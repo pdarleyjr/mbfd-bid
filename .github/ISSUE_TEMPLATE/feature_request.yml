@@ -1,0 +1,73 @@
+name: ✨ Feature request
+description: A new capability or significant enhancement.
+title: '[Feature] '
+labels: [enhancement, needs-triage]
+assignees: [pdarleyjr]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for new functionality. For small UI / copy tweaks, use bug
+        report with severity P3.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user pain or process gap does this solve? Who feels it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you solve it? UI sketches / API shape welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Member-facing
+        - Admin-facing
+        - Both
+        - Infrastructure / DevOps
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Which plan / phase should own this?
+      options:
+        - Plan 01 (Foundation)
+        - Plan 02 (Data plane)
+        - Plan 03 (Eligibility engine)
+        - Plan 04 (Live bid core)
+        - Plan 05 (Admin console)
+        - Plan 06 (AI integration)
+        - Plan 07 (R-Day Phase 2)
+        - Plan 08 (Audit + exports + portal)
+        - Plan 09 (Hardening + rehearsal)
+        - Post-v1 backlog
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: success
+    attributes:
+      label: Success criteria
+      description: How will we know this is done? (Acceptance criteria, metrics.)
+    validations:
+      required: true

@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: 9.12.0
+  NODE_VERSION: 20.x
+
+jobs:
+  # Placeholder until Plan 01 Task 1 lands the monorepo.
+  # Once the workspace exists, this job is replaced by the full lint /
+  # typecheck / unit / integration / e2e matrix from Plan 01 Task 11.
+  smoke:
+    name: Repository smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify required files exist
+        run: |
+          test -f README.md
+          test -f LICENSE
+          test -f SECURITY.md
+          test -f CONTRIBUTING.md
+          test -f .gitignore
+          test -f .gitattributes
+          test -f .editorconfig
+          test -f .github/CODEOWNERS
+          test -f .github/dependabot.yml
+          test -f .github/PULL_REQUEST_TEMPLATE.md
+          echo "✅ All required repo scaffold files present"
+      - name: Check no secrets in tracked files
+        run: |
+          # Block accidental token check-ins. Add new patterns here as needed.
+          if git grep -E -I '(ghp_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{82}|cfat_[0-9a-f]{40,}|cfut_[0-9a-zA-Z]{40,}|sk-ant-[0-9A-Za-z_-]{50,}|sk-[A-Za-z0-9]{40,})' -- ':!.github/workflows/ci.yml' ':!.github/workflows/*.yml'; then
+            echo "❌ Possible secret found in tracked files"
+            exit 1
+          fi
+          echo "✅ No obvious secrets in tracked files"

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/pdarleyjr/mbfd-bid/blob/main/SECURITY.md
+    about: For security issues, please follow our security policy (do not open a public issue).
+  - name: Spec / design questions
+    url: https://github.com/pdarleyjr/MBFD_Hub/tree/main/docs/superpowers/specs
+    about: Architecture and spec live in the MBFD_Hub companion repo.

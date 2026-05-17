@@ -1,0 +1,79 @@
+version: 2
+updates:
+  # JavaScript / TypeScript deps (root + workspaces)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/New_York
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    labels: [dependencies, javascript]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      next:
+        patterns:
+          - 'next'
+          - 'react'
+          - 'react-dom'
+          - '@types/react*'
+      hono-and-cf:
+        patterns:
+          - 'hono'
+          - '@hono/*'
+          - 'wrangler'
+          - '@cloudflare/*'
+          - '@opennextjs/*'
+      drizzle:
+        patterns:
+          - 'drizzle-orm'
+          - 'drizzle-kit'
+          - 'drizzle-zod'
+      testing:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+          - '@playwright/*'
+      lint:
+        patterns:
+          - '@biomejs/biome'
+          - 'eslint*'
+      types:
+        patterns:
+          - '@types/*'
+
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    labels: [dependencies, javascript, app:web]
+    commit-message: { prefix: 'chore(web)' }
+
+  - package-ecosystem: npm
+    directory: /apps/worker
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    labels: [dependencies, javascript, app:worker]
+    commit-message: { prefix: 'chore(worker)' }
+
+  - package-ecosystem: npm
+    directory: /packages/shared
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    labels: [dependencies, javascript, package:shared]
+    commit-message: { prefix: 'chore(shared)' }
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, github-actions]
+    commit-message:
+      prefix: ci
+      include: scope

@@ -1,0 +1,79 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+.yarn/
+.npm/
+
+# Build outputs
+.next/
+.open-next/
+.vercel/
+.wrangler/
+.mf/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Env files (never commit secrets)
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+.dev.vars
+.dev.vars.*
+
+# Keep example files
+!.env.example
+!.dev.vars.example
+
+# Cloudflare
+wrangler.toml.bak
+.wrangler-runtime/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+!.vscode/launch.json.example
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Test artifacts
+coverage/
+playwright-report/
+playwright/.cache/
+test-results/
+*.lcov
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Storybook
+storybook-static/
+
+# Misc
+*.bak
+*.tmp
+.cache/
+.turbo/

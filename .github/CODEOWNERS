@@ -1,0 +1,26 @@
+# MBFD Bid — Code Owners
+#
+# Each line is a file pattern followed by one or more owners.
+# These owners are automatically requested for review when a PR
+# touches matching files.
+
+# Global default — every PR needs owner approval
+*                          @pdarleyjr
+
+# Spec & plans (documentation lives in MBFD_Hub but if mirrored here)
+/docs/                     @pdarleyjr
+/SECURITY.md               @pdarleyjr
+/CONTRIBUTING.md           @pdarleyjr
+
+# Critical surfaces — additional review weight
+/apps/worker/src/durable/  @pdarleyjr
+/apps/worker/src/audit/    @pdarleyjr
+/apps/worker/src/security/ @pdarleyjr
+/apps/worker/src/middleware/  @pdarleyjr
+
+# Build + CI configuration
+/.github/                  @pdarleyjr
+/wrangler.toml             @pdarleyjr
+/apps/worker/wrangler.toml @pdarleyjr
+/pnpm-workspace.yaml       @pdarleyjr
+/package.json              @pdarleyjr

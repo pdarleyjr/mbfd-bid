@@ -1,0 +1,28 @@
+name: Deploy staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Placeholder until Plan 01 Task 12 lands the actual deploy steps.
+# This workflow file is kept here so branch protection can reference it
+# from day 1 without churn.
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  noop:
+    name: Awaiting Plan 01 Task 12
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: |
+          echo "Deploy workflow placeholder — actual deploy lands in Plan 01 Task 12"
+          echo "When that lands this file is replaced wholesale."

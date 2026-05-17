@@ -1,0 +1,34 @@
+# Auto-detect line endings; normalize on commit
+* text=auto eol=lf
+
+# Treat these as binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.avif      binary
+*.svg       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.mp4       binary
+
+# Force LF for shell scripts
+*.sh        text eol=lf
+
+# GitHub Linguist overrides — exclude generated + lock files from language stats
+pnpm-lock.yaml linguist-generated=true
+package-lock.json linguist-generated=true
+*.min.js linguist-generated=true
+*.min.css linguist-generated=true
+dist/* linguist-generated=true
+.next/* linguist-generated=true
+.open-next/* linguist-generated=true
+.wrangler/* linguist-generated=true
