@@ -4,7 +4,9 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-export const runtime = 'edge';
+// Runtime: Node.js (default for App Router). OpenNext on Cloudflare Workers
+// requires edge-runtime routes to live in a separate function; the default
+// runtime bundles cleanly with the rest of the worker output.
 
 const Body = z.object({ jwt: z.string().min(1) });
 
