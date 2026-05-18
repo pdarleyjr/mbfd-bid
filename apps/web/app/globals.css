@@ -1,0 +1,68 @@
+/* Variable font self-host via @fontsource — no Google Fonts CDN at runtime */
+@import "@fontsource-variable/plus-jakarta-sans/index.css";
+@import "@fontsource-variable/source-sans-3/index.css";
+@import "@fontsource/jetbrains-mono/400.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Tint stones with brand hue (subtle) per .impeccable.md guidance */
+    --bg: 36 33% 97%; /* stone-50 */
+    --fg: 24 10% 14%; /* stone-800 */
+  }
+
+  html {
+    color-scheme: light;
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+  }
+
+  body {
+    font-family: var(--font-body, "Source Sans 3 Variable"), system-ui, sans-serif;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Plus Jakarta Sans Variable", system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* All numeric data uses tabular-nums by default (spec §17.B) */
+  .num,
+  [data-num],
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Touch targets — spec §17.D / .impeccable.md ERROR-037 */
+  @media (hover: none) {
+    button,
+    a[role="button"],
+    [type="submit"],
+    [type="button"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
+  /* Motion gate — spec §17.C / .impeccable.md ERROR-036 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0s !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0s !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
