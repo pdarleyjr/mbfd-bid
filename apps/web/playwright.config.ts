@@ -1,7 +1,12 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   testDir: './tests/e2e',
+  globalSetup: path.resolve(__dirname, './tests/e2e/global-setup.ts'),
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   use: {
@@ -15,6 +20,7 @@ export default defineConfig({
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: { ...process.env, NODE_ENV: 'test' } as Record<string, string>,
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },

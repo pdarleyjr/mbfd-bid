@@ -47,3 +47,34 @@ test.describe('Lobby protection', () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 });
+
+test.describe('Full happy path (JWT in cookie)', () => {
+  test('PIN → JWT cookie → lobby greets the member', async ({ context, page }) => {
+    const jwt = process.env.E2E_JWT;
+    if (!jwt) {
+      test.skip(true, 'JWT_SIGNING_KEY not set for global-setup');
+      return;
+    }
+    // Set PIN cookie + pre-signed JWT cookie directly
+    await context.clearCookies();
+    await context.addCookies([
+      {
+        name: 'mbfd_pin',
+        value: 'ok',
+        url: 'http://localhost:3000',
+        httpOnly: true,
+        sameSite: 'Strict',
+      },
+      {
+        name: 'mbfd_bid_jwt',
+        value: jwt,
+        url: 'http://localhost:3000',
+        httpOnly: true,
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/lobby');
+    await expect(page.getByRole('heading', { name: /lobby/i })).toBeVisible();
+    await expect(page.getByText('Peter')).toBeVisible();
+  });
+});

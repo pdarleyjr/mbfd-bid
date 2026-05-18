@@ -18,33 +18,61 @@ env:
   NODE_VERSION: 20.x
 
 jobs:
-  # Placeholder until Plan 01 Task 1 lands the monorepo.
-  # Once the workspace exists, this job is replaced by the full lint /
-  # typecheck / unit / integration / e2e matrix from Plan 01 Task 11.
-  smoke:
-    name: Repository smoke
+  lint-and-typecheck:
+    name: Lint + Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Verify required files exist
-        run: |
-          test -f README.md
-          test -f LICENSE
-          test -f SECURITY.md
-          test -f CONTRIBUTING.md
-          test -f .gitignore
-          test -f .gitattributes
-          test -f .editorconfig
-          test -f .github/CODEOWNERS
-          test -f .github/dependabot.yml
-          test -f .github/PULL_REQUEST_TEMPLATE.md
-          echo "✅ All required repo scaffold files present"
-      - name: Check no secrets in tracked files
-        run: |
-          # Block accidental token check-ins. Add new patterns here as needed.
-          if git grep -E -I '(ghp_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{82}|cfat_[0-9a-f]{40,}|cfut_[0-9a-zA-Z]{40,}|sk-ant-[0-9A-Za-z_-]{50,}|sk-[A-Za-z0-9]{40,})' -- ':!.github/workflows/ci.yml' ':!.github/workflows/*.yml'; then
-            echo "❌ Possible secret found in tracked files"
-            exit 1
-          fi
-          echo "✅ No obvious secrets in tracked files"
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  unit-and-integration:
+    name: Unit + Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+
+  e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JWT_SIGNING_KEY: ${{ secrets.E2E_JWT_SIGNING_KEY }}
+      PIN_PLAIN: '2300'
+      E2E_REAL_JWT: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mbfd/shared build
+      - run: pnpm --filter @mbfd/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
