@@ -1,11 +1,10 @@
+import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { requireAdmin } from '@/lib/require-admin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'edge';
-
-const WORKER_URL = process.env.WORKER_URL ?? 'http://localhost:8787';
 
 export async function POST(req: Request) {
   try {
@@ -38,9 +37,10 @@ export async function POST(req: Request) {
   const body = new FormData();
   body.append('file', file);
 
+  const workerUrl = cfEnv('WORKER_URL') ?? 'http://localhost:8787';
   let res: Response;
   try {
-    res = await fetch(`${WORKER_URL}/api/admin/members/import`, {
+    res = await fetch(`${workerUrl}/api/admin/members/import`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${jwt}` },
       body,

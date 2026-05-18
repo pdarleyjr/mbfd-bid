@@ -1,4 +1,5 @@
 import { BrandHeader } from '@/components/BrandHeader';
+import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
 import { requirePin } from '@/lib/require-pin';
@@ -13,7 +14,7 @@ export default async function LobbyPage() {
   const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
   if (!jwt) redirect('/login');
 
-  const signingKey = process.env.JWT_SIGNING_KEY;
+  const signingKey = cfEnv('JWT_SIGNING_KEY');
   if (!signingKey) throw new Error('missing JWT_SIGNING_KEY');
 
   let payload: JwtPayload;

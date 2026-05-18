@@ -1,3 +1,4 @@
+import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME, JWT_COOKIE_OPTS } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
 import { cookies } from 'next/headers';
@@ -6,10 +7,6 @@ import { z } from 'zod';
 
 export const runtime = 'edge';
 
-// Runtime: Node.js (default for App Router). OpenNext on Cloudflare Workers
-// requires edge-runtime routes to live in a separate function; the default
-// runtime bundles cleanly with the rest of the worker output.
-
 const Body = z.object({ jwt: z.string().min(1) });
 
 export async function POST(req: Request) {
@@ -17,7 +14,7 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(json);
   if (!parsed.success) return NextResponse.json({ error: 'invalid' }, { status: 400 });
 
-  const signingKey = process.env.JWT_SIGNING_KEY;
+  const signingKey = cfEnv('JWT_SIGNING_KEY');
   if (!signingKey) {
     return NextResponse.json({ error: 'misconfigured' }, { status: 500 });
   }

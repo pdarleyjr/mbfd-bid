@@ -1,6 +1,7 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { cfEnv } from './cf-env';
 import { JWT_COOKIE_NAME } from './cookies';
 import { verifyJwt } from './jwt';
 import { requirePin } from './require-pin';
@@ -13,7 +14,7 @@ export async function requireAdmin(): Promise<JwtPayload> {
 
   let claims: JwtPayload;
   try {
-    const signingKey = process.env.JWT_SIGNING_KEY;
+    const signingKey = cfEnv('JWT_SIGNING_KEY');
     if (!signingKey) throw new Error('missing JWT_SIGNING_KEY');
     claims = await verifyJwt(token, signingKey);
   } catch {

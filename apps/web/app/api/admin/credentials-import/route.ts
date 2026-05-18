@@ -1,11 +1,10 @@
+import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { requireAdmin } from '@/lib/require-admin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'edge';
-
-const WORKER_URL = process.env.WORKER_URL ?? 'http://localhost:8787';
 
 export async function POST(req: Request) {
   try {
@@ -52,7 +51,8 @@ export async function POST(req: Request) {
   const body = new FormData();
   body.append('file', file);
 
-  const url = new URL(`${WORKER_URL}/api/admin/credentials/import`);
+  const workerUrl = cfEnv('WORKER_URL') ?? 'http://localhost:8787';
+  const url = new URL(`${workerUrl}/api/admin/credentials/import`);
   url.searchParams.set('mode', mode);
   if (mode === 'legacy_wide_matrix') {
     url.searchParams.set('metadata_columns', String(metadataColumns));
