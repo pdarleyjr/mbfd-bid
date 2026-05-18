@@ -20,3 +20,5 @@ export {
   techCredNames,
   type OpTechPair,
 } from './operations-techs.js';
+
+export { compare, sortByTieBreak, type ComparableResult } from './tie-break.js';
