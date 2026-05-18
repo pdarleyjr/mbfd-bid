@@ -16,7 +16,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -264,11 +264,12 @@ function main(): void {
   console.info('Building SQL...');
   const sql = buildSql(positions, credentials, explicitRules);
 
-  // Write SQL to temp file
-  const tmpDir = tmpdir();
-  mkdirSync(tmpDir, { recursive: true });
-  const sqlFile = join(tmpDir, `mbfd-seed-2026-${Date.now()}.sql`);
-  writeFileSync(sqlFile, sql, 'utf-8');
+  // Write SQL to a unique private temp dir. `mkdtempSync` creates a directory
+  // with a random suffix and 0o700 permissions, avoiding the predictable-path
+  // hazard CodeQL flags on `path.join(os.tmpdir(), ...)` (js/insecure-temporary-file).
+  const tmpDirRoot = mkdtempSync(join(tmpdir(), 'mbfd-seed-2026-'));
+  const sqlFile = join(tmpDirRoot, 'seed.sql');
+  writeFileSync(sqlFile, sql, { encoding: 'utf-8', mode: 0o600 });
   console.info(`  Wrote SQL to ${sqlFile}`);
 
   console.info(`Executing against ${isRemote ? 'remote staging' : 'local'} D1...`);

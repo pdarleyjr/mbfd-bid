@@ -89,12 +89,16 @@ describe('parseLegacyWideMatrix golden', () => {
       const file = path.resolve(
         '../../../MBFD/Bid/2025 Bid Documents/eligible/2025 Bid position requirements and points.xlsx',
       );
+      // Read directly and silently skip when the local source file is
+      // unavailable (CI doesn't have the local MBFD checkout). Avoids the
+      // access-then-read TOCTOU pattern (CodeQL js/file-system-race).
+      let fileData: Buffer;
       try {
-        await fs.access(file);
-      } catch {
-        return; // skipped silently if file path varies across machines
+        fileData = await fs.readFile(file);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+        throw err;
       }
-      const fileData = await fs.readFile(file);
       const buf = fileData.buffer as ArrayBuffer;
       const result = parseLegacyWideMatrix(buf, { metadataColumns: 4 });
       expect(result.ok.length).toBeGreaterThanOrEqual(30);

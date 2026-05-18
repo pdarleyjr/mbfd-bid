@@ -54,15 +54,16 @@ bob,5
     const path = await import('node:path');
     const file = path.resolve('../../../MBFD_Hub/analysis/personnel.csv');
 
-    // Skip if file is not accessible (e.g. CI environment)
+    // Read directly and skip the test if the golden file is unavailable
+    // (CI environments don't have access to the local MBFD_Hub checkout).
+    // Avoid the access-then-read TOCTOU pattern (CodeQL js/file-system-race).
+    let csv: string;
     try {
-      await fs.access(file);
-    } catch {
-      // File not accessible - skip this test in CI
-      return;
+      csv = await fs.readFile(file, 'utf-8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
     }
-
-    const csv = await fs.readFile(file, 'utf-8');
     const { MemberImportRowSchema } = await import('@mbfd/shared');
     const result = await parseCsv(csv, MemberImportRowSchema);
     expect(result.ok.length).toBeGreaterThanOrEqual(200);
