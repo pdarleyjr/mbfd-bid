@@ -52,7 +52,10 @@ export async function POST(req: Request) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    return NextResponse.json({ error: `Worker returned ${res.status}: ${text}` }, { status: res.status });
+    return NextResponse.json(
+      { error: `Worker returned ${res.status}: ${text}` },
+      { status: res.status },
+    );
   }
 
   const result = await res.json();

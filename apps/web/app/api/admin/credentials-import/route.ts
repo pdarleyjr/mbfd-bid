@@ -43,7 +43,10 @@ export async function POST(req: Request) {
   const metadataColumnsRaw = formData.get('metadata_columns');
   const metadataColumns = metadataColumnsRaw ? Number(metadataColumnsRaw) : 4;
   if (!Number.isInteger(metadataColumns) || metadataColumns < 0) {
-    return NextResponse.json({ error: `Invalid metadata_columns value: ${metadataColumnsRaw}` }, { status: 400 });
+    return NextResponse.json(
+      { error: `Invalid metadata_columns value: ${metadataColumnsRaw}` },
+      { status: 400 },
+    );
   }
 
   const body = new FormData();
@@ -69,7 +72,10 @@ export async function POST(req: Request) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    return NextResponse.json({ error: `Worker returned ${res.status}: ${text}` }, { status: res.status });
+    return NextResponse.json(
+      { error: `Worker returned ${res.status}: ${text}` },
+      { status: res.status },
+    );
   }
 
   const result = await res.json();

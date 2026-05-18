@@ -20,11 +20,7 @@ export default async function MembersImportPage() {
         </p>
       </header>
 
-      <UploadForm
-        endpoint="/api/admin/members-import"
-        accept=".csv,text/csv"
-        label="Members CSV"
-      />
+      <UploadForm endpoint="/api/admin/members-import" accept=".csv,text/csv" label="Members CSV" />
     </div>
   );
 }
