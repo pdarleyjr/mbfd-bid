@@ -1,0 +1,43 @@
+name = "mbfd-bid-worker"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare account ID set via env var: CLOUDFLARE_ACCOUNT_ID
+# Token via wrangler login OR CLOUDFLARE_API_TOKEN
+
+[env.staging]
+name = "mbfd-bid-worker-staging"
+route = { pattern = "api.staging.bid.mbfdhub.com/*", zone_name = "mbfdhub.com" }
+vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "mbfd-bid-staging"
+database_id = "6dd16e65-5cb6-4c19-aff2-ec2706e72d50"
+migrations_dir = "./migrations"
+
+[[env.staging.kv_namespaces]]
+binding = "KV"
+id = "ce8afe4605464683a51bf6ae9c042c01"
+
+[env.production]
+name = "mbfd-bid-worker-production"
+route = { pattern = "api.bid.mbfdhub.com/*", zone_name = "mbfdhub.com" }
+vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "mbfd-bid-production"
+database_id = "REPLACE_AFTER_PRODUCTION_d1_CREATE"
+migrations_dir = "./migrations"
+
+[[env.production.kv_namespaces]]
+binding = "KV"
+id = "REPLACE_AFTER_PRODUCTION_kv_CREATE"
+
+# Secrets — set via `wrangler secret put NAME --env staging`:
+#   JWT_SIGNING_KEY    (HMAC HS256, 32-byte random base64url)
+#   PIN_HASH           (bcrypt of the live PIN; rotate via `wrangler secret put`)
+#   PORTAL_BID_READER  (service token for /verify-credentials)
+#   PORTAL_BID_WRITER  (service token for /bid-assignment — used in Plan 08)

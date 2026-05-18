@@ -5,24 +5,71 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Placeholder until Plan 01 Task 12 lands the actual deploy steps.
-# This workflow file is kept here so branch protection can reference it
-# from day 1 without churn.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  PNPM_VERSION: 9.12.0
+  NODE_VERSION: 20.x
 
 permissions:
   contents: read
   deployments: write
 
-concurrency:
-  group: deploy-staging
-  cancel-in-progress: false
-
 jobs:
-  noop:
-    name: Awaiting Plan 01 Task 12
+  deploy-worker:
+    name: Deploy worker (staging)
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 15
+    environment:
+      name: staging
+      url: https://api.staging.bid.mbfdhub.com
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - run: |
-          echo "Deploy workflow placeholder — actual deploy lands in Plan 01 Task 12"
-          echo "When that lands this file is replaced wholesale."
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mbfd/shared build
+      - name: Apply D1 migrations (staging, remote)
+        working-directory: apps/worker
+        run: pnpm exec wrangler d1 migrations apply mbfd-bid-staging --remote --env staging
+      - name: Deploy worker
+        working-directory: apps/worker
+        run: pnpm exec wrangler deploy --env staging
+
+  deploy-web:
+    name: Deploy web (staging)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: deploy-worker
+    environment:
+      name: staging
+      url: https://staging.bid.mbfdhub.com
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mbfd/shared build
+      - run: pnpm --filter @mbfd/web build
+      - name: Deploy Next.js to Cloudflare Pages
+        working-directory: apps/web
+        run: |
+          # Use the @opennextjs/cloudflare CLI to bundle + deploy
+          pnpm exec opennextjs-cloudflare build
+          pnpm exec opennextjs-cloudflare deploy --env staging
