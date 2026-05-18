@@ -10,13 +10,31 @@ app.use('*', logger());
 app.use(
   '*',
   cors({
-    origin: (origin) => {
-      // Reflect-only for known hostnames; reject otherwise.
+    origin: (origin, c) => {
       if (!origin) return null;
-      if (origin.endsWith('.bid.mbfdhub.com') || origin === 'https://bid.mbfdhub.com') {
+      // Parse the origin properly; reject anything that fails URL parsing.
+      let url: URL;
+      try {
+        url = new URL(origin);
+      } catch {
+        return null;
+      }
+
+      const isProd = c.env?.ENV === 'production';
+
+      // Production / staging: HTTPS only, exact host or subdomain of bid.mbfdhub.com
+      if (
+        url.protocol === 'https:' &&
+        (url.hostname === 'bid.mbfdhub.com' || url.hostname.endsWith('.bid.mbfdhub.com'))
+      ) {
         return origin;
       }
-      if (origin.startsWith('http://localhost:')) return origin;
+
+      // Local dev only — never in production. Allow http://localhost on any port.
+      if (!isProd && url.protocol === 'http:' && url.hostname === 'localhost') {
+        return origin;
+      }
+
       return null;
     },
     credentials: true,
