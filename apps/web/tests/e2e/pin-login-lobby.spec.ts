@@ -24,3 +24,26 @@ test.describe('PIN gate', () => {
     await expect(page).toHaveURL(/\/$/);
   });
 });
+
+test.describe('Lobby protection', () => {
+  test('/lobby without PIN cookie redirects to /', async ({ page }) => {
+    await page.context().clearCookies();
+    await page.goto('/lobby');
+    await expect(page).toHaveURL(/\/$/);
+  });
+
+  test('/lobby with PIN cookie but no JWT redirects to /login', async ({ context, page }) => {
+    await context.clearCookies();
+    await context.addCookies([
+      {
+        name: 'mbfd_pin',
+        value: 'ok',
+        url: 'http://localhost:3000',
+        httpOnly: true,
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/lobby');
+    await expect(page).toHaveURL(/\/login$/);
+  });
+});
