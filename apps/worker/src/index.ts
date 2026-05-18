@@ -3,6 +3,8 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import adminCredentials from './routes/admin/credentials.js';
 import adminMembers from './routes/admin/members.js';
+import adminPositions from './routes/admin/positions.js';
+import adminRules from './routes/admin/rules.js';
 import auth from './routes/auth';
 import health from './routes/health';
 import type { WorkerEnv } from './types/env';
@@ -49,6 +51,8 @@ app.route('/api', health);
 app.route('/api/auth', auth);
 app.route('/api/admin/members', adminMembers);
 app.route('/api/admin/credentials', adminCredentials);
+app.route('/api/admin/positions', adminPositions);
+app.route('/api/admin/rules', adminRules);
 
 app.notFound((c) => c.json({ error: 'Not Found' }, 404));
 
