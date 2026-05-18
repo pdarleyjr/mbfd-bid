@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
-import { JWT_COOKIE_NAME } from './cookies.js';
-import { createRpcClient } from './rpc-client.js';
+import { JWT_COOKIE_NAME } from './cookies';
+import { createRpcClient } from './rpc-client';
 
 export async function getServerRpc() {
   const cookieStore = await cookies();
