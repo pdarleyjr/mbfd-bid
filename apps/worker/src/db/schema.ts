@@ -1,4 +1,4 @@
-import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const members = sqliteTable('members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -99,6 +99,210 @@ export const positionRules = sqliteTable(
       t.ruleBookVersion,
       t.positionId,
       t.templateVersion,
+    ),
+  }),
+);
+
+// ── Plan 02 Task 4: bid-execution, audit, AI advisory, snapshot, portal ──────
+
+export const bidYears = sqliteTable('bid_years', {
+  year: integer('year').primaryKey(),
+  status: text('status', {
+    enum: ['configuring', 'live', 'paused', 'complete', 'archived'],
+  }).notNull(),
+  positionTemplateVersion: text('position_template_version').references(
+    () => positionTemplates.version,
+  ),
+  ruleBookVersion: text('rule_book_version').references(() => ruleBooks.version),
+  configJson: text('config_json'),
+});
+
+export const bidSessions = sqliteTable('bid_sessions', {
+  id: text('id').primaryKey(),
+  bidYear: integer('bid_year')
+    .notNull()
+    .references(() => bidYears.year, { onDelete: 'cascade' }),
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
+  pausedAt: integer('paused_at', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  currentPhase: text('current_phase', {
+    enum: ['config', 'position_bid', 'r_day_bid', 'paused', 'complete'],
+  }).notNull(),
+  currentBidderId: integer('current_bidder_id').references(() => members.id, {
+    onDelete: 'restrict',
+  }),
+  currentTurnStartedAt: integer('current_turn_started_at', { mode: 'timestamp' }),
+  turnTimerSeconds: integer('turn_timer_seconds').notNull().default(180),
+  expectedDurationDays: integer('expected_duration_days').notNull().default(2),
+  scheduledResumeAt: integer('scheduled_resume_at', { mode: 'timestamp' }),
+  dayCount: integer('day_count').notNull().default(0),
+});
+
+export const bidOrder = sqliteTable(
+  'bid_order',
+  {
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    ordinal: integer('ordinal').notNull(),
+    memberId: integer('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    pool: text('pool', { enum: ['OFC', 'FF'] }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.bidSessionId, t.ordinal] }),
+    memberIdx: index('idx_bid_order_member_id').on(t.memberId),
+  }),
+);
+
+export const bids = sqliteTable(
+  'bids',
+  {
+    id: text('id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    ordinal: integer('ordinal').notNull(),
+    memberId: integer('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    // No FK to positions — composite PK on positions blocks single-column FK
+    positionId: text('position_id').notNull(),
+    rDay: text('r_day'),
+    pickedAt: integer('picked_at', { mode: 'timestamp' }).notNull(),
+    forced: integer('forced', { mode: 'boolean' }).notNull().default(false),
+    adminActorId: integer('admin_actor_id').references(() => members.id, {
+      onDelete: 'restrict',
+    }),
+    reason: text('reason'),
+    idempotencyKey: text('idempotency_key').unique().notNull(),
+    portalSyncStatus: text('portal_sync_status', {
+      enum: ['pending', 'synced', 'failed', 'superseded'],
+    })
+      .notNull()
+      .default('pending'),
+    portalSyncedAt: integer('portal_synced_at', { mode: 'timestamp' }),
+    portalSyncAttempts: integer('portal_sync_attempts').notNull().default(0),
+    portalLastError: text('portal_last_error'),
+  },
+  (t) => ({
+    sessionOrdinalIdx: index('idx_bids_session_ordinal').on(t.bidSessionId, t.ordinal),
+    memberIdx: index('idx_bids_member_id').on(t.memberId),
+    portalSyncStatusIdx: index('idx_bids_portal_sync_status').on(t.portalSyncStatus),
+  }),
+);
+
+export const portalWritebackQueue = sqliteTable(
+  'portal_writeback_queue',
+  {
+    id: text('id').primaryKey(),
+    bidId: text('bid_id')
+      .notNull()
+      .references(() => bids.id, { onDelete: 'cascade' }),
+    enqueuedAt: integer('enqueued_at', { mode: 'timestamp' }).notNull(),
+    nextAttemptAt: integer('next_attempt_at', { mode: 'timestamp' }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    status: text('status', {
+      enum: ['queued', 'in_flight', 'done', 'failed'],
+    }).notNull(),
+    payloadJson: text('payload_json').notNull(),
+    lastError: text('last_error'),
+  },
+  (t) => ({
+    statusNextAttemptIdx: index('idx_portal_writeback_queue_status_next').on(
+      t.status,
+      t.nextAttemptAt,
+    ),
+  }),
+);
+
+export const auditLog = sqliteTable(
+  'audit_log',
+  {
+    id: text('id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    actorType: text('actor_type', {
+      enum: ['member', 'admin', 'system', 'ai'],
+    }).notNull(),
+    actorId: integer('actor_id'),
+    action: text('action', {
+      enum: [
+        'pick',
+        'forced_pick',
+        'pause',
+        'resume',
+        'skip',
+        'override_rule',
+        'override_cert',
+        'lock_position',
+        'unlock_position',
+        'grant_extension',
+        'admin_bid_for_member',
+        'session_start',
+        'session_complete',
+        'members_import',
+        'credentials_import',
+      ],
+    }).notNull(),
+    targetKind: text('target_kind'),
+    targetId: text('target_id'),
+    beforeStateJson: text('before_state'),
+    afterStateJson: text('after_state'),
+    reason: text('reason'),
+    aiAdvisoryId: text('ai_advisory_id'),
+    clientMetaJson: text('client_meta').notNull(),
+  },
+  (t) => ({
+    sessionSeqIdx: index('idx_audit_log_session_seq').on(t.bidSessionId, t.seq),
+  }),
+);
+
+export const aiAdvisories = sqliteTable(
+  'ai_advisories',
+  {
+    id: text('id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    memberId: integer('member_id'),
+    positionId: text('position_id'),
+    triggeredBy: text('triggered_by', {
+      enum: ['turn_start', 'admin_request', 'periodic_forecast', 'override_check'],
+    }).notNull(),
+    model: text('model').notNull(),
+    promptHash: text('prompt_hash').notNull(),
+    responseJson: text('response_json').notNull(),
+    renderedMarkdown: text('rendered_markdown').notNull(),
+    latencyMs: integer('latency_ms').notNull(),
+    costCents: integer('cost_cents').notNull(),
+    cacheHitRatio: real('cache_hit_ratio').notNull(),
+  },
+  (t) => ({
+    sessionTriggeredByIdx: index('idx_ai_advisories_session_triggered').on(
+      t.bidSessionId,
+      t.triggeredBy,
+    ),
+  }),
+);
+
+export const bidSessionSnapshots = sqliteTable(
+  'bid_session_snapshots',
+  {
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    snapshotAt: integer('snapshot_at', { mode: 'timestamp' }).notNull(),
+    stateJson: text('state_json').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.bidSessionId, t.snapshotAt] }),
+    sessionSnapshotIdx: index('idx_bid_session_snapshots_session_at').on(
+      t.bidSessionId,
+      t.snapshotAt,
     ),
   }),
 );

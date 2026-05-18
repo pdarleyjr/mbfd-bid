@@ -32,4 +32,23 @@ describe('db schema (Plan 02)', () => {
     expect(schema.positions.id).toBeDefined();
     expect(schema.positions.templateVersion).toBeDefined();
   });
+  it('exports bid_years, bid_sessions, bid_order, bids, audit_log, ai_advisories, snapshots, writeback queue', () => {
+    expect(schema.bidYears).toBeDefined();
+    expect(schema.bidSessions).toBeDefined();
+    expect(schema.bidOrder).toBeDefined();
+    expect(schema.bids).toBeDefined();
+    expect(schema.auditLog).toBeDefined();
+    expect(schema.aiAdvisories).toBeDefined();
+    expect(schema.bidSessionSnapshots).toBeDefined();
+    expect(schema.portalWritebackQueue).toBeDefined();
+  });
+  it('bid_sessions has multi-day fields (scheduled_resume_at, expected_duration_days, day_count)', () => {
+    expect(schema.bidSessions.scheduledResumeAt).toBeDefined();
+    expect(schema.bidSessions.expectedDurationDays).toBeDefined();
+    expect(schema.bidSessions.dayCount).toBeDefined();
+  });
+  it('bids has portal write-back tracking columns', () => {
+    expect(schema.bids.portalSyncStatus).toBeDefined();
+    expect(schema.bids.portalSyncAttempts).toBeDefined();
+  });
 });
