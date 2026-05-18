@@ -1,16 +1,56 @@
 import { zValidator } from '@hono/zod-validator';
 import { LoginRequestSchema, type LoginResponse } from '@mbfd/shared';
 import { Hono } from 'hono';
-import { isAdminEmployeeId, validateEnv } from '../lib/env';
+import { LOCAL_ADMIN_USERNAME, validateEnv, verifyLocalAdminPassword } from '../lib/env';
 import { signJwt } from '../lib/jwt';
 import { verifyCredentials } from '../lib/portal-client';
 import type { WorkerEnv } from '../types/env';
 
 const auth = new Hono<{ Bindings: WorkerEnv }>();
 
+// Synthetic identity for the shared admin account. `sub: 0` is reserved
+// because real `members.id` starts at 1 (autoincrement). The audit log
+// records `actor_id: 0` so admin actions are distinguishable from member
+// activity even though there is no row in the members table.
+const ADMIN_IDENTITY = {
+  member_id: 0,
+  employee_id: LOCAL_ADMIN_USERNAME,
+  first_name: 'Bid',
+  last_name: 'Admin',
+  rank: 'CHIEF' as const,
+} satisfies Omit<LoginResponse, 'role'>;
+
 auth.post('/login', zValidator('json', LoginRequestSchema), async (c) => {
   const { employee_id, password } = c.req.valid('json');
   const env = validateEnv(c.env);
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  // Local admin login: employee_id="admin", password verified against the
+  // LOCAL_ADMIN_PASSWORD_HASH bcrypt secret. Bypasses portal entirely.
+  // Plan 02 rehearsal scaffolding; Plan 05 admin console replaces this.
+  if (employee_id === LOCAL_ADMIN_USERNAME) {
+    if (!verifyLocalAdminPassword(env.LOCAL_ADMIN_PASSWORD_HASH, password)) {
+      return c.json({ error: 'invalid_credentials' }, 401);
+    }
+    const adminJwt = await signJwt(
+      {
+        sub: ADMIN_IDENTITY.member_id,
+        emp: ADMIN_IDENTITY.employee_id,
+        role: 'admin',
+        rank: ADMIN_IDENTITY.rank,
+        first_name: ADMIN_IDENTITY.first_name,
+        last_name: ADMIN_IDENTITY.last_name,
+        fresh_auth_at: nowSec,
+      },
+      env.JWT_SIGNING_KEY,
+      '8h',
+    );
+    return c.json({
+      jwt: adminJwt,
+      role: 'admin' as const,
+      member: { ...ADMIN_IDENTITY },
+    });
+  }
 
   let portalResponse: LoginResponse | null;
   try {
@@ -29,18 +69,11 @@ auth.post('/login', zValidator('json', LoginRequestSchema), async (c) => {
     return c.json({ error: 'invalid_credentials' }, 401);
   }
 
-  const nowSec = Math.floor(Date.now() / 1000);
-  // Plan 02 Task 20 — promote employee_id to admin via ADMIN_EMPLOYEE_IDS allow-list.
-  // The portal does not yet expose an is_admin flag; this is rehearsal scaffolding
-  // that Plan 05 (admin console) will replace with portal-sourced roles.
-  const effectiveRole = isAdminEmployeeId(env.ADMIN_EMPLOYEE_IDS, portalResponse.employee_id)
-    ? 'admin'
-    : portalResponse.role;
   const jwt = await signJwt(
     {
       sub: portalResponse.member_id,
       emp: portalResponse.employee_id,
-      role: effectiveRole,
+      role: portalResponse.role,
       rank: portalResponse.rank,
       first_name: portalResponse.first_name,
       last_name: portalResponse.last_name,
@@ -52,7 +85,7 @@ auth.post('/login', zValidator('json', LoginRequestSchema), async (c) => {
 
   return c.json({
     jwt,
-    role: effectiveRole,
+    role: portalResponse.role,
     member: {
       member_id: portalResponse.member_id,
       employee_id: portalResponse.employee_id,

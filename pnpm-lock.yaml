@@ -120,6 +120,9 @@ importers:
       '@mbfd/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      bcryptjs:
+        specifier: ^2.4.3
+        version: 2.4.3
       drizzle-orm:
         specifier: 0.36.4
         version: 0.36.4(@cloudflare/workers-types@4.20241011.0)(@types/better-sqlite3@7.6.13)(@types/react@18.3.12)(better-sqlite3@11.10.0)
@@ -151,6 +154,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: 4.20241011.0
         version: 4.20241011.0
+      '@types/bcryptjs':
+        specifier: ^2.4.6
+        version: 2.4.6
       '@types/better-sqlite3':
         specifier: ^7.6
         version: 7.6.13
@@ -2108,6 +2114,9 @@ packages:
   '@tsconfig/node18@1.0.3':
     resolution: {integrity: sha512-RbwvSJQsuN9TB04AQbGULYfOGE/RnSFk/FLQ5b0NmDf5Kx2q/lABZbHQPKCO1vZ6Fiwkplu+yb9pGdLy1iGseQ==}
 
+  '@types/bcryptjs@2.4.6':
+    resolution: {integrity: sha512-9xlo6R2qDs5uixm0bcIqCeMCE6HiQsIyel9KQySStiyqNl2tnj2mP3DX1Nf56MD6KMenNNlBBsy3LJ7gUEQPXQ==}
+
   '@types/better-sqlite3@7.6.13':
     resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
 
@@ -2232,6 +2241,9 @@ packages:
     resolution: {integrity: sha512-xjOFN16Ha1+Rz4nFYKqHU/LSB+gx/Vi3yQLX7r7sAW+Wa+8hhF2h4pvqTrTMc8+WcDBEunnUurr46Jvv0jk3Vg==}
     engines: {node: '>=6.0.0'}
     hasBin: true
+
+  bcryptjs@2.4.3:
+    resolution: {integrity: sha512-V/Hy/X9Vt7f3BbPJEi8BdVFMByHi+jNXrYkW3huaybV/kQ0KJg0Y6PkEMbn+zeT+i+SiKZ/HMqJGIIt4LZDqNQ==}
 
   better-sqlite3@11.10.0:
     resolution: {integrity: sha512-EwhOpyXiOEL/lKzHz9AW1msWFNzGc/z+LzeB3/jnFJpxu+th2yqvzsSWas1v9jgs9+xiXJcD5A8CJxAG2TaghQ==}
@@ -5691,6 +5703,8 @@ snapshots:
 
   '@tsconfig/node18@1.0.3': {}
 
+  '@types/bcryptjs@2.4.6': {}
+
   '@types/better-sqlite3@7.6.13':
     dependencies:
       '@types/node': 22.7.7
@@ -5828,6 +5842,8 @@ snapshots:
   base64-js@1.5.1: {}
 
   baseline-browser-mapping@2.10.30: {}
+
+  bcryptjs@2.4.3: {}
 
   better-sqlite3@11.10.0:
     dependencies:

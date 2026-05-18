@@ -25,6 +25,7 @@
   "dependencies": {
     "@hono/zod-validator": "0.4.1",
     "@mbfd/shared": "workspace:*",
+    "bcryptjs": "^2.4.3",
     "drizzle-orm": "0.36.4",
     "drizzle-zod": "0.7.1",
     "hono": "4.6.5",
@@ -37,6 +38,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.5.20",
     "@cloudflare/workers-types": "4.20241011.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6",
     "@types/papaparse": "5.5.2",
     "better-sqlite3": "^11.5",
