@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getDb, schema } from '../src/db';
 
 describe('db wiring (integration smoke)', () => {
