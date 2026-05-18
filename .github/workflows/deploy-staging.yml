@@ -69,7 +69,10 @@ jobs:
       - name: Deploy Next.js to Cloudflare Workers (+ Static Assets)
         working-directory: apps/web
         # OpenNext 1.x deploys to Workers + Static Assets (replaces the old
-        # Pages flow). `deploy` runs the build internally + uploads. The
+        # Pages flow). `pnpm deploy:staging` chains build && deploy. The
         # custom domain staging.bid.mbfdhub.com is auto-provisioned by the
-        # `routes` block in wrangler.jsonc.
+        # `routes` block in wrangler.jsonc. NEXT_PUBLIC_* is baked into the
+        # client bundle at build time, so it must be set on the build step.
+        env:
+          NEXT_PUBLIC_WORKER_BASE: https://api.staging.bid.mbfdhub.com
         run: pnpm deploy:staging
