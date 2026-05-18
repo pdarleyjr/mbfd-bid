@@ -126,6 +126,9 @@ importers:
       ulid:
         specifier: 2.4.0
         version: 2.4.0
+      xlsx:
+        specifier: https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz
+        version: https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz
       zod:
         specifier: 3.23.8
         version: 3.23.8
@@ -3629,6 +3632,12 @@ packages:
         optional: true
       utf-8-validate:
         optional: true
+
+  xlsx@https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz:
+    resolution: {tarball: https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz}
+    version: 0.20.3
+    engines: {node: '>=0.8'}
+    hasBin: true
 
   xml-naming@0.1.0:
     resolution: {integrity: sha512-k8KO9hrMyNk6tUWqUfkTEZbezRRpONVOzUTnc97VnCvyj6Tf9lyUR9EDAIeiVLv56jsMcoXEwjW8Kv5yPY52lw==}
@@ -7245,6 +7254,8 @@ snapshots:
   wrappy@1.0.2: {}
 
   ws@8.20.1: {}
+
+  xlsx@https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz: {}
 
   xml-naming@0.1.0: {}
 
