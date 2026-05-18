@@ -66,6 +66,7 @@ function applyMigrations(sqlite: Database.Database): void {
     '0002_members_certs.sql',
     '0003_positions_rules.sql',
     '0004_bid_audit_ai.sql',
+    '0005_audit_log_session_nullable.sql',
   ];
   for (const file of files) {
     const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8');
@@ -198,6 +199,9 @@ describe('admin credentials routes', () => {
     expect(body.updated).toBe(0);
     expect(body.errors).toHaveLength(1);
     expect(body.errors[0]?.rowNumber).toBe(5); // row 1=header, 2-4=valid, 5=invalid
+
+    const auditCount = sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get() as { n: number };
+    expect(auditCount.n).toBe(1);
   });
 
   it('POST /admin/credentials/import is idempotent — re-running updates instead of inserting', async () => {

@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { getDb } from '../../db/index.js';
 import { credentials } from '../../db/schema.js';
+import { writeAuditLog } from '../../lib/audit.js';
 import { parseCredentialsXlsx, parseLegacyWideMatrix } from '../../lib/xlsx-cred-parser.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -55,7 +56,13 @@ router.post('/import', async (c) => {
     }
   }
 
-  // TODO(plan-02 task 13): write audit_log entry for this import.
+  await writeAuditLog(db, {
+    bidSessionId: null,
+    actorType: 'admin',
+    actorId: c.get('claims').sub ?? null,
+    action: 'credentials_import',
+    afterState: { inserted, updated, errorCount: result.errors.length },
+  });
   return c.json({ inserted, updated, errors: result.errors });
 });
 

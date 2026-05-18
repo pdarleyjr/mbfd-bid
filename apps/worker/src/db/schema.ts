@@ -221,9 +221,7 @@ export const auditLog = sqliteTable(
   'audit_log',
   {
     id: text('id').primaryKey(),
-    bidSessionId: text('bid_session_id')
-      .notNull()
-      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    bidSessionId: text('bid_session_id').references(() => bidSessions.id, { onDelete: 'cascade' }),
     seq: integer('seq').notNull(),
     actorType: text('actor_type', {
       enum: ['member', 'admin', 'system', 'ai'],
@@ -246,18 +244,21 @@ export const auditLog = sqliteTable(
         'session_complete',
         'members_import',
         'credentials_import',
+        'positions_clone',
+        'rule_book_clone',
       ],
     }).notNull(),
     targetKind: text('target_kind'),
     targetId: text('target_id'),
-    beforeStateJson: text('before_state'),
-    afterStateJson: text('after_state'),
+    beforeState: text('before_state'),
+    afterState: text('after_state'),
     reason: text('reason'),
     aiAdvisoryId: text('ai_advisory_id'),
-    clientMetaJson: text('client_meta').notNull(),
+    clientMeta: text('client_meta'),
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   },
   (t) => ({
-    sessionSeqIdx: index('idx_audit_log_session_seq').on(t.bidSessionId, t.seq),
+    sessionSeqIdx: index('audit_log_session_seq_idx').on(t.bidSessionId, t.seq),
   }),
 );
 

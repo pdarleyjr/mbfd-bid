@@ -65,6 +65,7 @@ function applyMigrations(sqlite: Database.Database): void {
     '0002_members_certs.sql',
     '0003_positions_rules.sql',
     '0004_bid_audit_ai.sql',
+    '0005_audit_log_session_nullable.sql',
   ];
   for (const file of files) {
     const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8');
@@ -377,6 +378,9 @@ describe('admin positions routes', () => {
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as { count: number };
     expect(listBody.count).toBe(3);
+
+    const auditCount = sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get() as { n: number };
+    expect(auditCount.n).toBe(1);
   });
 
   it('POST /admin/positions/clone-from-year returns 400 when body missing destVersion', async () => {

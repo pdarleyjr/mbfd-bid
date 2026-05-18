@@ -3,6 +3,7 @@ import { type SQL, and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { getDb } from '../../db/index.js';
 import { positionTemplates, positions } from '../../db/schema.js';
+import { writeAuditLog } from '../../lib/audit.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -86,7 +87,15 @@ router.post('/clone-from-year/:src_version', async (c) => {
       .values(srcPositions.map((p) => ({ ...p, templateVersion: destVersion })));
   }
 
-  // TODO(plan-02 task 13): audit_log entry for clone operation.
+  await writeAuditLog(db, {
+    bidSessionId: null,
+    actorType: 'admin',
+    actorId: c.get('claims').sub ?? null,
+    action: 'positions_clone',
+    targetKind: 'position_template',
+    targetId: destVersion,
+    afterState: { srcVersion, destVersion, copied: srcPositions.length },
+  });
 
   return c.json({ destVersion, destYear, copied: srcPositions.length });
 });
