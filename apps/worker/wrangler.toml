@@ -8,7 +8,10 @@ compatibility_flags = ["nodejs_compat"]
 
 [env.staging]
 name = "mbfd-bid-worker-staging"
-route = { pattern = "api.staging.bid.mbfdhub.com/*", zone_name = "mbfdhub.com" }
+# Workers Custom Domain (dedicated cert via Cloudflare's auto-provisioning).
+# Replaces the legacy `route = { pattern = "...", zone_name = "..." }` which
+# relied on Universal SSL that did not reissue to cover this 4th-level host.
+routes = [{ pattern = "api.staging.bid.mbfdhub.com", custom_domain = true }]
 vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
 
 [[env.staging.d1_databases]]
@@ -23,7 +26,7 @@ id = "ce8afe4605464683a51bf6ae9c042c01"
 
 [env.production]
 name = "mbfd-bid-worker-production"
-route = { pattern = "api.bid.mbfdhub.com/*", zone_name = "mbfdhub.com" }
+routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
 vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
 
 [[env.production.d1_databases]]
