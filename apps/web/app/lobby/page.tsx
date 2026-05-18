@@ -5,8 +5,6 @@ import { type JwtPayload, RANK_LABELS } from '@mbfd/shared';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-export const runtime = 'edge';
-
 export default async function LobbyPage() {
   const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
   if (!jwt) redirect('/login');
