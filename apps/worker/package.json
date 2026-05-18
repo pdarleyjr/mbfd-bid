@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  },
   "scripts": {
     "dev": "wrangler dev --persist-to .wrangler/state --port 8787",
     "deploy:staging": "wrangler deploy --env staging",
@@ -11,21 +16,34 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "db:migrate:local": "wrangler d1 migrations apply mbfd-bid-staging --local",
-    "db:migrate:remote": "wrangler d1 migrations apply mbfd-bid-staging --remote"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply mbfd-bid-staging --env staging --local",
+    "db:migrate:remote": "wrangler d1 migrations apply mbfd-bid-staging --remote --env staging",
+    "db:seed:local": "tsx seed/2026.ts --local",
+    "db:seed:remote": "tsx seed/2026.ts --remote"
   },
   "dependencies": {
-    "@mbfd/shared": "workspace:*",
-    "hono": "4.6.5",
     "@hono/zod-validator": "0.4.1",
-    "drizzle-orm": "0.36.0",
-    "zod": "3.23.8",
-    "jose": "5.9.4"
+    "@mbfd/shared": "workspace:*",
+    "bcryptjs": "^2.4.3",
+    "drizzle-orm": "0.36.4",
+    "drizzle-zod": "0.7.1",
+    "hono": "4.6.5",
+    "jose": "5.9.4",
+    "papaparse": "5.5.3",
+    "ulid": "2.4.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz",
+    "zod": "3.23.8"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "4.20241011.0",
     "@cloudflare/vitest-pool-workers": "0.5.20",
+    "@cloudflare/workers-types": "4.20241011.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6",
+    "@types/papaparse": "5.5.2",
+    "better-sqlite3": "^11.5",
     "drizzle-kit": "0.28.0",
+    "tsx": "4.22.1",
     "typescript": "5.6.3",
     "vitest": "2.1.4",
     "wrangler": "3.84.1"

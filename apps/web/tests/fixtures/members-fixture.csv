@@ -1,0 +1,2 @@
+employee_id,first_name,last_name,rank,bid_category,rsc_seniority,hired_at,is_probationary
+10001,Alice,Smith,CPT,OFC,1,2000-01-15,false

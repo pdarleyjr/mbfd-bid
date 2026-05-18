@@ -69,7 +69,7 @@ jobs:
       - run: pnpm --filter @mbfd/web build
       - name: Deploy Next.js to Cloudflare Pages
         working-directory: apps/web
-        run: |
-          # Use the @opennextjs/cloudflare CLI to bundle + deploy
-          pnpm exec opennextjs-cloudflare build
-          pnpm exec opennextjs-cloudflare deploy --env staging
+        # `opennextjs-cloudflare deploy` bundles+deploys in one step; an
+        # explicit prior `build` invocation is rejected as a positional arg
+        # by the 0.5.x CLI. See docs/STATUS.md W15.
+        run: pnpm deploy:staging
