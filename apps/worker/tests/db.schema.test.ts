@@ -13,4 +13,13 @@ describe('db schema (Plan 02)', () => {
     expect(schema.credentials).toBeDefined();
     expect(schema.memberCredentials).toBeDefined();
   });
+  it('members.isProbationary is a boolean-mode column with default false', () => {
+    const col = schema.members.isProbationary;
+    expect(col).toBeDefined();
+    // drizzle exposes column metadata via the internal config object
+    const config = (col as unknown as { config: Record<string, unknown> }).config;
+    expect(config.hasDefault).toBe(true);
+    expect(config.default).toBe(false);
+    expect(config.mode).toBe('boolean');
+  });
 });

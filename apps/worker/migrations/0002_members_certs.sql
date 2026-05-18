@@ -1,3 +1,20 @@
+CREATE TABLE `members` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`employee_id` text NOT NULL,
+	`first_name` text NOT NULL,
+	`last_name` text NOT NULL,
+	`rank` text NOT NULL,
+	`bid_category` text NOT NULL,
+	`rsc_seniority` integer NOT NULL,
+	`rank_seniority` integer,
+	`hired_at` text,
+	`promoted_at` text,
+	`is_probationary` integer DEFAULT 0 NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `members_employee_id_unique` ON `members` (`employee_id`);--> statement-breakpoint
 CREATE TABLE `credentials` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text NOT NULL,
@@ -15,20 +32,4 @@ CREATE TABLE `member_credentials` (
 	FOREIGN KEY (`credential_id`) REFERENCES `credentials`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE TABLE `members` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`employee_id` text NOT NULL,
-	`first_name` text NOT NULL,
-	`last_name` text NOT NULL,
-	`rank` text NOT NULL,
-	`bid_category` text NOT NULL,
-	`rsc_seniority` integer NOT NULL,
-	`rank_seniority` integer,
-	`hired_at` text,
-	`promoted_at` text,
-	`is_probationary` integer DEFAULT false NOT NULL,
-	`created_at` integer NOT NULL,
-	`updated_at` integer NOT NULL
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `members_employee_id_unique` ON `members` (`employee_id`);
+CREATE INDEX `member_credentials_credential_id_idx` ON `member_credentials` (`credential_id`);

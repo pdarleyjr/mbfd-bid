@@ -1,4 +1,4 @@
-import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const members = sqliteTable('members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -34,5 +34,8 @@ export const memberCredentials = sqliteTable(
     startDate: text('start_date'),
     expirationDate: text('expiration_date'),
   },
-  (t) => ({ pk: primaryKey({ columns: [t.memberId, t.credentialId] }) }),
+  (t) => ({
+    pk: primaryKey({ columns: [t.memberId, t.credentialId] }),
+    credIdx: index('member_credentials_credential_id_idx').on(t.credentialId),
+  }),
 );
