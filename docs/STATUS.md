@@ -34,6 +34,7 @@ indicated future task / plan. Each is currently non-blocking.
 | W12 | Final review | `/api/pin` accepts `PIN_PLAIN` plain-text fallback (`process.env.PIN_PLAIN ?? '2300'`). Swap to bcrypt verify against `PIN_HASH` + add rate-limiting (per-IP + per-cookie). | Plan 09 hardening |
 | W13 | Final review | `reactCompiler` disabled in `next.config.mjs` because `babel-plugin-react-compiler` isn't auto-installed in Next 15.0.3. Re-enable when the plugin is added as a devDep. | Plan 09 hardening |
 | W14 | Task 11 / CI | Playwright "Full happy path" test skipped in CI — happy-path /lobby render after JWT cookie injection fails in CI but passes locally. Likely related to W10 (Next 15.0.3 + React 19 RC). Remove skip when /lobby is re-enabled with edge runtime + Next ≥ 15.2. | Plan 09 hardening |
+| W15 | Deploy-staging failure | `opennextjs-cloudflare build` rejects positional argument in 0.5.7. Workflow currently has `pnpm exec opennextjs-cloudflare build && pnpm exec opennextjs-cloudflare deploy --env staging` — first command fails. Use `pnpm deploy:staging` (the package script) instead, OR drop the explicit `build` since `deploy` builds implicitly. ALSO requires: Pages project created in CF dashboard, DNS record for `staging.bid.mbfdhub.com`. | Plan 09 / Plan 12 follow-up |
 
 ---
 
