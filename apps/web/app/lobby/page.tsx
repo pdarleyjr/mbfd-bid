@@ -1,11 +1,15 @@
 import { BrandHeader } from '@/components/BrandHeader';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
+import { requirePin } from '@/lib/require-pin';
 import { type JwtPayload, RANK_LABELS } from '@mbfd/shared';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+export const runtime = 'edge';
+
 export default async function LobbyPage() {
+  await requirePin();
   const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
   if (!jwt) redirect('/login');
 

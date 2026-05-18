@@ -3,6 +3,8 @@ import { getServerRpc } from '@/lib/rpc-server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+export const runtime = 'edge';
+
 interface MemberRow {
   id: number;
   employee_id: string;

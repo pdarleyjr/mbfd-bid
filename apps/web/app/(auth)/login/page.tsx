@@ -1,7 +1,11 @@
 import { BrandHeader } from '@/components/BrandHeader';
+import { requirePin } from '@/lib/require-pin';
 import { LoginForm } from './login-form';
 
-export default function LoginPage() {
+export const runtime = 'edge';
+
+export default async function LoginPage() {
+  await requirePin();
   return (
     <div className="min-h-screen bg-stone-50">
       <BrandHeader subtitle="Authorized personnel only" />

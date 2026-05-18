@@ -1,6 +1,7 @@
 import { UploadForm } from '@/components/admin/UploadForm';
 import { requireAdmin } from '@/lib/require-admin';
-import { uploadCredentialsXlsx } from './actions';
+
+export const runtime = 'edge';
 
 function ModeFields() {
   return (
@@ -51,7 +52,7 @@ export default async function CredentialsImportPage() {
       </header>
 
       <UploadForm
-        action={uploadCredentialsXlsx}
+        endpoint="/api/admin/credentials-import"
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         label="Credentials XLSX"
         extraFields={<ModeFields />}

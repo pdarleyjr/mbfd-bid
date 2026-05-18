@@ -3,6 +3,8 @@ import { PIN_COOKIE_NAME } from '@/lib/cookies';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+export const runtime = 'edge';
+
 export default async function Home() {
   const c = await cookies();
   if (c.get(PIN_COOKIE_NAME)?.value === 'ok') {

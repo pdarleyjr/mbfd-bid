@@ -66,10 +66,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @mbfd/shared build
-      - name: Deploy Next.js to Cloudflare Workers (+ Static Assets)
+      - name: Build and deploy Next.js to Cloudflare Pages
         working-directory: apps/web
-        # OpenNext 1.x deploys to Workers + Static Assets (replaces the old
-        # Pages flow). `deploy` runs the build internally + uploads. The
-        # custom domain staging.bid.mbfdhub.com is auto-provisioned by the
-        # `routes` block in wrangler.jsonc.
+        # next-on-pages calls `vercel build` internally and outputs to
+        # .vercel/output/static. We then push that directly to Pages.
+        # NEXT_PUBLIC_* vars are baked into the client bundle at build time.
+        env:
+          NEXT_PUBLIC_WORKER_BASE: https://api.staging.bid.mbfdhub.com
         run: pnpm deploy:staging

@@ -1,6 +1,6 @@
 'use client';
 
-import type { ImportResult } from '@/app/admin/members/import/actions';
+import type { ImportResult } from '@/lib/import-types';
 
 type Props = {
   result: ImportResult;

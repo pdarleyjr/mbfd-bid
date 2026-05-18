@@ -2,6 +2,8 @@ import { BrandHeader } from '@/components/BrandHeader';
 import { AdminSideNav } from '@/components/admin/AdminShell';
 import { requireAdmin } from '@/lib/require-admin';
 
+export const runtime = 'edge';
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Verifies JWT and redirects non-admins to /lobby or /login.
   await requireAdmin();

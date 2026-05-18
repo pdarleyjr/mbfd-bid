@@ -1,19 +1,17 @@
 'use client';
 
-import type { ImportResult } from '@/app/admin/members/import/actions';
+import type { ImportResult } from '@/lib/import-types';
 import { useState } from 'react';
-import { useFormStatus } from 'react-dom';
 import { ImportResults } from './ImportResults';
 
 type Props = {
-  action: (fd: FormData) => Promise<ImportResult>;
+  endpoint: string;
   accept: string;
   label: string;
   extraFields?: React.ReactNode;
 };
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
+function SubmitButton({ pending }: { pending: boolean }) {
   return (
     <button
       type="submit"
@@ -25,18 +23,29 @@ function SubmitButton() {
   );
 }
 
-export function UploadForm({ action, accept, label, extraFields }: Props) {
+export function UploadForm({ endpoint, accept, label, extraFields }: Props) {
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [pending, setPending] = useState(false);
 
-  async function clientAction(fd: FormData) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setResult(null);
-    const r = await action(fd);
-    setResult(r);
+    setPending(true);
+    try {
+      const fd = new FormData(e.currentTarget);
+      const res = await fetch(endpoint, { method: 'POST', body: fd });
+      const data = (await res.json()) as ImportResult;
+      setResult(data);
+    } catch (err) {
+      setResult({ error: err instanceof Error ? err.message : 'Upload failed' });
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
     <div>
-      <form action={clientAction} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-2 text-stone-200">
           <span>{label}</span>
           <input
@@ -48,7 +57,7 @@ export function UploadForm({ action, accept, label, extraFields }: Props) {
           />
         </label>
         {extraFields}
-        <SubmitButton />
+        <SubmitButton pending={pending} />
       </form>
       {result && <ImportResults result={result} />}
     </div>

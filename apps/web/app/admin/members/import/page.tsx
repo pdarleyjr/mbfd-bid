@@ -1,6 +1,7 @@
 import { UploadForm } from '@/components/admin/UploadForm';
 import { requireAdmin } from '@/lib/require-admin';
-import { uploadMembersCsv } from './actions';
+
+export const runtime = 'edge';
 
 export default async function MembersImportPage() {
   await requireAdmin();
@@ -19,7 +20,7 @@ export default async function MembersImportPage() {
         </p>
       </header>
 
-      <UploadForm action={uploadMembersCsv} accept=".csv,text/csv" label="Members CSV" />
+      <UploadForm endpoint="/api/admin/members-import" accept=".csv,text/csv" label="Members CSV" />
     </div>
   );
 }
