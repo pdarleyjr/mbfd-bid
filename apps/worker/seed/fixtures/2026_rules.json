@@ -1,0 +1,1669 @@
+[
+  {
+    "_comment": "Prevention Days — Fire Prevention Captain (D101)",
+    "positionId": "D101",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 1,
+      "items": [
+        { "points": 1, "credential": "Firesafety Inspector I" },
+        { "points": 1, "credential": "Firesafety Inspector II" }
+      ]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": "1 pt for FL Inspector (either level)"
+  },
+  {
+    "_comment": "Prevention Days — Special Events Coordinator (D102)",
+    "positionId": "D102",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": ["Firesafety Inspector I"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 1,
+      "items": [{ "points": 1, "credential": "Firesafety Inspector I" }]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Prevention Days — Public Education Lieutenant (D103)",
+    "positionId": "D103",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Firesafety Inspector I"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 5,
+      "items": [
+        { "points": 1, "credential": "Instructor I" },
+        { "points": 1, "credential": "Firesafety Inspector I" },
+        { "points": 1, "credential": "Fire & Life Safety Educator I" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Prevention Days — Special Events Lieutenant (D104)",
+    "positionId": "D104",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": [],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 0,
+      "items": []
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Admin Building — Rescue/EMS Captain (D201)",
+    "positionId": "D201",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 5,
+      "items": [
+        { "points": 1, "credential": "Instructor I" },
+        { "points": 1, "credential": "Advance Cardiac Life Support (ACLS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Pediatric Advanced Life Support (PALS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Basic Life Support (BLS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Incident Safety Officer Course Certificate" }
+      ]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Admin Building — Support Services Captain (D301)",
+    "positionId": "D301",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 0,
+      "items": []
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Training — Training Lieutenant (D401)",
+    "positionId": "D401",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Instructor I"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 20,
+      "items": [
+        { "points": 1, "credential": "Instructor I" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 2, "credential": "Driver Engineer Qualified" },
+        { "points": 1, "credential": "Swim Assessment - Primary" },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "State of Florida Live Fire Training Instructor I " },
+        { "points": 1, "credential": "Incident Safety Officer Course Certificate" }
+      ]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Training — Training Lieutenant (D402)",
+    "positionId": "D402",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Instructor I"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 20,
+      "items": [
+        { "points": 1, "credential": "Instructor I" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 2, "credential": "Driver Engineer Qualified" },
+        { "points": 1, "credential": "Swim Assessment - Primary" },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "State of Florida Live Fire Training Instructor I " },
+        { "points": 1, "credential": "Incident Safety Officer Course Certificate" }
+      ]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — Captain (XX201) — applies to A201,B201,C201",
+    "_template": "sta2_captain",
+    "_positions": ["A201", "B201", "C201"],
+    "positionId": "A201",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — Captain (B201)",
+    "positionId": "B201",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — Captain (C201)",
+    "positionId": "C201",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — DE Position (XX202) — A202",
+    "positionId": "A202",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Driver Engineer Qualified"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 15,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 2, "credential": "Driver Engineer Qualified" },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — DE Position (B202)",
+    "positionId": "B202",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Driver Engineer Qualified"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 15,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 2, "credential": "Driver Engineer Qualified" },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — DE Position (C202)",
+    "positionId": "C202",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Driver Engineer Qualified"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 15,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 2, "credential": "Driver Engineer Qualified" },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — Air Tech (XX203) — A203",
+    "positionId": "A203",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "SCOTT SCBA Technician",
+        "Cylinder Hazmat & FSO Compliance (AIR TECH REQUIREMENT)",
+        "Driver Engineer Qualified"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 19,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" },
+        { "points": 2, "credential": "Car Seat Technician" },
+        { "points": 1, "credential": "SCOTT SCBA Technician" },
+        { "points": 1, "credential": "Cylinder Hazmat & FSO Compliance (AIR TECH REQUIREMENT)" },
+        { "points": 2, "credential": "Driver Engineer Qualified" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — Air Tech (B203)",
+    "positionId": "B203",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "SCOTT SCBA Technician",
+        "Cylinder Hazmat & FSO Compliance (AIR TECH REQUIREMENT)",
+        "Driver Engineer Qualified"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 19,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" },
+        { "points": 2, "credential": "Car Seat Technician" },
+        { "points": 1, "credential": "SCOTT SCBA Technician" },
+        { "points": 1, "credential": "Cylinder Hazmat & FSO Compliance (AIR TECH REQUIREMENT)" },
+        { "points": 2, "credential": "Driver Engineer Qualified" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — Air Tech (C203)",
+    "positionId": "C203",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "SCOTT SCBA Technician",
+        "Cylinder Hazmat & FSO Compliance (AIR TECH REQUIREMENT)",
+        "Driver Engineer Qualified"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 19,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" },
+        { "points": 2, "credential": "Car Seat Technician" },
+        { "points": 1, "credential": "SCOTT SCBA Technician" },
+        { "points": 1, "credential": "Cylinder Hazmat & FSO Compliance (AIR TECH REQUIREMENT)" },
+        { "points": 2, "credential": "Driver Engineer Qualified" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — Rescue Lt & Floating Lt (XX205, XX214) — A205",
+    "positionId": "A205",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": "Rescue Lt Special Ops"
+  },
+  {
+    "_comment": "B205",
+    "positionId": "B205",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C205",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "A214",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": "Floating Lt Special Ops"
+  },
+  {
+    "positionId": "B214",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C214",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["LT"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 Special Ops — Rescue FF & Floating FF (XX206, XX216)",
+    "positionId": "A206",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "B206",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C206",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "A216",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": "Floating FF Special Ops"
+  },
+  {
+    "positionId": "B216",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C216",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Paramedic"],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 13,
+      "items": [
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 — Captain 5 / Foam 2 (XX212)",
+    "positionId": "A212",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": { "rank": ["CPT"], "credentials": [], "custom": [] },
+    "pointsPreference": {
+      "max": 18,
+      "items": [
+        { "points": 1, "credential": "Instructor I" },
+        { "points": 1, "credential": "Advance Cardiac Life Support (ACLS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Pediatric Advanced Life Support (PALS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Basic Life Support (BLS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Incident Safety Officer Course Certificate" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": "Captain 5 — SO points tie-break"
+  },
+  {
+    "positionId": "B212",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": { "rank": ["CPT"], "credentials": [], "custom": [] },
+    "pointsPreference": {
+      "max": 18,
+      "items": [
+        { "points": 1, "credential": "Instructor I" },
+        { "points": 1, "credential": "Advance Cardiac Life Support (ACLS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Pediatric Advanced Life Support (PALS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Basic Life Support (BLS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Incident Safety Officer Course Certificate" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C212",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": { "rank": ["CPT"], "credentials": [], "custom": [] },
+    "pointsPreference": {
+      "max": 18,
+      "items": [
+        { "points": 1, "credential": "Instructor I" },
+        { "points": 1, "credential": "Advance Cardiac Life Support (ACLS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Pediatric Advanced Life Support (PALS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Basic Life Support (BLS) INSTRUCTOR AHA" },
+        { "points": 1, "credential": "Incident Safety Officer Course Certificate" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 2 — Float Captain (XX213) — marine-capable, SO+MO tie-break",
+    "positionId": "A213",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 18,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": "Float Captain — SO+MO tie-break per 2026 rules"
+  },
+  {
+    "positionId": "B213",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 18,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C213",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["CPT"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": ["non_probationary"]
+    },
+    "pointsPreference": {
+      "max": 18,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Rope Rescue Operations" },
+        { "points": 1, "credential": "Confined Space Operations" },
+        { "points": 1, "credential": "Structural Collapse Operations" },
+        { "points": 1, "credential": "Trench Rescue Operations" },
+        { "points": 1, "credential": "Vehicle & Machinery Rescue Operations" },
+        {
+          "points": 1,
+          "credential": "State Certified Hazardous Materials Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Rope Rescue Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Confined Space Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Structural Collapse Technician", "gating": "ops_all_6" },
+        { "points": 1, "credential": "Trench Rescue Technician", "gating": "ops_all_6" },
+        {
+          "points": 1,
+          "credential": "Vehicle & Machinery Rescue Technician",
+          "gating": "ops_all_6"
+        },
+        { "points": 1, "credential": "Drone Operator Qualified-Part 107 sUAS" }
+      ]
+    },
+    "tieBreakChain": ["points", "so_points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 6 Marine — Fire Boat Operator (XX611)",
+    "positionId": "A611",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "Driver Engineer Qualified",
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 8,
+      "items": [
+        { "points": 2, "credential": "Driver Engineer Qualified" },
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": "Fire Boat Operator — MO points tie-break"
+  },
+  {
+    "positionId": "B611",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "Driver Engineer Qualified",
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 8,
+      "items": [
+        { "points": 2, "credential": "Driver Engineer Qualified" },
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C611",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "Driver Engineer Qualified",
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 8,
+      "items": [
+        { "points": 2, "credential": "Driver Engineer Qualified" },
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 6 Marine — Marine Firefighter (XX612)",
+    "positionId": "A612",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 6,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": "Marine Firefighter — MO points tie-break"
+  },
+  {
+    "positionId": "B612",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 6,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C612",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 6,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Station 6 Marine — Post St.6 / Floating FF (XX613)",
+    "positionId": "A613",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 6,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": "Post St.6 Floating FF — same marine reqs as Marine FF"
+  },
+  {
+    "positionId": "B613",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 6,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C613",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": [
+        "IADRS Swim Evaluation ",
+        "Hazardous Materials Operations",
+        "Open Water Diver Certified",
+        "Merchant Mariner Credential (MMC)"
+      ],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 6,
+      "items": [
+        { "points": 1, "credential": "Merchant Mariner Credential (MMC)" },
+        { "points": 1, "credential": "IADRS Swim Evaluation " },
+        { "points": 1, "credential": "Open Water Diver Certified" },
+        { "points": 1, "credential": "Hazardous Materials Operations" },
+        { "points": 1, "credential": "Public Safety Diver" },
+        { "points": 2, "credential": "Car Seat Technician" }
+      ]
+    },
+    "tieBreakChain": ["points", "mo_points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Investigator — Ladder 3 FF #1 INV (XX303)",
+    "positionId": "A303",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Firesafety Inspector I", "Fire Investigator I"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 5,
+      "items": [
+        { "points": 1, "credential": "Fire Investigator I" },
+        { "points": 1, "credential": "Fire Investigator (FL cert issued 2015 or later)" },
+        { "points": 1, "credential": "Firesafety Inspector I" },
+        { "points": 1, "credential": "IAAI Expert Witness Courtroom Testimony" },
+        { "points": 1, "credential": "Criminal Interview and Interrogation Techniques" },
+        { "points": 1, "credential": "Certified Fire and Explosion Investigator" }
+      ]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": "Investigator (Ladder 3 FF #1 INV)"
+  },
+  {
+    "positionId": "B303",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Firesafety Inspector I", "Fire Investigator I"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 5,
+      "items": [
+        { "points": 1, "credential": "Fire Investigator I" },
+        { "points": 1, "credential": "Fire Investigator (FL cert issued 2015 or later)" },
+        { "points": 1, "credential": "Firesafety Inspector I" },
+        { "points": 1, "credential": "IAAI Expert Witness Courtroom Testimony" },
+        { "points": 1, "credential": "Criminal Interview and Interrogation Techniques" },
+        { "points": 1, "credential": "Certified Fire and Explosion Investigator" }
+      ]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C303",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": {
+      "rank": ["FF"],
+      "credentials": ["Firesafety Inspector I", "Fire Investigator I"],
+      "custom": []
+    },
+    "pointsPreference": {
+      "max": 5,
+      "items": [
+        { "points": 1, "credential": "Fire Investigator I" },
+        { "points": 1, "credential": "Fire Investigator (FL cert issued 2015 or later)" },
+        { "points": 1, "credential": "Firesafety Inspector I" },
+        { "points": 1, "credential": "IAAI Expert Witness Courtroom Testimony" },
+        { "points": 1, "credential": "Criminal Interview and Interrogation Techniques" },
+        { "points": 1, "credential": "Certified Fire and Explosion Investigator" }
+      ]
+    },
+    "tieBreakChain": ["points", "rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "_comment": "Division Chief (XX211) — pre-bid pool, one per shift",
+    "positionId": "A211",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": { "rank": ["DC"], "credentials": [], "custom": ["pre_bid_pool"] },
+    "pointsPreference": { "max": 0, "items": [] },
+    "tieBreakChain": ["rsc_seniority", "rank_seniority"],
+    "notes": "Pre-bid pool allocation; admin assigns one DC per shift before bid opens"
+  },
+  {
+    "positionId": "B211",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": { "rank": ["DC"], "credentials": [], "custom": ["pre_bid_pool"] },
+    "pointsPreference": { "max": 0, "items": [] },
+    "tieBreakChain": ["rsc_seniority", "rank_seniority"],
+    "notes": null
+  },
+  {
+    "positionId": "C211",
+    "templateVersion": "2026.1",
+    "ruleBookVersion": "2026.1",
+    "requiredCriteria": { "rank": ["DC"], "credentials": [], "custom": ["pre_bid_pool"] },
+    "pointsPreference": { "max": 0, "items": [] },
+    "tieBreakChain": ["rsc_seniority", "rank_seniority"],
+    "notes": null
+  }
+]
