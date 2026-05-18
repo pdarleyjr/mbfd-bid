@@ -19,9 +19,12 @@ export const MemberImportRowSchema = z
     bid_rank: z.string().optional().nullable(),
     bid_category: z.string(), // can be "OFC", "FF", "0", ""
     bid: z.enum(['Include', 'Exclude']),
-    rsc_seniority: z.union([z.string(), z.number()]).transform(Number),
-    hired_at: z.string().optional().nullable(),
-    promoted_at: z.string().optional().nullable(),
+    // Personnel CSV exports seniority as "RscSeniorityIn" (normalizes to rscseniorityin)
+    rscseniorityin: z.union([z.string(), z.number()]).transform(Number),
+    // Personnel CSV exports hire date as "RscHireDt" (normalizes to rschiredt)
+    rschiredt: z.string().optional().nullable(),
+    // Personnel CSV exports promotion date as "RscPromotionDt" (normalizes to rscpromotiondt)
+    rscpromotiondt: z.string().optional().nullable(),
   })
   .passthrough()
   .transform((row, ctx) => {
@@ -38,9 +41,9 @@ export const MemberImportRowSchema = z
       firstName: row.first_name.trim(),
       rank,
       bidCategory,
-      rscSeniority: row.rsc_seniority,
-      hiredAt: row.hired_at ?? null,
-      promotedAt: row.promoted_at ?? null,
+      rscSeniority: row.rscseniorityin,
+      hiredAt: row.rschiredt ?? null,
+      promotedAt: row.rscpromotiondt ?? null,
     };
   });
 
