@@ -1,0 +1,6 @@
+# Copy to .dev.vars (gitignored) for local dev.
+# Real values set in CF dashboard for staging/production.
+
+JWT_SIGNING_KEY=DEV_ONLY_REPLACE_WITH_32_BYTE_BASE64URL_VALUE
+PIN_HASH=$2b$12$LocalDevBcryptHashOfPin2300Here
+PORTAL_BID_READER=DEV_ONLY_NOT_A_REAL_TOKEN
