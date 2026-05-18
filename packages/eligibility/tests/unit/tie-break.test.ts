@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compare } from '../../src/tie-break.js';
+import { compare, sortByTieBreak } from '../../src/tie-break.js';
 import type { EligibilityResult, TieBreakKey } from '../../src/types.js';
 
 const result = (
@@ -81,5 +81,26 @@ describe('compare', () => {
     const a = result({ points: 7 });
     const b = result({ points: 3 });
     expect(compare(a, b, chain)).toBe(-compare(b, a, chain));
+  });
+});
+
+describe('sortByTieBreak', () => {
+  it('sorts highest-priority member first (descending points)', () => {
+    const a = result({ points: 3 });
+    const b = result({ points: 7 });
+    const c = result({ points: 5 });
+    const sorted = sortByTieBreak([a, b, c], chain);
+    expect(sorted.map((r) => r.points)).toEqual([7, 5, 3]);
+  });
+
+  it('returns a new array without mutating the input', () => {
+    const input = [result({ points: 3 }), result({ points: 5 })];
+    const sorted = sortByTieBreak(input, chain);
+    expect(input.map((r) => r.points)).toEqual([3, 5]);
+    expect(sorted.map((r) => r.points)).toEqual([5, 3]);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(sortByTieBreak([], chain)).toEqual([]);
   });
 });

@@ -133,4 +133,58 @@ describe('evaluateEligibility', () => {
     expect(result.soPoints).toBe(0);
     expect(result.moPoints).toBe(0);
   });
+
+  it('member with required cred missing from requiredCriteria list fails', () => {
+    const rule: PositionRule = {
+      positionId: 'X611',
+      ruleBookVersion: '2026.1',
+      requiredCriteria: {
+        rank: ['FF'],
+        credentials: ['Merchant Mariner Credential (MMC)', 'IADRS Swim Evaluation'],
+        custom: [],
+      },
+      pointsPreference: { max: 0, items: [] },
+      tieBreakChain: ['points', 'mo_points', 'rsc_seniority', 'rank_seniority'],
+    };
+    const ff: Member = {
+      employeeId: '55555',
+      firstName: 'X',
+      lastName: 'Y',
+      rank: 'FF',
+      rscSeniority: 100,
+      rankSeniority: 50,
+      isProbationary: false,
+      credentials: [{ name: 'Merchant Mariner Credential (MMC)' }],
+    };
+    const result = evaluateEligibility(ff, rule);
+    expect(result.eligible).toBe(false);
+    expect(
+      result.reasons.find((r) => r.code === 'CRED_MISSING' && r.label.includes('IADRS')),
+    ).toBeDefined();
+  });
+
+  it('driver_engineer custom gate is evaluated when present', () => {
+    const deRule: PositionRule = {
+      positionId: 'X102',
+      ruleBookVersion: '2026.1',
+      requiredCriteria: { rank: ['FF'], credentials: [], custom: ['driver_engineer'] },
+      pointsPreference: { max: 0, items: [] },
+      tieBreakChain: ['rsc_seniority', 'rank_seniority'],
+    };
+    const ff: Member = {
+      employeeId: '44444',
+      firstName: 'A',
+      lastName: 'B',
+      rank: 'FF',
+      rscSeniority: 1,
+      rankSeniority: 1,
+      isProbationary: false,
+      credentials: [],
+    };
+    expect(evaluateEligibility(ff, deRule).eligible).toBe(false);
+    expect(
+      evaluateEligibility({ ...ff, credentials: [{ name: 'Driver Engineer Qualified' }] }, deRule)
+        .eligible,
+    ).toBe(true);
+  });
 });
