@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import adminMembers from './routes/admin/members.js';
 import auth from './routes/auth';
 import health from './routes/health';
 import type { WorkerEnv } from './types/env';
@@ -45,6 +46,7 @@ app.use(
 
 app.route('/api', health);
 app.route('/api/auth', auth);
+app.route('/api/admin/members', adminMembers);
 
 app.notFound((c) => c.json({ error: 'Not Found' }, 404));
 
