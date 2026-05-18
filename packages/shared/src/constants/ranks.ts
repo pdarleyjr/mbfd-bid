@@ -9,3 +9,7 @@ export const RANK_LABELS: Record<Rank, string> = {
   DEP_CHIEF: 'Deputy Chief',
   CHIEF: 'Fire Chief',
 };
+
+/** Ranks that actively participate in the annual bid (excludes Deputy Chief / Chief). */
+export const BIDDING_RANKS = ['FF', 'LT', 'CPT', 'DC'] as const satisfies readonly Rank[];
+export type BiddingRank = (typeof BIDDING_RANKS)[number];

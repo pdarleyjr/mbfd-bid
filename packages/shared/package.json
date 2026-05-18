@@ -16,6 +16,9 @@
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit"
   },
+  "peerDependencies": {
+    "zod": "^3.23.0"
+  },
   "dependencies": {
     "zod": "3.23.8"
   },
