@@ -10,7 +10,9 @@ import { RoleSchema } from './auth.js';
  */
 export const JwtPayloadSchema = z
   .object({
-    sub: z.number().int().positive(), // member_id
+    // member_id; 0 is reserved for the synthetic local admin identity
+    // (employee_id 'admin'), so non-negative integer is the correct bound.
+    sub: z.number().int().nonnegative(),
     emp: z.string(), // employee_id
     role: RoleSchema,
     rank: z.enum(RANKS),

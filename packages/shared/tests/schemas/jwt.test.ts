@@ -28,8 +28,12 @@ describe('JwtPayloadSchema', () => {
     expect(JwtPayloadSchema.safeParse(rest).success).toBe(false);
   });
 
-  it('rejects sub = 0', () => {
-    expect(JwtPayloadSchema.safeParse({ ...validPayload, sub: 0 }).success).toBe(false);
+  it('accepts sub = 0 (synthetic local admin identity)', () => {
+    expect(JwtPayloadSchema.safeParse({ ...validPayload, sub: 0 }).success).toBe(true);
+  });
+
+  it('rejects negative sub', () => {
+    expect(JwtPayloadSchema.safeParse({ ...validPayload, sub: -1 }).success).toBe(false);
   });
 
   it('rejects unknown rank', () => {
