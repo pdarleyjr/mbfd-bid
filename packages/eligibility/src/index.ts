@@ -22,3 +22,5 @@ export {
 } from './operations-techs.js';
 
 export { compare, sortByTieBreak, type ComparableResult } from './tie-break.js';
+
+export { evaluateEligibility } from './evaluate.js';
