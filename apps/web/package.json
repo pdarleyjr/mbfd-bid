@@ -12,8 +12,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
-    "deploy:staging": "opennextjs-cloudflare deploy --env staging",
-    "deploy:production": "opennextjs-cloudflare deploy --env production"
+    "deploy:staging": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env staging",
+    "deploy:production": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env production"
   },
   "dependencies": {
     "@mbfd/shared": "workspace:*",
