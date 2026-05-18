@@ -1,7 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { LoginRequestSchema, type LoginResponse } from '@mbfd/shared';
 import { Hono } from 'hono';
-import { validateEnv } from '../lib/env';
+import { isAdminEmployeeId, validateEnv } from '../lib/env';
 import { signJwt } from '../lib/jwt';
 import { verifyCredentials } from '../lib/portal-client';
 import type { WorkerEnv } from '../types/env';
@@ -30,11 +30,17 @@ auth.post('/login', zValidator('json', LoginRequestSchema), async (c) => {
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
+  // Plan 02 Task 20 — promote employee_id to admin via ADMIN_EMPLOYEE_IDS allow-list.
+  // The portal does not yet expose an is_admin flag; this is rehearsal scaffolding
+  // that Plan 05 (admin console) will replace with portal-sourced roles.
+  const effectiveRole = isAdminEmployeeId(env.ADMIN_EMPLOYEE_IDS, portalResponse.employee_id)
+    ? 'admin'
+    : portalResponse.role;
   const jwt = await signJwt(
     {
       sub: portalResponse.member_id,
       emp: portalResponse.employee_id,
-      role: portalResponse.role,
+      role: effectiveRole,
       rank: portalResponse.rank,
       first_name: portalResponse.first_name,
       last_name: portalResponse.last_name,
@@ -46,7 +52,7 @@ auth.post('/login', zValidator('json', LoginRequestSchema), async (c) => {
 
   return c.json({
     jwt,
-    role: portalResponse.role,
+    role: effectiveRole,
     member: {
       member_id: portalResponse.member_id,
       employee_id: portalResponse.employee_id,

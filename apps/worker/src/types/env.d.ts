@@ -7,6 +7,9 @@ export interface WorkerEnv {
   JWT_SIGNING_KEY: string;
   PIN_HASH: string;
   PORTAL_BID_READER: string;
+  // Comma-separated employee IDs promoted to role=admin at login time.
+  // Rehearsal scaffolding for Plan 02; Plan 05 (admin console) supersedes it.
+  ADMIN_EMPLOYEE_IDS?: string;
   // Bindings
   DB: D1Database;
   KV: KVNamespace;
