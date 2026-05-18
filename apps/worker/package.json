@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  },
   "scripts": {
     "dev": "wrangler dev --persist-to .wrangler/state --port 8787",
     "deploy:staging": "wrangler deploy --env staging",

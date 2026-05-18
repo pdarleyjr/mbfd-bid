@@ -35,6 +35,9 @@ importers:
       framer-motion:
         specifier: 11.11.10
         version: 11.11.10(react-dom@19.0.0-rc.1(react@19.0.0-rc.1))(react@19.0.0-rc.1)
+      hono:
+        specifier: 4.6.5
+        version: 4.6.5
       jose:
         specifier: 5.9.4
         version: 5.9.4
@@ -60,6 +63,9 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/react@18.3.12)(react@19.0.0-rc.1)
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 4.20241011.0
+        version: 4.20241011.0
       '@fontsource-variable/plus-jakarta-sans':
         specifier: 5.1.0
         version: 5.1.0
@@ -69,9 +75,12 @@ importers:
       '@fontsource/jetbrains-mono':
         specifier: 5.1.1
         version: 5.1.1
+      '@mbfd/worker':
+        specifier: workspace:*
+        version: link:../worker
       '@opennextjs/cloudflare':
         specifier: 0.5.7
-        version: 0.5.7(wrangler@3.84.1)
+        version: 0.5.7(wrangler@3.84.1(@cloudflare/workers-types@4.20241011.0))
       '@playwright/test':
         specifier: 1.48.1
         version: 1.48.1
@@ -5262,7 +5271,7 @@ snapshots:
       - aws-crt
       - supports-color
 
-  '@opennextjs/cloudflare@0.5.7(wrangler@3.84.1)':
+  '@opennextjs/cloudflare@0.5.7(wrangler@3.84.1(@cloudflare/workers-types@4.20241011.0))':
     dependencies:
       '@ast-grep/napi': 0.34.4
       '@dotenvx/dotenvx': 1.31.0

@@ -5,10 +5,24 @@ import adminCredentials from './routes/admin/credentials.js';
 import adminMembers from './routes/admin/members.js';
 import adminPositions from './routes/admin/positions.js';
 import adminRules from './routes/admin/rules.js';
-import auth from './routes/auth';
-import health from './routes/health';
-import type { WorkerEnv } from './types/env';
+import auth from './routes/auth.js';
+import health from './routes/health.js';
+import type { WorkerEnv } from './types/env.js';
 
+// Typed route tree — used for AppType inference by the Hono RPC client.
+// Middleware (.use) is intentionally omitted here: it mutates the schema
+// type in a way that shadows route entries, breaking hc<AppType>() inference.
+const routes = new Hono<{ Bindings: WorkerEnv }>()
+  .route('/api', health)
+  .route('/api/auth', auth)
+  .route('/api/admin/members', adminMembers)
+  .route('/api/admin/credentials', adminCredentials)
+  .route('/api/admin/positions', adminPositions)
+  .route('/api/admin/rules', adminRules);
+
+export type AppType = typeof routes;
+
+// Main application — middleware applied separately to avoid schema mutation.
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
 app.use('*', logger());
@@ -47,12 +61,7 @@ app.use(
   }),
 );
 
-app.route('/api', health);
-app.route('/api/auth', auth);
-app.route('/api/admin/members', adminMembers);
-app.route('/api/admin/credentials', adminCredentials);
-app.route('/api/admin/positions', adminPositions);
-app.route('/api/admin/rules', adminRules);
+app.route('/', routes);
 
 app.notFound((c) => c.json({ error: 'Not Found' }, 404));
 

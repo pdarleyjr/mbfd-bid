@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@mbfd/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
+      '@mbfd/worker': path.resolve(__dirname, '../../apps/worker/src/index.ts'),
     },
   },
 });
