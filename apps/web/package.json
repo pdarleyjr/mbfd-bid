@@ -12,8 +12,9 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
-    "deploy:staging": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env staging",
-    "deploy:production": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env production"
+    "build:pages": "next-on-pages",
+    "deploy:staging": "pnpm build:pages && wrangler pages deploy .vercel/output/static --project-name=mbfd-bid-web-staging --branch=main --commit-dirty=true",
+    "deploy:production": "pnpm build:pages && wrangler pages deploy .vercel/output/static --project-name=mbfd-bid-web-production --branch=main --commit-dirty=true"
   },
   "dependencies": {
     "@mbfd/shared": "workspace:*",
@@ -34,12 +35,12 @@
     "zustand": "5.0.0"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.13.12",
     "@cloudflare/workers-types": "4.20241011.0",
     "@fontsource-variable/plus-jakarta-sans": "5.1.0",
     "@fontsource-variable/source-sans-3": "5.1.0",
     "@fontsource/jetbrains-mono": "5.1.1",
     "@mbfd/worker": "workspace:*",
-    "@opennextjs/cloudflare": "1.19.10",
     "@playwright/test": "1.60.0",
     "@types/node": "22.7.7",
     "@types/react": "19.2.14",
@@ -48,6 +49,7 @@
     "postcss": "8.4.47",
     "tailwindcss": "3.4.14",
     "typescript": "5.6.3",
+    "vercel": "^39.3.0",
     "vitest": "2.1.4",
     "wrangler": "^4"
   }

@@ -3,8 +3,10 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { JWT_COOKIE_NAME } from './cookies';
 import { verifyJwt } from './jwt';
+import { requirePin } from './require-pin';
 
 export async function requireAdmin(): Promise<JwtPayload> {
+  await requirePin();
   const store = await cookies();
   const token = store.get(JWT_COOKIE_NAME)?.value;
   if (!token) redirect('/login');

@@ -1,6 +1,8 @@
 import { requireAdmin } from '@/lib/require-admin';
 import Link from 'next/link';
 
+export const runtime = 'edge';
+
 const QUICK_LINKS = [
   {
     href: '/admin/members' as const,
