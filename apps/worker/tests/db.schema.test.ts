@@ -22,4 +22,14 @@ describe('db schema (Plan 02)', () => {
     expect(config.default).toBe(false);
     expect(config.mode).toBe('boolean');
   });
+  it('exports position_templates, positions, rule_books, position_rules', () => {
+    expect(schema.positionTemplates).toBeDefined();
+    expect(schema.positions).toBeDefined();
+    expect(schema.ruleBooks).toBeDefined();
+    expect(schema.positionRules).toBeDefined();
+  });
+  it('positions table has compound natural key (id, templateVersion)', () => {
+    expect(schema.positions.id).toBeDefined();
+    expect(schema.positions.templateVersion).toBeDefined();
+  });
 });

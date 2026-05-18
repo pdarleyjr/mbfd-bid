@@ -8,6 +8,13 @@
       "when": 1779093624483,
       "tag": "0002_members_certs",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1779094150375,
+      "tag": "0003_positions_rules",
+      "breakpoints": true
     }
   ]
 }
