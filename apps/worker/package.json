@@ -23,12 +23,12 @@
     "db:seed:remote": "tsx seed/2026.ts --remote"
   },
   "dependencies": {
-    "@hono/zod-validator": "0.4.1",
+    "@hono/zod-validator": "0.8.0",
     "@mbfd/shared": "workspace:*",
     "bcryptjs": "^2.4.3",
     "drizzle-orm": "0.36.4",
     "drizzle-zod": "0.7.1",
-    "hono": "4.6.5",
+    "hono": "4.12.19",
     "jose": "5.9.4",
     "papaparse": "5.5.3",
     "ulid": "2.4.0",
@@ -36,7 +36,7 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.5.20",
+    "@cloudflare/vitest-pool-workers": "0.16.6",
     "@cloudflare/workers-types": "4.20260518.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6",
