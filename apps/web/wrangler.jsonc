@@ -1,8 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mbfd-bid-web",
-  "compatibility_date": "2024-11-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2025-03-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "main": ".open-next/worker.js",
   "assets": {
     "binding": "ASSETS",
@@ -14,14 +14,26 @@
       "vars": {
         "ENV": "staging",
         "WORKER_URL": "https://api.staging.bid.mbfdhub.com"
-      }
+      },
+      "routes": [
+        {
+          "pattern": "staging.bid.mbfdhub.com",
+          "custom_domain": true
+        }
+      ]
     },
     "production": {
       "name": "mbfd-bid-web-production",
       "vars": {
         "ENV": "production",
         "WORKER_URL": "https://api.bid.mbfdhub.com"
-      }
+      },
+      "routes": [
+        {
+          "pattern": "bid.mbfdhub.com",
+          "custom_domain": true
+        }
+      ]
     }
   }
 }
