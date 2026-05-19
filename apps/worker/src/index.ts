@@ -99,7 +99,7 @@ app.onError((err, c) => {
 export { BidSessionDO } from './durable/bid-session.js';
 
 import { handlePortalQueueBatch } from './portal-writeback/queue-handler.js';
-import { handleScheduled } from './scheduled.js';
+import { handlePortalReconciliation, handleScheduled } from './scheduled.js';
 
 // Hono app exposed as a named export so tests can call `app.request(...)`
 // directly. Wrangler boots from the default export below which wraps
@@ -109,10 +109,17 @@ export { app };
 const handler = {
   fetch: app.fetch.bind(app),
   scheduled: async (
-    _event: ScheduledEvent,
+    event: ScheduledEvent,
     env: WorkerEnv,
     _ctx: ExecutionContext,
   ): Promise<void> => {
+    // Plan 08 Task 25 — dispatch based on cron pattern. The 04:15 UTC slot
+    // runs the portal reconciliation; the existing AI-forecast cron runs on
+    // every other invocation.
+    if (event.cron === '15 4 * * *') {
+      await handlePortalReconciliation(env);
+      return;
+    }
     await handleScheduled(env);
   },
   /** Plan 08 Task 22 — Cloudflare Queue consumer for portal write-backs. */
