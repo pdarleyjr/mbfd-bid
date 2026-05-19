@@ -98,6 +98,8 @@ app.onError((err, c) => {
 
 export { BidSessionDO } from './durable/bid-session.js';
 
+import type { MessageBatch as CfMessageBatch } from '@cloudflare/workers-types';
+
 import { handlePortalQueueBatch } from './portal-writeback/queue-handler.js';
 import { handlePortalReconciliation, handleScheduled } from './scheduled.js';
 
@@ -123,7 +125,7 @@ const handler = {
     await handleScheduled(env);
   },
   /** Plan 08 Task 22 — Cloudflare Queue consumer for portal write-backs. */
-  queue: async (batch: MessageBatch, env: WorkerEnv, _ctx: ExecutionContext): Promise<void> => {
+  queue: async (batch: CfMessageBatch, env: WorkerEnv, _ctx: ExecutionContext): Promise<void> => {
     await handlePortalQueueBatch(batch, env);
   },
 };
