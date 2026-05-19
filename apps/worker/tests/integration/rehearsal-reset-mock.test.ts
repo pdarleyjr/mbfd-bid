@@ -28,8 +28,9 @@ interface DoFetchCall {
 
 function stubBidSessionNamespace(calls: DoFetchCall[]): WorkerEnv['BID_SESSION'] {
   const stub = {
-    fetch: async (req: Request) => {
-      const u = new URL(req.url);
+    fetch: async (input: Request | string) => {
+      const url = typeof input === 'string' ? input : input.url;
+      const u = new URL(url);
       calls.push({ pathname: u.pathname });
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     },
