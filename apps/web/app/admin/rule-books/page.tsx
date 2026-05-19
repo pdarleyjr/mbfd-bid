@@ -26,11 +26,22 @@ export default async function RuleBooksPage() {
   const cookieStore = await cookies();
   const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value;
   const baseUrl = getWorkerBase();
-  const res = await fetch(`${baseUrl}/api/admin/rule-books`, {
-    headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-    cache: 'no-store',
-  });
-  const { rule_books } = (await res.json()) as { rule_books: RuleBook[] };
+  let rule_books: RuleBook[] = [];
+  let fetchError: string | null = null;
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/rule-books`, {
+      headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      fetchError = `Worker returned ${res.status}`;
+    } else {
+      const body = (await res.json()) as { rule_books?: RuleBook[] };
+      rule_books = body.rule_books ?? [];
+    }
+  } catch (e) {
+    fetchError = e instanceof Error ? e.message : 'fetch failed';
+  }
 
   return (
     <div>
@@ -38,6 +49,19 @@ export default async function RuleBooksPage() {
       <p className="mt-2 text-sm text-slate-300">
         Each year has at most one active book. Drafts can be edited; archived books are immutable.
       </p>
+      {fetchError && (
+        <div className="mt-6 rounded-lg border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-200">
+          Could not load rule books: {fetchError}.{' '}
+          <span className="text-amber-300">
+            Check the Worker logs and JWT validity. The page is rendering with an empty list.
+          </span>
+        </div>
+      )}
+      {!fetchError && rule_books.length === 0 && (
+        <div className="mt-6 rounded-lg border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300">
+          No rule books yet. Use the Worker API or seed script to create one.
+        </div>
+      )}
       <table className="mt-6 w-full border border-slate-700 text-sm text-slate-200">
         <thead className="bg-slate-800 text-left text-slate-300">
           <tr>
