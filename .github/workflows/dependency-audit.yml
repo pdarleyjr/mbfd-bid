@@ -1,0 +1,36 @@
+name: Dependency audit
+
+# Plan 09 Task 7 — weekly pnpm audit for high+critical CVE advisories on
+# production dependencies. Reports failures; does not auto-block merges
+# (kept separate from `ci.yml` so a new CVE published on Sunday night
+# doesn't immediately block a Monday morning hotfix).
+
+on:
+  schedule:
+    - cron: '0 13 * * 1'   # Mondays 13:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  PNPM_VERSION: 9.12.0
+  NODE_VERSION: 22.x
+
+jobs:
+  audit:
+    name: pnpm audit --prod --audit-level=high
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run audit
+        run: pnpm audit --prod --audit-level=high

@@ -37,10 +37,16 @@ describe('applySecurityHeaders', () => {
   it('is idempotent — applying twice leaves the same values', () => {
     const headers = new Headers();
     applySecurityHeaders(headers);
-    const before = Object.fromEntries(headers.entries());
+    const captured: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      captured[key] = value;
+    });
     applySecurityHeaders(headers);
-    const after = Object.fromEntries(headers.entries());
-    expect(after).toEqual(before);
+    const after: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      after[key] = value;
+    });
+    expect(after).toEqual(captured);
   });
 
   it('does not clobber unrelated headers', () => {
