@@ -39,6 +39,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build internal packages
         run: pnpm -r --filter "./packages/*" build
+      - name: Generate AI rulebook constant
+        run: pnpm --filter @mbfd/worker ai:codegen
       - name: Apply D1 migrations (staging, remote)
         working-directory: apps/worker
         run: pnpm exec wrangler d1 migrations apply mbfd-bid-staging --remote --env staging
