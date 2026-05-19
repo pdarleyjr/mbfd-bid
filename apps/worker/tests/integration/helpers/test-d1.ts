@@ -115,7 +115,11 @@ export interface TestD1 {
 
 export async function setupTestD1(): Promise<TestD1> {
   const sqlite = new Database(':memory:');
-  sqlite.pragma('foreign_keys = ON');
+  // Match Cloudflare D1 test behavior: FK pragma is OFF unless the worker
+  // explicitly turns it on. The synthetic admin actor (sub: 0) is not a
+  // real member row, so enforcing FKs on admin_actor_id would falsely fail
+  // forced-pick tests.
+  sqlite.pragma('foreign_keys = OFF');
   applyMigrations(sqlite);
 
   const env: WorkerEnv = {
