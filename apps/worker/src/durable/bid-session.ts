@@ -346,7 +346,44 @@ export class BidSessionDO implements DurableObject {
         headers: { 'content-type': 'application/json' },
       });
     }
+    if (url.pathname.endsWith('/reset-mock')) {
+      // Plan 09 / Rehearsal Tooling — Task R4. Wipes durable session state so
+      // an admin can re-run a mock rehearsal from a clean slate without
+      // destroying the audit chain.
+      await this.resetMock();
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     return new Response('Not Found', { status: 404 });
+  }
+
+  /**
+   * Plan 09 / Rehearsal Tooling — Task R4.
+   *
+   * Resets the BidSession DO's in-memory state AND persisted storage to the
+   * empty starting point so the admin can replay the rehearsal. The audit
+   * chain (R2 / `audit_log` / `audit_chunks`) is intentionally preserved —
+   * the legal-record property of the chain must survive even rehearsals so
+   * the operator can audit what was wiped and when.
+   *
+   * Note: this is destructive. The Worker route guards it with `is_mock=1`
+   * and the route is admin-only. Idempotency keys cached in storage are
+   * cleared so the same rehearsal can re-use them.
+   */
+  async resetMock(): Promise<void> {
+    await this.state.blockConcurrencyWhile(async () => {
+      // Use the native storage handle (not the narrowed `DOStorageLike`) so we
+      // can `deleteAll()` the whole keyspace. The DOStorageLike abstraction
+      // models only the surface the state loader needs; the real DO storage
+      // exposes deleteAll, which is the only safe way to wipe idempotency
+      // records + the persisted snapshot in one shot.
+      const native = this.state.storage as unknown as { deleteAll(): Promise<void> };
+      await native.deleteAll();
+      this.memoryState = emptyBidSessionState(this.state.id.toString());
+      await persistBidSessionState(this.storage, this.memoryState);
+    });
   }
 
   private async handleUpgrade(req: Request): Promise<Response> {
