@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import adminAudit from './routes/admin/audit.js';
 import adminBidControls from './routes/admin/bid-controls.js';
 import adminBidSession from './routes/admin/bid-session.js';
 import adminBid from './routes/admin/bid.js';
@@ -30,7 +31,8 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/rule-books', adminRuleBooks)
   .route('/api/admin/bid', adminBid)
   .route('/api/admin/bid-session', adminBidSession)
-  .route('/api/admin/bid-session', adminBidControls);
+  .route('/api/admin/bid-session', adminBidControls)
+  .route('/api/admin/audit', adminAudit);
 
 export type AppType = typeof routes;
 
