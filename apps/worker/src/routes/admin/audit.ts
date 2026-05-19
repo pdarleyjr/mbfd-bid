@@ -1,6 +1,7 @@
 import { AuditQuerySchema, type JwtPayload } from '@mbfd/shared';
 import { type SQL, and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { verifyChain } from '../../audit/verifier.js';
 import { getDb } from '../../db/index.js';
 import { auditLog } from '../../db/schema.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
@@ -117,6 +118,25 @@ router.get('/export', async (c) => {
       'Cache-Control': 'no-store',
     },
   });
+});
+
+// Plan 08 Task 10 — GET /api/admin/audit/verify-chain?session_id=…&year=…
+//
+// Streams the R2 chunks for the requested session and replays the hash chain.
+// Returns 200 with `ok:true` on a clean chain, 422 with `ok:false` (and a
+// `failed_at_chunk` / `reason`) on tamper or missing-chunk detection.
+router.get('/verify-chain', async (c) => {
+  const sid = c.req.query('session_id');
+  const yr = Number(c.req.query('year') ?? new Date().getUTCFullYear());
+  if (!sid) return c.json({ error: 'session_id_required' }, 400);
+  if (!Number.isInteger(yr) || yr < 2000 || yr > 9999) {
+    return c.json({ error: 'invalid_year' }, 400);
+  }
+  if (!c.env.R2_AUDIT || typeof c.env.R2_AUDIT.list !== 'function') {
+    return c.json({ error: 'audit_chain_not_configured' }, 503);
+  }
+  const res = await verifyChain(c.env.R2_AUDIT, sid, yr);
+  return c.json(res, res.ok ? 200 : 422);
 });
 
 export default router;
