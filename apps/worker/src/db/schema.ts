@@ -278,6 +278,9 @@ export const auditLog = sqliteTable(
     aiAdvisoryId: text('ai_advisory_id'),
     clientMeta: text('client_meta'),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+    // Plan 08 — back-references into the R2 audit chain (mig 0013).
+    chunkSeq: integer('chunk_seq'),
+    chunkRowIndex: integer('chunk_row_index'),
   },
   (t) => ({
     sessionSeqIdx: index('audit_log_session_seq_idx').on(t.bidSessionId, t.seq),
@@ -365,3 +368,42 @@ export const aDayPicks = sqliteTable(
     memberIdx: index('idx_a_day_picks_member').on(t.memberId),
   }),
 );
+
+// ── Plan 08 — Audit chain bookkeeping (mig 0013) ────────────────────────────
+//
+// `audit_chunks` indexes every JSONL chunk flushed to R2 so the verifier can
+// stream chunks back in deterministic seq order without scanning R2 listings.
+// `audit_chain_state` tracks per-session pointer state (next seq, current
+// buffer-started-at for the 30-second timeout, and last chunk hash so the next
+// chunk can be linked without a round-trip read).
+export const auditChunks = sqliteTable(
+  'audit_chunks',
+  {
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    r2Key: text('r2_key').notNull(),
+    sha256: text('sha256').notNull(),
+    prevSha256: text('prev_sha256'),
+    signatureB64u: text('signature_b64u').notNull(),
+    pubkeyB64u: text('pubkey_b64u').notNull(),
+    eventsInChunk: integer('events_in_chunk').notNull(),
+    minSeq: integer('min_seq').notNull(),
+    maxSeq: integer('max_seq').notNull(),
+    signedAt: integer('signed_at', { mode: 'timestamp' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.bidSessionId, t.seq] }),
+    sessionSeqIdx: index('idx_audit_chunks_session_seq').on(t.bidSessionId, t.seq),
+  }),
+);
+
+export const auditChainState = sqliteTable('audit_chain_state', {
+  bidSessionId: text('bid_session_id')
+    .primaryKey()
+    .references(() => bidSessions.id, { onDelete: 'cascade' }),
+  nextSeq: integer('next_seq').notNull().default(1),
+  pendingBufferStartedAt: integer('pending_buffer_started_at', { mode: 'timestamp' }),
+  lastChunkSha256: text('last_chunk_sha256'),
+});
