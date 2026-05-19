@@ -14,3 +14,4 @@ export * from './schemas/position-import.js';
 export * from './schemas/rule-book-import.js';
 export * from './constants/bid-events.js';
 export * from './schemas/bid-events.js';
+export * from './schemas/ai-advisory.js';
