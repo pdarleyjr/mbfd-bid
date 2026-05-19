@@ -8,64 +8,61 @@ updates:
       day: monday
       time: '06:00'
       timezone: America/New_York
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     versioning-strategy: increase
     labels: [dependencies, javascript]
     commit-message:
       prefix: chore
       include: scope
+    # Pre-cutover code freeze (2026-05-19): no major version bumps.
+    # Plan 09a's pnpm.overrides handles security advisories on hono/drizzle.
+    # Restore major bumps after bid cutover completes.
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     groups:
       next:
-        patterns:
-          - 'next'
-          - 'react'
-          - 'react-dom'
-          - '@types/react*'
+        patterns: ['next', 'react', 'react-dom', '@types/react*']
       hono-and-cf:
-        patterns:
-          - 'hono'
-          - '@hono/*'
-          - 'wrangler'
-          - '@cloudflare/*'
-          - '@opennextjs/*'
+        patterns: ['hono', '@hono/*', 'wrangler', '@cloudflare/*', '@opennextjs/*']
       drizzle:
-        patterns:
-          - 'drizzle-orm'
-          - 'drizzle-kit'
-          - 'drizzle-zod'
+        patterns: ['drizzle-orm', 'drizzle-kit', 'drizzle-zod']
       testing:
-        patterns:
-          - 'vitest'
-          - '@vitest/*'
-          - '@playwright/*'
+        patterns: ['vitest', '@vitest/*', '@playwright/*']
       lint:
-        patterns:
-          - '@biomejs/biome'
-          - 'eslint*'
+        patterns: ['@biomejs/biome', 'eslint*']
       types:
-        patterns:
-          - '@types/*'
+        patterns: ['@types/*']
 
   - package-ecosystem: npm
     directory: /apps/web
     schedule: { interval: weekly, day: monday }
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     labels: [dependencies, javascript, app:web]
     commit-message: { prefix: 'chore(web)' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /apps/worker
     schedule: { interval: weekly, day: monday }
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     labels: [dependencies, javascript, app:worker]
     commit-message: { prefix: 'chore(worker)' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /packages/shared
     schedule: { interval: weekly, day: monday }
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     labels: [dependencies, javascript, package:shared]
     commit-message: { prefix: 'chore(shared)' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   # GitHub Actions
   - package-ecosystem: github-actions
@@ -73,7 +70,11 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    open-pull-requests-limit: 2
     labels: [dependencies, github-actions]
     commit-message:
       prefix: ci
       include: scope
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
