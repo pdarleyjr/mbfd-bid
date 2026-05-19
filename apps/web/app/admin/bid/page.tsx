@@ -4,6 +4,7 @@ import { verifyJwt } from '@/lib/jwt';
 import { requireAdmin } from '@/lib/require-admin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { AIAdvisoryPanel } from './_components/AIAdvisoryPanel';
 import { AdminBoard } from './_components/AdminBoard';
 
 export const runtime = 'edge';
@@ -52,13 +53,18 @@ export default async function AdminBidPage() {
           Active bidder: <span className="font-bold">{board.currentBidderId ?? '—'}</span>
         </p>
       </header>
-      <AdminBoard
-        bidSessionId={board.bidSessionId}
-        initialSeq={board.lastSeq}
-        meMemberId={claims.sub}
-        jwt={jwt}
-        initialFills={board.fills}
-      />
+      <div className="flex">
+        <div className="flex-1">
+          <AdminBoard
+            bidSessionId={board.bidSessionId}
+            initialSeq={board.lastSeq}
+            meMemberId={claims.sub}
+            jwt={jwt}
+            initialFills={board.fills}
+          />
+        </div>
+        <AIAdvisoryPanel bidSessionId={board.bidSessionId} turnTimerSeconds={180} />
+      </div>
     </div>
   );
 }
