@@ -112,7 +112,10 @@ export function validateOfficerInvariant(
   const remaining = remainingOfficersOnShift(state, shift, candidateId);
   let shortfall = 0;
   for (const g of COMBAT_GROUPS) {
-    const need = required - postCounts[g];
+    // Each group can have its own officersRequired (set per-shift via config),
+    // so look up the per-group value rather than reusing the candidate group's.
+    const groupRequired = state.groupCaps[shift][g].officersRequired;
+    const need = groupRequired - postCounts[g];
     if (need < 0) {
       return {
         shift,
@@ -121,7 +124,7 @@ export function validateOfficerInvariant(
         projectedOfficers: projected,
         required,
         feasible: false,
-        explanation: `Officer count in ${shift}-shift ${g} is already above ${required}.`,
+        explanation: `Officer count in ${shift}-shift ${g} is already above ${groupRequired}.`,
       };
     }
     shortfall += need;

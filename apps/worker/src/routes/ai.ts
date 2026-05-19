@@ -42,6 +42,26 @@ r.get('/advise-current', async (c) => {
     turn,
   });
 
+  // Plan 07 cross-plan hook: when Phase 2 is active, populate the optional
+  // `aDayInvariantSnapshot` so the advisory carries the current group/officer
+  // capacity board alongside the AI recommendation. Populated from the DO
+  // snapshot via a non-blocking best-effort fetch. The field is `z.record(z.unknown()).optional()`
+  // (see Plan 06 AdvisorySchema), so the shape is permissive.
+  // TODO(plan-09): tighten the snapshot shape into a typed payload.
+  try {
+    const doId = c.env.BID_SESSION.idFromName(sessionId);
+    const stub = c.env.BID_SESSION.get(doId);
+    const snap = await stub.fetch(`${new URL(c.req.url).origin}/snapshot`);
+    if (snap.ok) {
+      const session = (await snap.json()) as { currentPhase?: string; aDay?: unknown };
+      if (session.currentPhase === 'a_day_bid' && session.aDay != null) {
+        envelope.advisory.aDayInvariantSnapshot = session.aDay as Record<string, unknown>;
+      }
+    }
+  } catch {
+    // Snapshot is advisory-only; failures must not break the AI response.
+  }
+
   if (!envelope.stale && envelope.ai_advisory_id) {
     const db = getDb(c.env.DB);
     const promptHash = await client.hashPrompt(
