@@ -18,6 +18,12 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
+import { AnthropicAIClient } from '../../ai/client.js';
+import { checkAiGate } from '../../ai/gate.js';
+import { systemBlock } from '../../ai/prompts/system-2026.js';
+import { rosterBlock } from '../../ai/prompts/user-roster.js';
+import { turnBlock } from '../../ai/prompts/user-turn.js';
+import { loadRosterForSession, loadTurnStateForSession } from '../../ai/session-loader.js';
 import { type DB, getDb } from '../../db/index.js';
 import {
   aDayPicks,
@@ -205,20 +211,32 @@ async function getCurrentBidderFromDO(
   }
 }
 
-async function getAiTopPick(
-  env: WorkerEnv,
-  sessionId: string,
-  jwt: string,
-): Promise<string | null> {
+/**
+ * W42 — Call the AI advisor directly (NOT via a recursive `app.fetch`) and
+ * return the top-pick `position_id`. The logic mirrors `GET
+ * /api/admin/ai/advise-current` minus the HTTP wrapper and the D1 advisory
+ * row write (rehearsal pre-picks shouldn't be cluttering the advisories
+ * table). On ANY failure path — AI gate closed, gateway error, schema
+ * mismatch — we return null and the caller falls back to `first_eligible`.
+ */
+async function getAiTopPick(env: WorkerEnv, sessionId: string): Promise<string | null> {
   try {
-    // We can't issue a real fetch inside the worker for an internal route in
-    // unit-test land. Fall back to null and let the caller use first_eligible.
-    // In staging (real env), the operator can run the AI advisory directly.
-    // This keeps the rehearsal endpoint testable without mocking AI.
-    void env;
-    void sessionId;
-    void jwt;
-    return null;
+    const gate = await checkAiGate(env, sessionId);
+    if (!gate.ok) return null;
+    const roster = await loadRosterForSession(env, sessionId);
+    const state = await loadTurnStateForSession(env, sessionId);
+    const client = new AnthropicAIClient(env);
+    const envelope = await client.adviseCurrent({
+      bidSessionId: sessionId,
+      system: systemBlock(),
+      roster: rosterBlock(roster),
+      turn: turnBlock({
+        ...state,
+        question: "Advise on the current bidder's upcoming pick.",
+      }),
+    });
+    const pick = envelope.advisory.eligible_recommendations?.[0]?.position_id;
+    return typeof pick === 'string' && pick.length > 0 ? pick : null;
   } catch {
     return null;
   }
@@ -284,7 +302,6 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
 
   const claims = c.get('claims');
   const adminActorId = claims.sub > 0 ? claims.sub : 0;
-  const jwt = c.req.header('Authorization')?.slice(7).trim() ?? '';
 
   let picksMade = 0;
   let consecutiveNoEligible = 0;
@@ -320,7 +337,7 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
     // first_eligible just walks the rules in their declared order.
     let candidatePositions = rules.map((r) => r.positionId).filter((p) => !takenSet.has(p));
     if (body.strategy === 'ai_top') {
-      const aiTop = await getAiTopPick(c.env, sessionId, jwt);
+      const aiTop = await getAiTopPick(c.env, sessionId);
       if (aiTop !== null && !takenSet.has(aiTop)) {
         candidatePositions = [aiTop, ...candidatePositions.filter((p) => p !== aiTop)];
       }
