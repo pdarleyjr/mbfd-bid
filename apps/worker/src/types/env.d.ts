@@ -24,6 +24,16 @@ export interface WorkerEnv {
   AUDIT_SIGNING_PRIVKEY: string;
   AUDIT_SIGNING_PUBKEY: string;
   BROWSERLESS_TOKEN: string;
+  /** Plan 08 — HMAC secret for Browserless print tokens; falls back to JWT_SIGNING_KEY in dev. */
+  PRINT_TOKEN_SECRET?: string;
+  /** Plan 08 — public base URL of the web app (Browserless target). */
+  WEB_BASE_URL?: string;
+  /** Plan 08 — R2 S3-compatible credentials for signed download URLs. */
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  R2_ACCOUNT_ID?: string;
+  /** Plan 08 — R2 bucket name as configured in wrangler.toml. */
+  R2_EXPORTS_BUCKET_NAME?: string;
   // Bindings
   DB: D1Database;
   KV: KVNamespace;
