@@ -123,6 +123,9 @@ importers:
       '@hono/zod-validator':
         specifier: 0.4.1
         version: 0.4.1(hono@4.6.5)(zod@3.23.8)
+      '@mbfd/eligibility':
+        specifier: workspace:^
+        version: link:../../packages/eligibility
       '@mbfd/shared':
         specifier: workspace:*
         version: link:../../packages/shared
