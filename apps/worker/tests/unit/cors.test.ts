@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 // Re-import the production app to test its CORS behavior end-to-end via OPTIONS preflight.
 // We don't reach into internals; we just verify the response headers reflect the right origins.
-import app from '../../src/index';
+import { app } from '../../src/index';
 import type { WorkerEnv } from '../../src/types/env';
 
 function mkEnv(env: 'staging' | 'production'): WorkerEnv {

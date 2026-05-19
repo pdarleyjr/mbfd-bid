@@ -92,4 +92,22 @@ app.onError((err, c) => {
 
 export { BidSessionDO } from './durable/bid-session.js';
 
-export default app;
+import { handleScheduled } from './scheduled.js';
+
+// Hono app exposed as a named export so tests can call `app.request(...)`
+// directly. Wrangler boots from the default export below which wraps both
+// `fetch` and `scheduled` per the modules-format Worker contract.
+export { app };
+
+const handler = {
+  fetch: app.fetch.bind(app),
+  scheduled: async (
+    _event: ScheduledEvent,
+    env: WorkerEnv,
+    _ctx: ExecutionContext,
+  ): Promise<void> => {
+    await handleScheduled(env);
+  },
+};
+
+export default handler;

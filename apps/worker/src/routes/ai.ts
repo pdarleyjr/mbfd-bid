@@ -68,6 +68,17 @@ r.get('/advise-current', async (c) => {
   return c.json(envelope);
 });
 
+r.get('/forecast', async (c) => {
+  const sessionId = c.req.query('session_id');
+  if (!sessionId) return c.json({ error: 'session_id_required' }, 400);
+  const raw = await c.env.AI_KV.get(`ai_forecast:${sessionId}`);
+  if (!raw) return c.json({ error: 'no_forecast_cached' }, 404);
+  return c.body(raw, 200, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'private, max-age=30',
+  });
+});
+
 const DeepBodySchema = z.object({
   session_id: z.string().min(1),
   question: z.string().min(1).max(2000),
