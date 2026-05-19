@@ -42,7 +42,7 @@
     "papaparse": "5.5.3",
     "ulid": "2.4.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz",
-    "zod": "3.23.8"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.5.20",
