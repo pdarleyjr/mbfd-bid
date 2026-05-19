@@ -79,9 +79,7 @@ export function rosterBlock(input: RosterInput): Array<{
   text: string;
   cache_control: { type: 'ephemeral' };
 }> {
-  const sortedMembers = [...input.members].sort((a, b) =>
-    a.employeeId.localeCompare(b.employeeId),
-  );
+  const sortedMembers = [...input.members].sort((a, b) => a.employeeId.localeCompare(b.employeeId));
   const sortedMatrix = [...input.eligibilityMatrix].sort(
     (a, b) =>
       a.memberEmployeeId.localeCompare(b.memberEmployeeId) ||
