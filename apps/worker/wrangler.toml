@@ -24,6 +24,14 @@ migrations_dir = "./migrations"
 binding = "KV"
 id = "ce8afe4605464683a51bf6ae9c042c01"
 
+[[env.staging.durable_objects.bindings]]
+name = "BID_SESSION"
+class_name = "BidSessionDO"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_classes = ["BidSessionDO"]
+
 [env.production]
 name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
@@ -38,6 +46,14 @@ migrations_dir = "./migrations"
 [[env.production.kv_namespaces]]
 binding = "KV"
 id = "REPLACE_AFTER_PRODUCTION_kv_CREATE"
+
+[[env.production.durable_objects.bindings]]
+name = "BID_SESSION"
+class_name = "BidSessionDO"
+
+[[env.production.migrations]]
+tag = "v1"
+new_classes = ["BidSessionDO"]
 
 # Secrets — set via `wrangler secret put NAME --env staging`:
 #   JWT_SIGNING_KEY    (HMAC HS256, 32-byte random base64url)

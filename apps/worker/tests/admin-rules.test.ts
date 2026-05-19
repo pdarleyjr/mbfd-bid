@@ -92,6 +92,7 @@ function mkEnv(sqlite: Database.Database): WorkerEnv {
     PORTAL_BID_READER: 'tok',
     DB: makeD1Adapter(sqlite),
     KV: {} as never,
+    BID_SESSION: {} as never,
   };
 }
 

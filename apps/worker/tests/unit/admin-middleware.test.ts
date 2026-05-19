@@ -16,6 +16,7 @@ function mkEnv(): WorkerEnv {
     PORTAL_BID_READER: 'tok',
     DB: {} as never,
     KV: {} as never,
+    BID_SESSION: {} as never,
   };
 }
 

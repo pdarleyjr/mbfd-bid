@@ -68,7 +68,7 @@ function rejectFrozen(state: BidSessionState, key?: string): RejectedResult | nu
       kind: 'rejected',
       code: 'SESSION_FROZEN',
       message: 'Bid session is frozen; only admin overrides may mutate state.',
-      idempotencyKey: key,
+      ...(key !== undefined && { idempotencyKey: key }),
     };
   }
   return null;

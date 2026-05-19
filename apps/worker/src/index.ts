@@ -70,4 +70,6 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal Error' }, 500);
 });
 
+export { BidSessionDO } from './durable/bid-session.js';
+
 export default app;
