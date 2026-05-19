@@ -32,3 +32,8 @@ export { computeCapacityMeter, isGroupFull, computeAllMeters } from './capacity.
 export { projectedOfficers, validateOfficerInvariant } from './officer-invariant.js';
 
 export { canPick } from './can-pick.js';
+
+export { initADayState, applyPick, nextBidder, isPhase2Complete } from './state.js';
+export type { InitADayStateInput } from './state.js';
+
+export type { Member } from '@mbfd/eligibility';
