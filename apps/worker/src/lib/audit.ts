@@ -21,7 +21,9 @@ export type AuditAction =
   | 'credentials_import'
   | 'positions_clone'
   | 'rule_book_clone'
-  | 'dissent';
+  | 'dissent'
+  | 'a_day_pick'
+  | 'forced_a_day_pick';
 
 export type AuditEntry = {
   bidSessionId: string | null;
