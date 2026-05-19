@@ -26,3 +26,5 @@ export {
   isWeekday,
   isValidADayForShift,
 } from './groups.js';
+
+export { computeCapacityMeter, isGroupFull, computeAllMeters } from './capacity.js';
