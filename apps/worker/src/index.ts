@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import adminAi from './routes/ai.js';
 import adminAudit from './routes/admin/audit.js';
 import adminBidControls from './routes/admin/bid-controls.js';
 import adminBidSession from './routes/admin/bid-session.js';
@@ -13,6 +12,7 @@ import adminPlacements from './routes/admin/placements.js';
 import adminPositions from './routes/admin/positions.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
+import adminAi from './routes/ai.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
 import health from './routes/health.js';
