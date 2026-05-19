@@ -40,6 +40,12 @@ function makeEnv(overrides: Partial<WorkerEnv> = {}): WorkerEnv {
     KV: {} as never,
     BID_SESSION: {} as never,
     AI_KV: makeKv(),
+    AUDIT_SIGNING_PRIVKEY: '',
+    AUDIT_SIGNING_PUBKEY: '',
+    BROWSERLESS_TOKEN: '',
+    R2_AUDIT: {} as never,
+    R2_EXPORTS: {} as never,
+    PORTAL_QUEUE: {} as never,
     ...overrides,
   };
 }

@@ -36,6 +36,27 @@ class_name = "BidSessionDO"
 tag = "v1"
 new_classes = ["BidSessionDO"]
 
+# Plan 08: R2 buckets
+[[env.staging.r2_buckets]]
+binding = "R2_AUDIT"
+bucket_name = "mbfd-bid-audit-staging"
+
+[[env.staging.r2_buckets]]
+binding = "R2_EXPORTS"
+bucket_name = "mbfd-bid-exports-staging"
+
+# Plan 08: Queues
+[[env.staging.queues.producers]]
+binding = "PORTAL_QUEUE"
+queue = "mbfd-portal-writebacks-staging"
+
+[[env.staging.queues.consumers]]
+queue = "mbfd-portal-writebacks-staging"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 0
+dead_letter_queue = "mbfd-portal-writebacks-staging-dlq"
+
 [env.production]
 name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
@@ -63,12 +84,40 @@ class_name = "BidSessionDO"
 tag = "v1"
 new_classes = ["BidSessionDO"]
 
+# Plan 08: R2 buckets
+[[env.production.r2_buckets]]
+binding = "R2_AUDIT"
+bucket_name = "mbfd-bid-audit-production"
+
+[[env.production.r2_buckets]]
+binding = "R2_EXPORTS"
+bucket_name = "mbfd-bid-exports-production"
+
+# Plan 08: Queues
+[[env.production.queues.producers]]
+binding = "PORTAL_QUEUE"
+queue = "mbfd-portal-writebacks-production"
+
+[[env.production.queues.consumers]]
+queue = "mbfd-portal-writebacks-production"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 0
+dead_letter_queue = "mbfd-portal-writebacks-production-dlq"
+
 [triggers]
-crons = ["*/10 * * * *"]
+# Plan 08: 1-minute audit buffer flush + 04:15 daily portal reconciliation.
+crons = [
+  "*/1 * * * *",
+  "15 4 * * *",
+]
 
 # Secrets — set via `wrangler secret put NAME --env staging`:
-#   JWT_SIGNING_KEY    (HMAC HS256, 32-byte random base64url)
-#   PIN_HASH           (bcrypt of the live PIN; rotate via `wrangler secret put`)
-#   PORTAL_BID_READER  (service token for /verify-credentials)
-#   PORTAL_BID_WRITER  (service token for /bid-assignment — used in Plan 08)
-#   ANTHROPIC_API_KEY  (Plan 06 — forwarded by Cloudflare AI Gateway)
+#   JWT_SIGNING_KEY        (HMAC HS256, 32-byte random base64url)
+#   PIN_HASH               (bcrypt of the live PIN; rotate via `wrangler secret put`)
+#   PORTAL_BID_READER      (service token for /verify-credentials)
+#   PORTAL_BID_WRITER      (service token for /bid-assignment — used in Plan 08)
+#   ANTHROPIC_API_KEY      (Plan 06 — forwarded by Cloudflare AI Gateway)
+#   AUDIT_SIGNING_PRIVKEY  (Plan 08 — ed25519 32-byte base64url; per year per env)
+#   AUDIT_SIGNING_PUBKEY   (Plan 08 — ed25519 32-byte base64url; non-secret)
+#   BROWSERLESS_TOKEN      (Plan 08 — Browserless v2 API token for PDF render)
