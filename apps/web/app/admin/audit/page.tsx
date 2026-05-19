@@ -1,8 +1,8 @@
 import { cookies } from 'next/headers';
-import { cfEnv } from '../../../lib/cf-env';
 import { JWT_COOKIE_NAME } from '../../../lib/cookies';
 import { formatET } from '../../../lib/et-time';
 import { requireAdmin } from '../../../lib/require-admin';
+import { getWorkerBase } from '../../../lib/worker-base';
 import { AIDissentMarker } from '../bid/_components/AIDissentMarker';
 
 export const runtime = 'edge';
@@ -51,7 +51,7 @@ export default async function AuditPage({
   const sp = await searchParams;
   const cookieStore = await cookies();
   const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value;
-  const baseUrl = cfEnv('WORKER_URL') ?? 'http://localhost:8787';
+  const baseUrl = getWorkerBase();
 
   const qs = new URLSearchParams();
   qs.set('limit', '100');

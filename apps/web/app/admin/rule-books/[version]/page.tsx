@@ -1,8 +1,8 @@
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { cfEnv } from '../../../../lib/cf-env';
 import { JWT_COOKIE_NAME } from '../../../../lib/cookies';
 import { requireAdmin } from '../../../../lib/require-admin';
+import { getWorkerBase } from '../../../../lib/worker-base';
 import { PublishButton } from './PublishButton';
 
 export const runtime = 'edge';
@@ -24,7 +24,7 @@ export default async function RuleBookDetailPage({
   const { version } = await params;
   const cookieStore = await cookies();
   const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value;
-  const baseUrl = cfEnv('WORKER_URL') ?? 'http://localhost:8787';
+  const baseUrl = getWorkerBase();
   const res = await fetch(`${baseUrl}/api/admin/rule-books`, {
     headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
     cache: 'no-store',

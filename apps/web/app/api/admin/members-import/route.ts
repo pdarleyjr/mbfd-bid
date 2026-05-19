@@ -1,6 +1,6 @@
-import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { requireAdmin } from '@/lib/require-admin';
+import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   const body = new FormData();
   body.append('file', file);
 
-  const workerUrl = cfEnv('WORKER_URL') ?? 'http://localhost:8787';
+  const workerUrl = getWorkerBase();
   let res: Response;
   try {
     res = await fetch(`${workerUrl}/api/admin/members/import`, {

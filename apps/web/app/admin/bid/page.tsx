@@ -2,6 +2,7 @@ import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
 import { requireAdmin } from '@/lib/require-admin';
+import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { MockBanner } from '../../_components/MockBanner';
@@ -24,7 +25,7 @@ interface BoardSnapshot {
 }
 
 async function loadBoard(jwt: string): Promise<BoardSnapshot> {
-  const workerBase = cfEnv('WORKER_BASE_URL') ?? 'http://localhost:8787';
+  const workerBase = getWorkerBase();
   const res = await fetch(`${workerBase}/api/board?bidSessionId=01HSESS`, {
     headers: { Authorization: `Bearer ${jwt}` },
     cache: 'no-store',
