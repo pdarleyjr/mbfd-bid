@@ -34,7 +34,7 @@
     "@noble/hashes": "^1.4",
     "bcryptjs": "^2.4.3",
     "drizzle-orm": "0.36.4",
-    "drizzle-zod": "0.7.1",
+    "drizzle-zod": "0.8.3",
     "eventsource-parser": "^3.0.0",
     "hono": "4.6.5",
     "jose": "5.9.4",
