@@ -14,7 +14,7 @@ export function parseAdvisoryFromText(text: string): Advisory | null {
 
   // 1) Try fenced block first (most common Claude output for JSON mode)
   const fenced = trimmed.match(FENCE);
-  const candidate = fenced && fenced[1] ? fenced[1].trim() : trimmed;
+  const candidate = fenced?.[1] ? fenced[1].trim() : trimmed;
 
   // 2) Find the first '{' and matching '}' span; if the candidate is just
   //    JSON this is a no-op, otherwise it salvages the JSON from a
