@@ -8,6 +8,7 @@ import adminBid from './routes/admin/bid.js';
 import adminCredentials from './routes/admin/credentials.js';
 import adminEligibilityPreview from './routes/admin/eligibility-preview.js';
 import adminMembers from './routes/admin/members.js';
+import adminPlacements from './routes/admin/placements.js';
 import adminPositions from './routes/admin/positions.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
@@ -34,7 +35,8 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/bid-session', adminBidSession)
   .route('/api/admin/bid-session', adminBidControls)
   .route('/api/admin/audit', adminAudit)
-  .route('/api/admin/eligibility', adminEligibilityPreview);
+  .route('/api/admin/eligibility', adminEligibilityPreview)
+  .route('/api/admin/placements', adminPlacements);
 
 export type AppType = typeof routes;
 
