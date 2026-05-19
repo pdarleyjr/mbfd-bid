@@ -1,4 +1,5 @@
 import {
+  type AuditEvent,
   BID_EVENT_VERSION,
   type BidEventEnvelope,
   ClientMessageSchema,
@@ -6,6 +7,8 @@ import {
   type StateSnapshotEvent,
 } from '@mbfd/shared';
 import { ulid } from 'ulid';
+import { makeChainDb } from '../audit/chain-db-d1.js';
+import { ChainEmitter } from '../audit/chain-emitter.js';
 import { getDb } from '../db/index.js';
 import { auditLog } from '../db/schema.js';
 import {
@@ -57,6 +60,8 @@ export class BidSessionDO implements DurableObject {
   private env: WorkerEnv;
   private clients = new Map<string, ConnectedClient>();
   private memoryState: BidSessionState | null = null;
+  /** Plan 08 — lazy per-DO chain emitter (one per Worker isolate). */
+  private emitter: ChainEmitter | null = null;
 
   constructor(state: DurableObjectState, env: WorkerEnv) {
     this.state = state;
@@ -116,7 +121,20 @@ export class BidSessionDO implements DurableObject {
     } catch {}
   }
 
-  private async writeAudit(draft: AuditRowDraft): Promise<void> {
+  /**
+   * Writes a flat audit_log row and (best-effort) emits into the R2 chain.
+   *
+   * For `pick` and `forced_pick` events the chain emit is performed
+   * explicitly BEFORE state is persisted (§D10 strict variant) and the
+   * caller passes `opts.skipChainEmit = true` so this method doesn't
+   * double-emit. Non-pick events (skip, freeze, etc.) are emitted
+   * best-effort: their D1 row is the authoritative record and any missing
+   * chain entry is picked up by the reconciliation cron.
+   */
+  private async writeAudit(
+    draft: AuditRowDraft,
+    opts: { skipChainEmit?: boolean } = {},
+  ): Promise<void> {
     try {
       await getDb(this.env.DB).insert(auditLog).values({
         id: draft.id,
@@ -140,6 +158,68 @@ export class BidSessionDO implements DurableObject {
       // Plan 08 reconciliation job.
       console.error('[BidSessionDO] audit insert failed', err);
     }
+    if (opts.skipChainEmit) return;
+    try {
+      await this.emitDraftToChain(draft);
+    } catch (err) {
+      console.error('[BidSessionDO] chain emit (best-effort) failed', err);
+    }
+  }
+
+  /**
+   * Plan 08 §D10 — strict variant for picks. Throws on R2 failure so the
+   * caller can return pick_rejected. MUST be called BEFORE persisting the
+   * new state — otherwise a successful pick will be unrecoverable if R2 is
+   * down.
+   */
+  private async emitPickToChain(draft: AuditRowDraft): Promise<void> {
+    const emitter = this.getEmitter();
+    if (!emitter) return; // emitter disabled (no AUDIT_SIGNING_PRIVKEY) — degrade gracefully
+    await emitter.emit(this.draftToEvent(draft));
+  }
+
+  private async emitDraftToChain(draft: AuditRowDraft): Promise<void> {
+    const emitter = this.getEmitter();
+    if (!emitter) return;
+    await emitter.emit(this.draftToEvent(draft));
+  }
+
+  private draftToEvent(draft: AuditRowDraft): AuditEvent {
+    return {
+      seq: draft.seq,
+      bid_session_id: draft.bidSessionId,
+      action: draft.action,
+      actor_type: draft.actorType,
+      actor_id: draft.actorId,
+      target_kind: draft.targetKind ?? null,
+      target_id: draft.targetId ?? null,
+      before_state: draft.beforeState ?? null,
+      after_state: draft.afterState ?? null,
+      reason: draft.reason ?? null,
+      ai_advisory_id: draft.aiAdvisoryId ?? null,
+      client_meta: draft.clientMeta ?? null,
+      created_at: draft.createdAt.toISOString(),
+    };
+  }
+
+  /**
+   * Returns the per-isolate ChainEmitter, or null if the audit-chain bindings
+   * are not configured (e.g. unit tests with stub env). Constructed lazily so
+   * DO instantiation does not fail when secrets are absent in local dev.
+   */
+  private getEmitter(): ChainEmitter | null {
+    if (this.emitter) return this.emitter;
+    if (!this.env.AUDIT_SIGNING_PRIVKEY || !this.env.AUDIT_SIGNING_PUBKEY) return null;
+    if (!this.env.R2_AUDIT || typeof this.env.R2_AUDIT.put !== 'function') return null;
+    this.emitter = new ChainEmitter({
+      r2: this.env.R2_AUDIT,
+      db: makeChainDb(this.env.DB),
+      privKey: this.env.AUDIT_SIGNING_PRIVKEY,
+      pubKey: this.env.AUDIT_SIGNING_PUBKEY,
+      year: new Date().getUTCFullYear(),
+      now: () => Date.now(),
+    });
+    return this.emitter;
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -316,21 +396,43 @@ export class BidSessionDO implements DurableObject {
 
       let envelope: BidEventEnvelope;
       if (result.kind === 'accepted') {
+        // Plan 08 §D10 — emit the R2 audit chunk BEFORE persisting durable
+        // state. If R2 is unavailable we throw, the outer fetch handler
+        // catches the error and the pick is rejected (the WS client sees
+        // pick_rejected/AUDIT_UNAVAILABLE). This protects the legal-record
+        // guarantee: every persisted pick has a chained R2 record.
+        const pickDraft = auditEntryForPickMade({
+          bidSessionId: result.event.payload.bidSessionId,
+          seq: result.newState.lastSeq,
+          bidId: result.event.payload.bidId,
+          memberId: result.event.payload.memberId,
+          positionId: result.event.payload.positionId,
+          idempotencyKey: result.event.payload.idempotencyKey,
+          nowMs: Date.now(),
+        });
+        try {
+          await this.emitPickToChain(pickDraft);
+        } catch (err) {
+          console.error('[BidSessionDO] pick rejected — audit chain unavailable', err);
+          envelope = this.envelope(
+            'pick_rejected',
+            {
+              idempotencyKey: msg.idempotencyKey,
+              code: 'AUDIT_UNAVAILABLE',
+              message: 'Audit chain unavailable — pick rejected (Plan 08 §D10).',
+            } satisfies PickRejectedEvent,
+            state.lastSeq,
+          );
+          await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
+          this.send(client.socket, envelope);
+          return;
+        }
         await persistBidSessionState(this.storage, result.newState);
         this.memoryState = result.newState;
         envelope = this.envelope('pick_made', result.event.payload, result.newState.lastSeq);
         await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
-        await this.writeAudit(
-          auditEntryForPickMade({
-            bidSessionId: result.event.payload.bidSessionId,
-            seq: result.newState.lastSeq,
-            bidId: result.event.payload.bidId,
-            memberId: result.event.payload.memberId,
-            positionId: result.event.payload.positionId,
-            idempotencyKey: result.event.payload.idempotencyKey,
-            nowMs: Date.now(),
-          }),
-        );
+        // D1 mirror — fire-and-forget; chain is already durable in R2.
+        await this.writeAudit(pickDraft, { skipChainEmit: true });
         this.broadcast(envelope);
       } else {
         envelope = this.envelope(
@@ -382,21 +484,28 @@ export class BidSessionDO implements DurableObject {
       if (r.kind === 'rejected') {
         return { ok: false };
       }
+      // Plan 08 §D10 — strict chain emit BEFORE persist so a forced pick
+      // is never silently un-mirrored to R2.
+      const forcedDraft = auditEntryForForcedPick({
+        bidSessionId: r.event.payload.bidSessionId,
+        seq: r.newState.lastSeq,
+        bidId: r.event.payload.bidId,
+        adminActorId: input.adminActorId,
+        targetMemberId: r.event.payload.memberId,
+        positionId: r.event.payload.positionId,
+        reason: r.event.payload.reason,
+        nowMs: Date.now(),
+      });
+      try {
+        await this.emitPickToChain(forcedDraft);
+      } catch (err) {
+        console.error('[BidSessionDO] force-pick rejected — audit chain unavailable', err);
+        return { ok: false };
+      }
       await persistBidSessionState(this.storage, r.newState);
       this.memoryState = r.newState;
       const envelope = this.envelope('forced_pick', r.event.payload, r.newState.lastSeq);
-      await this.writeAudit(
-        auditEntryForForcedPick({
-          bidSessionId: r.event.payload.bidSessionId,
-          seq: r.newState.lastSeq,
-          bidId: r.event.payload.bidId,
-          adminActorId: input.adminActorId,
-          targetMemberId: r.event.payload.memberId,
-          positionId: r.event.payload.positionId,
-          reason: r.event.payload.reason,
-          nowMs: Date.now(),
-        }),
-      );
+      await this.writeAudit(forcedDraft, { skipChainEmit: true });
       this.broadcast(envelope);
       return { ok: true, envelope };
     });

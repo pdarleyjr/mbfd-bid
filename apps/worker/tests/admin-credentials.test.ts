@@ -67,6 +67,7 @@ function applyMigrations(sqlite: Database.Database): void {
     '0003_positions_rules.sql',
     '0004_bid_audit_ai.sql',
     '0005_audit_log_session_nullable.sql',
+    '0013_audit_chain_bookkeeping.sql',
   ];
   for (const file of files) {
     const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8');

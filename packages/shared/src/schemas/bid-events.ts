@@ -9,6 +9,8 @@ export const PICK_REJECT_CODES = [
   'SESSION_FROZEN',
   'SESSION_PAUSED',
   'PROTOCOL_ERROR',
+  // Plan 08 §D10 — chain emit failed; pick is unrecoverable until R2 recovers.
+  'AUDIT_UNAVAILABLE',
 ] as const;
 export const PickRejectCodeSchema = z.enum(PICK_REJECT_CODES);
 export type PickRejectCode = z.infer<typeof PickRejectCodeSchema>;
