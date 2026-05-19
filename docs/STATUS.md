@@ -178,3 +178,44 @@ indicated future task / plan. Each is currently non-blocking.
 - **Migrations applied locally:** `0008_rule_book_status.sql`, `0009_bid_session_config.sql`. Remote D1 not deployed in this work (per briefing: staging-only, not part of this scope).
 - **Lint:** 0 errors, 3 pre-existing warnings (all `console.log` in `scripts/copy-staging-fixtures.mjs`)
 - **Typecheck:** all 4 workspace packages green
+
+## Plan 06 — AI Integration (complete 2026-05-19)
+
+- `/api/admin/ai/advise-current` (Sonnet 4.6, non-streaming): builds system+roster+turn prompt blocks with cache breakpoints after system and roster; returns `AdvisoryEnvelope` with `stale`/`fallback` markers; writes one `ai_advisories` audit row per non-stale call; admin-only via `requireAdmin`.
+- `/api/admin/ai/advise-deep` (Opus 4.7, SSE): streams `text/event-stream` with token deltas; `event: done` on completion. Mocked Anthropic SSE consumed via `@anthropic-ai/sdk` stream; route forwards `content_block_delta` text-deltas as `data:` lines.
+- `/api/admin/ai/forecast` (KV-cached envelope) + `*/10 * * * *` scheduled cron (`apps/worker/src/scheduled.ts`) refreshes `ai_forecast:<session_id>` for every live `position_bid` session.
+- `/api/admin/ai/cost` returns running cents + cap from `AI_KV` for the AICostPill.
+- **Unified mute gate** (`apps/worker/src/ai/gate.ts`): all four AI routes return `503 { disabled: true, reason }` when `ai_advisory_enabled=false` or when `ai_cost_cents:<session_id>` ≥ `AI_BUDGET_CAP_CENTS`.
+- **Cache-warm pre-fetch** (`apps/worker/src/ai/cache-warm.ts`): fire-and-forget Sonnet call for on-deck member; writes `ai_last_good:<session_id>` so the next `/advise-current` is mostly cache-read.
+- **Defensive parser** (`apps/worker/src/ai/output-parser.ts`): handles fenced JSON, BOM, prose-prefixed responses, and falls back to `last_good` then `deterministic` envelope on parse failure.
+- **Dissent log writer** (`apps/worker/src/ai/dissent.ts`): writes `audit_log.action='dissent'` when admin force-picks against an AI advisory whose `force_recommended=false`. The Plan 05 force-pick handler needs a 2-line follow-up to call `recordDissentIfNeeded(env, …)` after the pick commits — left as a watch-item.
+- **Web components** on `/admin/bid`: `AIAdvisoryPanel` (TanStack Query, 30 s poll), `AIAskDeepDialog` (SSE consumer using `apps/web/lib/ai-sse-client.ts` async generator), `AIForecastBanner` (top-of-page critical/warn surfacing), `AICostPill` (header pill, 30 s poll), and `AIDissentMarker` on `/admin/audit`.
+- **Schema sync test** (`packages/shared/tests/schemas/ai-advisory-mirror.test.ts`): byte-comparison guard so `apps/worker/src/ai/output-schema.ts` and `packages/shared/src/schemas/ai-advisory.ts` stay byte-identical (modulo comment headers).
+- **Cross-plan ticket honored:** `AdvisorySchema` carries an optional `aDayInvariantSnapshot` field reserved for Plan 07 (A-Day phase 2). Plan 07 populates it without re-touching the schema.
+- **Migration `0010_audit_action_dissent.sql`:** SQLite enum is enforced in TS only, so the migration is a recordkeeping no-op DDL paired with the `AuditAction` widening in `apps/worker/src/lib/audit.ts`. The plan body said "0005"; renumbered to 0010 because Plans 05–07 already claimed 0005–0009.
+- **Cloudflare AI Gateway routing:** Anthropic SDK `baseURL` is set to `CF_AI_GATEWAY_URL`; no direct `api.anthropic.com` reference anywhere in `apps/worker/src/`. All tests assert this.
+- **Per-session cost accounting:** `ai_cost_cents:<session_id>` in `AI_KV` (TTL 14 days). Computed via the per-model `MODEL_PRICING` table (`apps/worker/src/ai/pricing.ts`); cache-read is 10 %, cache-write is 1.25× of input pricing per Anthropic's prompt-caching docs.
+- **Build-time rulebook codegen:** `pnpm --filter @mbfd/worker ai:codegen` reads `apps/worker/docs/bid-docs/2026/*.md` into `rulebook-2026.generated.ts` (gitignored, biome-ignored). CI runs it before typecheck and before unit/integration tests.
+- **2025 eval-harness skeleton:** `apps/worker/src/ai/eval/replay-2025.ts` + `docs/ai-eval/format.md`. The script reads `analysis/bid_pick.csv` + `analysis/personnel.csv` and writes `docs/ai-eval/2025-replay.md`. The Anthropic call loop is gated on `ANTHROPIC_API_KEY` so the harness can ship without burning credits; the offline operator fleshes it out before running. **Not run in this session — no real API key available.**
+
+### Plan 06 — final tallies (2026-05-19)
+
+- **Tests landed:** `@mbfd/worker` 59 files / 316 pass + 1 skip · `@mbfd/shared` 12 files / 101 pass · `@mbfd/web` 5 files / 21 pass · `@mbfd/eligibility` 13 files / 81 pass + 3 skip
+- **New worker files:** `src/ai/{pricing,cost-accounting,output-schema,output-parser,client,session-loader,cache-warm,dissent,gate}.ts`, `src/ai/prompts/{system-2026,user-roster,user-turn,rulebook-codegen}.ts`, `src/ai/eval/replay-2025.ts`, `src/routes/ai.ts`, `src/scheduled.ts`
+- **New web files:** `app/admin/bid/_components/{AIAdvisoryPanel,AIAskDeepDialog,AIForecastBanner,AIDissentMarker,AICostPill}.tsx`, `lib/ai-sse-client.ts`
+- **Migration:** `0010_audit_action_dissent.sql` (not yet applied — Plan 09 handles deploy; the test harness picks it up automatically via `applyMigrations`)
+- **Lint:** 0 errors, 3 pre-existing warnings in `packages/eligibility/scripts/export-fixtures.ts` (unchanged from Plan 05)
+- **Typecheck:** all 4 workspace packages green
+- **CI workflow updated:** AI rulebook codegen step added to both `lint-and-typecheck` and `unit-and-integration` jobs
+
+### New watch-items (Plan 06)
+
+| ID | Source | Watch-item | Action by |
+|----|--------|------------|-----------|
+| W27 | Plan 06 T14 + T21 | Migration `0010_audit_action_dissent.sql` committed but NOT applied to staging/production. Plan 09 deploy must run `pnpm db:migrate:remote` for both envs. | Plan 09 deploy |
+| W28 | Plan 06 T14 step 9 | `recordDissentIfNeeded(env, …)` is decoupled — Plan 05's `/api/admin/bid-session/:id/force-pick` handler still needs a 2-line call to it after the pick commits. Documented as Plan 05 follow-up. | Plan 05 follow-up |
+| W29 | Plan 06 T1 | Two new Wrangler bindings (`AI_KV` namespace, `ANTHROPIC_API_KEY` secret) need to be created via `wrangler kv:namespace create AI_KV --env staging` and `wrangler secret put ANTHROPIC_API_KEY --env staging` before deploy. `wrangler.toml` carries `REPLACE_AFTER_kv_create_ai` placeholders. | Plan 09 deploy |
+| W30 | Plan 06 T13 | `apps/worker/src/index.ts` default export changed from `app` to a `{ fetch, scheduled }` handler object for cron support. All 13 worker tests that did `import app from '../../src/index'` were switched to the named export `import { app } from …`. The Hono RPC type still exports from `AppType = typeof routes`, unchanged. | Done in this plan |
+| W31 | Plan 06 T9 | `@anthropic-ai/sdk@0.96.0` has a peer-dep warning for `zod@^3.25 || ^4`; the repo pins `zod@3.23.8`. No runtime errors; if Anthropic SDK starts using zod 3.25-only APIs, bump zod across the monorepo. | Plan 09 hardening |
+| W32 | Plan 06 T19 | Eval harness skeleton committed but not actually run. Offline operator must run `pnpm --filter @mbfd/worker ai:eval:2025` with real `ANTHROPIC_API_KEY` before Plan 09 sign-off, paste the report into `docs/ai-eval/2025-replay.md`. | Plan 09 pre-deploy |
+| W33 | Plan 06 T15/T16 | Three new E2E specs (`ai-panel`, `ai-deep-dialog`, `ai-dissent-marker`) are `test.skip` placeholders pending the same Playwright fixtures harness Plan 05 deferred to Plan 09. | Plan 09 hardening |
