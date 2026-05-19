@@ -322,8 +322,7 @@ export class BidSessionDO implements DurableObject {
     if (typeof storage.setAlarm !== 'function') return;
     try {
       const desired = Date.now() + 30_000;
-      const current =
-        typeof storage.getAlarm === 'function' ? await storage.getAlarm() : null;
+      const current = typeof storage.getAlarm === 'function' ? await storage.getAlarm() : null;
       // If an alarm is already pending and earlier than `desired`, keep it —
       // the existing alarm will fire first and re-arm if there's still work.
       if (current !== null && current <= desired) return;

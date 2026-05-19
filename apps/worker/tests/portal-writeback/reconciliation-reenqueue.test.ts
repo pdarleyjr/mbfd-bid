@@ -3,16 +3,12 @@
 // test verifies the new path works for admin-style idempotency keys that
 // do NOT end in an employee_id.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Queue } from '@cloudflare/workers-types';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handlePortalReconciliation } from '../../src/scheduled.js';
 import type { WorkerEnv } from '../../src/types/env.js';
-import {
-  type TestD1,
-  setupTestD1,
-  teardownTestD1,
-} from '../integration/helpers/test-d1.js';
+import { type TestD1, setupTestD1, teardownTestD1 } from '../integration/helpers/test-d1.js';
 
 describe('handlePortalReconciliation reEnqueue → employeeId resolution (W38)', () => {
   let h: TestD1;

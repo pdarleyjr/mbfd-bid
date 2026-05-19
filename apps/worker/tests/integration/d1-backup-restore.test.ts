@@ -65,7 +65,9 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
   it('restore script does not hard-code prod database names', () => {
     const src = readFileSync(RESTORE_SCRIPT, 'utf-8');
     // No hard-coded "mbfd-bid-production" anywhere — must take the name as a param.
-    const lines = src.split('\n').filter((l) => !l.trim().startsWith('#') && !l.includes('Example'));
+    const lines = src
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#') && !l.includes('Example'));
     expect(lines.join('\n')).not.toContain('mbfd-bid-production');
   });
 });

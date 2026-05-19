@@ -19,9 +19,9 @@ import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 import * as ed from '@noble/ed25519';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { BidSessionDO } from '../../src/durable/bid-session.js';
 import { encodeKey } from '../../src/audit/signer.js';
 import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
+import { BidSessionDO } from '../../src/durable/bid-session.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 
 interface Storage {
@@ -235,8 +235,7 @@ describe('BidSessionDO rejects pick when R2 chain emit fails (W36)', () => {
       positionId: 'A101',
       reason: 'simulated R2 outage 2',
     });
-    const persisted =
-      (await storage.get<BidSessionState>(`bs:${sessionId}:state`)) ?? initialState;
+    const persisted = (await storage.get<BidSessionState>(`bs:${sessionId}:state`)) ?? initialState;
     // No fill recorded for A101.
     expect(persisted.fills?.A101).toBeUndefined();
     // lastSeq did not advance.

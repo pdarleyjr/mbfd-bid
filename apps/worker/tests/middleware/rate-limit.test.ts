@@ -13,10 +13,7 @@
 import type { KVNamespace } from '@cloudflare/workers-types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  rateLimitByEmployeeId,
-  rateLimitByIp,
-} from '../../src/middleware/rate-limit.js';
+import { rateLimitByEmployeeId, rateLimitByIp } from '../../src/middleware/rate-limit.js';
 
 type FakeKv = KVNamespace & { store: Map<string, string> };
 

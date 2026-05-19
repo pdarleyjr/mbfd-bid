@@ -21,10 +21,7 @@ import type { R2Bucket } from '@cloudflare/workers-types';
 import type { AuditEvent } from '@mbfd/shared';
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  type ChainDb,
-  ChainEmitter,
-} from '../../src/audit/chain-emitter.js';
+import { type ChainDb, ChainEmitter } from '../../src/audit/chain-emitter.js';
 
 function makeR2Stub(): { put: ReturnType<typeof vi.fn>; bucket: R2Bucket } {
   const put = vi.fn().mockResolvedValue(undefined);

@@ -8,8 +8,8 @@
 //      flat `members: []` array for direct consumers.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { app } from '../../src/index.js';
 import { mintPrintToken } from '../../src/exports/print-token.js';
+import { app } from '../../src/index.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const PRINT_SECRET = 'p'.repeat(64);
@@ -40,9 +40,7 @@ describe('GET /api/admin/exports/roster-data (W35)', () => {
     }
 
     // 5 members + 5 bids.
-    await h.db.run(
-      "INSERT INTO bid_years (year, status) VALUES (2026, 'live');",
-    );
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1);",
       [sessionId, Date.now()],
