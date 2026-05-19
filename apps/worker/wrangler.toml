@@ -12,7 +12,7 @@ name = "mbfd-bid-worker-staging"
 # Replaces the legacy `route = { pattern = "...", zone_name = "..." }` which
 # relied on Universal SSL that did not reissue to cover this 4th-level host.
 routes = [{ pattern = "api.staging.bid.mbfdhub.com", custom_domain = true }]
-vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
+vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com", CF_AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/265122b6d6f29457b0ca950c55f3ac6e/mbfd-bid/anthropic", AI_BUDGET_CAP_CENTS = "2500", AI_FEATURE_FLAG_KEY = "ai_advisory_enabled" }
 
 [[env.staging.d1_databases]]
 binding = "DB"
@@ -23,6 +23,10 @@ migrations_dir = "./migrations"
 [[env.staging.kv_namespaces]]
 binding = "KV"
 id = "ce8afe4605464683a51bf6ae9c042c01"
+
+[[env.staging.kv_namespaces]]
+binding = "AI_KV"
+id = "REPLACE_AFTER_kv_create_ai"
 
 [[env.staging.durable_objects.bindings]]
 name = "BID_SESSION"
@@ -35,7 +39,7 @@ new_classes = ["BidSessionDO"]
 [env.production]
 name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
-vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
+vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com", CF_AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/265122b6d6f29457b0ca950c55f3ac6e/mbfd-bid/anthropic", AI_BUDGET_CAP_CENTS = "5000", AI_FEATURE_FLAG_KEY = "ai_advisory_enabled" }
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -47,6 +51,10 @@ migrations_dir = "./migrations"
 binding = "KV"
 id = "REPLACE_AFTER_PRODUCTION_kv_CREATE"
 
+[[env.production.kv_namespaces]]
+binding = "AI_KV"
+id = "REPLACE_AFTER_PRODUCTION_kv_create_ai"
+
 [[env.production.durable_objects.bindings]]
 name = "BID_SESSION"
 class_name = "BidSessionDO"
@@ -55,8 +63,12 @@ class_name = "BidSessionDO"
 tag = "v1"
 new_classes = ["BidSessionDO"]
 
+[triggers]
+crons = ["*/10 * * * *"]
+
 # Secrets — set via `wrangler secret put NAME --env staging`:
 #   JWT_SIGNING_KEY    (HMAC HS256, 32-byte random base64url)
 #   PIN_HASH           (bcrypt of the live PIN; rotate via `wrangler secret put`)
 #   PORTAL_BID_READER  (service token for /verify-credentials)
 #   PORTAL_BID_WRITER  (service token for /bid-assignment — used in Plan 08)
+#   ANTHROPIC_API_KEY  (Plan 06 — forwarded by Cloudflare AI Gateway)

@@ -13,6 +13,21 @@ export const EnvSchema = z.object({
   // succeed. The username is the constant LOCAL_ADMIN_USERNAME above; this
   // secret is the bcrypt hash of the shared admin password.
   LOCAL_ADMIN_PASSWORD_HASH: z.string().optional().default(''),
+  // Plan 06 — AI integration. All Anthropic traffic flows through the
+  // Cloudflare AI Gateway, so the SDK baseURL points at the gateway and
+  // ANTHROPIC_API_KEY is forwarded by the gateway. AI_BUDGET_CAP_CENTS is
+  // a hard ceiling on per-day spend across all advisory endpoints.
+  CF_AI_GATEWAY_URL: z
+    .string()
+    .url()
+    .refine((u) => u.startsWith('https://'), 'Gateway URL must be https'),
+  ANTHROPIC_API_KEY: z.string().min(1),
+  AI_BUDGET_CAP_CENTS: z
+    .union([z.string(), z.number()])
+    .transform((v) => (typeof v === 'string' ? Number(v) : v))
+    .pipe(z.number().int().nonnegative())
+    .default(2500),
+  AI_FEATURE_FLAG_KEY: z.string().default('ai_advisory_enabled'),
 });
 
 export type ValidatedEnv = z.infer<typeof EnvSchema>;

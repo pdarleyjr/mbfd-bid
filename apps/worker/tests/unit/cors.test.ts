@@ -13,9 +13,14 @@ function mkEnv(env: 'staging' | 'production'): WorkerEnv {
     JWT_SIGNING_KEY: 'x'.repeat(64),
     PIN_HASH: '$2b$12$placeholder',
     PORTAL_BID_READER: 'tok',
+    CF_AI_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/test/mbfd-bid/anthropic',
+    ANTHROPIC_API_KEY: 'sk-test',
+    AI_BUDGET_CAP_CENTS: 2500,
+    AI_FEATURE_FLAG_KEY: 'ai_advisory_enabled',
     DB: {} as never,
     KV: {} as never,
     BID_SESSION: {} as never,
+    AI_KV: {} as never,
   };
 }
 
