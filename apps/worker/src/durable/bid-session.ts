@@ -6,6 +6,15 @@ import {
   type StateSnapshotEvent,
 } from '@mbfd/shared';
 import { ulid } from 'ulid';
+import { getDb } from '../db/index.js';
+import { auditLog } from '../db/schema.js';
+import {
+  type AuditRowDraft,
+  auditEntryForForcedPick,
+  auditEntryForFreeze,
+  auditEntryForPickMade,
+  auditEntryForSkip,
+} from '../lib/audit.js';
 import type { WorkerEnv } from '../types/env.js';
 import {
   type ForcePickInput,
@@ -98,6 +107,32 @@ export class BidSessionDO implements DurableObject {
     try {
       socket.send(JSON.stringify(env));
     } catch {}
+  }
+
+  private async writeAudit(draft: AuditRowDraft): Promise<void> {
+    try {
+      await getDb(this.env.DB).insert(auditLog).values({
+        id: draft.id,
+        bidSessionId: draft.bidSessionId,
+        seq: draft.seq,
+        actorType: draft.actorType,
+        actorId: draft.actorId,
+        action: draft.action,
+        targetKind: draft.targetKind,
+        targetId: draft.targetId,
+        beforeState: draft.beforeState,
+        afterState: draft.afterState,
+        reason: draft.reason,
+        aiAdvisoryId: draft.aiAdvisoryId,
+        clientMeta: draft.clientMeta,
+        createdAt: draft.createdAt,
+      });
+    } catch (err) {
+      // Audit failures must not break the DO state machine. The durable state
+      // is the source of truth; failed audit writes are picked up by the
+      // Plan 08 reconciliation job.
+      console.error('[BidSessionDO] audit insert failed', err);
+    }
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -262,6 +297,17 @@ export class BidSessionDO implements DurableObject {
         this.memoryState = result.newState;
         envelope = this.envelope('pick_made', result.event.payload, result.newState.lastSeq);
         await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
+        await this.writeAudit(
+          auditEntryForPickMade({
+            bidSessionId: result.event.payload.bidSessionId,
+            seq: result.newState.lastSeq,
+            bidId: result.event.payload.bidId,
+            memberId: result.event.payload.memberId,
+            positionId: result.event.payload.positionId,
+            idempotencyKey: result.event.payload.idempotencyKey,
+            nowMs: Date.now(),
+          }),
+        );
         this.broadcast(envelope);
       } else {
         envelope = this.envelope(
@@ -289,6 +335,16 @@ export class BidSessionDO implements DurableObject {
       await persistBidSessionState(this.storage, r.newState);
       this.memoryState = r.newState;
       const envelope = this.envelope('skip', r.event.payload, r.newState.lastSeq);
+      await this.writeAudit(
+        auditEntryForSkip({
+          bidSessionId: r.event.payload.bidSessionId,
+          seq: r.newState.lastSeq,
+          adminActorId: input.adminActorId,
+          skippedMemberId: r.event.payload.skippedMemberId,
+          reason: r.event.payload.reason,
+          nowMs: Date.now(),
+        }),
+      );
       this.broadcast(envelope);
       return { ok: true, envelope };
     });
@@ -306,6 +362,18 @@ export class BidSessionDO implements DurableObject {
       await persistBidSessionState(this.storage, r.newState);
       this.memoryState = r.newState;
       const envelope = this.envelope('forced_pick', r.event.payload, r.newState.lastSeq);
+      await this.writeAudit(
+        auditEntryForForcedPick({
+          bidSessionId: r.event.payload.bidSessionId,
+          seq: r.newState.lastSeq,
+          bidId: r.event.payload.bidId,
+          adminActorId: input.adminActorId,
+          targetMemberId: r.event.payload.memberId,
+          positionId: r.event.payload.positionId,
+          reason: r.event.payload.reason,
+          nowMs: Date.now(),
+        }),
+      );
       this.broadcast(envelope);
       return { ok: true, envelope };
     });
@@ -321,6 +389,15 @@ export class BidSessionDO implements DurableObject {
       await persistBidSessionState(this.storage, r.newState);
       this.memoryState = r.newState;
       const envelope = this.envelope('freeze', r.event.payload, r.newState.lastSeq);
+      await this.writeAudit(
+        auditEntryForFreeze({
+          bidSessionId: r.event.payload.bidSessionId,
+          seq: r.newState.lastSeq,
+          adminActorId: input.adminActorId,
+          reason: r.event.payload.reason,
+          nowMs: Date.now(),
+        }),
+      );
       this.broadcast(envelope);
       return { ok: true, envelope };
     });

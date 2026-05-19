@@ -80,3 +80,126 @@ export async function writeAuditLog(
 
   return { id, seq: nextSeq };
 }
+
+export interface AuditRowDraft {
+  id: string;
+  bidSessionId: string;
+  seq: number;
+  actorType: 'member' | 'admin' | 'system' | 'ai';
+  actorId: number | null;
+  action: 'pick' | 'forced_pick' | 'pause' | 'resume' | 'skip' | 'admin_bid_for_member';
+  targetKind: string | null;
+  targetId: string | null;
+  beforeState: string | null;
+  afterState: string | null;
+  reason: string | null;
+  aiAdvisoryId: string | null;
+  clientMeta: string | null;
+  createdAt: Date;
+}
+
+export function auditEntryForPickMade(input: {
+  bidSessionId: string;
+  seq: number;
+  bidId: string;
+  memberId: number;
+  positionId: string;
+  idempotencyKey: string;
+  nowMs: number;
+}): AuditRowDraft {
+  return {
+    id: ulid(),
+    bidSessionId: input.bidSessionId,
+    seq: input.seq,
+    actorType: 'member',
+    actorId: input.memberId,
+    action: 'pick',
+    targetKind: 'position',
+    targetId: input.positionId,
+    beforeState: null,
+    afterState: JSON.stringify({ bidId: input.bidId, idempotencyKey: input.idempotencyKey }),
+    reason: null,
+    aiAdvisoryId: null,
+    clientMeta: null,
+    createdAt: new Date(input.nowMs),
+  };
+}
+
+export function auditEntryForForcedPick(input: {
+  bidSessionId: string;
+  seq: number;
+  bidId: string;
+  adminActorId: number;
+  targetMemberId: number;
+  positionId: string;
+  reason: string;
+  nowMs: number;
+}): AuditRowDraft {
+  return {
+    id: ulid(),
+    bidSessionId: input.bidSessionId,
+    seq: input.seq,
+    actorType: 'admin',
+    actorId: input.adminActorId,
+    action: 'forced_pick',
+    targetKind: 'position',
+    targetId: input.positionId,
+    beforeState: null,
+    afterState: JSON.stringify({ bidId: input.bidId, memberId: input.targetMemberId }),
+    reason: input.reason,
+    aiAdvisoryId: null,
+    clientMeta: null,
+    createdAt: new Date(input.nowMs),
+  };
+}
+
+export function auditEntryForSkip(input: {
+  bidSessionId: string;
+  seq: number;
+  adminActorId: number;
+  skippedMemberId: number;
+  reason: string;
+  nowMs: number;
+}): AuditRowDraft {
+  return {
+    id: ulid(),
+    bidSessionId: input.bidSessionId,
+    seq: input.seq,
+    actorType: 'admin',
+    actorId: input.adminActorId,
+    action: 'skip',
+    targetKind: 'member',
+    targetId: String(input.skippedMemberId),
+    beforeState: null,
+    afterState: null,
+    reason: input.reason,
+    aiAdvisoryId: null,
+    clientMeta: null,
+    createdAt: new Date(input.nowMs),
+  };
+}
+
+export function auditEntryForFreeze(input: {
+  bidSessionId: string;
+  seq: number;
+  adminActorId: number;
+  reason: string;
+  nowMs: number;
+}): AuditRowDraft {
+  return {
+    id: ulid(),
+    bidSessionId: input.bidSessionId,
+    seq: input.seq,
+    actorType: 'admin',
+    actorId: input.adminActorId,
+    action: 'pause',
+    targetKind: 'session',
+    targetId: input.bidSessionId,
+    beforeState: null,
+    afterState: JSON.stringify({ frozen: true }),
+    reason: `freeze: ${input.reason}`,
+    aiAdvisoryId: null,
+    clientMeta: null,
+    createdAt: new Date(input.nowMs),
+  };
+}
