@@ -1,6 +1,12 @@
 import { zValidator } from '@hono/zod-validator';
 import { evaluateEligibility } from '@mbfd/eligibility';
-import { BidForMemberSchema, ForcePickSchema, type JwtPayload, SkipSchema } from '@mbfd/shared';
+import {
+  BidForMemberSchema,
+  ForcePickSchema,
+  type JwtPayload,
+  LockPositionSchema,
+  SkipSchema,
+} from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
@@ -272,6 +278,72 @@ router.post(
     });
 
     return c.json({ bid_id: bidId, forced: false }, 201);
+  },
+);
+
+// POST /api/admin/bid-session/:id/lock-position
+router.post(
+  '/:id/lock-position',
+  requireStepUpAuth(),
+  zValidator('json', LockPositionSchema),
+  async (c) => {
+    const sessionId = c.req.param('id');
+    const body = c.req.valid('json');
+
+    if (!isReasonValidForAction('lock_position', body.reason_code)) {
+      return c.json(
+        {
+          error: 'invalid_reason_for_action',
+          action: 'lock_position',
+          reason_code: body.reason_code,
+        },
+        400,
+      );
+    }
+
+    const db = getDb(c.env.DB);
+    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (session.currentPhase !== 'config') {
+      return c.json(
+        { error: 'locks_only_in_config_phase', current_phase: session.currentPhase },
+        409,
+      );
+    }
+
+    const cfg: { position_locks?: { position_id: string; member_id: number }[] } =
+      session.configJson !== null && session.configJson !== ''
+        ? JSON.parse(session.configJson)
+        : {};
+    cfg.position_locks = Array.isArray(cfg.position_locks) ? cfg.position_locks : [];
+    const conflict = cfg.position_locks.find((l) => l.position_id === body.position_id);
+    if (conflict !== undefined) {
+      return c.json({ error: 'position_already_locked', existing: conflict }, 409);
+    }
+    cfg.position_locks.push({ position_id: body.position_id, member_id: body.member_id });
+
+    await db
+      .update(bidSessions)
+      .set({ configJson: JSON.stringify(cfg) })
+      .where(eq(bidSessions.id, sessionId));
+
+    const claims = c.get('claims');
+    await writeAuditLog(db, {
+      bidSessionId: sessionId,
+      actorType: 'admin',
+      actorId: claims.sub > 0 ? claims.sub : 0,
+      action: 'lock_position',
+      targetKind: 'position',
+      targetId: body.position_id,
+      reason: body.reason,
+      afterState: { member_id: body.member_id, reason_code: body.reason_code },
+    });
+
+    return c.json({
+      position_id: body.position_id,
+      member_id: body.member_id,
+      reason_code: body.reason_code,
+    });
   },
 );
 

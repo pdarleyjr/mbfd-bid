@@ -146,6 +146,7 @@ export const bidSessions = sqliteTable('bid_sessions', {
     onDelete: 'restrict',
   }),
   freezeReason: text('freeze_reason'),
+  configJson: text('config_json'),
 });
 
 export const bidOrder = sqliteTable(
