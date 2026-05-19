@@ -4,60 +4,85 @@ import Link from 'next/link';
 
 export const runtime = 'edge';
 
-// hrefs typed as string so Plan-05 stub routes compile before Next's
-// typed-routes generator runs against their finished implementations.
-const QUICK_LINKS: { href: string; title: string; description: string }[] = [
+type LinkEntry = { href: string; title: string; description: string; emphasis?: boolean };
+
+// Primary actions surfaced as larger cards at the top.
+const PRIMARY_ACTIONS: LinkEntry[] = [
   {
-    href: '/admin/members' as const,
-    title: 'Members',
-    description: 'View and search all department members.',
+    href: '/admin/rehearsal',
+    title: 'Mock Draft / Rehearsal',
+    description:
+      'Spin up a mock session, proxy-bid for members, run auto-bid, log findings. Use this before going live.',
+    emphasis: true,
   },
   {
-    href: '/admin/credentials' as const,
-    title: 'Credentials',
-    description: 'Browse certification types and point values.',
+    href: '/admin/sessions/new',
+    title: 'New Bid Session',
+    description: 'Configure and start a new live bid session.',
+    emphasis: true,
   },
   {
-    href: '/admin/positions' as const,
-    title: 'Positions',
-    description: 'View bid positions grouped by shift and station.',
+    href: '/admin/bid',
+    title: 'Live Bid Console',
+    description:
+      'Watch picks land in real time, override, skip, freeze. AI advisory panel docked here.',
+    emphasis: true,
+  },
+];
+
+// Secondary tools below.
+const SECONDARY_LINKS: LinkEntry[] = [
+  {
+    href: '/admin/eligibility',
+    title: 'Eligibility Preview',
+    description: 'Test whether a member is eligible for a position without committing a pick.',
   },
   {
-    href: '/admin/rules' as const,
-    title: 'Rules',
-    description: 'Inspect rule book criteria, points, and tie-break chains.',
+    href: '/admin/audit',
+    title: 'Audit Log',
+    description: 'Search, filter, and export the event audit trail.',
   },
   {
-    href: '/admin/members/import' as const,
-    title: 'Import Members',
-    description: 'Upload a Telestaff CSV to seed or refresh member records.',
+    href: '/admin/exports',
+    title: 'Exports',
+    description: 'Roster PDFs (per shift) and audit-log CSV downloads.',
   },
   {
-    href: '/admin/credentials/import' as const,
-    title: 'Import Credentials',
-    description: 'Upload a CSV to seed credential definitions.',
-  },
-  {
-    href: '/admin/rule-books' as const,
+    href: '/admin/rule-books',
     title: 'Rule Books',
     description: 'View, draft, and publish rule book versions.',
   },
   {
-    href: '/admin/sessions/new' as const,
-    title: 'New Session',
-    description: 'Configure and start a new bid session.',
+    href: '/admin/rules',
+    title: 'Position Rules',
+    description: 'Inspect required criteria, points preferences, and tie-break chains.',
   },
   {
-    href: '/admin/audit' as const,
-    title: 'Audit Log',
-    description: 'Search and export the full event audit trail.',
+    href: '/admin/positions',
+    title: 'Positions',
+    description: 'View bid positions grouped by shift and station.',
   },
   {
-    href: '/admin/eligibility' as const,
-    title: 'Eligibility Preview',
-    description: 'Check if a member is eligible for a position under any rule book.',
+    href: '/admin/members',
+    title: 'Members',
+    description: 'View and search all department members.',
   },
-] as const;
+  {
+    href: '/admin/credentials',
+    title: 'Credentials',
+    description: 'Browse certification types and point values.',
+  },
+  {
+    href: '/admin/members/import',
+    title: 'Import Members',
+    description: 'Upload a Telestaff CSV to seed or refresh member records.',
+  },
+  {
+    href: '/admin/credentials/import',
+    title: 'Import Credentials',
+    description: 'Upload a CSV to seed credential definitions.',
+  },
+];
 
 export default async function AdminDashboardPage() {
   const claims = await requireAdmin();
@@ -69,8 +94,29 @@ export default async function AdminDashboardPage() {
         Welcome back, {claims.first_name} {claims.last_name}.
       </p>
 
-      <dl className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {QUICK_LINKS.map(({ href, title, description }) => (
+      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        Run a bid
+      </h2>
+      <dl className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {PRIMARY_ACTIONS.map(({ href, title, description }) => (
+          <Link
+            key={href}
+            href={href as Route}
+            className="group rounded-xl border-2 border-red-700/60 bg-gradient-to-br from-red-950/40 to-slate-800 p-5 transition-colors duration-fast ease-out-quart hover:border-red-500 hover:from-red-900/60"
+          >
+            <dt className="font-heading text-base font-semibold text-white group-hover:text-red-300">
+              {title}
+            </dt>
+            <dd className="mt-2 text-sm text-slate-300">{description}</dd>
+          </Link>
+        ))}
+      </dl>
+
+      <h2 className="mt-10 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        Manage data & inspect
+      </h2>
+      <dl className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {SECONDARY_LINKS.map(({ href, title, description }) => (
           <Link
             key={href}
             href={href as Route}

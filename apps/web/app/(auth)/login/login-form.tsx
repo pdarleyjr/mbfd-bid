@@ -42,8 +42,9 @@ export function LoginForm() {
           setError('Could not finalize session. Try again.');
           return;
         }
-        // Cast: '/lobby' is created in Task 10
-        router.push('/lobby' as never);
+        // Land on /admin for admin users; /admin's requireAdmin redirects
+        // non-admins back to /lobby, so this is safe for both roles.
+        router.push('/admin' as never);
         router.refresh();
       } else if (res.status === 401) {
         setError('Incorrect employee ID or password.');

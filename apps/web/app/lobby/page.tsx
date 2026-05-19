@@ -24,13 +24,18 @@ export default async function LobbyPage() {
     redirect('/login');
   }
 
+  // Admins always go to the admin dashboard — /lobby is the member view.
+  if (payload.role === 'admin') {
+    redirect('/admin');
+  }
+
   return (
     <div className="min-h-screen bg-stone-50">
       <BrandHeader subtitle={`Hi, ${payload.first_name} — ${RANK_LABELS[payload.rank]}`} />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
         <h2 className="font-heading text-2xl text-stone-800">Lobby</h2>
         <p className="mt-2 text-stone-600">
-          Bid hasn't started yet. This page will become the pre-bid lobby in Plan 04.
+          Bid hasn't started yet. You'll see your turn information here once a session is live.
         </p>
         <dl className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Card label="Employee ID" value={payload.emp} numeric />
