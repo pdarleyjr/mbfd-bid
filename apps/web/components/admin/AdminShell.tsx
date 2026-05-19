@@ -9,6 +9,10 @@ const NAV_LINKS = [
   { href: '/admin/credentials' as const, label: 'Credentials', exact: false },
   { href: '/admin/positions' as const, label: 'Positions', exact: false },
   { href: '/admin/rules' as const, label: 'Rules', exact: false },
+  { href: '/admin/rule-books' as const, label: 'Rule Books', exact: false },
+  { href: '/admin/sessions/new' as const, label: 'New Session', exact: false },
+  { href: '/admin/audit' as const, label: 'Audit Log', exact: false },
+  { href: '/admin/eligibility' as const, label: 'Eligibility Preview', exact: false },
 ];
 
 const IMPORT_LINKS = [

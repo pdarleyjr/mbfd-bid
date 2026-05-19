@@ -34,6 +34,26 @@ const QUICK_LINKS = [
     title: 'Import Credentials',
     description: 'Upload a CSV to seed credential definitions.',
   },
+  {
+    href: '/admin/rule-books' as const,
+    title: 'Rule Books',
+    description: 'View, draft, and publish rule book versions.',
+  },
+  {
+    href: '/admin/sessions/new' as const,
+    title: 'New Session',
+    description: 'Configure and start a new bid session.',
+  },
+  {
+    href: '/admin/audit' as const,
+    title: 'Audit Log',
+    description: 'Search and export the full event audit trail.',
+  },
+  {
+    href: '/admin/eligibility' as const,
+    title: 'Eligibility Preview',
+    description: 'Check if a member is eligible for a position under any rule book.',
+  },
 ] as const;
 
 export default async function AdminDashboardPage() {
