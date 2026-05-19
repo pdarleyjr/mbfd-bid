@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import { ForcePickSchema, type JwtPayload } from '@mbfd/shared';
+import { ForcePickSchema, type JwtPayload, SkipSchema } from '@mbfd/shared';
 import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
@@ -100,5 +100,39 @@ router.post(
     return c.json({ bid_id: bidId, forced: true }, 201);
   },
 );
+
+// POST /api/admin/bid-session/:id/skip
+router.post('/:id/skip', requireStepUpAuth(), zValidator('json', SkipSchema), async (c) => {
+  const sessionId = c.req.param('id');
+  const body = c.req.valid('json');
+
+  if (!isReasonValidForAction('skip', body.reason_code)) {
+    return c.json(
+      { error: 'invalid_reason_for_action', action: 'skip', reason_code: body.reason_code },
+      400,
+    );
+  }
+
+  const db = getDb(c.env.DB);
+  const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+
+  const member = await db.select().from(members).where(eq(members.id, body.member_id)).get();
+  if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
+
+  const claims = c.get('claims');
+  await writeAuditLog(db, {
+    bidSessionId: sessionId,
+    actorType: 'admin',
+    actorId: claims.sub > 0 ? claims.sub : 0,
+    action: 'skip',
+    targetKind: 'member',
+    targetId: String(body.member_id),
+    reason: body.reason,
+    afterState: { skipped_member_id: body.member_id, reason_code: body.reason_code },
+  });
+
+  return c.json({ skipped_member_id: body.member_id, reason_code: body.reason_code });
+});
 
 export default router;
