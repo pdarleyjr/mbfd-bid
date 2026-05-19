@@ -136,6 +136,11 @@ export const bidSessions = sqliteTable('bid_sessions', {
   expectedDurationDays: integer('expected_duration_days').notNull().default(2),
   scheduledResumeAt: integer('scheduled_resume_at', { mode: 'timestamp' }),
   dayCount: integer('day_count').notNull().default(0),
+  frozenAt: integer('frozen_at', { mode: 'timestamp' }),
+  freezeActorId: integer('freeze_actor_id').references(() => members.id, {
+    onDelete: 'restrict',
+  }),
+  freezeReason: text('freeze_reason'),
 });
 
 export const bidOrder = sqliteTable(
