@@ -37,7 +37,8 @@ jobs:
           node-version: '${{ env.NODE_VERSION }}'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @mbfd/shared build
+      - name: Build internal packages
+        run: pnpm -r --filter "./packages/*" build
       - name: Apply D1 migrations (staging, remote)
         working-directory: apps/worker
         run: pnpm exec wrangler d1 migrations apply mbfd-bid-staging --remote --env staging
@@ -65,7 +66,8 @@ jobs:
           node-version: '${{ env.NODE_VERSION }}'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @mbfd/shared build
+      - name: Build internal packages
+        run: pnpm -r --filter "./packages/*" build
       - name: Build and deploy Next.js to Cloudflare Pages
         working-directory: apps/web
         # next-on-pages calls `vercel build` internally and outputs to
