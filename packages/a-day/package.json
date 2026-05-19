@@ -1,0 +1,30 @@
+{
+  "name": "@mbfd/a-day",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@mbfd/eligibility": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "2.1.4",
+    "typescript": "5.6.3",
+    "vitest": "2.1.4"
+  }
+}
