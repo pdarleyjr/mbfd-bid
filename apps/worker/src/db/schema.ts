@@ -1,4 +1,12 @@
-import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 export const members = sqliteTable('members', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -258,6 +266,8 @@ export const auditLog = sqliteTable(
         'positions_clone',
         'rule_book_clone',
         'dissent',
+        'a_day_pick',
+        'forced_a_day_pick',
       ],
     }).notNull(),
     targetKind: text('target_kind'),
@@ -317,5 +327,41 @@ export const bidSessionSnapshots = sqliteTable(
       t.bidSessionId,
       t.snapshotAt,
     ),
+  }),
+);
+
+// Plan 07: Phase 2 A-Day picks
+export const aDayPicks = sqliteTable(
+  'a_day_picks',
+  {
+    id: text('id').primaryKey().notNull(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    memberId: integer('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    shift: text('shift', { enum: ['A', 'B', 'C', 'D'] }).notNull(),
+    aDay: text('a_day').notNull(), // 'G1'..'G4' | 'MON'..'SUN'
+    pickedAtMs: integer('picked_at').notNull(),
+    forced: integer('forced', { mode: 'boolean' }).default(false).notNull(),
+    adminActorId: integer('admin_actor_id').references(() => members.id, {
+      onDelete: 'restrict',
+    }),
+    reason: text('reason'),
+    idempotencyKey: text('idempotency_key').notNull(),
+  },
+  (t) => ({
+    sessionMemberUnique: uniqueIndex('a_day_picks_session_member_unique').on(
+      t.bidSessionId,
+      t.memberId,
+    ),
+    idempotencyUnique: uniqueIndex('a_day_picks_idempotency_key_unique').on(t.idempotencyKey),
+    sessionShiftAday: index('idx_a_day_picks_session_shift_aday').on(
+      t.bidSessionId,
+      t.shift,
+      t.aDay,
+    ),
+    memberIdx: index('idx_a_day_picks_member').on(t.memberId),
   }),
 );
