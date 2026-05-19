@@ -15,3 +15,31 @@ export * from './schemas/rule-book-import.js';
 export * from './constants/bid-events.js';
 export * from './schemas/bid-events.js';
 export * from './schemas/ai-advisory.js';
+
+// A-Day Phase 2 schemas. `Shift` is re-exported from constants/shifts.js — to avoid
+// a duplicate identifier, we export the Zod schema and the additional types directly.
+export {
+  ADayGroupIdSchema,
+  WeekdaySchema,
+  ADayValueSchema,
+  ShiftSchema,
+  ADayRejectReasonCodeSchema,
+  CapacityMeterPayloadSchema,
+  MetersBundleSchema,
+  SubmitADayPickRequestSchema,
+  ADayPickMadeMessageSchema,
+  PhaseChangedMessageSchema,
+  ADayRejectMessageSchema,
+  ADayServerMessageSchema,
+} from './schemas/a-day.js';
+export type {
+  ADayGroupId,
+  Weekday,
+  ADayValue,
+  ADayRejectReasonCode,
+  SubmitADayPickRequest,
+  ADayPickMadeMessage,
+  PhaseChangedMessage,
+  ADayRejectMessage,
+  ADayServerMessage,
+} from './schemas/a-day.js';
