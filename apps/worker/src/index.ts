@@ -11,6 +11,7 @@ import adminExports from './routes/admin/exports.js';
 import adminForceADay from './routes/admin/force-a-day.js';
 import adminMembers from './routes/admin/members.js';
 import adminPlacements from './routes/admin/placements.js';
+import adminPortal from './routes/admin/portal.js';
 import adminPositions from './routes/admin/positions.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
@@ -40,6 +41,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/bid-session', adminForceADay)
   .route('/api/admin/audit', adminAudit)
   .route('/api/admin/exports', adminExports)
+  .route('/api/admin', adminPortal)
   .route('/api/admin/eligibility', adminEligibilityPreview)
   .route('/api/admin/placements', adminPlacements)
   .route('/api/admin/ai', adminAi);
