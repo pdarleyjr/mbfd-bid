@@ -1,7 +1,7 @@
-import Database from 'better-sqlite3';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 
 import * as schema from '../../src/db/schema.js';
@@ -47,9 +47,7 @@ describe('Mock-draft schema (mig 0014)', () => {
     sqlite.pragma('foreign_keys = OFF');
     applyMigrations(sqlite);
 
-    sqlite
-      .prepare("INSERT INTO bid_years (year, status) VALUES (2027, 'configuring')")
-      .run();
+    sqlite.prepare("INSERT INTO bid_years (year, status) VALUES (2027, 'configuring')").run();
     sqlite
       .prepare(
         'INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2027, ?, ?, ?, ?, ?)',

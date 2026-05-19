@@ -136,26 +136,24 @@ describe('auto-bid strategy=ai_top wires getAiTopPick (W42)', () => {
   beforeEach(async () => {
     h = await setupTestD1();
     await seedMockSession(h, sessionId);
-    adviseSpy = vi
-      .spyOn(AnthropicAIClient.prototype, 'adviseCurrent')
-      .mockResolvedValue({
-        ai_advisory_id: 'adv-W42-001',
-        generated_at_ms: Date.now(),
-        stale: false,
-        fallback: 'none',
-        advisory: {
-          summary: 'Pick A103.',
-          // The AI recommends A103 — NOT the first-eligible A101. Order in
-          // `eligible_recommendations` is "best first", so [0] is the top pick.
-          eligible_recommendations: [
-            { position_id: 'A103', points: 100, why: 'AI top pick' },
-            { position_id: 'A102', points: 50, why: 'alt' },
-          ],
-          ineligible_top_picks: [],
-          forecast: { warnings: [] },
-          force_recommended: false,
-        },
-      }) as unknown as ReturnType<typeof vi.spyOn>;
+    adviseSpy = vi.spyOn(AnthropicAIClient.prototype, 'adviseCurrent').mockResolvedValue({
+      ai_advisory_id: 'adv-W42-001',
+      generated_at_ms: Date.now(),
+      stale: false,
+      fallback: 'none',
+      advisory: {
+        summary: 'Pick A103.',
+        // The AI recommends A103 — NOT the first-eligible A101. Order in
+        // `eligible_recommendations` is "best first", so [0] is the top pick.
+        eligible_recommendations: [
+          { position_id: 'A103', points: 100, why: 'AI top pick' },
+          { position_id: 'A102', points: 50, why: 'alt' },
+        ],
+        ineligible_top_picks: [],
+        forecast: { warnings: [] },
+        force_recommended: false,
+      },
+    }) as unknown as ReturnType<typeof vi.spyOn>;
   });
 
   afterEach(async () => {

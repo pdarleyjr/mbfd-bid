@@ -111,7 +111,9 @@ describe('GET /api/admin/readiness/no-mock-sessions (W-MOCKSAFETY)', () => {
     expect(r1.ok).toBe(false);
     expect(r1.openMockSessions).toContain('mock-to-archive');
 
-    await h.db.run("UPDATE bid_sessions SET current_phase = 'complete' WHERE id = 'mock-to-archive';");
+    await h.db.run(
+      "UPDATE bid_sessions SET current_phase = 'complete' WHERE id = 'mock-to-archive';",
+    );
 
     const r2 = (await (
       await app.fetch(
@@ -126,10 +128,10 @@ describe('GET /api/admin/readiness/no-mock-sessions (W-MOCKSAFETY)', () => {
   });
 
   it('requires admin auth — 401 without JWT', async () => {
-    const res = await app.fetch(
-      new Request('http://x/api/admin/readiness/no-mock-sessions'),
-      { ...h.env, JWT_SIGNING_KEY: KEY },
-    );
+    const res = await app.fetch(new Request('http://x/api/admin/readiness/no-mock-sessions'), {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+    });
     expect(res.status).toBe(401);
   });
 });
