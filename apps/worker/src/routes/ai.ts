@@ -2,6 +2,7 @@ import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { AIError, AnthropicAIClient } from '../ai/client.js';
+import { checkAiGate } from '../ai/gate.js';
 import { systemBlock } from '../ai/prompts/system-2026.js';
 import { rosterBlock } from '../ai/prompts/user-roster.js';
 import { turnBlock } from '../ai/prompts/user-turn.js';
@@ -20,9 +21,8 @@ r.get('/advise-current', async (c) => {
   const sessionId = c.req.query('session_id');
   if (!sessionId) return c.json({ error: 'session_id_required' }, 400);
 
-  // Feature flag — fail fast before building prompts
-  const flag = await c.env.AI_KV.get(c.env.AI_FEATURE_FLAG_KEY);
-  if (flag === 'false') return c.json({ disabled: true, reason: 'feature_flag_off' }, 503);
+  const gate = await checkAiGate(c.env, sessionId);
+  if (!gate.ok) return c.json({ disabled: true, reason: gate.reason }, 503);
 
   const startedAt = Date.now();
   const roster = await loadRosterForSession(c.env, sessionId);
@@ -97,8 +97,8 @@ r.post('/advise-deep', async (c) => {
   if (!parsed.success) return c.json({ error: 'bad_body' }, 400);
   const { session_id, question } = parsed.data;
 
-  const flag = await c.env.AI_KV.get(c.env.AI_FEATURE_FLAG_KEY);
-  if (flag === 'false') return c.json({ disabled: true, reason: 'feature_flag_off' }, 503);
+  const gate = await checkAiGate(c.env, session_id);
+  if (!gate.ok) return c.json({ disabled: true, reason: gate.reason }, 503);
 
   const roster = await loadRosterForSession(c.env, session_id);
   const state = await loadTurnStateForSession(c.env, session_id);
