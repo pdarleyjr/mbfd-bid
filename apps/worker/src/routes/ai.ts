@@ -90,7 +90,28 @@ r.get('/advise-current', async (c) => {
 
 r.get('/cost', async (c) => {
   const sessionId = c.req.query('session_id');
-  if (!sessionId) return c.json({ error: 'session_id_required' }, 400);
+  // Plan 09 / Rehearsal Tooling — Task R10. When session_id is omitted, fall
+  // back to the aggregate running total stored under `ai_cost_cents_total`.
+  // If that key is absent (e.g. before any AI work has run), sum the keys
+  // under `ai_cost_cents:*` so the rehearsal dashboard still has something
+  // meaningful to render.
+  if (!sessionId) {
+    const stored = await c.env.AI_KV.get('ai_cost_cents_total');
+    if (stored !== null) {
+      return c.json({ cost_cents: Number(stored), cap_cents: c.env.AI_BUDGET_CAP_CENTS });
+    }
+    let total = 0;
+    try {
+      const list = await c.env.AI_KV.list({ prefix: 'ai_cost_cents:' });
+      for (const k of list.keys) {
+        const v = await c.env.AI_KV.get(k.name);
+        if (v !== null) total += Number(v);
+      }
+    } catch {
+      // best-effort — return whatever we managed to accumulate
+    }
+    return c.json({ cost_cents: total, cap_cents: c.env.AI_BUDGET_CAP_CENTS });
+  }
   const used = Number((await c.env.AI_KV.get(`ai_cost_cents:${sessionId}`)) ?? 0);
   return c.json({ cost_cents: used, cap_cents: c.env.AI_BUDGET_CAP_CENTS });
 });
