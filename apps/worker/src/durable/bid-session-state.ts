@@ -5,7 +5,7 @@ export interface DOStorageLike {
   list<T>(prefix: string): Promise<Map<string, T>>;
 }
 
-export type CurrentPhase = 'config' | 'position_bid' | 'r_day_bid' | 'paused' | 'complete';
+export type CurrentPhase = 'config' | 'position_bid' | 'a_day_bid' | 'paused' | 'complete';
 
 export interface Fill {
   memberId: number;

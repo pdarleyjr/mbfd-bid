@@ -26,7 +26,7 @@ describe('bid event schemas (Plan 04 Task 2)', () => {
         ordinal: 5,
         memberId: 17,
         positionId: 'A101',
-        rDay: null,
+        aDay: null,
         idempotencyKey: '11111111-1111-4111-8111-111111111111',
         nextBidderId: 22,
         turnStartedAtMs: Date.now(),
@@ -51,7 +51,7 @@ describe('bid event schemas (Plan 04 Task 2)', () => {
       SubmitPickMessageSchema.safeParse({
         type: 'submit_pick',
         positionId: 'A101',
-        rDay: null,
+        aDay: null,
         idempotencyKey: 'not-a-uuid',
       }).success,
     ).toBe(false);
@@ -60,7 +60,7 @@ describe('bid event schemas (Plan 04 Task 2)', () => {
       SubmitPickMessageSchema.safeParse({
         type: 'submit_pick',
         positionId: 'A101',
-        rDay: null,
+        aDay: null,
         idempotencyKey: '11111111-1111-4111-8111-111111111111',
       }).success,
     ).toBe(true);

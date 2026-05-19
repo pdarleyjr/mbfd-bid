@@ -44,7 +44,7 @@ interface AcceptedFreeze {
 export interface SubmitPickInput {
   senderMemberId: number;
   positionId: string;
-  rDay: string | null;
+  aDay: string | null;
   idempotencyKey: string;
 }
 export interface SkipInput {
@@ -174,7 +174,7 @@ export function handleSubmitPick(
     ordinal,
     memberId: input.senderMemberId,
     positionId: input.positionId,
-    rDay: input.rDay,
+    aDay: input.aDay,
     idempotencyKey: input.idempotencyKey,
     nextBidderId,
     turnStartedAtMs,

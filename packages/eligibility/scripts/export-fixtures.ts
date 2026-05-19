@@ -140,7 +140,7 @@ const picks = bid.rows
       bidNumber: bidNumberRaw.length > 0 ? Number(bidNumberRaw) : 0,
       employeeId: empId,
       positionId: obj.position__ ?? obj.position_ ?? '',
-      rDayPositionId: obj.r_day_pick ?? '',
+      aDayPositionId: obj.r_day_pick ?? obj.a_day_pick ?? '',
       lastName: obj.last_name ?? '',
       firstName: obj.first_name ?? '',
       rank: RANK_MAP[rankRaw] ?? obj.current_rank ?? '',

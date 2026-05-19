@@ -56,7 +56,7 @@ describe('handleSubmitPick (Plan 04 Task 5)', () => {
     const r = handleSubmitPick(state, env(), {
       senderMemberId: 17,
       positionId: 'A101',
-      rDay: null,
+      aDay: null,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
     expect(r.kind).toBe('accepted');
@@ -75,7 +75,7 @@ describe('handleSubmitPick (Plan 04 Task 5)', () => {
     const r = handleSubmitPick(state, env(), {
       senderMemberId: 99,
       positionId: 'A101',
-      rDay: null,
+      aDay: null,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
     expect(r.kind).toBe('rejected');
@@ -91,7 +91,7 @@ describe('handleSubmitPick (Plan 04 Task 5)', () => {
     const r = handleSubmitPick(state, env(), {
       senderMemberId: 17,
       positionId: 'A101',
-      rDay: null,
+      aDay: null,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
     expect(r.kind).toBe('rejected');
@@ -106,7 +106,7 @@ describe('handleSubmitPick (Plan 04 Task 5)', () => {
     const r = handleSubmitPick(state, env('ineligible'), {
       senderMemberId: 17,
       positionId: 'A101',
-      rDay: null,
+      aDay: null,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
     expect(r.kind).toBe('rejected');
@@ -121,7 +121,7 @@ describe('handleSubmitPick (Plan 04 Task 5)', () => {
     const r = handleSubmitPick(state, env(), {
       senderMemberId: 17,
       positionId: 'A101',
-      rDay: null,
+      aDay: null,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
     expect(r.kind).toBe('rejected');
@@ -136,7 +136,7 @@ describe('handleSubmitPick (Plan 04 Task 5)', () => {
     const r = handleSubmitPick(state, env(), {
       senderMemberId: 17,
       positionId: 'A101',
-      rDay: null,
+      aDay: null,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
     expect(r.kind).toBe('rejected');
@@ -153,7 +153,7 @@ describe('handleSubmitPick (Plan 04 Task 5)', () => {
     const r = handleSubmitPick(state, env(), {
       senderMemberId: 19,
       positionId: 'A101',
-      rDay: null,
+      aDay: null,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
     expect(r.kind).toBe('accepted');

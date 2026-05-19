@@ -16,7 +16,7 @@ export type PickRejectCode = z.infer<typeof PickRejectCodeSchema>;
 export const SubmitPickMessageSchema = z.object({
   type: z.literal('submit_pick'),
   positionId: z.string().min(1).max(16),
-  rDay: z.string().nullable(),
+  aDay: z.string().nullable(),
   idempotencyKey: z.string().uuid(),
 });
 export type SubmitPickMessage = z.infer<typeof SubmitPickMessageSchema>;
@@ -47,7 +47,7 @@ export const PickMadeEventSchema = z.object({
   ordinal: z.number().int().nonnegative(),
   memberId: z.number().int().positive(),
   positionId: z.string().min(1),
-  rDay: z.string().nullable(),
+  aDay: z.string().nullable(),
   idempotencyKey: z.string().uuid(),
   nextBidderId: z.number().int().nonnegative().nullable(),
   turnStartedAtMs: z.number().int().nonnegative(),
@@ -93,7 +93,7 @@ export type FreezeEvent = z.infer<typeof FreezeEventSchema>;
 export const StateSnapshotEventSchema = z.object({
   bidSessionId: z.string().min(1),
   seq: z.number().int().nonnegative(),
-  currentPhase: z.enum(['config', 'position_bid', 'r_day_bid', 'paused', 'complete']),
+  currentPhase: z.enum(['config', 'position_bid', 'a_day_bid', 'paused', 'complete']),
   currentBidderId: z.number().int().nonnegative().nullable(),
   turnStartedAtMs: z.number().int().nonnegative(),
   turnTimerSeconds: z.number().int().positive(),

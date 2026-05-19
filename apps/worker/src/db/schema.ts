@@ -126,7 +126,7 @@ export const bidSessions = sqliteTable('bid_sessions', {
   pausedAt: integer('paused_at', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
   currentPhase: text('current_phase', {
-    enum: ['config', 'position_bid', 'r_day_bid', 'paused', 'complete'],
+    enum: ['config', 'position_bid', 'a_day_bid', 'paused', 'complete'],
   }).notNull(),
   currentBidderId: integer('current_bidder_id').references(() => members.id, {
     onDelete: 'restrict',
@@ -174,7 +174,7 @@ export const bids = sqliteTable(
       .references(() => members.id, { onDelete: 'restrict' }),
     // No FK to positions — composite PK on positions blocks single-column FK
     positionId: text('position_id').notNull(),
-    rDay: text('r_day'),
+    aDay: text('a_day'),
     pickedAt: integer('picked_at', { mode: 'timestamp' }).notNull(),
     forced: integer('forced', { mode: 'boolean' }).notNull().default(false),
     adminActorId: integer('admin_actor_id').references(() => members.id, {

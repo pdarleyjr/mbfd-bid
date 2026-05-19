@@ -267,7 +267,7 @@ export class BidSessionDO implements DurableObject {
 
   private async applySubmitPick(
     clientId: string,
-    msg: { positionId: string; rDay: string | null; idempotencyKey: string },
+    msg: { positionId: string; aDay: string | null; idempotencyKey: string },
   ): Promise<void> {
     const client = this.clients.get(clientId);
     if (!client) {
@@ -286,7 +286,7 @@ export class BidSessionDO implements DurableObject {
       const input: SubmitPickInput = {
         senderMemberId: client.memberId,
         positionId: msg.positionId,
-        rDay: msg.rDay,
+        aDay: msg.aDay,
         idempotencyKey: msg.idempotencyKey,
       };
       const result = handleSubmitPick(state, this.handlerEnv(), input);

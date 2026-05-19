@@ -22,7 +22,7 @@ export function YourTurnPanel({ store, send, eligiblePositionIds }: Props) {
     const key = newIdempotencyKey();
     store.getState().markPendingMine(positionId, key);
     setSubmitting(positionId);
-    send({ type: 'submit_pick', positionId, rDay: null, idempotencyKey: key });
+    send({ type: 'submit_pick', positionId, aDay: null, idempotencyKey: key });
   };
 
   return (
