@@ -155,6 +155,10 @@ export const bidSessions = sqliteTable('bid_sessions', {
   }),
   freezeReason: text('freeze_reason'),
   configJson: text('config_json'),
+  // Plan 09 / Rehearsal Tooling — Task R1.
+  // Marks the session as a rehearsal/mock. Portal writeback consumer skips
+  // bids belonging to mock sessions; admin dashboard exposes reset/auto-bid.
+  isMock: integer('is_mock', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const bidOrder = sqliteTable(
