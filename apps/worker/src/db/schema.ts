@@ -78,6 +78,11 @@ export const ruleBooks = sqliteTable('rule_books', {
   version: text('version').primaryKey(),
   effectiveYear: integer('effective_year').notNull(),
   notes: text('notes'),
+  status: text('status', { enum: ['draft', 'active', 'archived'] })
+    .notNull()
+    .default('draft'),
+  publishedAt: integer('published_at', { mode: 'timestamp' }),
+  publishedBy: integer('published_by').references(() => members.id, { onDelete: 'set null' }),
 });
 
 export const positionRules = sqliteTable(
