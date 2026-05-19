@@ -1,6 +1,7 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
-import { AnthropicAIClient } from '../ai/client.js';
+import { z } from 'zod';
+import { AIError, AnthropicAIClient } from '../ai/client.js';
 import { systemBlock } from '../ai/prompts/system-2026.js';
 import { rosterBlock } from '../ai/prompts/user-roster.js';
 import { turnBlock } from '../ai/prompts/user-turn.js';
@@ -65,6 +66,72 @@ r.get('/advise-current', async (c) => {
   }
 
   return c.json(envelope);
+});
+
+const DeepBodySchema = z.object({
+  session_id: z.string().min(1),
+  question: z.string().min(1).max(2000),
+});
+
+r.post('/advise-deep', async (c) => {
+  const json = await c.req.json().catch(() => null);
+  const parsed = DeepBodySchema.safeParse(json);
+  if (!parsed.success) return c.json({ error: 'bad_body' }, 400);
+  const { session_id, question } = parsed.data;
+
+  const flag = await c.env.AI_KV.get(c.env.AI_FEATURE_FLAG_KEY);
+  if (flag === 'false') return c.json({ disabled: true, reason: 'feature_flag_off' }, 503);
+
+  const roster = await loadRosterForSession(c.env, session_id);
+  const state = await loadTurnStateForSession(c.env, session_id);
+  const client = new AnthropicAIClient(c.env);
+
+  // Use the raw SDK stream and forward token deltas as SSE
+  let stream: Awaited<ReturnType<typeof client.adviseDeepStream>>;
+  try {
+    stream = await client.adviseDeepStream({
+      bidSessionId: session_id,
+      system: systemBlock(),
+      roster: rosterBlock(roster),
+      turn: turnBlock({ ...state, question }),
+    });
+  } catch (err) {
+    if (err instanceof AIError && err.kind === 'disabled') {
+      return c.json({ disabled: true, reason: err.message }, 503);
+    }
+    return c.json({ error: 'upstream' }, 502);
+  }
+
+  const enc = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const event of stream) {
+          if (
+            event.type === 'content_block_delta' &&
+            event.delta.type === 'text_delta'
+          ) {
+            controller.enqueue(enc.encode(`data: ${event.delta.text}\n\n`));
+          }
+        }
+        controller.enqueue(enc.encode('event: done\ndata: end\n\n'));
+        controller.close();
+      } catch {
+        controller.enqueue(enc.encode('event: error\ndata: stream_error\n\n'));
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  });
 });
 
 export default r;
