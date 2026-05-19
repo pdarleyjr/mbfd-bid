@@ -5,6 +5,7 @@ import adminBid from './routes/admin/bid.js';
 import adminCredentials from './routes/admin/credentials.js';
 import adminMembers from './routes/admin/members.js';
 import adminPositions from './routes/admin/positions.js';
+import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
@@ -24,6 +25,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/credentials', adminCredentials)
   .route('/api/admin/positions', adminPositions)
   .route('/api/admin/rules', adminRules)
+  .route('/api/admin/rule-books', adminRuleBooks)
   .route('/api/admin/bid', adminBid);
 
 export type AppType = typeof routes;
