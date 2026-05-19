@@ -307,3 +307,107 @@ No new peer-dep warnings beyond the pre-existing Anthropic SDK / zod mismatch (W
 | W39 | Plan 08 Task 9 | Existing audit-pipe `writeAudit` now also calls `emitDraftToChain` best-effort for non-pick events. The emit failure is swallowed (logged) but if the chain becomes the legal record for non-pick audits too (e.g., skip/freeze/dissent), §D10 strictness should be expanded. Currently only `pick` + `forced_pick` are strict. | Plan 09 / spec clarification |
 | W40 | Plan 08 deviation 4 | The Cloudflare Queue consumer happy path is tested via direct invocation; the real `queue.send → consumer.queue → message.ack/retry` cycle isn't exercised under Miniflare. Plan 09 must run a smoke test that drops a real message into the staging queue and verifies the bid row transitions. | Plan 09 rehearsal |
 | W41 | Plan 08 Task 17 | `/api/admin/exports/audit-csv` returns 500 on D1 errors; the plan envisioned 502 for portal-style upstream failures. Behavior is fine but inconsistent with the roster route (502 on Browserless failures). Normalize. | Follow-up cleanup |
+
+---
+
+## Rehearsal tooling (Plan 09 prequel) — 2026-05-19
+
+Eleven-task burst (R1–R11) landing a complete mock-draft rehearsal flow on
+`staging.bid.mbfdhub.com` so the admin can validate the system end-to-end
+BEFORE Plan 09's prod cutover. Plan 09 itself stays scoped to the cutover;
+this prequel is the safety harness that runs on staging.
+
+### Endpoints landed
+
+| Method + Path | Auth | Purpose |
+|---|---|---|
+| `POST /api/admin/rehearsal/:sessionId/mark-mock` | admin | Idempotently set `bid_sessions.is_mock=1`. 404 if session missing. |
+| `POST /api/admin/rehearsal/:sessionId/reset-mock` | admin | Wipe Phase 1 `bids` + Phase 2 `a_day_picks`, rewind `bid_sessions` row, reset DO state. 403 unless `is_mock=1`. Returns 204. |
+| `POST /api/admin/rehearsal/:sessionId/auto-bid` | admin | Body `{ count, strategy: 'ai_top' \| 'first_eligible' }`. Loops up to `count` picks; stops on `complete`, 5 consecutive `no_eligible`, or count exhaustion. Returns 200 with `{ picksMade, stoppedReason, detail? }`. 207 if `no_eligible` after some picks. 403 unless `is_mock=1`. |
+| `POST /api/admin/rehearsal/findings` | admin | Body `{ bidSessionId, note, screenshotR2Key? }`. Inserts one row. 201 on success. 404 if session missing. |
+| `GET  /api/admin/rehearsal/findings?session_id=…&limit=50` | admin | Per-session findings, newest-first. 400 if no `session_id`. |
+| `GET  /api/admin/rehearsal/findings-recent?limit=50` | admin | All findings across mock sessions, newest-first. |
+| `GET  /api/admin/rehearsal/sessions` | admin | List of mock sessions for the dashboard. |
+| `GET  /api/admin/ai/cost` | admin | No `session_id` → aggregate running total (`ai_cost_cents_total`, with fallback summing of `ai_cost_cents:*`). With `?session_id=…` → per-session cost. |
+
+### MockBanner contract
+
+`apps/web/app/_components/MockBanner.tsx` is a Server Component:
+- `MockBanner({ isMock: true, sessionId })` → sticky red banner across the top
+  reading `MOCK SESSION — NOT LIVE — picks will not be exported to portal`
+  with the session id pinned on the right.
+- `MockBanner({ isMock: false, sessionId })` → returns `null` (no DOM).
+
+Wired into `/bid` and `/admin/bid` pages, reading `is_mock` from the
+`/api/board` response (which now joins `bid_sessions` to surface the flag).
+
+### Portal write-back guard (Task R8)
+
+`handlePortalQueueBatch` in `apps/worker/src/portal-writeback/queue-handler.ts`
+now consults D1 at the top of every message. If the bid's session has
+`is_mock=1`, the message is `ack()`'d without calling the portal HTTP
+client. A missing bid row is also acked (treated as mock) so the queue
+can't loop forever after a `reset-mock`. Defence-in-depth: the producer
+should also skip mock sessions, but the consumer enforces it
+unconditionally.
+
+### Cutover safety check Plan 09 MUST add
+
+Before promoting staging → production, Plan 09's deploy script needs to
+refuse to cut over if any session row is BOTH `is_mock=1` and not
+terminal. The simplest SQL form, runnable via `pnpm db:exec`:
+
+```sql
+SELECT id, current_phase, started_at
+FROM bid_sessions
+WHERE is_mock = 1
+  AND current_phase NOT IN ('complete', 'archived');
+```
+
+If this returns any rows the deploy must abort — either complete or
+archive the rehearsal first (audit chain stays intact regardless). The
+production environment should also have a Worker-side guard that fails
+the readiness probe when this query is non-empty.
+
+### How to run a full rehearsal flow
+
+1. As admin, create a normal bid session via `POST /api/admin/bid-session`.
+2. Mark it mock: `POST /api/admin/rehearsal/<id>/mark-mock`.
+3. Open `/admin/bid?session=<id>` — the red MockBanner appears across the top.
+4. Start the session (`POST /api/admin/bid-session/<id>/start`).
+5. From `/admin/rehearsal`, click **Auto-bid 10 picks (first-eligible)** or
+   **Auto-bid 10 picks (AI)** to drive picks. The dashboard shows AI
+   cost per session in the rightmost column.
+6. Hit **Verify Audit Chain** — confirms the chain is intact across all
+   picks made during the rehearsal.
+7. Capture observations via **Submit Finding** (right rail) — text + an
+   optional R2 key of a screenshot uploaded out-of-band.
+8. To redo from clean: **Reset** wipes bids + A-Day picks + the DO state
+   but preserves the audit chain (legal record of what happened).
+9. When satisfied, complete or archive the session so the Plan 09 cutover
+   check (above) does not block the deploy.
+
+### Migrations
+
+- `0014_is_mock_column.sql` — `ALTER TABLE bid_sessions ADD COLUMN is_mock integer NOT NULL DEFAULT 0;`
+- `0015_rehearsal_findings.sql` — new `rehearsal_findings` table + index, FKs to `bid_sessions(ON DELETE CASCADE)` and `members(ON DELETE SET NULL)`.
+
+Run on staging before deploying the rehearsal burst:
+`pnpm --filter @mbfd/worker db:migrate:remote --env staging`.
+
+### Verification snapshot at the end of the burst
+
+- `@mbfd/worker`: 97 test files, 501 tests + 1 skip — all green.
+- `@mbfd/web`: 9 test files, 43 tests — all green.
+- `pnpm lint` — exit 0 (7 pre-existing eligibility-script `noConsole` warnings).
+
+### New watch-items (Rehearsal burst)
+
+| ID | Source | Watch-item | Action by |
+|----|--------|------------|-----------|
+| W42 | Task R5 | `getAiTopPick` in the auto-bid loop currently always returns `null` (falls back to `first_eligible`) because issuing a recursive `app.fetch` to `/api/admin/ai/advise-current` inside a Worker request risks unbounded fan-out. The dashboard's `Auto-bid 10 picks (AI)` button therefore behaves identically to the first-eligible variant. Plan 09 hardening: surface a banner explaining this, OR wire the AI call into the same handler that powers the AI advisory panel. | Plan 09 hardening |
+| W43 | Task R4 | The DO `resetMock()` method calls `state.storage.deleteAll()` on the native handle (cast bypasses the narrowed `DOStorageLike` typing). The cast is safe in production where the storage IS the real DO storage, but the DOStorageLike abstraction should grow a `deleteAll?(): Promise<void>` member to keep the type story honest. | Follow-up cleanup |
+| W44 | Task R5 | The auto-bid endpoint inserts bids directly into D1 (mirroring `bid-for-member`) rather than going through the BidSession DO. That keeps the rehearsal loop testable, but the DO's in-memory `fills` map and the D1 `bids` table will drift during a rehearsal. Reset-mock wipes both, so the only operator-visible failure mode is the DO's WebSocket clients showing a stale board until the next snapshot fetch. Plan 09 should validate this by spinning the rehearsal through a real WS-connected admin browser. | Plan 09 rehearsal |
+| W45 | Task R8 | The portal write-back guard re-queries D1 per message. For batches of 100 messages this is 100 D1 reads. If batches grow, batch the `is_mock` lookup with `IN (...)`. | Follow-up cleanup |
+| W46 | Task R10 | `/api/admin/ai/cost` without `session_id` falls back to `KV.list` if `ai_cost_cents_total` isn't populated. KV list is eventually consistent — the aggregate may lag the per-session values by ≤ 60s on staging. Plan 09 should backfill `ai_cost_cents_total` on every advisory write (single-counter update) to make the aggregate strictly consistent. | Plan 09 hardening |
+| W47 | Task R7 | MockBanner reads `is_mock` from `/api/board`, which is the DO snapshot enriched with one D1 query. For sessions that don't yet have a DO instance (mark-mock before start), the snapshot fetch may 404 — the banner falls back to `isMock=false`. Symptom: the banner doesn't appear until after `/start`. Either always-read D1 for `is_mock` OR have `mark-mock` initialise the DO. Recommend the former. | Plan 09 hardening |
