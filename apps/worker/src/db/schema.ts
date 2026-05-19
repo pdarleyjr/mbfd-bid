@@ -257,6 +257,7 @@ export const auditLog = sqliteTable(
         'credentials_import',
         'positions_clone',
         'rule_book_clone',
+        'dissent',
       ],
     }).notNull(),
     targetKind: text('target_kind'),

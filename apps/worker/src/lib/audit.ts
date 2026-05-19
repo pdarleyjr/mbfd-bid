@@ -20,7 +20,8 @@ export type AuditAction =
   | 'members_import'
   | 'credentials_import'
   | 'positions_clone'
-  | 'rule_book_clone';
+  | 'rule_book_clone'
+  | 'dissent';
 
 export type AuditEntry = {
   bidSessionId: string | null;
