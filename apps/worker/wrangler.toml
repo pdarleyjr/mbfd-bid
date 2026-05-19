@@ -26,7 +26,7 @@ id = "ce8afe4605464683a51bf6ae9c042c01"
 
 [[env.staging.kv_namespaces]]
 binding = "AI_KV"
-id = "REPLACE_AFTER_kv_create_ai"
+id = "cc5416d5a3e94cc5b35061f182bd0a84"
 
 [[env.staging.durable_objects.bindings]]
 name = "BID_SESSION"
@@ -36,14 +36,15 @@ class_name = "BidSessionDO"
 tag = "v1"
 new_classes = ["BidSessionDO"]
 
-# Plan 08: R2 buckets
+# Plan 08: R2 buckets (created 2026-05-17 — names omit -staging because the
+# buckets were provisioned without the suffix and are dedicated to this app).
 [[env.staging.r2_buckets]]
 binding = "R2_AUDIT"
-bucket_name = "mbfd-bid-audit-staging"
+bucket_name = "mbfd-bid-audit"
 
 [[env.staging.r2_buckets]]
 binding = "R2_EXPORTS"
-bucket_name = "mbfd-bid-exports-staging"
+bucket_name = "mbfd-bid-exports"
 
 # Plan 08: Queues
 [[env.staging.queues.producers]]
