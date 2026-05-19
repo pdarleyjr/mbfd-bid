@@ -24,12 +24,14 @@
     "db:seed:remote": "tsx seed/2026.ts --remote"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
     "@hono/zod-validator": "0.4.1",
     "@mbfd/eligibility": "workspace:^",
     "@mbfd/shared": "workspace:*",
     "bcryptjs": "^2.4.3",
     "drizzle-orm": "0.36.4",
     "drizzle-zod": "0.7.1",
+    "eventsource-parser": "^3.0.0",
     "hono": "4.6.5",
     "jose": "5.9.4",
     "papaparse": "5.5.3",
