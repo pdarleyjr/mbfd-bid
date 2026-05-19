@@ -510,4 +510,81 @@ router.get('/findings', async (c) => {
   });
 });
 
+/**
+ * GET /api/admin/rehearsal/findings-recent?limit=50
+ *
+ * Returns the most recent findings across ALL mock sessions, for the
+ * rehearsal dashboard. Admin-only.
+ */
+router.get('/findings-recent', async (c) => {
+  const limitParam = c.req.query('limit');
+  const parsedLimit = limitParam !== undefined ? Number.parseInt(limitParam, 10) : 50;
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
+  const db = getDb(c.env.DB);
+  const rows = await db
+    .select()
+    .from(rehearsalFindings)
+    .orderBy(desc(rehearsalFindings.createdAt))
+    .limit(limit)
+    .all();
+  return c.json({
+    findings: rows.map((r) => ({
+      id: r.id,
+      bidSessionId: r.bidSessionId,
+      createdAt: r.createdAt.toISOString(),
+      authorId: r.authorId,
+      note: r.note,
+      screenshotR2Key: r.screenshotR2Key,
+    })),
+  });
+});
+
+/**
+ * GET /api/admin/rehearsal/sessions
+ *
+ * Returns the list of mock sessions for the rehearsal dashboard, with
+ * minimal columns: id, bid_year, current_phase, current_bidder_id and the
+ * timestamp of the most recent bid. Admin-only.
+ */
+router.get('/sessions', async (c) => {
+  const db = getDb(c.env.DB);
+  const sessions = await db
+    .select({
+      id: bidSessions.id,
+      bidYear: bidSessions.bidYear,
+      currentPhase: bidSessions.currentPhase,
+      currentBidderId: bidSessions.currentBidderId,
+      isMock: bidSessions.isMock,
+    })
+    .from(bidSessions)
+    .where(eq(bidSessions.isMock, true))
+    .all();
+
+  // Last-pick lookup per session (best-effort).
+  const lastPicks = new Map<string, string>();
+  for (const s of sessions) {
+    const last = await db
+      .select({ pickedAt: bids.pickedAt })
+      .from(bids)
+      .where(eq(bids.bidSessionId, s.id))
+      .orderBy(desc(bids.pickedAt))
+      .limit(1)
+      .get();
+    if (last !== undefined) {
+      lastPicks.set(s.id, last.pickedAt.toISOString());
+    }
+  }
+
+  return c.json({
+    sessions: sessions.map((s) => ({
+      id: s.id,
+      bidYear: s.bidYear,
+      currentPhase: s.currentPhase,
+      currentBidderId: s.currentBidderId,
+      isMock: s.isMock,
+      lastPickedAtIso: lastPicks.get(s.id) ?? null,
+    })),
+  });
+});
+
 export default router;

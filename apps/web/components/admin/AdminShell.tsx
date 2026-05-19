@@ -17,6 +17,7 @@ const NAV_LINKS: { href: string; label: string; exact: boolean }[] = [
   { href: '/admin/sessions/new', label: 'New Session', exact: false },
   { href: '/admin/audit', label: 'Audit Log', exact: false },
   { href: '/admin/eligibility', label: 'Eligibility Preview', exact: false },
+  { href: '/admin/rehearsal', label: 'Rehearsal Console', exact: false },
 ];
 
 const IMPORT_LINKS = [
