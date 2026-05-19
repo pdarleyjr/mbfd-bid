@@ -10,6 +10,7 @@
     }
   },
   "scripts": {
+    "ai:codegen": "tsx src/ai/prompts/rulebook-codegen.ts",
     "dev": "wrangler dev --persist-to .wrangler/state --port 8787",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env production",

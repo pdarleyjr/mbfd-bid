@@ -33,6 +33,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm --filter @mbfd/shared build
+      - name: AI rulebook codegen
+        run: pnpm --filter @mbfd/worker ai:codegen
       - run: pnpm typecheck
 
   unit-and-integration:
@@ -49,6 +51,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: AI rulebook codegen
+        run: pnpm --filter @mbfd/worker ai:codegen
       - run: pnpm test
 
   e2e:
