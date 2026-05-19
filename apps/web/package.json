@@ -41,7 +41,7 @@
     "@cloudflare/workers-types": "4.20241011.0",
     "@fontsource-variable/plus-jakarta-sans": "5.1.0",
     "@fontsource-variable/source-sans-3": "5.1.0",
-    "@fontsource/jetbrains-mono": "5.1.1",
+    "@fontsource/jetbrains-mono": "5.2.8",
     "@mbfd/worker": "workspace:*",
     "@playwright/test": "1.60.0",
     "@types/node": "22.7.7",

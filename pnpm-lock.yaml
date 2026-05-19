@@ -89,8 +89,8 @@ importers:
         specifier: 5.1.0
         version: 5.1.0
       '@fontsource/jetbrains-mono':
-        specifier: 5.1.1
-        version: 5.1.1
+        specifier: 5.2.8
+        version: 5.2.8
       '@mbfd/worker':
         specifier: workspace:*
         version: link:../worker
@@ -1455,8 +1455,8 @@ packages:
   '@fontsource-variable/source-sans-3@5.1.0':
     resolution: {integrity: sha512-nGkPIJYgWeVZyIAKrJsBrTUyYRF+Dun4MGBh9k5ZAqCKJN3fCi37BLIjpXL5rApgvY3gjNBo8a+MbjBMuy75bg==}
 
-  '@fontsource/jetbrains-mono@5.1.1':
-    resolution: {integrity: sha512-5rwvmdQQpXev4LlBX1P+7h2dguu6iwW/9Npjde4+DEq+HgpVJI/7QY8DI1NVVFdvLtXZNP+vO2L/5BQED6FUhA==}
+  '@fontsource/jetbrains-mono@5.2.8':
+    resolution: {integrity: sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ==}
 
   '@hono/zod-validator@0.4.1':
     resolution: {integrity: sha512-I8LyfeJfvVmC5hPjZ2Iij7RjexlgSBT7QJudZ4JvNPLxn0JQ3sqclz2zydlwISAnw21D2n4LQ0nfZdoiv9fQQA==}
@@ -5026,7 +5026,7 @@ snapshots:
 
   '@fontsource-variable/source-sans-3@5.1.0': {}
 
-  '@fontsource/jetbrains-mono@5.1.1': {}
+  '@fontsource/jetbrains-mono@5.2.8': {}
 
   '@hono/zod-validator@0.4.1(hono@4.12.21)(zod@3.23.8)':
     dependencies:
