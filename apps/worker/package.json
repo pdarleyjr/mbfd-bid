@@ -40,7 +40,7 @@
     "jose": "5.9.4",
     "pako": "^2.1",
     "papaparse": "5.5.3",
-    "ulid": "2.4.0",
+    "ulid": "3.0.2",
     "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz",
     "zod": "3.23.8"
   },
