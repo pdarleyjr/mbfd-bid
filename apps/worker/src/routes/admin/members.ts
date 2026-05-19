@@ -2,14 +2,27 @@ import { MemberImportRowSchema } from '@mbfd/shared';
 import type { JwtPayload } from '@mbfd/shared';
 import { type SQL, and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { getDb } from '../../db/index.js';
-import { members } from '../../db/schema.js';
+import { credentials as credentialsTable, memberCredentials, members } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { parseCsv } from '../../lib/csv-parser.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
 type AdminEnv = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
+
+const MemberPatchSchema = z
+  .object({
+    rank: z.enum(['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF']).optional(),
+    bid_category: z.enum(['OFC', 'FF', 'EXCLUDED']).optional(),
+    rsc_seniority: z.number().int().nonnegative().optional(),
+    rank_seniority: z.number().int().nonnegative().nullable().optional(),
+    is_probationary: z.boolean().optional(),
+    credentials: z.array(z.string().min(1)).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'at least one field is required' });
 
 const router = new Hono<AdminEnv>();
 
@@ -120,6 +133,71 @@ router.get('/:id{\\d+}', async (c) => {
   }
 
   return c.json({ member });
+});
+
+// PATCH /api/admin/members/:id
+router.patch('/:id{\\d+}', async (c) => {
+  const id = Number(c.req.param('id'));
+  const raw = await c.req.json().catch(() => null);
+  const parsed = MemberPatchSchema.safeParse(raw);
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const patch = parsed.data;
+
+  const db = getDb(c.env.DB);
+  const existing = await db.select().from(members).where(eq(members.id, id)).get();
+  if (existing === undefined) return c.json({ error: 'not_found' }, 404);
+
+  // Resolve credential names -> ids; reject unknown names.
+  let resolvedCredIds: number[] | undefined;
+  if (patch.credentials !== undefined) {
+    const all = await db
+      .select({ id: credentialsTable.id, name: credentialsTable.name })
+      .from(credentialsTable)
+      .all();
+    const byName = new Map(all.map((r) => [r.name, r.id]));
+    const missing: string[] = [];
+    resolvedCredIds = [];
+    for (const name of patch.credentials) {
+      const cid = byName.get(name);
+      if (cid === undefined) missing.push(name);
+      else resolvedCredIds.push(cid);
+    }
+    if (missing.length > 0) {
+      return c.json({ error: 'unknown_credentials', missing }, 400);
+    }
+  }
+
+  const now = new Date();
+  const setObj: Partial<typeof members.$inferInsert> = { updatedAt: now };
+  if (patch.rank !== undefined) setObj.rank = patch.rank;
+  if (patch.bid_category !== undefined) setObj.bidCategory = patch.bid_category;
+  if (patch.rsc_seniority !== undefined) setObj.rscSeniority = patch.rsc_seniority;
+  if (patch.rank_seniority !== undefined) setObj.rankSeniority = patch.rank_seniority;
+  if (patch.is_probationary !== undefined) setObj.isProbationary = patch.is_probationary;
+
+  await db.update(members).set(setObj).where(eq(members.id, id));
+
+  if (resolvedCredIds !== undefined) {
+    await db.delete(memberCredentials).where(eq(memberCredentials.memberId, id));
+    for (const cid of resolvedCredIds) {
+      await db.insert(memberCredentials).values({ memberId: id, credentialId: cid });
+    }
+  }
+
+  const updated = await db.select().from(members).where(eq(members.id, id)).get();
+
+  await writeAuditLog(db, {
+    bidSessionId: null,
+    actorType: 'admin',
+    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+    action: 'override_cert',
+    targetKind: 'member',
+    targetId: String(id),
+    beforeState: existing,
+    afterState: updated,
+  });
+
+  return c.json({ member: updated });
 });
 
 export default router;
