@@ -127,21 +127,21 @@ export const bidSessions = sqliteTable('bid_sessions', {
   bidYear: integer('bid_year')
     .notNull()
     .references(() => bidYears.year, { onDelete: 'cascade' }),
-  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
-  pausedAt: integer('paused_at', { mode: 'timestamp' }),
-  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
+  pausedAt: integer('paused_at', { mode: 'timestamp_ms' }),
+  completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
   currentPhase: text('current_phase', {
     enum: ['config', 'position_bid', 'a_day_bid', 'paused', 'complete'],
   }).notNull(),
   currentBidderId: integer('current_bidder_id').references(() => members.id, {
     onDelete: 'restrict',
   }),
-  currentTurnStartedAt: integer('current_turn_started_at', { mode: 'timestamp' }),
+  currentTurnStartedAt: integer('current_turn_started_at', { mode: 'timestamp_ms' }),
   turnTimerSeconds: integer('turn_timer_seconds').notNull().default(180),
   expectedDurationDays: integer('expected_duration_days').notNull().default(2),
-  scheduledResumeAt: integer('scheduled_resume_at', { mode: 'timestamp' }),
+  scheduledResumeAt: integer('scheduled_resume_at', { mode: 'timestamp_ms' }),
   dayCount: integer('day_count').notNull().default(0),
-  frozenAt: integer('frozen_at', { mode: 'timestamp' }),
+  frozenAt: integer('frozen_at', { mode: 'timestamp_ms' }),
   freezeActorId: integer('freeze_actor_id').references(() => members.id, {
     onDelete: 'restrict',
   }),
