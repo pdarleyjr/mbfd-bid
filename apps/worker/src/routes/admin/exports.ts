@@ -4,21 +4,25 @@
 //   POST /print-token             Mint a 5-min HMAC token for Browserless
 //   POST /roster/:shift           Generate + upload roster PDF for shift
 //   POST /audit-csv               Stream audit_log → gzip → R2 + return signed URL
+//   GET  /roster-data             (W35) Print-token auth, no admin JWT — used by
+//                                  Browserless to render the roster RSC page
 //   GET  /:session_id             List exports for a session (R2 listing)
 //
 // Write endpoints require step-up auth (Plan 05 `requireStepUpAuth`).
-// Bucket name resolves from env.R2_EXPORTS_BUCKET_NAME with a sensible
-// per-environment default. Signed-URL credentials (R2_ACCESS_KEY_ID etc.)
-// come from Wrangler secrets — if missing the worker returns 503 so the
-// admin gets a clear error instead of an opaque crash.
+// `/roster-data` is intentionally UNAUTHENTICATED via admin JWT because
+// Browserless cannot carry one; authorization comes from the HMAC
+// print-token bound to {kind, shift, session_id, exp}.
 
 import type { JwtPayload } from '@mbfd/shared';
+import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
+import { getDb } from '../../db/index.js';
+import { bids, members, positions } from '../../db/schema.js';
 import { auditCsvDbFromD1 } from '../../exports/audit-csv-db.js';
 import { exportAuditCsv } from '../../exports/audit-csv.js';
-import { mintPrintToken } from '../../exports/print-token.js';
+import { mintPrintToken, verifyPrintToken } from '../../exports/print-token.js';
 import { generateRosterPdf } from '../../exports/roster-pdf.js';
 import { createSignedR2Url } from '../../exports/signed-url.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
@@ -28,6 +32,125 @@ import { requireAdmin } from './middleware.js';
 type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
 const router = new Hono<Env>();
+
+// W35 — Print-token-authorized roster-data endpoint. MUST be declared
+// BEFORE `router.use('*', requireAdmin)` so the admin-JWT guard is bypassed.
+// Authorization is the HMAC print-token bound to {kind=roster, shift,
+// session_id, exp}.
+const RosterShiftSchema = z.enum(['A', 'B', 'C', 'D']);
+router.get('/roster-data', async (c) => {
+  const sessionId = c.req.query('session_id');
+  const shiftRaw = c.req.query('shift');
+  const token = c.req.query('token');
+  if (!sessionId || !shiftRaw || !token) {
+    return c.json({ error: 'missing_query', required: ['session_id', 'shift', 'token'] }, 400);
+  }
+  const shiftParsed = RosterShiftSchema.safeParse(shiftRaw);
+  if (!shiftParsed.success) {
+    return c.json({ error: 'invalid_shift', shift: shiftRaw }, 400);
+  }
+  const shift = shiftParsed.data;
+  const secret = c.env.PRINT_TOKEN_SECRET ?? c.env.JWT_SIGNING_KEY;
+  const ok = verifyPrintToken(token, secret, {
+    kind: 'roster',
+    shift,
+    session_id: sessionId,
+  });
+  if (!ok) {
+    return c.json({ error: 'invalid_print_token' }, 401);
+  }
+
+  const db = getDb(c.env.DB);
+  // Load all positions on this shift (joined to bids if a member picked them).
+  const allPositions = await db.select().from(positions).where(eq(positions.shift, shift)).all();
+  const allBids = await db.select().from(bids).where(eq(bids.bidSessionId, sessionId)).all();
+  const bidByPosition = new Map<string, (typeof allBids)[number]>();
+  for (const b of allBids) bidByPosition.set(b.positionId, b);
+
+  // Load members for resolved bids in one batch.
+  const memberIds = [...new Set(allBids.map((b) => b.memberId))];
+  const memberRows = memberIds.length
+    ? await Promise.all(
+        memberIds.map((id) => db.select().from(members).where(eq(members.id, id)).get()),
+      )
+    : [];
+  const memberById = new Map<number, NonNullable<(typeof memberRows)[number]>>();
+  for (const m of memberRows) {
+    if (m) memberById.set(m.id, m);
+  }
+
+  // Group by station.
+  const stationMap = new Map<
+    string,
+    Array<{
+      position_id: string;
+      unit: string;
+      rank: string;
+      member_name: string | null;
+      rsc_seniority: number | null;
+    }>
+  >();
+  const flatMembers: Array<{
+    memberId: number;
+    employeeId: string;
+    name: string;
+    rank: string;
+    positionId: string;
+    station: string;
+    unit: string;
+  }> = [];
+
+  for (const p of allPositions) {
+    const bid = bidByPosition.get(p.id);
+    const member = bid ? memberById.get(bid.memberId) : null;
+    const memberName = member ? `${member.firstName} ${member.lastName}` : null;
+    const rscSeniority = member ? member.rscSeniority : null;
+    const row = {
+      position_id: p.id,
+      unit: p.unit,
+      rank: p.rankRequired,
+      member_name: memberName,
+      rsc_seniority: rscSeniority,
+    };
+    const existing = stationMap.get(p.station);
+    if (existing) {
+      existing.push(row);
+    } else {
+      stationMap.set(p.station, [row]);
+    }
+    if (member && bid) {
+      flatMembers.push({
+        memberId: member.id,
+        employeeId: member.employeeId,
+        name: memberName ?? '',
+        rank: member.rank,
+        positionId: bid.positionId,
+        station: p.station,
+        unit: p.unit,
+      });
+    }
+  }
+
+  const stations = [...stationMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([station, rows]) => ({
+      station,
+      rows: rows.sort((a, b) => a.position_id.localeCompare(b.position_id)),
+    }));
+
+  return c.json({
+    year: new Date().getUTCFullYear(),
+    shift,
+    station_count: stations.length,
+    position_count: allPositions.length,
+    stations,
+    // W35 spec — flat members array for direct consumers that don't need
+    // the station-grouped print layout.
+    members: flatMembers,
+    generatedAt: new Date().toISOString(),
+  });
+});
+
 router.use('*', requireAdmin);
 
 function printSecretOf(env: WorkerEnv): string {
