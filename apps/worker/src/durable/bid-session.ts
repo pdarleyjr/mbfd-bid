@@ -249,12 +249,18 @@ export class BidSessionDO implements DurableObject {
     const emitter = this.getEmitter();
     if (!emitter) return; // emitter disabled (no AUDIT_SIGNING_PRIVKEY) — degrade gracefully
     await emitter.emit(this.draftToEvent(draft));
+    // W34 — arm the timeout flush. If the emit just triggered a threshold
+    // flush (100 events), pendingSessions() is empty and we don't really
+    // need an alarm — but we set it cheaply and the alarm() callback
+    // will be a no-op via flushStale.
+    await this.armAuditFlushAlarm();
   }
 
   private async emitDraftToChain(draft: AuditRowDraft): Promise<void> {
     const emitter = this.getEmitter();
     if (!emitter) return;
     await emitter.emit(this.draftToEvent(draft));
+    await this.armAuditFlushAlarm();
   }
 
   private draftToEvent(draft: AuditRowDraft): AuditEvent {
@@ -293,6 +299,62 @@ export class BidSessionDO implements DurableObject {
       now: () => Date.now(),
     });
     return this.emitter;
+  }
+
+  /**
+   * W34 — Arm a DO alarm to flush the audit chain in ~30s.
+   *
+   * Called after every `emitter.emit(...)` that buffers events (i.e. didn't
+   * already trigger a threshold flush). The Worker-level 1-minute cron
+   * can't reach per-DO emitter state, so we delegate stale-flush duty to
+   * the DO itself.
+   *
+   * Best-effort: in unit tests `state.storage.setAlarm` doesn't exist on
+   * the stubbed storage; we no-op silently. The threshold flush (100 events)
+   * still works synchronously inside `emitter.emit`, so durability is
+   * preserved even if the alarm path is unreachable.
+   */
+  private async armAuditFlushAlarm(): Promise<void> {
+    const storage = this.state.storage as unknown as {
+      setAlarm?: (whenMs: number) => Promise<void>;
+      getAlarm?: () => Promise<number | null>;
+    };
+    if (typeof storage.setAlarm !== 'function') return;
+    try {
+      const desired = Date.now() + 30_000;
+      const current =
+        typeof storage.getAlarm === 'function' ? await storage.getAlarm() : null;
+      // If an alarm is already pending and earlier than `desired`, keep it —
+      // the existing alarm will fire first and re-arm if there's still work.
+      if (current !== null && current <= desired) return;
+      await storage.setAlarm(desired);
+    } catch (err) {
+      console.error('[BidSessionDO] setAlarm failed (best-effort)', err);
+    }
+  }
+
+  /**
+   * W34 — DO alarm callback. Cloudflare invokes this at the time we set via
+   * `state.storage.setAlarm`. We flush any stale chunks (buffer age >= 30s)
+   * and re-arm the alarm if there's still pending work waiting to age out.
+   *
+   * Safe to call repeatedly; `flushStale` is a no-op when no buffers have
+   * crossed the timeout threshold.
+   */
+  async alarm(): Promise<void> {
+    const emitter = this.getEmitter();
+    if (!emitter) return;
+    try {
+      await emitter.flushStale();
+    } catch (err) {
+      console.error('[BidSessionDO] alarm flushStale failed', err);
+    }
+    // If anything still has pending events, re-arm so the next age-out gets
+    // its flush. The chunker only flushes >=30s-old buffers, so the work
+    // left here is "events buffered after the last alarm armed".
+    if (emitter.pendingSessions().length > 0) {
+      await this.armAuditFlushAlarm();
+    }
   }
 
   async fetch(req: Request): Promise<Response> {
