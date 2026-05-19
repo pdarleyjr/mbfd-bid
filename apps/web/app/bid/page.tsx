@@ -6,7 +6,6 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { BidBoard } from './_components/BidBoard';
 import { BoardHeader } from './_components/BoardHeader';
-import { PositionGrid } from './_components/PositionGrid';
 
 export const runtime = 'edge';
 
@@ -19,6 +18,11 @@ interface BoardSnapshot {
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
 }
 
+interface EligibilityResponse {
+  memberId: number;
+  positions: Array<{ positionId: string; eligible: boolean }>;
+}
+
 async function loadBoard(jwt: string): Promise<BoardSnapshot> {
   const workerBase = cfEnv('WORKER_BASE_URL') ?? 'http://localhost:8787';
   const res = await fetch(`${workerBase}/api/board?bidSessionId=01HSESS`, {
@@ -27,6 +31,17 @@ async function loadBoard(jwt: string): Promise<BoardSnapshot> {
   });
   if (!res.ok) throw new Error(`Board fetch failed: ${res.status}`);
   return (await res.json()) as BoardSnapshot;
+}
+
+async function loadEligibility(jwt: string): Promise<string[]> {
+  const workerBase = cfEnv('WORKER_BASE_URL') ?? 'http://localhost:8787';
+  const res = await fetch(`${workerBase}/api/me/eligibility`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  const body = (await res.json()) as EligibilityResponse;
+  return body.positions.filter((p) => p.eligible).map((p) => p.positionId);
 }
 
 export default async function BidPage() {
@@ -38,7 +53,7 @@ export default async function BidPage() {
   if (!signingKey) throw new Error('JWT_SIGNING_KEY not set');
   const claims = await verifyJwt(jwt, signingKey);
 
-  const board = await loadBoard(jwt);
+  const [board, eligiblePositionIds] = await Promise.all([loadBoard(jwt), loadEligibility(jwt)]);
 
   return (
     <main className="min-h-screen bg-stone-50">
@@ -47,12 +62,13 @@ export default async function BidPage() {
         currentPhase={board.currentPhase}
         meMemberId={claims.sub}
       />
-      <PositionGrid fills={board.fills} />
       <BidBoard
         bidSessionId={board.bidSessionId}
         initialSeq={board.lastSeq}
         meMemberId={claims.sub}
         jwt={jwt}
+        initialFills={board.fills}
+        eligiblePositionIds={eligiblePositionIds}
       />
     </main>
   );
