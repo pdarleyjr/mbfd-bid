@@ -37,3 +37,6 @@ export { initADayState, applyPick, nextBidder, isPhase2Complete } from './state.
 export type { InitADayStateInput } from './state.js';
 
 export type { Member } from '@mbfd/eligibility';
+
+export { phase2BidOrder } from './order.js';
+export type { Phase2BidOrderInput } from './order.js';
