@@ -13,10 +13,11 @@ const router = new Hono<Env>();
 router.use('*', requireAdmin);
 
 router.get('/export', async (c) => {
-  const sessionId = c.req.query('bid_session_id');
+  const sessionIdRaw = c.req.query('bid_session_id');
   const format = c.req.query('format') ?? 'csv';
-  if (sessionId === undefined) return c.json({ error: 'bid_session_id_required' }, 400);
+  if (sessionIdRaw === undefined) return c.json({ error: 'bid_session_id_required' }, 400);
   if (format !== 'csv') return c.json({ error: 'unsupported_format', format }, 400);
+  const sessionId: string = sessionIdRaw;
 
   const db = getDb(c.env.DB);
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
