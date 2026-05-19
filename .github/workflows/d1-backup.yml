@@ -44,7 +44,7 @@ jobs:
         env: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', inputs.env)) || fromJson('["staging", "production"]') }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with: { version: '${{ env.PNPM_VERSION }}' }
       - uses: actions/setup-node@v4
         with:
