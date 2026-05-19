@@ -68,6 +68,13 @@ r.get('/advise-current', async (c) => {
   return c.json(envelope);
 });
 
+r.get('/cost', async (c) => {
+  const sessionId = c.req.query('session_id');
+  if (!sessionId) return c.json({ error: 'session_id_required' }, 400);
+  const used = Number((await c.env.AI_KV.get(`ai_cost_cents:${sessionId}`)) ?? 0);
+  return c.json({ cost_cents: used, cap_cents: c.env.AI_BUDGET_CAP_CENTS });
+});
+
 r.get('/forecast', async (c) => {
   const sessionId = c.req.query('session_id');
   if (!sessionId) return c.json({ error: 'session_id_required' }, 400);

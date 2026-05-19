@@ -3,6 +3,7 @@ import { cfEnv } from '../../../lib/cf-env';
 import { JWT_COOKIE_NAME } from '../../../lib/cookies';
 import { formatET } from '../../../lib/et-time';
 import { requireAdmin } from '../../../lib/require-admin';
+import { AIDissentMarker } from '../bid/_components/AIDissentMarker';
 
 export const runtime = 'edge';
 
@@ -16,6 +17,7 @@ interface AuditEntry {
   targetKind: string | null;
   targetId: string | null;
   reason: string | null;
+  aiAdvisoryId: string | null;
   createdAt: number;
 }
 
@@ -37,6 +39,7 @@ const AUDIT_ACTIONS = [
   'credentials_import',
   'positions_clone',
   'rule_book_clone',
+  'dissent',
 ] as const;
 
 export default async function AuditPage({
@@ -144,7 +147,10 @@ export default async function AuditPage({
                 {e.actorType}
                 {e.actorId !== null ? ` #${e.actorId}` : ''}
               </td>
-              <td className="p-2 font-mono">{e.action}</td>
+              <td className="p-2 font-mono">
+                {e.action}
+                {e.action === 'dissent' && <AIDissentMarker aiAdvisoryId={e.aiAdvisoryId} />}
+              </td>
               <td className="p-2">
                 {e.targetKind !== null ? `${e.targetKind}:${e.targetId ?? ''}` : '—'}
               </td>

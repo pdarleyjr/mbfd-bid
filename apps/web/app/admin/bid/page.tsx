@@ -6,6 +6,8 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AIAdvisoryPanel } from './_components/AIAdvisoryPanel';
 import { AIAskDeepDialog } from './_components/AIAskDeepDialog';
+import { AICostPill } from './_components/AICostPill';
+import { AIForecastBanner } from './_components/AIForecastBanner';
 import { AdminBoard } from './_components/AdminBoard';
 
 export const runtime = 'edge';
@@ -49,11 +51,13 @@ export default async function AdminBidPage() {
         <div className="flex items-baseline gap-3 font-display text-2xl text-stone-900">
           <span>MBFD 2026 Bid — Admin Console</span>
           <span className="text-sm font-medium text-stone-600">Phase: {board.currentPhase}</span>
+          <AICostPill bidSessionId={board.bidSessionId} />
         </div>
         <p className="mt-2 text-sm tabular-nums text-stone-700">
           Active bidder: <span className="font-bold">{board.currentBidderId ?? '—'}</span>
         </p>
       </header>
+      <AIForecastBanner bidSessionId={board.bidSessionId} />
       <div className="flex">
         <div className="flex-1">
           <AdminBoard
