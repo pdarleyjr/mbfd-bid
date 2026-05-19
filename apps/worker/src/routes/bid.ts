@@ -7,9 +7,10 @@ import {
   computeAllMeters,
 } from '@mbfd/a-day';
 import { SubmitADayPickRequestSchema } from '@mbfd/shared';
+import { eq } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { getDb } from '../db/index.js';
-import { members as membersTable } from '../db/schema.js';
+import { bidSessions as bidSessionsTable, members as membersTable } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
 import { validateEnv } from '../lib/env.js';
@@ -61,7 +62,23 @@ bid.get('/board', async (c) => {
   const stub = c.env.BID_SESSION.get(doId);
   const snap = await stub.fetch(`${new URL(c.req.url).origin}/snapshot`);
   const body = (await snap.json()) as Record<string, unknown>;
-  return c.json(body);
+  // Plan 09 / Rehearsal Tooling — surface `is_mock` so the page can render
+  // MockBanner without a second round-trip. Failure to read the session row
+  // (e.g. local dev without seeded data) leaves `is_mock=false` — the live
+  // banner only appears when the column explicitly says so.
+  let isMock = false;
+  try {
+    const db = getDb(c.env.DB);
+    const session = await db
+      .select({ isMock: bidSessionsTable.isMock })
+      .from(bidSessionsTable)
+      .where(eq(bidSessionsTable.id, bidSessionId))
+      .get();
+    isMock = session?.isMock === true;
+  } catch {
+    // best-effort — banner stays off if the lookup fails
+  }
+  return c.json({ ...body, isMock, bidSessionId });
 });
 
 bid.get('/bid/state', async (c) => {

@@ -4,6 +4,7 @@ import { verifyJwt } from '@/lib/jwt';
 import { requirePin } from '@/lib/require-pin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { MockBanner } from '../_components/MockBanner';
 import { BidBoard } from './_components/BidBoard';
 import { BoardHeader } from './_components/BoardHeader';
 
@@ -16,6 +17,7 @@ interface BoardSnapshot {
   currentBidderId: number | null;
   fills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
+  isMock?: boolean;
 }
 
 interface EligibilityResponse {
@@ -57,6 +59,7 @@ export default async function BidPage() {
 
   return (
     <main className="min-h-screen bg-stone-50">
+      <MockBanner isMock={board.isMock === true} sessionId={board.bidSessionId} />
       <BoardHeader
         currentBidderId={board.currentBidderId}
         currentPhase={board.currentPhase}

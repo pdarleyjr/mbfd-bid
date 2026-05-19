@@ -4,6 +4,7 @@ import { verifyJwt } from '@/lib/jwt';
 import { requireAdmin } from '@/lib/require-admin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { MockBanner } from '../../_components/MockBanner';
 import { AIAdvisoryPanel } from './_components/AIAdvisoryPanel';
 import { AIAskDeepDialog } from './_components/AIAskDeepDialog';
 import { AICostPill } from './_components/AICostPill';
@@ -19,6 +20,7 @@ interface BoardSnapshot {
   currentBidderId: number | null;
   fills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
+  isMock?: boolean;
 }
 
 async function loadBoard(jwt: string): Promise<BoardSnapshot> {
@@ -44,6 +46,7 @@ export default async function AdminBidPage() {
 
   return (
     <div className="min-h-screen bg-stone-50">
+      <MockBanner isMock={board.isMock === true} sessionId={board.bidSessionId} />
       <header
         data-testid="bid-board-header"
         className="border-b border-stone-200 bg-white px-6 py-4"
