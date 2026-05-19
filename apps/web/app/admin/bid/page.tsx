@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/require-admin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AIAdvisoryPanel } from './_components/AIAdvisoryPanel';
+import { AIAskDeepDialog } from './_components/AIAskDeepDialog';
 import { AdminBoard } from './_components/AdminBoard';
 
 export const runtime = 'edge';
@@ -63,7 +64,12 @@ export default async function AdminBidPage() {
             initialFills={board.fills}
           />
         </div>
-        <AIAdvisoryPanel bidSessionId={board.bidSessionId} turnTimerSeconds={180} />
+        <div className="flex flex-col">
+          <AIAdvisoryPanel bidSessionId={board.bidSessionId} turnTimerSeconds={180} />
+          <div className="border-l border-stone-200 bg-white p-4 w-[360px]">
+            <AIAskDeepDialog bidSessionId={board.bidSessionId} />
+          </div>
+        </div>
       </div>
     </div>
   );
