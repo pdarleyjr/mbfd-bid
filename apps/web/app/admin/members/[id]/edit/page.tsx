@@ -30,12 +30,39 @@ export default async function MemberEditPage({
   const cookieStore = await cookies();
   const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value;
   const baseUrl = getWorkerBase();
-  const res = await fetch(`${baseUrl}/api/admin/members/${id}`, {
-    headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-    cache: 'no-store',
-  });
-  if (res.status === 404) notFound();
-  const { member } = (await res.json()) as MemberResponse;
+
+  let member: MemberResponse['member'] | null = null;
+  let fetchError: string | null = null;
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/members/${id}`, {
+      headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+      cache: 'no-store',
+    });
+    if (res.status === 404) notFound();
+    if (!res.ok) {
+      fetchError = `Worker returned ${res.status}`;
+    } else {
+      const body = (await res.json()) as { member?: MemberResponse['member'] };
+      member = body.member ?? null;
+      if (member === null) fetchError = 'Worker response missing member';
+    }
+  } catch (e) {
+    fetchError = e instanceof Error ? e.message : 'fetch failed';
+  }
+
+  if (member === null) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <h1 className="font-heading text-2xl text-white">Edit member</h1>
+        <div className="mt-6 rounded-lg border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-200">
+          Could not load member #{id}: {fetchError ?? 'unknown error'}.{' '}
+          <span className="text-amber-300">
+            Check the Worker logs and JWT validity, then reload this page.
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl">

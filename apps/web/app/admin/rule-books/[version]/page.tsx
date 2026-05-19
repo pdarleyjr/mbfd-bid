@@ -25,11 +25,40 @@ export default async function RuleBookDetailPage({
   const cookieStore = await cookies();
   const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value;
   const baseUrl = getWorkerBase();
-  const res = await fetch(`${baseUrl}/api/admin/rule-books`, {
-    headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-    cache: 'no-store',
-  });
-  const { rule_books } = (await res.json()) as { rule_books: RuleBook[] };
+
+  let rule_books: RuleBook[] = [];
+  let fetchError: string | null = null;
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/rule-books`, {
+      headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      fetchError = `Worker returned ${res.status}`;
+    } else {
+      const body = (await res.json()) as { rule_books?: RuleBook[] };
+      rule_books = body.rule_books ?? [];
+    }
+  } catch (e) {
+    fetchError = e instanceof Error ? e.message : 'fetch failed';
+  }
+
+  if (fetchError !== null) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <h1 className="font-heading text-2xl text-white">
+          Rule book <span className="font-mono">{version}</span>
+        </h1>
+        <div className="mt-6 rounded-lg border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-200">
+          Could not load rule books: {fetchError}.{' '}
+          <span className="text-amber-300">
+            Check the Worker logs and JWT validity, then reload this page.
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   const book = rule_books.find((b) => b.version === version);
   if (book === undefined) notFound();
 

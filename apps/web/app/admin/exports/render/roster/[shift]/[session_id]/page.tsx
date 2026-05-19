@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation';
 import type { ReactElement } from 'react';
 
 import { verifyPrintToken } from '@/lib/print-token';
+import { getWorkerBase } from '@/lib/worker-base';
 
 import './print.css';
 
@@ -50,13 +51,17 @@ async function fetchRoster(
   shift: Shift,
   token: string,
 ): Promise<RosterPayload | null> {
-  const base = process.env.WORKER_BASE_URL ?? 'https://api.staging.bid.mbfdhub.com';
+  const base = getWorkerBase();
   const url = `${base}/api/admin/exports/roster-data?session_id=${encodeURIComponent(
     sessionId,
   )}&shift=${shift}&token=${encodeURIComponent(token)}`;
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) return null;
-  return (await res.json()) as RosterPayload;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return (await res.json()) as RosterPayload;
+  } catch {
+    return null;
+  }
 }
 
 export default async function RosterRenderPage({

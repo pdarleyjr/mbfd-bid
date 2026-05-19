@@ -24,7 +24,8 @@ export default function AdminError({
       <p className="mt-2 text-red-200">
         The admin page failed to render. This is almost always a Worker fetch returning an
         unexpected status (401, 500) or a missing binding. Use the digest below to look up the
-        request in <code className="rounded bg-red-900 px-1">wrangler tail mbfd-bid-worker-staging</code>.
+        request in{' '}
+        <code className="rounded bg-red-900 px-1">wrangler tail mbfd-bid-worker-staging</code>.
       </p>
       <dl className="mt-4 space-y-1 font-mono text-xs">
         <div>

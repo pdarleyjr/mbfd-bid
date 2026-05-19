@@ -24,14 +24,23 @@ interface BoardSnapshot {
   isMock?: boolean;
 }
 
-async function loadBoard(jwt: string): Promise<BoardSnapshot> {
+async function loadBoard(
+  jwt: string,
+): Promise<{ board: BoardSnapshot | null; fetchError: string | null }> {
   const workerBase = getWorkerBase();
-  const res = await fetch(`${workerBase}/api/board?bidSessionId=01HSESS`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`Board fetch failed: ${res.status}`);
-  return (await res.json()) as BoardSnapshot;
+  try {
+    const res = await fetch(`${workerBase}/api/board?bidSessionId=01HSESS`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      return { board: null, fetchError: `Worker returned ${res.status}` };
+    }
+    const board = (await res.json()) as BoardSnapshot;
+    return { board, fetchError: null };
+  } catch (e) {
+    return { board: null, fetchError: e instanceof Error ? e.message : 'fetch failed' };
+  }
 }
 
 export default async function AdminBidPage() {
@@ -43,7 +52,23 @@ export default async function AdminBidPage() {
   if (!signingKey) throw new Error('JWT_SIGNING_KEY not set');
   const claims = await verifyJwt(jwt, signingKey);
 
-  const board = await loadBoard(jwt);
+  const { board, fetchError } = await loadBoard(jwt);
+
+  if (fetchError !== null || board === null) {
+    return (
+      <div className="min-h-screen bg-stone-50 p-6">
+        <header className="mb-4">
+          <h1 className="font-display text-2xl text-stone-900">MBFD 2026 Bid — Admin Console</h1>
+        </header>
+        <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
+          Could not load the bid board: {fetchError ?? 'no data'}.{' '}
+          <span className="text-amber-800">
+            Check the Worker logs and JWT validity, then reload this page.
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-stone-50">

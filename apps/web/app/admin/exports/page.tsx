@@ -2,6 +2,7 @@
 
 import type { ReactElement } from 'react';
 
+import { getWorkerBase } from '@/lib/worker-base';
 import { ExportCard } from './_components/ExportCard';
 import { ExportTriggerButton } from './_components/ExportTriggerButton';
 import { PortalSyncStatus } from './_components/PortalSyncStatus';
@@ -29,24 +30,42 @@ interface PortalBidRow {
   portalSyncAttempts: number;
 }
 
-async function fetchExports(sid: string): Promise<{ exports: ExportRow[] }> {
-  const base = process.env.WORKER_BASE_URL ?? 'https://api.staging.bid.mbfdhub.com';
-  const res = await fetch(`${base}/api/admin/exports/${encodeURIComponent(sid)}`, {
-    cache: 'no-store',
-    credentials: 'include',
-  });
-  if (!res.ok) return { exports: [] };
-  return (await res.json()) as { exports: ExportRow[] };
+async function fetchExports(
+  sid: string,
+): Promise<{ exports: ExportRow[]; fetchError: string | null }> {
+  const base = getWorkerBase();
+  try {
+    const res = await fetch(`${base}/api/admin/exports/${encodeURIComponent(sid)}`, {
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      return { exports: [], fetchError: `Worker returned ${res.status}` };
+    }
+    const body = (await res.json()) as { exports?: ExportRow[] };
+    return { exports: body.exports ?? [], fetchError: null };
+  } catch (e) {
+    return { exports: [], fetchError: e instanceof Error ? e.message : 'fetch failed' };
+  }
 }
 
-async function fetchPortalStatus(sid: string): Promise<{ bids: PortalBidRow[] }> {
-  const base = process.env.WORKER_BASE_URL ?? 'https://api.staging.bid.mbfdhub.com';
-  const res = await fetch(`${base}/api/admin/portal-status/${encodeURIComponent(sid)}`, {
-    cache: 'no-store',
-    credentials: 'include',
-  });
-  if (!res.ok) return { bids: [] };
-  return (await res.json()) as { bids: PortalBidRow[] };
+async function fetchPortalStatus(
+  sid: string,
+): Promise<{ bids: PortalBidRow[]; fetchError: string | null }> {
+  const base = getWorkerBase();
+  try {
+    const res = await fetch(`${base}/api/admin/portal-status/${encodeURIComponent(sid)}`, {
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      return { bids: [], fetchError: `Worker returned ${res.status}` };
+    }
+    const body = (await res.json()) as { bids?: PortalBidRow[] };
+    return { bids: body.bids ?? [], fetchError: null };
+  } catch (e) {
+    return { bids: [], fetchError: e instanceof Error ? e.message : 'fetch failed' };
+  }
 }
 
 export default async function ExportsPage({ searchParams }: PageProps): Promise<ReactElement> {
@@ -59,7 +78,10 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
       </main>
     );
   }
-  const [exportsList, portalList] = await Promise.all([fetchExports(sid), fetchPortalStatus(sid)]);
+  const [exportsResult, portalResult] = await Promise.all([
+    fetchExports(sid),
+    fetchPortalStatus(sid),
+  ]);
 
   return (
     <main className="admin-exports">
@@ -77,16 +99,50 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
 
       <section>
         <h2>Available exports</h2>
-        {exportsList.exports.length === 0 ? (
+        {exportsResult.fetchError !== null && (
+          <div
+            style={{
+              border: '1px solid #b45309',
+              background: 'rgba(120, 53, 15, 0.2)',
+              color: '#fde68a',
+              padding: '0.75rem 1rem',
+              borderRadius: '0.5rem',
+              fontSize: '0.875rem',
+            }}
+          >
+            Could not load exports: {exportsResult.fetchError}. Check the Worker logs and JWT
+            validity.
+          </div>
+        )}
+        {exportsResult.fetchError === null && exportsResult.exports.length === 0 ? (
           <p>No exports yet for this session.</p>
         ) : (
-          exportsList.exports.map((e) => <ExportCard key={e.r2Key} entry={e} sessionId={sid} />)
+          exportsResult.exports.map((e) => <ExportCard key={e.r2Key} entry={e} sessionId={sid} />)
         )}
       </section>
 
       <section>
         <h2>Portal sync status</h2>
-        <PortalSyncStatus bids={portalList.bids} />
+        {portalResult.fetchError !== null && (
+          <div
+            style={{
+              border: '1px solid #b45309',
+              background: 'rgba(120, 53, 15, 0.2)',
+              color: '#fde68a',
+              padding: '0.75rem 1rem',
+              borderRadius: '0.5rem',
+              fontSize: '0.875rem',
+            }}
+          >
+            Could not load portal sync status: {portalResult.fetchError}. Check the Worker logs and
+            JWT validity.
+          </div>
+        )}
+        {portalResult.fetchError === null && portalResult.bids.length === 0 ? (
+          <p>No bids tracked for this session yet.</p>
+        ) : (
+          <PortalSyncStatus bids={portalResult.bids} />
+        )}
       </section>
     </main>
   );

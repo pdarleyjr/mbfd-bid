@@ -59,11 +59,24 @@ export default async function AuditPage({
   if (sp.from !== undefined && sp.from !== '') qs.set('from', sp.from);
   if (sp.to !== undefined && sp.to !== '') qs.set('to', sp.to);
 
-  const res = await fetch(`${baseUrl}/api/admin/audit?${qs.toString()}`, {
-    headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-    cache: 'no-store',
-  });
-  const { entries, total } = (await res.json()) as { entries: AuditEntry[]; total: number };
+  let entries: AuditEntry[] = [];
+  let total = 0;
+  let fetchError: string | null = null;
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/audit?${qs.toString()}`, {
+      headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      fetchError = `Worker returned ${res.status}`;
+    } else {
+      const body = (await res.json()) as { entries?: AuditEntry[]; total?: number };
+      entries = body.entries ?? [];
+      total = body.total ?? 0;
+    }
+  } catch (e) {
+    fetchError = e instanceof Error ? e.message : 'fetch failed';
+  }
 
   const exportQs = new URLSearchParams(qs);
   exportQs.set('format', 'csv');
@@ -123,6 +136,19 @@ export default async function AuditPage({
         </button>
       </form>
 
+      {fetchError && (
+        <div className="mt-6 rounded-lg border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-200">
+          Could not load audit log: {fetchError}.{' '}
+          <span className="text-amber-300">
+            Check the Worker logs and JWT validity. The page is rendering with an empty list.
+          </span>
+        </div>
+      )}
+      {!fetchError && entries.length === 0 && (
+        <div className="mt-6 rounded-lg border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300">
+          No audit entries match the current filter.
+        </div>
+      )}
       <p className="mt-4 text-sm text-slate-400">
         Showing {entries.length} of {total} matches.
       </p>
