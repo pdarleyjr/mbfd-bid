@@ -105,4 +105,58 @@ describe('POST /api/auth/login', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  // Plan 09 Task 3 — rate-limit gate.
+  it('returns 429 with Retry-After when the per-IP limit is exceeded', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(null, { status: 401 }),
+    );
+    const app = new Hono<{ Bindings: WorkerEnv }>();
+    app.route('/api/auth', auth);
+
+    // Wire a real Map-backed KV stub.
+    const store = new Map<string, string>();
+    const kv = {
+      get: async (k: string) => store.get(k) ?? null,
+      put: async (k: string, v: string) => {
+        store.set(k, v);
+      },
+      delete: async () => {},
+      list: async () => ({ keys: [] }),
+      getWithMetadata: async () => ({ value: null, metadata: null }),
+    } as unknown as WorkerEnv['KV'];
+    const env: WorkerEnv = { ...mkEnv(), KV: kv };
+
+    // First 5 attempts: 401 from portal (rate limit allows them through).
+    for (let i = 0; i < 5; i++) {
+      const r = await app.request(
+        '/api/auth/login',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': '198.51.100.7' },
+          body: JSON.stringify({ employee_id: '20731', password: 'wrong-pw' }),
+        },
+        env,
+      );
+      expect(r.status).toBe(401);
+    }
+
+    // 6th attempt: 429 with Retry-After header.
+    const blocked = await app.request(
+      '/api/auth/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': '198.51.100.7' },
+        body: JSON.stringify({ employee_id: '20731', password: 'wrong-pw' }),
+      },
+      env,
+    );
+    expect(blocked.status).toBe(429);
+    const retryAfter = blocked.headers.get('Retry-After');
+    expect(retryAfter).not.toBeNull();
+    expect(Number(retryAfter)).toBeGreaterThan(0);
+    const body = (await blocked.json()) as { error: string; scope: string };
+    expect(body.error).toBe('rate_limited');
+    expect(body.scope).toBe('ip');
+  });
 });

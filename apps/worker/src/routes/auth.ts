@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { LOCAL_ADMIN_USERNAME, validateEnv, verifyLocalAdminPassword } from '../lib/env';
 import { signJwt } from '../lib/jwt';
 import { verifyCredentials } from '../lib/portal-client';
+import { rateLimitByEmployeeId, rateLimitByIp } from '../middleware/rate-limit';
 import type { WorkerEnv } from '../types/env';
 
 const auth = new Hono<{ Bindings: WorkerEnv }>();
@@ -24,6 +25,26 @@ auth.post('/login', zValidator('json', LoginRequestSchema), async (c) => {
   const { employee_id, password } = c.req.valid('json');
   const env = validateEnv(c.env);
   const nowSec = Math.floor(Date.now() / 1000);
+
+  // Plan 09 Task 3 — rate limit by IP, then by employee_id. Fails open if KV
+  // is unavailable: the goal is to throttle abuse, not take login down.
+  if (c.env.KV && typeof c.env.KV.get === 'function') {
+    try {
+      const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+      const ipCheck = await rateLimitByIp(c.env.KV, ip);
+      if (!ipCheck.allowed) {
+        c.header('Retry-After', String(ipCheck.retryAfterSec));
+        return c.json({ error: 'rate_limited', scope: 'ip' }, 429);
+      }
+      const empCheck = await rateLimitByEmployeeId(c.env.KV, employee_id);
+      if (!empCheck.allowed) {
+        c.header('Retry-After', String(empCheck.retryAfterSec));
+        return c.json({ error: 'rate_limited', scope: 'employee_id' }, 429);
+      }
+    } catch (err) {
+      console.error('[auth.login] rate-limit check failed (fail-open)', err);
+    }
+  }
 
   // Local admin login: employee_id="admin", password verified against the
   // LOCAL_ADMIN_PASSWORD_HASH bcrypt secret. Bypasses portal entirely.
