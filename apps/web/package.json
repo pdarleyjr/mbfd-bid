@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.12",
-    "@cloudflare/workers-types": "4.20241011.0",
+    "@cloudflare/workers-types": "4.20260519.1",
     "@fontsource-variable/plus-jakarta-sans": "5.1.0",
     "@fontsource-variable/source-sans-3": "5.1.0",
     "@fontsource/jetbrains-mono": "5.1.1",
