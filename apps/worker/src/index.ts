@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { applySecurityHeaders } from './middleware/security-headers.js';
 import adminAudit from './routes/admin/audit.js';
 import adminBidControls from './routes/admin/bid-controls.js';
 import adminBidSession from './routes/admin/bid-session.js';
@@ -54,6 +55,12 @@ export type AppType = typeof routes;
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
 app.use('*', logger());
+// Plan 09 Task 4 — every response (including 404/500) carries CSP, HSTS,
+// and the rest of the security header set.
+app.use('*', async (c, next) => {
+  await next();
+  applySecurityHeaders(c.res.headers);
+});
 app.use(
   '*',
   cors({
