@@ -7,9 +7,9 @@
 
 import { cookies } from 'next/headers';
 import type { ReactElement } from 'react';
-import { cfEnv } from '../../../lib/cf-env';
 import { JWT_COOKIE_NAME } from '../../../lib/cookies';
 import { requireAdmin } from '../../../lib/require-admin';
+import { getWorkerBase } from '../../../lib/worker-base';
 import type { FindingRow } from './_components/FindingsList';
 import { FindingsList } from './_components/FindingsList';
 import type { MockSessionRow } from './_components/MockSessionsTable';
@@ -29,23 +29,31 @@ interface SessionRowRaw {
 }
 
 async function fetchMockSessions(workerBase: string, jwt: string): Promise<SessionRowRaw[]> {
-  const res = await fetch(`${workerBase}/api/admin/rehearsal/sessions`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-    cache: 'no-store',
-  });
-  if (!res.ok) return [];
-  const body = (await res.json()) as { sessions: SessionRowRaw[] };
-  return body.sessions;
+  try {
+    const res = await fetch(`${workerBase}/api/admin/rehearsal/sessions`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { sessions: SessionRowRaw[] };
+    return body.sessions;
+  } catch {
+    return [];
+  }
 }
 
 async function fetchRecentFindings(workerBase: string, jwt: string): Promise<FindingRow[]> {
-  const res = await fetch(`${workerBase}/api/admin/rehearsal/findings-recent?limit=50`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-    cache: 'no-store',
-  });
-  if (!res.ok) return [];
-  const body = (await res.json()) as { findings: FindingRow[] };
-  return body.findings;
+  try {
+    const res = await fetch(`${workerBase}/api/admin/rehearsal/findings-recent?limit=50`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { findings: FindingRow[] };
+    return body.findings;
+  } catch {
+    return [];
+  }
 }
 
 async function fetchSessionCost(
@@ -70,7 +78,7 @@ export default async function RehearsalDashboardPage(): Promise<ReactElement> {
   await requireAdmin();
   const cookieStore = await cookies();
   const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value ?? '';
-  const workerBase = cfEnv('WORKER_URL') ?? cfEnv('WORKER_BASE_URL') ?? 'http://localhost:8787';
+  const workerBase = getWorkerBase();
 
   const [rawSessions, findings] = await Promise.all([
     fetchMockSessions(workerBase, jwt),
