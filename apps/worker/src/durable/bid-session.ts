@@ -6,11 +6,12 @@ import {
   type PickRejectedEvent,
   type StateSnapshotEvent,
 } from '@mbfd/shared';
+import { eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
 import { makeChainDb } from '../audit/chain-db-d1.js';
 import { ChainEmitter } from '../audit/chain-emitter.js';
 import { getDb } from '../db/index.js';
-import { auditLog } from '../db/schema.js';
+import { auditLog, bids, members, portalWritebackQueue, positions } from '../db/schema.js';
 import {
   type AuditRowDraft,
   auditEntryForForcedPick,
@@ -18,6 +19,8 @@ import {
   auditEntryForPickMade,
   auditEntryForSkip,
 } from '../lib/audit.js';
+import { buildPortalPayload } from '../portal-writeback/payload-builder.js';
+import { enqueuePortalWriteback } from '../portal-writeback/queue-producer.js';
 import type { WorkerEnv } from '../types/env.js';
 import {
   type SubmitADayPickInput,
@@ -164,6 +167,76 @@ export class BidSessionDO implements DurableObject {
     } catch (err) {
       console.error('[BidSessionDO] chain emit (best-effort) failed', err);
     }
+  }
+
+  /**
+   * Plan 08 Task 21 — Look up the bid+member+position rows for an existing
+   * D1 bid and enqueue the portal write-back. Returns silently when the
+   * portal queue binding is absent (local/test).
+   */
+  private async enqueuePortalForBid(bidId: string): Promise<void> {
+    if (!this.env.PORTAL_QUEUE || typeof this.env.PORTAL_QUEUE.send !== 'function') return;
+    const db = getDb(this.env.DB);
+    const bid = await db.select().from(bids).where(eq(bids.id, bidId)).get();
+    if (!bid) return;
+    const member = await db.select().from(members).where(eq(members.id, bid.memberId)).get();
+    if (!member) return;
+    // Composite PK on positions means we have to fetch by id+template; since
+    // only one active template is in use at a time we filter by id and pick
+    // the first hit (Plan 03 invariant).
+    const position = await db
+      .select()
+      .from(positions)
+      .where(eq(positions.id, bid.positionId))
+      .get();
+    if (!position) return;
+    const adminActor = bid.adminActorId
+      ? ((await db.select().from(members).where(eq(members.id, bid.adminActorId)).get()) ?? null)
+      : null;
+    const payload = buildPortalPayload({
+      bid: {
+        id: bid.id,
+        bidSessionId: bid.bidSessionId,
+        memberId: bid.memberId,
+        positionId: bid.positionId,
+        aDay: bid.aDay,
+        pickedAt: bid.pickedAt,
+        forced: bid.forced,
+        adminActorId: bid.adminActorId,
+      },
+      member: {
+        id: member.id,
+        employeeId: member.employeeId,
+        rank: member.rank,
+      },
+      adminActor: adminActor ? { id: adminActor.id, employeeId: adminActor.employeeId } : null,
+      position: {
+        id: position.id,
+        shift: position.shift,
+        station: position.station,
+        unit: position.unit,
+      },
+      bidYear: new Date().getUTCFullYear(),
+    });
+    await enqueuePortalWriteback({
+      bidId: bid.id,
+      employeeId: member.employeeId,
+      payload,
+      queue: this.env.PORTAL_QUEUE,
+      insertQueueRow: async (row) => {
+        await db.insert(portalWritebackQueue).values({
+          id: row.id,
+          bidId: row.bidId,
+          enqueuedAt: row.enqueuedAt,
+          nextAttemptAt: row.nextAttemptAt,
+          attempts: row.attempts,
+          status: row.status,
+          payloadJson: row.payloadJson,
+          lastError: row.lastError,
+        });
+      },
+      now: () => Date.now(),
+    });
   }
 
   /**
@@ -433,6 +506,13 @@ export class BidSessionDO implements DurableObject {
         await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
         // D1 mirror — fire-and-forget; chain is already durable in R2.
         await this.writeAudit(pickDraft, { skipChainEmit: true });
+        // Plan 08 Task 21 — enqueue portal write-back. Failures are
+        // best-effort; reconciliation cron picks up unfinished rows.
+        try {
+          await this.enqueuePortalForBid(result.event.payload.bidId);
+        } catch (err) {
+          console.error('[BidSessionDO] portal enqueue failed (best-effort)', err);
+        }
         this.broadcast(envelope);
       } else {
         envelope = this.envelope(

@@ -96,11 +96,12 @@ app.onError((err, c) => {
 
 export { BidSessionDO } from './durable/bid-session.js';
 
+import { handlePortalQueueBatch } from './portal-writeback/queue-handler.js';
 import { handleScheduled } from './scheduled.js';
 
 // Hono app exposed as a named export so tests can call `app.request(...)`
-// directly. Wrangler boots from the default export below which wraps both
-// `fetch` and `scheduled` per the modules-format Worker contract.
+// directly. Wrangler boots from the default export below which wraps
+// `fetch`, `scheduled`, AND `queue` per the modules-format Worker contract.
 export { app };
 
 const handler = {
@@ -111,6 +112,10 @@ const handler = {
     _ctx: ExecutionContext,
   ): Promise<void> => {
     await handleScheduled(env);
+  },
+  /** Plan 08 Task 22 — Cloudflare Queue consumer for portal write-backs. */
+  queue: async (batch: MessageBatch, env: WorkerEnv, _ctx: ExecutionContext): Promise<void> => {
+    await handlePortalQueueBatch(batch, env);
   },
 };
 
