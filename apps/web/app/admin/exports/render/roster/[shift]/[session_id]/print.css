@@ -1,0 +1,82 @@
+/* Plan 08 Task 13 — print stylesheet for the roster RSC. */
+
+@page {
+  size: Letter;
+  margin: 0.5in;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Source Sans 3", system-ui, sans-serif;
+  color: #1a1a1a;
+}
+
+.roster-page {
+  max-width: 7.5in;
+  margin: 0 auto;
+}
+
+.roster-header h1 {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 24pt;
+  margin: 0 0 4pt;
+}
+
+.roster-meta {
+  font-size: 9pt;
+  color: #555;
+  margin: 0 0 16pt;
+}
+
+.station-block {
+  margin-bottom: 16pt;
+  page-break-inside: avoid;
+}
+
+.station-block h2 {
+  font-size: 14pt;
+  border-bottom: 1pt solid #b91c1c;
+  margin: 0 0 6pt;
+  padding-bottom: 2pt;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+}
+
+th,
+td {
+  padding: 4pt 6pt;
+  text-align: left;
+  border-bottom: 0.5pt solid #d4d4d4;
+}
+
+th {
+  background: #f4f4f5;
+  font-weight: 600;
+}
+
+td.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.vacant {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+tr[data-empty="true"] td {
+  background: #fef2f2;
+}
+
+.auth-error {
+  padding: 24pt;
+  font-family: monospace;
+  color: #b91c1c;
+}
