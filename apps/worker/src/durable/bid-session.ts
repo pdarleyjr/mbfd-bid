@@ -177,6 +177,22 @@ export class BidSessionDO implements DurableObject {
         headers: { 'content-type': 'application/json' },
       });
     }
+    if (url.pathname.endsWith('/submit-a-day-pick')) {
+      const body = (await req.json()) as SubmitADayPickInput;
+      const result = await this.submitADayPick(body);
+      return new Response(JSON.stringify(result), {
+        status: result.kind === 'accepted' ? 200 : 409,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.pathname.endsWith('/transition-to-phase-2')) {
+      const body = (await req.json()) as TransitionToPhase2Input;
+      const result = await this.transitionToPhase2(body);
+      return new Response(JSON.stringify(result), {
+        status: result.ok ? 200 : 409,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     return new Response('Not Found', { status: 404 });
   }
 
