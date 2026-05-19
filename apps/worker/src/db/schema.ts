@@ -411,3 +411,25 @@ export const auditChainState = sqliteTable('audit_chain_state', {
   pendingBufferStartedAt: integer('pending_buffer_started_at', { mode: 'timestamp' }),
   lastChunkSha256: text('last_chunk_sha256'),
 });
+
+// ── Plan 09 / Rehearsal Tooling — mig 0015 ──────────────────────────────────
+//
+// In-app bug tracker for mock-draft rehearsals. Each row is one observation
+// a participant captures during a rehearsal session. The screenshot (if any)
+// lives in R2; only the key is stored here.
+export const rehearsalFindings = sqliteTable(
+  'rehearsal_findings',
+  {
+    id: text('id').primaryKey().notNull(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    authorId: integer('author_id').references(() => members.id, { onDelete: 'set null' }),
+    note: text('note').notNull(),
+    screenshotR2Key: text('screenshot_r2_key'),
+  },
+  (t) => ({
+    sessionCreatedAtIdx: index('idx_rehearsal_findings_session').on(t.bidSessionId, t.createdAt),
+  }),
+);
