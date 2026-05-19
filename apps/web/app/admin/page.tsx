@@ -1,9 +1,12 @@
 import { requireAdmin } from '@/lib/require-admin';
+import type { Route } from 'next';
 import Link from 'next/link';
 
 export const runtime = 'edge';
 
-const QUICK_LINKS = [
+// hrefs typed as string so Plan-05 stub routes compile before Next's
+// typed-routes generator runs against their finished implementations.
+const QUICK_LINKS: { href: string; title: string; description: string }[] = [
   {
     href: '/admin/members' as const,
     title: 'Members',
@@ -70,7 +73,7 @@ export default async function AdminDashboardPage() {
         {QUICK_LINKS.map(({ href, title, description }) => (
           <Link
             key={href}
-            href={href}
+            href={href as Route}
             className="group rounded-xl border border-slate-700 bg-slate-800 p-5 transition-colors duration-fast ease-out-quart hover:border-red-700"
           >
             <dt className="font-heading text-base font-semibold text-white group-hover:text-red-400">

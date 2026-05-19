@@ -1,18 +1,22 @@
 'use client';
 
+import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const NAV_LINKS = [
-  { href: '/admin' as const, label: 'Dashboard', exact: true },
-  { href: '/admin/members' as const, label: 'Members', exact: false },
-  { href: '/admin/credentials' as const, label: 'Credentials', exact: false },
-  { href: '/admin/positions' as const, label: 'Positions', exact: false },
-  { href: '/admin/rules' as const, label: 'Rules', exact: false },
-  { href: '/admin/rule-books' as const, label: 'Rule Books', exact: false },
-  { href: '/admin/sessions/new' as const, label: 'New Session', exact: false },
-  { href: '/admin/audit' as const, label: 'Audit Log', exact: false },
-  { href: '/admin/eligibility' as const, label: 'Eligibility Preview', exact: false },
+// Note: hrefs typed loosely so Plan-05 stub routes (rule-books, sessions/new,
+// audit, eligibility) compile before Next's typed-routes generator has run
+// against their finished implementations.
+const NAV_LINKS: { href: string; label: string; exact: boolean }[] = [
+  { href: '/admin', label: 'Dashboard', exact: true },
+  { href: '/admin/members', label: 'Members', exact: false },
+  { href: '/admin/credentials', label: 'Credentials', exact: false },
+  { href: '/admin/positions', label: 'Positions', exact: false },
+  { href: '/admin/rules', label: 'Rules', exact: false },
+  { href: '/admin/rule-books', label: 'Rule Books', exact: false },
+  { href: '/admin/sessions/new', label: 'New Session', exact: false },
+  { href: '/admin/audit', label: 'Audit Log', exact: false },
+  { href: '/admin/eligibility', label: 'Eligibility Preview', exact: false },
 ];
 
 const IMPORT_LINKS = [
@@ -33,7 +37,7 @@ export function AdminSideNav() {
         return (
           <Link
             key={href}
-            href={href}
+            href={href as Route}
             className={[
               'flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-fast ease-out-quart',
               isActive
