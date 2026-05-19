@@ -15,3 +15,14 @@ export type {
   Phase2BidOrderStrategy,
   Rank,
 } from './types.js';
+
+export {
+  COMBAT_GROUPS,
+  WEEKDAYS,
+  OFFICER_RANKS,
+  DEFAULT_GROUP_CAPACITY,
+  isOfficer,
+  isCombatGroup,
+  isWeekday,
+  isValidADayForShift,
+} from './groups.js';
