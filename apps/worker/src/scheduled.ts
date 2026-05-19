@@ -5,7 +5,7 @@ import { rosterBlock } from './ai/prompts/user-roster.js';
 import { turnBlock } from './ai/prompts/user-turn.js';
 import { loadRosterForSession, loadTurnStateForSession } from './ai/session-loader.js';
 import { getDb } from './db/index.js';
-import { bidSessions, bids, portalWritebackQueue } from './db/schema.js';
+import { bidSessions, bids, members, portalWritebackQueue } from './db/schema.js';
 import type { QueueMessage } from './portal-writeback/queue-producer.js';
 import { type DueQueueRow, runReconciliation } from './portal-writeback/reconciliation.js';
 import type { WorkerEnv } from './types/env.js';
@@ -56,17 +56,23 @@ export async function handlePortalReconciliation(env: WorkerEnv): Promise<void> 
       return rows;
     },
     async reEnqueue(row) {
-      // Best-effort: deserialize the persisted payload and look up the member
-      // employee ID lazily. If anything is missing we skip — the next run
-      // will retry with the (possibly fixed) state.
+      // W38 — Look up the employeeId via the bids → members FK rather than
+      // parsing it out of the idempotency_key. The earlier approach split
+      // `idempotency_key` on `_` and took the trailing segment, which is
+      // fragile for any key shape that doesn't end in the employeeId
+      // (admin force-pick / rehearsal auto-bid keys do not).
       const parsedPayload = JSON.parse(row.payloadJson);
       const bidRow = await db.select().from(bids).where(eq(bids.id, row.bidId)).get();
       if (!bidRow) return;
+      const memberRow = await db
+        .select({ employeeId: members.employeeId })
+        .from(members)
+        .where(eq(members.id, bidRow.memberId))
+        .get();
+      if (!memberRow) return;
       const message: QueueMessage = {
         bidId: row.bidId,
-        employeeId: parsedPayload.idempotency_key
-          ? (String(parsedPayload.idempotency_key).split('_').pop() ?? '')
-          : '',
+        employeeId: memberRow.employeeId,
         payload: parsedPayload,
         attempts: row.attempts,
         queueRowId: row.id,
