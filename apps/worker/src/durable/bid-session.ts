@@ -17,6 +17,13 @@ import {
 } from '../lib/audit.js';
 import type { WorkerEnv } from '../types/env.js';
 import {
+  type SubmitADayPickInput,
+  type SubmitADayPickResult,
+  type TransitionToPhase2Input,
+  handleSubmitADayPick,
+  transitionToPhase2,
+} from './bid-session-aday-handlers.js';
+import {
   type ForcePickInput,
   type FreezeInput,
   type HandlerEnv,
@@ -425,6 +432,93 @@ export class BidSessionDO implements DurableObject {
       };
       await persistBidSessionState(this.storage, newState);
       this.memoryState = newState;
+    });
+  }
+
+  /**
+   * Plan 07: transition the DO from `position_bid` to `a_day_bid`.
+   * Caller (admin route or auto-detect job) supplies the Phase 1 results and
+   * member roster. Atomic via blockConcurrencyWhile.
+   */
+  async transitionToPhase2(input: TransitionToPhase2Input): Promise<{ ok: boolean }> {
+    return this.state.blockConcurrencyWhile(async () => {
+      const state = await this.getState();
+      if (state.currentPhase !== 'position_bid' && state.currentPhase !== 'paused') {
+        return { ok: false };
+      }
+      const nowMs = Date.now();
+      const newState = transitionToPhase2(state, input, nowMs);
+      await persistBidSessionState(this.storage, newState);
+      this.memoryState = newState;
+      const envelope = this.envelope(
+        'phase_changed',
+        {
+          from: state.currentPhase,
+          to: newState.currentPhase,
+          bidOrderPhase2: newState.aDay?.bidOrder ?? [],
+        },
+        newState.lastSeq,
+      );
+      this.broadcast(envelope);
+      return { ok: true };
+    });
+  }
+
+  /**
+   * Plan 07: apply a Phase-2 A-Day pick (normal member submission OR admin force).
+   * Mirrors applySubmitPick from Phase 1 — persist before broadcast, idempotent
+   * via storage-keyed prior envelope.
+   */
+  async submitADayPick(input: SubmitADayPickInput): Promise<SubmitADayPickResult> {
+    return this.state.blockConcurrencyWhile(async () => {
+      const idemKey = `idem-aday:${this.state.id.toString()}:${input.idempotencyKey}`;
+      const prior = await this.storage.get<IdempotencyRecord>(idemKey);
+      if (prior) {
+        // Replay the prior envelope to the caller via broadcast for parity, but
+        // return a synthesized "accepted-like" result. For correctness we just
+        // re-broadcast and let the caller treat this as a no-op.
+        this.broadcast(prior.envelope);
+        return {
+          kind: 'rejected',
+          code: 'ALREADY_PICKED',
+          message: 'Idempotency key already used.',
+          idempotencyKey: input.idempotencyKey,
+        };
+      }
+      const state = await this.getState();
+      const nowMs = Date.now();
+      const result = handleSubmitADayPick(state, input, nowMs);
+      if (result.kind === 'rejected') {
+        return result;
+      }
+      await persistBidSessionState(this.storage, result.newState);
+      this.memoryState = result.newState;
+      const envelope = this.envelope(
+        result.pick.forced ? 'forced_a_day_pick_made' : 'a_day_pick_made',
+        {
+          memberId: result.pick.memberId,
+          shift: result.pick.shift,
+          aDay: result.pick.aDay,
+          pickedAtMs: result.pick.pickedAtMs,
+          forced: result.pick.forced,
+          adminActorId: result.pick.adminActorId,
+          nextMemberId: result.nextMemberId,
+        },
+        result.newState.lastSeq,
+      );
+      await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
+      this.broadcast(envelope);
+      // If Phase 2 just completed, also broadcast phase_changed.
+      if (result.newState.currentPhase === 'complete') {
+        this.broadcast(
+          this.envelope(
+            'phase_changed',
+            { from: 'a_day_bid', to: 'complete' },
+            result.newState.lastSeq,
+          ),
+        );
+      }
+      return result;
     });
   }
 }

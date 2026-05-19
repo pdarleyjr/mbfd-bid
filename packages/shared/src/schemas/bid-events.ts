@@ -130,6 +130,11 @@ export const EVENT_TYPES = [
   'freeze',
   'resync',
   'pong',
+  // Plan 07: Phase 2 (A-Day) events
+  'phase_changed',
+  'a_day_pick_made',
+  'forced_a_day_pick_made',
+  'a_day_reject',
 ] as const;
 export const EventTypeSchema = z.enum(EVENT_TYPES);
 export type EventType = z.infer<typeof EventTypeSchema>;

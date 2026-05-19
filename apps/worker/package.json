@@ -27,6 +27,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
     "@hono/zod-validator": "0.4.1",
+    "@mbfd/a-day": "workspace:^",
     "@mbfd/eligibility": "workspace:^",
     "@mbfd/shared": "workspace:*",
     "bcryptjs": "^2.4.3",
