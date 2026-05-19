@@ -1,0 +1,59 @@
+name: D1 backup
+
+# Plan 09 Task 6 — scheduled D1 snapshots to R2.
+#
+# Runs every 6 hours by default; switch the cron to 15 minutes during the
+# live bid week. `workflow_dispatch` allows the operator to trigger an
+# ad-hoc backup before risky operations.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch:
+    inputs:
+      env:
+        description: staging | production
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d1-backup-${{ github.event_name == 'workflow_dispatch' && inputs.env || 'scheduled' }}
+  cancel-in-progress: false
+
+env:
+  PNPM_VERSION: 9.12.0
+  NODE_VERSION: 22.x
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', inputs.env)) || fromJson('["staging", "production"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run backup
+        shell: pwsh
+        run: |
+          $db = if ("${{ matrix.env }}" -eq "production") { "mbfd-bid-production" } else { "mbfd-bid-staging" }
+          $bucket = if ("${{ matrix.env }}" -eq "production") { "mbfd-bid-prod-backups" } else { "mbfd-bid-staging-backups" }
+          ./scripts/d1-backup.ps1 -Env ${{ matrix.env }} -DbName $db -BucketName $bucket
