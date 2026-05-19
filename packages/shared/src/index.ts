@@ -18,6 +18,8 @@ export * from './schemas/ai-advisory.js';
 // Plan 08 — audit chain wire types.
 export * from './schemas/audit-event.js';
 export * from './schemas/audit-chunk.js';
+// Plan 08 — portal write-back payload (shared by producer + consumer + tests).
+export * from './schemas/portal-payload.js';
 
 // A-Day Phase 2 schemas. `Shift` is re-exported from constants/shifts.js — to avoid
 // a duplicate identifier, we export the Zod schema and the additional types directly.
