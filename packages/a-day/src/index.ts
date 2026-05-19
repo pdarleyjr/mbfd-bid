@@ -30,3 +30,5 @@ export {
 export { computeCapacityMeter, isGroupFull, computeAllMeters } from './capacity.js';
 
 export { projectedOfficers, validateOfficerInvariant } from './officer-invariant.js';
+
+export { canPick } from './can-pick.js';
