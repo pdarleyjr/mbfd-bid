@@ -14,7 +14,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { type PositionRule, evaluateEligibility } from '@mbfd/eligibility';
 import type { JwtPayload } from '@mbfd/shared';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
@@ -28,6 +28,7 @@ import {
   memberCredentials,
   members,
   positionRules,
+  rehearsalFindings,
   ruleBooks,
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
@@ -422,6 +423,91 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
   if (detail !== undefined) responseBody.detail = detail;
   const status = stoppedReason === 'no_eligible' && picksMade > 0 ? 207 : 200;
   return c.json(responseBody, status);
+});
+
+// ── Task R6 — Rehearsal findings (in-app bug tracker) ───────────────────────
+
+const PostFindingBodySchema = z.object({
+  bidSessionId: z.string().min(1),
+  note: z.string().min(1).max(4000),
+  screenshotR2Key: z.string().min(1).max(500).optional(),
+});
+
+/**
+ * POST /api/admin/rehearsal/findings
+ *
+ * Body: { bidSessionId, note, screenshotR2Key? }
+ *
+ * Inserts one finding row. Returns 404 if the session doesn't exist, 201 on
+ * success with the created row. Admin-only.
+ */
+router.post('/findings', zValidator('json', PostFindingBodySchema), async (c) => {
+  const body = c.req.valid('json');
+  const db = getDb(c.env.DB);
+
+  const s = await db.select().from(bidSessions).where(eq(bidSessions.id, body.bidSessionId)).get();
+  if (s === undefined) return c.json({ error: 'session_not_found' }, 404);
+
+  const claims = c.get('claims');
+  const authorId = claims.sub > 0 ? claims.sub : null;
+  const id = ulid();
+  const createdAt = new Date();
+
+  await db.insert(rehearsalFindings).values({
+    id,
+    bidSessionId: body.bidSessionId,
+    createdAt,
+    authorId,
+    note: body.note,
+    screenshotR2Key: body.screenshotR2Key ?? null,
+  });
+
+  return c.json(
+    {
+      id,
+      bidSessionId: body.bidSessionId,
+      createdAt: createdAt.toISOString(),
+      authorId,
+      note: body.note,
+      screenshotR2Key: body.screenshotR2Key ?? null,
+    },
+    201,
+  );
+});
+
+/**
+ * GET /api/admin/rehearsal/findings?session_id=…&limit=50
+ *
+ * Returns findings for one session ordered newest-first. Admin-only.
+ */
+router.get('/findings', async (c) => {
+  const sessionId = c.req.query('session_id');
+  if (sessionId === undefined || sessionId === '') {
+    return c.json({ error: 'session_id_required' }, 400);
+  }
+  const limitParam = c.req.query('limit');
+  const parsedLimit = limitParam !== undefined ? Number.parseInt(limitParam, 10) : 50;
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
+
+  const db = getDb(c.env.DB);
+  const rows = await db
+    .select()
+    .from(rehearsalFindings)
+    .where(eq(rehearsalFindings.bidSessionId, sessionId))
+    .orderBy(desc(rehearsalFindings.createdAt))
+    .limit(limit)
+    .all();
+
+  return c.json({
+    findings: rows.map((r) => ({
+      id: r.id,
+      bidSessionId: r.bidSessionId,
+      createdAt: r.createdAt.toISOString(),
+      authorId: r.authorId,
+      note: r.note,
+      screenshotR2Key: r.screenshotR2Key,
+    })),
+  });
 });
 
 export default router;
