@@ -4,6 +4,7 @@ import { verifyJwt } from '@/lib/jwt';
 import { requirePin } from '@/lib/require-pin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { BidBoard } from './_components/BidBoard';
 import { BoardHeader } from './_components/BoardHeader';
 import { PositionGrid } from './_components/PositionGrid';
 
@@ -47,6 +48,12 @@ export default async function BidPage() {
         meMemberId={claims.sub}
       />
       <PositionGrid fills={board.fills} />
+      <BidBoard
+        bidSessionId={board.bidSessionId}
+        initialSeq={board.lastSeq}
+        meMemberId={claims.sub}
+        jwt={jwt}
+      />
     </main>
   );
 }
