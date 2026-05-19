@@ -28,3 +28,5 @@ export {
 } from './groups.js';
 
 export { computeCapacityMeter, isGroupFull, computeAllMeters } from './capacity.js';
+
+export { projectedOfficers, validateOfficerInvariant } from './officer-invariant.js';
