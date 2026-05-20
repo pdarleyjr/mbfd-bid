@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.1.0",
-    "@hono/zod-validator": "0.4.1",
+    "@hono/zod-validator": "0.8.0",
     "@mbfd/a-day": "workspace:^",
     "@mbfd/eligibility": "workspace:^",
     "@mbfd/shared": "workspace:*",
@@ -45,8 +45,8 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.12.21",
-    "@cloudflare/workers-types": "4.20260518.1",
+    "@cloudflare/vitest-pool-workers": "0.16.7",
+    "@cloudflare/workers-types": "4.20260520.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6",
     "@types/pako": "^2",
