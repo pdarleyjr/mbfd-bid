@@ -625,6 +625,34 @@ const SYNTH_RANK_MAP: Record<string, 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 
   'Fire Chief': 'CHIEF',
 };
 
+/**
+ * Specialty certs that can be inferred from a member's 2025 position ID alone.
+ * Position IDs are formatted `<shift><station><role>`, e.g. `B201` = B-shift,
+ * Station 2, role 01 (Captain). Holding a Station-2 position in 2025 implies
+ * the member already had the six TRT Ops certs (otherwise they couldn't have
+ * been picked). Marine 8, Air Tech 810, and Captain 5 are Days-only positions
+ * not present in the 2025 shift bid, so those certs are manually toggled by
+ * the chief.
+ */
+const TRT_OPERATIONS_CERTS: ReadonlyArray<string> = [
+  'Hazardous Materials Operations',
+  'Rope Rescue Operations',
+  'Confined Space Operations',
+  'Structural Collapse Operations',
+  'Trench Rescue Operations',
+  'Vehicle & Machinery Rescue Operations',
+];
+
+function specialtyCertsFromPosition(
+  position2025: string | undefined | null,
+): ReadonlyArray<string> {
+  if (!position2025) return [];
+  if (/^[A-D]2\d{2,3}$/.test(position2025)) {
+    return TRT_OPERATIONS_CERTS;
+  }
+  return [];
+}
+
 interface SynthesisRow {
   employee_id: number | string;
   first_name?: string;
@@ -636,6 +664,7 @@ interface SynthesisRow {
   rsc_seniority?: number | string | null;
   rank_seniority?: number | string | null;
   inferred_certs_2025?: ReadonlyArray<string>;
+  position_2025?: string | null;
 }
 
 router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
@@ -776,7 +805,16 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
       membersUpdated += 1;
     }
 
-    const certs = row.inferred_certs_2025 ?? [];
+    // Combine explicit certs from synthesis JSON with position-derived
+    // specialty certs (e.g. anyone who held a Station-2 slot in 2025 already
+    // had the six TRT Ops certs). Dedupe so we don't process the same cert
+    // twice per member.
+    const certs = Array.from(
+      new Set<string>([
+        ...(row.inferred_certs_2025 ?? []),
+        ...specialtyCertsFromPosition(row.position_2025 ?? null),
+      ]),
+    );
     for (const certName of certs) {
       const cid = credIdByName.get(certName);
       if (cid === undefined) {
