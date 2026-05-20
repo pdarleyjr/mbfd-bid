@@ -116,6 +116,7 @@ fs.writeFileSync(
   path.join(FIXTURE_DIR, '2025-members.json'),
   `${JSON.stringify(members, null, 2)}\n`,
 );
+// biome-ignore lint/suspicious/noConsole: offline build script
 console.log(
   `Wrote ${members.length} members → ${path.relative(process.cwd(), FIXTURE_DIR)}/2025-members.json`,
 );
@@ -153,6 +154,7 @@ fs.writeFileSync(
   path.join(FIXTURE_DIR, '2025-actual-bid.json'),
   `${JSON.stringify(picks, null, 2)}\n`,
 );
+// biome-ignore lint/suspicious/noConsole: offline build script
 console.log(
   `Wrote ${picks.length} bid picks → ${path.relative(process.cwd(), FIXTURE_DIR)}/2025-actual-bid.json`,
 );
@@ -161,6 +163,7 @@ const rulesSource = path.resolve(__dirname, '../../../apps/worker/seed/fixtures/
 const rulesTarget = path.join(FIXTURE_DIR, '2025-rules.json');
 if (fs.existsSync(rulesSource)) {
   fs.copyFileSync(rulesSource, rulesTarget);
+  // biome-ignore lint/suspicious/noConsole: offline build script
   console.log(`Copied 2026_rules.json → ${path.relative(process.cwd(), rulesTarget)}`);
 } else {
   console.warn(`Source rules not found: ${rulesSource} — golden replay will skip`);

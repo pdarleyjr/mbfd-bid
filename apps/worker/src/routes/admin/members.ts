@@ -51,7 +51,7 @@ export interface RosterRow {
  * `credentials` table does not have a notes column, so the worker carries
  * the canonical text inline. Surface these in tooltips on the toggle UI.
  */
-const CREDENTIAL_NOTES: Readonly<Record<string, string>> = {
+export const CREDENTIAL_NOTES: Readonly<Record<string, string>> = {
   'Basic Life Support (BLS) INSTRUCTOR AHA': 'For Capt 5: Either/Or',
   'Fire Investigator (FL cert issued 2015 or later)': 'Investigator: Count 1 max',
   'Firesafety Inspector I': 'Count 1 max',
