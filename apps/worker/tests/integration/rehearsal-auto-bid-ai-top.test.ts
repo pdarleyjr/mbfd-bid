@@ -169,6 +169,8 @@ describe('auto-bid strategy=ai_top wires getAiTopPick (W42)', () => {
       BID_SESSION: stubBidSessionNamespace(snapMap),
       AI_KV: makeAiKv(),
       KV: makeKv(),
+      // adviseSpy intercepts the client method; this stub is unused.
+      AI: { run: async () => ({}) } as unknown as Ai,
     };
 
     const res = await app.fetch(
@@ -203,6 +205,7 @@ describe('auto-bid strategy=ai_top wires getAiTopPick (W42)', () => {
       BID_SESSION: stubBidSessionNamespace(snapMap),
       AI_KV: makeAiKv(),
       KV: makeKv(),
+      AI: { run: async () => ({}) } as unknown as Ai,
     };
     const res = await app.fetch(
       new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {

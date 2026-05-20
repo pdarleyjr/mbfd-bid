@@ -18,11 +18,11 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
-import { AnthropicAIClient } from '../../ai/client.js';
+import { WorkersAIClient } from '../../ai/client.js';
 import { checkAiGate } from '../../ai/gate.js';
-import { systemBlock } from '../../ai/prompts/system-2026.js';
-import { rosterBlock } from '../../ai/prompts/user-roster.js';
-import { turnBlock } from '../../ai/prompts/user-turn.js';
+import { systemPrompt } from '../../ai/prompts/system-2026.js';
+import { rosterPrompt } from '../../ai/prompts/user-roster.js';
+import { turnPrompt, userPrompt } from '../../ai/prompts/user-turn.js';
 import { loadRosterForSession, loadTurnStateForSession } from '../../ai/session-loader.js';
 import { type DB, getDb } from '../../db/index.js';
 import {
@@ -225,14 +225,16 @@ async function getAiTopPick(env: WorkerEnv, sessionId: string): Promise<string |
     if (!gate.ok) return null;
     const roster = await loadRosterForSession(env, sessionId);
     const state = await loadTurnStateForSession(env, sessionId);
-    const client = new AnthropicAIClient(env);
+    const client = new WorkersAIClient(env);
     const envelope = await client.adviseCurrent({
       bidSessionId: sessionId,
-      system: systemBlock(),
-      roster: rosterBlock(roster),
-      turn: turnBlock({
-        ...state,
-        question: "Advise on the current bidder's upcoming pick.",
+      system: systemPrompt(),
+      user: userPrompt({
+        roster: rosterPrompt(roster),
+        turn: turnPrompt({
+          ...state,
+          question: "Advise on the current bidder's upcoming pick.",
+        }),
       }),
     });
     const pick = envelope.advisory.eligible_recommendations?.[0]?.position_id;

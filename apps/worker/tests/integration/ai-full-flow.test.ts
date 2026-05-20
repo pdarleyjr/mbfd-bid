@@ -1,29 +1,25 @@
 /*
  * Plan 06 Task 20 — full /advise-current happy-path integration test.
  *
- * This test exercises the entire AI advisory pipeline using a real D1
- * (better-sqlite3 harness), a fake KV, and a mocked global fetch that
- * stands in for the Cloudflare AI Gateway. It verifies:
+ * Updated 2026-05 for the Workers AI swap. The test exercises the entire AI
+ * advisory pipeline using a real D1 (better-sqlite3 harness), a fake KV, and
+ * a mocked `env.AI.run` standing in for the Cloudflare Workers AI binding.
+ * It verifies:
  *
  *   1. Admin JWT auth passes through requireAdmin middleware.
- *   2. /advise-current builds the prompt blocks (system + roster + turn).
- *   3. The AnthropicAIClient calls the gateway URL (NOT api.anthropic.com)
- *      and persists cost_cents to AI_KV.
+ *   2. /advise-current builds the prompt (system + roster + turn).
+ *   3. The WorkersAIClient calls `env.AI.run` (NOT globalThis.fetch).
  *   4. The route writes an ai_advisories row whose model + promptHash are set.
- *   5. The follow-up GET /cost reflects the running spend.
+ *   5. The follow-up GET /cost reflects the running spend (0 for Llama).
  *   6. The follow-up GET /forecast (after a manual KV seed) returns the
  *      forecast envelope.
- *
- * The plan body suggests `wrangler unstable_dev` but that runs the worker
- * out-of-process, which makes outbound fetch mocking far harder than the
- * in-process Hono pattern used here. The in-process variant gives identical
- * coverage with deterministic mocks.
  */
 
 import type { KVNamespace } from '@cloudflare/workers-types';
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WORKERS_AI_MODEL } from '../../src/ai/client.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import adminAi from '../../src/routes/ai.js';
 import type { WorkerEnv } from '../../src/types/env.js';
@@ -62,41 +58,26 @@ async function adminJwt(env: WorkerEnv): Promise<string> {
 describe('AI advisory full-flow integration', () => {
   let harness: TestD1;
   let env: WorkerEnv;
-  let fetchMock: ReturnType<typeof vi.fn>;
+  let aiRunMock: ReturnType<typeof vi.fn>;
+  let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     harness = await setupTestD1();
+    aiRunMock = vi.fn().mockResolvedValue({ response: JSON.stringify(canonical) });
     env = {
       ...harness.env,
       KV: makeKv(),
       AI_KV: makeKv(),
+      AI: { run: aiRunMock } as unknown as Ai,
     };
     await harness.db.run(
       `INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count)
        VALUES ('sessIntg', 2026, ?, 'position_bid', 180, 2, 0)`,
       [Date.now()],
     );
-    fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: 'msg_intg',
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: JSON.stringify(canonical) }],
-          stop_reason: 'end_turn',
-          model: 'claude-sonnet-4-6',
-          usage: {
-            input_tokens: 5000,
-            output_tokens: 800,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 4500,
-          },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+    fetchSpy = vi.fn();
     // biome-ignore lint/suspicious/noExplicitAny: test-only fetch shim
-    globalThis.fetch = fetchMock as any;
+    globalThis.fetch = fetchSpy as any;
   });
 
   afterEach(async () => {
@@ -122,24 +103,21 @@ describe('AI advisory full-flow integration', () => {
     expect(envelope.stale).toBe(false);
     expect(envelope.ai_advisory_id).toBeDefined();
 
-    // 2. The route persisted an ai_advisories audit row
+    // 2. The route persisted an ai_advisories audit row with the Llama model name
     const { results } = await harness.db.run(
       'SELECT model, bid_session_id, triggered_by FROM ai_advisories LIMIT 1',
     );
-    expect(results[0]?.model).toBe('claude-sonnet-4-6');
+    expect(results[0]?.model).toBe(WORKERS_AI_MODEL);
     expect(results[0]?.bid_session_id).toBe('sessIntg');
     expect(results[0]?.triggered_by).toBe('turn_start');
 
-    // 3. The fetch went to the configured gateway URL
-    const calls = fetchMock.mock.calls;
-    expect(calls.length).toBeGreaterThanOrEqual(1);
-    const firstCall = calls[0];
-    if (!firstCall) throw new Error('fetch was not called');
-    const url = firstCall[0] as string;
-    expect(url).toContain('gateway.ai.cloudflare.com');
-    expect(url).not.toContain('api.anthropic.com');
+    // 3. The call went to env.AI.run with the Llama model — NOT through globalThis.fetch
+    expect(aiRunMock).toHaveBeenCalled();
+    const firstCall = aiRunMock.mock.calls[0] ?? [];
+    expect(firstCall[0]).toBe(WORKERS_AI_MODEL);
+    expect(fetchSpy).not.toHaveBeenCalled();
 
-    // 4. /cost reflects the spend
+    // 4. /cost reflects the spend (0 cents for the Workers AI free tier)
     const costRes = await app.request(
       '/api/admin/ai/cost?session_id=sessIntg',
       { headers: { Authorization: `Bearer ${jwt}` } },

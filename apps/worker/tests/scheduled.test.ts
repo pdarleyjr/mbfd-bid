@@ -21,6 +21,10 @@ function makeKv(): FakeKv {
   } as unknown as FakeKv;
 }
 
+function makeAi(response: unknown): Ai {
+  return { run: vi.fn().mockResolvedValue(response) } as unknown as Ai;
+}
+
 describe('handleScheduled', () => {
   let harness: TestD1;
   let env: WorkerEnv;
@@ -31,6 +35,7 @@ describe('handleScheduled', () => {
       ...harness.env,
       KV: makeKv(),
       AI_KV: makeKv(),
+      AI: makeAi({ response: JSON.stringify(canonical) }),
     };
   });
 
@@ -44,35 +49,14 @@ describe('handleScheduled', () => {
        VALUES ('sess1', 2026, ?, 'position_bid', 180, 2, 0)`,
       [Date.now()],
     );
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: 'm',
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: JSON.stringify(canonical) }],
-          stop_reason: 'end_turn',
-          model: 'claude-sonnet-4-6',
-          usage: {
-            input_tokens: 10,
-            output_tokens: 5,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-          },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-      // biome-ignore lint/suspicious/noExplicitAny: test-only fetch shim
-    ) as any;
     await handleScheduled(env);
     expect((env.AI_KV as FakeKv).store.has('ai_forecast:sess1')).toBe(true);
   });
 
   it('is a no-op when no live sessions', async () => {
-    const fetchSpy = vi.fn();
-    // biome-ignore lint/suspicious/noExplicitAny: test-only fetch shim
-    globalThis.fetch = fetchSpy as any;
+    const aiRun = vi.fn();
+    env.AI = { run: aiRun } as unknown as Ai;
     await handleScheduled(env);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(aiRun).not.toHaveBeenCalled();
   });
 });

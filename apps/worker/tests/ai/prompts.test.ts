@@ -1,30 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { SYSTEM_PROMPT_VERSION, systemBlock } from '../../src/ai/prompts/system-2026.js';
-import { type RosterInput, rosterBlock } from '../../src/ai/prompts/user-roster.js';
-import { type TurnInput, turnBlock } from '../../src/ai/prompts/user-turn.js';
+import { SYSTEM_PROMPT_VERSION, systemPrompt } from '../../src/ai/prompts/system-2026.js';
+import { type RosterInput, rosterPrompt } from '../../src/ai/prompts/user-roster.js';
+import { type TurnInput, turnPrompt, userPrompt } from '../../src/ai/prompts/user-turn.js';
 
-describe('systemBlock', () => {
-  it('returns an array of one text block with cache_control', () => {
-    const b = systemBlock();
-    expect(Array.isArray(b)).toBe(true);
-    expect(b).toHaveLength(1);
-    expect(b[0]).toMatchObject({ type: 'text', cache_control: { type: 'ephemeral' } });
+describe('systemPrompt', () => {
+  it('returns a plain string (no cache_control after Workers AI swap)', () => {
+    const s = systemPrompt();
+    expect(typeof s).toBe('string');
+    expect(s.length).toBeGreaterThan(100);
   });
 
   it('text includes all three rulebook section markers', () => {
-    const b = systemBlock();
-    expect(b[0]?.text).toContain('BEGIN Bid Process');
-    expect(b[0]?.text).toContain('BEGIN Rules & Points');
-    expect(b[0]?.text).toContain('BEGIN Position Template');
+    const s = systemPrompt();
+    expect(s).toContain('BEGIN Bid Process');
+    expect(s).toContain('BEGIN Rules & Points');
+    expect(s).toContain('BEGIN Position Template');
   });
 
   it('text states the deterministic-engine constraint verbatim', () => {
-    expect(systemBlock()[0]?.text).toContain('do not recompute eligibility');
+    expect(systemPrompt()).toContain('do not recompute eligibility');
   });
 
   it('text declares the required JSON output shape', () => {
-    expect(systemBlock()[0]?.text).toContain('"eligible_recommendations"');
-    expect(systemBlock()[0]?.text).toContain('"force_recommended"');
+    expect(systemPrompt()).toContain('"eligible_recommendations"');
+    expect(systemPrompt()).toContain('"force_recommended"');
   });
 
   it('SYSTEM_PROMPT_VERSION is a date-like string', () => {
@@ -32,7 +31,7 @@ describe('systemBlock', () => {
   });
 });
 
-describe('rosterBlock', () => {
+describe('rosterPrompt', () => {
   const input: RosterInput = {
     bidSessionId: '01HF3SESSION',
     members: [
@@ -62,36 +61,34 @@ describe('rosterBlock', () => {
     ],
   };
 
-  it('returns array with one user-role text block carrying cache_control', () => {
-    const b = rosterBlock(input);
-    expect(b).toHaveLength(1);
-    expect(b[0]?.type).toBe('text');
-    expect(b[0]?.cache_control).toEqual({ type: 'ephemeral' });
+  it('returns a plain string', () => {
+    const s = rosterPrompt(input);
+    expect(typeof s).toBe('string');
   });
 
   it('text includes the session id', () => {
-    expect(rosterBlock(input)[0]?.text).toContain('01HF3SESSION');
+    expect(rosterPrompt(input)).toContain('01HF3SESSION');
   });
 
   it('roster includes member id + rank + creds', () => {
-    const t = rosterBlock(input)[0]?.text ?? '';
+    const t = rosterPrompt(input);
     expect(t).toContain('14335');
     expect(t).toContain('Hazardous Materials Operations');
   });
 
   it('eligibility matrix row is rendered as compact JSON line per row', () => {
-    const t = rosterBlock(input)[0]?.text ?? '';
+    const t = rosterPrompt(input);
     expect(t).toMatch(/"position_id":\s*"A101"/);
   });
 
   it('output is deterministic — same input twice yields byte-identical text', () => {
-    const a = rosterBlock(input)[0]?.text;
-    const b = rosterBlock(input)[0]?.text;
+    const a = rosterPrompt(input);
+    const b = rosterPrompt(input);
     expect(a).toBe(b);
   });
 });
 
-describe('turnBlock', () => {
+describe('turnPrompt + userPrompt', () => {
   const t: TurnInput = {
     phase: 'position_bid',
     currentBidderEmployeeId: '14335',
@@ -101,20 +98,23 @@ describe('turnBlock', () => {
     question: 'Advise on the upcoming pick.',
   };
 
-  it('returns single text block WITHOUT cache_control', () => {
-    const b = turnBlock(t);
-    expect(b).toHaveLength(1);
-    expect(b[0]?.type).toBe('text');
-    expect((b[0] as { cache_control?: unknown }).cache_control).toBeUndefined();
+  it('turnPrompt returns a plain string', () => {
+    expect(typeof turnPrompt(t)).toBe('string');
   });
 
-  it('embeds the question verbatim', () => {
-    expect(turnBlock(t)[0]?.text).toContain('Advise on the upcoming pick.');
+  it('turnPrompt embeds the question verbatim', () => {
+    expect(turnPrompt(t)).toContain('Advise on the upcoming pick.');
   });
 
-  it('embeds current bidder + queue + fills', () => {
-    const x = turnBlock(t)[0]?.text ?? '';
+  it('turnPrompt embeds current bidder + queue + fills', () => {
+    const x = turnPrompt(t);
     expect(x).toContain('"current_bidder":"14335"');
     expect(x).toContain('"queue":["14335"');
+  });
+
+  it('userPrompt concatenates roster + turn text', () => {
+    const u = userPrompt({ roster: 'ROSTER_HERE', turn: turnPrompt(t) });
+    expect(u).toContain('ROSTER_HERE');
+    expect(u).toContain('Advise on the upcoming pick.');
   });
 });

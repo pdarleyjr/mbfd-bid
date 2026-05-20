@@ -1,6 +1,6 @@
 import { RULEBOOK_2026, RULEBOOK_2026_VERSION } from './rulebook-2026.generated.js';
 
-export const SYSTEM_PROMPT_VERSION = '2026-05-17';
+export const SYSTEM_PROMPT_VERSION = '2026-05-20';
 
 const PREAMBLE = `You are the MBFD bid event AI advisor. Two strict rules:
 
@@ -44,19 +44,19 @@ Reference materials follow.
 
 const TEXT = PREAMBLE + RULEBOOK_2026;
 
-/** Typed Anthropic system param: text block with cache_control breakpoint. */
-export function systemBlock(): Array<{
-  type: 'text';
-  text: string;
-  cache_control: { type: 'ephemeral' };
-}> {
-  return [
-    {
-      type: 'text',
-      text: TEXT,
-      cache_control: { type: 'ephemeral' },
-    },
-  ];
+/**
+ * Returns the system prompt as a plain string. The Workers AI swap (2026-05)
+ * dropped Anthropic prompt caching, so we no longer wrap the text in a
+ * `[{ type: 'text', cache_control: ... }]` block — the binding accepts
+ * standard OpenAI-style `messages: [{ role, content }]`.
+ */
+export function systemPrompt(): string {
+  return TEXT;
+}
+
+/** @deprecated Use `systemPrompt()`. Kept for one release. */
+export function systemBlock(): string {
+  return TEXT;
 }
 
 export const SYSTEM_PROMPT_RULEBOOK_VERSION = RULEBOOK_2026_VERSION;

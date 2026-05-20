@@ -24,6 +24,10 @@ function makeKv(): FakeKv {
   } as unknown as FakeKv;
 }
 
+function makeAi(response: unknown): Ai {
+  return { run: vi.fn().mockResolvedValue(response) } as unknown as Ai;
+}
+
 async function adminJwt(env: WorkerEnv): Promise<string> {
   const payload: Omit<JwtPayload, 'iat' | 'exp'> = {
     sub: 0,
@@ -64,6 +68,7 @@ describe('GET /api/admin/ai/advise-current', () => {
       ...harness.env,
       KV: makeKv(),
       AI_KV: makeKv(),
+      AI: makeAi({ response: JSON.stringify(canonical) }),
     };
     // seed a bid_session so the optional FK has a target if FKs were on
     await harness.db.run(
@@ -71,26 +76,6 @@ describe('GET /api/admin/ai/advise-current', () => {
        VALUES ('sess1', 2026, ?, 'config', 180, 2, 0)`,
       [Date.now()],
     );
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: 'm',
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: JSON.stringify(canonical) }],
-          stop_reason: 'end_turn',
-          model: 'claude-sonnet-4-6',
-          usage: {
-            input_tokens: 100,
-            output_tokens: 50,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-          },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-      // biome-ignore lint/suspicious/noExplicitAny: test-only fetch shim
-    ) as any;
   });
 
   afterEach(async () => {
@@ -137,7 +122,7 @@ describe('GET /api/admin/ai/advise-current', () => {
     expect(body.stale).toBe(false);
   });
 
-  it('completes in <2500ms (synthetic — fetch mocked at 0ms)', async () => {
+  it('completes in <2500ms (synthetic — env.AI.run mocked at 0ms)', async () => {
     const jwt = await adminJwt(env);
     const t0 = performance.now();
     await mkApp().request(

@@ -1,4 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk';
+// Workers AI client — replaces the Anthropic SDK + Cloudflare AI Gateway
+// pair as of the 2026-05 swap. All inference now runs on the `env.AI`
+// binding using Llama 3.3 70B Instruct (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`).
+//
+// Public surface is unchanged from the previous AnthropicAIClient so callers
+// (route handlers, cache-warm, rehearsal proxy-bid) do not churn. The legacy
+// class name is re-exported as an alias for one release.
+
 import { ulid } from 'ulid';
 import type { WorkerEnv } from '../types/env.js';
 import { COST_KEY_PREFIX, addSessionCostCents, getSessionCostCents } from './cost-accounting.js';
@@ -6,25 +13,24 @@ import { parseAdvisoryFromText } from './output-parser.js';
 import type { Advisory, AdvisoryEnvelope } from './output-schema.js';
 import { computeCostCents } from './pricing.js';
 
-export interface SonnetCallInput {
+export const WORKERS_AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast' as const;
+export const ADVISORY_MODEL_NAME = WORKERS_AI_MODEL;
+
+const LAST_GOOD_PREFIX = 'ai_last_good:';
+
+export interface WorkersAICallInput {
   bidSessionId: string;
-  /** Cached system block — array shape with cache_control. */
-  system: NonNullable<Anthropic.MessageCreateParams['system']>;
-  /** Cached user roster block — first user message. */
-  roster: Array<{ type: 'text'; text: string; cache_control: { type: 'ephemeral' } }>;
-  /** Uncached turn block — second user message. */
-  turn: Array<{ type: 'text'; text: string }>;
+  /** Combined system prompt text (rulebook + role instructions). */
+  system: string;
+  /** Combined user prompt text (roster + current turn state + question). */
+  user: string;
   /** Optional precomputed deterministic Advisory used as the absolute-last fallback. */
   deterministicFallback?: { advisory: Advisory };
-  /** Per-call timeout. Default: 2500ms (Sonnet hot path). */
+  /** Per-call timeout. Default: 2500ms (Sonnet-equivalent hot path). */
   timeoutMs?: number;
   /** Override model (test/eval). */
   model?: string;
 }
-
-const SONNET = 'claude-sonnet-4-6';
-const OPUS = 'claude-opus-4-7';
-const LAST_GOOD_PREFIX = 'ai_last_good:';
 
 export class AIError extends Error {
   constructor(
@@ -35,18 +41,33 @@ export class AIError extends Error {
   }
 }
 
-export class AnthropicAIClient {
-  private readonly client: Anthropic;
+interface WorkersAiRunResult {
+  response?: string;
+  // Older / typed shapes return tool_calls or usage; we don't read them yet.
+  [k: string]: unknown;
+}
 
-  constructor(private readonly env: WorkerEnv) {
-    this.client = new Anthropic({
-      apiKey: env.ANTHROPIC_API_KEY,
-      baseURL: env.CF_AI_GATEWAY_URL,
-      // Anthropic SDK uses fetch by default; CF Workers polyfill works.
-    });
+// Minimal structural type for `env.AI.run`. We rely on the runtime Workers AI
+// binding (Llama 3.3 70B Instruct) — older `@cloudflare/workers-types` versions
+// (e.g. 4.20241011 used by the web app's pinned dep) have overload sets that
+// require model-literal keys, which clashes with our string model id. We
+// narrow to a permissive structural type so the worker compiles against any
+// version of the types that includes `env.AI.run`.
+interface AiBindingLike {
+  run(
+    model: string,
+    inputs: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | ReadableStream<Uint8Array>>;
+}
+
+export class WorkersAIClient {
+  constructor(private readonly env: WorkerEnv) {}
+
+  private get aiRun(): AiBindingLike {
+    return this.env.AI as unknown as AiBindingLike;
   }
 
-  /** SHA-256 hex of the concatenated system/roster/turn texts (audit trail). */
+  /** SHA-256 hex of the concatenated prompt parts (audit trail). */
   async hashPrompt(...parts: string[]): Promise<string> {
     const buf = new TextEncoder().encode(parts.join('\x1f'));
     const digest = await crypto.subtle.digest('SHA-256', buf);
@@ -96,50 +117,55 @@ export class AnthropicAIClient {
     );
   }
 
-  async adviseCurrent(input: SonnetCallInput): Promise<AdvisoryEnvelope> {
+  async adviseCurrent(input: WorkersAICallInput): Promise<AdvisoryEnvelope> {
     return this.callNonStreaming({
       ...input,
-      model: input.model ?? SONNET,
+      model: input.model ?? WORKERS_AI_MODEL,
       timeoutMs: input.timeoutMs ?? 2500,
     });
   }
 
   /** Async pre-fetch helper used by cache-warm. Same as adviseCurrent but the
    * caller awaits nothing — it writes last-good silently. */
-  async preFetch(input: SonnetCallInput): Promise<void> {
+  async preFetch(input: WorkersAICallInput): Promise<void> {
     await this.callNonStreaming({
       ...input,
-      model: input.model ?? SONNET,
+      model: input.model ?? WORKERS_AI_MODEL,
       timeoutMs: input.timeoutMs ?? 4000,
     });
   }
 
-  /** Opus streaming call returning the underlying SDK stream so the route can
-   * tee it as SSE. The caller is responsible for closing the stream. */
-  async adviseDeepStream(input: SonnetCallInput) {
+  /**
+   * Deep-streaming call. Returns the raw `ReadableStream` produced by
+   * `env.AI.run(... { stream: true })` so the route handler can pipe it
+   * directly to the client as SSE. The Workers AI binding emits OpenAI-style
+   * SSE chunks (`data: {"response":"..."}\n\n`) which the route handler
+   * forwards verbatim.
+   */
+  async adviseDeepStream(input: WorkersAICallInput): Promise<ReadableStream<Uint8Array>> {
     if (!(await this.featureEnabled())) {
       throw new AIError('disabled', 'feature_flag_off');
     }
     if ((await this.budgetRemaining(input.bidSessionId)) <= 0) {
       throw new AIError('disabled', 'budget_exceeded');
     }
-    return this.client.messages.stream({
-      model: input.model ?? OPUS,
+    const messages = [
+      { role: 'system' as const, content: input.system },
+      { role: 'user' as const, content: input.user },
+    ];
+    const result = await this.aiRun.run(input.model ?? WORKERS_AI_MODEL, {
+      messages,
+      stream: true,
       max_tokens: 2048,
-      system: input.system,
-      messages: [
-        {
-          role: 'user',
-          content: [...input.roster, ...input.turn] as Anthropic.ContentBlockParam[],
-        },
-      ],
-    } as Anthropic.MessageStreamParams);
+    });
+    // The `stream: true` overload returns a ReadableStream of SSE chunks.
+    return result as unknown as ReadableStream<Uint8Array>;
   }
 
   // ---- private ----
 
   private async callNonStreaming(
-    input: SonnetCallInput & { model: string; timeoutMs: number },
+    input: WorkersAICallInput & { model: string; timeoutMs: number },
   ): Promise<AdvisoryEnvelope> {
     if (!(await this.featureEnabled())) {
       return this.fallback(input);
@@ -148,47 +174,42 @@ export class AnthropicAIClient {
       return this.fallback(input);
     }
 
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), input.timeoutMs);
+    const messages = [
+      { role: 'system' as const, content: input.system },
+      { role: 'user' as const, content: input.user },
+    ];
 
-    let res: Anthropic.Messages.Message;
+    // The Workers AI binding does not currently honor AbortSignal, so we
+    // implement a timeout via Promise.race rather than ac.abort().
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new AIError('upstream', 'timeout')), input.timeoutMs);
+    });
+
+    let res: WorkersAiRunResult;
     try {
-      res = await this.client.messages.create(
-        {
-          model: input.model,
-          max_tokens: 1500,
-          system: input.system,
-          messages: [
-            {
-              role: 'user',
-              content: [...input.roster, ...input.turn] as Anthropic.ContentBlockParam[],
-            },
-          ],
-        },
-        { signal: ac.signal },
-      );
+      res = (await Promise.race([
+        this.aiRun.run(input.model, { messages, max_tokens: 1500 }),
+        timeout,
+      ])) as WorkersAiRunResult;
     } catch {
       return this.fallback(input);
-    } finally {
-      clearTimeout(timer);
     }
 
-    // Anthropic returns content array; advisory is in the first text block.
-    const text = res.content
-      .filter((c): c is Anthropic.TextBlock => c.type === 'text')
-      .map((c) => c.text)
-      .join('\n');
-
+    // Llama returns the response text in the `response` field. Defensive: tools
+    // sometimes return `{ result: { response: "..." } }` or a raw string.
+    const text = extractResponseText(res);
     const advisory = parseAdvisoryFromText(text);
     if (!advisory) return this.fallback(input);
 
-    // Cost + KV.
-    const usage = res.usage;
-    const cost = computeCostCents(res.model, {
-      input: usage.input_tokens,
-      output: usage.output_tokens,
-      cacheRead: usage.cache_read_input_tokens ?? 0,
-      cacheWrite: usage.cache_creation_input_tokens ?? 0,
+    // Workers AI is currently free within the Workers Paid plan's neuron
+    // quota; pricing.ts returns 0 cents for the Llama model. We still
+    // exercise the cost-accounting code path so the per-session key exists
+    // and the rehearsal dashboard has a row to render.
+    const cost = computeCostCents(input.model, {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
     });
     await addSessionCostCents(this.env.AI_KV, input.bidSessionId, cost);
 
@@ -204,7 +225,7 @@ export class AnthropicAIClient {
     return envelope;
   }
 
-  private async fallback(input: SonnetCallInput): Promise<AdvisoryEnvelope> {
+  private async fallback(input: WorkersAICallInput): Promise<AdvisoryEnvelope> {
     const lg = await this.lastGood(input.bidSessionId);
     if (lg) return lg;
     if (input.deterministicFallback) {
@@ -232,5 +253,26 @@ export class AnthropicAIClient {
     };
   }
 }
+
+function extractResponseText(res: WorkersAiRunResult | string | undefined): string {
+  if (res === undefined || res === null) return '';
+  if (typeof res === 'string') return res;
+  if (typeof res.response === 'string') return res.response;
+  const nested = res.result;
+  if (nested && typeof nested === 'object' && 'response' in (nested as Record<string, unknown>)) {
+    const r = (nested as { response?: unknown }).response;
+    if (typeof r === 'string') return r;
+  }
+  return '';
+}
+
+// ── Back-compat re-exports ──────────────────────────────────────────────────
+// The earlier Plan 06 implementation used `AnthropicAIClient`. The Workers AI
+// swap renames it to `WorkersAIClient`. We re-export the old name as an alias
+// so test files and any external callers (in this branch only — there are no
+// known external consumers) continue to compile. This alias may be removed
+// once all references are renamed.
+export const AnthropicAIClient = WorkersAIClient;
+export type AnthropicAIClient = WorkersAIClient;
 
 export { COST_KEY_PREFIX };

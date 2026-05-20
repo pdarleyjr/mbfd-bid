@@ -1,8 +1,8 @@
 import { and, eq, lte } from 'drizzle-orm';
-import { AnthropicAIClient } from './ai/client.js';
-import { systemBlock } from './ai/prompts/system-2026.js';
-import { rosterBlock } from './ai/prompts/user-roster.js';
-import { turnBlock } from './ai/prompts/user-turn.js';
+import { WorkersAIClient } from './ai/client.js';
+import { systemPrompt } from './ai/prompts/system-2026.js';
+import { rosterPrompt } from './ai/prompts/user-roster.js';
+import { turnPrompt, userPrompt } from './ai/prompts/user-turn.js';
 import { loadRosterForSession, loadTurnStateForSession } from './ai/session-loader.js';
 import { getDb } from './db/index.js';
 import { bidSessions, bids, members, portalWritebackQueue } from './db/schema.js';
@@ -92,16 +92,18 @@ export async function handleScheduled(env: WorkerEnv): Promise<void> {
     .all();
   if (live.length === 0) return;
 
-  const client = new AnthropicAIClient(env);
+  const client = new WorkersAIClient(env);
   for (const s of live) {
     const roster = await loadRosterForSession(env, s.id);
     const state = await loadTurnStateForSession(env, s.id);
     try {
       const envelope = await client.adviseCurrent({
         bidSessionId: s.id,
-        system: systemBlock(),
-        roster: rosterBlock(roster),
-        turn: turnBlock({ ...state, question: FORECAST_QUESTION }),
+        system: systemPrompt(),
+        user: userPrompt({
+          roster: rosterPrompt(roster),
+          turn: turnPrompt({ ...state, question: FORECAST_QUESTION }),
+        }),
       });
       await env.AI_KV.put(`ai_forecast:${s.id}`, JSON.stringify(envelope), {
         expirationTtl: 60 * 60,

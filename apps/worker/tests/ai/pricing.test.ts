@@ -2,18 +2,29 @@ import { describe, expect, it } from 'vitest';
 import { MODEL_PRICING, computeCostCents } from '../../src/ai/pricing.js';
 
 describe('MODEL_PRICING', () => {
-  it('has entries for both Sonnet and Opus production aliases', () => {
+  it('has an entry for the Workers AI Llama model (active)', () => {
+    expect(MODEL_PRICING['@cf/meta/llama-3.3-70b-instruct-fp8-fast']).toBeDefined();
+  });
+
+  it('Llama is priced at 0 cents (free within $5 plan neuron quota)', () => {
+    const p = MODEL_PRICING['@cf/meta/llama-3.3-70b-instruct-fp8-fast'];
+    expect(p).toBeDefined();
+    expect(p?.inputCentsPerMTok).toBe(0);
+    expect(p?.outputCentsPerMTok).toBe(0);
+  });
+
+  it('still has legacy Sonnet + Opus entries for historic ai_advisories rows', () => {
     expect(MODEL_PRICING['claude-sonnet-4-6']).toBeDefined();
     expect(MODEL_PRICING['claude-opus-4-7']).toBeDefined();
   });
 
-  it('input price for Sonnet is positive cents per MTok', () => {
+  it('legacy Sonnet input price is positive cents per MTok', () => {
     const p = MODEL_PRICING['claude-sonnet-4-6'];
     expect(p).toBeDefined();
     expect(p?.inputCentsPerMTok).toBeGreaterThan(0);
   });
 
-  it('cache-read is exactly 10% of input for both models', () => {
+  it('legacy cache-read is exactly 10% of input for both Anthropic entries', () => {
     for (const k of ['claude-sonnet-4-6', 'claude-opus-4-7'] as const) {
       const p = MODEL_PRICING[k];
       expect(p).toBeDefined();
@@ -30,6 +41,17 @@ describe('computeCostCents', () => {
     ).toBe(0);
   });
 
+  it('returns 0 for the Workers AI Llama model regardless of token volume', () => {
+    expect(
+      computeCostCents('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+        input: 1_000_000,
+        output: 500_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+      }),
+    ).toBe(0);
+  });
+
   it('computes integer cents — Sonnet 1000 input / 500 output', () => {
     const c = computeCostCents('claude-sonnet-4-6', {
       input: 1000,
@@ -41,7 +63,7 @@ describe('computeCostCents', () => {
     expect(c).toBeGreaterThanOrEqual(0);
   });
 
-  it('cache-read tokens count 10% of input rate', () => {
+  it('cache-read tokens count 10% of input rate (legacy Sonnet)', () => {
     const c1 = computeCostCents('claude-sonnet-4-6', {
       input: 10_000_000,
       output: 0,
@@ -57,7 +79,7 @@ describe('computeCostCents', () => {
     expect(c2).toBeCloseTo(c1 / 10, 0);
   });
 
-  it('cache-write tokens count 1.25× input rate', () => {
+  it('cache-write tokens count 1.25× input rate (legacy Sonnet)', () => {
     const c1 = computeCostCents('claude-sonnet-4-6', {
       input: 10_000_000,
       output: 0,

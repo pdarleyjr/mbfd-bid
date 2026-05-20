@@ -23,29 +23,26 @@ function makeKv(): FakeKv {
   } as unknown as FakeKv;
 }
 
-function fakeAnthropicSse(): Response {
-  // Emit two text-delta events then message_stop. The SDK's stream consumer
-  // requires content_block_start before deltas to track indices.
+/**
+ * Build a fake Workers AI streaming response. The binding emits OpenAI-style
+ * SSE chunks of the form `data: {"response":"…"}\n\n`. The advise-deep route
+ * forwards the upstream stream verbatim, so we just need a ReadableStream
+ * containing a couple of SSE events plus a terminating `data: [DONE]\n\n`.
+ */
+function fakeWorkersAiStream(): ReadableStream<Uint8Array> {
   const enc = new TextEncoder();
-  const chunks = [
-    'event: message_start\ndata: {"type":"message_start","message":{"id":"m","type":"message","role":"assistant","model":"claude-opus-4-7","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n\n',
-    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
-    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}\n\n',
-    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" admin"}}\n\n',
-    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
-    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":2}}\n\n',
-    'event: message_stop\ndata: {"type":"message_stop"}\n\n',
-  ];
-  const body = new ReadableStream<Uint8Array>({
+  return new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const c of chunks) controller.enqueue(enc.encode(c));
+      controller.enqueue(enc.encode('data: {"response":"Hello"}\n\n'));
+      controller.enqueue(enc.encode('data: {"response":" admin"}\n\n'));
+      controller.enqueue(enc.encode('data: [DONE]\n\n'));
       controller.close();
     },
   });
-  return new Response(body, {
-    status: 200,
-    headers: { 'Content-Type': 'text/event-stream' },
-  });
+}
+
+function makeAi(stream: ReadableStream<Uint8Array>): Ai {
+  return { run: vi.fn().mockResolvedValue(stream) } as unknown as Ai;
 }
 
 async function adminJwt(env: WorkerEnv): Promise<string> {
@@ -75,16 +72,13 @@ describe('POST /api/admin/ai/advise-deep', () => {
       ...harness.env,
       KV: makeKv(),
       AI_KV: makeKv(),
+      AI: makeAi(fakeWorkersAiStream()),
     };
     await harness.db.run(
       `INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count)
        VALUES ('s1', 2026, ?, 'config', 180, 2, 0)`,
       [Date.now()],
     );
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      fakeAnthropicSse(),
-      // biome-ignore lint/suspicious/noExplicitAny: test-only fetch shim
-    ) as any;
   });
 
   afterEach(async () => {
@@ -104,7 +98,7 @@ describe('POST /api/admin/ai/advise-deep', () => {
     expect(res.status).toBe(401);
   });
 
-  it('streams text/event-stream with token deltas', async () => {
+  it('streams text/event-stream with response chunks from Workers AI', async () => {
     const jwt = await adminJwt(env);
     const res = await mkApp().request(
       '/api/admin/ai/advise-deep',
@@ -121,9 +115,9 @@ describe('POST /api/admin/ai/advise-deep', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toContain('text/event-stream');
     const text = await res.text();
-    expect(text).toContain('data: Hello');
-    expect(text).toContain('data:  admin');
-    expect(text).toContain('event: done');
+    expect(text).toContain('"response":"Hello"');
+    expect(text).toContain('"response":" admin"');
+    expect(text).toContain('[DONE]');
   });
 
   it('returns 503 when feature flag off', async () => {

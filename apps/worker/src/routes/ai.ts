@@ -1,11 +1,11 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { AIError, AnthropicAIClient } from '../ai/client.js';
+import { ADVISORY_MODEL_NAME, AIError, WorkersAIClient } from '../ai/client.js';
 import { checkAiGate } from '../ai/gate.js';
-import { systemBlock } from '../ai/prompts/system-2026.js';
-import { rosterBlock } from '../ai/prompts/user-roster.js';
-import { turnBlock } from '../ai/prompts/user-turn.js';
+import { systemPrompt } from '../ai/prompts/system-2026.js';
+import { rosterPrompt } from '../ai/prompts/user-roster.js';
+import { turnPrompt, userPrompt } from '../ai/prompts/user-turn.js';
 import { loadRosterForSession, loadTurnStateForSession } from '../ai/session-loader.js';
 import { getDb } from '../db/index.js';
 import { aiAdvisories } from '../db/schema.js';
@@ -32,18 +32,18 @@ r.get('/advise-current', async (c) => {
   const roster = await loadRosterForSession(c.env, sessionId);
   const state = await loadTurnStateForSession(c.env, sessionId);
 
-  const client = new AnthropicAIClient(c.env);
-  const sys = systemBlock();
-  const rosterPrompt = rosterBlock(roster);
-  const turn = turnBlock({
+  const client = new WorkersAIClient(c.env);
+  const sys = systemPrompt();
+  const rosterText = rosterPrompt(roster);
+  const turnText = turnPrompt({
     ...state,
     question: "Advise on the current bidder's upcoming pick.",
   });
+  const user = userPrompt({ roster: rosterText, turn: turnText });
   const envelope = await client.adviseCurrent({
     bidSessionId: sessionId,
     system: sys,
-    roster: rosterPrompt,
-    turn,
+    user,
   });
 
   // Plan 07 cross-plan hook: when Phase 2 is active, populate the optional
@@ -68,18 +68,14 @@ r.get('/advise-current', async (c) => {
 
   if (!envelope.stale && envelope.ai_advisory_id) {
     const db = getDb(c.env.DB);
-    const promptHash = await client.hashPrompt(
-      JSON.stringify(sys),
-      JSON.stringify(rosterPrompt),
-      JSON.stringify(turn),
-    );
+    const promptHash = await client.hashPrompt(sys, rosterText, turnText);
     await db.insert(aiAdvisories).values({
       id: envelope.ai_advisory_id,
       bidSessionId: sessionId,
       memberId: null,
       positionId: null,
       triggeredBy: 'turn_start',
-      model: 'claude-sonnet-4-6',
+      model: ADVISORY_MODEL_NAME,
       promptHash,
       responseJson: JSON.stringify(envelope.advisory),
       renderedMarkdown: envelope.advisory.summary,
@@ -147,16 +143,20 @@ r.post('/advise-deep', async (c) => {
 
   const roster = await loadRosterForSession(c.env, session_id);
   const state = await loadTurnStateForSession(c.env, session_id);
-  const client = new AnthropicAIClient(c.env);
+  const client = new WorkersAIClient(c.env);
 
-  // Use the raw SDK stream and forward token deltas as SSE
-  let stream: Awaited<ReturnType<typeof client.adviseDeepStream>>;
+  // Workers AI streams OpenAI-style SSE (`data: {"response":"…"}\n\n`)
+  // chunks. We forward the upstream stream verbatim so the client gets the
+  // exact same wire format it would from any other OpenAI-compatible endpoint.
+  let upstream: ReadableStream<Uint8Array>;
   try {
-    stream = await client.adviseDeepStream({
+    upstream = await client.adviseDeepStream({
       bidSessionId: session_id,
-      system: systemBlock(),
-      roster: rosterBlock(roster),
-      turn: turnBlock({ ...state, question }),
+      system: systemPrompt(),
+      user: userPrompt({
+        roster: rosterPrompt(roster),
+        turn: turnPrompt({ ...state, question }),
+      }),
     });
   } catch (err) {
     if (err instanceof AIError && err.kind === 'disabled') {
@@ -165,25 +165,7 @@ r.post('/advise-deep', async (c) => {
     return c.json({ error: 'upstream' }, 502);
   }
 
-  const enc = new TextEncoder();
-  const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for await (const event of stream) {
-          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            controller.enqueue(enc.encode(`data: ${event.delta.text}\n\n`));
-          }
-        }
-        controller.enqueue(enc.encode('event: done\ndata: end\n\n'));
-        controller.close();
-      } catch {
-        controller.enqueue(enc.encode('event: error\ndata: stream_error\n\n'));
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(body, {
+  return new Response(upstream, {
     status: 200,
     headers: {
       'Content-Type': 'text/event-stream',

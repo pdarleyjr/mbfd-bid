@@ -30,8 +30,10 @@ export interface RosterInput {
 }
 
 function stable(o: unknown): string {
-  // JSON.stringify with sorted keys to maximise cache-hit rate. Anthropic's
-  // cache is keyed on the exact byte sequence; small reorderings invalidate it.
+  // JSON.stringify with sorted keys. We keep deterministic ordering even
+  // though Workers AI no longer caches prompt prefixes — identical inputs
+  // should still produce identical outputs (and identical promptHash audit
+  // rows) regardless of input key order.
   const seen = new WeakSet<object>();
   return JSON.stringify(o, (_k, v) => {
     if (v && typeof v === 'object' && !Array.isArray(v)) {
@@ -74,11 +76,14 @@ function renderRow(r: EligibilityMatrixRow): string {
   });
 }
 
-export function rosterBlock(input: RosterInput): Array<{
-  type: 'text';
-  text: string;
-  cache_control: { type: 'ephemeral' };
-}> {
+/**
+ * Returns the roster + eligibility-matrix portion of the user prompt as
+ * plain text. The Workers AI swap (2026-05) collapses the prior
+ * cached-roster + uncached-turn pair into a single `user` message; this
+ * function provides the roster half, and `turnBlock`/`userPrompt` adds the
+ * per-turn context on top.
+ */
+export function rosterPrompt(input: RosterInput): string {
   const sortedMembers = [...input.members].sort((a, b) => a.employeeId.localeCompare(b.employeeId));
   const sortedMatrix = [...input.eligibilityMatrix].sort(
     (a, b) =>
@@ -86,10 +91,14 @@ export function rosterBlock(input: RosterInput): Array<{
       a.positionId.localeCompare(b.positionId),
   );
 
-  const text =
+  return (
     `# Session ${input.bidSessionId} — roster + eligibility matrix\n\n` +
     `## Members (${sortedMembers.length})\n${sortedMembers.map(renderMember).join('\n')}` +
-    `\n\n## Eligibility matrix rows (${sortedMatrix.length})\n${sortedMatrix.map(renderRow).join('\n')}`;
+    `\n\n## Eligibility matrix rows (${sortedMatrix.length})\n${sortedMatrix.map(renderRow).join('\n')}`
+  );
+}
 
-  return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];
+/** @deprecated Use `rosterPrompt()`. Kept for one release. */
+export function rosterBlock(input: RosterInput): string {
+  return rosterPrompt(input);
 }

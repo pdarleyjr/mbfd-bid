@@ -30,12 +30,17 @@ declare -A SECRETS=(
   [PIN_HASH]="bcrypt of the access PIN. Default PIN is 2300. Generate: node -e \"console.log(require('bcryptjs').hashSync('2300',12))\""
   [PORTAL_BID_READER]="Portal service token for POST /api/v2/verify-credentials"
   [PORTAL_BID_WRITER]="Portal service token for POST /api/v2/members/:emp/bid-assignment (Plan 08 — can skip until then)"
-  [ANTHROPIC_API_KEY]="Anthropic API key (sk-ant-...) for AI Gateway. Plan 06 — can skip until then."
   [AUDIT_SIGNING_PRIVKEY]="ed25519 private key (PEM) for R2 audit chunk signatures. Plan 08 — can skip until then."
 )
 
+# NOTE: ANTHROPIC_API_KEY was removed in the 2026-05 Workers AI swap. The bid
+# worker now uses the env.AI binding (Llama 3.3 70B on Cloudflare's inference
+# network) — no Anthropic key required. If the legacy secret is still set
+# from a prior deploy, run `wrangler secret delete ANTHROPIC_API_KEY --env <env>`
+# to clear it. The variable is silently ignored by the worker either way.
+
 # Preserve insertion order
-ORDER=(JWT_SIGNING_KEY PIN_HASH PORTAL_BID_READER PORTAL_BID_WRITER ANTHROPIC_API_KEY AUDIT_SIGNING_PRIVKEY)
+ORDER=(JWT_SIGNING_KEY PIN_HASH PORTAL_BID_READER PORTAL_BID_WRITER AUDIT_SIGNING_PRIVKEY)
 
 pushd "$WORKER_DIR" > /dev/null
 
