@@ -44,7 +44,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      - run: pnpm --filter @mbfd/shared build
+      # Build all internal packages first so `tsc --noEmit` in dependent
+      # packages can resolve workspace deps via their dist/ exports.
+      - run: pnpm -r --filter "./packages/*" build
       - name: AI rulebook codegen
         run: pnpm --filter @mbfd/worker ai:codegen
       - run: pnpm typecheck
