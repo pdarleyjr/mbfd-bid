@@ -590,11 +590,34 @@ router.patch('/bid-order', requireStepUpAuth(), async (c) => {
   return c.json({ updated: overrides.length });
 });
 
-// POST /api/admin/members/seed-from-synthesis — bulk pre-fill member_credentials
-// from the analysis script output (members_2026_synthesis.json). Used by the
-// Master Roster "Pre-fill from 2025 picks" button.
+// POST /api/admin/members/seed-from-synthesis — bulk bootstrap members AND
+// their inferred 2025 credentials from the analysis script output
+// (members_2026_synthesis.json). Used by the Master Roster "Pre-fill from 2025
+// picks" button to make staging usable in one click on an empty DB.
+//
+// Idempotent: existing members are updated in place (rank/seniority/category);
+// missing members are inserted; inferred credentials that aren't already on a
+// member are linked. Members whose synthesis-rank can't be mapped or whose
+// rsc_seniority is missing are reported in `skippedMembers`.
+const SYNTH_RANK_MAP: Record<string, 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF'> = {
+  Firefighter: 'FF',
+  Lieutenant: 'LT',
+  Captain: 'CPT',
+  'Division Chief': 'DC',
+  'Deputy Fire Chief': 'DEP_CHIEF',
+  'Fire Chief': 'CHIEF',
+};
+
 interface SynthesisRow {
   employee_id: number | string;
+  first_name?: string;
+  last_name?: string;
+  current_rank?: string;
+  bid_rank?: string;
+  bid_category?: string;
+  bid?: string;
+  rsc_seniority?: number | string | null;
+  rank_seniority?: number | string | null;
   inferred_certs_2025?: ReadonlyArray<string>;
 }
 
@@ -628,42 +651,130 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
     .all();
   const credIdByName = new Map(allCreds.map((c2) => [c2.name, c2.id]));
 
-  const missingMembers: string[] = [];
   const missingCredentialsSet = new Set<string>();
-  let membersProcessed = 0;
+  const skippedMembers: Array<{ employee_id: string; reason: string }> = [];
+  let membersInserted = 0;
+  let membersUpdated = 0;
   let certsInserted = 0;
+  const now = new Date();
 
   for (const row of raw as SynthesisRow[]) {
-    const certs = row.inferred_certs_2025 ?? [];
-    if (certs.length === 0) continue;
+    const employeeId = String(row.employee_id ?? '').trim();
+    if (employeeId === '') {
+      continue;
+    }
+    if (String(row.bid ?? 'Include').toLowerCase() === 'exclude') {
+      skippedMembers.push({ employee_id: employeeId, reason: 'bid=Exclude' });
+      continue;
+    }
 
-    const employeeId = String(row.employee_id);
-    const member = await db
+    const rankLabel = String(row.current_rank ?? row.bid_rank ?? '').trim();
+    const rank = SYNTH_RANK_MAP[rankLabel];
+    if (rank === undefined) {
+      skippedMembers.push({ employee_id: employeeId, reason: `unknown_rank:${rankLabel}` });
+      continue;
+    }
+
+    const bidCategoryRaw = String(row.bid_category ?? '')
+      .trim()
+      .toUpperCase();
+    const bidCategory: 'OFC' | 'FF' | 'EXCLUDED' =
+      bidCategoryRaw === 'OFC' || bidCategoryRaw === 'FF' || bidCategoryRaw === 'EXCLUDED'
+        ? (bidCategoryRaw as 'OFC' | 'FF' | 'EXCLUDED')
+        : rank === 'FF'
+          ? 'FF'
+          : 'OFC';
+
+    const rscSeniorityRaw = row.rsc_seniority;
+    const rscSeniority =
+      typeof rscSeniorityRaw === 'number'
+        ? Math.floor(rscSeniorityRaw)
+        : typeof rscSeniorityRaw === 'string' && rscSeniorityRaw.length > 0
+          ? Math.floor(Number(rscSeniorityRaw))
+          : Number.NaN;
+    if (!Number.isFinite(rscSeniority) || rscSeniority < 0) {
+      skippedMembers.push({ employee_id: employeeId, reason: 'missing_rsc_seniority' });
+      continue;
+    }
+
+    const rankSeniorityRaw = row.rank_seniority;
+    const rankSeniority =
+      typeof rankSeniorityRaw === 'number'
+        ? Math.floor(rankSeniorityRaw)
+        : typeof rankSeniorityRaw === 'string' && rankSeniorityRaw.length > 0
+          ? Math.floor(Number(rankSeniorityRaw))
+          : null;
+
+    const firstName = String(row.first_name ?? '').trim();
+    const lastName = String(row.last_name ?? '').trim();
+    if (firstName === '' || lastName === '') {
+      skippedMembers.push({ employee_id: employeeId, reason: 'missing_name' });
+      continue;
+    }
+
+    const existing = await db
       .select({ id: members.id })
       .from(members)
       .where(eq(members.employeeId, employeeId))
       .get();
-    if (member === undefined) {
-      missingMembers.push(employeeId);
-      continue;
+
+    let memberId: number;
+    if (existing === undefined) {
+      const inserted = await db
+        .insert(members)
+        .values({
+          employeeId,
+          firstName,
+          lastName,
+          rank,
+          bidCategory,
+          rscSeniority,
+          rankSeniority,
+          isProbationary: false,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: members.id });
+      const newId = inserted[0]?.id;
+      if (newId === undefined) {
+        skippedMembers.push({ employee_id: employeeId, reason: 'insert_failed' });
+        continue;
+      }
+      memberId = newId;
+      membersInserted += 1;
+    } else {
+      memberId = existing.id;
+      await db
+        .update(members)
+        .set({
+          firstName,
+          lastName,
+          rank,
+          bidCategory,
+          rscSeniority,
+          rankSeniority,
+          updatedAt: now,
+        })
+        .where(eq(members.id, memberId));
+      membersUpdated += 1;
     }
 
-    membersProcessed += 1;
+    const certs = row.inferred_certs_2025 ?? [];
     for (const certName of certs) {
       const cid = credIdByName.get(certName);
       if (cid === undefined) {
         missingCredentialsSet.add(certName);
         continue;
       }
-      const existing = await db
+      const link = await db
         .select()
         .from(memberCredentials)
         .where(
-          and(eq(memberCredentials.memberId, member.id), eq(memberCredentials.credentialId, cid)),
+          and(eq(memberCredentials.memberId, memberId), eq(memberCredentials.credentialId, cid)),
         )
         .get();
-      if (existing === undefined) {
-        await db.insert(memberCredentials).values({ memberId: member.id, credentialId: cid });
+      if (link === undefined) {
+        await db.insert(memberCredentials).values({ memberId, credentialId: cid });
         certsInserted += 1;
       }
     }
@@ -673,20 +784,22 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
     bidSessionId: null,
     actorType: 'admin',
     actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
-    action: 'credentials_import',
+    action: 'members_import',
     targetKind: 'synthesis_seed',
     afterState: {
-      membersProcessed,
+      membersInserted,
+      membersUpdated,
       certsInserted,
-      missingMembers: missingMembers.length,
+      skippedMembers: skippedMembers.length,
       missingCredentials: missingCredentialsSet.size,
     },
   });
 
   return c.json({
-    membersProcessed,
+    membersInserted,
+    membersUpdated,
     certsInserted,
-    missingMembers,
+    skippedMembers,
     missingCredentials: [...missingCredentialsSet],
   });
 });

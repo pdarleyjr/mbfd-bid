@@ -62,10 +62,11 @@ describe('Rehearsal findings schema (mig 0015)', () => {
       ['author_id', 'bid_session_id', 'created_at', 'id', 'note', 'screenshot_r2_key'].sort(),
     );
 
-    sqlite.prepare("INSERT INTO bid_years (year, status) VALUES (2028, 'configuring')").run();
+    // Migration 0017 pre-seeds 2026/2027/2028; pick a year outside that range.
+    sqlite.prepare("INSERT INTO bid_years (year, status) VALUES (2099, 'configuring')").run();
     sqlite
       .prepare(
-        'INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2028, ?, ?, ?, ?, ?)',
+        'INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2099, ?, ?, ?, ?, ?)',
       )
       .run('01HZZTESTSESSION00000000002', Date.now(), 'config', 180, 2, 0);
     sqlite

@@ -47,10 +47,12 @@ describe('Mock-draft schema (mig 0014)', () => {
     sqlite.pragma('foreign_keys = OFF');
     applyMigrations(sqlite);
 
-    sqlite.prepare("INSERT INTO bid_years (year, status) VALUES (2027, 'configuring')").run();
+    // Use a year migration 0017 does NOT pre-seed so the bare INSERT below
+    // doesn't collide with the UNIQUE constraint on bid_years.year.
+    sqlite.prepare("INSERT INTO bid_years (year, status) VALUES (2099, 'configuring')").run();
     sqlite
       .prepare(
-        'INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2027, ?, ?, ?, ?, ?)',
+        'INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2099, ?, ?, ?, ?, ?)',
       )
       .run('01HZZTESTSESSION00000000001', Date.now(), 'config', 180, 2, 0);
 

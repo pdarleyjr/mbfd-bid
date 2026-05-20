@@ -157,7 +157,7 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
 
   async function preFillFromSynthesis() {
     const ok = window.confirm(
-      "Pre-fill credentials from the 2025 bid synthesis? This will insert credentials inferred from each member's 2025 station. Existing credentials are not touched.",
+      "Bootstrap the bid roster from the 2025 synthesis? Missing members are inserted, existing members have their rank/seniority refreshed, and inferred credentials from each member's 2025 station are linked. Already-present credentials are not touched.",
     );
     if (!ok) return;
     setSeeding(true);
@@ -172,19 +172,23 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
         return;
       }
       const body = (await res.json()) as {
-        membersProcessed: number;
+        membersInserted: number;
+        membersUpdated: number;
         certsInserted: number;
-        missingMembers: string[];
+        skippedMembers: Array<{ employee_id: string; reason: string }>;
         missingCredentials: string[];
       };
       const parts = [
-        `${body.membersProcessed} members processed`,
-        `${body.certsInserted} certs inserted`,
+        `${body.membersInserted} inserted`,
+        `${body.membersUpdated} updated`,
+        `${body.certsInserted} certs linked`,
       ];
-      if (body.missingMembers.length > 0)
-        parts.push(`${body.missingMembers.length} unknown emp ids`);
-      if (body.missingCredentials.length > 0)
+      if (body.skippedMembers.length > 0) {
+        parts.push(`${body.skippedMembers.length} skipped`);
+      }
+      if (body.missingCredentials.length > 0) {
         parts.push(`${body.missingCredentials.length} unknown cert names`);
+      }
       setToast(parts.join('; '));
       startTransition(() => router.refresh());
     } catch (err) {
@@ -245,7 +249,11 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
             disabled={seeding}
             className="min-h-10 rounded-md bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50"
           >
-            {seeding ? 'Pre-filling...' : 'Pre-fill from 2025 picks'}
+            {seeding
+              ? 'Bootstrapping...'
+              : members.length === 0
+                ? 'Bootstrap roster from 2025 synthesis'
+                : 'Pre-fill from 2025 picks'}
           </button>
         </div>
       </div>
@@ -359,7 +367,11 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
             {members.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
-                  No members match the current filter.
+                  <p className="font-medium text-slate-200">No members in the bid roster.</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Click "Bootstrap roster from 2025 synthesis" above to load 226 members and their
+                    inferred 2025 credentials in one click.
+                  </p>
                 </td>
               </tr>
             )}

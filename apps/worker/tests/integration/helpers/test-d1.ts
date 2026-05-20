@@ -121,6 +121,11 @@ export async function setupTestD1(): Promise<TestD1> {
   // forced-pick tests.
   sqlite.pragma('foreign_keys = OFF');
   applyMigrations(sqlite);
+  // Migration 0017 idempotently seeds bid_years for 2026/2027/2028 so a
+  // fresh production deploy can create a mock session without a manual
+  // INSERT. Tests manage their own bid_years rows (often with a non-default
+  // status like 'live'), so wipe the seed rows here for test isolation.
+  sqlite.exec('DELETE FROM bid_years;');
 
   const env: WorkerEnv = {
     ENV: 'staging',
