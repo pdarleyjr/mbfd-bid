@@ -125,9 +125,9 @@ async function main(): Promise<void> {
   // This skeleton intentionally does not call Anthropic when ANTHROPIC_API_KEY
   // is unset, so the harness can be checked into CI without burning credits.
   if (!process.env.ANTHROPIC_API_KEY) {
-      console.info('ANTHROPIC_API_KEY not set — emitting empty report skeleton.');
+    console.info('ANTHROPIC_API_KEY not set — emitting empty report skeleton.');
   } else {
-      console.info(
+    console.info(
       'ANTHROPIC_API_KEY detected — the offline operator fleshes out the eval loop here.',
     );
   }

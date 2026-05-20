@@ -15,8 +15,8 @@ import { writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import { parseCsv } from '../../lib/csv-parser.js';
 import {
-  type Station,
   STATIONS,
+  type Station,
   isEligibleFor,
   stationRuleText,
   stationTitle,
