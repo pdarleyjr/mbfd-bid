@@ -64,7 +64,12 @@ export default async function EligibleStationPage({ params }: PageProps) {
       serverWorkerFetch('/api/admin/credentials?limit=500'),
     ]);
     if (!eligibleRes.ok) {
-      fetchError = `Eligibility fetch failed: ${eligibleRes.status}`;
+      const errBody = (await eligibleRes.json().catch(() => null)) as {
+        error?: string;
+        detail?: string;
+      } | null;
+      const tag = errBody?.detail ?? errBody?.error ?? '';
+      fetchError = `Eligibility fetch failed: ${eligibleRes.status}${tag ? ` — ${tag}` : ''}`;
     } else {
       const body = (await eligibleRes.json()) as EligibleResponse;
       members = body.members;

@@ -46,7 +46,12 @@ export default async function MasterRosterPage({
       serverWorkerFetch('/api/admin/credentials?limit=500'),
     ]);
     if (!rosterRes.ok) {
-      fetchError = `Roster fetch failed: ${rosterRes.status}`;
+      const errBody = (await rosterRes.json().catch(() => null)) as {
+        error?: string;
+        detail?: string;
+      } | null;
+      const tag = errBody?.detail ?? errBody?.error ?? '';
+      fetchError = `Roster fetch failed: ${rosterRes.status}${tag ? ` — ${tag}` : ''}`;
     } else {
       const body = (await rosterRes.json()) as RosterResponse;
       members = body.members;

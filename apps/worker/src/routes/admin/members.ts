@@ -408,42 +408,56 @@ async function loadRoster(
 }
 
 router.get('/roster', async (c) => {
-  const rank = c.req.query('rank');
-  const sessionId = c.req.query('session_id');
-  const search = c.req.query('search');
-  const stationParam = c.req.query('station');
-  let station: Station | undefined;
-  if (stationParam) {
-    if (!STATIONS.includes(stationParam as Station)) {
-      return c.json({ error: 'invalid_station', stations: STATIONS }, 400);
+  try {
+    const rank = c.req.query('rank');
+    const sessionId = c.req.query('session_id');
+    const search = c.req.query('search');
+    const stationParam = c.req.query('station');
+    let station: Station | undefined;
+    if (stationParam) {
+      if (!STATIONS.includes(stationParam as Station)) {
+        return c.json({ error: 'invalid_station', stations: STATIONS }, 400);
+      }
+      station = stationParam as Station;
     }
-    station = stationParam as Station;
-  }
 
-  const db = getDb(c.env.DB);
-  const rows = await loadRoster(db, { rank, sessionId, search, station });
-  return c.json({ members: rows, total: rows.length });
+    const db = getDb(c.env.DB);
+    const rows = await loadRoster(db, { rank, sessionId, search, station });
+    return c.json({ members: rows, total: rows.length });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error('[roster-error]', { msg, stack });
+    return c.json({ error: 'roster_load_failed', detail: msg }, 500);
+  }
 });
 
 router.get('/eligible-for/:station', async (c) => {
-  const stationParam = c.req.param('station');
-  if (!STATIONS.includes(stationParam as Station)) {
-    return c.json({ error: 'invalid_station', stations: STATIONS }, 400);
-  }
-  const station = stationParam as Station;
-  const sessionId = c.req.query('session_id');
-  const search = c.req.query('search');
-  const rank = c.req.query('rank');
+  try {
+    const stationParam = c.req.param('station');
+    if (!STATIONS.includes(stationParam as Station)) {
+      return c.json({ error: 'invalid_station', stations: STATIONS }, 400);
+    }
+    const station = stationParam as Station;
+    const sessionId = c.req.query('session_id');
+    const search = c.req.query('search');
+    const rank = c.req.query('rank');
 
-  const db = getDb(c.env.DB);
-  const rows = await loadRoster(db, { rank, sessionId, search, station });
-  return c.json({
-    members: rows,
-    total: rows.length,
-    station,
-    rule: stationRuleText(station),
-    title: stationTitle(station),
-  });
+    const db = getDb(c.env.DB);
+    const rows = await loadRoster(db, { rank, sessionId, search, station });
+    return c.json({
+      members: rows,
+      total: rows.length,
+      station,
+      rule: stationRuleText(station),
+      title: stationTitle(station),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error('[eligible-for-error]', { msg, stack });
+    return c.json({ error: 'eligibility_load_failed', detail: msg }, 500);
+  }
 });
 
 // POST /api/admin/members/:id/credentials/:credentialId — toggle a single cert.
