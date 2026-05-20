@@ -41,7 +41,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', inputs.env)) || fromJson('["staging", "production"]') }}
+        # Scheduled runs only back up staging; production matrix entry is
+        # added by Plan 09b once production D1 + R2 backups bucket exist.
+        # Use workflow_dispatch with env=production to back up prod ad-hoc.
+        env: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', inputs.env)) || fromJson('["staging"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
