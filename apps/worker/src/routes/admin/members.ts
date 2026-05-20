@@ -1,6 +1,6 @@
 import { MemberImportRowSchema } from '@mbfd/shared';
 import type { JwtPayload } from '@mbfd/shared';
-import { type SQL, and, eq, inArray, sql } from 'drizzle-orm';
+import { type SQL, and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
@@ -252,6 +252,443 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   });
 
   return c.json({ member: updated });
+});
+
+// ── Members section / Master Roster — Task A5 ─────────────────────────────
+//
+// Helpers shared by /roster, /eligible-for/:station, and other read paths.
+
+interface RawMemberRow {
+  id: number;
+  employee_id: string;
+  last_name: string;
+  first_name: string;
+  rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+  bid_category: 'OFC' | 'FF' | 'EXCLUDED';
+  rsc_seniority: number;
+  rank_seniority: number | null;
+}
+
+/**
+ * Loads members + their credential names/ids, computes natural bid order,
+ * then applies optional manual_bid_order_override rows for a given session.
+ * Returns rows sorted ascending by ordinal.
+ */
+async function loadRoster(
+  db: ReturnType<typeof getDb>,
+  opts: {
+    rank: string | undefined;
+    sessionId: string | undefined;
+    search: string | undefined;
+    station: Station | undefined;
+  },
+): Promise<RosterRow[]> {
+  const filters: SQL[] = [];
+  if (opts.rank) {
+    filters.push(eq(members.rank, opts.rank as RawMemberRow['rank']));
+  }
+  if (opts.search && opts.search.trim().length > 0) {
+    const needle = `%${opts.search.trim()}%`;
+    const searchOr = or(
+      like(members.lastName, needle),
+      like(members.firstName, needle),
+      like(members.employeeId, needle),
+    );
+    if (searchOr !== undefined) filters.push(searchOr);
+  }
+  const where = filters.length > 0 ? and(...filters) : undefined;
+
+  const memberRows = await db
+    .select({
+      id: members.id,
+      employeeId: members.employeeId,
+      firstName: members.firstName,
+      lastName: members.lastName,
+      rank: members.rank,
+      bidCategory: members.bidCategory,
+      rscSeniority: members.rscSeniority,
+      rankSeniority: members.rankSeniority,
+    })
+    .from(members)
+    .where(where)
+    .all();
+
+  if (memberRows.length === 0) return [];
+
+  const ids = memberRows.map((m) => m.id);
+  const credsRows = await db
+    .select({
+      memberId: memberCredentials.memberId,
+      credentialId: memberCredentials.credentialId,
+      credentialName: credentialsTable.name,
+    })
+    .from(memberCredentials)
+    .innerJoin(credentialsTable, eq(memberCredentials.credentialId, credentialsTable.id))
+    .where(inArray(memberCredentials.memberId, ids))
+    .all();
+
+  const credIdsByMember = new Map<number, number[]>();
+  const credNamesByMember = new Map<number, string[]>();
+  for (const row of credsRows) {
+    const ids2 = credIdsByMember.get(row.memberId) ?? [];
+    ids2.push(row.credentialId);
+    credIdsByMember.set(row.memberId, ids2);
+    const names = credNamesByMember.get(row.memberId) ?? [];
+    names.push(row.credentialName);
+    credNamesByMember.set(row.memberId, names);
+  }
+
+  // Compute natural bid order across the FULL member set (not filtered),
+  // so ordinals stay stable when filters narrow the result.
+  const allMembers = await db
+    .select({
+      id: members.id,
+      bidCategory: members.bidCategory,
+      rscSeniority: members.rscSeniority,
+      rankSeniority: members.rankSeniority,
+    })
+    .from(members)
+    .all();
+  const ordered = computeBidOrder(
+    allMembers.map((m) => ({
+      id: m.id,
+      bidCategory: m.bidCategory,
+      rscSeniority: m.rscSeniority,
+      rankSeniority: m.rankSeniority,
+    })),
+  );
+  const ordinalByMember = new Map<number, number>();
+  for (const o of ordered) ordinalByMember.set(o.memberId, o.ordinal);
+
+  // Apply manual overrides if a session id is provided.
+  const overrideByMember = new Map<number, number>();
+  if (opts.sessionId) {
+    const overrides = await db
+      .select({
+        memberId: manualBidOrderOverride.memberId,
+        overrideOrdinal: manualBidOrderOverride.overrideOrdinal,
+      })
+      .from(manualBidOrderOverride)
+      .where(eq(manualBidOrderOverride.bidSessionId, opts.sessionId))
+      .all();
+    for (const o of overrides) overrideByMember.set(o.memberId, o.overrideOrdinal);
+  }
+
+  let rows: RosterRow[] = memberRows.map((m) => {
+    const naturalOrdinal = ordinalByMember.get(m.id) ?? Number.MAX_SAFE_INTEGER;
+    const overrideOrdinal = overrideByMember.get(m.id) ?? null;
+    return {
+      id: m.id,
+      employee_id: m.employeeId,
+      last_name: m.lastName,
+      first_name: m.firstName,
+      rank: m.rank,
+      bid_category: m.bidCategory,
+      rsc_seniority: m.rscSeniority,
+      rank_seniority: m.rankSeniority,
+      ordinal: overrideOrdinal ?? naturalOrdinal,
+      manual_override_ordinal: overrideOrdinal,
+      credential_ids: credIdsByMember.get(m.id) ?? [],
+    };
+  });
+
+  if (opts.station) {
+    const station = opts.station;
+    rows = rows.filter((r) =>
+      isEligibleFor(station, {
+        rank: r.rank,
+        credentialNames: credNamesByMember.get(r.id) ?? [],
+        employeeId: r.employee_id,
+      }),
+    );
+  }
+
+  rows.sort((a, b) => a.ordinal - b.ordinal);
+  return rows;
+}
+
+router.get('/roster', async (c) => {
+  const rank = c.req.query('rank');
+  const sessionId = c.req.query('session_id');
+  const search = c.req.query('search');
+  const stationParam = c.req.query('station');
+  let station: Station | undefined;
+  if (stationParam) {
+    if (!STATIONS.includes(stationParam as Station)) {
+      return c.json({ error: 'invalid_station', stations: STATIONS }, 400);
+    }
+    station = stationParam as Station;
+  }
+
+  const db = getDb(c.env.DB);
+  const rows = await loadRoster(db, { rank, sessionId, search, station });
+  return c.json({ members: rows, total: rows.length });
+});
+
+router.get('/eligible-for/:station', async (c) => {
+  const stationParam = c.req.param('station');
+  if (!STATIONS.includes(stationParam as Station)) {
+    return c.json({ error: 'invalid_station', stations: STATIONS }, 400);
+  }
+  const station = stationParam as Station;
+  const sessionId = c.req.query('session_id');
+  const search = c.req.query('search');
+  const rank = c.req.query('rank');
+
+  const db = getDb(c.env.DB);
+  const rows = await loadRoster(db, { rank, sessionId, search, station });
+  return c.json({
+    members: rows,
+    total: rows.length,
+    station,
+    rule: stationRuleText(station),
+    title: stationTitle(station),
+  });
+});
+
+// POST /api/admin/members/:id/credentials/:credentialId — toggle a single cert.
+router.post('/:id{\\d+}/credentials/:credentialId{\\d+}', requireStepUpAuth(), async (c) => {
+  const memberId = Number(c.req.param('id'));
+  const credentialId = Number(c.req.param('credentialId'));
+
+  const db = getDb(c.env.DB);
+
+  const member = await db.select().from(members).where(eq(members.id, memberId)).get();
+  if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
+
+  const cred = await db
+    .select()
+    .from(credentialsTable)
+    .where(eq(credentialsTable.id, credentialId))
+    .get();
+  if (cred === undefined) return c.json({ error: 'credential_not_found' }, 404);
+
+  const existing = await db
+    .select()
+    .from(memberCredentials)
+    .where(
+      and(
+        eq(memberCredentials.memberId, memberId),
+        eq(memberCredentials.credentialId, credentialId),
+      ),
+    )
+    .get();
+
+  let held: boolean;
+  if (existing === undefined) {
+    await db.insert(memberCredentials).values({ memberId, credentialId });
+    held = true;
+  } else {
+    await db
+      .delete(memberCredentials)
+      .where(
+        and(
+          eq(memberCredentials.memberId, memberId),
+          eq(memberCredentials.credentialId, credentialId),
+        ),
+      );
+    held = false;
+  }
+
+  await writeAuditLog(db, {
+    bidSessionId: null,
+    actorType: 'admin',
+    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+    action: 'override_cert',
+    targetKind: 'member_credential',
+    targetId: `${memberId}:${credentialId}`,
+    beforeState: existing === undefined ? { held: false } : { held: true },
+    afterState: { held },
+  });
+
+  return c.json({ held });
+});
+
+const BidOrderPatchSchema = z
+  .object({
+    session_id: z.string().min(1),
+    overrides: z
+      .array(
+        z.object({
+          member_id: z.number().int().positive(),
+          override_ordinal: z.number().int().positive(),
+        }),
+      )
+      .min(1),
+  })
+  .strict();
+
+// PATCH /api/admin/members/bid-order — upsert manual override rows.
+router.patch('/bid-order', requireStepUpAuth(), async (c) => {
+  const raw = await c.req.json().catch(() => null);
+  const parsed = BidOrderPatchSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  }
+  const { session_id, overrides } = parsed.data;
+
+  const db = getDb(c.env.DB);
+
+  const session = await db.select().from(bidSessions).where(eq(bidSessions.id, session_id)).get();
+  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+
+  // Validate member ids exist.
+  const memberIds = overrides.map((o) => o.member_id);
+  const existing = await db
+    .select({ id: members.id })
+    .from(members)
+    .where(inArray(members.id, memberIds))
+    .all();
+  if (existing.length !== memberIds.length) {
+    const found = new Set(existing.map((e) => e.id));
+    const missing = memberIds.filter((id) => !found.has(id));
+    return c.json({ error: 'unknown_members', missing }, 400);
+  }
+
+  const now = new Date();
+  for (const o of overrides) {
+    const exists = await db
+      .select()
+      .from(manualBidOrderOverride)
+      .where(
+        and(
+          eq(manualBidOrderOverride.bidSessionId, session_id),
+          eq(manualBidOrderOverride.memberId, o.member_id),
+        ),
+      )
+      .get();
+    if (exists === undefined) {
+      await db.insert(manualBidOrderOverride).values({
+        bidSessionId: session_id,
+        memberId: o.member_id,
+        overrideOrdinal: o.override_ordinal,
+        createdAt: now,
+      });
+    } else {
+      await db
+        .update(manualBidOrderOverride)
+        .set({ overrideOrdinal: o.override_ordinal })
+        .where(
+          and(
+            eq(manualBidOrderOverride.bidSessionId, session_id),
+            eq(manualBidOrderOverride.memberId, o.member_id),
+          ),
+        );
+    }
+  }
+
+  await writeAuditLog(db, {
+    bidSessionId: session_id,
+    actorType: 'admin',
+    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+    action: 'override_rule',
+    targetKind: 'manual_bid_order_override',
+    targetId: session_id,
+    afterState: { overrides },
+  });
+
+  return c.json({ updated: overrides.length });
+});
+
+// POST /api/admin/members/seed-from-synthesis — bulk pre-fill member_credentials
+// from the analysis script output (members_2026_synthesis.json). Used by the
+// Master Roster "Pre-fill from 2025 picks" button.
+interface SynthesisRow {
+  employee_id: number | string;
+  inferred_certs_2025?: ReadonlyArray<string>;
+}
+
+router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
+  let raw: unknown;
+  const contentType = c.req.header('content-type') ?? '';
+  if (contentType.includes('multipart/form-data')) {
+    const form = await c.req.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) {
+      return c.json({ error: 'file_required' }, 400);
+    }
+    const text = await file.text();
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400);
+    }
+  } else {
+    raw = await c.req.json().catch(() => null);
+  }
+
+  if (!Array.isArray(raw)) {
+    return c.json({ error: 'expected_array' }, 400);
+  }
+
+  const db = getDb(c.env.DB);
+  const allCreds = await db
+    .select({ id: credentialsTable.id, name: credentialsTable.name })
+    .from(credentialsTable)
+    .all();
+  const credIdByName = new Map(allCreds.map((c2) => [c2.name, c2.id]));
+
+  const missingMembers: string[] = [];
+  const missingCredentialsSet = new Set<string>();
+  let membersProcessed = 0;
+  let certsInserted = 0;
+
+  for (const row of raw as SynthesisRow[]) {
+    const certs = row.inferred_certs_2025 ?? [];
+    if (certs.length === 0) continue;
+
+    const employeeId = String(row.employee_id);
+    const member = await db
+      .select({ id: members.id })
+      .from(members)
+      .where(eq(members.employeeId, employeeId))
+      .get();
+    if (member === undefined) {
+      missingMembers.push(employeeId);
+      continue;
+    }
+
+    membersProcessed += 1;
+    for (const certName of certs) {
+      const cid = credIdByName.get(certName);
+      if (cid === undefined) {
+        missingCredentialsSet.add(certName);
+        continue;
+      }
+      const existing = await db
+        .select()
+        .from(memberCredentials)
+        .where(
+          and(eq(memberCredentials.memberId, member.id), eq(memberCredentials.credentialId, cid)),
+        )
+        .get();
+      if (existing === undefined) {
+        await db.insert(memberCredentials).values({ memberId: member.id, credentialId: cid });
+        certsInserted += 1;
+      }
+    }
+  }
+
+  await writeAuditLog(db, {
+    bidSessionId: null,
+    actorType: 'admin',
+    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+    action: 'credentials_import',
+    targetKind: 'synthesis_seed',
+    afterState: {
+      membersProcessed,
+      certsInserted,
+      missingMembers: missingMembers.length,
+      missingCredentials: missingCredentialsSet.size,
+    },
+  });
+
+  return c.json({
+    membersProcessed,
+    certsInserted,
+    missingMembers,
+    missingCredentials: [...missingCredentialsSet],
+  });
 });
 
 export default router;
