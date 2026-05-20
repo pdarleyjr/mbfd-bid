@@ -691,6 +691,7 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
   }
 
   const db = getDb(c.env.DB);
+  const rawDB = c.env.DB;
   const allCreds = await db
     .select({ id: credentialsTable.id, name: credentialsTable.name })
     .from(credentialsTable)
@@ -702,13 +703,28 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
   let membersInserted = 0;
   let membersUpdated = 0;
   let certsInserted = 0;
-  const now = new Date();
+  const nowMs = Date.now();
 
+  interface NormalizedRow {
+    employeeId: string;
+    firstName: string;
+    lastName: string;
+    rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+    bidCategory: 'OFC' | 'FF' | 'EXCLUDED';
+    rscSeniority: number;
+    rankSeniority: number | null;
+    certs: string[];
+  }
+
+  // --- Pass 1: normalize / validate every row in pure JS (no DB I/O). -----
+  const normalized: NormalizedRow[] = [];
+  const seenEmpIds = new Set<string>();
   for (const row of raw as SynthesisRow[]) {
     const employeeId = String(row.employee_id ?? '').trim();
-    if (employeeId === '') {
-      continue;
-    }
+    if (employeeId === '') continue;
+    if (seenEmpIds.has(employeeId)) continue; // dedupe within payload
+    seenEmpIds.add(employeeId);
+
     if (String(row.bid ?? 'Include').toLowerCase() === 'exclude') {
       skippedMembers.push({ employee_id: employeeId, reason: 'bid=Exclude' });
       continue;
@@ -758,80 +774,178 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
       continue;
     }
 
-    const existing = await db
-      .select({ id: members.id })
-      .from(members)
-      .where(eq(members.employeeId, employeeId))
-      .get();
-
-    let memberId: number;
-    if (existing === undefined) {
-      const inserted = await db
-        .insert(members)
-        .values({
-          employeeId,
-          firstName,
-          lastName,
-          rank,
-          bidCategory,
-          rscSeniority,
-          rankSeniority,
-          isProbationary: false,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: members.id });
-      const newId = inserted[0]?.id;
-      if (newId === undefined) {
-        skippedMembers.push({ employee_id: employeeId, reason: 'insert_failed' });
-        continue;
-      }
-      memberId = newId;
-      membersInserted += 1;
-    } else {
-      memberId = existing.id;
-      await db
-        .update(members)
-        .set({
-          firstName,
-          lastName,
-          rank,
-          bidCategory,
-          rscSeniority,
-          rankSeniority,
-          updatedAt: now,
-        })
-        .where(eq(members.id, memberId));
-      membersUpdated += 1;
-    }
-
-    // Combine explicit certs from synthesis JSON with position-derived
-    // specialty certs (e.g. anyone who held a Station-2 slot in 2025 already
-    // had the six TRT Ops certs). Dedupe so we don't process the same cert
-    // twice per member.
     const certs = Array.from(
       new Set<string>([
         ...(row.inferred_certs_2025 ?? []),
         ...specialtyCertsFromPosition(row.position_2025 ?? null),
       ]),
     );
-    for (const certName of certs) {
+
+    normalized.push({
+      employeeId,
+      firstName,
+      lastName,
+      rank,
+      bidCategory,
+      rscSeniority,
+      rankSeniority,
+      certs,
+    });
+  }
+
+  // --- Pass 2: pre-fetch which members already exist (chunked IN-query). ---
+  const empIds = normalized.map((r) => r.employeeId);
+  const existingRows = await chunkedInArraySelect(empIds, (chunk) =>
+    db
+      .select({ id: members.id, employeeId: members.employeeId })
+      .from(members)
+      .where(inArray(members.employeeId, chunk))
+      .all(),
+  );
+  const memberIdByEmp = new Map<string, number>(existingRows.map((r) => [r.employeeId, r.id]));
+
+  // --- Pass 3: batch INSERT all new members, batch UPDATE existing ones. ---
+  const insertStmts: D1PreparedStatement[] = [];
+  const insertEmpIds: string[] = [];
+  const updateStmts: D1PreparedStatement[] = [];
+
+  for (const r of normalized) {
+    const existingId = memberIdByEmp.get(r.employeeId);
+    if (existingId === undefined) {
+      insertEmpIds.push(r.employeeId);
+      insertStmts.push(
+        rawDB
+          .prepare(
+            'INSERT INTO members ' +
+              '(employee_id, first_name, last_name, rank, bid_category, rsc_seniority, rank_seniority, is_probationary, created_at, updated_at) ' +
+              'VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+          )
+          .bind(
+            r.employeeId,
+            r.firstName,
+            r.lastName,
+            r.rank,
+            r.bidCategory,
+            r.rscSeniority,
+            r.rankSeniority,
+            nowMs,
+            nowMs,
+          ),
+      );
+    } else {
+      updateStmts.push(
+        rawDB
+          .prepare(
+            'UPDATE members SET first_name = ?, last_name = ?, rank = ?, ' +
+              'bid_category = ?, rsc_seniority = ?, rank_seniority = ?, updated_at = ? WHERE id = ?',
+          )
+          .bind(
+            r.firstName,
+            r.lastName,
+            r.rank,
+            r.bidCategory,
+            r.rscSeniority,
+            r.rankSeniority,
+            nowMs,
+            existingId,
+          ),
+      );
+    }
+  }
+
+  if (insertStmts.length > 0) {
+    // D1.batch executes statements in order; RETURNING semantics aren't
+    // portable across the real-D1 and miniflare-D1 runtimes, so we follow up
+    // with a single chunked SELECT to resolve the new auto-incremented ids.
+    const head = insertStmts[0];
+    if (head !== undefined) {
+      await rawDB.batch([head, ...insertStmts.slice(1)]);
+      const resolved = await chunkedInArraySelect(insertEmpIds, (chunk) =>
+        db
+          .select({ id: members.id, employeeId: members.employeeId })
+          .from(members)
+          .where(inArray(members.employeeId, chunk))
+          .all(),
+      );
+      for (const r2 of resolved) {
+        if (!memberIdByEmp.has(r2.employeeId)) {
+          memberIdByEmp.set(r2.employeeId, r2.id);
+          membersInserted += 1;
+        }
+      }
+      // Anything we expected to insert but didn't surface is reported.
+      for (const emp of insertEmpIds) {
+        if (!memberIdByEmp.has(emp)) {
+          skippedMembers.push({ employee_id: emp, reason: 'insert_failed' });
+        }
+      }
+    }
+  }
+
+  if (updateStmts.length > 0) {
+    const head = updateStmts[0];
+    if (head !== undefined) {
+      await rawDB.batch([head, ...updateStmts.slice(1)]);
+      membersUpdated = updateStmts.length;
+    }
+  }
+
+  // --- Pass 4: compute desired cert links, pre-fetch existing links. ------
+  interface DesiredLink {
+    memberId: number;
+    credentialId: number;
+  }
+  const desiredLinks: DesiredLink[] = [];
+  for (const r of normalized) {
+    const memberId = memberIdByEmp.get(r.employeeId);
+    if (memberId === undefined) continue;
+    for (const certName of r.certs) {
       const cid = credIdByName.get(certName);
       if (cid === undefined) {
         missingCredentialsSet.add(certName);
         continue;
       }
-      const link = await db
-        .select()
+      desiredLinks.push({ memberId, credentialId: cid });
+    }
+  }
+
+  if (desiredLinks.length > 0) {
+    const affectedMemberIds = Array.from(new Set(desiredLinks.map((l) => l.memberId)));
+    const existingLinks = await chunkedInArraySelect(affectedMemberIds, (chunk) =>
+      db
+        .select({
+          memberId: memberCredentials.memberId,
+          credentialId: memberCredentials.credentialId,
+        })
         .from(memberCredentials)
-        .where(
-          and(eq(memberCredentials.memberId, memberId), eq(memberCredentials.credentialId, cid)),
-        )
-        .get();
-      if (link === undefined) {
-        await db.insert(memberCredentials).values({ memberId, credentialId: cid });
-        certsInserted += 1;
+        .where(inArray(memberCredentials.memberId, chunk))
+        .all(),
+    );
+    const linkKeySet = new Set<string>(existingLinks.map((l) => `${l.memberId}:${l.credentialId}`));
+
+    // --- Pass 5: batch INSERT new cert links (chunked at 100 per batch). ---
+    const newLinkStmts: D1PreparedStatement[] = [];
+    for (const l of desiredLinks) {
+      const key = `${l.memberId}:${l.credentialId}`;
+      if (linkKeySet.has(key)) continue;
+      linkKeySet.add(key); // also dedupes duplicates within this payload
+      newLinkStmts.push(
+        rawDB
+          .prepare('INSERT INTO member_credentials (member_id, credential_id) VALUES (?, ?)')
+          .bind(l.memberId, l.credentialId),
+      );
+    }
+
+    if (newLinkStmts.length > 0) {
+      const BATCH_LIMIT = 100;
+      for (let i = 0; i < newLinkStmts.length; i += BATCH_LIMIT) {
+        const slice = newLinkStmts.slice(i, i + BATCH_LIMIT);
+        const head = slice[0];
+        if (head !== undefined) {
+          await rawDB.batch([head, ...slice.slice(1)]);
+        }
       }
+      certsInserted = newLinkStmts.length;
     }
   }
 
