@@ -1,11 +1,10 @@
-import { cookies } from 'next/headers';
-import { JWT_COOKIE_NAME } from '../../../lib/cookies';
 import { formatET } from '../../../lib/et-time';
 import { requireAdmin } from '../../../lib/require-admin';
-import { getWorkerBase } from '../../../lib/worker-base';
+import { serverWorkerFetch } from '../../../lib/server-worker-fetch';
 import { AIDissentMarker } from '../bid/_components/AIDissentMarker';
 
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 
 interface AuditEntry {
   id: string;
@@ -49,9 +48,6 @@ export default async function AuditPage({
 }) {
   await requireAdmin();
   const sp = await searchParams;
-  const cookieStore = await cookies();
-  const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value;
-  const baseUrl = getWorkerBase();
 
   const qs = new URLSearchParams();
   qs.set('limit', '100');
@@ -63,10 +59,7 @@ export default async function AuditPage({
   let total = 0;
   let fetchError: string | null = null;
   try {
-    const res = await fetch(`${baseUrl}/api/admin/audit?${qs.toString()}`, {
-      headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-      cache: 'no-store',
-    });
+    const res = await serverWorkerFetch(`/api/admin/audit?${qs.toString()}`);
     if (!res.ok) {
       fetchError = `Worker returned ${res.status}`;
     } else {

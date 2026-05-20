@@ -2,8 +2,10 @@ import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
 import { requireAdmin } from '@/lib/require-admin';
-import { getWorkerBase } from '@/lib/worker-base';
+import { serverWorkerFetch } from '@/lib/server-worker-fetch';
+import type { Route } from 'next';
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { MockBanner } from '../../_components/MockBanner';
 import { AIAdvisoryPanel } from './_components/AIAdvisoryPanel';
@@ -13,6 +15,7 @@ import { AIForecastBanner } from './_components/AIForecastBanner';
 import { AdminBoard } from './_components/AdminBoard';
 
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 
 interface BoardSnapshot {
   bidSessionId: string;
@@ -24,15 +27,15 @@ interface BoardSnapshot {
   isMock?: boolean;
 }
 
+interface ActiveSessionResponse {
+  session: { id: string } | null;
+}
+
 async function loadBoard(
-  jwt: string,
+  sessionId: string,
 ): Promise<{ board: BoardSnapshot | null; fetchError: string | null }> {
-  const workerBase = getWorkerBase();
   try {
-    const res = await fetch(`${workerBase}/api/board?bidSessionId=01HSESS`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-      cache: 'no-store',
-    });
+    const res = await serverWorkerFetch(`/api/board?bidSessionId=${encodeURIComponent(sessionId)}`);
     if (!res.ok) {
       return { board: null, fetchError: `Worker returned ${res.status}` };
     }
@@ -43,7 +46,18 @@ async function loadBoard(
   }
 }
 
-export default async function AdminBidPage() {
+async function loadActiveSession(): Promise<string | null> {
+  const res = await serverWorkerFetch('/api/admin/bid-session/active');
+  if (!res.ok) return null;
+  const body = (await res.json()) as ActiveSessionResponse;
+  return body.session?.id ?? null;
+}
+
+export default async function AdminBidPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ session_id?: string; bidSessionId?: string }>;
+}) {
   await requireAdmin();
   const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
   if (!jwt) redirect('/login');
@@ -52,7 +66,25 @@ export default async function AdminBidPage() {
   if (!signingKey) throw new Error('JWT_SIGNING_KEY not set');
   const claims = await verifyJwt(jwt, signingKey);
 
-  const { board, fetchError } = await loadBoard(jwt);
+  const sp = await searchParams;
+  const sessionId = sp.session_id ?? sp.bidSessionId ?? (await loadActiveSession());
+  if (!sessionId) {
+    return (
+      <div className="min-h-screen bg-stone-50 p-6">
+        <header className="mb-4">
+          <h1 className="font-display text-2xl text-stone-900">MBFD 2026 Bid — Admin Console</h1>
+        </header>
+        <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
+          No active bid session is available.
+          <Link href={'/admin/sessions/new' as Route} className="ml-2 font-semibold underline">
+            Create a session
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const { board, fetchError } = await loadBoard(sessionId);
 
   if (fetchError !== null || board === null) {
     return (

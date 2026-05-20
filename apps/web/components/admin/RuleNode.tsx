@@ -1,3 +1,6 @@
+import type { Route } from 'next';
+import Link from 'next/link';
+
 interface ParsedRule {
   id: number;
   ruleBookVersion: string;
@@ -37,6 +40,14 @@ export function RuleNode({ rule }: RuleNodeProps) {
         </span>
       </summary>
       <dl className="px-4 pb-4">
+        <div className="mt-2">
+          <Link
+            href={`/admin/positions/${rule.positionId}/edit` as Route}
+            className="text-sm font-medium text-red-400 underline hover:text-red-300"
+          >
+            Edit draft rule
+          </Link>
+        </div>
         <JsonBlock label="Required Criteria" value={rule.requiredCriteria} />
         <JsonBlock label="Points Preference" value={rule.pointsPreference} />
         <JsonBlock label="Tie-Break Chain" value={rule.tieBreakChain} />

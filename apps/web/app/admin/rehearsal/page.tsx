@@ -5,11 +5,9 @@
 // verify audit chain), shows the most recent findings, and exposes a form
 // for submitting new findings. Admin role-gated.
 
-import { cookies } from 'next/headers';
 import type { ReactElement } from 'react';
-import { JWT_COOKIE_NAME } from '../../../lib/cookies';
 import { requireAdmin } from '../../../lib/require-admin';
-import { getWorkerBase } from '../../../lib/worker-base';
+import { serverWorkerFetch } from '../../../lib/server-worker-fetch';
 import type { FindingRow } from './_components/FindingsList';
 import { FindingsList } from './_components/FindingsList';
 import type { MockSessionRow } from './_components/MockSessionsTable';
@@ -28,12 +26,9 @@ interface SessionRowRaw {
   lastPickedAtIso: string | null;
 }
 
-async function fetchMockSessions(workerBase: string, jwt: string): Promise<SessionRowRaw[]> {
+async function fetchMockSessions(): Promise<SessionRowRaw[]> {
   try {
-    const res = await fetch(`${workerBase}/api/admin/rehearsal/sessions`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-      cache: 'no-store',
-    });
+    const res = await serverWorkerFetch('/api/admin/rehearsal/sessions');
     if (!res.ok) return [];
     const body = (await res.json()) as { sessions: SessionRowRaw[] };
     return body.sessions;
@@ -42,12 +37,9 @@ async function fetchMockSessions(workerBase: string, jwt: string): Promise<Sessi
   }
 }
 
-async function fetchRecentFindings(workerBase: string, jwt: string): Promise<FindingRow[]> {
+async function fetchRecentFindings(): Promise<FindingRow[]> {
   try {
-    const res = await fetch(`${workerBase}/api/admin/rehearsal/findings-recent?limit=50`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-      cache: 'no-store',
-    });
+    const res = await serverWorkerFetch('/api/admin/rehearsal/findings-recent?limit=50');
     if (!res.ok) return [];
     const body = (await res.json()) as { findings: FindingRow[] };
     return body.findings;
@@ -56,15 +48,10 @@ async function fetchRecentFindings(workerBase: string, jwt: string): Promise<Fin
   }
 }
 
-async function fetchSessionCost(
-  workerBase: string,
-  jwt: string,
-  sessionId: string,
-): Promise<number> {
+async function fetchSessionCost(sessionId: string): Promise<number> {
   try {
-    const res = await fetch(
-      `${workerBase}/api/admin/ai/cost?session_id=${encodeURIComponent(sessionId)}`,
-      { headers: { Authorization: `Bearer ${jwt}` }, cache: 'no-store' },
+    const res = await serverWorkerFetch(
+      `/api/admin/ai/cost?session_id=${encodeURIComponent(sessionId)}`,
     );
     if (!res.ok) return 0;
     const body = (await res.json()) as { cost_cents?: number };
@@ -76,18 +63,12 @@ async function fetchSessionCost(
 
 export default async function RehearsalDashboardPage(): Promise<ReactElement> {
   await requireAdmin();
-  const cookieStore = await cookies();
-  const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value ?? '';
-  const workerBase = getWorkerBase();
 
-  const [rawSessions, findings] = await Promise.all([
-    fetchMockSessions(workerBase, jwt),
-    fetchRecentFindings(workerBase, jwt),
-  ]);
+  const [rawSessions, findings] = await Promise.all([fetchMockSessions(), fetchRecentFindings()]);
 
   // Fan-out cost lookup per session in parallel. Costs are advisory; failures
   // surface as $0.00 in the table.
-  const costs = await Promise.all(rawSessions.map((s) => fetchSessionCost(workerBase, jwt, s.id)));
+  const costs = await Promise.all(rawSessions.map((s) => fetchSessionCost(s.id)));
   const sessions: MockSessionRow[] = rawSessions.map((s, i) => ({
     id: s.id,
     bidYear: s.bidYear,

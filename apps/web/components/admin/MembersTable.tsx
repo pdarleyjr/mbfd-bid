@@ -6,14 +6,14 @@ import { DataTable } from './DataTable';
 
 interface MemberRow {
   id: number;
-  employee_id: string;
-  first_name: string;
-  last_name: string;
+  employeeId: string;
+  firstName: string;
+  lastName: string;
   rank: string;
-  bid_category: string;
-  rsc_seniority: number;
-  hired_at: string | null;
-  is_probationary: boolean;
+  bidCategory: string;
+  rscSeniority: number;
+  hiredAt: string | null;
+  isProbationary: boolean;
 }
 
 const RANK_LABELS: Record<string, string> = {
@@ -28,7 +28,7 @@ const RANK_LABELS: Record<string, string> = {
 const helper = createColumnHelper<MemberRow>();
 
 const columns: ColumnDef<MemberRow, string>[] = [
-  helper.accessor('employee_id', {
+  helper.accessor('employeeId', {
     header: 'Emp ID',
     cell: (info) => (
       <Link
@@ -39,7 +39,7 @@ const columns: ColumnDef<MemberRow, string>[] = [
       </Link>
     ),
   }) as ColumnDef<MemberRow, string>,
-  helper.accessor('last_name', {
+  helper.accessor('lastName', {
     header: 'Last Name',
     cell: (info) => (
       <Link
@@ -50,14 +50,14 @@ const columns: ColumnDef<MemberRow, string>[] = [
       </Link>
     ),
   }) as ColumnDef<MemberRow, string>,
-  helper.accessor('first_name', {
+  helper.accessor('firstName', {
     header: 'First Name',
   }) as ColumnDef<MemberRow, string>,
   helper.accessor('rank', {
     header: 'Rank',
     cell: (info) => RANK_LABELS[info.getValue()] ?? info.getValue(),
   }) as ColumnDef<MemberRow, string>,
-  helper.accessor('bid_category', {
+  helper.accessor('bidCategory', {
     header: 'Category',
     cell: (info) => {
       const val = info.getValue();
@@ -77,7 +77,7 @@ const columns: ColumnDef<MemberRow, string>[] = [
       );
     },
   }) as ColumnDef<MemberRow, string>,
-  helper.accessor((row) => String(row.rsc_seniority), {
+  helper.accessor((row) => String(row.rscSeniority), {
     id: 'rsc_seniority',
     header: 'RSC Sen.',
     cell: (info) => (
@@ -86,7 +86,7 @@ const columns: ColumnDef<MemberRow, string>[] = [
       </span>
     ),
   }),
-  helper.accessor((row) => row.hired_at ?? '', {
+  helper.accessor((row) => row.hiredAt ?? '', {
     id: 'hired_at',
     header: 'Hired',
     cell: (info) => (

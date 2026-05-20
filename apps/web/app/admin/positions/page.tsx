@@ -6,16 +6,16 @@ export const runtime = 'edge';
 
 interface Position {
   id: string;
-  template_version: string;
+  templateVersion: string;
   shift: string;
   station: string;
   division: string;
   unit: string;
-  rank_required: string;
-  position_name: string;
-  is_floating: boolean;
-  is_vacant_by_design: boolean;
-  is_excluded_from_count: boolean;
+  rankRequired: string;
+  positionName: string;
+  isFloating: boolean;
+  isVacantByDesign: boolean;
+  isExcludedFromCount: boolean;
 }
 
 interface PositionsResponse {

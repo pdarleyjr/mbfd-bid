@@ -45,6 +45,7 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
   it('MockSessionsTable shows empty state when no sessions are mock', () => {
     const html = renderToString(<MockSessionsTable sessions={[]} />);
     expect(html).toContain('No mock sessions yet');
+    expect(html).toContain('/admin/sessions/new?mock=1');
   });
 
   it('NewFindingForm renders the inputs the operator needs', () => {

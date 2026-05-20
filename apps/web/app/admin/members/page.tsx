@@ -7,14 +7,14 @@ export const runtime = 'edge';
 
 interface MemberRow {
   id: number;
-  employee_id: string;
-  first_name: string;
-  last_name: string;
+  employeeId: string;
+  firstName: string;
+  lastName: string;
   rank: string;
-  bid_category: string;
-  rsc_seniority: number;
-  hired_at: string | null;
-  is_probationary: boolean;
+  bidCategory: string;
+  rscSeniority: number;
+  hiredAt: string | null;
+  isProbationary: boolean;
 }
 
 interface MembersResponse {

@@ -4,6 +4,8 @@
 // auto-bid, verify audit chain). Action affordances are delegated to the
 // AutoBidButton client island so the table itself stays a Server Component.
 
+import type { Route } from 'next';
+import Link from 'next/link';
 import type { ReactElement } from 'react';
 import { AutoBidButton } from './AutoBidButton';
 import { ResetMockButton } from './ResetMockButton';
@@ -27,7 +29,13 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
   if (sessions.length === 0) {
     return (
       <div className="rounded border border-stone-300 bg-stone-50 p-6 text-center text-sm text-stone-600">
-        No mock sessions yet. Mark one with POST /api/admin/rehearsal/:id/mark-mock.
+        <p>No mock sessions yet.</p>
+        <Link
+          href={'/admin/sessions/new?mock=1' as Route}
+          className="mt-3 inline-flex min-h-10 items-center rounded bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-600"
+        >
+          Create mock session
+        </Link>
       </div>
     );
   }

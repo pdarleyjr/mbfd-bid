@@ -55,17 +55,7 @@ export function DataTable<TData>({ columns, data, caption }: DataTableProps<TDat
                 <th
                   key={header.id}
                   scope="col"
-                  tabIndex={header.column.getCanSort() ? 0 : undefined}
-                  className={[
-                    'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400',
-                    header.column.getCanSort() ? 'cursor-pointer select-none hover:text-white' : '',
-                  ].join(' ')}
-                  onClick={header.column.getToggleSortingHandler()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      header.column.getToggleSortingHandler()?.(e);
-                    }
-                  }}
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400"
                   aria-sort={
                     header.column.getIsSorted() === 'asc'
                       ? 'ascending'
@@ -74,11 +64,17 @@ export function DataTable<TData>({ columns, data, caption }: DataTableProps<TDat
                         : undefined
                   }
                 >
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(header.column.columnDef.header, header.getContext())}
-                  {header.column.getCanSort() && (
-                    <SortIcon direction={header.column.getIsSorted()} />
+                  {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                    <button
+                      type="button"
+                      className="inline-flex min-h-8 items-center text-left uppercase tracking-wider hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      <SortIcon direction={header.column.getIsSorted()} />
+                    </button>
+                  ) : (
+                    flexRender(header.column.columnDef.header, header.getContext())
                   )}
                 </th>
               ))}

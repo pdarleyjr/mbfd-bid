@@ -3,11 +3,12 @@
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 
-export function NewSessionForm() {
+export function NewSessionForm({ defaultMock = false }: { defaultMock?: boolean }) {
   const router = useRouter();
   const [bidYear, setBidYear] = useState(new Date().getFullYear());
   const [days, setDays] = useState(2);
   const [timer, setTimer] = useState(180);
+  const [isMock, setIsMock] = useState(defaultMock);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -24,6 +25,7 @@ export function NewSessionForm() {
           bid_year: bidYear,
           expected_duration_days: days,
           turn_timer_seconds: timer,
+          is_mock: isMock,
         }),
       });
       if (!res.ok) {
@@ -70,6 +72,15 @@ export function NewSessionForm() {
           onChange={(e) => setTimer(Number(e.target.value))}
           className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
         />
+      </label>
+      <label className="flex items-center gap-2 text-sm text-slate-300">
+        <input
+          type="checkbox"
+          checked={isMock}
+          onChange={(e) => setIsMock(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-red-700"
+        />
+        Create as rehearsal/mock session
       </label>
 
       {error !== null && (

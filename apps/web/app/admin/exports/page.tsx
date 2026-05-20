@@ -2,7 +2,7 @@
 
 import type { ReactElement } from 'react';
 
-import { getWorkerBase } from '@/lib/worker-base';
+import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import { ExportCard } from './_components/ExportCard';
 import { ExportTriggerButton } from './_components/ExportTriggerButton';
 import { PortalSyncStatus } from './_components/PortalSyncStatus';
@@ -33,12 +33,8 @@ interface PortalBidRow {
 async function fetchExports(
   sid: string,
 ): Promise<{ exports: ExportRow[]; fetchError: string | null }> {
-  const base = getWorkerBase();
   try {
-    const res = await fetch(`${base}/api/admin/exports/${encodeURIComponent(sid)}`, {
-      cache: 'no-store',
-      credentials: 'include',
-    });
+    const res = await serverWorkerFetch(`/api/admin/exports/${encodeURIComponent(sid)}`);
     if (!res.ok) {
       return { exports: [], fetchError: `Worker returned ${res.status}` };
     }
@@ -52,12 +48,8 @@ async function fetchExports(
 async function fetchPortalStatus(
   sid: string,
 ): Promise<{ bids: PortalBidRow[]; fetchError: string | null }> {
-  const base = getWorkerBase();
   try {
-    const res = await fetch(`${base}/api/admin/portal-status/${encodeURIComponent(sid)}`, {
-      cache: 'no-store',
-      credentials: 'include',
-    });
+    const res = await serverWorkerFetch(`/api/admin/portal-status/${encodeURIComponent(sid)}`);
     if (!res.ok) {
       return { bids: [], fetchError: `Worker returned ${res.status}` };
     }

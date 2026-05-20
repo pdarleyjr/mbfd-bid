@@ -13,7 +13,20 @@ interface DraftValues {
   tie: string;
 }
 
-export function RuleEditor({ positionId }: { positionId: string }) {
+interface InitialRule {
+  id: number;
+  requiredCriteria: unknown;
+  pointsPreference: unknown;
+  tieBreakChain: unknown;
+}
+
+export function RuleEditor({
+  positionId,
+  initialRule,
+}: {
+  positionId: string;
+  initialRule?: InitialRule;
+}) {
   const router = useRouter();
   const [ruleId, setRuleId] = useState<number | null>(null);
   const [required, setRequired] = useState('');
@@ -33,6 +46,11 @@ export function RuleEditor({ positionId }: { positionId: string }) {
       setRequired(d.values.required);
       setPoints(d.values.points);
       setTie(d.values.tie);
+    } else if (initialRule !== undefined) {
+      setRuleId(initialRule.id);
+      setRequired(JSON.stringify(initialRule.requiredCriteria, null, 2));
+      setPoints(JSON.stringify(initialRule.pointsPreference, null, 2));
+      setTie(JSON.stringify(initialRule.tieBreakChain));
     } else {
       // Default skeleton; operator must supply rule_id (typically via the parent
       // /admin/rules table — a deep link would prefill this in a richer build).
@@ -40,7 +58,7 @@ export function RuleEditor({ positionId }: { positionId: string }) {
       setPoints('{"max":0,"items":[]}');
       setTie('["points","rsc_seniority","rank_seniority"]');
     }
-  }, [positionId]);
+  }, [positionId, initialRule]);
 
   // Autosave debounced
   useEffect(() => {
@@ -107,16 +125,23 @@ export function RuleEditor({ positionId }: { positionId: string }) {
 
   return (
     <form onSubmit={onSubmit} className="mt-6 space-y-4">
-      <label className="block">
-        <span className="text-sm text-slate-300">Rule ID (position_rules.id)</span>
-        <input
-          type="number"
-          value={ruleId ?? ''}
-          onChange={(e) => setRuleId(e.target.value === '' ? null : Number(e.target.value))}
-          className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
-          required
-        />
-      </label>
+      {initialRule !== undefined ? (
+        <p className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-300">
+          Editing draft rule <span className="font-mono text-slate-100">#{initialRule.id}</span> for{' '}
+          <span className="font-mono text-slate-100">{positionId}</span>.
+        </p>
+      ) : (
+        <label className="block">
+          <span className="text-sm text-slate-300">Rule ID (position_rules.id)</span>
+          <input
+            type="number"
+            value={ruleId ?? ''}
+            onChange={(e) => setRuleId(e.target.value === '' ? null : Number(e.target.value))}
+            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
+            required
+          />
+        </label>
+      )}
 
       <label className="block">
         <span className="text-sm text-slate-300">Required criteria (JSON)</span>

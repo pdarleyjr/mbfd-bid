@@ -6,7 +6,7 @@ export const runtime = 'edge';
 interface Credential {
   id: number;
   name: string;
-  fy_points_default: number;
+  fyPointsDefault: number;
 }
 
 interface CredentialsResponse {
@@ -100,7 +100,7 @@ export default async function AdminCredentialsPage() {
                     </td>
                     <td className="px-4 py-2 text-slate-200">{cred.name}</td>
                     <td className="px-4 py-2 font-mono text-xs text-slate-400 [font-variant-numeric:tabular-nums]">
-                      {cred.fy_points_default}
+                      {cred.fyPointsDefault}
                     </td>
                   </tr>
                 ))

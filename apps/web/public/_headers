@@ -1,5 +1,5 @@
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.bid.mbfdhub.com https://api.staging.bid.mbfdhub.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.bid.mbfdhub.com https://api.staging.bid.mbfdhub.com wss://api.bid.mbfdhub.com wss://api.staging.bid.mbfdhub.com https://static.cloudflareinsights.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

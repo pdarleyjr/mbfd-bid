@@ -1,11 +1,10 @@
-import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { JWT_COOKIE_NAME } from '../../../../lib/cookies';
 import { requireAdmin } from '../../../../lib/require-admin';
-import { getWorkerBase } from '../../../../lib/worker-base';
+import { serverWorkerFetch } from '../../../../lib/server-worker-fetch';
 import { PublishButton } from './PublishButton';
 
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 
 interface RuleBook {
   version: string;
@@ -22,17 +21,11 @@ export default async function RuleBookDetailPage({
 }) {
   await requireAdmin();
   const { version } = await params;
-  const cookieStore = await cookies();
-  const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value;
-  const baseUrl = getWorkerBase();
 
   let rule_books: RuleBook[] = [];
   let fetchError: string | null = null;
   try {
-    const res = await fetch(`${baseUrl}/api/admin/rule-books`, {
-      headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-      cache: 'no-store',
-    });
+    const res = await serverWorkerFetch('/api/admin/rule-books');
     if (!res.ok) {
       fetchError = `Worker returned ${res.status}`;
     } else {

@@ -1,15 +1,18 @@
+import type { Route } from 'next';
+import Link from 'next/link';
+
 interface Position {
   id: string;
-  template_version: string;
+  templateVersion: string;
   shift: string;
   station: string;
   division: string;
   unit: string;
-  rank_required: string;
-  position_name: string;
-  is_floating: boolean;
-  is_vacant_by_design: boolean;
-  is_excluded_from_count: boolean;
+  rankRequired: string;
+  positionName: string;
+  isFloating: boolean;
+  isVacantByDesign: boolean;
+  isExcludedFromCount: boolean;
 }
 
 const RANK_LABELS: Record<string, string> = {
@@ -85,27 +88,32 @@ export function PositionGroup({ station, positions }: PositionGroupProps) {
                 ].join(' ')}
               >
                 <td className="px-4 py-2 font-mono text-xs text-red-400 [font-variant-numeric:tabular-nums]">
-                  {pos.id}
+                  <Link
+                    href={`/admin/positions/${pos.id}/edit` as Route}
+                    className="hover:text-red-300"
+                  >
+                    {pos.id}
+                  </Link>
                 </td>
                 <td className="px-4 py-2 text-slate-300">
-                  {RANK_LABELS[pos.rank_required] ?? pos.rank_required}
+                  {RANK_LABELS[pos.rankRequired] ?? pos.rankRequired}
                 </td>
-                <td className="px-4 py-2 text-slate-200">{pos.position_name}</td>
+                <td className="px-4 py-2 text-slate-200">{pos.positionName}</td>
                 <td className="px-4 py-2 text-slate-400">{pos.unit}</td>
                 <td className="px-4 py-2 text-slate-400">{pos.division}</td>
                 <td className="px-4 py-2">
                   <span className="flex gap-1 flex-wrap">
-                    {pos.is_floating && (
+                    {pos.isFloating && (
                       <span className="rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300">
                         Float
                       </span>
                     )}
-                    {pos.is_vacant_by_design && (
+                    {pos.isVacantByDesign && (
                       <span className="rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300">
                         Vacant
                       </span>
                     )}
-                    {pos.is_excluded_from_count && (
+                    {pos.isExcludedFromCount && (
                       <span className="rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300">
                         Excl
                       </span>

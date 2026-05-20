@@ -2,7 +2,7 @@ import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
 import { requirePin } from '@/lib/require-pin';
-import { getWorkerBase } from '@/lib/worker-base';
+import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { MockBanner } from '../_components/MockBanner';
@@ -10,6 +10,7 @@ import { BidBoard } from './_components/BidBoard';
 import { BoardHeader } from './_components/BoardHeader';
 
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 
 interface BoardSnapshot {
   bidSessionId: string;
@@ -26,28 +27,40 @@ interface EligibilityResponse {
   positions: Array<{ positionId: string; eligible: boolean }>;
 }
 
-async function loadBoard(jwt: string): Promise<BoardSnapshot> {
-  const workerBase = getWorkerBase();
-  const res = await fetch(`${workerBase}/api/board?bidSessionId=01HSESS`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`Board fetch failed: ${res.status}`);
-  return (await res.json()) as BoardSnapshot;
+async function loadBoard(
+  sessionId?: string,
+): Promise<{ board: BoardSnapshot | null; fetchError: string | null }> {
+  const qs = sessionId ? `?bidSessionId=${encodeURIComponent(sessionId)}` : '';
+  const res = await serverWorkerFetch(`/api/board${qs}`);
+  if (!res.ok) return { board: null, fetchError: `Worker returned ${res.status}` };
+  const board = (await res.json()) as BoardSnapshot;
+  return { board, fetchError: null };
 }
 
-async function loadEligibility(jwt: string): Promise<string[]> {
-  const workerBase = getWorkerBase();
-  const res = await fetch(`${workerBase}/api/me/eligibility`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-    cache: 'no-store',
-  });
+async function loadEligibility(sessionId: string): Promise<string[]> {
+  const res = await serverWorkerFetch(
+    `/api/me/eligibility?bidSessionId=${encodeURIComponent(sessionId)}`,
+  );
   if (!res.ok) return [];
   const body = (await res.json()) as EligibilityResponse;
   return body.positions.filter((p) => p.eligible).map((p) => p.positionId);
 }
 
-export default async function BidPage() {
+function BidUnavailable({ message }: { message: string }) {
+  return (
+    <main className="min-h-screen bg-stone-50 p-6">
+      <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
+        The bid board is not available yet: {message}. Check back when the bid session is active.
+      </div>
+    </main>
+  );
+}
+
+export default async function BidPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ session_id?: string; bidSessionId?: string }>;
+}) {
   await requirePin();
   const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
   if (!jwt) redirect('/login');
@@ -56,7 +69,10 @@ export default async function BidPage() {
   if (!signingKey) throw new Error('JWT_SIGNING_KEY not set');
   const claims = await verifyJwt(jwt, signingKey);
 
-  const [board, eligiblePositionIds] = await Promise.all([loadBoard(jwt), loadEligibility(jwt)]);
+  const sp = await searchParams;
+  const { board, fetchError } = await loadBoard(sp.session_id ?? sp.bidSessionId);
+  if (!board) return <BidUnavailable message={fetchError ?? 'no active session'} />;
+  const eligiblePositionIds = await loadEligibility(board.bidSessionId);
 
   return (
     <main className="min-h-screen bg-stone-50">

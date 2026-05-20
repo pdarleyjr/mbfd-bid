@@ -71,6 +71,12 @@ export async function POST(req: Request) {
   }
 
   if (!res.ok) {
+    if (res.headers.get('content-type')?.includes('application/json')) {
+      return new Response(res.body, {
+        status: res.status,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     const text = await res.text().catch(() => '');
     return NextResponse.json(
       { error: `Worker returned ${res.status}: ${text}` },
