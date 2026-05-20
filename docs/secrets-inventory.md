@@ -20,7 +20,7 @@ values are stored in this file.** All values are generated outside the repo
 | `AUDIT_SIGNING_PRIVKEY` | yes | **YES** | `openssl genpkey -algorithm Ed25519` — per-year / per-env |
 | `AUDIT_SIGNING_PUBKEY` | yes (vars) | **YES** | derived from new privkey; non-secret, set as `vars` |
 | `ANTHROPIC_API_KEY` | yes | NO (same key, separate AI Gateway env) | reused — Cloudflare AI Gateway namespaces traffic per env |
-| `BROWSERLESS_TOKEN` | yes | **YES** | new Browserless v2 token issued for the prod surface |
+| ~~`BROWSERLESS_TOKEN`~~ | ~~yes~~ | **DEPRECATED 2026-05-20** | Replaced by Cloudflare Browser Rendering (`[browser] / BROWSER` wrangler binding). Workers Paid plan includes Browser Rendering — no token required. Existing staging secret can be `wrangler secret delete`d after the next deploy. |
 | `PRINT_TOKEN_SECRET` | optional | **YES** | `openssl rand -base64 32` if set explicitly; otherwise falls back to `JWT_SIGNING_KEY` (also rotated) |
 | `R2_ACCESS_KEY_ID` | yes | **YES** | new R2 API token scoped to `mbfd-bid-exports-production` |
 | `R2_SECRET_ACCESS_KEY` | yes | **YES** | paired secret for the new R2 token |

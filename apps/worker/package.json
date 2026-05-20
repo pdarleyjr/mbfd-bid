@@ -25,7 +25,7 @@
     "db:seed:remote": "tsx seed/2026.ts --remote"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.96.0",
+    "@cloudflare/puppeteer": "^1.1.0",
     "@hono/zod-validator": "0.4.1",
     "@mbfd/a-day": "workspace:^",
     "@mbfd/eligibility": "workspace:^",

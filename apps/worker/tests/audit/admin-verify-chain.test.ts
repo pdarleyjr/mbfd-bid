@@ -79,6 +79,8 @@ function makeEnv(r2: FakeR2): WorkerEnv {
     R2_AUDIT: r2,
     R2_EXPORTS: {} as never,
     PORTAL_QUEUE: {} as never,
+    AI: {} as never,
+    BROWSER: {} as never,
   };
 }
 

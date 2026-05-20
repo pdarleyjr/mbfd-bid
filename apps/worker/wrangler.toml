@@ -46,6 +46,20 @@ bucket_name = "mbfd-bid-audit"
 binding = "R2_EXPORTS"
 bucket_name = "mbfd-bid-exports"
 
+# Browser Rendering (replaces Browserless): used by exports/roster-pdf.ts to
+# render the print-stylesheet RSC page to PDF via @cloudflare/puppeteer.
+# Included on the Workers Paid plan; no external token required.
+[env.staging.browser]
+binding = "BROWSER"
+
+# Workers AI binding (2026-05 swap). Runs Llama 3.3 70B Instruct
+# (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) on Cloudflare's inference
+# network. Replaces the Anthropic SDK + Cloudflare AI Gateway pair; no
+# external API key required, free within the Workers Paid plan's neuron
+# quota.
+[env.staging.ai]
+binding = "AI"
+
 # Plan 08: Queues
 [[env.staging.queues.producers]]
 binding = "PORTAL_QUEUE"
@@ -94,6 +108,20 @@ bucket_name = "mbfd-bid-audit-production"
 binding = "R2_EXPORTS"
 bucket_name = "mbfd-bid-exports-production"
 
+# Browser Rendering (replaces Browserless): used by exports/roster-pdf.ts to
+# render the print-stylesheet RSC page to PDF via @cloudflare/puppeteer.
+# Included on the Workers Paid plan; no external token required.
+[env.production.browser]
+binding = "BROWSER"
+
+# Workers AI binding (2026-05 swap). Runs Llama 3.3 70B Instruct
+# (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) on Cloudflare's inference
+# network. Replaces the Anthropic SDK + Cloudflare AI Gateway pair; no
+# external API key required, free within the Workers Paid plan's neuron
+# quota.
+[env.production.ai]
+binding = "AI"
+
 # Plan 08: Queues
 [[env.production.queues.producers]]
 binding = "PORTAL_QUEUE"
@@ -118,7 +146,11 @@ crons = [
 #   PIN_HASH               (bcrypt of the live PIN; rotate via `wrangler secret put`)
 #   PORTAL_BID_READER      (service token for /verify-credentials)
 #   PORTAL_BID_WRITER      (service token for /bid-assignment — used in Plan 08)
-#   ANTHROPIC_API_KEY      (Plan 06 — forwarded by Cloudflare AI Gateway)
+#   ANTHROPIC_API_KEY      (DEPRECATED 2026-05 — replaced by the env.AI
+#                           Workers AI binding. Safe to `wrangler secret delete`
+#                           after one release; left for backwards compat.)
 #   AUDIT_SIGNING_PRIVKEY  (Plan 08 — ed25519 32-byte base64url; per year per env)
 #   AUDIT_SIGNING_PUBKEY   (Plan 08 — ed25519 32-byte base64url; non-secret)
-#   BROWSERLESS_TOKEN      (Plan 08 — Browserless v2 API token for PDF render)
+#   BROWSERLESS_TOKEN      (DEPRECATED — replaced by Cloudflare Browser
+#                           Rendering binding [browser]/BROWSER. Safe to
+#                           unset after the next deploy.)

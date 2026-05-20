@@ -227,7 +227,7 @@ indicated future task / plan. Each is currently non-blocking.
 **Sub-systems shipped:**
 
 - **A. R2 JSONL hash-chained audit log** with ed25519 signatures. Tamper detection verified by a 20-run random-byte mutation integration test plus truncation + middle-chunk deletion cases (`apps/worker/tests/integration/audit-tamper.test.ts`). 250-event replay performance test (`audit-replay-250.test.ts`) confirms verify completes in <1s and produces exactly 3 chunks (100+100+50).
-- **B. Roster PDF (Browserless) + audit CSV (papaparse + pako gzip)** exports stored in R2, accessible via AWS SigV4 signed URLs. Admin trigger + list endpoints under `/api/admin/exports/*`; print-token HMAC verifies on the web RSC side before Browserless renders the page.
+- **B. Roster PDF (Cloudflare Browser Rendering, post-2026-05 swap) + audit CSV (papaparse + pako gzip)** exports stored in R2, accessible via AWS SigV4 signed URLs. Admin trigger + list endpoints under `/api/admin/exports/*`; print-token HMAC verifies on the web RSC side before the headless browser renders the page. (Originally shipped on the Browserless v2 HTTP API; swapped to the first-party `env.BROWSER` binding + `@cloudflare/puppeteer` once the project moved to the Workers Paid plan — no external token required.)
 - **C. Cloudflare Queues portal write-back** with integer-safe 24-attempt / 24-hour exp-backoff retry; manual retry + portal-clear-year admin endpoints; daily reconciliation cron at 04:15 UTC.
 
 ### Final test counts (2026-05-19)
@@ -243,7 +243,7 @@ indicated future task / plan. Each is currently non-blocking.
 - `src/exports/{print-token,roster-pdf,audit-csv,audit-csv-db,signed-url}.ts`
 - `src/portal-writeback/{payload-builder,retry-policy,portal-client,queue-producer,queue-consumer,queue-handler,reconciliation}.ts`
 - `src/routes/admin/{exports,portal}.ts`
-- `src/types/env.d.ts` extended with R2_AUDIT, R2_EXPORTS, PORTAL_QUEUE, AUDIT_SIGNING_*, BROWSERLESS_TOKEN, PRINT_TOKEN_SECRET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ACCOUNT_ID, WEB_BASE_URL
+- `src/types/env.d.ts` extended with R2_AUDIT, R2_EXPORTS, PORTAL_QUEUE, AUDIT_SIGNING_*, PRINT_TOKEN_SECRET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ACCOUNT_ID, WEB_BASE_URL, BROWSER (Browser Rendering binding). BROWSERLESS_TOKEN is now optional + deprecated; retained for one release for backwards compat.
 
 ### New shared files
 
@@ -280,11 +280,12 @@ indicated future task / plan. Each is currently non-blocking.
 | Queue | `mbfd-portal-writebacks-staging` / `-production` + DLQ pair | `wrangler queues create` |
 | Cron | `*/1 * * * *` (audit buffer flush) and `15 4 * * *` (portal reconciliation) | already in `wrangler.toml` |
 | Secret | `AUDIT_SIGNING_PRIVKEY` + `AUDIT_SIGNING_PUBKEY` (ed25519, per env, per year) | `wrangler secret put` |
-| Secret | `BROWSERLESS_TOKEN` (Browserless v2 API) | `wrangler secret put` |
-| Secret | `PRINT_TOKEN_SECRET` (HMAC for Browserless print tokens; falls back to JWT_SIGNING_KEY) | `wrangler secret put` |
+| ~~Secret~~ | ~~`BROWSERLESS_TOKEN`~~ — **DEPRECATED 2026-05-20**: replaced by the first-party Cloudflare Browser Rendering binding `[browser] / BROWSER`. Safe to `wrangler secret delete` after the next staging + production deploy. | n/a |
+| Binding | `[browser] binding = "BROWSER"` — Cloudflare Browser Rendering, included on the Workers Paid plan. No token required. | `wrangler.toml` |
+| Secret | `PRINT_TOKEN_SECRET` (HMAC for print-token authorized roster render URLs; falls back to JWT_SIGNING_KEY) | `wrangler secret put` |
 | Secret | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` (for SigV4 download URLs) | `wrangler secret put` |
 | Secret | `PORTAL_BID_WRITER` (bearer token for /bid-assignment POSTs) | `wrangler secret put` |
-| Env var | `WEB_BASE_URL` (Browserless render target; staging vs production) | `wrangler.toml` `vars` |
+| Env var | `WEB_BASE_URL` (Browser Rendering target; staging vs production) | `wrangler.toml` `vars` |
 | Migration | `pnpm db:migrate:remote` for both environments | Plan 09 deploy |
 
 ### New deps
@@ -300,13 +301,13 @@ No new peer-dep warnings beyond the pre-existing Anthropic SDK / zod mismatch (W
 | ID | Source | Watch-item | Action by |
 |----|--------|------------|-----------|
 | W34 | Plan 08 deviation 2 | The 30-second cron flush of stale audit buffers is effectively a no-op because the ChainEmitter is per-DO (held in `BidSessionDO` memory) and the cron runs in the Worker-level isolate. For idle-but-active sessions the 30s flush guarantee is currently weaker than the spec's §D1. Options: (a) move flush trigger inside the DO via `state.setAlarm()`, (b) flush opportunistically on any incoming WS message. Recommend (a). | Plan 09 hardening |
-| W35 | Plan 08 deviation 5 | `/api/admin/exports/roster-data?session_id&shift&token` endpoint is referenced by the web RSC roster render page but not yet implemented. Currently the RSC will 404 when Browserless renders. Add the worker route that joins `bids` + `members` + `positions` for the shift and returns the roster JSON shape the RSC consumes. | Plan 09 deploy |
+| W35 | Plan 08 deviation 5 | `/api/admin/exports/roster-data?session_id&shift&token` endpoint is referenced by the web RSC roster render page but not yet implemented. Currently the RSC will 404 when the headless browser renders. Add the worker route that joins `bids` + `members` + `positions` for the shift and returns the roster JSON shape the RSC consumes. | Plan 09 deploy |
 | W36 | Plan 08 §D10 enforcement | DO unit test for `pick_rejected/AUDIT_UNAVAILABLE` not added (would require constructing a DurableObjectState in tests). Smoke test in Plan 09 staging deploy must explicitly: kill R2 binding, attempt a pick, verify the WS client receives `pick_rejected` with code `AUDIT_UNAVAILABLE`. | Plan 09 rehearsal |
 | W37 | Plan 08 Task 13 | Playwright visual snapshot baseline `roster-a-2025.png` not captured (no headless Chromium available). When staging is up, run `pnpm --filter @mbfd/web e2e --update-snapshots admin-export-roster-visual` and commit the new snapshot under `apps/web/tests/e2e/__snapshots__/`. | Plan 09 hardening |
 | W38 | Plan 08 Task 25 | `handlePortalReconciliation.reEnqueue` derives `employeeId` from the persisted `payload.idempotency_key` by splitting on `_` and taking the last segment. This works for the current `bid_<session>_<member>_<position>` ID shape but is fragile. Add a `payload.employee_id` mirror field or look up via `bids.member_id → members.employee_id`. | Plan 09 hardening |
 | W39 | Plan 08 Task 9 | Existing audit-pipe `writeAudit` now also calls `emitDraftToChain` best-effort for non-pick events. The emit failure is swallowed (logged) but if the chain becomes the legal record for non-pick audits too (e.g., skip/freeze/dissent), §D10 strictness should be expanded. Currently only `pick` + `forced_pick` are strict. | Plan 09 / spec clarification |
 | W40 | Plan 08 deviation 4 | The Cloudflare Queue consumer happy path is tested via direct invocation; the real `queue.send → consumer.queue → message.ack/retry` cycle isn't exercised under Miniflare. Plan 09 must run a smoke test that drops a real message into the staging queue and verifies the bid row transitions. | Plan 09 rehearsal |
-| W41 | Plan 08 Task 17 | `/api/admin/exports/audit-csv` returns 500 on D1 errors; the plan envisioned 502 for portal-style upstream failures. Behavior is fine but inconsistent with the roster route (502 on Browserless failures). Normalize. | Follow-up cleanup |
+| W41 | Plan 08 Task 17 | `/api/admin/exports/audit-csv` returns 500 on D1 errors; the plan envisioned 502 for portal-style upstream failures. Behavior is fine but inconsistent with the roster route (502 on Browser Rendering failures). Normalize. | Follow-up cleanup |
 
 ---
 

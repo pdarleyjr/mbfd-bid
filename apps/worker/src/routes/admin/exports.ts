@@ -1,17 +1,23 @@
 // Plan 08 Task 17 — Admin export trigger + list endpoints.
 //
 // Endpoints:
-//   POST /print-token             Mint a 5-min HMAC token for Browserless
+//   POST /print-token             Mint a 5-min HMAC token for the headless
+//                                  browser's render request
 //   POST /roster/:shift           Generate + upload roster PDF for shift
 //   POST /audit-csv               Stream audit_log → gzip → R2 + return signed URL
 //   GET  /roster-data             (W35) Print-token auth, no admin JWT — used by
-//                                  Browserless to render the roster RSC page
+//                                  the headless browser to render the roster RSC page
 //   GET  /:session_id             List exports for a session (R2 listing)
 //
 // Write endpoints require step-up auth (Plan 05 `requireStepUpAuth`).
 // `/roster-data` is intentionally UNAUTHENTICATED via admin JWT because
-// Browserless cannot carry one; authorization comes from the HMAC
+// the headless browser cannot carry one; authorization comes from the HMAC
 // print-token bound to {kind, shift, session_id, exp}.
+//
+// 2026-05 swap: roster PDF rendering moved from the Browserless v2 HTTP API
+// to the Cloudflare Browser Rendering binding (`env.BROWSER` +
+// `@cloudflare/puppeteer`). No external token is required on the Workers
+// Paid plan.
 
 import type { JwtPayload } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
@@ -220,8 +226,8 @@ router.post('/roster/:shift', requireStepUpAuth(), async (c) => {
   if (!shift || !['A', 'B', 'C', 'D'].includes(shift)) {
     return c.json({ error: 'invalid_shift', shift }, 400);
   }
-  if (!c.env.BROWSERLESS_TOKEN) {
-    return c.json({ error: 'browserless_not_configured' }, 503);
+  if (!c.env.BROWSER || typeof (c.env.BROWSER as { fetch?: unknown }).fetch !== 'function') {
+    return c.json({ error: 'browser_rendering_not_configured' }, 503);
   }
   if (!c.env.R2_EXPORTS || typeof c.env.R2_EXPORTS.put !== 'function') {
     return c.json({ error: 'exports_bucket_not_configured' }, 503);
@@ -239,11 +245,10 @@ router.post('/roster/:shift', requireStepUpAuth(), async (c) => {
       shift: shift as 'A' | 'B' | 'C' | 'D',
       sessionId: parsed.data.session_id,
       year: new Date().getUTCFullYear(),
-      browserlessToken: c.env.BROWSERLESS_TOKEN,
+      browser: c.env.BROWSER,
       printTokenSecret: printSecretOf(c.env),
       webBaseUrl: c.env.WEB_BASE_URL ?? 'https://staging.bid.mbfdhub.com',
       r2: c.env.R2_EXPORTS,
-      fetchImpl: fetch,
       now: () => Date.now(),
     });
     return c.json(out);

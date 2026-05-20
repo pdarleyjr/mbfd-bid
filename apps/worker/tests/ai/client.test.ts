@@ -1,6 +1,6 @@
 import type { KVNamespace } from '@cloudflare/workers-types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AnthropicAIClient } from '../../src/ai/client.js';
+import { WorkersAIClient } from '../../src/ai/client.js';
 import type { Advisory } from '../../src/ai/output-schema.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 import canonicalRaw from './__fixtures__/advisory-canonical.json';
@@ -25,6 +25,14 @@ function makeKv(): FakeKv {
   } as unknown as FakeKv;
 }
 
+interface AiStub {
+  run: ReturnType<typeof vi.fn>;
+}
+
+function makeAi(response: unknown): AiStub {
+  return { run: vi.fn().mockResolvedValue(response) };
+}
+
 function makeEnv(overrides: Partial<WorkerEnv> = {}): WorkerEnv {
   return {
     ENV: 'staging',
@@ -32,129 +40,102 @@ function makeEnv(overrides: Partial<WorkerEnv> = {}): WorkerEnv {
     JWT_SIGNING_KEY: 'a'.repeat(64),
     PIN_HASH: 'x',
     PORTAL_BID_READER: 'tok',
-    CF_AI_GATEWAY_URL: 'https://gateway.example.com/v1/abc/mbfd-bid/anthropic',
-    ANTHROPIC_API_KEY: 'sk-test',
     AI_BUDGET_CAP_CENTS: 2500,
     AI_FEATURE_FLAG_KEY: 'ai_advisory_enabled',
     DB: {} as never,
     KV: {} as never,
     BID_SESSION: {} as never,
     AI_KV: makeKv(),
+    AI: makeAi({ response: JSON.stringify(canonical) }) as unknown as Ai,
     AUDIT_SIGNING_PRIVKEY: '',
     AUDIT_SIGNING_PUBKEY: '',
     BROWSERLESS_TOKEN: '',
     R2_AUDIT: {} as never,
     R2_EXPORTS: {} as never,
     PORTAL_QUEUE: {} as never,
+    BROWSER: {} as never,
     ...overrides,
   };
 }
 
-describe('AnthropicAIClient', () => {
-  let fetchMock: ReturnType<typeof vi.fn>;
+describe('WorkersAIClient', () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
   beforeEach(() => {
-    fetchMock = vi.fn();
+    fetchSpy = vi.fn();
     // biome-ignore lint/suspicious/noExplicitAny: test-only fetch shim
-    globalThis.fetch = fetchMock as any;
+    globalThis.fetch = fetchSpy as any;
   });
 
-  it('posts to the CF AI Gateway URL (not api.anthropic.com)', async () => {
-    fetchMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: 'msg_test',
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: JSON.stringify(canonical) }],
-          stop_reason: 'end_turn',
-          model: 'claude-sonnet-4-6',
-          usage: {
-            input_tokens: 100,
-            output_tokens: 50,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-          },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+  it('invokes env.AI.run with the Llama model name (NOT globalThis.fetch)', async () => {
     const env = makeEnv();
-    const client = new AnthropicAIClient(env);
+    const client = new WorkersAIClient(env);
     const result = await client.adviseCurrent({
       bidSessionId: 'sess1',
-      system: [{ type: 'text', text: 'S', cache_control: { type: 'ephemeral' } }],
-      roster: [{ type: 'text', text: 'R', cache_control: { type: 'ephemeral' } }],
-      turn: [{ type: 'text', text: 'T' }],
+      system: 'system prompt',
+      user: 'roster + turn',
     });
     expect(result.advisory).not.toBeNull();
-    const callArgs = fetchMock.mock.calls[0];
-    if (!callArgs) throw new Error('fetch was not called');
-    const url = callArgs[0] as string;
-    expect(url).toContain('gateway.example.com');
-    expect(url).not.toContain('api.anthropic.com');
+    const aiRun = (env.AI as unknown as AiStub).run;
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    const calls = aiRun.mock.calls[0] ?? [];
+    expect(calls[0]).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('records cost_cents to KV after a successful call', async () => {
-    fetchMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: 'msg_test',
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: JSON.stringify(canonical) }],
-          stop_reason: 'end_turn',
-          model: 'claude-sonnet-4-6',
-          usage: {
-            input_tokens: 1000,
-            output_tokens: 500,
-            cache_creation_input_tokens: 30000,
-            cache_read_input_tokens: 0,
-          },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+  it('parses JSON output from response.response field', async () => {
     const env = makeEnv();
-    const client = new AnthropicAIClient(env);
+    const client = new WorkersAIClient(env);
+    const result = await client.adviseCurrent({
+      bidSessionId: 'sess1',
+      system: 'sys',
+      user: 'turn',
+    });
+    expect(result.stale).toBe(false);
+    expect(result.advisory.summary).toBe(canonical.summary);
+  });
+
+  it('records cost (neurons → 0 cents) to KV after a successful call', async () => {
+    const env = makeEnv();
+    const client = new WorkersAIClient(env);
     await client.adviseCurrent({
       bidSessionId: 'sess1',
-      system: [{ type: 'text', text: 'S', cache_control: { type: 'ephemeral' } }],
-      roster: [{ type: 'text', text: 'R', cache_control: { type: 'ephemeral' } }],
-      turn: [{ type: 'text', text: 'T' }],
+      system: 'sys',
+      user: 'turn',
     });
     const kv = env.AI_KV as FakeKv;
-    expect(kv.store.get('ai_cost_cents:sess1')).toBeDefined();
-    expect(Number(kv.store.get('ai_cost_cents:sess1'))).toBeGreaterThanOrEqual(0);
+    // We still write the key (even if 0) so cost-accounting tests stay happy
+    expect(kv.store.has('ai_cost_cents:sess1')).toBe(true);
+    expect(Number(kv.store.get('ai_cost_cents:sess1'))).toBe(0);
   });
 
-  it('returns stale-last-good envelope on 5xx', async () => {
-    const env = makeEnv();
+  it('returns stale-last-good envelope on env.AI.run rejection', async () => {
+    const env = makeEnv({
+      AI: { run: vi.fn().mockRejectedValue(new Error('boom')) } as unknown as Ai,
+    });
     const kv = env.AI_KV as FakeKv;
     kv.store.set(
       'ai_last_good:sess1',
       JSON.stringify({ advisory: canonical, generated_at_ms: 1000, ai_advisory_id: 'prev123' }),
     );
-    fetchMock.mockResolvedValue(new Response('{"error":"upstream"}', { status: 503 }));
-    const client = new AnthropicAIClient(env);
+    const client = new WorkersAIClient(env);
     const env2 = await client.adviseCurrent({
       bidSessionId: 'sess1',
-      system: [{ type: 'text', text: 'S', cache_control: { type: 'ephemeral' } }],
-      roster: [{ type: 'text', text: 'R', cache_control: { type: 'ephemeral' } }],
-      turn: [{ type: 'text', text: 'T' }],
+      system: 'sys',
+      user: 'turn',
     });
     expect(env2.stale).toBe(true);
     expect(env2.fallback).toBe('last_good');
   });
 
   it('returns deterministic-fallback envelope when no last-good exists', async () => {
-    fetchMock.mockResolvedValue(new Response('{"error":"upstream"}', { status: 503 }));
-    const env = makeEnv();
-    const client = new AnthropicAIClient(env);
+    const env = makeEnv({
+      AI: { run: vi.fn().mockRejectedValue(new Error('boom')) } as unknown as Ai,
+    });
+    const client = new WorkersAIClient(env);
     const r = await client.adviseCurrent({
       bidSessionId: 'sessX',
-      system: [{ type: 'text', text: 'S', cache_control: { type: 'ephemeral' } }],
-      roster: [{ type: 'text', text: 'R', cache_control: { type: 'ephemeral' } }],
-      turn: [{ type: 'text', text: 'T' }],
+      system: 'sys',
+      user: 'turn',
       deterministicFallback: { advisory: canonical },
     });
     expect(r.stale).toBe(true);
@@ -165,39 +146,62 @@ describe('AnthropicAIClient', () => {
     const env = makeEnv();
     const kv = env.AI_KV as FakeKv;
     kv.store.set('ai_cost_cents:sessOver', '3000');
-    const client = new AnthropicAIClient(env);
+    const client = new WorkersAIClient(env);
     const r = await client.adviseCurrent({
       bidSessionId: 'sessOver',
-      system: [{ type: 'text', text: 'S', cache_control: { type: 'ephemeral' } }],
-      roster: [{ type: 'text', text: 'R', cache_control: { type: 'ephemeral' } }],
-      turn: [{ type: 'text', text: 'T' }],
+      system: 'sys',
+      user: 'turn',
     });
     expect(r.stale).toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
+    const aiRun = (env.AI as unknown as AiStub).run;
+    expect(aiRun).not.toHaveBeenCalled();
   });
 
   it('refuses to call when feature flag disabled', async () => {
     const env = makeEnv();
     const kv = env.AI_KV as FakeKv;
     kv.store.set('ai_advisory_enabled', 'false');
-    const client = new AnthropicAIClient(env);
+    const client = new WorkersAIClient(env);
     const r = await client.adviseCurrent({
       bidSessionId: 'sessFlag',
-      system: [{ type: 'text', text: 'S', cache_control: { type: 'ephemeral' } }],
-      roster: [{ type: 'text', text: 'R', cache_control: { type: 'ephemeral' } }],
-      turn: [{ type: 'text', text: 'T' }],
+      system: 'sys',
+      user: 'turn',
     });
     expect(r.stale).toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
+    const aiRun = (env.AI as unknown as AiStub).run;
+    expect(aiRun).not.toHaveBeenCalled();
   });
 
   it('prompt_hash is deterministic for same inputs', async () => {
     const env = makeEnv();
-    const client = new AnthropicAIClient(env);
+    const client = new WorkersAIClient(env);
     const h1 = await client.hashPrompt('a', 'b', 'c');
     const h2 = await client.hashPrompt('a', 'b', 'c');
     const h3 = await client.hashPrompt('a', 'b', 'd');
     expect(h1).toBe(h2);
     expect(h1).not.toBe(h3);
+  });
+
+  it('adviseDeepStream returns a ReadableStream from env.AI.run with stream: true', async () => {
+    const enc = new TextEncoder();
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode('data: hello\n\n'));
+        controller.close();
+      },
+    });
+    const env = makeEnv({
+      AI: { run: vi.fn().mockResolvedValue(upstream) } as unknown as Ai,
+    });
+    const client = new WorkersAIClient(env);
+    const stream = await client.adviseDeepStream({
+      bidSessionId: 'sessStream',
+      system: 'sys',
+      user: 'turn',
+    });
+    expect(stream).toBeInstanceOf(ReadableStream);
+    const aiRun = (env.AI as unknown as AiStub).run;
+    const callArgs = aiRun.mock.calls[0] ?? [];
+    expect(callArgs[1]).toMatchObject({ stream: true });
   });
 });

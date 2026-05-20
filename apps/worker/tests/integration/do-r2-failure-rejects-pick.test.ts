@@ -193,6 +193,8 @@ describe('BidSessionDO rejects pick when R2 chain emit fails (W36)', () => {
       R2_AUDIT: makeBrokenR2(),
       R2_EXPORTS: {} as never,
       PORTAL_QUEUE: {} as never,
+      AI: {} as never,
+      BROWSER: {} as never,
     };
 
     // Seed initial state: 1 bidder in position_bid phase, ready to be force-picked.

@@ -1,6 +1,7 @@
 import type {
   D1Database,
   DurableObjectNamespace,
+  Fetcher,
   KVNamespace,
   Queue,
   R2Bucket,
@@ -15,18 +16,30 @@ export interface WorkerEnv {
   /** Plan 08 — bearer token used by portal-client to POST /bid-assignment. */
   PORTAL_BID_WRITER?: string;
   LOCAL_ADMIN_PASSWORD_HASH?: string;
-  // Plan 06 — AI integration
-  CF_AI_GATEWAY_URL: string;
-  ANTHROPIC_API_KEY: string;
+  // Plan 06 — AI integration.
+  // Workers AI swap (2026-05): the AI binding replaces the Anthropic SDK +
+  // Cloudflare AI Gateway pair. CF_AI_GATEWAY_URL and ANTHROPIC_API_KEY are
+  // kept optional for one release for backwards compat with .dev.vars and
+  // staging secrets; both are deprecated and unused by the worker code.
+  /** @deprecated unused since the Workers AI swap; kept for one release. */
+  CF_AI_GATEWAY_URL?: string;
+  /** @deprecated unused since the Workers AI swap; kept for one release. */
+  ANTHROPIC_API_KEY?: string;
   AI_BUDGET_CAP_CENTS: number;
   AI_FEATURE_FLAG_KEY: string;
   // Plan 08 — audit chain + exports
   AUDIT_SIGNING_PRIVKEY: string;
   AUDIT_SIGNING_PUBKEY: string;
-  BROWSERLESS_TOKEN: string;
-  /** Plan 08 — HMAC secret for Browserless print tokens; falls back to JWT_SIGNING_KEY in dev. */
+  /** @deprecated — kept for backwards compat. Replaced by Cloudflare Browser
+   *  Rendering (`env.BROWSER`) for roster PDF rendering. Safe to remove once
+   *  staging + production have been redeployed against the new binding. */
+  BROWSERLESS_TOKEN?: string;
+  /** Plan 08 — HMAC secret for print-token-authorized roster render URLs;
+   *  falls back to JWT_SIGNING_KEY in dev. Still required: the headless
+   *  browser fetches the web RSC page over the public internet, so the
+   *  token is what authorizes the unauthenticated render endpoint. */
   PRINT_TOKEN_SECRET?: string;
-  /** Plan 08 — public base URL of the web app (Browserless target). */
+  /** Plan 08 — public base URL of the web app (Browser Rendering target). */
   WEB_BASE_URL?: string;
   /** Plan 08 — R2 S3-compatible credentials for signed download URLs. */
   R2_ACCESS_KEY_ID?: string;
@@ -47,4 +60,18 @@ export interface WorkerEnv {
   R2_EXPORTS: R2Bucket;
   /** Plan 08 — Cloudflare Queue for portal write-back payloads. */
   PORTAL_QUEUE: Queue<unknown>;
+  /**
+   * Workers AI binding (2026-05 swap). Runs Llama 3.3 70B Instruct
+   * (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) directly on Cloudflare's
+   * inference network — no external API key, free within the Workers Paid
+   * plan's neuron quota.
+   */
+  AI: Ai;
+  /**
+   * Cloudflare Browser Rendering binding (2026-05 swap). Headless Chromium
+   * is launched via `@cloudflare/puppeteer`'s `puppeteer.launch(env.BROWSER)`.
+   * Replaces the Browserless v2 HTTP API; included with the Workers Paid
+   * plan (no external token required). Wrangler binding name: `BROWSER`.
+   */
+  BROWSER: Fetcher;
 }

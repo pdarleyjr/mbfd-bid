@@ -51,10 +51,11 @@ function makeEnv(r2: R2Bucket): WorkerEnv {
     AI_KV: {} as never,
     AUDIT_SIGNING_PRIVKEY: '',
     AUDIT_SIGNING_PUBKEY: '',
-    BROWSERLESS_TOKEN: '',
     R2_AUDIT: {} as never,
     R2_EXPORTS: r2,
     PORTAL_QUEUE: {} as never,
+    AI: {} as never,
+    BROWSER: {} as never,
   };
 }
 
@@ -132,7 +133,7 @@ describe('/api/admin/exports (Plan 08 Task 17)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /roster/A returns 503 when BROWSERLESS_TOKEN is empty', async () => {
+  it('POST /roster/A returns 503 when BROWSER binding is absent', async () => {
     const jwt = await adminJwt(env);
     const res = await mkApp().request(
       '/api/admin/exports/roster/A',
@@ -144,6 +145,8 @@ describe('/api/admin/exports (Plan 08 Task 17)', () => {
       env,
     );
     expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('browser_rendering_not_configured');
   });
 
   it('GET /:session_id lists exports under the year/session prefix', async () => {

@@ -27,6 +27,8 @@ function mkEnv(env: 'staging' | 'production'): WorkerEnv {
     R2_AUDIT: {} as never,
     R2_EXPORTS: {} as never,
     PORTAL_QUEUE: {} as never,
+    AI: {} as never,
+    BROWSER: {} as never,
   };
 }
 
