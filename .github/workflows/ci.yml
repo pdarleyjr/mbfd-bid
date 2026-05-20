@@ -62,9 +62,11 @@ jobs:
           node-version: '${{ env.NODE_VERSION }}'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      # Codegen must run BEFORE build because apps/web imports the generated
+      # rulebook file at type-check / next-build time.
       - name: AI rulebook codegen
         run: pnpm --filter @mbfd/worker ai:codegen
+      - run: pnpm build
       - run: pnpm test
 
   e2e:

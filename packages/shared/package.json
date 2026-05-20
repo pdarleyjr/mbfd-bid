@@ -23,7 +23,7 @@
     "build": "tsc -b",
     "dev": "tsc -b --watch",
     "test": "vitest run",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "zod": "^3.23.0"
