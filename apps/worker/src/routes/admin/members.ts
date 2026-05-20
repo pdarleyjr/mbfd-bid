@@ -14,6 +14,7 @@ import {
 import { writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import { parseCsv } from '../../lib/csv-parser.js';
+import { chunkedInArraySelect } from '../../lib/d1-batch.js';
 import {
   STATIONS,
   type Station,
@@ -316,16 +317,19 @@ async function loadRoster(
   if (memberRows.length === 0) return [];
 
   const ids = memberRows.map((m) => m.id);
-  const credsRows = await db
-    .select({
-      memberId: memberCredentials.memberId,
-      credentialId: memberCredentials.credentialId,
-      credentialName: credentialsTable.name,
-    })
-    .from(memberCredentials)
-    .innerJoin(credentialsTable, eq(memberCredentials.credentialId, credentialsTable.id))
-    .where(inArray(memberCredentials.memberId, ids))
-    .all();
+  // Chunk the IN-list — D1 caps bound parameters at ~100 per statement.
+  const credsRows = await chunkedInArraySelect(ids, (chunk) =>
+    db
+      .select({
+        memberId: memberCredentials.memberId,
+        credentialId: memberCredentials.credentialId,
+        credentialName: credentialsTable.name,
+      })
+      .from(memberCredentials)
+      .innerJoin(credentialsTable, eq(memberCredentials.credentialId, credentialsTable.id))
+      .where(inArray(memberCredentials.memberId, chunk))
+      .all(),
+  );
 
   const credIdsByMember = new Map<number, number[]>();
   const credNamesByMember = new Map<number, string[]>();
@@ -546,13 +550,12 @@ router.patch('/bid-order', requireStepUpAuth(), async (c) => {
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, session_id)).get();
   if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
 
-  // Validate member ids exist.
+  // Validate member ids exist. Chunked because a full-roster reorder can
+  // include 200+ ids — D1 caps placeholders per statement.
   const memberIds = overrides.map((o) => o.member_id);
-  const existing = await db
-    .select({ id: members.id })
-    .from(members)
-    .where(inArray(members.id, memberIds))
-    .all();
+  const existing = await chunkedInArraySelect(memberIds, (chunk) =>
+    db.select({ id: members.id }).from(members).where(inArray(members.id, chunk)).all(),
+  );
   if (existing.length !== memberIds.length) {
     const found = new Set(existing.map((e) => e.id));
     const missing = memberIds.filter((id) => !found.has(id));

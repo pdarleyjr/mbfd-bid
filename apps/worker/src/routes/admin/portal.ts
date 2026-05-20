@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { getDb } from '../../db/index.js';
 import { bidSessions, bids, portalWritebackQueue } from '../../db/schema.js';
+import { chunkedInArrayMutate, chunkedInArraySelect } from '../../lib/d1-batch.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -81,20 +82,24 @@ router.post('/portal-clear-year', requireStepUpAuth(), async (c) => {
   const sessionIds = sessions.map((s) => s.id);
   if (sessionIds.length === 0) return c.json({ cleared: 0 });
 
-  const affected = await db
-    .select({ id: bids.id })
-    .from(bids)
-    .where(inArray(bids.bidSessionId, sessionIds))
-    .all();
+  // Chunk every IN-list — a year's bids can easily exceed D1's per-statement
+  // placeholder cap when there are 200+ positions across N sessions.
+  const affected = await chunkedInArraySelect(sessionIds, (chunk) =>
+    db.select({ id: bids.id }).from(bids).where(inArray(bids.bidSessionId, chunk)).all(),
+  );
   const affectedIds = affected.map((a) => a.id);
 
-  await db
-    .update(bids)
-    .set({ portalSyncStatus: 'superseded' })
-    .where(inArray(bids.bidSessionId, sessionIds));
+  await chunkedInArrayMutate(sessionIds, (chunk) =>
+    db
+      .update(bids)
+      .set({ portalSyncStatus: 'superseded' })
+      .where(inArray(bids.bidSessionId, chunk)),
+  );
 
   if (affectedIds.length > 0) {
-    await db.delete(portalWritebackQueue).where(inArray(portalWritebackQueue.bidId, affectedIds));
+    await chunkedInArrayMutate(affectedIds, (chunk) =>
+      db.delete(portalWritebackQueue).where(inArray(portalWritebackQueue.bidId, chunk)),
+    );
   }
   return c.json({ cleared: affectedIds.length });
 });
