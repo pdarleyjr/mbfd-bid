@@ -412,6 +412,30 @@ export const auditChainState = sqliteTable('audit_chain_state', {
   lastChunkSha256: text('last_chunk_sha256'),
 });
 
+// ── Members section / Master Roster — mig 0016 ──────────────────────────────
+//
+// Per-session manual override that re-positions a member in the computed
+// bid queue. The natural order is computed from `members` (bidCategory +
+// rscSeniority + rankSeniority). Rows in this table replace the ordinal a
+// particular member would otherwise occupy for one specific bid session.
+export const manualBidOrderOverride = sqliteTable(
+  'manual_bid_order_override',
+  {
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    memberId: integer('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    overrideOrdinal: integer('override_ordinal').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.bidSessionId, t.memberId] }),
+    ordinalIdx: index('idx_mbo_ordinal').on(t.bidSessionId, t.overrideOrdinal),
+  }),
+);
+
 // ── Plan 09 / Rehearsal Tooling — mig 0015 ──────────────────────────────────
 //
 // In-app bug tracker for mock-draft rehearsals. Each row is one observation

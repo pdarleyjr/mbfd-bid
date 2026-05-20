@@ -1,17 +1,63 @@
 import { MemberImportRowSchema } from '@mbfd/shared';
 import type { JwtPayload } from '@mbfd/shared';
-import { type SQL, and, eq, sql } from 'drizzle-orm';
+import { type SQL, and, eq, inArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
-import { credentials as credentialsTable, memberCredentials, members } from '../../db/schema.js';
+import {
+  bidSessions,
+  credentials as credentialsTable,
+  manualBidOrderOverride,
+  memberCredentials,
+  members,
+} from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
+import { computeBidOrder } from '../../lib/bid-order.js';
 import { parseCsv } from '../../lib/csv-parser.js';
+import {
+  type Station,
+  STATIONS,
+  isEligibleFor,
+  stationRuleText,
+  stationTitle,
+} from '../../lib/station-eligibility.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
 type AdminEnv = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
+
+/**
+ * Roster row shape — what the Members Master Roster table consumes.
+ * `rankSeniority` is intentionally `number | null` (fractional values
+ * preserved as-is for cases like Mederos at 74.5).
+ */
+export interface RosterRow {
+  id: number;
+  employee_id: string;
+  last_name: string;
+  first_name: string;
+  rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+  bid_category: 'OFC' | 'FF' | 'EXCLUDED';
+  rsc_seniority: number;
+  rank_seniority: number | null;
+  ordinal: number;
+  manual_override_ordinal: number | null;
+  credential_ids: number[];
+}
+
+/**
+ * Notes attached to credentials by `credentials_master.json`. The DB
+ * `credentials` table does not have a notes column, so the worker carries
+ * the canonical text inline. Surface these in tooltips on the toggle UI.
+ */
+const CREDENTIAL_NOTES: Readonly<Record<string, string>> = {
+  'Basic Life Support (BLS) INSTRUCTOR AHA': 'For Capt 5: Either/Or',
+  'Fire Investigator (FL cert issued 2015 or later)': 'Investigator: Count 1 max',
+  'Firesafety Inspector I': 'Count 1 max',
+  'Instructor I': 'Count 1 max',
+  'Pediatric Advanced Life Support (PALS) INSTRUCTOR AHA': 'Count 1 max',
+};
 
 const MemberPatchSchema = z
   .object({
