@@ -78,10 +78,10 @@ app.use(
 
       const isProd = c.env?.ENV === 'production';
 
-      // Production / staging: HTTPS only, exact host or subdomain of bid.mbfdhub.com
+      // Production / staging: HTTPS only, exact public web hosts.
       if (
         url.protocol === 'https:' &&
-        (url.hostname === 'bid.mbfdhub.com' || url.hostname.endsWith('.bid.mbfdhub.com'))
+        (url.hostname === 'bid.mbfdhub.com' || url.hostname === 'staging.bid.mbfdhub.com')
       ) {
         return origin;
       }
@@ -100,11 +100,11 @@ app.use(
 
 app.route('/', routes);
 
-app.notFound((c) => c.json({ error: 'Not Found' }, 404));
+app.notFound((c) => c.json({ error: 'not_found' }, 404));
 
 app.onError((err, c) => {
   console.error('[worker error]', err);
-  return c.json({ error: 'Internal Error' }, 500);
+  return c.json({ error: 'internal_error' }, 500);
 });
 
 export { BidSessionDO } from './durable/bid-session.js';

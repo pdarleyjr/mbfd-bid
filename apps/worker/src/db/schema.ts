@@ -89,7 +89,7 @@ export const ruleBooks = sqliteTable('rule_books', {
   status: text('status', { enum: ['draft', 'active', 'archived'] })
     .notNull()
     .default('draft'),
-  publishedAt: integer('published_at', { mode: 'timestamp' }),
+  publishedAt: integer('published_at', { mode: 'timestamp_ms' }),
   publishedBy: integer('published_by').references(() => members.id, { onDelete: 'set null' }),
 });
 

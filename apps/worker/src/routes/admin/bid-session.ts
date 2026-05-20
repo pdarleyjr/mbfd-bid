@@ -7,7 +7,7 @@ import {
   ResumeSessionSchema,
   TimerConfigSchema,
 } from '@mbfd/shared';
-import { eq } from 'drizzle-orm';
+import { desc, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
@@ -24,6 +24,7 @@ const CreateSessionSchema = z.object({
   bid_year: z.number().int().min(2024).max(2100),
   expected_duration_days: z.number().int().min(1).max(7).default(2),
   turn_timer_seconds: z.number().int().min(30).max(600).default(180),
+  is_mock: z.boolean().optional().default(false),
 });
 
 function actorIdFromClaims(claims: JwtPayload): number | null {
@@ -32,6 +33,19 @@ function actorIdFromClaims(claims: JwtPayload): number | null {
 
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
+
+// GET /api/admin/bid-session/active
+router.get('/active', async (c) => {
+  const db = getDb(c.env.DB);
+  const session = await db
+    .select()
+    .from(bidSessions)
+    .where(ne(bidSessions.currentPhase, 'complete'))
+    .orderBy(desc(bidSessions.startedAt))
+    .get();
+
+  return c.json({ session: session ?? null });
+});
 
 // POST /api/admin/bid-session
 router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), async (c) => {
@@ -51,6 +65,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     turnTimerSeconds: body.turn_timer_seconds,
     expectedDurationDays: body.expected_duration_days,
     dayCount: 0,
+    isMock: body.is_mock,
   });
   await writeAuditLog(db, {
     bidSessionId: id,
@@ -59,9 +74,9 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     action: 'session_start',
     targetKind: 'bid_session',
     targetId: id,
-    afterState: { bid_year: body.bid_year, current_phase: 'config' },
+    afterState: { bid_year: body.bid_year, current_phase: 'config', is_mock: body.is_mock },
   });
-  return c.json({ id, current_phase: 'config' }, 201);
+  return c.json({ id, current_phase: 'config', is_mock: body.is_mock }, 201);
 });
 
 // POST /api/admin/bid-session/:id/start

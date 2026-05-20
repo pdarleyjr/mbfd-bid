@@ -180,6 +180,13 @@ function signerOf(env: WorkerEnv): ((key: string) => Promise<string>) | null {
     });
 }
 
+async function exportKeyBelongsToSession(env: WorkerEnv, sessionId: string, key: string) {
+  const expectedPrefix = `${new Date().getUTCFullYear()}/${sessionId}/`;
+  if (!key.startsWith(expectedPrefix)) return false;
+  const object = await env.R2_EXPORTS.head(key).catch(() => null);
+  return object !== null;
+}
+
 const PrintTokenBody = z.object({
   kind: z.enum(['roster', 'audit-csv']),
   shift: z.enum(['A', 'B', 'C', 'D']).optional(),
@@ -293,7 +300,10 @@ router.get('/:session_id', async (c) => {
 router.get('/:session_id/:r2key/url', async (c) => {
   const signer = signerOf(c.env);
   if (!signer) return c.json({ error: 'signed_urls_not_configured' }, 503);
+  const sid = c.req.param('session_id');
   const key = decodeURIComponent(c.req.param('r2key'));
+  const belongs = await exportKeyBelongsToSession(c.env, sid, key);
+  if (!belongs) return c.json({ error: 'export_not_found' }, 404);
   const url = await signer(key);
   return c.json({ url });
 });

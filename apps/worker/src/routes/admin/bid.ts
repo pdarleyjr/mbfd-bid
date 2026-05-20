@@ -2,6 +2,7 @@ import { zValidator } from '@hono/zod-validator';
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -22,7 +23,7 @@ const SkipBody = z.object({
   reason: z.string().min(1).max(500),
 });
 
-r.post('/skip', zValidator('json', SkipBody), async (c) => {
+r.post('/skip', requireStepUpAuth(), zValidator('json', SkipBody), async (c) => {
   const idem = IdemHeader.safeParse(c.req.header('Idempotency-Key'));
   if (!idem.success) return c.json({ error: 'missing_idempotency_key' }, 400);
   const body = c.req.valid('json');
@@ -42,7 +43,7 @@ const OverrideBody = z.object({
   reason: z.string().min(1).max(500),
 });
 
-r.post('/override', zValidator('json', OverrideBody), async (c) => {
+r.post('/override', requireStepUpAuth(), zValidator('json', OverrideBody), async (c) => {
   const idem = IdemHeader.safeParse(c.req.header('Idempotency-Key'));
   if (!idem.success) return c.json({ error: 'missing_idempotency_key' }, 400);
   const body = c.req.valid('json');
@@ -65,7 +66,7 @@ const FreezeBody = z.object({
   reason: z.string().min(1).max(500),
 });
 
-r.post('/freeze', zValidator('json', FreezeBody), async (c) => {
+r.post('/freeze', requireStepUpAuth(), zValidator('json', FreezeBody), async (c) => {
   const idem = IdemHeader.safeParse(c.req.header('Idempotency-Key'));
   if (!idem.success) return c.json({ error: 'missing_idempotency_key' }, 400);
   const body = c.req.valid('json');

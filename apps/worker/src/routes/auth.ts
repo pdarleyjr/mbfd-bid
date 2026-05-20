@@ -21,100 +21,109 @@ const ADMIN_IDENTITY = {
   rank: 'CHIEF' as const,
 } satisfies Omit<LoginResponse, 'role'>;
 
-auth.post('/login', zValidator('json', LoginRequestSchema), async (c) => {
-  const { employee_id, password } = c.req.valid('json');
-  const env = validateEnv(c.env);
-  const nowSec = Math.floor(Date.now() / 1000);
-
-  // Plan 09 Task 3 — rate limit by IP, then by employee_id. Fails open if KV
-  // is unavailable: the goal is to throttle abuse, not take login down.
-  if (c.env.KV && typeof c.env.KV.get === 'function') {
-    try {
-      const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
-      const ipCheck = await rateLimitByIp(c.env.KV, ip);
-      if (!ipCheck.allowed) {
-        c.header('Retry-After', String(ipCheck.retryAfterSec));
-        return c.json({ error: 'rate_limited', scope: 'ip' }, 429);
-      }
-      const empCheck = await rateLimitByEmployeeId(c.env.KV, employee_id);
-      if (!empCheck.allowed) {
-        c.header('Retry-After', String(empCheck.retryAfterSec));
-        return c.json({ error: 'rate_limited', scope: 'employee_id' }, 429);
-      }
-    } catch (err) {
-      console.error('[auth.login] rate-limit check failed (fail-open)', err);
+auth.post(
+  '/login',
+  zValidator('json', LoginRequestSchema, (result, c) => {
+    if (!result.success) {
+      return c.json({ error: 'invalid_body', issues: result.error.issues }, 400);
     }
-  }
+    return undefined;
+  }),
+  async (c) => {
+    const { employee_id, password } = c.req.valid('json');
+    const env = validateEnv(c.env);
+    const nowSec = Math.floor(Date.now() / 1000);
 
-  // Local admin login: employee_id="admin", password verified against the
-  // LOCAL_ADMIN_PASSWORD_HASH bcrypt secret. Bypasses portal entirely.
-  // Plan 02 rehearsal scaffolding; Plan 05 admin console replaces this.
-  if (employee_id === LOCAL_ADMIN_USERNAME) {
-    if (!verifyLocalAdminPassword(env.LOCAL_ADMIN_PASSWORD_HASH, password)) {
+    // Plan 09 Task 3 — rate limit by IP, then by employee_id. Fails open if KV
+    // is unavailable: the goal is to throttle abuse, not take login down.
+    if (c.env.KV && typeof c.env.KV.get === 'function') {
+      try {
+        const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+        const ipCheck = await rateLimitByIp(c.env.KV, ip);
+        if (!ipCheck.allowed) {
+          c.header('Retry-After', String(ipCheck.retryAfterSec));
+          return c.json({ error: 'rate_limited', scope: 'ip' }, 429);
+        }
+        const empCheck = await rateLimitByEmployeeId(c.env.KV, employee_id);
+        if (!empCheck.allowed) {
+          c.header('Retry-After', String(empCheck.retryAfterSec));
+          return c.json({ error: 'rate_limited', scope: 'employee_id' }, 429);
+        }
+      } catch (err) {
+        console.error('[auth.login] rate-limit check failed (fail-open)', err);
+      }
+    }
+
+    // Local admin login: employee_id="admin", password verified against the
+    // LOCAL_ADMIN_PASSWORD_HASH bcrypt secret. Bypasses portal entirely.
+    // Plan 02 rehearsal scaffolding; Plan 05 admin console replaces this.
+    if (employee_id === LOCAL_ADMIN_USERNAME) {
+      if (!verifyLocalAdminPassword(env.LOCAL_ADMIN_PASSWORD_HASH, password)) {
+        return c.json({ error: 'invalid_credentials' }, 401);
+      }
+      const adminJwt = await signJwt(
+        {
+          sub: ADMIN_IDENTITY.member_id,
+          emp: ADMIN_IDENTITY.employee_id,
+          role: 'admin',
+          rank: ADMIN_IDENTITY.rank,
+          first_name: ADMIN_IDENTITY.first_name,
+          last_name: ADMIN_IDENTITY.last_name,
+          fresh_auth_at: nowSec,
+        },
+        env.JWT_SIGNING_KEY,
+        '8h',
+      );
+      return c.json({
+        jwt: adminJwt,
+        role: 'admin' as const,
+        member: { ...ADMIN_IDENTITY },
+      });
+    }
+
+    let portalResponse: LoginResponse | null;
+    try {
+      portalResponse = await verifyCredentials({
+        portalBaseUrl: env.PORTAL_BASE_URL,
+        token: env.PORTAL_BID_READER,
+        employee_id,
+        password,
+      });
+    } catch (err) {
+      console.error('[auth.login] portal error', err);
+      return c.json({ error: 'portal_unavailable' }, 503);
+    }
+
+    if (!portalResponse) {
       return c.json({ error: 'invalid_credentials' }, 401);
     }
-    const adminJwt = await signJwt(
+
+    const jwt = await signJwt(
       {
-        sub: ADMIN_IDENTITY.member_id,
-        emp: ADMIN_IDENTITY.employee_id,
-        role: 'admin',
-        rank: ADMIN_IDENTITY.rank,
-        first_name: ADMIN_IDENTITY.first_name,
-        last_name: ADMIN_IDENTITY.last_name,
+        sub: portalResponse.member_id,
+        emp: portalResponse.employee_id,
+        role: portalResponse.role,
+        rank: portalResponse.rank,
+        first_name: portalResponse.first_name,
+        last_name: portalResponse.last_name,
         fresh_auth_at: nowSec,
       },
       env.JWT_SIGNING_KEY,
       '8h',
     );
+
     return c.json({
-      jwt: adminJwt,
-      role: 'admin' as const,
-      member: { ...ADMIN_IDENTITY },
-    });
-  }
-
-  let portalResponse: LoginResponse | null;
-  try {
-    portalResponse = await verifyCredentials({
-      portalBaseUrl: env.PORTAL_BASE_URL,
-      token: env.PORTAL_BID_READER,
-      employee_id,
-      password,
-    });
-  } catch (err) {
-    console.error('[auth.login] portal error', err);
-    return c.json({ error: 'portal_unavailable' }, 503);
-  }
-
-  if (!portalResponse) {
-    return c.json({ error: 'invalid_credentials' }, 401);
-  }
-
-  const jwt = await signJwt(
-    {
-      sub: portalResponse.member_id,
-      emp: portalResponse.employee_id,
+      jwt,
       role: portalResponse.role,
-      rank: portalResponse.rank,
-      first_name: portalResponse.first_name,
-      last_name: portalResponse.last_name,
-      fresh_auth_at: nowSec,
-    },
-    env.JWT_SIGNING_KEY,
-    '8h',
-  );
-
-  return c.json({
-    jwt,
-    role: portalResponse.role,
-    member: {
-      member_id: portalResponse.member_id,
-      employee_id: portalResponse.employee_id,
-      first_name: portalResponse.first_name,
-      last_name: portalResponse.last_name,
-      rank: portalResponse.rank,
-    },
-  });
-});
+      member: {
+        member_id: portalResponse.member_id,
+        employee_id: portalResponse.employee_id,
+        first_name: portalResponse.first_name,
+        last_name: portalResponse.last_name,
+        rank: portalResponse.rank,
+      },
+    });
+  },
+);
 
 export default auth;

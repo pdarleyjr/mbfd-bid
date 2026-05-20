@@ -6,11 +6,20 @@ import {
   canPick,
   computeAllMeters,
 } from '@mbfd/a-day';
+import { type PositionRule, evaluateEligibility } from '@mbfd/eligibility';
 import { SubmitADayPickRequestSchema } from '@mbfd/shared';
-import { eq } from 'drizzle-orm';
+import { desc, eq, ne } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { getDb } from '../db/index.js';
-import { bidSessions as bidSessionsTable, members as membersTable } from '../db/schema.js';
+import {
+  bidSessions as bidSessionsTable,
+  bids as bidsTable,
+  credentials,
+  memberCredentials,
+  members as membersTable,
+  positionRules,
+  ruleBooks,
+} from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
 import { validateEnv } from '../lib/env.js';
@@ -32,9 +41,48 @@ async function requireJwt(c: BidContext) {
   }
 }
 
+function readSessionQuery(c: BidContext): string | undefined {
+  return c.req.query('bidSessionId') ?? c.req.query('session') ?? c.req.query('session_id');
+}
+
+async function resolveBidSessionId(
+  c: BidContext,
+  explicitSessionId: string | undefined,
+): Promise<string | null> {
+  if (explicitSessionId && explicitSessionId.trim().length > 0) return explicitSessionId;
+  const db = getDb(c.env.DB);
+  const session = await db
+    .select({ id: bidSessionsTable.id })
+    .from(bidSessionsTable)
+    .where(ne(bidSessionsTable.currentPhase, 'complete'))
+    .orderBy(desc(bidSessionsTable.startedAt))
+    .get();
+  return session?.id ?? null;
+}
+
+async function loadActiveRuleBookVersion(c: BidContext): Promise<string | null> {
+  const db = getDb(c.env.DB);
+  const active = await db
+    .select({ version: ruleBooks.version })
+    .from(ruleBooks)
+    .where(eq(ruleBooks.status, 'active'))
+    .get();
+  return active?.version ?? null;
+}
+
+function parsePositionRule(row: typeof positionRules.$inferSelect): PositionRule {
+  return {
+    positionId: row.positionId,
+    ruleBookVersion: row.ruleBookVersion,
+    requiredCriteria: JSON.parse(row.requiredCriteriaJson),
+    pointsPreference: JSON.parse(row.pointsPreferenceJson),
+    tieBreakChain: JSON.parse(row.tieBreakChainJson),
+  };
+}
+
 bid.get('/me', async (c) => {
   const claims = await requireJwt(c);
-  if (!claims) return c.json({ error: 'unauthorised' }, 401);
+  if (!claims) return c.json({ error: 'missing_auth' }, 401);
   return c.json({
     memberId: claims.sub,
     employeeId: claims.emp,
@@ -47,17 +95,70 @@ bid.get('/me', async (c) => {
 
 bid.get('/me/eligibility', async (c) => {
   const claims = await requireJwt(c);
-  if (!claims) return c.json({ error: 'unauthorised' }, 401);
-  // Eligibility for every open position. In the live event the DO has the
-  // up-to-the-second fills map; here we return a snapshot from D1 + the
-  // eligibility engine. Pulled into the page via React Server Component.
-  return c.json({ memberId: claims.sub, positions: [] });
+  if (!claims) return c.json({ error: 'missing_auth' }, 401);
+  const db = getDb(c.env.DB);
+  const member = await db.select().from(membersTable).where(eq(membersTable.id, claims.sub)).get();
+  if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
+
+  const version = c.req.query('rule_book_version') ?? (await loadActiveRuleBookVersion(c));
+  if (!version) return c.json({ error: 'no_active_rule_book' }, 404);
+
+  const memberCreds = await db
+    .select({ name: credentials.name })
+    .from(memberCredentials)
+    .innerJoin(credentials, eq(memberCredentials.credentialId, credentials.id))
+    .where(eq(memberCredentials.memberId, claims.sub))
+    .all();
+
+  const rules = await db
+    .select()
+    .from(positionRules)
+    .where(eq(positionRules.ruleBookVersion, version))
+    .all();
+
+  const sessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  const filled = new Set<string>();
+  if (sessionId) {
+    const rows = await db
+      .select({ positionId: bidsTable.positionId })
+      .from(bidsTable)
+      .where(eq(bidsTable.bidSessionId, sessionId))
+      .all();
+    for (const row of rows) filled.add(row.positionId);
+  }
+
+  const eligibilityMember = {
+    employeeId: member.employeeId,
+    firstName: member.firstName,
+    lastName: member.lastName,
+    rank: member.rank,
+    rscSeniority: member.rscSeniority,
+    rankSeniority: member.rankSeniority ?? undefined,
+    isProbationary: member.isProbationary,
+    credentials: memberCreds.map((cred) => ({ name: cred.name })),
+  };
+
+  const positions = rules
+    .filter((rule) => !filled.has(rule.positionId))
+    .map((rule) => {
+      const parsedRule = parsePositionRule(rule);
+      const result = evaluateEligibility(eligibilityMember, parsedRule);
+      return {
+        positionId: rule.positionId,
+        eligible: result.eligible,
+        reasons: result.reasons,
+        points: result.points,
+      };
+    });
+
+  return c.json({ memberId: claims.sub, positions });
 });
 
 bid.get('/board', async (c) => {
   const claims = await requireJwt(c);
-  if (!claims) return c.json({ error: 'unauthorised' }, 401);
-  const bidSessionId = c.req.query('bidSessionId') ?? '01HSESS';
+  if (!claims) return c.json({ error: 'missing_auth' }, 401);
+  const bidSessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  if (!bidSessionId) return c.json({ error: 'no_active_session' }, 404);
   const doId = c.env.BID_SESSION.idFromName(bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);
   const snap = await stub.fetch(`${new URL(c.req.url).origin}/snapshot`);
@@ -83,9 +184,10 @@ bid.get('/board', async (c) => {
 
 bid.get('/bid/state', async (c) => {
   const claims = await requireJwt(c);
-  if (!claims) return c.json({ error: 'unauthorised' }, 401);
+  if (!claims) return c.json({ error: 'missing_auth' }, 401);
   const sinceSeq = Number(c.req.query('since_seq') ?? '0');
-  const bidSessionId = c.req.query('bidSessionId') ?? '01HSESS';
+  const bidSessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  if (!bidSessionId) return c.json({ error: 'no_active_session' }, 404);
   const doId = c.env.BID_SESSION.idFromName(bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);
   const snap = await stub.fetch(`${new URL(c.req.url).origin}/snapshot`);
@@ -138,7 +240,7 @@ async function fetchSessionSnapshot(
  */
 bid.get('/bid/a-day-state', async (c) => {
   const claims = await requireJwt(c);
-  if (!claims) return c.json({ error: 'unauthorised' }, 401);
+  if (!claims) return c.json({ error: 'missing_auth' }, 401);
   const sessionId = c.req.query('session');
   if (!sessionId) return c.json({ error: 'session_required' }, 400);
 
@@ -178,7 +280,7 @@ bid.get('/bid/a-day-state', async (c) => {
  */
 bid.post('/bid/a-day-pick', async (c) => {
   const claims = await requireJwt(c);
-  if (!claims) return c.json({ error: 'unauthorised' }, 401);
+  if (!claims) return c.json({ error: 'missing_auth' }, 401);
   const raw = await c.req.json().catch(() => null);
   const parsed = SubmitADayPickRequestSchema.safeParse(raw);
   if (!parsed.success) {

@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { getDb } from '../../db/index.js';
 import { positionTemplates, positions } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
+import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -41,7 +42,7 @@ router.get('/', async (c) => {
   return c.json({ positions: list, templateVersion, count: list.length });
 });
 
-router.post('/clone-from-year/:src_version', async (c) => {
+router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
   const srcVersion = c.req.param('src_version');
   const body = await c.req.json<{ destVersion?: string; destYear?: number }>();
 

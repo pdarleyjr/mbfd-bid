@@ -17,6 +17,10 @@ type AiEnv = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 const r = new Hono<AiEnv>();
 r.use('*', requireAdmin);
 
+function aiBudgetCapCents(env: WorkerEnv): number {
+  return Number(env.AI_BUDGET_CAP_CENTS ?? 0);
+}
+
 r.get('/advise-current', async (c) => {
   const sessionId = c.req.query('session_id');
   if (!sessionId) return c.json({ error: 'session_id_required' }, 400);
@@ -98,7 +102,7 @@ r.get('/cost', async (c) => {
   if (!sessionId) {
     const stored = await c.env.AI_KV.get('ai_cost_cents_total');
     if (stored !== null) {
-      return c.json({ cost_cents: Number(stored), cap_cents: c.env.AI_BUDGET_CAP_CENTS });
+      return c.json({ cost_cents: Number(stored), cap_cents: aiBudgetCapCents(c.env) });
     }
     let total = 0;
     try {
@@ -110,10 +114,10 @@ r.get('/cost', async (c) => {
     } catch {
       // best-effort — return whatever we managed to accumulate
     }
-    return c.json({ cost_cents: total, cap_cents: c.env.AI_BUDGET_CAP_CENTS });
+    return c.json({ cost_cents: total, cap_cents: aiBudgetCapCents(c.env) });
   }
   const used = Number((await c.env.AI_KV.get(`ai_cost_cents:${sessionId}`)) ?? 0);
-  return c.json({ cost_cents: used, cap_cents: c.env.AI_BUDGET_CAP_CENTS });
+  return c.json({ cost_cents: used, cap_cents: aiBudgetCapCents(c.env) });
 });
 
 r.get('/forecast', async (c) => {

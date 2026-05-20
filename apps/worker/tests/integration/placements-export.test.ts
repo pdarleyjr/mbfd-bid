@@ -81,6 +81,19 @@ describe('GET /api/admin/placements/export', () => {
     expect(lines[2]).toMatch(/^2,EMP101,/);
   });
 
+  it('accepts session_id as an alias for bid_session_id', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/placements/export?session_id=${sessionId}&format=csv`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('ordinal,member_employee_id');
+    expect(body).toContain('EMP100');
+  });
+
   it('quotes member_name containing comma (RFC 4180)', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/placements/export?bid_session_id=${sessionId}&format=csv`, {

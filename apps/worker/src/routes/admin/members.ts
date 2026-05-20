@@ -7,6 +7,7 @@ import { getDb } from '../../db/index.js';
 import { credentials as credentialsTable, memberCredentials, members } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { parseCsv } from '../../lib/csv-parser.js';
+import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -28,7 +29,7 @@ const router = new Hono<AdminEnv>();
 
 router.use('*', requireAdmin);
 
-router.post('/import', async (c) => {
+router.post('/import', requireStepUpAuth(), async (c) => {
   const form = await c.req.formData();
   const file = form.get('file');
   if (!(file instanceof File)) {
@@ -132,11 +133,18 @@ router.get('/:id{\\d+}', async (c) => {
     return c.json({ error: 'not_found' }, 404);
   }
 
-  return c.json({ member });
+  const creds = await db
+    .select({ id: credentialsTable.id, name: credentialsTable.name })
+    .from(memberCredentials)
+    .innerJoin(credentialsTable, eq(memberCredentials.credentialId, credentialsTable.id))
+    .where(eq(memberCredentials.memberId, id))
+    .all();
+
+  return c.json({ member, credentials: creds });
 });
 
 // PATCH /api/admin/members/:id
-router.patch('/:id{\\d+}', async (c) => {
+router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   const id = Number(c.req.param('id'));
   const raw = await c.req.json().catch(() => null);
   const parsed = MemberPatchSchema.safeParse(raw);

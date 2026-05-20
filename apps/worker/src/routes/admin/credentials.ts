@@ -5,6 +5,7 @@ import { getDb } from '../../db/index.js';
 import { credentials } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { parseCredentialsXlsx, parseLegacyWideMatrix } from '../../lib/xlsx-cred-parser.js';
+import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -14,7 +15,7 @@ const router = new Hono<AdminEnv>();
 
 router.use('*', requireAdmin);
 
-router.post('/import', async (c) => {
+router.post('/import', requireStepUpAuth(), async (c) => {
   const mode = c.req.query('mode') ?? 'normalized';
   const form = await c.req.formData();
   const file = form.get('file');
