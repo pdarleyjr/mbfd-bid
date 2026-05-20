@@ -20,8 +20,8 @@
     "typecheck": "tsc -b --noEmit"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "2.1.4",
+    "@vitest/coverage-v8": "3.2.4",
     "typescript": "5.6.3",
-    "vitest": "2.1.4"
+    "vitest": "3.2.4"
   }
 }

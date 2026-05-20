@@ -5,29 +5,106 @@
     {
       "idx": 0,
       "version": "6",
+      "when": 1779093000000,
+      "tag": "0001_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
       "when": 1779093624483,
       "tag": "0002_members_certs",
       "breakpoints": true
     },
     {
-      "idx": 1,
+      "idx": 2,
       "version": "6",
       "when": 1779094150375,
       "tag": "0003_positions_rules",
       "breakpoints": true
     },
     {
-      "idx": 2,
+      "idx": 3,
       "version": "6",
       "when": 1779094500000,
       "tag": "0004_bid_audit_ai",
       "breakpoints": true
     },
     {
-      "idx": 3,
+      "idx": 4,
       "version": "6",
       "when": 1747526400000,
       "tag": "0005_audit_log_session_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1747526500000,
+      "tag": "0006_bid_session_freeze",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1747526600000,
+      "tag": "0007_rday_to_aday_rename",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1747526700000,
+      "tag": "0008_rule_book_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1747526800000,
+      "tag": "0009_bid_session_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1747526900000,
+      "tag": "0010_audit_action_dissent",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1747527000000,
+      "tag": "0011_a_day_picks",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1747527100000,
+      "tag": "0012_audit_action_aday",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1747527200000,
+      "tag": "0013_audit_chain_bookkeeping",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1747527300000,
+      "tag": "0014_is_mock_column",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1747527400000,
+      "tag": "0015_rehearsal_findings",
       "breakpoints": true
     }
   ]
