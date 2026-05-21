@@ -146,6 +146,56 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
     expect((bidsRows.results[0] as { n: number }).n).toBe(3);
   });
 
+  it('bootstraps bid_order from members + advances to position_bid when session is in config', async () => {
+    // Wipe the seed's bid_order rows and rewind the session to config so the
+    // auto-bid endpoint has to recompute the queue itself — this is the
+    // out-of-the-box mock-session path the chief hit on staging.
+    await h.db.run('DELETE FROM bid_order WHERE bid_session_id = ?;', [sessionId]);
+    await h.db.run(
+      "UPDATE bid_sessions SET current_phase = 'config', current_bidder_id = NULL WHERE id = ?;",
+      [sessionId],
+    );
+
+    // DO snapshot says no bidder; the bootstrap path must short-circuit the
+    // DO read and use the freshly-inserted bid_order rows instead.
+    const snapMap = new Map<string, unknown>([[sessionId, { currentBidderId: null }]]);
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(snapMap),
+    };
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ count: 3, strategy: 'first_eligible' }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      picksMade: number;
+      stoppedReason: string;
+      bootstrapped?: boolean;
+    };
+    expect(body.bootstrapped).toBe(true);
+    expect(body.picksMade).toBe(3);
+
+    // bid_order was repopulated and the session transitioned out of config.
+    const orderCount = await h.db.run(
+      'SELECT count(*) AS n FROM bid_order WHERE bid_session_id = ?',
+      [sessionId],
+    );
+    expect((orderCount.results[0] as { n: number }).n).toBe(3);
+    const session = await h.db.run('SELECT current_phase FROM bid_sessions WHERE id = ?', [
+      sessionId,
+    ]);
+    expect((session.results[0] as { current_phase: string }).current_phase).not.toBe('config');
+  });
+
   it('returns 400 on invalid body (count<=0 or unknown strategy)', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {

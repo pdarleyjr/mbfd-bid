@@ -38,6 +38,7 @@ import {
   ruleBooks,
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
+import { computeBidOrder } from '../../lib/bid-order.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -284,12 +285,61 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
   }
   const rulesByPosition = new Map(rules.map((r) => [r.positionId, r]));
 
-  const orderRows = await db
+  let orderRows = await db
     .select()
     .from(bidOrder)
     .where(eq(bidOrder.bidSessionId, sessionId))
     .orderBy(asc(bidOrder.ordinal))
     .all();
+
+  // Bootstrap: mock sessions created via /admin/sessions/new sit in `config`
+  // phase with an empty bid_order until someone manually calls the start
+  // endpoint. Rehearsal flow should be one-click — if bid_order is empty
+  // here, compute it from the members roster (same seniority + pool rules
+  // session-start uses), insert it, and advance the session to position_bid
+  // with currentBidderId set to ordinal 1. The auto-bid loop then proceeds
+  // naturally.
+  let bootstrapped = false;
+  if (orderRows.length === 0) {
+    const memberRows = await db
+      .select({
+        id: members.id,
+        bidCategory: members.bidCategory,
+        rscSeniority: members.rscSeniority,
+        rankSeniority: members.rankSeniority,
+      })
+      .from(members)
+      .all();
+    const computed = computeBidOrder(memberRows);
+    if (computed.length === 0) {
+      return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
+    }
+    await db.insert(bidOrder).values(
+      computed.map((e) => ({
+        bidSessionId: sessionId,
+        ordinal: e.ordinal,
+        memberId: e.memberId,
+        pool: e.pool,
+      })),
+    );
+    const first = computed[0];
+    const firstMemberId = first ? first.memberId : null;
+    await db
+      .update(bidSessions)
+      .set({
+        currentPhase: 'position_bid',
+        currentBidderId: firstMemberId,
+        startedAt: session.startedAt ?? new Date(),
+      })
+      .where(eq(bidSessions.id, sessionId));
+    orderRows = await db
+      .select()
+      .from(bidOrder)
+      .where(eq(bidOrder.bidSessionId, sessionId))
+      .orderBy(asc(bidOrder.ordinal))
+      .all();
+    bootstrapped = true;
+  }
   if (orderRows.length === 0) {
     return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_bid_order' }, 200);
   }
@@ -309,11 +359,28 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
   let consecutiveNoEligible = 0;
   let stoppedReason: 'count_reached' | 'complete' | 'no_eligible' | 'error' = 'count_reached';
   let detail: string | undefined;
-  let currentBidder = await getCurrentBidderFromDO(
-    c.env,
-    sessionId,
-    session.currentBidderId ?? null,
-  );
+  // If we just bootstrapped, the DO snapshot doesn't have the new ordering
+  // yet, so don't ask it — take the first ordinal from the freshly-inserted
+  // bid_order rows. Otherwise prefer the DO (it's authoritative once the
+  // session is live).
+  const firstOrderRow = orderRows[0];
+  const firstFromOrder = firstOrderRow !== undefined ? firstOrderRow.memberId : null;
+  let currentBidder = bootstrapped
+    ? firstFromOrder
+    : await getCurrentBidderFromDO(c.env, sessionId, session.currentBidderId ?? null);
+  if (bootstrapped) {
+    await writeAuditLog(db, {
+      bidSessionId: sessionId,
+      actorType: 'admin',
+      actorId: adminActorId,
+      action: 'session_start',
+      targetKind: 'bid_session',
+      targetId: sessionId,
+      reason: 'rehearsal auto-bid bootstrap',
+      beforeState: { current_phase: 'config' },
+      afterState: { current_phase: 'position_bid', bid_order_rows: orderRows.length },
+    });
+  }
 
   for (let i = 0; i < body.count; i++) {
     if (currentBidder === null) {
@@ -435,11 +502,17 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
 
-  const responseBody: { picksMade: number; stoppedReason: string; detail?: string } = {
+  const responseBody: {
+    picksMade: number;
+    stoppedReason: string;
+    detail?: string;
+    bootstrapped?: boolean;
+  } = {
     picksMade,
     stoppedReason,
   };
   if (detail !== undefined) responseBody.detail = detail;
+  if (bootstrapped) responseBody.bootstrapped = true;
   const status = stoppedReason === 'no_eligible' && picksMade > 0 ? 207 : 200;
   return c.json(responseBody, status);
 });
