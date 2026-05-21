@@ -3,6 +3,7 @@ import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
+import { getWorkerBase } from '@/lib/worker-base';
 import type { Route } from 'next';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
@@ -136,6 +137,7 @@ export default async function AdminBidPage({
             meMemberId={claims.sub}
             jwt={jwt}
             initialFills={board.fills}
+            wsBase={getWorkerBase()}
           />
         </div>
         <div className="flex flex-col">

@@ -15,15 +15,25 @@ interface Props {
   meMemberId: number;
   jwt: string;
   initialFills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
+  /** See BidBoard — Worker origin for the WebSocket upgrade (Pages domain
+   *  doesn't proxy WS). */
+  wsBase?: string;
 }
 
-export function AdminBoard({ bidSessionId, initialSeq, meMemberId, jwt, initialFills }: Props) {
+export function AdminBoard({
+  bidSessionId,
+  initialSeq,
+  meMemberId,
+  jwt,
+  initialFills,
+  wsBase,
+}: Props) {
   const store = useMemo(() => {
     const s = createBidStore({ bidSessionId, initialSeq, meMemberId });
     s.setState({ fills: initialFills });
     return s;
   }, [bidSessionId, initialSeq, meMemberId, initialFills]);
-  const { status } = useBidWebSocket(store, { bidSessionId, jwt });
+  const { status } = useBidWebSocket(store, { bidSessionId, jwt, wsBase });
   const lastError = useStore(store, (s: BidStoreState) => s.lastError);
   return (
     <BidStoreProvider store={store}>

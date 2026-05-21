@@ -5,15 +5,37 @@ import type { WorkerEnv } from '../types/env.js';
 
 const ws = new Hono<{ Bindings: WorkerEnv }>();
 
+/**
+ * WebSocket upgrade for the live bid session.
+ *
+ * Browsers cannot set the `Authorization` header on a WebSocket upgrade
+ * (the API only exposes URL + subprotocols + cookies), so we accept the
+ * JWT via:
+ *   1. `?token=<jwt>` query param  (browser path — preferred)
+ *   2. `Authorization: Bearer <jwt>` header  (server-side / curl)
+ * Validation is identical in both cases; the query param value carries the
+ * same short-lived JWT used everywhere else and is not logged at the edge.
+ */
 ws.get('/session/:id', async (c) => {
   const env = validateEnv(c.env);
-  const auth = c.req.header('Authorization');
-  if (!auth?.startsWith('Bearer ')) {
+
+  let token: string | null = null;
+  const queryToken = c.req.query('token');
+  if (typeof queryToken === 'string' && queryToken.length > 0) {
+    token = queryToken;
+  } else {
+    const auth = c.req.header('Authorization');
+    if (auth?.startsWith('Bearer ')) {
+      token = auth.slice(7);
+    }
+  }
+  if (!token) {
     return c.json({ error: 'missing_auth' }, 401);
   }
+
   let claims: Awaited<ReturnType<typeof verifyJwt>>;
   try {
-    claims = await verifyJwt(auth.slice(7), env.JWT_SIGNING_KEY);
+    claims = await verifyJwt(token, env.JWT_SIGNING_KEY);
   } catch {
     return c.json({ error: 'invalid_token' }, 401);
   }

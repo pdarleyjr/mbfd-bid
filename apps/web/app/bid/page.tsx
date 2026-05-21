@@ -3,6 +3,7 @@ import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
 import { requirePin } from '@/lib/require-pin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
+import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { MockBanner } from '../_components/MockBanner';
@@ -101,6 +102,7 @@ export default async function BidPage({
         jwt={jwt}
         initialFills={board.fills}
         eligiblePositionIds={eligiblePositionIds}
+        wsBase={getWorkerBase()}
       />
     </main>
   );

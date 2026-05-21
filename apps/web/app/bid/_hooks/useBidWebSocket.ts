@@ -6,9 +6,27 @@ import type { BidStoreState } from './useBidStore';
 
 const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000] as const;
 
+/**
+ * Build the WebSocket URL.
+ *
+ * The Pages site (staging.bid.mbfdhub.com) has no `/api/ws/...` route — the
+ * WebSocket endpoint lives on the Worker (api.staging.bid.mbfdhub.com). The
+ * server-rendered page passes `wsBase` so the client connects directly to
+ * the Worker. `?token=` carries the JWT because the browser WebSocket API
+ * cannot set the Authorization header. The Worker accepts both forms; the
+ * query path is the one browsers can actually use.
+ */
+function buildWsUrl(wsBase: string | undefined, bidSessionId: string, jwt: string): string {
+  const httpBase = wsBase ?? (typeof window === 'undefined' ? '' : window.location.origin);
+  const wsHttp = httpBase.startsWith('http')
+    ? httpBase.replace(/^http/, 'ws')
+    : `${typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${typeof window !== 'undefined' ? window.location.host : ''}`;
+  return `${wsHttp.replace(/\/$/, '')}/api/ws/session/${encodeURIComponent(bidSessionId)}?token=${encodeURIComponent(jwt)}`;
+}
+
 export function useBidWebSocket(
   store: StoreApi<BidStoreState>,
-  opts: { bidSessionId: string; jwt: string },
+  opts: { bidSessionId: string; jwt: string; wsBase?: string | undefined },
 ): { status: 'connecting' | 'open' | 'closed'; send: (data: object) => void } {
   const [status, setStatus] = useState<'connecting' | 'open' | 'closed'>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
@@ -18,9 +36,7 @@ export function useBidWebSocket(
     let cancelled = false;
     function connect() {
       if (cancelled) return;
-      const base = typeof window === 'undefined' ? '' : window.location.host;
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${proto}//${base}/api/ws/session/${opts.bidSessionId}`;
+      const url = buildWsUrl(opts.wsBase, opts.bidSessionId, opts.jwt);
       const ws = new WebSocket(url);
       wsRef.current = ws;
       setStatus('connecting');
@@ -60,7 +76,7 @@ export function useBidWebSocket(
       cancelled = true;
       wsRef.current?.close();
     };
-  }, [opts.bidSessionId, opts.jwt, store]);
+  }, [opts.bidSessionId, opts.jwt, opts.wsBase, store]);
 
   return {
     status,

@@ -54,6 +54,25 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
     expect([426, 400]).toContain(res.status);
   });
 
+  it('GET /api/ws/session/:id accepts ?token= query param (browser path)', async () => {
+    // Browsers cannot set Authorization on a WebSocket upgrade, so the
+    // Worker falls back to ?token=. Without the Upgrade header (undici
+    // strips it) we still reach the 426 branch — the assert proves the JWT
+    // was read from the query and validated.
+    const res = await worker.fetch(`/api/ws/session/01HSESS?token=${memberJwt}`);
+    expect([426, 400]).toContain(res.status);
+  });
+
+  it('GET /api/ws/session/:id returns 401 with empty ?token=', async () => {
+    const res = await worker.fetch('/api/ws/session/01HSESS?token=');
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/ws/session/:id returns 401 with invalid ?token=', async () => {
+    const res = await worker.fetch('/api/ws/session/01HSESS?token=not-a-jwt');
+    expect(res.status).toBe(401);
+  });
+
   it('GET /api/board returns 200 with member JWT', async () => {
     const res = await worker.fetch('/api/board?bidSessionId=01HSESS', {
       headers: { Authorization: `Bearer ${memberJwt}` },
