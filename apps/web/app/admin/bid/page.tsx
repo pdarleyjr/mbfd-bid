@@ -11,6 +11,7 @@ import { redirect } from 'next/navigation';
 import { MockBanner } from '../../_components/MockBanner';
 import { BidderCard, type BidderContext } from '../../_components/bid/BidderCard';
 import { OnDeckQueue } from '../../_components/bid/OnDeckQueue';
+import type { MemberLite } from '../../_components/bid/types';
 import { AIAdvisoryPanel } from './_components/AIAdvisoryPanel';
 import { AIAskDeepDialog } from './_components/AIAskDeepDialog';
 import { AICostPill } from './_components/AICostPill';
@@ -27,6 +28,7 @@ interface BoardSnapshot {
   currentBidderId: number | null;
   currentBidder: BidderContext | null;
   onDeck: BidderContext[];
+  members: Record<string, MemberLite>;
   fills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
   isMock?: boolean;
@@ -137,6 +139,7 @@ export default async function AdminBidPage({
             meMemberId={claims.sub}
             jwt={jwt}
             initialFills={board.fills}
+            members={board.members ?? {}}
             wsBase={getWorkerBase()}
           />
         </div>

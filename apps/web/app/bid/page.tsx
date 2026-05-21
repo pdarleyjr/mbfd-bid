@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 import { MockBanner } from '../_components/MockBanner';
 import type { BidderContext } from '../_components/bid/BidderCard';
 import { OnDeckQueue } from '../_components/bid/OnDeckQueue';
+import type { MemberLite } from '../_components/bid/types';
 import { BidBoard } from './_components/BidBoard';
 import { BoardHeader } from './_components/BoardHeader';
 import { MemberAIAdvisoryPanel } from './_components/MemberAIAdvisoryPanel';
@@ -23,6 +24,7 @@ interface BoardSnapshot {
   currentBidderId: number | null;
   currentBidder: BidderContext | null;
   onDeck: BidderContext[];
+  members: Record<string, MemberLite>;
   fills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
   isMock?: boolean;
@@ -102,6 +104,7 @@ export default async function BidPage({
         jwt={jwt}
         initialFills={board.fills}
         eligiblePositionIds={eligiblePositionIds}
+        members={board.members ?? {}}
         wsBase={getWorkerBase()}
       />
     </main>

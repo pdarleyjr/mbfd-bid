@@ -201,17 +201,32 @@ bid.get('/board', async (c) => {
   // with member context so the UI shows "CPT Sola (14335)" instead of just
   // "ID 14335". Best-effort: if D1 lookup fails the legacy id-only payload
   // still ships and the front-end renders the fallback.
+  //
+  // Also ships a `members` map covering every member id referenced in
+  // bidOrder / fills / currentBidder / onDeck so the cell renderer can show
+  // "Lt Sola" inside each filled position without further fetches.
   let currentBidder: BidderContext | null = null;
   let onDeck: BidderContext[] = [];
+  const members: Record<
+    string,
+    { id: number; firstName: string; lastName: string; rank: string; employeeId: string }
+  > = {};
   try {
     const bidOrder = Array.isArray(body.bidOrder) ? body.bidOrder : [];
     const currentBidderId = typeof body.currentBidderId === 'number' ? body.currentBidderId : null;
     const fillsRec = body.fills && typeof body.fills === 'object' ? body.fills : {};
     const filledMemberIds = new Set<number>(Object.values(fillsRec).map((f) => f.memberId));
     const onDeckEntries = computeOnDeck(bidOrder, currentBidderId, filledMemberIds);
+
+    // Lookup set: everyone in bidOrder ∪ filled ∪ currentBidder ∪ onDeck.
+    // Worst case is one row per member in the session (≈226 today). Chunked
+    // SELECT keeps the IN(...) under the D1 placeholder cap.
     const lookupIds = new Set<number>();
+    for (const e of bidOrder) lookupIds.add(e.memberId);
+    for (const id of filledMemberIds) lookupIds.add(id);
     if (currentBidderId !== null) lookupIds.add(currentBidderId);
     for (const e of onDeckEntries) lookupIds.add(e.memberId);
+
     if (lookupIds.size > 0) {
       const db = getDb(c.env.DB);
       const rows = await chunkedInArraySelect(Array.from(lookupIds), (chunk) =>
@@ -259,12 +274,24 @@ bid.get('/board', async (c) => {
           },
         ];
       });
+      // Build the members map. Keys are stringified ids so the JSON payload
+      // round-trips cleanly (numeric keys would re-serialise as strings
+      // anyway under JSON.stringify).
+      for (const row of rows) {
+        members[String(row.id)] = {
+          id: row.id,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          rank: row.rank,
+          employeeId: row.employeeId,
+        };
+      }
     }
   } catch (err) {
     console.error('[bid.board] enrichment failed (fail-soft)', err);
   }
 
-  return c.json({ ...body, isMock, bidSessionId, currentBidder, onDeck });
+  return c.json({ ...body, isMock, bidSessionId, currentBidder, onDeck, members });
 });
 
 bid.get('/bid/state', async (c) => {
