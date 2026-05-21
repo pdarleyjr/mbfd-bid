@@ -9,14 +9,9 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { MockBanner } from '../../_components/MockBanner';
-import { BidderCard, type BidderContext } from '../../_components/bid/BidderCard';
-import { OnDeckQueue } from '../../_components/bid/OnDeckQueue';
+import type { BidderContext } from '../../_components/bid/BidderCard';
 import type { MemberLite } from '../../_components/bid/types';
-import { AIAdvisoryPanel } from './_components/AIAdvisoryPanel';
-import { AIAskDeepDialog } from './_components/AIAskDeepDialog';
-import { AICostPill } from './_components/AICostPill';
-import { AIForecastBanner } from './_components/AIForecastBanner';
-import { AdminBoard } from './_components/AdminBoard';
+import { AdminBidShell } from './_components/AdminBidShell';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -32,6 +27,9 @@ interface BoardSnapshot {
   fills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
   isMock?: boolean;
+  sessionStartedAt: number | null;
+  turnStartedAtMs?: number;
+  turnTimerSeconds?: number;
 }
 
 interface ActiveSessionResponse {
@@ -110,46 +108,24 @@ export default async function AdminBidPage({
   }
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div data-testid="bid-board-header" className="min-h-screen bg-stone-50 text-stone-900">
       <MockBanner isMock={board.isMock === true} sessionId={board.bidSessionId} />
-      <header
-        data-testid="bid-board-header"
-        className="border-b border-stone-200 bg-white px-6 py-4"
-      >
-        <div className="flex items-baseline gap-3 font-display text-2xl text-stone-900">
-          <span>MBFD Annual Bid — Admin Console</span>
-          <span className="text-sm font-medium text-stone-600">Phase: {board.currentPhase}</span>
-          <AICostPill bidSessionId={board.bidSessionId} />
-        </div>
-        <p className="mt-2 text-sm text-stone-700">
-          <span className="mr-2">Active bidder:</span>
-          <BidderCard
-            bidder={board.currentBidder ?? null}
-            fallbackMemberId={board.currentBidderId}
-          />
-        </p>
-      </header>
-      <OnDeckQueue onDeck={board.onDeck ?? []} meMemberId={claims.sub} />
-      <AIForecastBanner bidSessionId={board.bidSessionId} />
-      <div className="flex">
-        <div className="flex-1">
-          <AdminBoard
-            bidSessionId={board.bidSessionId}
-            initialSeq={board.lastSeq}
-            meMemberId={claims.sub}
-            jwt={jwt}
-            initialFills={board.fills}
-            members={board.members ?? {}}
-            wsBase={getWorkerBase()}
-          />
-        </div>
-        <div className="flex flex-col">
-          <AIAdvisoryPanel bidSessionId={board.bidSessionId} turnTimerSeconds={180} />
-          <div className="border-l border-stone-200 bg-white p-4 w-[360px]">
-            <AIAskDeepDialog bidSessionId={board.bidSessionId} />
-          </div>
-        </div>
-      </div>
+      <AdminBidShell
+        bidSessionId={board.bidSessionId}
+        lastSeq={board.lastSeq}
+        currentPhase={board.currentPhase}
+        currentBidderId={board.currentBidderId}
+        currentBidder={board.currentBidder ?? null}
+        onDeck={board.onDeck ?? []}
+        sessionStartedAt={board.sessionStartedAt}
+        turnStartedAtMs={board.turnStartedAtMs ?? 0}
+        turnTimerSeconds={board.turnTimerSeconds ?? 180}
+        meMemberId={claims.sub}
+        jwt={jwt}
+        initialFills={board.fills}
+        members={board.members ?? {}}
+        wsBase={getWorkerBase()}
+      />
     </div>
   );
 }

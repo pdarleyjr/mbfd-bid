@@ -184,15 +184,21 @@ bid.get('/board', async (c) => {
   // MockBanner without a second round-trip. Failure to read the session row
   // (e.g. local dev without seeded data) leaves `is_mock=false` — the live
   // banner only appears when the column explicitly says so.
+  // Also ships `sessionStartedAt` so the admin command bar can compute the
+  // session-uptime clock without a separate fetch.
   let isMock = false;
+  let sessionStartedAt: number | null = null;
   try {
     const db = getDb(c.env.DB);
     const session = await db
-      .select({ isMock: bidSessionsTable.isMock })
+      .select({ isMock: bidSessionsTable.isMock, startedAt: bidSessionsTable.startedAt })
       .from(bidSessionsTable)
       .where(eq(bidSessionsTable.id, bidSessionId))
       .get();
     isMock = session?.isMock === true;
+    if (session?.startedAt instanceof Date) {
+      sessionStartedAt = session.startedAt.getTime();
+    }
   } catch {
     // best-effort — banner stays off if the lookup fails
   }
@@ -291,7 +297,15 @@ bid.get('/board', async (c) => {
     console.error('[bid.board] enrichment failed (fail-soft)', err);
   }
 
-  return c.json({ ...body, isMock, bidSessionId, currentBidder, onDeck, members });
+  return c.json({
+    ...body,
+    isMock,
+    bidSessionId,
+    sessionStartedAt,
+    currentBidder,
+    onDeck,
+    members,
+  });
 });
 
 bid.get('/bid/state', async (c) => {

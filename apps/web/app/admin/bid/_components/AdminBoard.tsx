@@ -8,7 +8,6 @@ import { ReconnectingOverlay } from '../../../bid/_components/ReconnectingOverla
 import { BidStoreProvider } from '../../../bid/_hooks/BidStoreContext';
 import { type BidStoreState, createBidStore } from '../../../bid/_hooks/useBidStore';
 import { useBidWebSocket } from '../../../bid/_hooks/useBidWebSocket';
-import { AdminActionsBar } from './AdminActionsBar';
 
 interface Props {
   bidSessionId: string;
@@ -40,7 +39,6 @@ export function AdminBoard({
   const lastError = useStore(store, (s: BidStoreState) => s.lastError);
   return (
     <BidStoreProvider store={store}>
-      <AdminActionsBar bidSessionId={bidSessionId} jwt={jwt} />
       <StationGroupedGrid members={members} />
       {status !== 'open' ? <ReconnectingOverlay status={status} /> : null}
       {lastError ? (
