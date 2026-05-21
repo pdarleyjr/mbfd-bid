@@ -63,13 +63,7 @@ describe('BidRoster SSR', () => {
 
   it('shows the preview badge when the worker computed bidOrder on-the-fly', () => {
     const html = renderToString(
-      <BidRoster
-        bidOrder={ORDER}
-        members={MEMBERS}
-        currentBidderId={null}
-        fills={{}}
-        preview
-      />,
+      <BidRoster bidOrder={ORDER} members={MEMBERS} currentBidderId={null} fills={{}} preview />,
     );
     expect(html).toContain('data-testid="bid-roster-preview-badge"');
     expect(html).toContain('preview — session not started');
@@ -77,13 +71,7 @@ describe('BidRoster SSR', () => {
 
   it('falls back to memberId when the members map is missing the row', () => {
     const html = renderToString(
-      <BidRoster
-        bidOrder={ORDER}
-        members={{}}
-        currentBidderId={null}
-        fills={{}}
-        preview={false}
-      />,
+      <BidRoster bidOrder={ORDER} members={{}} currentBidderId={null} fills={{}} preview={false} />,
     );
     // React inserts comment markers between literal text and interpolated
     // values, so the rendered DOM is "#<!-- -->1" — match the surrounding

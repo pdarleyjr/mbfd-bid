@@ -48,4 +48,14 @@ describe('StationGroupedGrid SSR snapshot', () => {
     expect(html).toContain('shift-tab-C');
     expect(html).toContain('shift-tab-D');
   });
+
+  it('groups positions by apparatus (unit) within each station', () => {
+    const html = renderToString(<StationGroupedGrid members={MEMBERS} defaultShift="A" />);
+    // Each apparatus gets its own subheader so bidders can spot which
+    // vehicle a position belongs to without reading the cell.
+    expect(html).toContain('data-testid="apparatus-ladder-1"');
+    expect(html).toContain('data-testid="apparatus-engine-1"');
+    expect(html).toContain('data-testid="apparatus-rescue-1"');
+    expect(html).toContain('data-testid="apparatus-float-1"');
+  });
 });

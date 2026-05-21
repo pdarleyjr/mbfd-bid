@@ -1,6 +1,6 @@
 import { BrandHeader } from '@/components/BrandHeader';
-import { AdminSideNav } from '@/components/admin/AdminShell';
 import { requireAdmin } from '@/lib/require-admin';
+import { AdminLayoutShell } from './_components/AdminLayoutShell';
 import { AdminQueryProvider } from './_components/AdminQueryProvider';
 import { StepUpProvider } from './_components/StepUpProvider';
 
@@ -15,15 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <BrandHeader subtitle="Admin Console" />
       <AdminQueryProvider>
         <StepUpProvider>
-          <div className="flex min-h-[calc(100vh-57px)]">
-            {/* Sidebar */}
-            <aside className="hidden w-52 shrink-0 border-r border-slate-700 md:block">
-              <AdminSideNav />
-            </aside>
-
-            {/* Main content */}
-            <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
-          </div>
+          <AdminLayoutShell>{children}</AdminLayoutShell>
         </StepUpProvider>
       </AdminQueryProvider>
     </div>
