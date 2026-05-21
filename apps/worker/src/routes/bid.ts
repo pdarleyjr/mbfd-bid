@@ -8,7 +8,7 @@ import {
 } from '@mbfd/a-day';
 import { type PositionRule, evaluateEligibility } from '@mbfd/eligibility';
 import { SubmitADayPickRequestSchema } from '@mbfd/shared';
-import { desc, eq, ne } from 'drizzle-orm';
+import { desc, eq, inArray, ne } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { getDb } from '../db/index.js';
 import {
@@ -22,8 +22,10 @@ import {
 } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
+import { chunkedInArraySelect } from '../lib/d1-batch.js';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
+import { computeOnDeck } from '../lib/on-deck.js';
 import type { WorkerEnv } from '../types/env.js';
 
 type BidContext = Context<{ Bindings: WorkerEnv }>;
@@ -154,6 +156,16 @@ bid.get('/me/eligibility', async (c) => {
   return c.json({ memberId: claims.sub, positions });
 });
 
+interface BidderContext {
+  memberId: number;
+  ordinal: number;
+  pool: 'OFC' | 'FF';
+  firstName: string;
+  lastName: string;
+  rank: string;
+  employeeId: string;
+}
+
 bid.get('/board', async (c) => {
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
@@ -162,7 +174,12 @@ bid.get('/board', async (c) => {
   const doId = c.env.BID_SESSION.idFromName(bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);
   const snap = await stub.fetch(`${new URL(c.req.url).origin}/snapshot`);
-  const body = (await snap.json()) as Record<string, unknown>;
+  const body = (await snap.json()) as Record<string, unknown> & {
+    bidOrder?: ReadonlyArray<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
+    currentBidderId?: number | null;
+    fills?: Record<string, { memberId: number; ordinal: number; bidId: string }>;
+  };
+
   // Plan 09 / Rehearsal Tooling — surface `is_mock` so the page can render
   // MockBanner without a second round-trip. Failure to read the session row
   // (e.g. local dev without seeded data) leaves `is_mock=false` — the live
@@ -179,7 +196,75 @@ bid.get('/board', async (c) => {
   } catch {
     // best-effort — banner stays off if the lookup fails
   }
-  return c.json({ ...body, isMock, bidSessionId });
+
+  // Live Bid Console enrichment — hydrate the active bidder + next-5 queue
+  // with member context so the UI shows "CPT Sola (14335)" instead of just
+  // "ID 14335". Best-effort: if D1 lookup fails the legacy id-only payload
+  // still ships and the front-end renders the fallback.
+  let currentBidder: BidderContext | null = null;
+  let onDeck: BidderContext[] = [];
+  try {
+    const bidOrder = Array.isArray(body.bidOrder) ? body.bidOrder : [];
+    const currentBidderId = typeof body.currentBidderId === 'number' ? body.currentBidderId : null;
+    const fillsRec = body.fills && typeof body.fills === 'object' ? body.fills : {};
+    const filledMemberIds = new Set<number>(Object.values(fillsRec).map((f) => f.memberId));
+    const onDeckEntries = computeOnDeck(bidOrder, currentBidderId, filledMemberIds);
+    const lookupIds = new Set<number>();
+    if (currentBidderId !== null) lookupIds.add(currentBidderId);
+    for (const e of onDeckEntries) lookupIds.add(e.memberId);
+    if (lookupIds.size > 0) {
+      const db = getDb(c.env.DB);
+      const rows = await chunkedInArraySelect(Array.from(lookupIds), (chunk) =>
+        db
+          .select({
+            id: membersTable.id,
+            employeeId: membersTable.employeeId,
+            firstName: membersTable.firstName,
+            lastName: membersTable.lastName,
+            rank: membersTable.rank,
+          })
+          .from(membersTable)
+          .where(inArray(membersTable.id, chunk))
+          .all(),
+      );
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const bidOrderIndex = new Map(bidOrder.map((e) => [e.memberId, e]));
+      if (currentBidderId !== null) {
+        const row = byId.get(currentBidderId);
+        const order = bidOrderIndex.get(currentBidderId);
+        if (row && order) {
+          currentBidder = {
+            memberId: row.id,
+            ordinal: order.ordinal,
+            pool: order.pool,
+            firstName: row.firstName,
+            lastName: row.lastName,
+            rank: row.rank,
+            employeeId: row.employeeId,
+          };
+        }
+      }
+      onDeck = onDeckEntries.flatMap((entry) => {
+        const row = byId.get(entry.memberId);
+        if (!row) return [];
+        return [
+          {
+            memberId: row.id,
+            ordinal: entry.ordinal,
+            pool: entry.pool,
+            firstName: row.firstName,
+            lastName: row.lastName,
+            rank: row.rank,
+            employeeId: row.employeeId,
+          },
+        ];
+      });
+    }
+  } catch (err) {
+    console.error('[bid.board] enrichment failed (fail-soft)', err);
+  }
+
+  return c.json({ ...body, isMock, bidSessionId, currentBidder, onDeck });
 });
 
 bid.get('/bid/state', async (c) => {

@@ -1,8 +1,24 @@
+import type { KVNamespace } from '@cloudflare/workers-types';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const SHARED = 'test-bid-reader-secret-do-not-use-in-prod';
+
+function makeKv(initial: Record<string, string> = {}): KVNamespace {
+  const store = new Map<string, string>(Object.entries(initial));
+  return {
+    async get(key: string) {
+      return store.get(key) ?? null;
+    },
+    async put(key: string, value: string) {
+      store.set(key, value);
+    },
+    async delete(key: string) {
+      store.delete(key);
+    },
+  } as unknown as KVNamespace;
+}
 
 describe('GET /api/portal/members/:employee_id/credentials', () => {
   let h: TestD1;
@@ -108,5 +124,87 @@ describe('GET /api/portal/members/:employee_id/credentials', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { credentials: string[] };
     expect(body.credentials).toEqual([]);
+  });
+});
+
+describe('/api/portal/admin/bid-pin', () => {
+  let h: TestD1;
+
+  beforeEach(async () => {
+    h = await setupTestD1();
+  });
+
+  afterEach(async () => {
+    await teardownTestD1(h);
+  });
+
+  it('GET returns the default 2300 setting when KV is empty', async () => {
+    const kv = makeKv();
+    const res = await app.fetch(
+      new Request('http://x/api/portal/admin/bid-pin', {
+        headers: { Authorization: `Bearer ${SHARED}` },
+      }),
+      { ...h.env, PORTAL_BID_READER: SHARED, KV: kv },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      pin: string;
+      isDefault: boolean;
+      updatedAt: string | null;
+    };
+    expect(body.pin).toBe('2300');
+    expect(body.isDefault).toBe(true);
+    expect(body.updatedAt).toBeNull();
+  });
+
+  it('GET returns 401 without bearer', async () => {
+    const kv = makeKv();
+    const res = await app.fetch(new Request('http://x/api/portal/admin/bid-pin'), {
+      ...h.env,
+      PORTAL_BID_READER: SHARED,
+      KV: kv,
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('PUT stores a new PIN, then GET returns it (round-trip)', async () => {
+    const kv = makeKv();
+    const putRes = await app.fetch(
+      new Request('http://x/api/portal/admin/bid-pin', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${SHARED}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ pin: '4040', updatedBy: 'hub-admin@example' }),
+      }),
+      { ...h.env, PORTAL_BID_READER: SHARED, KV: kv },
+    );
+    expect(putRes.status).toBe(200);
+    const putBody = (await putRes.json()) as { pin: string; isDefault: boolean };
+    expect(putBody.pin).toBe('4040');
+    expect(putBody.isDefault).toBe(false);
+
+    const getRes = await app.fetch(
+      new Request('http://x/api/portal/admin/bid-pin', {
+        headers: { Authorization: `Bearer ${SHARED}` },
+      }),
+      { ...h.env, PORTAL_BID_READER: SHARED, KV: kv },
+    );
+    const getBody = (await getRes.json()) as { pin: string; updatedBy: string };
+    expect(getBody.pin).toBe('4040');
+    expect(getBody.updatedBy).toBe('hub-admin@example');
+  });
+
+  it('PUT rejects PINs that fail validation', async () => {
+    const kv = makeKv();
+    const res = await app.fetch(
+      new Request('http://x/api/portal/admin/bid-pin', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${SHARED}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ pin: '12' }),
+      }),
+      { ...h.env, PORTAL_BID_READER: SHARED, KV: kv },
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('invalid_pin');
   });
 });

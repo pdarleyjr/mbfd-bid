@@ -8,6 +8,8 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { MockBanner } from '../../_components/MockBanner';
+import { BidderCard, type BidderContext } from '../../_components/bid/BidderCard';
+import { OnDeckQueue } from '../../_components/bid/OnDeckQueue';
 import { AIAdvisoryPanel } from './_components/AIAdvisoryPanel';
 import { AIAskDeepDialog } from './_components/AIAskDeepDialog';
 import { AICostPill } from './_components/AICostPill';
@@ -22,6 +24,8 @@ interface BoardSnapshot {
   lastSeq: number;
   currentPhase: string;
   currentBidderId: number | null;
+  currentBidder: BidderContext | null;
+  onDeck: BidderContext[];
   fills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
   isMock?: boolean;
@@ -114,10 +118,15 @@ export default async function AdminBidPage({
           <span className="text-sm font-medium text-stone-600">Phase: {board.currentPhase}</span>
           <AICostPill bidSessionId={board.bidSessionId} />
         </div>
-        <p className="mt-2 text-sm tabular-nums text-stone-700">
-          Active bidder: <span className="font-bold">{board.currentBidderId ?? '—'}</span>
+        <p className="mt-2 text-sm text-stone-700">
+          <span className="mr-2">Active bidder:</span>
+          <BidderCard
+            bidder={board.currentBidder ?? null}
+            fallbackMemberId={board.currentBidderId}
+          />
         </p>
       </header>
+      <OnDeckQueue onDeck={board.onDeck ?? []} meMemberId={claims.sub} />
       <AIForecastBanner bidSessionId={board.bidSessionId} />
       <div className="flex">
         <div className="flex-1">

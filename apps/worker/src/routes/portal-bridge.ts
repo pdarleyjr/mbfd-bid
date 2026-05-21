@@ -2,26 +2,33 @@
  * Portal-bridge routes — called by the MBFD Hub Laravel app, NOT by browsers.
  *
  * The MBFD Hub Employee Portal embeds a "My Bid Certifications" page that
- * pulls a member's cert list from this Worker. Gated by a shared bearer
- * token (env `PORTAL_BID_READER`) matching the value the portal stores as
- * `BID_READER_TOKEN`. No user JWT involved — this is server-to-server.
+ * pulls a member's cert list from this Worker, and a "Bid Access PIN" admin
+ * page that mirrors the same KV-backed PIN setting the staging bid console
+ * exposes. Gated by a shared bearer token (env `PORTAL_BID_READER`) matching
+ * the value the portal stores as `BID_READER_TOKEN`. No user JWT involved —
+ * this is server-to-server.
  *
  * Routes (mounted at /api/portal):
  *   GET /members/:employee_id/credentials
  *     → { credentials: string[], lastUpdated: string|null }
+ *   GET /admin/bid-pin
+ *     → { pin, updatedAt, updatedBy, isDefault }
+ *   PUT /admin/bid-pin { pin: "1234" }
+ *     → same shape after a successful write
  *
  * Failure shapes:
  *   401 missing_token / invalid_token — middleware
  *   404 employee_not_found — no member row for that employee_id
+ *   400 invalid_pin — PUT bid-pin body failed validation
  *   500 + console.error('[portal-bridge-error]') — unexpected exception
- *
- * Idempotent and read-only. Safe to call as often as the portal needs.
  */
 
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { getDb } from '../db/index.js';
 import { credentials as credentialsTable, memberCredentials, members } from '../db/schema.js';
+import { getBidPin, isValidPin, setBidPin } from '../lib/bid-pin.js';
 import type { WorkerEnv } from '../types/env.js';
 
 const router = new Hono<{ Bindings: WorkerEnv }>();
@@ -81,6 +88,45 @@ router.get('/members/:employee_id/credentials', async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[portal-bridge-error]', { route: '/members/:employee_id/credentials', msg });
+    return c.json({ error: 'internal_error', detail: msg }, 500);
+  }
+});
+
+function presentPinSetting(setting: Awaited<ReturnType<typeof getBidPin>>) {
+  return {
+    pin: setting.pin,
+    updatedAt: setting.updatedAt > 0 ? new Date(setting.updatedAt).toISOString() : null,
+    updatedBy: setting.updatedBy,
+    isDefault: setting.updatedAt === 0,
+  };
+}
+
+router.get('/admin/bid-pin', async (c) => {
+  try {
+    const setting = await getBidPin(c.env.KV);
+    return c.json(presentPinSetting(setting));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[portal-bridge-error]', { route: 'GET /admin/bid-pin', msg });
+    return c.json({ error: 'internal_error', detail: msg }, 500);
+  }
+});
+
+const PutPinBody = z.object({ pin: z.string(), updatedBy: z.string().min(1).max(64).optional() });
+
+router.put('/admin/bid-pin', async (c) => {
+  try {
+    const json = await c.req.json().catch(() => null);
+    const parsed = PutPinBody.safeParse(json);
+    if (!parsed.success || !isValidPin(parsed.data.pin)) {
+      return c.json({ error: 'invalid_pin', detail: 'PIN must be 4–8 digits.' }, 400);
+    }
+    const updatedBy = parsed.data.updatedBy ?? 'mbfd-hub-admin';
+    const setting = await setBidPin(c.env.KV, parsed.data.pin, updatedBy);
+    return c.json(presentPinSetting(setting));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[portal-bridge-error]', { route: 'PUT /admin/bid-pin', msg });
     return c.json({ error: 'internal_error', detail: msg }, 500);
   }
 });

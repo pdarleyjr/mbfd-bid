@@ -1,6 +1,8 @@
 import { zValidator } from '@hono/zod-validator';
 import { LoginRequestSchema, type LoginResponse } from '@mbfd/shared';
 import { Hono } from 'hono';
+import { z } from 'zod';
+import { constantTimeEqual, getBidPin, isValidPin } from '../lib/bid-pin';
 import { LOCAL_ADMIN_USERNAME, validateEnv, verifyLocalAdminPassword } from '../lib/env';
 import { signJwt } from '../lib/jwt';
 import { verifyCredentials } from '../lib/portal-client';
@@ -125,5 +127,42 @@ auth.post(
     });
   },
 );
+
+const VerifyPinBody = z.object({ pin: z.string() });
+
+/**
+ * Verify the member bid-page PIN against the KV-stored value (default
+ * "2300"). Rate-limited per IP via the existing helper. Returns 204 on
+ * success — the Next.js edge proxy sets the cookie. Never returns the PIN
+ * itself.
+ */
+auth.post('/verify-pin', async (c) => {
+  // Rate limit. Fail-open on KV error so a transient hiccup doesn't lock
+  // members out of the bid page.
+  if (c.env.KV && typeof c.env.KV.get === 'function') {
+    try {
+      const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+      const check = await rateLimitByIp(c.env.KV, `pin:${ip}`);
+      if (!check.allowed) {
+        c.header('Retry-After', String(check.retryAfterSec));
+        return c.json({ error: 'rate_limited' }, 429);
+      }
+    } catch (err) {
+      console.error('[auth.verify-pin] rate-limit check failed (fail-open)', err);
+    }
+  }
+
+  const json = await c.req.json().catch(() => null);
+  const parsed = VerifyPinBody.safeParse(json);
+  if (!parsed.success || !isValidPin(parsed.data.pin)) {
+    return c.json({ error: 'invalid' }, 400);
+  }
+
+  const setting = await getBidPin(c.env.KV);
+  if (!constantTimeEqual(parsed.data.pin, setting.pin)) {
+    return c.json({ error: 'invalid_pin' }, 401);
+  }
+  return c.body(null, 204);
+});
 
 export default auth;

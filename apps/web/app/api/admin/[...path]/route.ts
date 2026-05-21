@@ -75,5 +75,6 @@ async function proxyAdminRequest(req: Request, context: RouteContext): Promise<R
 
 export const GET = proxyAdminRequest;
 export const POST = proxyAdminRequest;
+export const PUT = proxyAdminRequest;
 export const PATCH = proxyAdminRequest;
 export const DELETE = proxyAdminRequest;

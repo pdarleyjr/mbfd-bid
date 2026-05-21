@@ -18,6 +18,7 @@ const NAV_LINKS: { href: string; label: string; exact: boolean }[] = [
   { href: '/admin/audit', label: 'Audit Log', exact: false },
   { href: '/admin/eligibility', label: 'Eligibility Preview', exact: false },
   { href: '/admin/rehearsal', label: 'Rehearsal Console', exact: false },
+  { href: '/admin/settings/bid-pin', label: 'Bid Access PIN', exact: false },
 ];
 
 // Members sub-navigation — Master Roster + 6 per-station eligibility pages.

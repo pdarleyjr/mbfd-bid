@@ -1,5 +1,5 @@
-import { cfEnv } from '@/lib/cf-env';
 import { PIN_COOKIE_NAME, PIN_COOKIE_OPTS } from '@/lib/cookies';
+import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -34,34 +34,13 @@ function rateLimit(req: Request): { ok: true } | { ok: false; retryAfter: number
   return { ok: true };
 }
 
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  const max = Math.max(a.length, b.length);
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < max; i += 1) {
-    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-  }
-  return diff === 0;
-}
-
-async function verifyPin(pin: string): Promise<boolean> {
-  const expectedHash = cfEnv('PIN_HASH');
-  if (expectedHash) {
-    const normalized = expectedHash.startsWith('sha256:')
-      ? expectedHash.slice('sha256:'.length)
-      : expectedHash;
-    return constantTimeEqual(await sha256Hex(pin), normalized.toLowerCase());
-  }
-
-  const expectedPlain = cfEnv('PIN_PLAIN');
-  if (expectedPlain) return constantTimeEqual(pin, expectedPlain);
-  throw new Error('PIN gate is not configured');
-}
-
+/**
+ * PIN gate proxy. Sends the candidate PIN to the Worker's KV-backed verifier
+ * (`POST /api/auth/verify-pin`), then sets the gate cookie on success. The
+ * Worker holds the source-of-truth value — both the staging bid admin UI and
+ * the MBFD Hub Filament admin write to the same KV key, so a change in either
+ * surface takes effect immediately for the next PIN entry.
+ */
 export async function POST(req: Request) {
   const limit = rateLimit(req);
   if (!limit.ok) {
@@ -77,18 +56,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid' }, { status: 400 });
   }
 
-  let ok = false;
+  let upstream: Response;
   try {
-    ok = await verifyPin(parsed.data.pin);
-  } catch {
-    return NextResponse.json({ error: 'misconfigured' }, { status: 500 });
-  }
-  if (!ok) {
-    return NextResponse.json({ error: 'invalid_pin' }, { status: 401 });
+    upstream = await fetch(`${getWorkerBase()}/api/auth/verify-pin`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        // Forward client IP so the Worker's per-IP rate-limiter is accurate.
+        'cf-connecting-ip': clientKey(req),
+      },
+      body: JSON.stringify({ pin: parsed.data.pin }),
+    });
+  } catch (err) {
+    console.error('[api.pin] worker fetch failed', err);
+    return NextResponse.json({ error: 'misconfigured' }, { status: 503 });
   }
 
-  attempts.delete(clientKey(req));
-  const c = await cookies();
-  c.set(PIN_COOKIE_NAME, 'ok', PIN_COOKIE_OPTS);
-  return new NextResponse(null, { status: 204 });
+  if (upstream.status === 204) {
+    attempts.delete(clientKey(req));
+    const c = await cookies();
+    c.set(PIN_COOKIE_NAME, 'ok', PIN_COOKIE_OPTS);
+    return new NextResponse(null, { status: 204 });
+  }
+  if (upstream.status === 401) {
+    return NextResponse.json({ error: 'invalid_pin' }, { status: 401 });
+  }
+  if (upstream.status === 429) {
+    const retryAfter = upstream.headers.get('Retry-After') ?? '60';
+    return NextResponse.json(
+      { error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': retryAfter } },
+    );
+  }
+  return NextResponse.json({ error: 'misconfigured' }, { status: 500 });
 }

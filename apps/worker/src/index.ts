@@ -18,6 +18,8 @@ import adminReadiness from './routes/admin/readiness.js';
 import adminRehearsal from './routes/admin/rehearsal.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
+import adminSettings from './routes/admin/settings.js';
+import aiMember from './routes/ai-member.js';
 import adminAi from './routes/ai.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
@@ -49,8 +51,10 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/eligibility', adminEligibilityPreview)
   .route('/api/admin/placements', adminPlacements)
   .route('/api/admin/ai', adminAi)
+  .route('/api/ai', aiMember)
   .route('/api/admin/rehearsal', adminRehearsal)
   .route('/api/admin/readiness', adminReadiness)
+  .route('/api/admin/settings', adminSettings)
   .route('/api/portal', portalBridge);
 
 export type AppType = typeof routes;
