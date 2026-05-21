@@ -570,6 +570,172 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
   }
 });
 
+// ── Admin manual pick (mock-only, no step-up) ──────────────────────────────
+
+const ManualPickBodySchema = z.object({
+  member_id: z.number().int().positive(),
+  position_id: z
+    .string()
+    .trim()
+    .regex(/^[A-D]\d{3}$/, 'Position ID format: <shift><3-digits>'),
+  /** Force=true bypasses eligibility (admin override). */
+  force: z.boolean().optional(),
+  /** Optional admin note that surfaces in the audit row. */
+  reason: z.string().trim().max(500).optional(),
+});
+
+/**
+ * POST /api/admin/rehearsal/:sessionId/manual-pick
+ *
+ * Admin manually assigns a member to a position in a MOCK session. Skips
+ * step-up auth (rehearsal is low-stakes) and the structured reason_code
+ * machinery — just commits the pick straight to D1. Eligibility is enforced
+ * by default; pass `force: true` in the body to override.
+ *
+ * For LIVE bid day, use `/api/admin/bid-session/:id/bid-for-member` instead,
+ * which requires step-up + a reason_code.
+ *
+ * Returns 403 if the session is not flagged is_mock. The rehearsal console
+ * is the only legitimate caller.
+ */
+router.post('/:sessionId/manual-pick', zValidator('json', ManualPickBodySchema), async (c) => {
+  const sessionId = c.req.param('sessionId');
+  const body = c.req.valid('json');
+  const db = getDb(c.env.DB);
+
+  const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+  if (!session.isMock) {
+    return c.json(
+      {
+        error: 'not_mock_session',
+        detail:
+          'manual-pick is mock-only — use /api/admin/bid-session/:id/bid-for-member for live sessions',
+      },
+      403,
+    );
+  }
+
+  const member = await loadMemberWithCreds(db, body.member_id);
+  if (member === null) return c.json({ error: 'member_not_found' }, 404);
+
+  // Eligibility gate — admin can override with force=true.
+  if (body.force !== true) {
+    const ruleBook = await db
+      .select()
+      .from(ruleBooks)
+      .where(and(eq(ruleBooks.effectiveYear, session.bidYear), eq(ruleBooks.status, 'active')))
+      .get();
+    if (ruleBook === undefined) {
+      return c.json({ error: 'no_active_rule_book' }, 422);
+    }
+    const r = await db
+      .select()
+      .from(positionRules)
+      .where(
+        and(
+          eq(positionRules.positionId, body.position_id),
+          eq(positionRules.ruleBookVersion, ruleBook.version),
+        ),
+      )
+      .get();
+    if (r === undefined) {
+      return c.json({ error: 'rule_not_found_for_position' }, 422);
+    }
+    const rule: PositionRule = {
+      positionId: r.positionId,
+      ruleBookVersion: r.ruleBookVersion,
+      requiredCriteria: JSON.parse(r.requiredCriteriaJson),
+      pointsPreference: JSON.parse(r.pointsPreferenceJson),
+      tieBreakChain: JSON.parse(r.tieBreakChainJson),
+    };
+    const evalResult = evaluateEligibility(member, rule);
+    if (!evalResult.eligible) {
+      return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);
+    }
+  }
+
+  // Refuse if the position is already filled.
+  const existingForPosition = await db
+    .select({ id: bids.id })
+    .from(bids)
+    .where(and(eq(bids.bidSessionId, sessionId), eq(bids.positionId, body.position_id)))
+    .get();
+  if (existingForPosition !== undefined) {
+    return c.json({ error: 'position_already_filled', bid_id: existingForPosition.id }, 409);
+  }
+
+  const claims = c.get('claims');
+  const adminActorId: number | null = claims.sub > 0 ? claims.sub : null;
+  const bidId = ulid();
+  const maxOrdRow = await db
+    .select({ m: sql<number | null>`max(${bids.ordinal})` })
+    .from(bids)
+    .where(eq(bids.bidSessionId, sessionId))
+    .get();
+  const ordinal = (maxOrdRow?.m ?? 0) + 1;
+  const idemKey = `rehearsal-manual:${sessionId}:${body.member_id}:${body.position_id}`;
+  const reason = body.reason ?? 'rehearsal manual pick';
+
+  await db.insert(bids).values({
+    id: bidId,
+    bidSessionId: sessionId,
+    ordinal,
+    memberId: body.member_id,
+    positionId: body.position_id,
+    pickedAt: new Date(),
+    forced: body.force === true,
+    adminActorId,
+    reason,
+    idempotencyKey: idemKey,
+    portalSyncStatus: 'pending',
+    portalSyncAttempts: 0,
+  });
+
+  await writeAuditLog(db, {
+    bidSessionId: sessionId,
+    actorType: 'admin',
+    actorId: adminActorId,
+    action: body.force === true ? 'forced_pick' : 'admin_bid_for_member',
+    targetKind: 'bid',
+    targetId: bidId,
+    reason,
+    afterState: {
+      member_id: body.member_id,
+      position_id: body.position_id,
+      force: body.force === true,
+      rehearsal: true,
+    },
+  });
+
+  // Advance currentBidderId if this picked the current bidder. Best-effort —
+  // mirrors what auto-bid does so the UI moves forward.
+  if (session.currentBidderId === body.member_id) {
+    const orderRow = await db
+      .select({ ordinal: bidOrder.ordinal })
+      .from(bidOrder)
+      .where(and(eq(bidOrder.bidSessionId, sessionId), eq(bidOrder.memberId, body.member_id)))
+      .get();
+    if (orderRow !== undefined) {
+      const nextRow = await db
+        .select({ memberId: bidOrder.memberId })
+        .from(bidOrder)
+        .where(eq(bidOrder.bidSessionId, sessionId))
+        .orderBy(asc(bidOrder.ordinal))
+        .all();
+      const idx = nextRow.findIndex((r) => r.memberId === body.member_id);
+      const next =
+        idx >= 0 && idx + 1 < nextRow.length ? (nextRow[idx + 1]?.memberId ?? null) : null;
+      await db
+        .update(bidSessions)
+        .set({ currentBidderId: next })
+        .where(eq(bidSessions.id, sessionId));
+    }
+  }
+
+  return c.json({ bid_id: bidId, forced: body.force === true }, 201);
+});
+
 // ── Task R6 — Rehearsal findings (in-app bug tracker) ───────────────────────
 
 const PostFindingBodySchema = z.object({

@@ -40,42 +40,61 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
     );
   }
   return (
-    <table className="w-full table-fixed border-collapse text-sm">
-      <thead className="bg-stone-100 text-left">
-        <tr>
-          <th className="border border-stone-300 px-3 py-2">Session ID</th>
-          <th className="border border-stone-300 px-3 py-2">Year</th>
-          <th className="border border-stone-300 px-3 py-2">Phase</th>
-          <th className="border border-stone-300 px-3 py-2">Current bidder</th>
-          <th className="border border-stone-300 px-3 py-2">Last pick</th>
-          <th className="border border-stone-300 px-3 py-2">AI cost</th>
-          <th className="border border-stone-300 px-3 py-2">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {sessions.map((s) => (
-          <tr key={s.id} data-testid={`mock-session-row-${s.id}`}>
-            <td className="border border-stone-300 px-3 py-2 font-mono">{s.id}</td>
-            <td className="border border-stone-300 px-3 py-2">{s.bidYear}</td>
-            <td className="border border-stone-300 px-3 py-2">{s.currentPhase}</td>
-            <td className="border border-stone-300 px-3 py-2">{s.currentBidderId ?? '—'}</td>
-            <td className="border border-stone-300 px-3 py-2">
-              {s.lastPickedAtIso ? new Date(s.lastPickedAtIso).toLocaleString() : '—'}
-            </td>
-            <td className="border border-stone-300 px-3 py-2 tabular-nums">
-              ${(s.costCents / 100).toFixed(2)}
-            </td>
-            <td className="border border-stone-300 px-3 py-2">
-              <div className="flex flex-wrap gap-2">
-                <ResetMockButton sessionId={s.id} />
-                <AutoBidButton sessionId={s.id} strategy="first_eligible" count={10} />
-                <AutoBidButton sessionId={s.id} strategy="ai_top" count={10} />
-                <VerifyAuditButton sessionId={s.id} />
-              </div>
-            </td>
+    <div className="overflow-hidden rounded-lg border border-stone-300 bg-white text-stone-900 shadow-sm">
+      <table className="w-full border-collapse text-sm">
+        <thead className="bg-stone-200 text-left text-stone-900">
+          <tr>
+            <th className="border-b border-stone-300 px-3 py-2 font-semibold">Session ID</th>
+            <th className="border-b border-stone-300 px-3 py-2 font-semibold">Year</th>
+            <th className="border-b border-stone-300 px-3 py-2 font-semibold">Phase</th>
+            <th className="border-b border-stone-300 px-3 py-2 font-semibold">Current bidder</th>
+            <th className="border-b border-stone-300 px-3 py-2 font-semibold">Last pick</th>
+            <th className="border-b border-stone-300 px-3 py-2 font-semibold">AI cost</th>
+            <th className="border-b border-stone-300 px-3 py-2 font-semibold">Actions</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="text-stone-900">
+          {sessions.map((s, idx) => (
+            <tr
+              key={s.id}
+              data-testid={`mock-session-row-${s.id}`}
+              className={idx % 2 === 0 ? 'bg-white' : 'bg-stone-50'}
+            >
+              <td className="border-t border-stone-200 px-3 py-2 font-mono text-xs text-stone-800">
+                {s.id}
+              </td>
+              <td className="border-t border-stone-200 px-3 py-2 text-stone-900">{s.bidYear}</td>
+              <td className="border-t border-stone-200 px-3 py-2 text-stone-900">
+                {s.currentPhase}
+              </td>
+              <td className="border-t border-stone-200 px-3 py-2 text-stone-900">
+                {s.currentBidderId ?? '—'}
+              </td>
+              <td className="border-t border-stone-200 px-3 py-2 text-stone-900">
+                {s.lastPickedAtIso ? new Date(s.lastPickedAtIso).toLocaleString() : '—'}
+              </td>
+              <td className="border-t border-stone-200 px-3 py-2 tabular-nums text-stone-900">
+                ${(s.costCents / 100).toFixed(2)}
+              </td>
+              <td className="border-t border-stone-200 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`/admin/bid?session_id=${encodeURIComponent(s.id)}` as Route}
+                    className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-600"
+                    data-testid={`watch-session-${s.id}`}
+                  >
+                    Watch live
+                  </Link>
+                  <ResetMockButton sessionId={s.id} />
+                  <AutoBidButton sessionId={s.id} strategy="first_eligible" count={10} />
+                  <AutoBidButton sessionId={s.id} strategy="ai_top" count={10} />
+                  <VerifyAuditButton sessionId={s.id} />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

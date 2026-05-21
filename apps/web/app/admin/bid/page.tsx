@@ -128,6 +128,7 @@ export default async function AdminBidPage({
         initialFills={board.fills}
         members={board.members ?? {}}
         wsBase={getWorkerBase()}
+        isMock={board.isMock === true}
       />
     </div>
   );

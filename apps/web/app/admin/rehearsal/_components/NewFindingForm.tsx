@@ -56,7 +56,7 @@ export function NewFindingForm({ sessionIds }: Props): ReactElement {
         <select
           value={bidSessionId}
           onChange={(e) => setBidSessionId(e.target.value)}
-          className="mt-1 block w-full rounded border border-stone-300 px-2 py-1 font-mono text-sm"
+          className="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1 font-mono text-sm text-stone-900"
         >
           {sessionIds.length === 0 ? (
             <option value="">(no mock sessions)</option>
@@ -76,7 +76,7 @@ export function NewFindingForm({ sessionIds }: Props): ReactElement {
           onChange={(e) => setNote(e.target.value)}
           rows={4}
           maxLength={4000}
-          className="mt-1 block w-full rounded border border-stone-300 px-2 py-1 text-sm"
+          className="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1 text-sm text-stone-900 placeholder:text-stone-400"
           placeholder="What did you observe?"
         />
       </label>
@@ -87,7 +87,7 @@ export function NewFindingForm({ sessionIds }: Props): ReactElement {
           value={screenshotR2Key}
           onChange={(e) => setScreenshotR2Key(e.target.value)}
           maxLength={500}
-          className="mt-1 block w-full rounded border border-stone-300 px-2 py-1 font-mono text-sm"
+          className="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1 font-mono text-sm text-stone-900 placeholder:text-stone-400"
           placeholder="findings/2026/abc.png"
         />
       </label>

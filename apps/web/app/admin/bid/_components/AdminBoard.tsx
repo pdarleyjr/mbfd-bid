@@ -1,5 +1,5 @@
 'use client';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useStore } from 'zustand';
 import { StationGroupedGrid } from '../../../_components/bid/StationGroupedGrid';
 import type { MemberLite } from '../../../_components/bid/types';
@@ -8,6 +8,7 @@ import { ReconnectingOverlay } from '../../../bid/_components/ReconnectingOverla
 import { BidStoreProvider } from '../../../bid/_hooks/BidStoreContext';
 import { type BidStoreState, createBidStore } from '../../../bid/_hooks/useBidStore';
 import { useBidWebSocket } from '../../../bid/_hooks/useBidWebSocket';
+import { useManualPick } from './ManualPickContext';
 
 interface Props {
   bidSessionId: string;
@@ -37,9 +38,23 @@ export function AdminBoard({
   }, [bidSessionId, initialSeq, meMemberId, initialFills]);
   const { status } = useBidWebSocket(store, { bidSessionId, jwt, wsBase });
   const lastError = useStore(store, (s: BidStoreState) => s.lastError);
+  const { pickMode, selectedMemberId, submitPick } = useManualPick();
+
+  // Position cells are interactive only when pick mode is on AND the admin
+  // has already selected a member. The cell will be open-only (the filled-
+  // cell case short-circuits the submit on the server with 409).
+  const onPositionClick = useCallback(
+    (positionId: string) => {
+      if (!pickMode || selectedMemberId === null) return;
+      void submitPick({ memberId: selectedMemberId, positionId });
+    },
+    [pickMode, selectedMemberId, submitPick],
+  );
+  const positionClickHandler = pickMode && selectedMemberId !== null ? onPositionClick : undefined;
+
   return (
     <BidStoreProvider store={store}>
-      <StationGroupedGrid members={members} />
+      <StationGroupedGrid members={members} onPositionClick={positionClickHandler} />
       {status !== 'open' ? <ReconnectingOverlay status={status} /> : null}
       {lastError ? (
         <ErrorToast error={lastError} onClose={() => store.getState().clearError()} />

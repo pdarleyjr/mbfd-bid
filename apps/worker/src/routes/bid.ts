@@ -23,6 +23,7 @@ import {
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
 import { computeBidOrder } from '../lib/bid-order.js';
+import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-merge.js';
 import { chunkedInArraySelect } from '../lib/d1-batch.js';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
@@ -187,12 +188,26 @@ bid.get('/board', async (c) => {
   // banner only appears when the column explicitly says so.
   // Also ships `sessionStartedAt` so the admin command bar can compute the
   // session-uptime clock without a separate fetch.
+  //
+  // Additionally pulls `currentPhase` and `currentBidderId` from D1 so we can
+  // override the DO snapshot when admin endpoints (rehearsal auto-bid, manual
+  // bid-for-member, force-pick) have committed picks directly to D1 without
+  // round-tripping through the DO. The DO's in-memory state stays cold in
+  // those scenarios, leaving phase='config' / currentBidderId=null forever.
+  // D1 is the durable source of truth; the DO is a session-scoped buffer.
   let isMock = false;
   let sessionStartedAt: number | null = null;
+  let d1Phase: string | null = null;
+  let d1CurrentBidderId: number | null = null;
   try {
     const db = getDb(c.env.DB);
     const session = await db
-      .select({ isMock: bidSessionsTable.isMock, startedAt: bidSessionsTable.startedAt })
+      .select({
+        isMock: bidSessionsTable.isMock,
+        startedAt: bidSessionsTable.startedAt,
+        currentPhase: bidSessionsTable.currentPhase,
+        currentBidderId: bidSessionsTable.currentBidderId,
+      })
       .from(bidSessionsTable)
       .where(eq(bidSessionsTable.id, bidSessionId))
       .get();
@@ -200,9 +215,35 @@ bid.get('/board', async (c) => {
     if (session?.startedAt instanceof Date) {
       sessionStartedAt = session.startedAt.getTime();
     }
+    d1Phase = session?.currentPhase ?? null;
+    d1CurrentBidderId = session?.currentBidderId ?? null;
   } catch {
     // best-effort — banner stays off if the lookup fails
   }
+
+  // Merge D1-committed bids into the fills map. Auto-bid / admin bid-for-
+  // member / force-pick all commit straight to D1; the DO never sees them.
+  // Without this merge, /admin/bid renders "all WAITING" even though the
+  // rehearsal console reports picks made.
+  try {
+    const db = getDb(c.env.DB);
+    const dbBidRows = await db
+      .select({
+        id: bidsTable.id,
+        memberId: bidsTable.memberId,
+        positionId: bidsTable.positionId,
+        ordinal: bidsTable.ordinal,
+      })
+      .from(bidsTable)
+      .where(eq(bidsTable.bidSessionId, bidSessionId))
+      .all();
+    body.fills = mergeFills(body.fills, dbBidRows);
+  } catch (err) {
+    console.error('[bid.board] D1 fills merge failed (fail-soft)', err);
+  }
+
+  body.currentPhase = resolvePhase(body.currentPhase, d1Phase);
+  body.currentBidderId = resolveCurrentBidderId(body.currentBidderId, d1CurrentBidderId);
 
   // Live Bid Console enrichment — hydrate the active bidder + next-5 queue
   // with member context so the UI shows "CPT Sola (14335)" instead of just

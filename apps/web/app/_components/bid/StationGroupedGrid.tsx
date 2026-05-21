@@ -103,7 +103,7 @@ export function StationGroupedGrid({ members, defaultShift = 'A', onPositionClic
         id={`shift-panel-${shift}`}
         role="tabpanel"
         aria-labelledby={`shift-tab-${shift}`}
-        className="grid gap-4 p-4 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+        className="grid gap-2 p-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
       >
         {orderedStations.map((stationName) => {
           const apparatusMap = grouped.get(stationName);
@@ -113,24 +113,26 @@ export function StationGroupedGrid({ members, defaultShift = 'A', onPositionClic
             <article
               key={stationName}
               data-testid={`station-${stationName.replace(/\W+/g, '-').toLowerCase()}`}
-              className="flex flex-col gap-2 rounded-lg border border-stone-200 bg-stone-50 p-2"
+              className="flex flex-col gap-1.5 rounded border border-stone-200 bg-stone-50 p-1.5"
             >
-              <header className="rounded-md bg-stone-200 px-3 py-1.5 text-center text-sm font-bold text-stone-900">
+              <header className="rounded bg-stone-200 px-2 py-1 text-center text-xs font-bold text-stone-900">
                 {stationName}
-                <span className="ml-2 text-xs font-normal text-stone-600">{total} positions</span>
+                <span className="ml-2 text-[10px] font-normal text-stone-600">
+                  {total} positions
+                </span>
               </header>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 {Array.from(apparatusMap.entries()).map(([apparatus, positions]) => (
                   <section
                     key={apparatus}
                     data-testid={`apparatus-${apparatus.replace(/\W+/g, '-').toLowerCase()}`}
-                    className="flex flex-col gap-1"
+                    className="flex flex-col gap-0.5"
                   >
-                    <h3 className="flex items-center justify-between rounded-md bg-stone-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-stone-700">
+                    <h3 className="flex items-center justify-between rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-700">
                       <span>{apparatus}</span>
                       <span className="font-normal text-stone-500">{positions.length}</span>
                     </h3>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-0.5">
                       {positions.map((position) => (
                         <RichPositionCell
                           key={position.id}

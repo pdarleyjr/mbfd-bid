@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { BidderCard, type BidderContext } from '../../../_components/bid/BidderCard';
 import { AICostPill } from './AICostPill';
 import { FreezeConfirmDialog } from './FreezeConfirmDialog';
+import { useManualPick } from './ManualPickContext';
 import { OverrideDialog } from './OverrideDialog';
 
 interface Props {
@@ -68,6 +69,7 @@ export function LiveCommandBar({
   const now = useTick(1000);
   const [open, setOpen] = useState<'override' | 'freeze' | null>(null);
   const [busy, setBusy] = useState(false);
+  const { pickMode, setPickMode } = useManualPick();
 
   const sessionUptime =
     sessionStartedAt && sessionStartedAt > 0 ? formatDuration(now - sessionStartedAt) : '—';
@@ -146,6 +148,19 @@ export function LiveCommandBar({
         </div>
 
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="admin-action-pick-mode"
+            onClick={() => setPickMode(!pickMode)}
+            aria-pressed={pickMode}
+            className={
+              pickMode
+                ? 'rounded border border-blue-700 bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-600'
+                : 'rounded border border-blue-700 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-100'
+            }
+          >
+            {pickMode ? 'Pick mode: ON' : 'Pick for member'}
+          </button>
           <button
             type="button"
             data-testid="admin-action-skip"

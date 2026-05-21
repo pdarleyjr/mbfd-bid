@@ -46,25 +46,27 @@ function CellBody({ position, members, fill, pending, onClick }: CellBodyProps) 
       : 'open';
   const isInteractive = typeof onClick === 'function';
   const baseClass = [
-    'flex w-full flex-col gap-1 rounded-md border px-3 py-2 text-left text-sm transition-colors duration-fast ease-out-quart',
+    'flex w-full flex-col rounded border px-2 py-1 text-left text-xs leading-snug transition-colors duration-fast ease-out-quart',
     state === 'filled'
       ? 'border-emerald-300 bg-emerald-50'
       : state === 'pending-mine'
         ? 'border-amber-300 bg-amber-50'
-        : 'border-stone-200 bg-white hover:border-stone-300',
+        : isInteractive
+          ? 'border-stone-200 bg-white hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+          : 'border-stone-200 bg-white hover:border-stone-300',
   ].join(' ');
 
   const inner = (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-mono text-xs font-semibold text-stone-700">{position.id}</span>
-        <span className="text-[10px] uppercase tracking-wide text-stone-500">{position.unit}</span>
+        <span className="font-mono text-[11px] font-semibold text-stone-700">{position.id}</span>
+        <span className="text-[9px] uppercase tracking-wide text-stone-500">{position.unit}</span>
       </div>
-      <div className="text-sm font-semibold text-stone-900">
+      <div className="text-xs font-semibold text-stone-900">
         <span className="text-stone-500">{shortRank(position.rankRequired)} · </span>
         {position.positionName}
       </div>
-      <div className="text-sm">
+      <div className="text-[11px]">
         {filledBy ? (
           <span data-testid={`cell-filled-${position.id}`} className="text-emerald-800">
             {shortRank(filledBy.rank)} {filledBy.firstName} {filledBy.lastName}

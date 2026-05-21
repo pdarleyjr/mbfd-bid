@@ -1,7 +1,8 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { MemberLite } from '../../../_components/bid/types';
 import { shortRank } from '../../../_components/bid/types';
+import { useManualPick } from './ManualPickContext';
 
 interface BidOrderEntry {
   ordinal: number;
@@ -30,8 +31,18 @@ interface Props {
  * the admin is focused on the station grid.
  */
 export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }: Props) {
+  // Expanded by default so the chief sees the full bid order at a glance.
+  // The table itself is bounded by max-h so it can't dominate the viewport.
   const [open, setOpen] = useState(true);
   const [filter, setFilter] = useState<'all' | 'remaining' | 'picked'>('all');
+  const { pickMode, selectedMemberId, setSelectedMemberId } = useManualPick();
+
+  // Auto-open the roster when pick mode activates so the chief can see who
+  // they can select. We don't auto-close — the user may still want to refer
+  // back to the table after picking.
+  useEffect(() => {
+    if (pickMode) setOpen(true);
+  }, [pickMode]);
 
   const pickedIds = useMemo(
     () => new Set<number>(Object.values(fills).map((f) => f.memberId)),
@@ -100,7 +111,7 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
       {open && (
         <div
           data-testid="bid-roster-list"
-          className="max-h-72 overflow-auto border-t border-stone-100"
+          className="max-h-48 overflow-auto border-t border-stone-100"
         >
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
@@ -117,28 +128,59 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
                 const member = members[String(entry.memberId)];
                 const isCurrent = currentBidderId === entry.memberId;
                 const isPicked = pickedIds.has(entry.memberId);
+                const isSelected = selectedMemberId === entry.memberId;
                 const status: 'picked' | 'current' | 'waiting' = isCurrent
                   ? 'current'
                   : isPicked
                     ? 'picked'
                     : 'waiting';
-                const rowClass = isCurrent
+                const baseRowClass = isCurrent
                   ? 'bg-red-50'
                   : isPicked
                     ? 'bg-emerald-50/50 text-stone-500'
                     : 'bg-white';
+                const rowClass =
+                  isSelected && pickMode
+                    ? 'bg-blue-100 outline outline-2 -outline-offset-1 outline-blue-500'
+                    : baseRowClass;
                 const statusBadge =
                   status === 'current'
                     ? 'bg-red-700 text-white'
                     : status === 'picked'
                       ? 'bg-emerald-200 text-emerald-900'
                       : 'bg-stone-200 text-stone-700';
+                const onRowClick =
+                  pickMode && !isPicked
+                    ? () =>
+                        setSelectedMemberId(
+                          selectedMemberId === entry.memberId ? null : entry.memberId,
+                        )
+                    : undefined;
+                const interactiveProps = onRowClick
+                  ? {
+                      onClick: onRowClick,
+                      role: 'button' as const,
+                      tabIndex: 0,
+                      onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onRowClick();
+                        }
+                      },
+                      'aria-pressed': isSelected,
+                      'data-pick-mode': true,
+                      title: 'Click to select this member as the pick actor',
+                    }
+                  : {};
                 return (
                   <tr
                     key={entry.memberId}
                     data-testid={`bid-roster-row-${entry.ordinal}`}
                     data-status={status}
-                    className={rowClass}
+                    className={`${rowClass}${
+                      pickMode && !isPicked ? ' cursor-pointer hover:bg-blue-50' : ''
+                    }`}
+                    {...interactiveProps}
                   >
                     <td className="px-3 py-1 font-mono tabular-nums">{entry.ordinal}</td>
                     <td className="px-3 py-1 text-xs font-semibold uppercase tracking-wide">
