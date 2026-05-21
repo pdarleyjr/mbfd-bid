@@ -26,6 +26,7 @@ interface BoardSnapshot {
   members: Record<string, MemberLite>;
   fills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
+  bidOrderPreview?: boolean;
   isMock?: boolean;
   sessionStartedAt: number | null;
   turnStartedAtMs?: number;
@@ -117,6 +118,8 @@ export default async function AdminBidPage({
         currentBidderId={board.currentBidderId}
         currentBidder={board.currentBidder ?? null}
         onDeck={board.onDeck ?? []}
+        bidOrder={board.bidOrder ?? []}
+        bidOrderPreview={board.bidOrderPreview === true}
         sessionStartedAt={board.sessionStartedAt}
         turnStartedAtMs={board.turnStartedAtMs ?? 0}
         turnTimerSeconds={board.turnTimerSeconds ?? 180}

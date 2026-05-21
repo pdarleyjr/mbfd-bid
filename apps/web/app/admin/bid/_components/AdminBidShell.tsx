@@ -6,7 +6,14 @@ import { AIAdvisoryPanel } from './AIAdvisoryPanel';
 import { AIAskDeepDialog } from './AIAskDeepDialog';
 import { AIForecastBanner } from './AIForecastBanner';
 import { AdminBoard } from './AdminBoard';
+import { BidRoster } from './BidRoster';
 import { LiveCommandBar } from './LiveCommandBar';
+
+interface BidOrderEntry {
+  ordinal: number;
+  memberId: number;
+  pool: 'OFC' | 'FF';
+}
 
 interface Props {
   bidSessionId: string;
@@ -15,6 +22,8 @@ interface Props {
   currentBidderId: number | null;
   currentBidder: BidderContext | null;
   onDeck: BidderContext[];
+  bidOrder: BidOrderEntry[];
+  bidOrderPreview: boolean;
   sessionStartedAt: number | null;
   turnStartedAtMs: number;
   turnTimerSeconds: number;
@@ -52,6 +61,14 @@ export function AdminBidShell(props: Props) {
 
       <AIForecastBanner bidSessionId={props.bidSessionId} />
 
+      <BidRoster
+        bidOrder={props.bidOrder}
+        members={props.members}
+        currentBidderId={props.currentBidderId}
+        fills={props.initialFills}
+        preview={props.bidOrderPreview}
+      />
+
       <div className="flex min-h-0 flex-1 flex-row">
         <div className="min-w-0 flex-1 overflow-auto">
           <AdminBoard
@@ -69,10 +86,24 @@ export function AdminBidShell(props: Props) {
             data-testid="ai-side-panel"
             className="flex w-[360px] shrink-0 flex-col border-l border-stone-200 bg-white"
           >
-            <AIAdvisoryPanel
-              bidSessionId={props.bidSessionId}
-              turnTimerSeconds={props.turnTimerSeconds}
-            />
+            {props.currentBidderId === null ? (
+              <div
+                data-testid="ai-panel-idle"
+                className="border-b border-stone-200 bg-stone-50 p-4 text-sm text-stone-600"
+              >
+                <h2 className="mb-1 font-semibold text-stone-900">AI Advisor</h2>
+                <p>
+                  Idle — the AI advisor activates the moment the first bidder takes their turn.
+                  Until then there&apos;s nothing to advise on. Phase:{' '}
+                  <span className="font-mono text-stone-800">{props.currentPhase}</span>.
+                </p>
+              </div>
+            ) : (
+              <AIAdvisoryPanel
+                bidSessionId={props.bidSessionId}
+                turnTimerSeconds={props.turnTimerSeconds}
+              />
+            )}
             <div className="border-t border-stone-200 p-3">
               <AIAskDeepDialog bidSessionId={props.bidSessionId} />
             </div>

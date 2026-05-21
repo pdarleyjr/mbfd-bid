@@ -22,6 +22,7 @@ import {
 } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
+import { computeBidOrder } from '../lib/bid-order.js';
 import { chunkedInArraySelect } from '../lib/d1-batch.js';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
@@ -217,8 +218,39 @@ bid.get('/board', async (c) => {
     string,
     { id: number; firstName: string; lastName: string; rank: string; employeeId: string }
   > = {};
+  // When the session is in `config` phase (or otherwise hasn't materialised
+  // its persisted bid_order yet) the DO snapshot ships `bidOrder: []`. That
+  // hides the "who's next" queue from the admin console even though we can
+  // compute it deterministically from the roster (computeBidOrder applies
+  // the same seniority + pool rules the session-start codepath uses).
+  // Compute it on-the-fly here as a preview so the dashboard surfaces the
+  // upcoming order from the moment the session is created.
+  let bidOrder: ReadonlyArray<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }> =
+    Array.isArray(body.bidOrder) ? body.bidOrder : [];
+  let bidOrderPreview = false;
   try {
-    const bidOrder = Array.isArray(body.bidOrder) ? body.bidOrder : [];
+    if (bidOrder.length === 0) {
+      const db = getDb(c.env.DB);
+      const memberRows = await db
+        .select({
+          id: membersTable.id,
+          bidCategory: membersTable.bidCategory,
+          rscSeniority: membersTable.rscSeniority,
+          rankSeniority: membersTable.rankSeniority,
+        })
+        .from(membersTable)
+        .all();
+      const computed = computeBidOrder(memberRows);
+      if (computed.length > 0) {
+        bidOrder = computed;
+        bidOrderPreview = true;
+      }
+    }
+  } catch (err) {
+    console.error('[bid.board] bidOrder preview failed (fail-soft)', err);
+  }
+
+  try {
     const currentBidderId = typeof body.currentBidderId === 'number' ? body.currentBidderId : null;
     const fillsRec = body.fills && typeof body.fills === 'object' ? body.fills : {};
     const filledMemberIds = new Set<number>(Object.values(fillsRec).map((f) => f.memberId));
@@ -302,6 +334,8 @@ bid.get('/board', async (c) => {
     isMock,
     bidSessionId,
     sessionStartedAt,
+    bidOrder,
+    bidOrderPreview,
     currentBidder,
     onDeck,
     members,
