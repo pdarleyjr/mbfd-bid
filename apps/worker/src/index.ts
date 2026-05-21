@@ -22,6 +22,7 @@ import adminAi from './routes/ai.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
 import health from './routes/health.js';
+import portalBridge from './routes/portal-bridge.js';
 import ws from './routes/ws.js';
 import type { WorkerEnv } from './types/env.js';
 
@@ -49,7 +50,8 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/placements', adminPlacements)
   .route('/api/admin/ai', adminAi)
   .route('/api/admin/rehearsal', adminRehearsal)
-  .route('/api/admin/readiness', adminReadiness);
+  .route('/api/admin/readiness', adminReadiness)
+  .route('/api/portal', portalBridge);
 
 export type AppType = typeof routes;
 
