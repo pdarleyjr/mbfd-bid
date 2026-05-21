@@ -15,10 +15,13 @@ export function AIAdvisoryPanel({ bidSessionId, turnTimerSeconds }: Props) {
         credentials: 'include',
       });
       if (r.status === 503) {
-        const body = (await r.json()) as { reason?: string };
-        throw new Error(body.reason ?? 'disabled');
+        const body = (await r.json().catch(() => ({}))) as { reason?: string; detail?: string };
+        throw new Error(body.reason ?? body.detail ?? 'disabled');
       }
-      if (!r.ok) throw new Error(`http_${r.status}`);
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new Error(`http_${r.status}${text ? `: ${text.slice(0, 200)}` : ''}`);
+      }
       return r.json() as Promise<AdvisoryEnvelope>;
     },
     staleTime: turnTimerSeconds * 1000,
@@ -33,9 +36,24 @@ export function AIAdvisoryPanel({ bidSessionId, turnTimerSeconds }: Props) {
     );
   }
   if (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    // Translate the common gate reasons into something the chief can act on
+    // instead of the bare slug. Everything else falls through as-is so the
+    // network panel still shows the underlying HTTP error.
+    const friendly =
+      msg === 'feature_flag_off'
+        ? 'AI advisor is disabled (feature flag is off). Toggle it in /admin/settings to enable.'
+        : msg === 'budget_exceeded'
+          ? 'AI advisor is paused — the session has exceeded its spend cap.'
+          : msg.startsWith('http_503')
+            ? 'AI advisor is temporarily unavailable. Check ANTHROPIC_API_KEY + AI Gateway config on the Worker.'
+            : msg.startsWith('http_5')
+              ? `AI advisor server error: ${msg}`
+              : `AI advisor unavailable: ${msg}`;
     return (
-      <aside data-testid="ai-panel-error" className="p-4 text-stone-500">
-        AI advisor unavailable
+      <aside data-testid="ai-panel-error" className="p-4 text-sm text-stone-700">
+        <h2 className="mb-1 font-semibold text-stone-900">AI Advisor</h2>
+        <p>{friendly}</p>
       </aside>
     );
   }
