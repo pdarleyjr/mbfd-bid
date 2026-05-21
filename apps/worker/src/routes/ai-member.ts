@@ -113,6 +113,7 @@ r.get('/advise-me', async (c) => {
     }
   }
 
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
   return c.json(envelope);
 });
 

@@ -85,6 +85,7 @@ r.get('/advise-current', async (c) => {
     });
   }
 
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
   return c.json(envelope);
 });
 
