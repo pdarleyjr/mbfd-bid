@@ -146,6 +146,55 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
     expect((bidsRows.results[0] as { n: number }).n).toBe(3);
   });
 
+  it('bootstrap survives a large roster (>100 placeholders worth of rows)', async () => {
+    // D1 caps params at ~100 per statement. A real bid has ~226 members ×
+    // 4 cols = 904 placeholders, well past the cap; the chunked INSERT must
+    // stay green. Add 50 more members on top of the 3 from the seed so
+    // we're guaranteed to exceed the 20-row-per-chunk threshold.
+    const now = Date.now();
+    for (let i = 0; i < 50; i += 1) {
+      const id = 300 + i;
+      await h.db.run(
+        'INSERT INTO members (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?);',
+        [id, String(id), 'M', String(id), 'FF', 'FF', 400 + i, now, now],
+      );
+    }
+    await h.db.run('DELETE FROM bid_order WHERE bid_session_id = ?;', [sessionId]);
+    await h.db.run(
+      "UPDATE bid_sessions SET current_phase = 'config', current_bidder_id = NULL WHERE id = ?;",
+      [sessionId],
+    );
+
+    const snapMap = new Map<string, unknown>([[sessionId, { currentBidderId: null }]]);
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(snapMap),
+    };
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ count: 1, strategy: 'first_eligible' }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { bootstrapped?: boolean; stoppedReason: string };
+    expect(body.bootstrapped).toBe(true);
+    expect(body.stoppedReason).not.toBe('error');
+
+    const orderCount = await h.db.run(
+      'SELECT count(*) AS n FROM bid_order WHERE bid_session_id = ?',
+      [sessionId],
+    );
+    // 3 seed members + 50 extras = 53 rows expected.
+    expect((orderCount.results[0] as { n: number }).n).toBe(53);
+  });
+
   it('bootstraps bid_order from members + advances to position_bid when session is in config', async () => {
     // Wipe the seed's bid_order rows and rewind the session to config so the
     // auto-bid endpoint has to recompute the queue itself — this is the

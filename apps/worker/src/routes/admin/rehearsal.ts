@@ -301,47 +301,87 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
   // naturally.
   let bootstrapped = false;
   if (orderRows.length === 0) {
-    const memberRows = await db
-      .select({
-        id: members.id,
-        bidCategory: members.bidCategory,
-        rscSeniority: members.rscSeniority,
-        rankSeniority: members.rankSeniority,
-      })
-      .from(members)
-      .all();
-    const computed = computeBidOrder(memberRows);
-    if (computed.length === 0) {
-      return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
-    }
-    await db.insert(bidOrder).values(
-      computed.map((e) => ({
+    try {
+      const memberRows = await db
+        .select({
+          id: members.id,
+          bidCategory: members.bidCategory,
+          rscSeniority: members.rscSeniority,
+          rankSeniority: members.rankSeniority,
+        })
+        .from(members)
+        .all();
+      const computed = computeBidOrder(memberRows);
+      if (computed.length === 0) {
+        return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
+      }
+      // D1 caps bound parameters at ~100 per statement. 226 members × 4 cols =
+      // 904 placeholders blows the limit in one INSERT. Chunk to 20 rows
+      // (80 placeholders) per statement to stay safely under.
+      const BID_ORDER_INSERT_CHUNK = 20;
+      const rowsToInsert = computed.map((e) => ({
         bidSessionId: sessionId,
         ordinal: e.ordinal,
         memberId: e.memberId,
         pool: e.pool,
-      })),
-    );
-    const first = computed[0];
-    const firstMemberId = first ? first.memberId : null;
-    await db
-      .update(bidSessions)
-      .set({
-        currentPhase: 'position_bid',
-        currentBidderId: firstMemberId,
-        startedAt: session.startedAt ?? new Date(),
-      })
-      .where(eq(bidSessions.id, sessionId));
-    orderRows = await db
-      .select()
-      .from(bidOrder)
-      .where(eq(bidOrder.bidSessionId, sessionId))
-      .orderBy(asc(bidOrder.ordinal))
-      .all();
-    bootstrapped = true;
+      }));
+      for (let i = 0; i < rowsToInsert.length; i += BID_ORDER_INSERT_CHUNK) {
+        const chunk = rowsToInsert.slice(i, i + BID_ORDER_INSERT_CHUNK);
+        await db.insert(bidOrder).values(chunk);
+      }
+      const first = computed[0];
+      const firstMemberId = first ? first.memberId : null;
+      await db
+        .update(bidSessions)
+        .set({
+          currentPhase: 'position_bid',
+          currentBidderId: firstMemberId,
+          startedAt: session.startedAt ?? new Date(),
+        })
+        .where(eq(bidSessions.id, sessionId));
+      orderRows = await db
+        .select()
+        .from(bidOrder)
+        .where(eq(bidOrder.bidSessionId, sessionId))
+        .orderBy(asc(bidOrder.ordinal))
+        .all();
+      bootstrapped = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[rehearsal.auto-bid] bootstrap failed', { sessionId, msg });
+      return c.json(
+        { picksMade: 0, stoppedReason: 'error', detail: `bootstrap_failed: ${msg}` },
+        500,
+      );
+    }
   }
   if (orderRows.length === 0) {
     return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_bid_order' }, 200);
+  }
+
+  // Self-heal: a prior failed bootstrap may have left bid_order rows but
+  // never updated current_phase / current_bidder_id. If the session is still
+  // in config OR currentBidderId is null, advance it now using the existing
+  // ordering — better than telling the chief the session is "complete" with
+  // zero picks made.
+  if (
+    session.currentPhase === 'config' ||
+    (session.currentBidderId === null && orderRows.length > 0)
+  ) {
+    const firstRow = orderRows[0];
+    if (firstRow !== undefined) {
+      await db
+        .update(bidSessions)
+        .set({
+          currentPhase: 'position_bid',
+          currentBidderId: firstRow.memberId,
+          startedAt: session.startedAt ?? new Date(),
+        })
+        .where(eq(bidSessions.id, sessionId));
+      session.currentPhase = 'position_bid';
+      session.currentBidderId = firstRow.memberId;
+      bootstrapped = true;
+    }
   }
   const memberIdToNextMember = new Map<number, number | null>();
   for (let i = 0; i < orderRows.length; i++) {
