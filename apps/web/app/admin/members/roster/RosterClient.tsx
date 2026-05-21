@@ -157,7 +157,7 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
 
   async function preFillFromSynthesis() {
     const ok = window.confirm(
-      "Bootstrap the bid roster from the 2025 synthesis? Missing members are inserted, existing members have their rank/seniority refreshed, and inferred credentials from each member's 2025 station are linked. Already-present credentials are not touched.",
+      'Bootstrap the bid roster from the canonical credentials extract? Missing members are inserted, existing members have their rank and seniority refreshed, and every credential each member holds is linked. Already-present credentials are not touched. Admin can still toggle individual certs from this page at any time.',
     );
     if (!ok) return;
     setSeeding(true);
@@ -252,8 +252,8 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
             {seeding
               ? 'Bootstrapping...'
               : members.length === 0
-                ? 'Bootstrap roster from 2025 synthesis'
-                : 'Pre-fill from 2025 picks'}
+                ? 'Bootstrap roster from credentials extract'
+                : 'Re-sync credentials from extract'}
           </button>
         </div>
       </div>
@@ -369,8 +369,8 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
                 <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
                   <p className="font-medium text-slate-200">No members in the bid roster.</p>
                   <p className="mt-1 text-xs text-slate-400">
-                    Click "Bootstrap roster from 2025 synthesis" above to load 226 members and their
-                    inferred 2025 credentials in one click.
+                    Click "Bootstrap roster from credentials extract" above to load every member and
+                    the credentials they hold in one click.
                   </p>
                 </td>
               </tr>

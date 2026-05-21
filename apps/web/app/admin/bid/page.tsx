@@ -72,7 +72,7 @@ export default async function AdminBidPage({
     return (
       <div className="min-h-screen bg-stone-50 p-6">
         <header className="mb-4">
-          <h1 className="font-display text-2xl text-stone-900">MBFD 2026 Bid — Admin Console</h1>
+          <h1 className="font-display text-2xl text-stone-900">MBFD Annual Bid — Admin Console</h1>
         </header>
         <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
           No active bid session is available.
@@ -90,7 +90,7 @@ export default async function AdminBidPage({
     return (
       <div className="min-h-screen bg-stone-50 p-6">
         <header className="mb-4">
-          <h1 className="font-display text-2xl text-stone-900">MBFD 2026 Bid — Admin Console</h1>
+          <h1 className="font-display text-2xl text-stone-900">MBFD Annual Bid — Admin Console</h1>
         </header>
         <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
           Could not load the bid board: {fetchError ?? 'no data'}.{' '}
@@ -110,7 +110,7 @@ export default async function AdminBidPage({
         className="border-b border-stone-200 bg-white px-6 py-4"
       >
         <div className="flex items-baseline gap-3 font-display text-2xl text-stone-900">
-          <span>MBFD 2026 Bid — Admin Console</span>
+          <span>MBFD Annual Bid — Admin Console</span>
           <span className="text-sm font-medium text-stone-600">Phase: {board.currentPhase}</span>
           <AICostPill bidSessionId={board.bidSessionId} />
         </div>

@@ -94,6 +94,28 @@ export default async function AdminDashboardPage() {
         Welcome back, {claims.first_name} {claims.last_name}.
       </p>
 
+      {/* Pinned CTA — jumping directly into the live bid is the single most
+          common operator action, so it gets its own full-width card at the
+          top of the dashboard. */}
+      <Link
+        href={'/admin/bid' as Route}
+        className="mt-6 flex items-center justify-between rounded-xl border-2 border-red-700 bg-gradient-to-br from-red-900/70 to-red-950 p-5 transition-colors duration-fast ease-out-quart hover:border-red-500 hover:from-red-800/80"
+      >
+        <div>
+          <p className="font-heading text-xl font-semibold text-white">
+            <span aria-hidden className="mr-2">
+              ●
+            </span>
+            Live Bid Console
+          </p>
+          <p className="mt-1 text-sm text-red-100">
+            Watch the bid play out, see who's next, view AI advisories as each turn comes up. Works
+            for both real bids and mock drafts.
+          </p>
+        </div>
+        <span className="hidden text-sm font-medium text-red-200 sm:block">Open →</span>
+      </Link>
+
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-slate-400">
         Run a bid
       </h2>

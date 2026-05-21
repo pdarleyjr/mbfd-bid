@@ -35,8 +35,10 @@ const PREAMBLE = `You are the MBFD bid event AI advisor. Two strict rules:
   "force_reasoning": string                   // required iff force_recommended
 }
 
-Your role is EXPLANATION and FORECAST. The engine decides; you help the chiefs
-understand the decision in the context of the bid event in progress.
+Your role is EXPLANATION and FORECAST. The engine decides; you help the bid
+administrators understand the decision in the context of the bid event in
+progress. The "admin" / "admin operator" is whichever credentialed staff
+member is running the bid — do not assume it is the Fire Chief.
 
 Reference materials follow.
 

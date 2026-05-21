@@ -333,4 +333,46 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it('accepts the wrapped { members: [...] } shape from the credentials PDF extract', async () => {
+    // Sends the new shape — `credentials[]` instead of `inferred_certs_2025[]`,
+    // `straight_seniority` instead of `rsc_seniority`, `rank` instead of
+    // `current_rank`, top-level wrapper instead of bare array.
+    const payload = {
+      members: [
+        {
+          employee_id: 14335,
+          first_name: 'Jesus',
+          last_name: 'Sola',
+          rank: 'Captain',
+          straight_seniority: 4,
+          rank_seniority: 4,
+          credentials: ['Paramedic', 'Driver Engineer Qualified'],
+        },
+      ],
+      unmatched_credentials: ['Some Cert The Reference Doesnt Know'],
+    };
+    const res = await app.fetch(
+      new Request('http://x/api/admin/members/seed-from-synthesis', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SeedResponse;
+    expect(body.membersUpdated).toBe(1);
+    expect(body.certsInserted).toBe(2);
+    expect(body.skippedMembers).toEqual([]);
+
+    // Verify both certs landed on the actual member row.
+    const rows = await h.db.run(
+      "SELECT count(*) AS n FROM member_credentials mc INNER JOIN members m ON mc.member_id = m.id WHERE m.employee_id = '14335'",
+    );
+    expect(rows.results[0]?.n).toBe(2);
+  });
 });

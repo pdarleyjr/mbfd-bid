@@ -653,17 +653,33 @@ function specialtyCertsFromPosition(
   return [];
 }
 
+/**
+ * The endpoint accepts two shapes:
+ *   1. Legacy array form — `[{ employee_id, current_rank, inferred_certs_2025, ... }, ...]`
+ *      (the original synthesis.json produced by the analysis script).
+ *   2. New wrapped form — `{ members: [{ employee_id, rank, credentials: [...] }, ...] }`
+ *      (the canonical credentials PDF extract — richer per-member cert lists).
+ * The two are merged at the field level: `credentials` and `inferred_certs_2025`
+ * both feed into the same cert list; `straight_seniority` and `rsc_seniority`
+ * both feed into rsc_seniority.
+ */
 interface SynthesisRow {
   employee_id: number | string;
   first_name?: string;
   last_name?: string;
+  // rank labels — either form accepted
   current_rank?: string;
   bid_rank?: string;
+  rank?: string;
   bid_category?: string;
   bid?: string;
+  // seniority — either spelling accepted
   rsc_seniority?: number | string | null;
+  straight_seniority?: number | string | null;
   rank_seniority?: number | string | null;
+  // cert lists — both merged
   inferred_certs_2025?: ReadonlyArray<string>;
+  credentials?: ReadonlyArray<string>;
   position_2025?: string | null;
 }
 
@@ -686,8 +702,20 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
     raw = await c.req.json().catch(() => null);
   }
 
-  if (!Array.isArray(raw)) {
-    return c.json({ error: 'expected_array' }, 400);
+  // Accept either a top-level array (legacy synthesis shape) or a wrapped
+  // `{ members: [...] }` object (new credentials-PDF extract shape).
+  let rows: ReadonlyArray<SynthesisRow>;
+  if (Array.isArray(raw)) {
+    rows = raw as ReadonlyArray<SynthesisRow>;
+  } else if (
+    raw !== null &&
+    typeof raw === 'object' &&
+    'members' in raw &&
+    Array.isArray((raw as { members: unknown }).members)
+  ) {
+    rows = (raw as { members: ReadonlyArray<SynthesisRow> }).members;
+  } else {
+    return c.json({ error: 'expected_array_or_members_wrapper' }, 400);
   }
 
   const db = getDb(c.env.DB);
@@ -719,7 +747,7 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
   // --- Pass 1: normalize / validate every row in pure JS (no DB I/O). -----
   const normalized: NormalizedRow[] = [];
   const seenEmpIds = new Set<string>();
-  for (const row of raw as SynthesisRow[]) {
+  for (const row of rows) {
     const employeeId = String(row.employee_id ?? '').trim();
     if (employeeId === '') continue;
     if (seenEmpIds.has(employeeId)) continue; // dedupe within payload
@@ -730,9 +758,9 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
       continue;
     }
 
-    const rankLabel = String(row.current_rank ?? row.bid_rank ?? '').trim();
-    const rank = SYNTH_RANK_MAP[rankLabel];
-    if (rank === undefined) {
+    const rankLabel = String(row.current_rank ?? row.rank ?? row.bid_rank ?? '').trim();
+    const rankResolved = SYNTH_RANK_MAP[rankLabel];
+    if (rankResolved === undefined) {
       skippedMembers.push({ employee_id: employeeId, reason: `unknown_rank:${rankLabel}` });
       continue;
     }
@@ -743,11 +771,12 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
     const bidCategory: 'OFC' | 'FF' | 'EXCLUDED' =
       bidCategoryRaw === 'OFC' || bidCategoryRaw === 'FF' || bidCategoryRaw === 'EXCLUDED'
         ? (bidCategoryRaw as 'OFC' | 'FF' | 'EXCLUDED')
-        : rank === 'FF'
+        : rankResolved === 'FF'
           ? 'FF'
           : 'OFC';
 
-    const rscSeniorityRaw = row.rsc_seniority;
+    // rsc_seniority: accept legacy `rsc_seniority` or new `straight_seniority`
+    const rscSeniorityRaw = row.rsc_seniority ?? row.straight_seniority;
     const rscSeniority =
       typeof rscSeniorityRaw === 'number'
         ? Math.floor(rscSeniorityRaw)
@@ -774,9 +803,12 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
       continue;
     }
 
+    // Merge legacy `inferred_certs_2025` + new `credentials` + position-derived
+    // TRT certs. Dedupe so we never process the same cert twice per member.
     const certs = Array.from(
       new Set<string>([
         ...(row.inferred_certs_2025 ?? []),
+        ...(row.credentials ?? []),
         ...specialtyCertsFromPosition(row.position_2025 ?? null),
       ]),
     );
@@ -785,7 +817,7 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
       employeeId,
       firstName,
       lastName,
-      rank,
+      rank: rankResolved,
       bidCategory,
       rscSeniority,
       rankSeniority,

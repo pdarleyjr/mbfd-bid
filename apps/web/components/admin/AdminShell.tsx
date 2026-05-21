@@ -40,9 +40,30 @@ const IMPORT_LINKS = [
 export function AdminSideNav() {
   const pathname = usePathname();
   const membersSectionOpen = pathname.startsWith('/admin/members');
+  const liveBidActive = pathname === '/admin/bid';
 
   return (
     <nav aria-label="Admin navigation" className="flex flex-col gap-1 p-3">
+      {/* Pinned CTA — Live Bid Console. Always visible, visually distinct. */}
+      <Link
+        href={'/admin/bid' as Route}
+        className={[
+          'mb-2 flex min-h-[52px] items-center justify-between rounded-md px-3 py-2 text-sm font-semibold transition-colors duration-fast ease-out-quart',
+          liveBidActive
+            ? 'bg-red-700 text-white ring-2 ring-red-500'
+            : 'bg-red-700/80 text-white hover:bg-red-700 hover:ring-2 hover:ring-red-500',
+        ].join(' ')}
+        aria-current={liveBidActive ? 'page' : undefined}
+      >
+        <span className="flex items-center gap-2">
+          <span aria-hidden className="text-lg">
+            ●
+          </span>
+          Live Bid Console
+        </span>
+        <span className="text-xs font-normal opacity-90">Watch live</span>
+      </Link>
+
       {NAV_LINKS.map(({ href, label, exact }) => {
         const isActive = exact
           ? pathname === href

@@ -2,7 +2,10 @@ import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import type { CredentialRow, RosterMember } from '../_lib/station-info';
 import { RosterClient } from './RosterClient';
-import synthesisData from './_data/synthesis.json';
+// Canonical member-credentials extract from the official Bid Credentials PDF
+// (235 members, 3,877 cert links). Replaces the older `synthesis.json` which
+// only had position-derived inferences.
+import memberCredentialsData from './_data/member_credentials.json';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -85,7 +88,7 @@ export default async function MasterRosterPage({
         initialMembers={members}
         credentials={credentials}
         initialSearch={sp.search ?? ''}
-        synthesisJson={JSON.stringify(synthesisData)}
+        synthesisJson={JSON.stringify(memberCredentialsData)}
       />
     </div>
   );
