@@ -156,19 +156,50 @@ export class WorkersAIClient {
     ];
     const gatewayId = extractGatewayId(this.env.CF_AI_GATEWAY_URL);
     const options = gatewayId ? { gateway: { id: gatewayId } } : undefined;
-    const result = await this.aiRun.run(
-      input.model ?? WORKERS_AI_MODEL,
-      {
-        messages,
-        stream: true,
-        max_tokens: 2048,
-      },
-      options,
-    );
-    // The `stream: true` overload returns a ReadableStream of SSE chunks.
-    return result as unknown as ReadableStream<Uint8Array>;
+    try {
+      const result = await this.aiRun.run(
+        input.model ?? WORKERS_AI_MODEL,
+        {
+          messages,
+          stream: true,
+          max_tokens: 2048,
+        },
+        options,
+      );
+      // The `stream: true` overload returns a ReadableStream of SSE chunks.
+      return result as unknown as ReadableStream<Uint8Array>;
+    } catch (err) {
+      console.warn('[WorkersAIClient] Deep stream primary gateway run failed:', err);
+      try {
+        console.info('[WorkersAIClient] Retrying deep stream with "default" gateway...');
+        const result = await this.aiRun.run(
+          input.model ?? WORKERS_AI_MODEL,
+          {
+            messages,
+            stream: true,
+            max_tokens: 2048,
+          },
+          { gateway: { id: 'default' } },
+        );
+        return result as unknown as ReadableStream<Uint8Array>;
+      } catch (defaultGatewayErr) {
+        console.warn(
+          '[WorkersAIClient] Deep stream default gateway retry failed:',
+          defaultGatewayErr,
+        );
+        const result = await this.aiRun.run(
+          input.model ?? WORKERS_AI_MODEL,
+          {
+            messages,
+            stream: true,
+            max_tokens: 2048,
+          },
+          undefined,
+        );
+        return result as unknown as ReadableStream<Uint8Array>;
+      }
+    }
   }
-
   // ---- private ----
 
   private async callNonStreaming(
@@ -210,8 +241,44 @@ export class WorkersAIClient {
         timeout,
       ])) as WorkersAiRunResult;
     } catch (err) {
-      console.error('[WorkersAIClient] Inference failed:', err);
-      return this.fallback(input);
+      console.warn('[WorkersAIClient] Primary gateway run failed:', err);
+      // Fallback 1: Retry with "default" gateway which is auto-created and always works
+      try {
+        console.info('[WorkersAIClient] Retrying with "default" gateway...');
+        res = (await Promise.race([
+          this.aiRun.run(
+            input.model,
+            {
+              messages,
+              max_tokens: 1500,
+              response_format: { type: 'json_object' },
+            },
+            { gateway: { id: 'default' } },
+          ),
+          timeout,
+        ])) as WorkersAiRunResult;
+      } catch (defaultGatewayErr) {
+        console.warn('[WorkersAIClient] Default gateway retry failed:', defaultGatewayErr);
+        // Fallback 2: Retry directly without any gateway options
+        try {
+          console.info('[WorkersAIClient] Retrying directly without gateway...');
+          res = (await Promise.race([
+            this.aiRun.run(
+              input.model,
+              {
+                messages,
+                max_tokens: 1500,
+                response_format: { type: 'json_object' },
+              },
+              undefined,
+            ),
+            timeout,
+          ])) as WorkersAiRunResult;
+        } catch (retryErr) {
+          console.error('[WorkersAIClient] Direct run retry failed:', retryErr);
+          return this.fallback(input);
+        }
+      }
     }
 
     // Llama returns the response text in the `response` field. Defensive: tools
