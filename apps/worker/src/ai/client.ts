@@ -209,7 +209,8 @@ export class WorkersAIClient {
         ),
         timeout,
       ])) as WorkersAiRunResult;
-    } catch {
+    } catch (err) {
+      console.error('[WorkersAIClient] Inference failed:', err);
       return this.fallback(input);
     }
 
@@ -217,7 +218,10 @@ export class WorkersAIClient {
     // sometimes return `{ result: { response: "..." } }` or a raw string.
     const text = extractResponseText(res);
     const advisory = parseAdvisoryFromText(text);
-    if (!advisory) return this.fallback(input);
+    if (!advisory) {
+      console.error('[WorkersAIClient] Failed to parse advisory from text:', text);
+      return this.fallback(input);
+    }
 
     // Workers AI is currently free within the Workers Paid plan's neuron
     // quota; pricing.ts returns 0 cents for the Llama model. We still
