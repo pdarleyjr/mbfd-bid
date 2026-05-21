@@ -57,6 +57,7 @@ interface AiBindingLike {
   run(
     model: string,
     inputs: Record<string, unknown>,
+    options?: Record<string, unknown>,
   ): Promise<Record<string, unknown> | ReadableStream<Uint8Array>>;
 }
 
@@ -121,7 +122,7 @@ export class WorkersAIClient {
     return this.callNonStreaming({
       ...input,
       model: input.model ?? WORKERS_AI_MODEL,
-      timeoutMs: input.timeoutMs ?? 2500,
+      timeoutMs: input.timeoutMs ?? 15000,
     });
   }
 
@@ -131,7 +132,7 @@ export class WorkersAIClient {
     await this.callNonStreaming({
       ...input,
       model: input.model ?? WORKERS_AI_MODEL,
-      timeoutMs: input.timeoutMs ?? 4000,
+      timeoutMs: input.timeoutMs ?? 20000,
     });
   }
 
@@ -153,11 +154,17 @@ export class WorkersAIClient {
       { role: 'system' as const, content: input.system },
       { role: 'user' as const, content: input.user },
     ];
-    const result = await this.aiRun.run(input.model ?? WORKERS_AI_MODEL, {
-      messages,
-      stream: true,
-      max_tokens: 2048,
-    });
+    const gatewayId = extractGatewayId(this.env.CF_AI_GATEWAY_URL);
+    const options = gatewayId ? { gateway: { id: gatewayId } } : undefined;
+    const result = await this.aiRun.run(
+      input.model ?? WORKERS_AI_MODEL,
+      {
+        messages,
+        stream: true,
+        max_tokens: 2048,
+      },
+      options,
+    );
     // The `stream: true` overload returns a ReadableStream of SSE chunks.
     return result as unknown as ReadableStream<Uint8Array>;
   }
@@ -185,10 +192,21 @@ export class WorkersAIClient {
       setTimeout(() => reject(new AIError('upstream', 'timeout')), input.timeoutMs);
     });
 
+    const gatewayId = extractGatewayId(this.env.CF_AI_GATEWAY_URL);
+    const options = gatewayId ? { gateway: { id: gatewayId } } : undefined;
+
     let res: WorkersAiRunResult;
     try {
       res = (await Promise.race([
-        this.aiRun.run(input.model, { messages, max_tokens: 1500 }),
+        this.aiRun.run(
+          input.model,
+          {
+            messages,
+            max_tokens: 1500,
+            response_format: { type: 'json_object' },
+          },
+          options,
+        ),
         timeout,
       ])) as WorkersAiRunResult;
     } catch {
@@ -252,6 +270,17 @@ export class WorkersAIClient {
       ai_advisory_id: null,
     };
   }
+}
+
+function extractGatewayId(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parts = new URL(url).pathname.split('/');
+    if (parts[1] === 'v1' && parts[3]) {
+      return parts[3];
+    }
+  } catch {}
+  return undefined;
 }
 
 function extractResponseText(res: WorkersAiRunResult | string | undefined): string {

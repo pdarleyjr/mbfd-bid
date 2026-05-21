@@ -46,7 +46,7 @@ export function AIAdvisoryPanel({ bidSessionId, turnTimerSeconds }: Props) {
         : msg === 'budget_exceeded'
           ? 'AI advisor is paused — the session has exceeded its spend cap.'
           : msg.startsWith('http_503')
-            ? 'AI advisor is temporarily unavailable. Check ANTHROPIC_API_KEY + AI Gateway config on the Worker.'
+            ? 'AI advisor is temporarily unavailable. Check Workers AI + AI Gateway config on the Worker.'
             : msg.startsWith('http_5')
               ? `AI advisor server error: ${msg}`
               : `AI advisor unavailable: ${msg}`;

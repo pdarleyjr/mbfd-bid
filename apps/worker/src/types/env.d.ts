@@ -18,13 +18,11 @@ export interface WorkerEnv {
   LOCAL_ADMIN_PASSWORD_HASH?: string;
   // Plan 06 — AI integration.
   // Workers AI swap (2026-05): the AI binding replaces the Anthropic SDK +
-  // Cloudflare AI Gateway pair. CF_AI_GATEWAY_URL and ANTHROPIC_API_KEY are
-  // kept optional for one release for backwards compat with .dev.vars and
-  // staging secrets; both are deprecated and unused by the worker code.
+  // Cloudflare AI Gateway pair. CF_AI_GATEWAY_URL is kept optional for
+  // backwards compat with .dev.vars and staging secrets; it is unused by
+  // the legacy worker code except for routing Workers AI calls.
   /** @deprecated unused since the Workers AI swap; kept for one release. */
   CF_AI_GATEWAY_URL?: string;
-  /** @deprecated unused since the Workers AI swap; kept for one release. */
-  ANTHROPIC_API_KEY?: string;
   AI_BUDGET_CAP_CENTS: number;
   AI_FEATURE_FLAG_KEY: string;
   // Plan 08 — audit chain + exports

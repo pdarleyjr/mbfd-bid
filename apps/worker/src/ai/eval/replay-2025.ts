@@ -2,7 +2,7 @@
  * 2025 bid replay eval harness — Plan 06 Task 19.
  *
  * Usage (from repo root):
- *   ANTHROPIC_API_KEY=sk-... CF_AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/<acct>/mbfd-bid/anthropic \
+ *   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
  *     pnpm --filter @mbfd/worker tsx src/ai/eval/replay-2025.ts
  *
  * Reads:
@@ -14,7 +14,7 @@
  * For each pick:
  *   1. Restore the bid state to the moment just before this pick.
  *   2. Build the same system/roster/turn prompt blocks the production route uses.
- *   3. Call /advise-current with Sonnet (via the same AnthropicAIClient).
+ *   3. Call /advise-current with Llama 3.3 70B (via the same WorkersAIClient).
  *   4. Compare the top eligible_recommendation to the actual 2025 pick.
  *   5. Accumulate match-rate, latency_ms, cost_cents, and a "dissent" bucket
  *      when the AI's top pick != actual pick.
@@ -22,9 +22,8 @@
  * Writes docs/ai-eval/2025-replay.md with summary stats + top-10 dissent
  * cases + cost histogram. See docs/ai-eval/format.md for the report shape.
  *
- * NOTE: this is an offline one-shot tool, not part of CI. It requires a real
- * ANTHROPIC_API_KEY routed through the Cloudflare AI Gateway, and burns
- * roughly 5-10 cents per replay run depending on cache-hit rate.
+ * NOTE: this is an offline one-shot tool, not part of CI. It uses Cloudflare
+ * Workers AI, and is free/inexpensive within the Paid plan's neuron quota.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -119,16 +118,16 @@ async function main(): Promise<void> {
     latencyMsTotal: 0,
   };
 
-  // TODO(Plan 06 follow-up): wire AnthropicAIClient + the full eval loop.
+  // TODO(Plan 06 follow-up): wire WorkersAIClient + the full eval loop.
   // The control-flow skeleton is in place; the implementer (offline) fleshes
-  // out per-pick state restoration when a real ANTHROPIC_API_KEY is available.
-  // This skeleton intentionally does not call Anthropic when ANTHROPIC_API_KEY
+  // out per-pick state restoration when a real CLOUDFLARE_API_TOKEN is available.
+  // This skeleton intentionally does not call Workers AI when CLOUDFLARE_API_TOKEN
   // is unset, so the harness can be checked into CI without burning credits.
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.info('ANTHROPIC_API_KEY not set — emitting empty report skeleton.');
+  if (!process.env.CLOUDFLARE_API_TOKEN) {
+    console.info('CLOUDFLARE_API_TOKEN not set — emitting empty report skeleton.');
   } else {
     console.info(
-      'ANTHROPIC_API_KEY detected — the offline operator fleshes out the eval loop here.',
+      'CLOUDFLARE_API_TOKEN detected — the offline operator fleshes out the eval loop here.',
     );
   }
 

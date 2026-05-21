@@ -15,13 +15,10 @@ export const EnvSchema = z.object({
   LOCAL_ADMIN_PASSWORD_HASH: z.string().optional().default(''),
   // Plan 06 — AI integration. As of the 2026-05 swap, AI calls run on the
   // Cloudflare Workers AI binding (`env.AI`) using Llama 3.3 70B Instruct.
-  // The legacy `CF_AI_GATEWAY_URL` + `ANTHROPIC_API_KEY` fields are kept
-  // optional for one release so existing .dev.vars and staging secrets
-  // remain parseable; they are no longer read at runtime.
+  // The legacy `CF_AI_GATEWAY_URL` field is kept optional so existing
+  // .dev.vars and staging secrets remain parseable.
   /** @deprecated unused since the Workers AI swap; kept for one release. */
   CF_AI_GATEWAY_URL: z.string().url().optional(),
-  /** @deprecated unused since the Workers AI swap; kept for one release. */
-  ANTHROPIC_API_KEY: z.string().optional(),
   AI_BUDGET_CAP_CENTS: z
     .union([z.string(), z.number()])
     .transform((v) => (typeof v === 'string' ? Number(v) : v))
