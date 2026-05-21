@@ -84,6 +84,7 @@ export function AdminBidShell(props: Props) {
               meMemberId={props.meMemberId}
               jwt={props.jwt}
               initialFills={props.initialFills}
+              initialCurrentBidderId={props.currentBidderId}
               members={props.members}
               wsBase={props.wsBase}
             />

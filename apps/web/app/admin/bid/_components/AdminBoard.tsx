@@ -16,6 +16,10 @@ interface Props {
   meMemberId: number;
   jwt: string;
   initialFills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
+  /** Bidder the SSR snapshot believed was up — fed into the store so the
+   *  client UI shows the right member before the WS connects (or if the WS
+   *  state_snapshot ships currentBidderId=null because the DO is stale). */
+  initialCurrentBidderId: number | null;
   members: Record<string, MemberLite>;
   /** See BidBoard — Worker origin for the WebSocket upgrade (Pages domain
    *  doesn't proxy WS). */
@@ -28,14 +32,15 @@ export function AdminBoard({
   meMemberId,
   jwt,
   initialFills,
+  initialCurrentBidderId,
   members,
   wsBase,
 }: Props) {
   const store = useMemo(() => {
     const s = createBidStore({ bidSessionId, initialSeq, meMemberId });
-    s.setState({ fills: initialFills });
+    s.setState({ fills: initialFills, currentBidderId: initialCurrentBidderId });
     return s;
-  }, [bidSessionId, initialSeq, meMemberId, initialFills]);
+  }, [bidSessionId, initialSeq, meMemberId, initialFills, initialCurrentBidderId]);
   const { status } = useBidWebSocket(store, { bidSessionId, jwt, wsBase });
   const lastError = useStore(store, (s: BidStoreState) => s.lastError);
   const { pickMode, selectedMemberId, submitPick } = useManualPick();
