@@ -219,9 +219,10 @@ export class WorkersAIClient {
 
     // The Workers AI binding does not currently honor AbortSignal, so we
     // implement a timeout via Promise.race rather than ac.abort().
-    const timeout = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new AIError('upstream', 'timeout')), input.timeoutMs);
-    });
+    const getTimeout = () =>
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new AIError('upstream', 'timeout')), input.timeoutMs);
+      });
 
     const gatewayId = extractGatewayId(this.env.CF_AI_GATEWAY_URL);
     const options = gatewayId ? { gateway: { id: gatewayId } } : undefined;
@@ -238,7 +239,7 @@ export class WorkersAIClient {
           },
           options,
         ),
-        timeout,
+        getTimeout(),
       ])) as WorkersAiRunResult;
     } catch (err) {
       console.warn('[WorkersAIClient] Primary gateway run failed:', err);
@@ -255,7 +256,7 @@ export class WorkersAIClient {
             },
             { gateway: { id: 'default' } },
           ),
-          timeout,
+          getTimeout(),
         ])) as WorkersAiRunResult;
       } catch (defaultGatewayErr) {
         console.warn('[WorkersAIClient] Default gateway retry failed:', defaultGatewayErr);
@@ -272,7 +273,7 @@ export class WorkersAIClient {
               },
               undefined,
             ),
-            timeout,
+            getTimeout(),
           ])) as WorkersAiRunResult;
         } catch (retryErr) {
           console.error('[WorkersAIClient] Direct run retry failed:', retryErr);
