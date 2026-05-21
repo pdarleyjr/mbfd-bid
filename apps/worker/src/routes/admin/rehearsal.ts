@@ -269,292 +269,305 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
   const sessionId = c.req.param('sessionId');
   const body = c.req.valid('json');
   const db = getDb(c.env.DB);
-
-  const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-  if (!session.isMock) {
-    return c.json({ error: 'not_a_mock_session' }, 403);
-  }
-  if (session.currentPhase === 'complete') {
-    return c.json({ picksMade: 0, stoppedReason: 'complete' });
-  }
-
-  const { rules } = await loadActiveRulesForYear(db, session.bidYear);
-  if (rules.length === 0) {
-    return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_active_rule_book' }, 200);
-  }
-  const rulesByPosition = new Map(rules.map((r) => [r.positionId, r]));
-
-  let orderRows = await db
-    .select()
-    .from(bidOrder)
-    .where(eq(bidOrder.bidSessionId, sessionId))
-    .orderBy(asc(bidOrder.ordinal))
-    .all();
-
-  // Bootstrap: mock sessions created via /admin/sessions/new sit in `config`
-  // phase with an empty bid_order until someone manually calls the start
-  // endpoint. Rehearsal flow should be one-click — if bid_order is empty
-  // here, compute it from the members roster (same seniority + pool rules
-  // session-start uses), insert it, and advance the session to position_bid
-  // with currentBidderId set to ordinal 1. The auto-bid loop then proceeds
-  // naturally.
-  let bootstrapped = false;
-  if (orderRows.length === 0) {
-    try {
-      const memberRows = await db
-        .select({
-          id: members.id,
-          bidCategory: members.bidCategory,
-          rscSeniority: members.rscSeniority,
-          rankSeniority: members.rankSeniority,
-        })
-        .from(members)
-        .all();
-      const computed = computeBidOrder(memberRows);
-      if (computed.length === 0) {
-        return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
-      }
-      // D1 caps bound parameters at ~100 per statement. 226 members × 4 cols =
-      // 904 placeholders blows the limit in one INSERT. Chunk to 20 rows
-      // (80 placeholders) per statement to stay safely under.
-      const BID_ORDER_INSERT_CHUNK = 20;
-      const rowsToInsert = computed.map((e) => ({
-        bidSessionId: sessionId,
-        ordinal: e.ordinal,
-        memberId: e.memberId,
-        pool: e.pool,
-      }));
-      for (let i = 0; i < rowsToInsert.length; i += BID_ORDER_INSERT_CHUNK) {
-        const chunk = rowsToInsert.slice(i, i + BID_ORDER_INSERT_CHUNK);
-        await db.insert(bidOrder).values(chunk);
-      }
-      const first = computed[0];
-      const firstMemberId = first ? first.memberId : null;
-      await db
-        .update(bidSessions)
-        .set({
-          currentPhase: 'position_bid',
-          currentBidderId: firstMemberId,
-          startedAt: session.startedAt ?? new Date(),
-        })
-        .where(eq(bidSessions.id, sessionId));
-      orderRows = await db
-        .select()
-        .from(bidOrder)
-        .where(eq(bidOrder.bidSessionId, sessionId))
-        .orderBy(asc(bidOrder.ordinal))
-        .all();
-      bootstrapped = true;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[rehearsal.auto-bid] bootstrap failed', { sessionId, msg });
-      return c.json(
-        { picksMade: 0, stoppedReason: 'error', detail: `bootstrap_failed: ${msg}` },
-        500,
-      );
+  try {
+    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (!session.isMock) {
+      return c.json({ error: 'not_a_mock_session' }, 403);
     }
-  }
-  if (orderRows.length === 0) {
-    return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_bid_order' }, 200);
-  }
-
-  // Self-heal: a prior failed bootstrap may have left bid_order rows but
-  // never updated current_phase / current_bidder_id. If the session is still
-  // in config OR currentBidderId is null, advance it now using the existing
-  // ordering — better than telling the chief the session is "complete" with
-  // zero picks made.
-  if (
-    session.currentPhase === 'config' ||
-    (session.currentBidderId === null && orderRows.length > 0)
-  ) {
-    const firstRow = orderRows[0];
-    if (firstRow !== undefined) {
-      await db
-        .update(bidSessions)
-        .set({
-          currentPhase: 'position_bid',
-          currentBidderId: firstRow.memberId,
-          startedAt: session.startedAt ?? new Date(),
-        })
-        .where(eq(bidSessions.id, sessionId));
-      session.currentPhase = 'position_bid';
-      session.currentBidderId = firstRow.memberId;
-      bootstrapped = true;
-    }
-  }
-  const memberIdToNextMember = new Map<number, number | null>();
-  for (let i = 0; i < orderRows.length; i++) {
-    const cur = orderRows[i];
-    const nxt = orderRows[i + 1];
-    if (cur !== undefined) {
-      memberIdToNextMember.set(cur.memberId, nxt?.memberId ?? null);
-    }
-  }
-
-  const claims = c.get('claims');
-  const adminActorId = claims.sub > 0 ? claims.sub : 0;
-
-  let picksMade = 0;
-  let consecutiveNoEligible = 0;
-  let stoppedReason: 'count_reached' | 'complete' | 'no_eligible' | 'error' = 'count_reached';
-  let detail: string | undefined;
-  // If we just bootstrapped, the DO snapshot doesn't have the new ordering
-  // yet, so don't ask it — take the first ordinal from the freshly-inserted
-  // bid_order rows. Otherwise prefer the DO (it's authoritative once the
-  // session is live).
-  const firstOrderRow = orderRows[0];
-  const firstFromOrder = firstOrderRow !== undefined ? firstOrderRow.memberId : null;
-  let currentBidder = bootstrapped
-    ? firstFromOrder
-    : await getCurrentBidderFromDO(c.env, sessionId, session.currentBidderId ?? null);
-  if (bootstrapped) {
-    await writeAuditLog(db, {
-      bidSessionId: sessionId,
-      actorType: 'admin',
-      actorId: adminActorId,
-      action: 'session_start',
-      targetKind: 'bid_session',
-      targetId: sessionId,
-      reason: 'rehearsal auto-bid bootstrap',
-      beforeState: { current_phase: 'config' },
-      afterState: { current_phase: 'position_bid', bid_order_rows: orderRows.length },
-    });
-  }
-
-  for (let i = 0; i < body.count; i++) {
-    if (currentBidder === null) {
-      stoppedReason = 'complete';
-      break;
+    if (session.currentPhase === 'complete') {
+      return c.json({ picksMade: 0, stoppedReason: 'complete' });
     }
 
-    const member = await loadMemberWithCreds(db, currentBidder);
-    if (member === null) {
-      stoppedReason = 'error';
-      detail = `member ${currentBidder} not found`;
-      break;
+    const { rules } = await loadActiveRulesForYear(db, session.bidYear);
+    if (rules.length === 0) {
+      return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_active_rule_book' }, 200);
     }
+    const rulesByPosition = new Map(rules.map((r) => [r.positionId, r]));
 
-    const taken = await db
-      .select({ positionId: bids.positionId })
-      .from(bids)
-      .where(eq(bids.bidSessionId, sessionId))
+    let orderRows = await db
+      .select()
+      .from(bidOrder)
+      .where(eq(bidOrder.bidSessionId, sessionId))
+      .orderBy(asc(bidOrder.ordinal))
       .all();
-    const takenSet = new Set(taken.map((t) => t.positionId));
 
-    // Determine candidate ordering. ai_top tries the AI's top pick first;
-    // first_eligible just walks the rules in their declared order.
-    let candidatePositions = rules.map((r) => r.positionId).filter((p) => !takenSet.has(p));
-    if (body.strategy === 'ai_top') {
-      const aiTop = await getAiTopPick(c.env, sessionId);
-      if (aiTop !== null && !takenSet.has(aiTop)) {
-        candidatePositions = [aiTop, ...candidatePositions.filter((p) => p !== aiTop)];
+    // Bootstrap: mock sessions created via /admin/sessions/new sit in `config`
+    // phase with an empty bid_order until someone manually calls the start
+    // endpoint. Rehearsal flow should be one-click — if bid_order is empty
+    // here, compute it from the members roster (same seniority + pool rules
+    // session-start uses), insert it, and advance the session to position_bid
+    // with currentBidderId set to ordinal 1. The auto-bid loop then proceeds
+    // naturally.
+    let bootstrapped = false;
+    if (orderRows.length === 0) {
+      try {
+        const memberRows = await db
+          .select({
+            id: members.id,
+            bidCategory: members.bidCategory,
+            rscSeniority: members.rscSeniority,
+            rankSeniority: members.rankSeniority,
+          })
+          .from(members)
+          .all();
+        const computed = computeBidOrder(memberRows);
+        if (computed.length === 0) {
+          return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
+        }
+        // D1 caps bound parameters at ~100 per statement. 226 members × 4 cols =
+        // 904 placeholders blows the limit in one INSERT. Chunk to 20 rows
+        // (80 placeholders) per statement to stay safely under.
+        const BID_ORDER_INSERT_CHUNK = 20;
+        const rowsToInsert = computed.map((e) => ({
+          bidSessionId: sessionId,
+          ordinal: e.ordinal,
+          memberId: e.memberId,
+          pool: e.pool,
+        }));
+        for (let i = 0; i < rowsToInsert.length; i += BID_ORDER_INSERT_CHUNK) {
+          const chunk = rowsToInsert.slice(i, i + BID_ORDER_INSERT_CHUNK);
+          await db.insert(bidOrder).values(chunk);
+        }
+        const first = computed[0];
+        const firstMemberId = first ? first.memberId : null;
+        await db
+          .update(bidSessions)
+          .set({
+            currentPhase: 'position_bid',
+            currentBidderId: firstMemberId,
+            startedAt: session.startedAt ?? new Date(),
+          })
+          .where(eq(bidSessions.id, sessionId));
+        orderRows = await db
+          .select()
+          .from(bidOrder)
+          .where(eq(bidOrder.bidSessionId, sessionId))
+          .orderBy(asc(bidOrder.ordinal))
+          .all();
+        bootstrapped = true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[rehearsal.auto-bid] bootstrap failed', { sessionId, msg });
+        return c.json(
+          { picksMade: 0, stoppedReason: 'error', detail: `bootstrap_failed: ${msg}` },
+          500,
+        );
+      }
+    }
+    if (orderRows.length === 0) {
+      return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_bid_order' }, 200);
+    }
+
+    // Self-heal: a prior failed bootstrap may have left bid_order rows but
+    // never updated current_phase / current_bidder_id. If the session is still
+    // in config OR currentBidderId is null, advance it now using the existing
+    // ordering — better than telling the chief the session is "complete" with
+    // zero picks made.
+    if (
+      session.currentPhase === 'config' ||
+      (session.currentBidderId === null && orderRows.length > 0)
+    ) {
+      const firstRow = orderRows[0];
+      if (firstRow !== undefined) {
+        await db
+          .update(bidSessions)
+          .set({
+            currentPhase: 'position_bid',
+            currentBidderId: firstRow.memberId,
+            startedAt: session.startedAt ?? new Date(),
+          })
+          .where(eq(bidSessions.id, sessionId));
+        session.currentPhase = 'position_bid';
+        session.currentBidderId = firstRow.memberId;
+        bootstrapped = true;
+      }
+    }
+    const memberIdToNextMember = new Map<number, number | null>();
+    for (let i = 0; i < orderRows.length; i++) {
+      const cur = orderRows[i];
+      const nxt = orderRows[i + 1];
+      if (cur !== undefined) {
+        memberIdToNextMember.set(cur.memberId, nxt?.memberId ?? null);
       }
     }
 
-    let chosenPositionId: string | null = null;
-    for (const positionId of candidatePositions) {
-      const rule = rulesByPosition.get(positionId);
-      if (rule === undefined) continue;
-      const r = evaluateEligibility(member, rule);
-      if (r.eligible) {
-        chosenPositionId = positionId;
-        break;
-      }
+    const claims = c.get('claims');
+    // `bids.admin_actor_id` is FK → members.id with ON DELETE RESTRICT. SQLite
+    // enforces the FK on any non-NULL value, so passing 0 (the synthetic
+    // "Bid Admin" identity that lives outside the members table) blows the
+    // INSERT with a FOREIGN KEY constraint failure mid-loop. NULL bypasses
+    // the FK check, which is the intended semantics for "no member row
+    // behind this admin action" — same shape the DO uses for its admin
+    // actions.
+    const adminActorId: number | null = claims.sub > 0 ? claims.sub : null;
+
+    let picksMade = 0;
+    let consecutiveNoEligible = 0;
+    let stoppedReason: 'count_reached' | 'complete' | 'no_eligible' | 'error' = 'count_reached';
+    let detail: string | undefined;
+    // If we just bootstrapped, the DO snapshot doesn't have the new ordering
+    // yet, so don't ask it — take the first ordinal from the freshly-inserted
+    // bid_order rows. Otherwise prefer the DO (it's authoritative once the
+    // session is live).
+    const firstOrderRow = orderRows[0];
+    const firstFromOrder = firstOrderRow !== undefined ? firstOrderRow.memberId : null;
+    let currentBidder = bootstrapped
+      ? firstFromOrder
+      : await getCurrentBidderFromDO(c.env, sessionId, session.currentBidderId ?? null);
+    if (bootstrapped) {
+      await writeAuditLog(db, {
+        bidSessionId: sessionId,
+        actorType: 'admin',
+        actorId: adminActorId,
+        action: 'session_start',
+        targetKind: 'bid_session',
+        targetId: sessionId,
+        reason: 'rehearsal auto-bid bootstrap',
+        beforeState: { current_phase: 'config' },
+        afterState: { current_phase: 'position_bid', bid_order_rows: orderRows.length },
+      });
     }
 
-    if (chosenPositionId === null) {
-      consecutiveNoEligible++;
-      if (consecutiveNoEligible >= 5) {
-        stoppedReason = 'no_eligible';
-        detail = `5 consecutive members with no eligible position starting at member ${currentBidder}`;
+    for (let i = 0; i < body.count; i++) {
+      if (currentBidder === null) {
+        stoppedReason = 'complete';
         break;
       }
-      // Advance to the next member and try again
+
+      const member = await loadMemberWithCreds(db, currentBidder);
+      if (member === null) {
+        stoppedReason = 'error';
+        detail = `member ${currentBidder} not found`;
+        break;
+      }
+
+      const taken = await db
+        .select({ positionId: bids.positionId })
+        .from(bids)
+        .where(eq(bids.bidSessionId, sessionId))
+        .all();
+      const takenSet = new Set(taken.map((t) => t.positionId));
+
+      // Determine candidate ordering. ai_top tries the AI's top pick first;
+      // first_eligible just walks the rules in their declared order.
+      let candidatePositions = rules.map((r) => r.positionId).filter((p) => !takenSet.has(p));
+      if (body.strategy === 'ai_top') {
+        const aiTop = await getAiTopPick(c.env, sessionId);
+        if (aiTop !== null && !takenSet.has(aiTop)) {
+          candidatePositions = [aiTop, ...candidatePositions.filter((p) => p !== aiTop)];
+        }
+      }
+
+      let chosenPositionId: string | null = null;
+      for (const positionId of candidatePositions) {
+        const rule = rulesByPosition.get(positionId);
+        if (rule === undefined) continue;
+        const r = evaluateEligibility(member, rule);
+        if (r.eligible) {
+          chosenPositionId = positionId;
+          break;
+        }
+      }
+
+      if (chosenPositionId === null) {
+        consecutiveNoEligible++;
+        if (consecutiveNoEligible >= 5) {
+          stoppedReason = 'no_eligible';
+          detail = `5 consecutive members with no eligible position starting at member ${currentBidder}`;
+          break;
+        }
+        // Advance to the next member and try again
+        currentBidder = memberIdToNextMember.get(currentBidder) ?? null;
+        continue;
+      }
+      consecutiveNoEligible = 0;
+
+      // Insert the bid row (proxy bid by admin). ordinal is best-effort — the
+      // DO is the source of truth for the live ordering, but rehearsal mode
+      // wires straight to D1 so the dashboard shows progress.
+      const bidId = ulid();
+      const maxOrdRow = await db
+        .select({ m: sql<number | null>`max(${bids.ordinal})` })
+        .from(bids)
+        .where(eq(bids.bidSessionId, sessionId))
+        .get();
+      const ordinal = (maxOrdRow?.m ?? 0) + 1;
+      const idemKey = `rehearsal-auto:${sessionId}:${currentBidder}:${chosenPositionId}:${Date.now()}`;
+
+      await db.insert(bids).values({
+        id: bidId,
+        bidSessionId: sessionId,
+        ordinal,
+        memberId: currentBidder,
+        positionId: chosenPositionId,
+        pickedAt: new Date(),
+        forced: false,
+        adminActorId,
+        reason: `rehearsal auto-bid (${body.strategy})`,
+        idempotencyKey: idemKey,
+        portalSyncStatus: 'pending',
+        portalSyncAttempts: 0,
+      });
+
+      await writeAuditLog(db, {
+        bidSessionId: sessionId,
+        actorType: 'admin',
+        actorId: adminActorId,
+        action: 'admin_bid_for_member',
+        targetKind: 'bid',
+        targetId: bidId,
+        reason: `rehearsal auto-bid (${body.strategy})`,
+        afterState: {
+          member_id: currentBidder,
+          position_id: chosenPositionId,
+          strategy: body.strategy,
+          rehearsal: true,
+        },
+      });
+
+      picksMade++;
+
+      // Advance to the next bidder for the next iteration.
       currentBidder = memberIdToNextMember.get(currentBidder) ?? null;
-      continue;
-    }
-    consecutiveNoEligible = 0;
-
-    // Insert the bid row (proxy bid by admin). ordinal is best-effort — the
-    // DO is the source of truth for the live ordering, but rehearsal mode
-    // wires straight to D1 so the dashboard shows progress.
-    const bidId = ulid();
-    const maxOrdRow = await db
-      .select({ m: sql<number | null>`max(${bids.ordinal})` })
-      .from(bids)
-      .where(eq(bids.bidSessionId, sessionId))
-      .get();
-    const ordinal = (maxOrdRow?.m ?? 0) + 1;
-    const idemKey = `rehearsal-auto:${sessionId}:${currentBidder}:${chosenPositionId}:${Date.now()}`;
-
-    await db.insert(bids).values({
-      id: bidId,
-      bidSessionId: sessionId,
-      ordinal,
-      memberId: currentBidder,
-      positionId: chosenPositionId,
-      pickedAt: new Date(),
-      forced: false,
-      adminActorId,
-      reason: `rehearsal auto-bid (${body.strategy})`,
-      idempotencyKey: idemKey,
-      portalSyncStatus: 'pending',
-      portalSyncAttempts: 0,
-    });
-
-    await writeAuditLog(db, {
-      bidSessionId: sessionId,
-      actorType: 'admin',
-      actorId: adminActorId,
-      action: 'admin_bid_for_member',
-      targetKind: 'bid',
-      targetId: bidId,
-      reason: `rehearsal auto-bid (${body.strategy})`,
-      afterState: {
-        member_id: currentBidder,
-        position_id: chosenPositionId,
-        strategy: body.strategy,
-        rehearsal: true,
-      },
-    });
-
-    picksMade++;
-
-    // Advance to the next bidder for the next iteration.
-    currentBidder = memberIdToNextMember.get(currentBidder) ?? null;
-    await db
-      .update(bidSessions)
-      .set({ currentBidderId: currentBidder })
-      .where(eq(bidSessions.id, sessionId));
-
-    if (currentBidder === null) {
-      // Roster exhausted — mark complete and stop.
       await db
         .update(bidSessions)
-        .set({ currentPhase: 'complete' })
+        .set({ currentBidderId: currentBidder })
         .where(eq(bidSessions.id, sessionId));
-      stoppedReason = 'complete';
-      break;
+
+      if (currentBidder === null) {
+        // Roster exhausted — mark complete and stop.
+        await db
+          .update(bidSessions)
+          .set({ currentPhase: 'complete' })
+          .where(eq(bidSessions.id, sessionId));
+        stoppedReason = 'complete';
+        break;
+      }
+
+      // Rate limit between picks. Tests pass through (sleep is short).
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
 
-    // Rate limit between picks. Tests pass through (sleep is short).
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    const responseBody: {
+      picksMade: number;
+      stoppedReason: string;
+      detail?: string;
+      bootstrapped?: boolean;
+    } = {
+      picksMade,
+      stoppedReason,
+    };
+    if (detail !== undefined) responseBody.detail = detail;
+    if (bootstrapped) responseBody.bootstrapped = true;
+    const status = stoppedReason === 'no_eligible' && picksMade > 0 ? 207 : 200;
+    return c.json(responseBody, status);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error('[rehearsal.auto-bid] uncaught', { sessionId, msg, stack });
+    return c.json({ picksMade: 0, stoppedReason: 'error', detail: `uncaught: ${msg}` }, 500);
   }
-
-  const responseBody: {
-    picksMade: number;
-    stoppedReason: string;
-    detail?: string;
-    bootstrapped?: boolean;
-  } = {
-    picksMade,
-    stoppedReason,
-  };
-  if (detail !== undefined) responseBody.detail = detail;
-  if (bootstrapped) responseBody.bootstrapped = true;
-  const status = stoppedReason === 'no_eligible' && picksMade > 0 ? 207 : 200;
-  return c.json(responseBody, status);
 });
 
 // ── Task R6 — Rehearsal findings (in-app bug tracker) ───────────────────────

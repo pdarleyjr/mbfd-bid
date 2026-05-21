@@ -245,6 +245,45 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
     expect((session.results[0] as { current_phase: string }).current_phase).not.toBe('config');
   });
 
+  it('passes adminActorId=null (not 0) so bids.admin_actor_id FK is satisfied', async () => {
+    // Production D1 enforces foreign_keys = ON. The synthetic "Bid Admin"
+    // identity has sub=0 — there's no members row with id=0, so any
+    // INSERT INTO bids (admin_actor_id, ...) VALUES (0, ...) blows up with
+    // a FOREIGN KEY constraint failure. Verify the handler sends NULL
+    // instead by enabling FKs locally before calling auto-bid.
+    h.sqlite.pragma('foreign_keys = ON');
+
+    const snapMap = new Map<string, unknown>([[sessionId, { currentBidderId: 201 }]]);
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(snapMap),
+    };
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ count: 2, strategy: 'first_eligible' }),
+      }),
+      env,
+    );
+    // Should not 500 — the FK column accepts NULL for the admin actor.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { picksMade: number; stoppedReason: string };
+    expect(body.picksMade).toBe(2);
+
+    const bidsRows = await h.db.run('SELECT admin_actor_id FROM bids WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    for (const row of bidsRows.results) {
+      // Either NULL or a real member id — never 0.
+      expect((row as { admin_actor_id: number | null }).admin_actor_id).not.toBe(0);
+    }
+  });
+
   it('returns 400 on invalid body (count<=0 or unknown strategy)', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
