@@ -257,7 +257,14 @@ bid.get('/board', async (c) => {
   let onDeck: BidderContext[] = [];
   const members: Record<
     string,
-    { id: number; firstName: string; lastName: string; rank: string; employeeId: string }
+    {
+      id: number;
+      firstName: string;
+      lastName: string;
+      rank: string;
+      employeeId: string;
+      priorPositionId: string | null;
+    }
   > = {};
   // When the session is in `config` phase (or otherwise hasn't materialised
   // its persisted bid_order yet) the DO snapshot ships `bidOrder: []`. That
@@ -316,6 +323,7 @@ bid.get('/board', async (c) => {
             firstName: membersTable.firstName,
             lastName: membersTable.lastName,
             rank: membersTable.rank,
+            priorPositionId: membersTable.priorPositionId,
           })
           .from(membersTable)
           .where(inArray(membersTable.id, chunk))
@@ -363,6 +371,7 @@ bid.get('/board', async (c) => {
           lastName: row.lastName,
           rank: row.rank,
           employeeId: row.employeeId,
+          priorPositionId: row.priorPositionId ?? null,
         };
       }
     }

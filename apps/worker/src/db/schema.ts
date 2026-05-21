@@ -20,6 +20,12 @@ export const members = sqliteTable('members', {
   hiredAt: text('hired_at'),
   promotedAt: text('promoted_at'),
   isProbationary: integer('is_probationary', { mode: 'boolean' }).notNull().default(false),
+  /**
+   * Prior-year bid position (e.g. each member's 2025 assignment when running
+   * the 2026 bid). Nullable for new hires and members not yet backfilled.
+   * Surfaced in /api/board so the Live Bid Console can show "from → to".
+   */
+  priorPositionId: text('prior_position_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });

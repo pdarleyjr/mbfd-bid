@@ -1,0 +1,11 @@
+ALTER TABLE `members` ADD COLUMN `prior_position_id` text;
+-- Members section — prior-year position.
+--
+-- Records each member's assignment from the previous annual bid (e.g. their
+-- 2025 pick when the 2026 bid is running). The Live Bid Console surfaces it
+-- next to the current pick so the chief can see "where they're coming from"
+-- alongside "where they're going" as the bid unfolds.
+--
+-- Nullable: brand-new hires (who never bid before) and members who joined
+-- mid-year have no prior pick. The column also stays NULL until a one-shot
+-- seed script populates it from the legacy bid_pick.csv export.

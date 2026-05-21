@@ -89,7 +89,13 @@ export function ManualPickProvider({ bidSessionId, isMock, children }: ProviderP
         });
         if (!res.ok) {
           const text = await res.text();
-          setLastError(`Pick rejected (${res.status}): ${text.slice(0, 250)}`);
+          let parsed: { error?: string; detail?: string; reasons?: { code: string }[] } = {};
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            // server returned something other than JSON — fall back to raw
+          }
+          setLastError(humanizePickError(res.status, parsed, text));
           return { ok: false };
         }
         // Clear selection + refresh so the page shows the new fill.
@@ -122,6 +128,44 @@ export function ManualPickProvider({ bidSessionId, isMock, children }: ProviderP
   );
 
   return <ManualPickContext.Provider value={value}>{children}</ManualPickContext.Provider>;
+}
+
+/**
+ * Convert worker error envelopes into a short, actionable sentence the
+ * chief can read at-a-glance. Falls back to the raw response text if the
+ * payload isn't shaped like an error JSON.
+ */
+function humanizePickError(
+  status: number,
+  body: { error?: string; detail?: string; reasons?: { code: string }[] },
+  raw: string,
+): string {
+  if (body.error === 'position_already_filled') {
+    return 'That position is already filled. Reset the mock session to clear picks, or choose a different position.';
+  }
+  if (body.error === 'ineligible') {
+    const codes = body.reasons?.map((r) => r.code).join(', ') ?? '';
+    return `This member is not eligible for that position${codes ? ` (${codes})` : ''}. Toggle Force-pick to override.`;
+  }
+  if (body.error === 'not_mock_session') {
+    return 'This session is live — manual picks here are mock-only. Use Override on the command bar instead.';
+  }
+  if (body.error === 'member_not_found') {
+    return 'Member not found in the database.';
+  }
+  if (body.error === 'rule_not_found_for_position' || body.error === 'no_active_rule_book') {
+    return 'No active rule book covers that position. Activate a rule book in /admin/rule-books first.';
+  }
+  if (body.error === 'session_not_found') {
+    return 'The session you are picking on no longer exists. Refresh the page.';
+  }
+  if (status === 401 || status === 403) {
+    return `Permission denied (${status}). Try signing back in as an admin.`;
+  }
+  if (status >= 500) {
+    return `Server error (${status}). The pick was NOT recorded. ${body.detail ?? raw.slice(0, 150)}`;
+  }
+  return `Pick rejected (${status}): ${body.detail ?? body.error ?? raw.slice(0, 200)}`;
 }
 
 const NOOP: ManualPickValue = {

@@ -11,6 +11,9 @@ export interface MemberLite {
   lastName: string;
   rank: string;
   employeeId: string;
+  /** Member's pick from the previous annual bid (e.g. their 2025 assignment
+   *  when running the 2026 bid). NULL for new hires / unbackfilled rows. */
+  priorPositionId?: string | null;
 }
 
 export interface PositionMeta {

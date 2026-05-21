@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { formatPositionLabel, getPositionMeta } from '../../../_components/bid/position-meta';
 import type { MemberLite } from '../../../_components/bid/types';
 import { shortRank } from '../../../_components/bid/types';
 import { useManualPick } from './ManualPickContext';
@@ -48,6 +49,16 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
     () => new Set<number>(Object.values(fills).map((f) => f.memberId)),
     [fills],
   );
+
+  // Reverse-lookup so each row can show "this year's pick" = position the
+  // member just selected. Built once per `fills` change.
+  const positionByMember = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const [positionId, fill] of Object.entries(fills)) {
+      map.set(fill.memberId, positionId);
+    }
+    return map;
+  }, [fills]);
 
   const rows = useMemo(() => {
     return bidOrder.filter((entry) => {
@@ -120,6 +131,8 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
                 <th className="px-3 py-1.5 text-left">Pool</th>
                 <th className="px-3 py-1.5 text-left">Member</th>
                 <th className="px-3 py-1.5 text-left">Emp #</th>
+                <th className="px-3 py-1.5 text-left">Last year</th>
+                <th className="px-3 py-1.5 text-left">This year</th>
                 <th className="px-3 py-1.5 text-left">Status</th>
               </tr>
             </thead>
@@ -201,6 +214,8 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
                     <td className="px-3 py-1 font-mono text-xs text-stone-500">
                       {member?.employeeId ?? '—'}
                     </td>
+                    <PositionLabelCell positionId={member?.priorPositionId ?? null} />
+                    <PositionLabelCell positionId={positionByMember.get(entry.memberId) ?? null} />
                     <td className="px-3 py-1">
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadge}`}
@@ -213,7 +228,7 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-4 text-center text-sm text-stone-500">
+                  <td colSpan={7} className="px-3 py-4 text-center text-sm text-stone-500">
                     No bidders match this filter.
                   </td>
                 </tr>
@@ -223,5 +238,28 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Cell that renders a position id as "{id} · {station} / {unit} {role}" with
+ * a tooltip showing the full label. Em-dash when the position is unknown or
+ * the member has no record.
+ */
+function PositionLabelCell({ positionId }: { positionId: string | null }) {
+  if (positionId === null || positionId.length === 0) {
+    return <td className="px-3 py-1 text-xs text-stone-400">—</td>;
+  }
+  const meta = getPositionMeta(positionId);
+  const full = formatPositionLabel(positionId);
+  return (
+    <td className="px-3 py-1 text-xs text-stone-900" title={full}>
+      <span className="font-mono font-semibold text-stone-700">{positionId}</span>
+      {meta && (
+        <span className="ml-2 text-stone-500">
+          {meta.unit} · {meta.positionName}
+        </span>
+      )}
+    </td>
   );
 }
