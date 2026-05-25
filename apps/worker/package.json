@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.1.0",
-    "@hono/zod-validator": "0.4.1",
+    "@hono/zod-validator": "0.8.0",
     "@mbfd/a-day": "workspace:^",
     "@mbfd/eligibility": "workspace:^",
     "@mbfd/shared": "workspace:*",
@@ -36,7 +36,7 @@
     "drizzle-orm": "0.36.4",
     "drizzle-zod": "0.7.1",
     "eventsource-parser": "^3.0.0",
-    "hono": "4.6.5",
+    "hono": "4.12.23",
     "jose": "5.9.4",
     "pako": "^2.1",
     "papaparse": "5.5.3",
@@ -45,8 +45,8 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.12.21",
-    "@cloudflare/workers-types": "4.20260518.1",
+    "@cloudflare/vitest-pool-workers": "0.16.9",
+    "@cloudflare/workers-types": "4.20260525.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6",
     "@types/pako": "^2",
@@ -56,6 +56,6 @@
     "tsx": "4.22.1",
     "typescript": "5.6.3",
     "vitest": "3.2.4",
-    "wrangler": "4.93.0"
+    "wrangler": "4.94.0"
   }
 }
