@@ -25,7 +25,7 @@
     "class-variance-authority": "0.7.0",
     "clsx": "2.1.1",
     "framer-motion": "12.38.0",
-    "hono": "4.6.5",
+    "hono": "4.12.25",
     "jose": "5.9.4",
     "lucide-react": "0.453.0",
     "nanoid": "^5.0",
