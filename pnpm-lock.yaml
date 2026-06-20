@@ -57,7 +57,7 @@ importers:
         version: 12.38.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       hono:
         specifier: '>=4.12.18 <5'
-        version: 4.12.21
+        version: 4.12.25
       jose:
         specifier: 5.9.4
         version: 5.9.4
@@ -148,7 +148,7 @@ importers:
         version: 1.1.0
       '@hono/zod-validator':
         specifier: 0.4.1
-        version: 0.4.1(hono@4.12.21)(zod@3.23.8)
+        version: 0.4.1(hono@4.12.25)(zod@3.23.8)
       '@mbfd/a-day':
         specifier: workspace:^
         version: link:../../packages/a-day
@@ -178,7 +178,7 @@ importers:
         version: 3.0.8
       hono:
         specifier: '>=4.12.18 <5'
-        version: 4.12.21
+        version: 4.12.25
       jose:
         specifier: 5.9.4
         version: 5.9.4
@@ -1418,6 +1418,11 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
+  acorn@8.17.0:
+    resolution: {integrity: sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg==}
+    engines: {node: '>=0.4.0'}
+    hasBin: true
+
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
@@ -2156,8 +2161,8 @@ packages:
     resolution: {integrity: sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg==}
     engines: {node: '>= 0.4'}
 
-  hono@4.12.21:
-    resolution: {integrity: sha512-uV63apnb0kyPtAUwoWgaGh9HyIFcv8lgmzPZSiTBQAFOFGIzka5EZ1dZocmGnn0XdX0+XTqJ6Tqv7selMuGLRQ==}
+  hono@4.12.25:
+    resolution: {integrity: sha512-2NFaIyNVgJmBs/ecmtGzlmluTFs5cHEWGTdu0t1HBwYzoGXOL5nUQBRMXsXWla5i4KkG//QMzVP88m1+I3fdAQ==}
     engines: {node: '>=16.9.0'}
 
   html-encoding-sniffer@6.0.0:
@@ -2905,6 +2910,7 @@ packages:
 
   stream-to-promise@2.2.0:
     resolution: {integrity: sha512-HAGUASw8NT0k8JvIVutB2Y/9iBk7gpgEyAudXwNJmZERdMITGdajOa4VJfD/kNiA3TppQpTP4J+CtcHwdzKBAw==}
+    deprecated: Deprecated. Use node:stream/promises and node:stream/consumers instead.
 
   streamx@2.25.0:
     resolution: {integrity: sha512-0nQuG6jf1w+wddNEEXCF4nTg3LtufWINB5eFEN+5TNZW7KWJp6x87+JFL43vaAUPyCfH1wID+mNVyW6OHtFamg==}
@@ -3783,9 +3789,9 @@ snapshots:
 
   '@fontsource/jetbrains-mono@5.1.1': {}
 
-  '@hono/zod-validator@0.4.1(hono@4.12.21)(zod@3.23.8)':
+  '@hono/zod-validator@0.4.1(hono@4.12.25)(zod@3.23.8)':
     dependencies:
-      hono: 4.12.21
+      hono: 4.12.25
       zod: 3.23.8
 
   '@img/colour@1.1.0': {}
@@ -4463,6 +4469,9 @@ snapshots:
 
   acorn@8.16.0: {}
 
+  acorn@8.17.0:
+    optional: true
+
   agent-base@7.1.4: {}
 
   ajv@8.20.0:
@@ -5059,7 +5068,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.12.21: {}
+  hono@4.12.25: {}
 
   html-encoding-sniffer@6.0.0(@noble/hashes@1.8.0):
     dependencies:
@@ -5976,7 +5985,7 @@ snapshots:
   terser@5.16.9:
     dependencies:
       '@jridgewell/source-map': 0.3.11
-      acorn: 8.16.0
+      acorn: 8.17.0
       commander: 2.20.3
       source-map-support: 0.5.21
     optional: true
