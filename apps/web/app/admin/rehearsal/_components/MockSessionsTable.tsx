@@ -17,7 +17,6 @@ export interface MockSessionRow {
   currentPhase: string;
   currentBidderId: number | null;
   isMock: boolean;
-  costCents: number;
   lastPickedAtIso: string | null;
 }
 
@@ -49,7 +48,6 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
             <th className="border-b border-stone-300 px-3 py-2 font-semibold">Phase</th>
             <th className="border-b border-stone-300 px-3 py-2 font-semibold">Current bidder</th>
             <th className="border-b border-stone-300 px-3 py-2 font-semibold">Last pick</th>
-            <th className="border-b border-stone-300 px-3 py-2 font-semibold">AI cost</th>
             <th className="border-b border-stone-300 px-3 py-2 font-semibold">Actions</th>
           </tr>
         </thead>
@@ -73,9 +71,6 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
               <td className="border-t border-stone-200 px-3 py-2 text-stone-900">
                 {s.lastPickedAtIso ? new Date(s.lastPickedAtIso).toLocaleString() : '—'}
               </td>
-              <td className="border-t border-stone-200 px-3 py-2 tabular-nums text-stone-900">
-                ${(s.costCents / 100).toFixed(2)}
-              </td>
               <td className="border-t border-stone-200 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
@@ -87,7 +82,6 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
                   </Link>
                   <ResetMockButton sessionId={s.id} />
                   <AutoBidButton sessionId={s.id} strategy="first_eligible" count={10} />
-                  <AutoBidButton sessionId={s.id} strategy="ai_top" count={10} />
                   <VerifyAuditButton sessionId={s.id} />
                 </div>
               </td>

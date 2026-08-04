@@ -13,18 +13,6 @@ export const EnvSchema = z.object({
   // succeed. The username is the constant LOCAL_ADMIN_USERNAME above; this
   // secret is the bcrypt hash of the shared admin password.
   LOCAL_ADMIN_PASSWORD_HASH: z.string().optional().default(''),
-  // Plan 06 — AI integration. As of the 2026-05 swap, AI calls run on the
-  // Cloudflare Workers AI binding (`env.AI`) using Llama 3.3 70B Instruct.
-  // The legacy `CF_AI_GATEWAY_URL` field is kept optional so existing
-  // .dev.vars and staging secrets remain parseable.
-  /** @deprecated unused since the Workers AI swap; kept for one release. */
-  CF_AI_GATEWAY_URL: z.string().url().optional(),
-  AI_BUDGET_CAP_CENTS: z
-    .union([z.string(), z.number()])
-    .transform((v) => (typeof v === 'string' ? Number(v) : v))
-    .pipe(z.number().int().nonnegative())
-    .default(2500),
-  AI_FEATURE_FLAG_KEY: z.string().default('ai_advisory_enabled'),
 });
 
 export type ValidatedEnv = z.infer<typeof EnvSchema>;

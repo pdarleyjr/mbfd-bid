@@ -133,13 +133,9 @@ export async function setupTestD1(): Promise<TestD1> {
     JWT_SIGNING_KEY: 'b'.repeat(64),
     PIN_HASH: '$2b$12$placeholder',
     PORTAL_BID_READER: 'tok',
-    CF_AI_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/test/mbfd-bid/anthropic',
-    AI_BUDGET_CAP_CENTS: 2500,
-    AI_FEATURE_FLAG_KEY: 'ai_advisory_enabled',
     DB: makeD1Adapter(sqlite),
     KV: {} as never,
     BID_SESSION: {} as never,
-    AI_KV: {} as never,
     // Plan 08 — audit + exports + portal bindings/secrets (test placeholders).
     AUDIT_SIGNING_PRIVKEY: '',
     AUDIT_SIGNING_PUBKEY: '',
@@ -147,7 +143,6 @@ export async function setupTestD1(): Promise<TestD1> {
     R2_AUDIT: {} as never,
     R2_EXPORTS: {} as never,
     PORTAL_QUEUE: {} as never,
-    AI: {} as never,
     BROWSER: {} as never,
   };
 

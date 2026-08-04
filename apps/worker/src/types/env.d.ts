@@ -16,15 +16,6 @@ export interface WorkerEnv {
   /** Plan 08 — bearer token used by portal-client to POST /bid-assignment. */
   PORTAL_BID_WRITER?: string;
   LOCAL_ADMIN_PASSWORD_HASH?: string;
-  // Plan 06 — AI integration.
-  // Workers AI swap (2026-05): the AI binding replaces the Anthropic SDK +
-  // Cloudflare AI Gateway pair. CF_AI_GATEWAY_URL is kept optional for
-  // backwards compat with .dev.vars and staging secrets; it is unused by
-  // the legacy worker code except for routing Workers AI calls.
-  /** @deprecated unused since the Workers AI swap; kept for one release. */
-  CF_AI_GATEWAY_URL?: string;
-  AI_BUDGET_CAP_CENTS: number;
-  AI_FEATURE_FLAG_KEY: string;
   // Plan 08 — audit chain + exports
   AUDIT_SIGNING_PRIVKEY: string;
   AUDIT_SIGNING_PUBKEY: string;
@@ -49,22 +40,12 @@ export interface WorkerEnv {
   DB: D1Database;
   KV: KVNamespace;
   BID_SESSION: DurableObjectNamespace;
-  /** Separate namespace for AI cache / cost / fallback. Kept distinct
-   * from the auth KV so eviction policy can differ. */
-  AI_KV: KVNamespace;
   /** Plan 08 — R2 bucket holding hash-chained, ed25519-signed JSONL audit chunks. */
   R2_AUDIT: R2Bucket;
   /** Plan 08 — R2 bucket for roster PDFs and audit CSV gzip exports. */
   R2_EXPORTS: R2Bucket;
   /** Plan 08 — Cloudflare Queue for portal write-back payloads. */
   PORTAL_QUEUE: Queue<unknown>;
-  /**
-   * Workers AI binding (2026-05 swap). Runs Llama 3.3 70B Instruct
-   * (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) directly on Cloudflare's
-   * inference network — no external API key, free within the Workers Paid
-   * plan's neuron quota.
-   */
-  AI: Ai;
   /**
    * Cloudflare Browser Rendering binding (2026-05 swap). Headless Chromium
    * is launched via `@cloudflare/puppeteer`'s `puppeteer.launch(env.BROWSER)`.

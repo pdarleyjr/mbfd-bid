@@ -21,7 +21,6 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
             currentPhase: 'position_bid',
             currentBidderId: 101,
             isMock: true,
-            costCents: 42,
             lastPickedAtIso: '2026-09-22T14:30:00Z',
           },
           {
@@ -30,7 +29,6 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
             currentPhase: 'a_day_bid',
             currentBidderId: 202,
             isMock: true,
-            costCents: 0,
             lastPickedAtIso: null,
           },
         ]}
@@ -40,6 +38,8 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
     expect(html).toContain('01HZZSESS02');
     expect(html).toContain('position_bid');
     expect(html).toContain('a_day_bid');
+    expect(html).not.toContain('AI cost');
+    expect(html).not.toContain('(AI)');
   });
 
   it('MockSessionsTable shows empty state when no sessions are mock', () => {

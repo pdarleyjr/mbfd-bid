@@ -12,7 +12,7 @@ name = "mbfd-bid-worker-staging"
 # Replaces the legacy `route = { pattern = "...", zone_name = "..." }` which
 # relied on Universal SSL that did not reissue to cover this 4th-level host.
 routes = [{ pattern = "api.staging.bid.mbfdhub.com", custom_domain = true }]
-vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com", CF_AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/265122b6d6f29457b0ca950c55f3ac6e/mbfd-bid/anthropic", AI_BUDGET_CAP_CENTS = "2500", AI_FEATURE_FLAG_KEY = "ai_advisory_enabled" }
+vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
 
 [[env.staging.d1_databases]]
 binding = "DB"
@@ -23,10 +23,6 @@ migrations_dir = "./migrations"
 [[env.staging.kv_namespaces]]
 binding = "KV"
 id = "ce8afe4605464683a51bf6ae9c042c01"
-
-[[env.staging.kv_namespaces]]
-binding = "AI_KV"
-id = "cc5416d5a3e94cc5b35061f182bd0a84"
 
 [[env.staging.durable_objects.bindings]]
 name = "BID_SESSION"
@@ -52,14 +48,6 @@ bucket_name = "mbfd-bid-exports"
 [env.staging.browser]
 binding = "BROWSER"
 
-# Workers AI binding (2026-05 swap). Runs Llama 3.3 70B Instruct
-# (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) on Cloudflare's inference
-# network. Replaces the Anthropic SDK + Cloudflare AI Gateway pair; no
-# external API key required, free within the Workers Paid plan's neuron
-# quota.
-[env.staging.ai]
-binding = "AI"
-
 # Plan 08: Queues
 [[env.staging.queues.producers]]
 binding = "PORTAL_QUEUE"
@@ -75,7 +63,7 @@ dead_letter_queue = "mbfd-portal-writebacks-staging-dlq"
 [env.production]
 name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
-vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com", CF_AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/265122b6d6f29457b0ca950c55f3ac6e/mbfd-bid/anthropic", AI_BUDGET_CAP_CENTS = "5000", AI_FEATURE_FLAG_KEY = "ai_advisory_enabled" }
+vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -86,10 +74,6 @@ migrations_dir = "./migrations"
 [[env.production.kv_namespaces]]
 binding = "KV"
 id = "REPLACE_AFTER_PRODUCTION_kv_CREATE"
-
-[[env.production.kv_namespaces]]
-binding = "AI_KV"
-id = "REPLACE_AFTER_PRODUCTION_kv_create_ai"
 
 [[env.production.durable_objects.bindings]]
 name = "BID_SESSION"
@@ -114,14 +98,6 @@ bucket_name = "mbfd-bid-exports-production"
 [env.production.browser]
 binding = "BROWSER"
 
-# Workers AI binding (2026-05 swap). Runs Llama 3.3 70B Instruct
-# (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) on Cloudflare's inference
-# network. Replaces the Anthropic SDK + Cloudflare AI Gateway pair; no
-# external API key required, free within the Workers Paid plan's neuron
-# quota.
-[env.production.ai]
-binding = "AI"
-
 # Plan 08: Queues
 [[env.production.queues.producers]]
 binding = "PORTAL_QUEUE"
@@ -135,20 +111,14 @@ max_retries = 0
 dead_letter_queue = "mbfd-portal-writebacks-production-dlq"
 
 [triggers]
-# Plan 08: 1-minute audit buffer flush + 04:15 daily portal reconciliation.
-crons = [
-  "*/1 * * * *",
-  "15 4 * * *",
-]
+# Plan 08: 04:15 UTC daily portal reconciliation.
+crons = ["15 4 * * *"]
 
 # Secrets — set via `wrangler secret put NAME --env staging`:
 #   JWT_SIGNING_KEY        (HMAC HS256, 32-byte random base64url)
 #   PIN_HASH               (bcrypt of the live PIN; rotate via `wrangler secret put`)
 #   PORTAL_BID_READER      (service token for /verify-credentials)
 #   PORTAL_BID_WRITER      (service token for /bid-assignment — used in Plan 08)
-#   ANTHROPIC_API_KEY      (DEPRECATED 2026-05 — replaced by the env.AI
-#                           Workers AI binding. Safe to `wrangler secret delete`
-#                           after one release; left for backwards compat.)
 #   AUDIT_SIGNING_PRIVKEY  (Plan 08 — ed25519 32-byte base64url; per year per env)
 #   AUDIT_SIGNING_PUBKEY   (Plan 08 — ed25519 32-byte base64url; non-secret)
 #   BROWSERLESS_TOKEN      (DEPRECATED — replaced by Cloudflare Browser

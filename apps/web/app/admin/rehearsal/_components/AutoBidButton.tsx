@@ -4,7 +4,7 @@ import { type ReactElement, useState } from 'react';
 
 interface Props {
   sessionId: string;
-  strategy: 'ai_top' | 'first_eligible';
+  strategy: 'first_eligible';
   count: number;
 }
 
@@ -20,10 +20,7 @@ export function AutoBidButton({ sessionId, strategy, count }: Props): ReactEleme
   const [msg, setMsg] = useState<string | null>(null);
   const [tone, setTone] = useState<'ok' | 'warn' | 'err' | null>(null);
 
-  const label =
-    strategy === 'ai_top'
-      ? `Auto-bid ${count} picks (AI)`
-      : `Auto-bid ${count} picks (first-eligible)`;
+  const label = `Auto-bid ${count} picks (first-eligible)`;
 
   function formatStopped(body: AutoBidResponse): { text: string; tone: 'ok' | 'warn' | 'err' } {
     const bootstrapNote = body.bootstrapped ? ' (auto-started the session)' : '';

@@ -48,34 +48,17 @@ async function fetchRecentFindings(): Promise<FindingRow[]> {
   }
 }
 
-async function fetchSessionCost(sessionId: string): Promise<number> {
-  try {
-    const res = await serverWorkerFetch(
-      `/api/admin/ai/cost?session_id=${encodeURIComponent(sessionId)}`,
-    );
-    if (!res.ok) return 0;
-    const body = (await res.json()) as { cost_cents?: number };
-    return body.cost_cents ?? 0;
-  } catch {
-    return 0;
-  }
-}
-
 export default async function RehearsalDashboardPage(): Promise<ReactElement> {
   await requireAdmin();
 
   const [rawSessions, findings] = await Promise.all([fetchMockSessions(), fetchRecentFindings()]);
 
-  // Fan-out cost lookup per session in parallel. Costs are advisory; failures
-  // surface as $0.00 in the table.
-  const costs = await Promise.all(rawSessions.map((s) => fetchSessionCost(s.id)));
-  const sessions: MockSessionRow[] = rawSessions.map((s, i) => ({
+  const sessions: MockSessionRow[] = rawSessions.map((s) => ({
     id: s.id,
     bidYear: s.bidYear,
     currentPhase: s.currentPhase,
     currentBidderId: s.currentBidderId,
     isMock: s.isMock,
-    costCents: costs[i] ?? 0,
     lastPickedAtIso: s.lastPickedAtIso,
   }));
 

@@ -39,8 +39,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build internal packages
         run: pnpm -r --filter "./packages/*" build
-      - name: Generate AI rulebook constant
-        run: pnpm --filter @mbfd/worker ai:codegen
       - name: Apply D1 migrations (staging, remote)
         working-directory: apps/worker
         run: pnpm exec wrangler d1 migrations apply mbfd-bid-staging --remote --env staging
@@ -73,10 +71,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build internal packages
         run: pnpm -r --filter "./packages/*" build
-      - name: Generate AI rulebook constant
-        # Next.js type-checks worker imports transitively, so the generated
-        # ./rulebook-2026.generated.ts must exist before `next build`.
-        run: pnpm --filter @mbfd/worker ai:codegen
       - name: Build and deploy Next.js to Cloudflare Pages
         working-directory: apps/web
         # next-on-pages calls `vercel build` internally and outputs to

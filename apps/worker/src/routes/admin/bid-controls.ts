@@ -10,7 +10,6 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
-import { recordDissentIfNeeded } from '../../ai/dissent.js';
 import { type DB, getDb } from '../../db/index.js';
 import {
   bidSessions,
@@ -160,26 +159,6 @@ router.post(
         reason_code: body.reason_code,
       },
     });
-
-    // W28 — If a fresh AI advisory exists for this session and disagrees
-    // with the admin's force-pick (i.e. `force_recommended !== true`), write
-    // a `dissent` audit row so the legal record captures the divergence.
-    // Best-effort: AI_KV might be absent in tests; recordDissentIfNeeded
-    // no-ops gracefully when there's no cached advisory.
-    if (c.env.AI_KV && typeof c.env.AI_KV.get === 'function') {
-      try {
-        await recordDissentIfNeeded(c.env, {
-          bidSessionId: sessionId,
-          actorMemberId: adminActorId,
-          actionKind: 'forced_pick',
-          targetMemberEmployeeId: member.employeeId,
-          targetPositionId: body.position_id,
-          reason: body.reason,
-        });
-      } catch (err) {
-        console.error('[force-pick] dissent recording failed (best-effort)', err);
-      }
-    }
 
     return c.json({ bid_id: bidId, forced: true }, 201);
   },

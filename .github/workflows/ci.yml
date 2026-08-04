@@ -47,8 +47,6 @@ jobs:
       # Build all internal packages first so `tsc --noEmit` in dependent
       # packages can resolve workspace deps via their dist/ exports.
       - run: pnpm -r --filter "./packages/*" build
-      - name: AI rulebook codegen
-        run: pnpm --filter @mbfd/worker ai:codegen
       - run: pnpm typecheck
 
   unit-and-integration:
@@ -64,10 +62,6 @@ jobs:
           node-version: '${{ env.NODE_VERSION }}'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Codegen must run BEFORE build because apps/web imports the generated
-      # rulebook file at type-check / next-build time.
-      - name: AI rulebook codegen
-        run: pnpm --filter @mbfd/worker ai:codegen
       - run: pnpm build
       - run: pnpm test
 

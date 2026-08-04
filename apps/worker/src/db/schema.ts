@@ -2,7 +2,6 @@ import {
   index,
   integer,
   primaryKey,
-  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -294,34 +293,6 @@ export const auditLog = sqliteTable(
   },
   (t) => ({
     sessionSeqIdx: index('audit_log_session_seq_idx').on(t.bidSessionId, t.seq),
-  }),
-);
-
-export const aiAdvisories = sqliteTable(
-  'ai_advisories',
-  {
-    id: text('id').primaryKey(),
-    bidSessionId: text('bid_session_id')
-      .notNull()
-      .references(() => bidSessions.id, { onDelete: 'cascade' }),
-    memberId: integer('member_id'),
-    positionId: text('position_id'),
-    triggeredBy: text('triggered_by', {
-      enum: ['turn_start', 'admin_request', 'periodic_forecast', 'override_check'],
-    }).notNull(),
-    model: text('model').notNull(),
-    promptHash: text('prompt_hash').notNull(),
-    responseJson: text('response_json').notNull(),
-    renderedMarkdown: text('rendered_markdown').notNull(),
-    latencyMs: integer('latency_ms').notNull(),
-    costCents: integer('cost_cents').notNull(),
-    cacheHitRatio: real('cache_hit_ratio').notNull(),
-  },
-  (t) => ({
-    sessionTriggeredByIdx: index('idx_ai_advisories_session_triggered').on(
-      t.bidSessionId,
-      t.triggeredBy,
-    ),
   }),
 );
 

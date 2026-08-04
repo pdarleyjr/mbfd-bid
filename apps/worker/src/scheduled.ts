@@ -1,19 +1,9 @@
 import { and, eq, lte } from 'drizzle-orm';
-import { WorkersAIClient } from './ai/client.js';
-import { systemPrompt } from './ai/prompts/system-2026.js';
-import { rosterPrompt } from './ai/prompts/user-roster.js';
-import { turnPrompt, userPrompt } from './ai/prompts/user-turn.js';
-import { loadRosterForSession, loadTurnStateForSession } from './ai/session-loader.js';
 import { getDb } from './db/index.js';
-import { bidSessions, bids, members, portalWritebackQueue } from './db/schema.js';
+import { bids, members, portalWritebackQueue } from './db/schema.js';
 import type { QueueMessage } from './portal-writeback/queue-producer.js';
 import { type DueQueueRow, runReconciliation } from './portal-writeback/reconciliation.js';
 import type { WorkerEnv } from './types/env.js';
-
-const FORECAST_QUESTION =
-  'Provide a department-wide forecast: which credentials are running short, ' +
-  'which positions look likely to go unfilled, which members are most affected. ' +
-  'Return ONLY the JSON object specified in the system prompt.';
 
 /**
  * Plan 08 Task 25 — daily portal-writeback reconciliation.
@@ -81,35 +71,4 @@ export async function handlePortalReconciliation(env: WorkerEnv): Promise<void> 
     },
   });
   console.info('[portal-reconciliation]', result);
-}
-
-export async function handleScheduled(env: WorkerEnv): Promise<void> {
-  const db = getDb(env.DB);
-  const live = await db
-    .select({ id: bidSessions.id })
-    .from(bidSessions)
-    .where(eq(bidSessions.currentPhase, 'position_bid'))
-    .all();
-  if (live.length === 0) return;
-
-  const client = new WorkersAIClient(env);
-  for (const s of live) {
-    const roster = await loadRosterForSession(env, s.id);
-    const state = await loadTurnStateForSession(env, s.id);
-    try {
-      const envelope = await client.adviseCurrent({
-        bidSessionId: s.id,
-        system: systemPrompt(),
-        user: userPrompt({
-          roster: rosterPrompt(roster),
-          turn: turnPrompt({ ...state, question: FORECAST_QUESTION }),
-        }),
-      });
-      await env.AI_KV.put(`ai_forecast:${s.id}`, JSON.stringify(envelope), {
-        expirationTtl: 60 * 60,
-      });
-    } catch {
-      // best-effort; consumers see the old cached value or 404
-    }
-  }
 }

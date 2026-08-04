@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { BidderCard, type BidderContext } from '../../../_components/bid/BidderCard';
-import { AICostPill } from './AICostPill';
 import { FreezeConfirmDialog } from './FreezeConfirmDialog';
 import { useManualPick } from './ManualPickContext';
 import { OverrideDialog } from './OverrideDialog';
@@ -16,9 +15,6 @@ interface Props {
   currentBidder: BidderContext | null;
   currentBidderId: number | null;
   onDeck: ReadonlyArray<BidderContext>;
-  /** Toggled by the page to show/hide the right-side AI drawer. */
-  aiPanelOpen: boolean;
-  onToggleAiPanel: () => void;
 }
 
 function formatDuration(ms: number): string {
@@ -51,7 +47,6 @@ function useTick(intervalMs = 1000): number {
  *   - on-deck strip (next 5)
  *   - Skip / Override / Freeze (explicit text colors so the buttons can't go
  *     white-on-white when the admin layout's text-slate-50 leaks through)
- *   - AI cost pill + Hide/Show AI panel toggle
  */
 export function LiveCommandBar({
   bidSessionId,
@@ -63,8 +58,6 @@ export function LiveCommandBar({
   currentBidder,
   currentBidderId,
   onDeck,
-  aiPanelOpen,
-  onToggleAiPanel,
 }: Props) {
   const now = useTick(1000);
   const [open, setOpen] = useState<'override' | 'freeze' | null>(null);
@@ -185,19 +178,6 @@ export function LiveCommandBar({
             className="rounded border border-amber-600 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
           >
             Freeze
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <AICostPill bidSessionId={bidSessionId} />
-          <button
-            type="button"
-            data-testid="toggle-ai-panel"
-            onClick={onToggleAiPanel}
-            aria-pressed={aiPanelOpen}
-            className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
-          >
-            {aiPanelOpen ? 'Hide AI' : 'Show AI'}
           </button>
         </div>
       </div>

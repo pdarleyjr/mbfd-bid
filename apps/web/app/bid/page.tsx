@@ -12,7 +12,6 @@ import { OnDeckQueue } from '../_components/bid/OnDeckQueue';
 import type { MemberLite } from '../_components/bid/types';
 import { BidBoard } from './_components/BidBoard';
 import { BoardHeader } from './_components/BoardHeader';
-import { MemberAIAdvisoryPanel } from './_components/MemberAIAdvisoryPanel';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -82,8 +81,6 @@ export default async function BidPage({
   if (!board) return <BidUnavailable message={fetchError ?? 'no active session'} />;
   const eligiblePositionIds = await loadEligibility(board.bidSessionId);
 
-  const isMyTurn = board.currentBidderId === claims.sub;
-
   return (
     <main className="min-h-screen bg-stone-50">
       <MockBanner isMock={board.isMock === true} sessionId={board.bidSessionId} />
@@ -94,9 +91,6 @@ export default async function BidPage({
         meMemberId={claims.sub}
       />
       <OnDeckQueue onDeck={board.onDeck ?? []} meMemberId={claims.sub} />
-      {isMyTurn ? (
-        <MemberAIAdvisoryPanel bidSessionId={board.bidSessionId} turnTimerSeconds={180} />
-      ) : null}
       <BidBoard
         bidSessionId={board.bidSessionId}
         initialSeq={board.lastSeq}

@@ -1,10 +1,6 @@
 'use client';
-import { useState } from 'react';
 import type { BidderContext } from '../../../_components/bid/BidderCard';
 import type { MemberLite } from '../../../_components/bid/types';
-import { AIAdvisoryPanel } from './AIAdvisoryPanel';
-import { AIAskDeepDialog } from './AIAskDeepDialog';
-import { AIForecastBanner } from './AIForecastBanner';
 import { AdminBoard } from './AdminBoard';
 import { BidRoster } from './BidRoster';
 import { LiveCommandBar } from './LiveCommandBar';
@@ -39,14 +35,10 @@ interface Props {
 }
 
 /**
- * Page-level admin shell. Owns the AI-panel open/closed state so the command
- * bar's toggle and the right-side drawer stay in sync. Keeps the page
- * server-component thin: it just fetches the snapshot and passes the data
- * down to this client.
+ * Page-level admin shell. Keeps the page server-component thin: it fetches
+ * the snapshot and passes operational data down to the client controls.
  */
 export function AdminBidShell(props: Props) {
-  const [aiPanelOpen, setAiPanelOpen] = useState(true);
-
   return (
     <ManualPickProvider bidSessionId={props.bidSessionId} isMock={props.isMock}>
       <div className="flex h-full min-h-[calc(100vh-57px)] flex-col">
@@ -60,13 +52,9 @@ export function AdminBidShell(props: Props) {
           currentBidder={props.currentBidder}
           currentBidderId={props.currentBidderId}
           onDeck={props.onDeck}
-          aiPanelOpen={aiPanelOpen}
-          onToggleAiPanel={() => setAiPanelOpen((v) => !v)}
         />
 
         <ManualPickBar isMock={props.isMock} members={props.members} />
-
-        <AIForecastBanner bidSessionId={props.bidSessionId} />
 
         <BidRoster
           bidOrder={props.bidOrder}
@@ -89,34 +77,6 @@ export function AdminBidShell(props: Props) {
               wsBase={props.wsBase}
             />
           </div>
-          {aiPanelOpen && (
-            <aside
-              data-testid="ai-side-panel"
-              className="flex w-[360px] shrink-0 flex-col border-l border-stone-200 bg-white"
-            >
-              {props.currentBidderId === null ? (
-                <div
-                  data-testid="ai-panel-idle"
-                  className="border-b border-stone-200 bg-stone-50 p-4 text-sm text-stone-600"
-                >
-                  <h2 className="mb-1 font-semibold text-stone-900">AI Advisor</h2>
-                  <p>
-                    Idle — the AI advisor activates the moment the first bidder takes their turn.
-                    Until then there&apos;s nothing to advise on. Phase:{' '}
-                    <span className="font-mono text-stone-800">{props.currentPhase}</span>.
-                  </p>
-                </div>
-              ) : (
-                <AIAdvisoryPanel
-                  bidSessionId={props.bidSessionId}
-                  turnTimerSeconds={props.turnTimerSeconds}
-                />
-              )}
-              <div className="border-t border-stone-200 p-3">
-                <AIAskDeepDialog bidSessionId={props.bidSessionId} />
-              </div>
-            </aside>
-          )}
         </div>
       </div>
     </ManualPickProvider>

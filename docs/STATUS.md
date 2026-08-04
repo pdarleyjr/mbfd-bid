@@ -179,46 +179,16 @@ indicated future task / plan. Each is currently non-blocking.
 - **Lint:** 0 errors, 3 pre-existing warnings (all `console.log` in `scripts/copy-staging-fixtures.mjs`)
 - **Typecheck:** all 4 workspace packages green
 
-## Plan 06 — AI Integration (complete 2026-05-19)
+## Plan 06 — AI Integration (retired 2026-08-04)
 
-- `/api/admin/ai/advise-current` (Sonnet 4.6, non-streaming): builds system+roster+turn prompt blocks with cache breakpoints after system and roster; returns `AdvisoryEnvelope` with `stale`/`fallback` markers; writes one `ai_advisories` audit row per non-stale call; admin-only via `requireAdmin`.
-- `/api/admin/ai/advise-deep` (Opus 4.7, SSE): streams `text/event-stream` with token deltas; `event: done` on completion. Mocked Anthropic SSE consumed via `@anthropic-ai/sdk` stream; route forwards `content_block_delta` text-deltas as `data:` lines.
-- `/api/admin/ai/forecast` (KV-cached envelope) + `*/10 * * * *` scheduled cron (`apps/worker/src/scheduled.ts`) refreshes `ai_forecast:<session_id>` for every live `position_bid` session.
-- `/api/admin/ai/cost` returns running cents + cap from `AI_KV` for the AICostPill.
-- **Unified mute gate** (`apps/worker/src/ai/gate.ts`): all four AI routes return `503 { disabled: true, reason }` when `ai_advisory_enabled=false` or when `ai_cost_cents:<session_id>` ≥ `AI_BUDGET_CAP_CENTS`.
-- **Cache-warm pre-fetch** (`apps/worker/src/ai/cache-warm.ts`): fire-and-forget Sonnet call for on-deck member; writes `ai_last_good:<session_id>` so the next `/advise-current` is mostly cache-read.
-- **Defensive parser** (`apps/worker/src/ai/output-parser.ts`): handles fenced JSON, BOM, prose-prefixed responses, and falls back to `last_good` then `deterministic` envelope on parse failure.
-- **Dissent log writer** (`apps/worker/src/ai/dissent.ts`): writes `audit_log.action='dissent'` when admin force-picks against an AI advisory whose `force_recommended=false`. The Plan 05 force-pick handler needs a 2-line follow-up to call `recordDissentIfNeeded(env, …)` after the pick commits — left as a watch-item.
-- **Web components** on `/admin/bid`: `AIAdvisoryPanel` (TanStack Query, 30 s poll), `AIAskDeepDialog` (SSE consumer using `apps/web/lib/ai-sse-client.ts` async generator), `AIForecastBanner` (top-of-page critical/warn surfacing), `AICostPill` (header pill, 30 s poll), and `AIDissentMarker` on `/admin/audit`.
-- **Schema sync test** (`packages/shared/tests/schemas/ai-advisory-mirror.test.ts`): byte-comparison guard so `apps/worker/src/ai/output-schema.ts` and `packages/shared/src/schemas/ai-advisory.ts` stay byte-identical (modulo comment headers).
-- **Cross-plan ticket honored:** `AdvisorySchema` carries an optional `aDayInvariantSnapshot` field reserved for Plan 07 (A-Day phase 2). Plan 07 populates it without re-touching the schema.
-- **Migration `0010_audit_action_dissent.sql`:** SQLite enum is enforced in TS only, so the migration is a recordkeeping no-op DDL paired with the `AuditAction` widening in `apps/worker/src/lib/audit.ts`. The plan body said "0005"; renumbered to 0010 because Plans 05–07 already claimed 0005–0009.
-- **Cloudflare AI Gateway routing:** Anthropic SDK `baseURL` is set to `CF_AI_GATEWAY_URL`; no direct `api.anthropic.com` reference anywhere in `apps/worker/src/`. All tests assert this.
-- **Per-session cost accounting:** `ai_cost_cents:<session_id>` in `AI_KV` (TTL 14 days). Computed via the per-model `MODEL_PRICING` table (`apps/worker/src/ai/pricing.ts`); cache-read is 10 %, cache-write is 1.25× of input pricing per Anthropic's prompt-caching docs.
-- **Build-time rulebook codegen:** `pnpm --filter @mbfd/worker ai:codegen` reads `apps/worker/docs/bid-docs/2026/*.md` into `rulebook-2026.generated.ts` (gitignored, biome-ignored). CI runs it before typecheck and before unit/integration tests.
-- **2025 eval-harness skeleton:** `apps/worker/src/ai/eval/replay-2025.ts` + `docs/ai-eval/format.md`. The script reads `analysis/bid_pick.csv` + `analysis/personnel.csv` and writes `docs/ai-eval/2025-replay.md`. The Anthropic call loop is gated on `ANTHROPIC_API_KEY` so the harness can ship without burning credits; the offline operator fleshes it out before running. **Not run in this session — no real API key available.**
-
-### Plan 06 — final tallies (2026-05-19)
-
-- **Tests landed:** `@mbfd/worker` 59 files / 316 pass + 1 skip · `@mbfd/shared` 12 files / 101 pass · `@mbfd/web` 5 files / 21 pass · `@mbfd/eligibility` 13 files / 81 pass + 3 skip
-- **New worker files:** `src/ai/{pricing,cost-accounting,output-schema,output-parser,client,session-loader,cache-warm,dissent,gate}.ts`, `src/ai/prompts/{system-2026,user-roster,user-turn,rulebook-codegen}.ts`, `src/ai/eval/replay-2025.ts`, `src/routes/ai.ts`, `src/scheduled.ts`
-- **New web files:** `app/admin/bid/_components/{AIAdvisoryPanel,AIAskDeepDialog,AIForecastBanner,AIDissentMarker,AICostPill}.tsx`, `lib/ai-sse-client.ts`
-- **Migration:** `0010_audit_action_dissent.sql` (not yet applied — Plan 09 handles deploy; the test harness picks it up automatically via `applyMigrations`)
-- **Lint:** 0 errors, 3 pre-existing warnings in `packages/eligibility/scripts/export-fixtures.ts` (unchanged from Plan 05)
-- **Typecheck:** all 4 workspace packages green
-- **CI workflow updated:** AI rulebook codegen step added to both `lint-and-typecheck` and `unit-and-integration` jobs
-
-### New watch-items (Plan 06)
-
-| ID | Source | Watch-item | Action by |
-|----|--------|------------|-----------|
-| W27 | Plan 06 T14 + T21 | Migration `0010_audit_action_dissent.sql` committed but NOT applied to staging/production. Plan 09 deploy must run `pnpm db:migrate:remote` for both envs. | Plan 09 deploy |
-| W28 | Plan 06 T14 step 9 | `recordDissentIfNeeded(env, …)` is decoupled — Plan 05's `/api/admin/bid-session/:id/force-pick` handler still needs a 2-line call to it after the pick commits. Documented as Plan 05 follow-up. | Plan 05 follow-up |
-| W29 | Plan 06 T1 | Two new Wrangler bindings (`AI_KV` namespace, `ANTHROPIC_API_KEY` secret) need to be created via `wrangler kv:namespace create AI_KV --env staging` and `wrangler secret put ANTHROPIC_API_KEY --env staging` before deploy. `wrangler.toml` carries `REPLACE_AFTER_kv_create_ai` placeholders. | Plan 09 deploy |
-| W30 | Plan 06 T13 | `apps/worker/src/index.ts` default export changed from `app` to a `{ fetch, scheduled }` handler object for cron support. All 13 worker tests that did `import app from '../../src/index'` were switched to the named export `import { app } from …`. The Hono RPC type still exports from `AppType = typeof routes`, unchanged. | Done in this plan |
-| W31 | Plan 06 T9 | `@anthropic-ai/sdk@0.96.0` has a peer-dep warning for `zod@^3.25 || ^4`; the repo pins `zod@3.23.8`. No runtime errors; if Anthropic SDK starts using zod 3.25-only APIs, bump zod across the monorepo. | Plan 09 hardening |
-| W32 | Plan 06 T19 | Eval harness skeleton committed but not actually run. Offline operator must run `pnpm --filter @mbfd/worker ai:eval:2025` with real `ANTHROPIC_API_KEY` before Plan 09 sign-off, paste the report into `docs/ai-eval/2025-replay.md`. | Plan 09 pre-deploy |
-| W33 | Plan 06 T15/T16 | Three new E2E specs (`ai-panel`, `ai-deep-dialog`, `ai-dissent-marker`) are `test.skip` placeholders pending the same Playwright fixtures harness Plan 05 deferred to Plan 09. | Plan 09 hardening |
+The AI advisor was fully removed from the active application after a legacy
+Workers AI forecast cron generated unexpected neuron charges while the staging
+site was idle. The retirement release removes the model binding, dedicated KV
+binding, per-minute schedule, AI API routes, member/admin UI, rehearsal AI
+strategy, prompt/evaluation code, cost polling, and advisory table. Migration
+`0019_remove_ai_feature.sql` deletes the obsolete advisory rows. Historical
+audit-log compatibility fields remain so existing signed audit records can
+still be read; they cannot trigger inference.
 
 ---
 
@@ -324,12 +294,11 @@ this prequel is the safety harness that runs on staging.
 |---|---|---|
 | `POST /api/admin/rehearsal/:sessionId/mark-mock` | admin | Idempotently set `bid_sessions.is_mock=1`. 404 if session missing. |
 | `POST /api/admin/rehearsal/:sessionId/reset-mock` | admin | Wipe Phase 1 `bids` + Phase 2 `a_day_picks`, rewind `bid_sessions` row, reset DO state. 403 unless `is_mock=1`. Returns 204. |
-| `POST /api/admin/rehearsal/:sessionId/auto-bid` | admin | Body `{ count, strategy: 'ai_top' \| 'first_eligible' }`. Loops up to `count` picks; stops on `complete`, 5 consecutive `no_eligible`, or count exhaustion. Returns 200 with `{ picksMade, stoppedReason, detail? }`. 207 if `no_eligible` after some picks. 403 unless `is_mock=1`. |
+| `POST /api/admin/rehearsal/:sessionId/auto-bid` | admin | Body `{ count, strategy: 'first_eligible' }`. Loops up to `count` deterministic picks; stops on `complete`, 5 consecutive `no_eligible`, or count exhaustion. Returns 200 with `{ picksMade, stoppedReason, detail? }`. 207 if `no_eligible` after some picks. 403 unless `is_mock=1`. |
 | `POST /api/admin/rehearsal/findings` | admin | Body `{ bidSessionId, note, screenshotR2Key? }`. Inserts one row. 201 on success. 404 if session missing. |
 | `GET  /api/admin/rehearsal/findings?session_id=…&limit=50` | admin | Per-session findings, newest-first. 400 if no `session_id`. |
 | `GET  /api/admin/rehearsal/findings-recent?limit=50` | admin | All findings across mock sessions, newest-first. |
 | `GET  /api/admin/rehearsal/sessions` | admin | List of mock sessions for the dashboard. |
-| `GET  /api/admin/ai/cost` | admin | No `session_id` → aggregate running total (`ai_cost_cents_total`, with fallback summing of `ai_cost_cents:*`). With `?session_id=…` → per-session cost. |
 
 ### MockBanner contract
 
@@ -406,9 +375,7 @@ Run on staging before deploying the rehearsal burst:
 
 | ID | Source | Watch-item | Action by |
 |----|--------|------------|-----------|
-| W42 | Task R5 | `getAiTopPick` in the auto-bid loop currently always returns `null` (falls back to `first_eligible`) because issuing a recursive `app.fetch` to `/api/admin/ai/advise-current` inside a Worker request risks unbounded fan-out. The dashboard's `Auto-bid 10 picks (AI)` button therefore behaves identically to the first-eligible variant. Plan 09 hardening: surface a banner explaining this, OR wire the AI call into the same handler that powers the AI advisory panel. | Plan 09 hardening |
 | W43 | Task R4 | The DO `resetMock()` method calls `state.storage.deleteAll()` on the native handle (cast bypasses the narrowed `DOStorageLike` typing). The cast is safe in production where the storage IS the real DO storage, but the DOStorageLike abstraction should grow a `deleteAll?(): Promise<void>` member to keep the type story honest. | Follow-up cleanup |
 | W44 | Task R5 | The auto-bid endpoint inserts bids directly into D1 (mirroring `bid-for-member`) rather than going through the BidSession DO. That keeps the rehearsal loop testable, but the DO's in-memory `fills` map and the D1 `bids` table will drift during a rehearsal. Reset-mock wipes both, so the only operator-visible failure mode is the DO's WebSocket clients showing a stale board until the next snapshot fetch. Plan 09 should validate this by spinning the rehearsal through a real WS-connected admin browser. | Plan 09 rehearsal |
 | W45 | Task R8 | The portal write-back guard re-queries D1 per message. For batches of 100 messages this is 100 D1 reads. If batches grow, batch the `is_mock` lookup with `IN (...)`. | Follow-up cleanup |
-| W46 | Task R10 | `/api/admin/ai/cost` without `session_id` falls back to `KV.list` if `ai_cost_cents_total` isn't populated. KV list is eventually consistent — the aggregate may lag the per-session values by ≤ 60s on staging. Plan 09 should backfill `ai_cost_cents_total` on every advisory write (single-counter update) to make the aggregate strictly consistent. | Plan 09 hardening |
 | W47 | Task R7 | MockBanner reads `is_mock` from `/api/board`, which is the DO snapshot enriched with one D1 query. For sessions that don't yet have a DO instance (mark-mock before start), the snapshot fetch may 404 — the banner falls back to `isMock=false`. Symptom: the banner doesn't appear until after `/start`. Either always-read D1 for `is_mock` OR have `mark-mock` initialise the DO. Recommend the former. | Plan 09 hardening |

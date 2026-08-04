@@ -32,13 +32,13 @@ describe('db schema (Plan 02)', () => {
     expect(schema.positions.id).toBeDefined();
     expect(schema.positions.templateVersion).toBeDefined();
   });
-  it('exports bid_years, bid_sessions, bid_order, bids, audit_log, ai_advisories, snapshots, writeback queue', () => {
+  it('exports bid_years, bid_sessions, bid_order, bids, audit_log, snapshots, writeback queue', () => {
     expect(schema.bidYears).toBeDefined();
     expect(schema.bidSessions).toBeDefined();
     expect(schema.bidOrder).toBeDefined();
     expect(schema.bids).toBeDefined();
     expect(schema.auditLog).toBeDefined();
-    expect(schema.aiAdvisories).toBeDefined();
+    expect('aiAdvisories' in schema).toBe(false);
     expect(schema.bidSessionSnapshots).toBeDefined();
     expect(schema.portalWritebackQueue).toBeDefined();
   });

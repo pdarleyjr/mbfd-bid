@@ -19,8 +19,6 @@ import adminRehearsal from './routes/admin/rehearsal.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
 import adminSettings from './routes/admin/settings.js';
-import aiMember from './routes/ai-member.js';
-import adminAi from './routes/ai.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
 import health from './routes/health.js';
@@ -50,8 +48,6 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin', adminPortal)
   .route('/api/admin/eligibility', adminEligibilityPreview)
   .route('/api/admin/placements', adminPlacements)
-  .route('/api/admin/ai', adminAi)
-  .route('/api/ai', aiMember)
   .route('/api/admin/rehearsal', adminRehearsal)
   .route('/api/admin/readiness', adminReadiness)
   .route('/api/admin/settings', adminSettings)
@@ -118,7 +114,7 @@ export { BidSessionDO } from './durable/bid-session.js';
 import type { MessageBatch as CfMessageBatch } from '@cloudflare/workers-types';
 
 import { handlePortalQueueBatch } from './portal-writeback/queue-handler.js';
-import { handlePortalReconciliation, handleScheduled } from './scheduled.js';
+import { handlePortalReconciliation } from './scheduled.js';
 
 // Hono app exposed as a named export so tests can call `app.request(...)`
 // directly. Wrangler boots from the default export below which wraps
@@ -132,14 +128,11 @@ const handler = {
     env: WorkerEnv,
     _ctx: ExecutionContext,
   ): Promise<void> => {
-    // Plan 08 Task 25 — dispatch based on cron pattern. The 04:15 UTC slot
-    // runs the portal reconciliation; the existing AI-forecast cron runs on
-    // every other invocation.
+    // Plan 08 Task 25 — the only retained scheduled task is the 04:15 UTC
+    // portal reconciliation. Unknown/retired cron events are ignored.
     if (event.cron === '15 4 * * *') {
       await handlePortalReconciliation(env);
-      return;
     }
-    await handleScheduled(env);
   },
   /** Plan 08 Task 22 — Cloudflare Queue consumer for portal write-backs. */
   queue: async (batch: CfMessageBatch, env: WorkerEnv, _ctx: ExecutionContext): Promise<void> => {

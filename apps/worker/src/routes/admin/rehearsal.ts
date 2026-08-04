@@ -18,12 +18,6 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
-import { WorkersAIClient } from '../../ai/client.js';
-import { checkAiGate } from '../../ai/gate.js';
-import { systemPrompt } from '../../ai/prompts/system-2026.js';
-import { rosterPrompt } from '../../ai/prompts/user-roster.js';
-import { turnPrompt, userPrompt } from '../../ai/prompts/user-turn.js';
-import { loadRosterForSession, loadTurnStateForSession } from '../../ai/session-loader.js';
 import { type DB, getDb } from '../../db/index.js';
 import {
   aDayPicks,
@@ -163,7 +157,7 @@ router.post('/:sessionId/reset-mock', async (c) => {
 
 const AutoBidBodySchema = z.object({
   count: z.number().int().positive().max(200),
-  strategy: z.enum(['ai_top', 'first_eligible']),
+  strategy: z.literal('first_eligible'),
 });
 
 async function loadActiveRulesForYear(
@@ -213,44 +207,11 @@ async function getCurrentBidderFromDO(
 }
 
 /**
- * W42 — Call the AI advisor directly (NOT via a recursive `app.fetch`) and
- * return the top-pick `position_id`. The logic mirrors `GET
- * /api/admin/ai/advise-current` minus the HTTP wrapper and the D1 advisory
- * row write (rehearsal pre-picks shouldn't be cluttering the advisories
- * table). On ANY failure path — AI gate closed, gateway error, schema
- * mismatch — we return null and the caller falls back to `first_eligible`.
- */
-async function getAiTopPick(env: WorkerEnv, sessionId: string): Promise<string | null> {
-  try {
-    const gate = await checkAiGate(env, sessionId);
-    if (!gate.ok) return null;
-    const roster = await loadRosterForSession(env, sessionId);
-    const state = await loadTurnStateForSession(env, sessionId);
-    const client = new WorkersAIClient(env);
-    const envelope = await client.adviseCurrent({
-      bidSessionId: sessionId,
-      system: systemPrompt(),
-      user: userPrompt({
-        roster: rosterPrompt(roster),
-        turn: turnPrompt({
-          ...state,
-          question: "Advise on the current bidder's upcoming pick.",
-        }),
-      }),
-    });
-    const pick = envelope.advisory.eligible_recommendations?.[0]?.position_id;
-    return typeof pick === 'string' && pick.length > 0 ? pick : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Task R5 — POST /api/admin/rehearsal/:sessionId/auto-bid
  *
  * Body: { count, strategy }
  *   count    1..200 picks to attempt
- *   strategy 'ai_top' | 'first_eligible'
+ *   strategy 'first_eligible'
  *
  * Loops up to `count` picks, finding the current bidder via the DO snapshot
  * (falls back to `bid_sessions.current_bidder_id`), evaluating eligibility
@@ -449,15 +410,8 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
         .all();
       const takenSet = new Set(taken.map((t) => t.positionId));
 
-      // Determine candidate ordering. ai_top tries the AI's top pick first;
-      // first_eligible just walks the rules in their declared order.
-      let candidatePositions = rules.map((r) => r.positionId).filter((p) => !takenSet.has(p));
-      if (body.strategy === 'ai_top') {
-        const aiTop = await getAiTopPick(c.env, sessionId);
-        if (aiTop !== null && !takenSet.has(aiTop)) {
-          candidatePositions = [aiTop, ...candidatePositions.filter((p) => p !== aiTop)];
-        }
-      }
+      // Deterministic rehearsal behavior: walk eligible rules in declaration order.
+      const candidatePositions = rules.map((r) => r.positionId).filter((p) => !takenSet.has(p));
 
       let chosenPositionId: string | null = null;
       for (const positionId of candidatePositions) {

@@ -1,13 +1,9 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToString } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { LiveCommandBar } from '../../app/admin/bid/_components/LiveCommandBar';
 
-// LiveCommandBar embeds AICostPill which uses TanStack Query — wrap every
-// render in a fresh QueryClient so SSR doesn't blow on `useQuery`.
 function ssr(node: React.ReactElement): string {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return renderToString(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
+  return renderToString(node);
 }
 
 // jsdom-free smoke tests — verify SSR markup carries the operationally
@@ -26,8 +22,6 @@ const BASE_PROPS = {
   currentBidder: null,
   currentBidderId: null,
   onDeck: [],
-  aiPanelOpen: true,
-  onToggleAiPanel: vi.fn(),
 };
 
 describe('LiveCommandBar SSR', () => {
@@ -44,19 +38,15 @@ describe('LiveCommandBar SSR', () => {
     expect(html).toMatch(/admin-action-skip[\s\S]*?text-stone-900/);
   });
 
-  it('renders the phase chip + session/turn timers + AI toggle', () => {
+  it('renders the phase chip and session/turn timers without AI controls', () => {
     const html = ssr(<LiveCommandBar {...BASE_PROPS} />);
     expect(html).toContain('position_bid');
     expect(html).toContain('data-testid="session-uptime"');
     expect(html).toContain('data-testid="turn-remaining"');
-    expect(html).toContain('data-testid="toggle-ai-panel"');
-    expect(html).toContain('>Hide AI<');
-  });
-
-  it('shows "Show AI" when the panel is closed', () => {
-    const html = ssr(<LiveCommandBar {...BASE_PROPS} aiPanelOpen={false} />);
-    expect(html).toContain('>Show AI<');
-    expect(html).not.toContain('>Hide AI<');
+    expect(html).not.toContain('toggle-ai-panel');
+    expect(html).not.toContain('AI cost');
+    expect(html).not.toContain('Show AI');
+    expect(html).not.toContain('Hide AI');
   });
 
   it('falls back to em-dash when the session has no start time', () => {

@@ -1,7 +1,6 @@
 import { formatET } from '../../../lib/et-time';
 import { requireAdmin } from '../../../lib/require-admin';
 import { serverWorkerFetch } from '../../../lib/server-worker-fetch';
-import { AIDissentMarker } from '../bid/_components/AIDissentMarker';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -166,10 +165,7 @@ export default async function AuditPage({
                 {e.actorType}
                 {e.actorId !== null ? ` #${e.actorId}` : ''}
               </td>
-              <td className="p-2 font-mono">
-                {e.action}
-                {e.action === 'dissent' && <AIDissentMarker aiAdvisoryId={e.aiAdvisoryId} />}
-              </td>
+              <td className="p-2 font-mono">{e.action}</td>
               <td className="p-2">
                 {e.targetKind !== null ? `${e.targetKind}:${e.targetId ?? ''}` : '—'}
               </td>
