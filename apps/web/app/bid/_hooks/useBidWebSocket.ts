@@ -6,6 +6,9 @@ import type { StoreApi } from 'zustand';
 import type { BidStoreState } from './useBidStore';
 
 const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000] as const;
+const OPEN_READY_STATE = 1;
+
+export type BidWebSocketStatus = 'connecting' | 'open' | 'closed';
 
 /**
  * Build the WebSocket URL.
@@ -28,9 +31,9 @@ function buildWsUrl(wsBase: string | undefined, bidSessionId: string, jwt: strin
 export function useBidWebSocket(
   store: StoreApi<BidStoreState>,
   opts: { bidSessionId: string; jwt: string; wsBase?: string | undefined },
-): { status: 'connecting' | 'open' | 'closed'; send: (data: object) => void } {
+): { status: BidWebSocketStatus; send: (data: object) => boolean } {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<'connecting' | 'open' | 'closed'>('connecting');
+  const [status, setStatus] = useState<BidWebSocketStatus>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
   const attemptRef = useRef(0);
 
@@ -93,6 +96,15 @@ export function useBidWebSocket(
 
   return {
     status,
-    send: (data) => wsRef.current?.send(JSON.stringify(data)),
+    send: (data) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== OPEN_READY_STATE) return false;
+      try {
+        ws.send(JSON.stringify(data));
+        return true;
+      } catch {
+        return false;
+      }
+    },
   };
 }

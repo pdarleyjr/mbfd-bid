@@ -31,25 +31,31 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'd1-backup-preflight.ps1')
+
 $now = Get-Date -Format 'yyyy-MM-dd-HHmm'
 $day = Get-Date -Format 'yyyy-MM-dd'
-$tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "d1-backup-$now")
-$file = Join-Path $tmp "$DbName-$now.sql"
 
-Write-Host "[d1-backup] exporting D1 $DbName ($Env) -> $file"
-& pnpm exec wrangler d1 export $DbName --env $Env --remote --output $file
-if ($LASTEXITCODE -ne 0) { throw "wrangler d1 export failed (exit $LASTEXITCODE)" }
+$result = [pscustomobject]@{ Key = $null }
+Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString('N'))" -Operation {
+  param([string]$TemporaryDirectory)
 
-$size = (Get-Item $file).Length
-if ($size -lt 1024) {
-  throw "Backup file suspiciously small: $size bytes (expected >= 1KB)"
+  $file = Join-Path $TemporaryDirectory "$DbName-$now.sql"
+
+  Write-Host "[d1-backup] exporting D1 $DbName ($Env) -> $file"
+  & pnpm exec wrangler d1 export $DbName --env $Env --remote --output $file
+  if ($LASTEXITCODE -ne 0) { throw "wrangler d1 export failed (exit $LASTEXITCODE)" }
+
+  $size = (Get-Item $file).Length
+  if ($size -lt 1024) {
+    throw "Backup file suspiciously small: $size bytes (expected >= 1KB)"
+  }
+  Write-Host "[d1-backup] dump size: $size bytes"
+
+  $result.Key = "d1/$day/$DbName-$now.sql"
+  Write-Host "[d1-backup] uploading -> r2://$BucketName/$($result.Key)"
+  & pnpm exec wrangler r2 object put "$BucketName/$($result.Key)" --file=$file --remote
+  if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object put failed (exit $LASTEXITCODE)" }
 }
-Write-Host "[d1-backup] dump size: $size bytes"
 
-$key = "d1/$day/$DbName-$now.sql"
-Write-Host "[d1-backup] uploading -> r2://$BucketName/$key"
-& pnpm exec wrangler r2 object put "$BucketName/$key" --file=$file --remote
-if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object put failed (exit $LASTEXITCODE)" }
-
-Remove-Item -Recurse -Force $tmp
-Write-Host "[d1-backup] OK -> $key"
+Write-Host "[d1-backup] OK -> $($result.Key)"

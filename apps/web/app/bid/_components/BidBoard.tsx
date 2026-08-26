@@ -49,7 +49,12 @@ export function BidBoard({
   return (
     <BidStoreProvider store={store}>
       <StationGroupedGrid members={members} />
-      <YourTurnPanel store={store} send={send} eligiblePositionIds={eligiblePositionIds} />
+      <YourTurnPanel
+        store={store}
+        send={send}
+        connectionStatus={status}
+        eligiblePositionIds={eligiblePositionIds}
+      />
       {status !== 'open' ? <ReconnectingOverlay status={status} /> : null}
       {lastError ? (
         <ErrorToast error={lastError} onClose={() => store.getState().clearError()} />

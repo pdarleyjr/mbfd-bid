@@ -63,6 +63,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Verify D1 backup preflight
+        shell: pwsh
+        run: ./scripts/test-d1-backup-preflight.ps1
       - run: pnpm test
 
   e2e:

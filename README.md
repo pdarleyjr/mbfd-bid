@@ -6,13 +6,11 @@
 [![CodeQL](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/codeql.yml/badge.svg)](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/codeql.yml)
 [![Deploy staging](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/deploy-staging.yml/badge.svg)](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/deploy-staging.yml)
 
-A fantasy-football-style live drafting platform that replaces the manual
-spreadsheet workflow used by MBFD to assign shifts each year.
+A live platform that supports the annual MBFD shift-bid process.
 
 - 🔴 PIN-gated, employee-portal-authenticated
 - 📱 Mobile-first, accessible (WCAG AA)
 - 🎯 Live multi-user via Cloudflare Durable Objects
-- 🤖 AI advisory (Anthropic Claude via Cloudflare AI Gateway)
 - 🗂️ Hash-chained immutable audit log
 - 🛰️ Action-card write-back to the existing MBFD Employee Portal
 
@@ -35,7 +33,6 @@ companion `MBFD_Hub` repository:
 | API | Cloudflare Workers · Hono · Drizzle ORM · Zod |
 | Realtime | Cloudflare Durable Objects + WebSockets |
 | Data | Cloudflare D1 (SQLite) · R2 · KV · Queues |
-| AI | Cloudflare AI Gateway → Anthropic (Claude Sonnet 4.6 + Opus 4.7) |
 | Auth | Employee Portal SSO (`/verify-credentials`) + JWT (HS256, 8h) + PIN gate |
 | Testing | Vitest · Playwright · Miniflare |
 | CI/CD | GitHub Actions · Wrangler · `@opennextjs/cloudflare` |
@@ -70,7 +67,7 @@ mbfd-bid/
 ## Deploy
 
 - Pushes to `main` → automatic staging deploy via `.github/workflows/deploy-staging.yml`
-- Production deploys are manual via `workflow_dispatch` on `deploy-production.yml`
+- No automatic production deployment is configured.
 
 ## Security
 
