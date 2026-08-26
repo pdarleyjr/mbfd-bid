@@ -12,7 +12,7 @@
 
 import { zValidator } from '@hono/zod-validator';
 import { type PositionRule, evaluateEligibility } from '@mbfd/eligibility';
-import type { JwtPayload } from '@mbfd/shared';
+import { type JwtPayload, MockFreezeCommandSchema, MockFreezeRequestSchema } from '@mbfd/shared';
 import { and, asc, desc, eq, notExists, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
@@ -41,6 +41,8 @@ type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
+
+const IdempotencyKeyHeaderSchema = z.string().uuid();
 
 interface MemberWithCreds {
   employeeId: string;
@@ -154,6 +156,52 @@ router.post('/:sessionId/mark-mock', requireStepUpAuth(), async (c) => {
   });
   return c.json({ id: sessionId, is_mock: true, idempotent: false });
 });
+
+/**
+ * Rehearsal-only command boundary proof. It gates on the existing D1 mock
+ * designation, then forwards a typed, authenticated command to the named DO.
+ * No bid_sessions freeze column is written here, and D1/R2 audit work remains
+ * outside the DO-local state/receipt transaction.
+ */
+router.post(
+  '/:sessionId/commands/freeze',
+  requireStepUpAuth(),
+  zValidator('json', MockFreezeRequestSchema),
+  async (c) => {
+    const commandId = IdempotencyKeyHeaderSchema.safeParse(c.req.header('Idempotency-Key'));
+    if (!commandId.success) return c.json({ error: 'missing_idempotency_key' }, 400);
+
+    const sessionId = c.req.param('sessionId');
+    const db = getDb(c.env.DB);
+    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (!session.isMock) return c.json({ error: 'not_a_mock_session' }, 403);
+
+    const body = c.req.valid('json');
+    const claims = c.get('claims');
+    const command = MockFreezeCommandSchema.parse({
+      v: 1,
+      type: 'mock.freeze',
+      commandId: commandId.data,
+      bidSessionId: sessionId,
+      expectedSeq: body.expectedSeq,
+      actor: { id: claims.sub, role: 'admin' },
+      reason: body.reason,
+    });
+
+    const doId = c.env.BID_SESSION.idFromName(sessionId);
+    const stub = c.env.BID_SESSION.get(doId);
+    const response = await stub.fetch('https://do/admin/commands/mock-freeze', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(command),
+    });
+    return new Response(await response.text(), {
+      status: response.status,
+      headers: { 'content-type': response.headers.get('content-type') ?? 'application/json' },
+    });
+  },
+);
 
 /**
  * Task R4 — POST /api/admin/rehearsal/:sessionId/reset-mock

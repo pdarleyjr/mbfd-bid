@@ -31,6 +31,18 @@ The directive's 16 readiness facts are represented by a shared, data-only evalua
 
 Mock rehearsals remain available to exercise the existing behavior. A session can be designated mock only with fresh step-up authority while it is still in `config` and has no picks; the route then attempts a separate audit-log write. State/audit transactional coupling and audit-chain verification are not established. They are not evidence that a live start is safe. In particular, the live route has not yet created an immutable input snapshot or initialized the Durable Object before an authoritative transition. Those gaps remain release blockers rather than conditions to bypass.
 
+### Rehearsal command-boundary proof
+
+`POST /api/admin/rehearsal/:sessionId/commands/freeze` is a deliberately
+mock-only proof path. It requires fresh admin step-up authority, reads the
+existing `is_mock` designation before contacting the named Durable Object, and
+forwards a typed command with a UUID command identifier and expected DO
+sequence. Acceptance means only that the DO-local state and private command
+receipt committed together. It does not project `bid_sessions` freeze columns,
+does not establish D1/R2 audit atomicity, and does not create a live command
+path. A rehearsal reset clears DO receipts and remains separately best-effort
+across D1 and the DO.
+
 The current Durable Object member-pick handler also receives an always-eligible placeholder instead of a decoded, frozen rule book. The HTTP policy guards do not make that handler safe by implication. A canonical live command must either evaluate a verified snapshot in the DO or delegate to a guarded Worker command before any live enablement.
 
 ## Client reconnect contract

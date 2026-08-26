@@ -72,7 +72,7 @@ export function emptyBidSessionState(bidSessionId: string): BidSessionState {
   };
 }
 
-function keyFor(bidSessionId: string): string {
+export function bidSessionStateStorageKey(bidSessionId: string): string {
   return `bs:${bidSessionId}:state`;
 }
 
@@ -80,7 +80,7 @@ export async function loadBidSessionState(
   storage: DOStorageLike,
   bidSessionId: string,
 ): Promise<BidSessionState> {
-  const persisted = await storage.get<BidSessionState>(keyFor(bidSessionId));
+  const persisted = await storage.get<BidSessionState>(bidSessionStateStorageKey(bidSessionId));
   if (!persisted) return emptyBidSessionState(bidSessionId);
   // Forward-compatibility: legacy snapshots predating Plan 07 lack `aDay`.
   return { ...persisted, aDay: persisted.aDay ?? null };
@@ -90,5 +90,5 @@ export async function persistBidSessionState(
   storage: DOStorageLike,
   state: BidSessionState,
 ): Promise<void> {
-  await storage.put<BidSessionState>(keyFor(state.bidSessionId), state);
+  await storage.put<BidSessionState>(bidSessionStateStorageKey(state.bidSessionId), state);
 }

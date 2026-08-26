@@ -3,6 +3,9 @@ import {
   BID_EVENT_VERSION,
   type BidEventEnvelope,
   ClientMessageSchema,
+  type MockFreezeCommand,
+  type MockFreezeCommandResult,
+  MockFreezeCommandSchema,
   type PickRejectedEvent,
   type StateSnapshotEvent,
 } from '@mbfd/shared';
@@ -43,6 +46,7 @@ import {
 import {
   type BidSessionState,
   type DOStorageLike,
+  bidSessionStateStorageKey,
   emptyBidSessionState,
   loadBidSessionState,
   persistBidSessionState,
@@ -56,6 +60,22 @@ interface ConnectedClient {
 
 interface IdempotencyRecord {
   envelope: BidEventEnvelope;
+}
+
+interface MockFreezeCommandReceipt {
+  fingerprint: string;
+  result: MockFreezeCommandResult;
+}
+
+interface MockFreezeCommandCommit {
+  result: MockFreezeCommandResult;
+  newState: BidSessionState | null;
+  audit: {
+    bidSessionId: string;
+    seq: number;
+    adminActorId: number;
+    reason: string;
+  } | null;
 }
 
 export class BidSessionDO implements DurableObject {
@@ -73,6 +93,22 @@ export class BidSessionDO implements DurableObject {
 
   private get storage(): DOStorageLike {
     return this.state.storage as unknown as DOStorageLike;
+  }
+
+  private mockFreezeReceiptKey(commandId: string): string {
+    return `cmd:${this.state.id.toString()}:${commandId}`;
+  }
+
+  private mockFreezeFingerprint(command: MockFreezeCommand): string {
+    return JSON.stringify({
+      v: command.v,
+      type: command.type,
+      commandId: command.commandId,
+      bidSessionId: command.bidSessionId,
+      expectedSeq: command.expectedSeq,
+      actor: command.actor,
+      reason: command.reason,
+    });
   }
 
   private async getState(): Promise<BidSessionState> {
@@ -388,6 +424,29 @@ export class BidSessionDO implements DurableObject {
       const result = await this.adminFreeze(body);
       return new Response(JSON.stringify(result), {
         status: result.ok ? 200 : 409,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.pathname === '/admin/commands/mock-freeze') {
+      let raw: unknown;
+      try {
+        raw = await req.json();
+      } catch {
+        return new Response(JSON.stringify({ error: 'invalid_mock_freeze_command' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      const parsed = MockFreezeCommandSchema.safeParse(raw);
+      if (!parsed.success) {
+        return new Response(JSON.stringify({ error: 'invalid_mock_freeze_command' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      const result = await this.adminMockFreezeCommand(parsed.data);
+      return new Response(JSON.stringify(result), {
+        status: result.kind === 'accepted' ? 200 : 409,
         headers: { 'content-type': 'application/json' },
       });
     }
@@ -710,6 +769,108 @@ export class BidSessionDO implements DurableObject {
       );
       this.broadcast(envelope);
       return { ok: true, envelope };
+    });
+  }
+
+  /**
+   * Rehearsal-only canonical command proof. The receipt and state update share
+   * a DO-local transaction; the subsequent D1/R2 audit work remains explicitly
+   * best-effort and is not part of this command's acceptance condition.
+   */
+  async adminMockFreezeCommand(command: MockFreezeCommand): Promise<MockFreezeCommandResult> {
+    return this.state.blockConcurrencyWhile(async () => {
+      const state = await this.getState();
+      const namedSessionId = this.state.id.name ?? this.state.id.toString();
+      if (command.bidSessionId !== namedSessionId) {
+        return {
+          kind: 'rejected',
+          commandId: command.commandId,
+          code: 'SESSION_ID_MISMATCH',
+          currentSeq: state.lastSeq,
+        };
+      }
+
+      const receiptKey = this.mockFreezeReceiptKey(command.commandId);
+      const fingerprint = this.mockFreezeFingerprint(command);
+      const commit = await this.state.storage.transaction<MockFreezeCommandCommit>(async (txn) => {
+        const prior = await txn.get<MockFreezeCommandReceipt>(receiptKey);
+        if (prior) {
+          if (prior.fingerprint === fingerprint) {
+            return { result: prior.result, newState: null, audit: null };
+          }
+          return {
+            result: {
+              kind: 'rejected',
+              commandId: command.commandId,
+              code: 'COMMAND_ID_REUSED',
+              currentSeq: state.lastSeq,
+            },
+            newState: null,
+            audit: null,
+          };
+        }
+
+        if (command.expectedSeq !== state.lastSeq) {
+          const result: MockFreezeCommandResult = {
+            kind: 'rejected',
+            commandId: command.commandId,
+            code: 'STALE_SEQUENCE',
+            currentSeq: state.lastSeq,
+          };
+          await txn.put(receiptKey, { fingerprint, result } satisfies MockFreezeCommandReceipt);
+          return { result, newState: null, audit: null };
+        }
+
+        const frozen = handleFreeze(state, this.handlerEnv(), {
+          adminActorId: command.actor.id,
+          reason: command.reason,
+        });
+        if (frozen.kind === 'rejected') {
+          const result: MockFreezeCommandResult = {
+            kind: 'rejected',
+            commandId: command.commandId,
+            code: 'SESSION_FROZEN',
+            currentSeq: state.lastSeq,
+          };
+          await txn.put(receiptKey, { fingerprint, result } satisfies MockFreezeCommandReceipt);
+          return { result, newState: null, audit: null };
+        }
+
+        const envelope = this.envelope('freeze', frozen.event.payload, frozen.newState.lastSeq);
+        const result: MockFreezeCommandResult = {
+          kind: 'accepted',
+          commandId: command.commandId,
+          seq: frozen.newState.lastSeq,
+          envelope,
+        };
+        await txn.put(bidSessionStateStorageKey(frozen.newState.bidSessionId), frozen.newState);
+        await txn.put(receiptKey, { fingerprint, result } satisfies MockFreezeCommandReceipt);
+        return {
+          result,
+          newState: frozen.newState,
+          audit: {
+            bidSessionId: command.bidSessionId,
+            seq: frozen.newState.lastSeq,
+            adminActorId: command.actor.id,
+            reason: command.reason,
+          },
+        };
+      });
+
+      if (commit.newState === null || commit.audit === null) return commit.result;
+
+      this.memoryState = commit.newState;
+      await this.writeAudit(
+        auditEntryForFreeze({
+          bidSessionId: commit.audit.bidSessionId,
+          seq: commit.audit.seq,
+          adminActorId: commit.audit.adminActorId,
+          reason: commit.audit.reason,
+          nowMs: Date.now(),
+        }),
+      );
+      if (commit.result.kind === 'accepted') this.broadcast(commit.result.envelope);
+      return commit.result;
     });
   }
 
