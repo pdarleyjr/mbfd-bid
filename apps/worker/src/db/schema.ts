@@ -1,4 +1,5 @@
 import {
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -442,25 +443,23 @@ export const rehearsalFindings = sqliteTable(
 
 // ── Bid V2 canonical staffing/import foundation — migration 0021 ────────────
 //
-// These tables are deliberately source-backed drafts. They do not turn a
-// legacy `positions` row, an observed occupant, or a Bid award into an
-// authorized staffing slot. Import rows use hashes/fingerprints rather than
-// raw TeleStaff/personnel material.
+// The source model deliberately separates MBFD-owned authorized slots from
+// source-system mappings, immutable observations, and effective-dated
+// authoritative assignments. Import rows contain only opaque references and
+// normalized topology, never raw TeleStaff/personnel material.
 export const staffingPositions = sqliteTable(
   'staffing_positions',
   {
     id: text('id').primaryKey().notNull(),
-    sourceSystem: text('source_system').notNull(),
-    sourceRecordKey: text('source_record_key').notNull(),
-    sourceVersion: text('source_version').notNull(),
-    sourceHash: text('source_hash').notNull(),
+    stableSlotKey: text('stable_slot_key').notNull(),
     division: text('division'),
+    shift: text('shift'),
     station: text('station'),
     unit: text('unit'),
     positionName: text('position_name'),
-    shift: text('shift'),
-    // Source-system A/R-day notation, deliberately distinct from Bid A-Day.
-    aRDay: text('a_r_day'),
+    applicableRank: text('applicable_rank'),
+    activeFrom: text('active_from'),
+    activeTo: text('active_to'),
     reviewStatus: text('review_status', { enum: ['draft', 'approved', 'retired'] })
       .notNull()
       .default('draft'),
@@ -468,12 +467,43 @@ export const staffingPositions = sqliteTable(
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (t) => ({
-    sourceIdentityUnique: uniqueIndex('staffing_positions_source_identity_unique').on(
-      t.sourceSystem,
-      t.sourceRecordKey,
-      t.sourceVersion,
+    stableSlotKeyUnique: uniqueIndex('staffing_positions_stable_slot_key_unique').on(
+      t.stableSlotKey,
     ),
     reviewStatusIdx: index('idx_staffing_positions_review_status').on(t.reviewStatus),
+  }),
+);
+
+export const staffingPositionSourceMappings = sqliteTable(
+  'staffing_position_source_mappings',
+  {
+    id: text('id').primaryKey().notNull(),
+    staffingPositionId: text('staffing_position_id')
+      .notNull()
+      .references(() => staffingPositions.id, { onDelete: 'restrict' }),
+    sourceSystem: text('source_system').notNull(),
+    sourceLocator: text('source_locator').notNull(),
+    sourceSignature: text('source_signature').notNull(),
+    sourceVersion: text('source_version').notNull(),
+    sourceHash: text('source_hash').notNull(),
+    effectiveFrom: text('effective_from').notNull(),
+    effectiveTo: text('effective_to'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    locatorUnique: uniqueIndex('staffing_position_source_mapping_locator_unique').on(
+      t.sourceSystem,
+      t.sourceLocator,
+      t.effectiveFrom,
+    ),
+    slotEffectiveIdx: index('idx_staffing_position_source_mappings_slot_effective').on(
+      t.staffingPositionId,
+      t.effectiveFrom,
+    ),
+    idPositionUnique: uniqueIndex('staffing_position_source_mappings_id_position_unique').on(
+      t.id,
+      t.staffingPositionId,
+    ),
   }),
 );
 
@@ -513,9 +543,16 @@ export const assignmentImportRows = sqliteTable(
     rowFingerprint: text('row_fingerprint').notNull(),
     // HMAC-SHA-256 reference; never a plain hash of a personnel identifier.
     memberReferenceHmac: text('member_reference_hmac'),
-    staffingPositionId: text('staffing_position_id').references(() => staffingPositions.id, {
+    resolvedMemberId: integer('resolved_member_id').references(() => members.id, {
       onDelete: 'restrict',
     }),
+    staffingPositionSourceMappingId: text('staffing_position_source_mapping_id').references(
+      () => staffingPositionSourceMappings.id,
+      { onDelete: 'restrict' },
+    ),
+    // Source-system A/R-day notation, deliberately distinct from Bid A-Day.
+    sourceARDay: text('source_a_r_day'),
+    normalizedSourceTopology: text('normalized_source_topology').notNull(),
     disposition: text('disposition', {
       enum: [
         'unchanged',
@@ -528,10 +565,16 @@ export const assignmentImportRows = sqliteTable(
     })
       .notNull()
       .default('ambiguous_mapping'),
+    reviewStatus: text('review_status', {
+      enum: ['not_required', 'pending', 'approved', 'rejected'],
+    })
+      .notNull()
+      .default('pending'),
     reviewedAt: integer('reviewed_at', { mode: 'timestamp_ms' }),
     reviewedByMemberId: integer('reviewed_by_member_id').references(() => members.id, {
       onDelete: 'restrict',
     }),
+    resolutionReason: text('resolution_reason'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (t) => ({
@@ -542,7 +585,78 @@ export const assignmentImportRows = sqliteTable(
     importDispositionIdx: index('idx_assignment_import_rows_disposition').on(
       t.importId,
       t.disposition,
+      t.reviewStatus,
     ),
+    idImportUnique: uniqueIndex('assignment_import_rows_id_import_unique').on(t.id, t.importId),
+    idMemberUnique: uniqueIndex('assignment_import_rows_id_member_unique').on(
+      t.id,
+      t.resolvedMemberId,
+    ),
+    idMappingUnique: uniqueIndex('assignment_import_rows_id_mapping_unique').on(
+      t.id,
+      t.staffingPositionSourceMappingId,
+    ),
+  }),
+);
+
+export const assignmentObservations = sqliteTable(
+  'assignment_observations',
+  {
+    id: text('id').primaryKey().notNull(),
+    assignmentImportId: text('assignment_import_id')
+      .notNull()
+      .references(() => assignmentImports.id, { onDelete: 'restrict' }),
+    assignmentImportRowId: text('assignment_import_row_id').notNull(),
+    memberId: integer('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    staffingPositionId: text('staffing_position_id')
+      .notNull()
+      .references(() => staffingPositions.id, { onDelete: 'restrict' }),
+    staffingPositionSourceMappingId: text('staffing_position_source_mapping_id').notNull(),
+    sourceARDay: text('source_a_r_day'),
+    normalizedSourceTopology: text('normalized_source_topology').notNull(),
+    observedAt: integer('observed_at', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    importRowUnique: uniqueIndex('assignment_observations_import_row_unique').on(
+      t.assignmentImportRowId,
+    ),
+    memberObservedIdx: index('idx_assignment_observations_member_observed').on(
+      t.memberId,
+      t.observedAt,
+    ),
+    positionObservedIdx: index('idx_assignment_observations_position_observed').on(
+      t.staffingPositionId,
+      t.observedAt,
+    ),
+    importRowImportFk: foreignKey({
+      columns: [t.assignmentImportRowId, t.assignmentImportId],
+      foreignColumns: [assignmentImportRows.id, assignmentImportRows.importId],
+      name: 'assignment_observations_import_row_import_fkey',
+    }).onDelete('restrict'),
+    importRowMemberFk: foreignKey({
+      columns: [t.assignmentImportRowId, t.memberId],
+      foreignColumns: [assignmentImportRows.id, assignmentImportRows.resolvedMemberId],
+      name: 'assignment_observations_import_row_member_fkey',
+    }).onDelete('restrict'),
+    importRowMappingFk: foreignKey({
+      columns: [t.assignmentImportRowId, t.staffingPositionSourceMappingId],
+      foreignColumns: [
+        assignmentImportRows.id,
+        assignmentImportRows.staffingPositionSourceMappingId,
+      ],
+      name: 'assignment_observations_import_row_mapping_fkey',
+    }).onDelete('restrict'),
+    mappingPositionFk: foreignKey({
+      columns: [t.staffingPositionSourceMappingId, t.staffingPositionId],
+      foreignColumns: [
+        staffingPositionSourceMappings.id,
+        staffingPositionSourceMappings.staffingPositionId,
+      ],
+      name: 'assignment_observations_mapping_position_fkey',
+    }).onDelete('restrict'),
   }),
 );
 
@@ -556,68 +670,41 @@ export const memberAssignments = sqliteTable(
     staffingPositionId: text('staffing_position_id')
       .notNull()
       .references(() => staffingPositions.id, { onDelete: 'restrict' }),
-    sourceImportId: text('source_import_id')
+    originType: text('origin_type', {
+      enum: [
+        'TELESTAFF_IMPORT',
+        'BID_AWARD',
+        'MID_CYCLE_VACANCY',
+        'ADMIN_TRANSFER',
+        'PROMOTION',
+        'CORRECTION',
+      ],
+    }).notNull(),
+    originRef: text('origin_ref').notNull(),
+    sourceObservationId: text('source_observation_id').references(() => assignmentObservations.id, {
+      onDelete: 'restrict',
+    }),
+    status: text('status', {
+      enum: ['planned', 'active', 'superseded', 'cancelled', 'ended'],
+    })
       .notNull()
-      .references(() => assignmentImports.id, { onDelete: 'restrict' }),
-    observedAt: integer('observed_at', { mode: 'timestamp_ms' }).notNull(),
-    effectiveFrom: text('effective_from'),
+      .default('planned'),
+    effectiveFrom: text('effective_from').notNull(),
     effectiveTo: text('effective_to'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (t) => ({
-    memberObservedIdx: index('idx_member_assignments_member_observed').on(t.memberId, t.observedAt),
-    positionObservedIdx: index('idx_member_assignments_position_observed').on(
-      t.staffingPositionId,
-      t.observedAt,
-    ),
-  }),
-);
-
-export const assignmentAliases = sqliteTable(
-  'assignment_aliases',
-  {
-    id: text('id').primaryKey().notNull(),
-    sourceSystem: text('source_system').notNull(),
-    sourceAlias: text('source_alias').notNull(),
-    staffingPositionId: text('staffing_position_id')
-      .notNull()
-      .references(() => staffingPositions.id, { onDelete: 'restrict' }),
-    sourceImportId: text('source_import_id').references(() => assignmentImports.id, {
-      onDelete: 'restrict',
-    }),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-  },
-  (t) => ({
-    sourceAliasUnique: uniqueIndex('assignment_aliases_source_unique').on(
-      t.sourceSystem,
-      t.sourceAlias,
-    ),
-  }),
-);
-
-export const assignmentServiceHistory = sqliteTable(
-  'assignment_service_history',
-  {
-    id: text('id').primaryKey().notNull(),
-    memberId: integer('member_id')
-      .notNull()
-      .references(() => members.id, { onDelete: 'restrict' }),
-    staffingPositionId: text('staffing_position_id').references(() => staffingPositions.id, {
-      onDelete: 'restrict',
-    }),
-    sourceImportId: text('source_import_id').references(() => assignmentImports.id, {
-      onDelete: 'restrict',
-    }),
-    sourceHash: text('source_hash').notNull(),
-    recordKind: text('record_kind', { enum: ['assignment', 'service'] }).notNull(),
-    effectiveFrom: text('effective_from'),
-    effectiveTo: text('effective_to'),
-    recordedAt: integer('recorded_at', { mode: 'timestamp_ms' }).notNull(),
-  },
-  (t) => ({
-    memberRecordedIdx: index('idx_assignment_service_history_member_recorded').on(
+    memberEffectiveIdx: index('idx_member_assignments_member_effective').on(
       t.memberId,
-      t.recordedAt,
+      t.effectiveFrom,
+    ),
+    positionEffectiveIdx: index('idx_member_assignments_position_effective').on(
+      t.staffingPositionId,
+      t.effectiveFrom,
+    ),
+    sourceObservationUnique: uniqueIndex('member_assignments_source_observation_unique').on(
+      t.sourceObservationId,
     ),
   }),
 );

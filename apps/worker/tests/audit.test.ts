@@ -87,9 +87,20 @@ function makeTestDb() {
   return { sqlite, d1 };
 }
 
+function seedBidSessions(sqlite: Database.Database, ...sessionIds: string[]): void {
+  sqlite.prepare('INSERT INTO bid_years (year, status) VALUES (?, ?)').run(2026, 'draft');
+  const insertSession = sqlite.prepare(
+    'INSERT INTO bid_sessions (id, bid_year, started_at, current_phase) VALUES (?, ?, ?, ?)',
+  );
+  for (const sessionId of sessionIds) {
+    insertSession.run(sessionId, 2026, 1, 'config');
+  }
+}
+
 describe('writeAuditLog', () => {
   it('inserts a row with monotonic seq scoped to bid_session_id', async () => {
-    const { d1 } = makeTestDb();
+    const { sqlite, d1 } = makeTestDb();
+    seedBidSessions(sqlite, 'session-abc', 'session-xyz');
     const db = getDb(d1);
 
     const a = await writeAuditLog(db, {
@@ -174,7 +185,8 @@ describe('writeAuditLog', () => {
   });
 
   it('null scope and session scope do not share seq counters', async () => {
-    const { d1 } = makeTestDb();
+    const { sqlite, d1 } = makeTestDb();
+    seedBidSessions(sqlite, 'session-001');
     const db = getDb(d1);
 
     await writeAuditLog(db, {

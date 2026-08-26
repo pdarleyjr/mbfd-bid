@@ -1,4 +1,6 @@
-PRAGMA foreign_keys=off;
+-- Cloudflare D1 always enforces foreign keys. Defer checks only for this
+-- schema-rebuild transaction; never leave the local SQLite connection unguarded.
+PRAGMA defer_foreign_keys=on;
 --> statement-breakpoint
 CREATE TABLE `audit_log_new` (
 	`id` text PRIMARY KEY NOT NULL,

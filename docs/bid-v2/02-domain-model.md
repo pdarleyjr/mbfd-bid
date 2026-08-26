@@ -34,23 +34,70 @@ These anchors are implementation evidence, not approval of the currently seeded 
 
 ## Additive source-only foundation (migration 0021; not deployed)
 
-The V2 branch now defines these separate tables without replacing the legacy
+The V2 branch defines the following separation without replacing the legacy
 `positions`/`position_rules` model:
 
-- `staffing_positions` — source-versioned, reviewed operational topology; its
-  `a_r_day` field is source terminology and must not be interpreted as a Bid
-  A-Day selection.
-- `assignment_imports` and `assignment_import_rows` — staged source evidence
-  and complete reconciliation dispositions. A committed import requires both
-  an approving member and approval timestamp at the database boundary.
-- `member_assignments` — observed, effective-dated assignment records linked
-  to a source import, not bid awards or capacity.
-- `assignment_aliases` and `assignment_service_history` — provenance-preserving
-  reconciliation and historical context.
+- `staffing_positions` — the MBFD-owned authorized operational slot. Its
+  unique `stable_slot_key` and topology/effective dates are independent of a
+  TeleStaff export, current occupant, source version, or source A/R Day. A
+  slot key is immutable and represents one explicit authorized seat; a pool or
+  multi-seat opportunity must be modeled explicitly rather than inferred from
+  concurrent source occupancy.
+- `staffing_position_source_mappings` — an effective-dated, source-backed
+  description of a canonical slot. A mapping uses the complete normalized
+  locator/signature plus source version/hash; digests are text-only lowercase
+  hexadecimal SHA-256-style values and effective dates are canonical ISO
+  calendar dates.
+  Short global aliases are not a valid identity mechanism. A normalized source
+  system/locator has exactly one effective mapping at a time, even if its
+  signature changes.
+- `assignment_imports` and `assignment_import_rows` — staged source evidence,
+  including source A/R Day, normalized topology, a keyed opaque
+  member-reference HMAC, resolved internal member/mapping references, complete
+  reconciliation disposition, and reviewer evidence where required. Non-null
+  fingerprints and HMACs are text-only lowercase hexadecimal values; source
+  versions reject common surrounding whitespace. The import manifest (identity,
+  source system/version/hash, declared count, and creation time) is immutable
+  at creation. An import must traverse
+  `staged → reviewed → approved → committed` (or terminate as `rejected`);
+  approval is refused until the reconciled row set and count are complete.
+- `assignment_observations` — immutable evidence that a particular imported
+  row observed a resolved member in a canonical slot at a point in time. An
+  observation can only be inserted after its import is committed and must
+  match that row's import, resolved member, source mapping, canonical slot,
+  source A/R Day, and normalized topology. It cannot be updated, deleted, or
+  conflict-replaced.
+- `member_assignments` — MBFD Bid's authoritative effective-dated assignment
+  model. It records a generic `origin_type`/`origin_ref` and lifecycle status,
+  so a future `BID_AWARD` can exist before it appears in TeleStaff. Only a
+  `TELESTAFF_IMPORT` assignment must carry a matching immutable
+  `source_observation_id`; non-source origins must not pretend to be source
+  observations. A TeleStaff materialization is append-only for its identity,
+  provenance, member, slot, observation, and effective start: it may be ended
+  or superseded, but never deleted, retyped, or conflict-replaced. A correction
+  must be a separate `CORRECTION` record. Assignments require an approved or
+  historically retired slot within that slot's active range.
 
-Import rows hold a row fingerprint and optional keyed opaque member-reference
-HMAC, never a raw employee identifier or an unsalted identifier hash. The
+Source A/R Day remains source-assignment data on staged rows and immutable
+observations. It is not a canonical slot property and is not treated as the
+Bid's G1/G2/G3/G4 A-Day award. An authoritative mapping between those concepts
+is still a policy blocker.
+
+The reconciliation contract classifies `unchanged` as informational;
+`moved`, `new_combination`, and `missing_vanished` as review-required; and
+`unknown_employee` and `ambiguous_mapping` as blocking. It fails closed while
+blocking rows exist or a review-required row lacks an explicit human approval
+or rejection with reviewer, timestamp, and reason. The database also rejects a
+approval or commit unless the declared source-row count matches the staged rows,
+and freezes human-reviewed rows/mappings and all approved, committed, or
+rejected import evidence. The same guards reject SQLite conflict-replacement
+writes that would otherwise bypass delete triggers. A rejected source row is
+still evidence, not an automatic vacancy or authorized-slot deletion.
+
+Import rows hold no raw employee identifier or unsalted identity hash. The
 current foundation deliberately has no parser, reviewer route, approval
-workflow, assignment commit service, vacancy inference, or bid-opportunity
-creation. Those require an approved sanitized baseline and independent policy
-decisions.
+workflow, transactional assignment-commit service, vacancy inference, or
+bid-opportunity creation. In particular, source-version/hash compatibility and
+the source-effective-date rule for selecting an effective mapping are not yet
+authorized; importer implementation remains blocked pending those policy
+decisions and an approved sanitized baseline.
