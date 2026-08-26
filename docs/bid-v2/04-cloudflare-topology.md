@@ -22,3 +22,17 @@ Read-only authenticated inspection found a Bid-related Worker and Pages project.
 ## Mutation gate
 
 Before any Bid cloud change, record current Worker version, Pages deployment, route/domain, D1 schema and bookmark/backup status, binding ownership, rollback reference, and Media Control precheck where shared infrastructure could be involved. Never modify a shared tunnel, DNS record, Access application, or unknown resource for Bid convenience.
+
+## Adapter-spike decision
+
+An isolated, local-only OpenNext/Workers spike built successfully on Linux/WSL
+with patched Next 15.5.24 and `@opennextjs/cloudflare` 1.20.3. The equivalent
+Windows-native Worker bundle failed at the `sharp` native-binary boundary, so
+Windows is not an acceptance environment. No Worker, route, hostname, Pages
+project, D1 binding, or deployment was created or changed by the spike.
+
+Vinext's official source-compatibility check reported 94% compatibility, but
+Vinext targets the Next 16 migration line. For the existing Next 15 Bid app,
+OpenNext is the candidate path. It remains blocked on an independent clean
+Linux CI check and an explicitly authorized Bid-only, no-route runtime
+deployment; neither gate permits a shared Cloudflare or Media Control change.
