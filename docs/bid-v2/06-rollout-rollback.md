@@ -4,7 +4,14 @@
 
 No staging or production rollout is authorized from this baseline. The repository has unresolved test, policy, security, workflow, and topology gates.
 
-**Fail-closed backup gate:** every observed Actions D1-backup run failed before calling Wrangler because the script relied on an unset runner `TEMP` variable. Until the source fix, a manually authorized staging backup, object/hash/size verification, and a disposable restore test all pass, no D1-mutating rollout has rollback proof.
+**D1 recovery evidence:** the source preflight was corrected and an authorized
+staging export was imported into a disposable Bid-only D1. Schema, migration
+ledger, queryable table counts, and foreign-key results were compared; the
+disposable database was migrated by raw 0020 SQL and restored through D1 Time
+Travel before deletion. The actual staging database was never restored or
+migrated. This proves a controlled recovery procedure, but not a managed
+staging migration: raw execution did not advance the migration ledger and the
+temporary export still requires secure manual deletion.
 
 The current staging-deploy workflow applies remote D1 migrations without a pre-migration backup checkpoint. Do not repair that ordering by adding an unverified automated backup call; first prove the repair and restore procedure in a controlled staging operation.
 

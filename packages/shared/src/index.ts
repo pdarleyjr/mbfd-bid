@@ -20,6 +20,7 @@ export * from './schemas/audit-chunk.js';
 // Plan 08 — portal write-back payload (shared by producer + consumer + tests).
 export * from './schemas/portal-payload.js';
 export * from './live-readiness.js';
+export * from './assignment-reconciliation.js';
 
 // A-Day Phase 2 schemas. `Shift` is re-exported from constants/shifts.js — to avoid
 // a duplicate identifier, we export the Zod schema and the additional types directly.

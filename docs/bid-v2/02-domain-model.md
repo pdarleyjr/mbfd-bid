@@ -31,3 +31,26 @@
 - Worker session/route/migration implementation: `apps/worker/`.
 
 These anchors are implementation evidence, not approval of the currently seeded rule values.
+
+## Additive source-only foundation (migration 0021; not deployed)
+
+The V2 branch now defines these separate tables without replacing the legacy
+`positions`/`position_rules` model:
+
+- `staffing_positions` — source-versioned, reviewed operational topology; its
+  `a_r_day` field is source terminology and must not be interpreted as a Bid
+  A-Day selection.
+- `assignment_imports` and `assignment_import_rows` — staged source evidence
+  and complete reconciliation dispositions. A committed import requires both
+  an approving member and approval timestamp at the database boundary.
+- `member_assignments` — observed, effective-dated assignment records linked
+  to a source import, not bid awards or capacity.
+- `assignment_aliases` and `assignment_service_history` — provenance-preserving
+  reconciliation and historical context.
+
+Import rows hold a row fingerprint and optional keyed opaque member-reference
+HMAC, never a raw employee identifier or an unsalted identifier hash. The
+current foundation deliberately has no parser, reviewer route, approval
+workflow, assignment commit service, vacancy inference, or bid-opportunity
+creation. Those require an approved sanitized baseline and independent policy
+decisions.

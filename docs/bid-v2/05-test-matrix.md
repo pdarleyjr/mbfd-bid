@@ -4,12 +4,12 @@
 
 | Area | Current result | Required action |
 | --- | --- | --- |
-| Shared schemas and readiness contract | `evaluateLiveReadiness` passes 7 focused synthetic tests: ready, warning, explicit block, missing fact, absent required fact, duplicate fact, and unknown runtime status. | Implement independently verified Worker fact providers before treating a report as ready. |
+| Shared schemas and readiness contract | 17 files / 132 passing local tests, including `evaluateLiveReadiness` and the V2 assignment-reconciliation accounting contract. | Implement independently verified Worker fact providers before treating a report as ready; obtain an approved sanitized TeleStaff baseline before parser coverage. |
 | Eligibility primitives | Passing; golden replay has opt-in skips | Add only policy-verified golden tests. |
 | A-Day primitives | Passing | Add capacity/occupancy and role-specific edge cases. |
-| Worker suite | Current branch: 100 deterministic files, 559 passed, 1 opt-in skip; five serial `unstable_dev` launcher files, 24 passed. The live-start guard, policy-book validation, revision-guarded publication, atomic clone creation, context-bound eligibility selection, mock-designation guard, and persisted-rule decoder are covered by synthetic integration/unit cases. | Obtain CI evidence; preserve separate launcher visibility rather than masking future startup failures. |
+| Worker suite | Current branch: 101 deterministic files, 567 passed, 1 opt-in skip; five serial `unstable_dev` launcher files, 24 passed. The suite includes migration-0021 pristine-schema, human-approval chronology, A/R-day terminology, and opaque-reference tests. | Obtain CI evidence for the updated source; preserve separate launcher visibility rather than masking future startup failures. |
 | Web unit suite | Current branch: 15 files, 64 passed, including reconnect/no-send safety coverage and retired-AI reference checks. | Extend only with behavior-backed contracts. |
-| Root unit/integration suite | Current `pnpm test`: 156 files, 922 passed, 4 opt-in skips. | CI evidence remains required. |
+| Root unit/integration suite | Current local `pnpm test`: 158 files, 933 passed, 4 opt-in skips; `pnpm build`, lint, and typecheck also completed with exit code 0. PR CI passed for the prior remote checkpoint; CodeQL upload was blocked by repository settings. | Push a reviewed follow-up source checkpoint to obtain CI evidence for this exact HEAD after resolving the CodeQL repository gate. |
 | E2E | Stale selectors/manual workflow | Repair before operational acceptance. |
 
 ## Required coverage matrix
