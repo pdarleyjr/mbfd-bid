@@ -117,6 +117,109 @@ describe('POST /api/admin/eligibility/preview', () => {
     expect(body.eligible).toBe(true);
   });
 
+  it('requires an explicit version when more than one annual book is active', async () => {
+    await h.db.run(
+      "INSERT INTO rule_books (version, effective_year, status) VALUES ('2027.1', 2027, 'active');",
+    );
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2027.1', 'A205', '2027.1',
+         '{"rank":["LT"],"credentials":[],"custom":[]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/eligibility/preview', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ member_id: 80, position_id: 'A205' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: 'active_rule_book_ambiguous',
+      rule_book_version_required: true,
+    });
+  });
+
+  it('blocks a preview when another rule in the selected book is invalid', async () => {
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2026.1', 'B101', '2026.1',
+         '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/eligibility/preview', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ member_id: 80, position_id: 'A205' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: 'rule_book_invalid',
+      invalid_position_ids: ['B101'],
+    });
+  });
+
+  it('does not award Technician points when the all-six Operations gate is incomplete', async () => {
+    const operations = [
+      'Hazardous Materials Operations',
+      'Rope Rescue Operations',
+      'Confined Space Operations',
+      'Structural Collapse Operations',
+      'Trench Rescue Operations',
+      'Vehicle & Machinery Rescue Operations',
+    ];
+    const held = [
+      'Rope Rescue Technician',
+      ...operations.filter((name) => name !== 'Trench Rescue Operations'),
+    ];
+    for (const [index, name] of held.entries()) {
+      await h.db.run('INSERT INTO credentials (id, name) VALUES (?, ?);', [index + 1, name]);
+      await h.db.run('INSERT INTO member_credentials (member_id, credential_id) VALUES (80, ?);', [
+        index + 1,
+      ]);
+    }
+    await h.db.run(
+      `UPDATE position_rules
+       SET points_preference = '{"max":2,"items":[{"points":2,"credential":"Rope Rescue Technician","gating":"ops_all_6"}]}'
+       WHERE position_id = 'A205' AND rule_book_version = '2026.1';`,
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/eligibility/preview', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ member_id: 80, position_id: 'A205' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { points: number };
+    expect(body.points).toBe(0);
+  });
+
   it('returns 404 when no active rule book is found and version omitted', async () => {
     await h.db.run("UPDATE rule_books SET status = 'archived' WHERE version = '2026.1';");
     const res = await app.fetch(

@@ -8,10 +8,10 @@
 | Current assignment | A person's effective-dated operational placement. | A bid award alone. |
 | Bid opportunity | A selectable annual-Bid item: specific position, station pool, float pool, Days specialty, or overlay. | A staffing slot or current occupant. |
 
-## Required aggregates
+## Target aggregates (not a statement of current persistence)
 
-- **Policy version:** source hashes, version, approval state, validated rule definitions, and immutable published snapshots.
-- **Bid year/session:** phase, mock/live isolation, canonical event sequence, active/deferred turn state, frozen inputs, and audit references.
+- **Policy version:** source hashes, version, approval state, validated rule definitions, and immutable published snapshots. The current schema has version/status/revision metadata only; immutable policy snapshot persistence remains a release blocker.
+- **Bid year/session:** phase, mock/live isolation, canonical event sequence, active/deferred turn state, frozen inputs, and audit references. Freeze-input capture and canonical audit sequencing are not implemented for live use.
 - **Member eligibility snapshot:** rank, seniority inputs, credentials, specialty score inputs, provenance, and evaluation date.
 - **Opportunity:** type, topology, capacity/seat semantics, eligibility requirements, constraints, and lifecycle status.
 - **Award and transition:** selected opportunity, reasoning, audit command, current/effective future assignment, publication state, and reconciliation result.

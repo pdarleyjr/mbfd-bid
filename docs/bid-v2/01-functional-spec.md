@@ -14,7 +14,7 @@ MBFD Bid v2 is an administrator-operated, deterministic annual Bid and specialty
 - User interfaces must not report a pick as pending or accepted unless it entered the canonical mutation path.
 - AI may explain approved deterministic results only. It must not decide or mutate live Bid state.
 
-## Lifecycle
+## Target lifecycle (not accepted as current behavior)
 
 1. Import and reconcile staffing, credentials, and policy sources into reviewed drafts.
 2. Configure opportunities and constraints from a versioned policy.
@@ -22,6 +22,10 @@ MBFD Bid v2 is an administrator-operated, deterministic annual Bid and specialty
 4. Run an isolated mock or an administrator-supervised live session.
 5. Award, review, explicitly publish future assignment transitions, export, and archive.
 6. Handle mid-cycle vacancies through a separate effective-dated workflow.
+
+Steps 3–5 require immutable input and policy snapshots plus canonical
+command-and-audit evidence. Neither is established by the current direct-D1
+or HTTP implementation.
 
 ## Current safe implementation priorities
 

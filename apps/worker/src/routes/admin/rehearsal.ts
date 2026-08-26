@@ -7,14 +7,13 @@
 //   POST   /api/admin/rehearsal/findings               (Task R6)
 //   GET    /api/admin/rehearsal/findings?session_id=…  (Task R6)
 //
-// All routes require admin role (`requireAdmin`). Mark-mock is intentionally
-// NOT behind `requireStepUpAuth` because it is a no-op until the operator
-// also runs reset-mock / auto-bid (which themselves are 403 unless is_mock=1).
+// All routes require admin role (`requireAdmin`). Mark-mock is a privileged,
+// audited reclassification and therefore also requires fresh step-up auth.
 
 import { zValidator } from '@hono/zod-validator';
 import { type PositionRule, evaluateEligibility } from '@mbfd/eligibility';
 import type { JwtPayload } from '@mbfd/shared';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, notExists, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
@@ -33,6 +32,8 @@ import {
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
+import { decodeRuleBookRows } from '../../lib/position-rule.js';
+import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -76,14 +77,14 @@ async function loadMemberWithCreds(db: DB, memberId: number): Promise<MemberWith
 /**
  * Task R3 — POST /api/admin/rehearsal/:sessionId/mark-mock
  *
- * Idempotently sets `bid_sessions.is_mock = 1` for the given session. This
- * MUST be done BEFORE any picks happen — once a session is marked mock, the
- * portal-writeback consumer (Task R8) will skip every bid in it.
+ * Idempotently sets `bid_sessions.is_mock = 1` only while a session is still
+ * in config and has no picks. Once a session has started, it can never be
+ * reclassified to evade live-start or portal-writeback protections.
  *
  * Returns 404 if the session does not exist. 200 on success (whether or not
  * it was already marked).
  */
-router.post('/:sessionId/mark-mock', async (c) => {
+router.post('/:sessionId/mark-mock', requireStepUpAuth(), async (c) => {
   const sessionId = c.req.param('sessionId');
   const db = getDb(c.env.DB);
   const s = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
@@ -91,7 +92,66 @@ router.post('/:sessionId/mark-mock', async (c) => {
   if (s.isMock) {
     return c.json({ id: sessionId, is_mock: true, idempotent: true });
   }
-  await db.update(bidSessions).set({ isMock: true }).where(eq(bidSessions.id, sessionId));
+  if (s.currentPhase !== 'config') {
+    return c.json(
+      { error: 'mock_reclassification_not_allowed', current_phase: s.currentPhase },
+      409,
+    );
+  }
+
+  const [bidCount, aDayPickCount] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(bids)
+      .where(eq(bids.bidSessionId, sessionId))
+      .get(),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(aDayPicks)
+      .where(eq(aDayPicks.bidSessionId, sessionId))
+      .get(),
+  ]);
+  if ((bidCount?.count ?? 0) > 0 || (aDayPickCount?.count ?? 0) > 0) {
+    return c.json({ error: 'mock_reclassification_not_allowed', detail: 'session_has_picks' }, 409);
+  }
+
+  const updated = await db
+    .update(bidSessions)
+    .set({ isMock: true })
+    .where(
+      and(
+        eq(bidSessions.id, sessionId),
+        eq(bidSessions.isMock, false),
+        eq(bidSessions.currentPhase, 'config'),
+        notExists(db.select({ id: bids.id }).from(bids).where(eq(bids.bidSessionId, sessionId))),
+        notExists(
+          db
+            .select({ bidSessionId: aDayPicks.bidSessionId })
+            .from(aDayPicks)
+            .where(eq(aDayPicks.bidSessionId, sessionId)),
+        ),
+      ),
+    )
+    .returning();
+  const after = updated[0];
+  if (after === undefined) {
+    const current = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    if (current?.isMock) return c.json({ id: sessionId, is_mock: true, idempotent: true });
+    return c.json({ error: 'mock_reclassification_not_allowed' }, 409);
+  }
+
+  const claims = c.get('claims');
+  await writeAuditLog(db, {
+    bidSessionId: sessionId,
+    actorType: 'admin',
+    actorId: claims.sub > 0 ? claims.sub : null,
+    action: 'mark_mock',
+    targetKind: 'bid_session',
+    targetId: sessionId,
+    reason: 'Session designated mock before start.',
+    beforeState: s,
+    afterState: after,
+  });
   return c.json({ id: sessionId, is_mock: true, idempotent: false });
 });
 
@@ -163,29 +223,39 @@ const AutoBidBodySchema = z.object({
 async function loadActiveRulesForYear(
   db: DB,
   effectiveYear: number,
-): Promise<{ ruleBookVersion: string; rules: PositionRule[] }> {
+): Promise<{
+  ruleBookVersion: string;
+  rules: readonly PositionRule[];
+  invalidRulePositionIds: readonly string[];
+  duplicateRulePositionIds: readonly string[];
+  hasActiveRuleBook: boolean;
+}> {
   const rb = await db
     .select()
     .from(ruleBooks)
     .where(and(eq(ruleBooks.status, 'active'), eq(ruleBooks.effectiveYear, effectiveYear)))
     .get();
   if (rb === undefined) {
-    return { ruleBookVersion: '', rules: [] };
+    return {
+      ruleBookVersion: '',
+      rules: [],
+      invalidRulePositionIds: [],
+      duplicateRulePositionIds: [],
+      hasActiveRuleBook: false,
+    };
   }
   const rows = await db
     .select()
     .from(positionRules)
     .where(eq(positionRules.ruleBookVersion, rb.version))
     .all();
+  const decodedRuleBook = decodeRuleBookRows(rows);
   return {
     ruleBookVersion: rb.version,
-    rules: rows.map((r) => ({
-      positionId: r.positionId,
-      ruleBookVersion: r.ruleBookVersion,
-      requiredCriteria: JSON.parse(r.requiredCriteriaJson) as PositionRule['requiredCriteria'],
-      pointsPreference: JSON.parse(r.pointsPreferenceJson) as PositionRule['pointsPreference'],
-      tieBreakChain: JSON.parse(r.tieBreakChainJson) as PositionRule['tieBreakChain'],
-    })),
+    rules: decodedRuleBook.rules,
+    invalidRulePositionIds: decodedRuleBook.invalidPositionIds,
+    duplicateRulePositionIds: decodedRuleBook.duplicatePositionIds,
+    hasActiveRuleBook: true,
   };
 }
 
@@ -240,9 +310,24 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
       return c.json({ picksMade: 0, stoppedReason: 'complete' });
     }
 
-    const { rules } = await loadActiveRulesForYear(db, session.bidYear);
-    if (rules.length === 0) {
+    const { rules, invalidRulePositionIds, duplicateRulePositionIds, hasActiveRuleBook } =
+      await loadActiveRulesForYear(db, session.bidYear);
+    if (!hasActiveRuleBook) {
       return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_active_rule_book' }, 200);
+    }
+    if (
+      rules.length === 0 ||
+      invalidRulePositionIds.length > 0 ||
+      duplicateRulePositionIds.length > 0
+    ) {
+      return c.json(
+        {
+          error: 'active_rule_book_invalid',
+          invalid_position_ids: invalidRulePositionIds,
+          duplicate_position_ids: duplicateRulePositionIds,
+        },
+        409,
+      );
     }
     const rulesByPosition = new Map(rules.map((r) => [r.positionId, r]));
 
@@ -570,39 +655,34 @@ router.post('/:sessionId/manual-pick', zValidator('json', ManualPickBodySchema),
     );
   }
 
+  const activeRules = await loadActiveRulesForYear(db, session.bidYear);
+  if (!activeRules.hasActiveRuleBook) {
+    return c.json({ error: 'no_active_rule_book' }, 422);
+  }
+  if (
+    activeRules.rules.length === 0 ||
+    activeRules.invalidRulePositionIds.length > 0 ||
+    activeRules.duplicateRulePositionIds.length > 0
+  ) {
+    return c.json(
+      {
+        error: 'active_rule_book_invalid',
+        invalid_position_ids: activeRules.invalidRulePositionIds,
+        duplicate_position_ids: activeRules.duplicateRulePositionIds,
+      },
+      409,
+    );
+  }
+
   const member = await loadMemberWithCreds(db, body.member_id);
   if (member === null) return c.json({ error: 'member_not_found' }, 404);
 
   // Eligibility gate — admin can override with force=true.
   if (body.force !== true) {
-    const ruleBook = await db
-      .select()
-      .from(ruleBooks)
-      .where(and(eq(ruleBooks.effectiveYear, session.bidYear), eq(ruleBooks.status, 'active')))
-      .get();
-    if (ruleBook === undefined) {
-      return c.json({ error: 'no_active_rule_book' }, 422);
-    }
-    const r = await db
-      .select()
-      .from(positionRules)
-      .where(
-        and(
-          eq(positionRules.positionId, body.position_id),
-          eq(positionRules.ruleBookVersion, ruleBook.version),
-        ),
-      )
-      .get();
-    if (r === undefined) {
+    const rule = activeRules.rules.find((entry) => entry.positionId === body.position_id);
+    if (rule === undefined) {
       return c.json({ error: 'rule_not_found_for_position' }, 422);
     }
-    const rule: PositionRule = {
-      positionId: r.positionId,
-      ruleBookVersion: r.ruleBookVersion,
-      requiredCriteria: JSON.parse(r.requiredCriteriaJson),
-      pointsPreference: JSON.parse(r.pointsPreferenceJson),
-      tieBreakChain: JSON.parse(r.tieBreakChainJson),
-    };
     const evalResult = evaluateEligibility(member, rule);
     if (!evalResult.eligible) {
       return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);

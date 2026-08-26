@@ -24,10 +24,11 @@ describe('types (structural)', () => {
     expectTypeOf<Credential>().toHaveProperty('name');
   });
 
-  it('PointsItem has points, credential, requiresOpsPair', () => {
+  it('PointsItem has points, credential, requiresOpsPair, and an optional explicit ops gate', () => {
     expectTypeOf<PointsItem>().toHaveProperty('points');
     expectTypeOf<PointsItem>().toHaveProperty('credential');
     expectTypeOf<PointsItem>().toHaveProperty('requiresOpsPair');
+    expectTypeOf<PointsItem>().toHaveProperty('opsGate');
   });
 
   it('EligibilityReason has code, label, satisfied', () => {

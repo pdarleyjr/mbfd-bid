@@ -168,6 +168,36 @@ describe('POST /api/admin/rehearsal/:sessionId/manual-pick', () => {
     expect(auditRows.results[0]?.n).toBe(1);
   });
 
+  it('does not let force=true bypass an invalid active rule book', async () => {
+    await seedMockSessionWithEligibleFF(h, sessionId);
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2026.1', 'B101', '2026.1',
+         '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
+    );
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/manual-pick`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ member_id: 60, position_id: 'A101', force: true }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: 'active_rule_book_invalid',
+      invalid_position_ids: ['B101'],
+    });
+  });
+
   it('refuses with 409 when the position is already filled', async () => {
     await seedMockSessionWithEligibleFF(h, sessionId);
     // First pick succeeds.

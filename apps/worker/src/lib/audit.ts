@@ -16,6 +16,7 @@ export type AuditAction =
   | 'grant_extension'
   | 'admin_bid_for_member'
   | 'session_start'
+  | 'mark_mock'
   | 'session_complete'
   | 'members_import'
   | 'credentials_import'

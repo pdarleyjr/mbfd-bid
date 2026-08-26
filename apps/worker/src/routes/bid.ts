@@ -6,9 +6,9 @@ import {
   canPick,
   computeAllMeters,
 } from '@mbfd/a-day';
-import { type PositionRule, evaluateEligibility } from '@mbfd/eligibility';
+import { evaluateEligibility } from '@mbfd/eligibility';
 import { SubmitADayPickRequestSchema } from '@mbfd/shared';
-import { desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { getDb } from '../db/index.js';
 import {
@@ -28,6 +28,7 @@ import { chunkedInArraySelect } from '../lib/d1-batch.js';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeOnDeck } from '../lib/on-deck.js';
+import { decodeRuleBookRows } from '../lib/position-rule.js';
 import type { WorkerEnv } from '../types/env.js';
 
 type BidContext = Context<{ Bindings: WorkerEnv }>;
@@ -64,26 +65,6 @@ async function resolveBidSessionId(
   return session?.id ?? null;
 }
 
-async function loadActiveRuleBookVersion(c: BidContext): Promise<string | null> {
-  const db = getDb(c.env.DB);
-  const active = await db
-    .select({ version: ruleBooks.version })
-    .from(ruleBooks)
-    .where(eq(ruleBooks.status, 'active'))
-    .get();
-  return active?.version ?? null;
-}
-
-function parsePositionRule(row: typeof positionRules.$inferSelect): PositionRule {
-  return {
-    positionId: row.positionId,
-    ruleBookVersion: row.ruleBookVersion,
-    requiredCriteria: JSON.parse(row.requiredCriteriaJson),
-    pointsPreference: JSON.parse(row.pointsPreferenceJson),
-    tieBreakChain: JSON.parse(row.tieBreakChainJson),
-  };
-}
-
 bid.get('/me', async (c) => {
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
@@ -104,8 +85,38 @@ bid.get('/me/eligibility', async (c) => {
   const member = await db.select().from(membersTable).where(eq(membersTable.id, claims.sub)).get();
   if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
 
-  const version = c.req.query('rule_book_version') ?? (await loadActiveRuleBookVersion(c));
-  if (!version) return c.json({ error: 'no_active_rule_book' }, 404);
+  const sessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  if (!sessionId) return c.json({ error: 'no_active_session' }, 404);
+  const session = await db
+    .select({ id: bidSessionsTable.id, bidYear: bidSessionsTable.bidYear })
+    .from(bidSessionsTable)
+    .where(eq(bidSessionsTable.id, sessionId))
+    .get();
+  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+
+  // A member route must not evaluate an arbitrary draft or archived policy.
+  // Bind it to the one active book for the selected session's bid year.
+  const activeRuleBooks = await db
+    .select({ version: ruleBooks.version })
+    .from(ruleBooks)
+    .where(and(eq(ruleBooks.status, 'active'), eq(ruleBooks.effectiveYear, session.bidYear)))
+    .all();
+  if (activeRuleBooks.length === 0) return c.json({ error: 'no_active_rule_book' }, 404);
+  if (activeRuleBooks.length !== 1) return c.json({ error: 'active_rule_book_ambiguous' }, 409);
+  const activeRuleBook = activeRuleBooks.at(0);
+  if (activeRuleBook === undefined) return c.json({ error: 'no_active_rule_book' }, 404);
+  const version = activeRuleBook.version;
+  const requestedVersion = c.req.query('rule_book_version');
+  if (requestedVersion !== undefined && requestedVersion !== version) {
+    return c.json(
+      {
+        error: 'rule_book_version_not_active',
+        requested_version: requestedVersion,
+        active_version: version,
+      },
+      409,
+    );
+  }
 
   const memberCreds = await db
     .select({ name: credentials.name })
@@ -119,17 +130,29 @@ bid.get('/me/eligibility', async (c) => {
     .from(positionRules)
     .where(eq(positionRules.ruleBookVersion, version))
     .all();
-
-  const sessionId = await resolveBidSessionId(c, readSessionQuery(c));
-  const filled = new Set<string>();
-  if (sessionId) {
-    const rows = await db
-      .select({ positionId: bidsTable.positionId })
-      .from(bidsTable)
-      .where(eq(bidsTable.bidSessionId, sessionId))
-      .all();
-    for (const row of rows) filled.add(row.positionId);
+  const decodedRuleBook = decodeRuleBookRows(rules);
+  if (
+    rules.length === 0 ||
+    decodedRuleBook.invalidPositionIds.length > 0 ||
+    decodedRuleBook.duplicatePositionIds.length > 0
+  ) {
+    return c.json(
+      {
+        error: 'active_rule_book_invalid',
+        invalid_position_ids: decodedRuleBook.invalidPositionIds,
+        duplicate_position_ids: decodedRuleBook.duplicatePositionIds,
+      },
+      409,
+    );
   }
+
+  const filled = new Set<string>();
+  const rows = await db
+    .select({ positionId: bidsTable.positionId })
+    .from(bidsTable)
+    .where(eq(bidsTable.bidSessionId, sessionId))
+    .all();
+  for (const row of rows) filled.add(row.positionId);
 
   const eligibilityMember = {
     employeeId: member.employeeId,
@@ -142,18 +165,22 @@ bid.get('/me/eligibility', async (c) => {
     credentials: memberCreds.map((cred) => ({ name: cred.name })),
   };
 
-  const positions = rules
-    .filter((rule) => !filled.has(rule.positionId))
-    .map((rule) => {
-      const parsedRule = parsePositionRule(rule);
-      const result = evaluateEligibility(eligibilityMember, parsedRule);
-      return {
-        positionId: rule.positionId,
-        eligible: result.eligible,
-        reasons: result.reasons,
-        points: result.points,
-      };
+  const positions: Array<{
+    positionId: string;
+    eligible: boolean;
+    reasons: ReturnType<typeof evaluateEligibility>['reasons'];
+    points: number;
+  }> = [];
+  for (const rule of decodedRuleBook.rules) {
+    if (filled.has(rule.positionId)) continue;
+    const result = evaluateEligibility(eligibilityMember, rule);
+    positions.push({
+      positionId: rule.positionId,
+      eligible: result.eligible,
+      reasons: result.reasons,
+      points: result.points,
     });
+  }
 
   return c.json({ memberId: claims.sub, positions });
 });

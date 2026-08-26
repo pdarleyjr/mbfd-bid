@@ -78,6 +78,8 @@ describe('PATCH /api/admin/rules/:id', () => {
     ]);
     const rc = JSON.parse((row.results[0] as { required_criteria: string }).required_criteria);
     expect(rc.rank).toEqual(['LT']);
+    const book = await h.db.run("SELECT revision FROM rule_books WHERE version = '2026.1';");
+    expect(book.results[0]?.revision).toBe(1);
 
     const audit = await h.db.run(
       "SELECT count(*) AS n FROM audit_log WHERE action = 'override_rule' AND target_id = ?",
@@ -116,6 +118,110 @@ describe('PATCH /api/admin/rules/:id', () => {
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
     expect(res.status).toBe(400);
+  });
+
+  it('accepts an explicit all-operations points gate for a draft rule', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rules/${ruleId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${await fresh()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          points_preference: {
+            max: 2,
+            items: [
+              {
+                points: 2,
+                credential: 'Rope Rescue Technician',
+                opsGate: 'all_operations',
+              },
+            ],
+          },
+          reason_code: 'rule_override.fix_misconfig',
+          reason: 'Model the all six Operations gate explicitly.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    const row = await h.db.run('SELECT points_preference FROM position_rules WHERE id = ?', [
+      ruleId,
+    ]);
+    const points = JSON.parse((row.results[0] as { points_preference: string }).points_preference);
+    expect(points.items[0].opsGate).toBe('all_operations');
+  });
+
+  it('canonicalizes the legacy all-six Operations gate instead of silently dropping it', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rules/${ruleId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${await fresh()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          points_preference: {
+            max: 2,
+            items: [
+              {
+                points: 2,
+                credential: 'Rope Rescue Technician',
+                gating: 'ops_all_6',
+              },
+            ],
+          },
+          reason_code: 'rule_override.fix_misconfig',
+          reason: 'Preserve the source all-six Operations requirement.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    const row = await h.db.run('SELECT points_preference FROM position_rules WHERE id = ?', [
+      ruleId,
+    ]);
+    const points = JSON.parse((row.results[0] as { points_preference: string }).points_preference);
+    expect(points.items[0]).toMatchObject({ opsGate: 'all_operations' });
+    expect(points.items[0]).not.toHaveProperty('gating');
+  });
+
+  it('rejects an unrecognized explicit points gate', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rules/${ruleId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${await fresh()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          points_preference: {
+            max: 2,
+            items: [{ points: 2, credential: 'Rope Rescue Technician', opsGate: 'maybe' }],
+          },
+          reason_code: 'rule_override.fix_misconfig',
+          reason: 'Reject an invented policy gate.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a schema-valid patch when its persisted form fails the decoder', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rules/${ruleId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${await fresh()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          points_preference: {
+            max: 2,
+            items: [{ points: 2, credential: ' ', gating: 'ops_all_6' }],
+          },
+          reason_code: 'rule_override.fix_misconfig',
+          reason: 'Reject an empty credential after normalization.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'rule_invalid' });
   });
 
   it('returns 409 when rule_book is active (must edit drafts only)', async () => {

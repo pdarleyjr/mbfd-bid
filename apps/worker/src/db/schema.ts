@@ -96,6 +96,10 @@ export const ruleBooks = sqliteTable('rule_books', {
     .default('draft'),
   publishedAt: integer('published_at', { mode: 'timestamp_ms' }),
   publishedBy: integer('published_by').references(() => members.id, { onDelete: 'set null' }),
+  // Increments with every draft rule mutation.  Publication uses this as an
+  // optimistic precondition so it cannot promote a rule book that changed
+  // after its full-book validation pass.
+  revision: integer('revision').notNull().default(0),
 });
 
 export const positionRules = sqliteTable(
@@ -269,6 +273,7 @@ export const auditLog = sqliteTable(
         'grant_extension',
         'admin_bid_for_member',
         'session_start',
+        'mark_mock',
         'session_complete',
         'members_import',
         'credentials_import',

@@ -3,6 +3,7 @@ export type {
   EligibilityReason,
   EligibilityResult,
   Member,
+  OpsGate,
   PointsBreakdown,
   PointsItem,
   PointsPreference,

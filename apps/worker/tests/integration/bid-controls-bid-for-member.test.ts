@@ -119,6 +119,44 @@ describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
     expect(body.reasons.some((r) => r.code === 'RANK_REQUIRED')).toBe(true);
   });
 
+  it('blocks a bid when any sibling rule in the active book is invalid', async () => {
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2026.1', 'B101', '2026.1',
+         '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
+    );
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          member_id: 60,
+          position_id: 'A101',
+          reason_code: 'bid_for_member.unreachable_phone',
+          reason: 'Policy book must be valid before any proxy bid.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: 'active_rule_book_invalid',
+      invalid_position_ids: ['B101'],
+    });
+    const rows = await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    expect(rows.results[0]?.n).toBe(0);
+  });
+
   it('audit entry uses action=admin_bid_for_member', async () => {
     await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {

@@ -15,10 +15,17 @@ export interface Member {
   credentials: Credential[];
 }
 
+/**
+ * Controls which Operations credentials must accompany a points credential.
+ * Omit this to retain legacy `requiresOpsPair` behavior.
+ */
+export type OpsGate = 'paired_operation' | 'all_operations';
+
 export interface PointsItem {
   points: number;
   credential: string;
   requiresOpsPair: boolean;
+  opsGate?: OpsGate;
 }
 
 export interface RequiredCriteria {

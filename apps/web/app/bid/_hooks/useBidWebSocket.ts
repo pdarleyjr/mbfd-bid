@@ -1,6 +1,5 @@
 'use client';
 import { type BidEventEnvelope, BidEventEnvelopeSchema } from '@mbfd/shared';
-import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { StoreApi } from 'zustand';
 import type { BidStoreState } from './useBidStore';
@@ -32,7 +31,6 @@ export function useBidWebSocket(
   store: StoreApi<BidStoreState>,
   opts: { bidSessionId: string; jwt: string; wsBase?: string | undefined },
 ): { status: BidWebSocketStatus; send: (data: object) => boolean } {
-  const queryClient = useQueryClient();
   const [status, setStatus] = useState<BidWebSocketStatus>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
   const attemptRef = useRef(0);
@@ -63,16 +61,6 @@ export function useBidWebSocket(
           if (!parsed.success) return;
           const envelope = parsed.data as BidEventEnvelope;
           store.getState().applyEvent(envelope);
-
-          if (
-            envelope.type === 'pick_made' ||
-            envelope.type === 'forced_pick' ||
-            envelope.type === 'skip'
-          ) {
-            queryClient.invalidateQueries({
-              queryKey: ['ai-advise-current', opts.bidSessionId],
-            });
-          }
         } catch {
           // ignore malformed frames
         }
@@ -92,7 +80,7 @@ export function useBidWebSocket(
       cancelled = true;
       wsRef.current?.close();
     };
-  }, [opts.bidSessionId, opts.jwt, opts.wsBase, store, queryClient]);
+  }, [opts.bidSessionId, opts.jwt, opts.wsBase, store]);
 
   return {
     status,

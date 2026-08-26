@@ -76,7 +76,7 @@ export function EligibilityPreviewForm() {
         </label>
         <label className="block">
           <span className="text-sm text-slate-300">
-            Rule-book version (optional — defaults to active)
+            Rule-book version (required when multiple active annual books exist)
           </span>
           <input
             type="text"

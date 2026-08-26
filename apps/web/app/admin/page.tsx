@@ -24,8 +24,7 @@ const PRIMARY_ACTIONS: LinkEntry[] = [
   {
     href: '/admin/bid',
     title: 'Live Bid Console',
-    description:
-      'Watch picks land in real time, override, skip, freeze. AI advisory panel docked here.',
+    description: 'Watch picks land in real time, override, skip, and freeze the session.',
     emphasis: true,
   },
 ];
@@ -109,8 +108,8 @@ export default async function AdminDashboardPage() {
             Live Bid Console
           </p>
           <p className="mt-1 text-sm text-red-100">
-            Watch the bid play out, see who's next, view AI advisories as each turn comes up. Works
-            for both real bids and mock drafts.
+            Watch the bid, see who is next, and use the available controls. Works for live sessions
+            and mock drafts.
           </p>
         </div>
         <span className="hidden text-sm font-medium text-red-200 sm:block">Open →</span>

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { getDb } from '../../db/index.js';
 import { positionRules, ruleBooks } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
+import { decodePositionRule } from '../../lib/position-rule.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -72,22 +73,63 @@ router.get('/:id{\\d+}', async (c) => {
 
 const RankSchema = z.enum(['FF', 'LT', 'CPT', 'DC']);
 
-const RequiredCriteriaSchema = z.object({
-  rank: z.array(RankSchema),
-  credentials: z.array(z.string().min(1)),
-  custom: z.array(z.enum(['paramedic', 'driver_engineer', 'non_probationary'])),
-});
+const RequiredCriteriaSchema = z
+  .object({
+    rank: z.array(RankSchema),
+    credentials: z.array(z.string().min(1)),
+    custom: z.array(z.enum(['paramedic', 'driver_engineer', 'non_probationary'])),
+  })
+  .strict();
 
-const PointsPreferenceSchema = z.object({
-  max: z.number().int().nonnegative(),
-  items: z.array(
-    z.object({
-      points: z.number().int(),
-      credential: z.string().min(1),
-      requiresOpsPair: z.boolean(),
-    }),
-  ),
-});
+const PointsPreferenceItemSchema = z
+  .object({
+    points: z.number().int().nonnegative(),
+    credential: z.string().min(1),
+    // Legacy fixture shape. It is accepted only so a GET -> PATCH round trip
+    // cannot silently remove the all-six Operations requirement.
+    gating: z.literal('ops_all_6').optional(),
+    requiresOpsPair: z.boolean().optional(),
+    opsGate: z.enum(['paired_operation', 'all_operations']).optional(),
+  })
+  .strict()
+  .superRefine((item, ctx) => {
+    const legacyOpsGate = item.gating === 'ops_all_6' ? 'all_operations' : undefined;
+    const effectiveOpsGate = item.opsGate ?? legacyOpsGate;
+
+    if (legacyOpsGate && item.opsGate && legacyOpsGate !== item.opsGate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'conflicting Operations gate fields',
+      });
+    }
+    if (item.requiresOpsPair === true && effectiveOpsGate === 'all_operations') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'conflicting Operations gate fields',
+      });
+    }
+    if (item.requiresOpsPair === false && effectiveOpsGate === 'paired_operation') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'conflicting Operations gate fields',
+      });
+    }
+  })
+  .transform(({ gating, opsGate, ...item }) => ({
+    ...item,
+    ...(opsGate !== undefined || gating !== 'ops_all_6'
+      ? opsGate === undefined
+        ? {}
+        : { opsGate }
+      : { opsGate: 'all_operations' as const }),
+  }));
+
+const PointsPreferenceSchema = z
+  .object({
+    max: z.number().int().nonnegative(),
+    items: z.array(PointsPreferenceItemSchema),
+  })
+  .strict();
 
 const TieBreakChainSchema = z
   .array(z.enum(['points', 'so_points', 'mo_points', 'rsc_seniority', 'rank_seniority']))
@@ -102,6 +144,7 @@ const RulePatchSchema = z
     reason_code: ReasonCodeSchema,
     reason: z.string().trim().min(4).max(500),
   })
+  .strict()
   .refine(
     (v) =>
       v.required_criteria !== undefined ||
@@ -137,16 +180,81 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     return c.json({ error: 'rule_book_immutable', status: book.status }, 409);
   }
 
-  const setObj: Partial<typeof positionRules.$inferInsert> = {};
-  if (patch.required_criteria !== undefined)
-    setObj.requiredCriteriaJson = JSON.stringify(patch.required_criteria);
-  if (patch.points_preference !== undefined)
-    setObj.pointsPreferenceJson = JSON.stringify(patch.points_preference);
-  if (patch.tie_break_chain !== undefined)
-    setObj.tieBreakChainJson = JSON.stringify(patch.tie_break_chain);
-  if (patch.notes !== undefined) setObj.notes = patch.notes;
+  const nextRequiredCriteriaJson =
+    patch.required_criteria === undefined
+      ? existing.requiredCriteriaJson
+      : JSON.stringify(patch.required_criteria);
+  const nextPointsPreferenceJson =
+    patch.points_preference === undefined
+      ? existing.pointsPreferenceJson
+      : JSON.stringify(patch.points_preference);
+  const nextTieBreakChainJson =
+    patch.tie_break_chain === undefined
+      ? existing.tieBreakChainJson
+      : JSON.stringify(patch.tie_break_chain);
+  const candidate = decodePositionRule({
+    ...existing,
+    requiredCriteriaJson: nextRequiredCriteriaJson,
+    pointsPreferenceJson: nextPointsPreferenceJson,
+    tieBreakChainJson: nextTieBreakChainJson,
+  });
+  if (!candidate.ok) {
+    return c.json({ error: 'rule_invalid', issues: candidate.issues }, 400);
+  }
 
-  await db.update(positionRules).set(setObj).where(eq(positionRules.id, id));
+  const assignments: string[] = [];
+  const values: unknown[] = [];
+  if (patch.required_criteria !== undefined) {
+    assignments.push('required_criteria = ?');
+    values.push(nextRequiredCriteriaJson);
+  }
+  if (patch.points_preference !== undefined) {
+    assignments.push('points_preference = ?');
+    values.push(nextPointsPreferenceJson);
+  }
+  if (patch.tie_break_chain !== undefined) {
+    assignments.push('tie_break_chain = ?');
+    values.push(nextTieBreakChainJson);
+  }
+  if (patch.notes !== undefined) {
+    assignments.push('notes = ?');
+    values.push(patch.notes);
+  }
+
+  // D1 batches both changes: the child update only applies if the draft is at
+  // the version we read, and the parent revision advances in the same batch.
+  // This closes the publish/PATCH validation race without opening a window in
+  // which a valid draft can mutate after it has been reviewed for publication.
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE position_rules
+            SET ${assignments.join(', ')}
+          WHERE id = ?
+            AND EXISTS (
+              SELECT 1 FROM rule_books
+               WHERE version = ? AND status = 'draft' AND revision = ?
+            )`,
+    ).bind(...values, id, existing.ruleBookVersion, book.revision),
+    c.env.DB.prepare(
+      `UPDATE rule_books
+            SET revision = revision + 1
+          WHERE version = ? AND status = 'draft' AND revision = ?`,
+    ).bind(existing.ruleBookVersion, book.revision),
+  ]);
+  if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+    const currentBook = await db
+      .select()
+      .from(ruleBooks)
+      .where(eq(ruleBooks.version, existing.ruleBookVersion))
+      .get();
+    if (currentBook?.status !== 'draft') {
+      return c.json(
+        { error: 'rule_book_immutable', status: currentBook?.status ?? 'missing' },
+        409,
+      );
+    }
+    return c.json({ error: 'rule_book_changed' }, 409);
+  }
   const after = await db.select().from(positionRules).where(eq(positionRules.id, id)).get();
 
   await writeAuditLog(db, {

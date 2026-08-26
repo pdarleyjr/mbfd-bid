@@ -15,11 +15,12 @@
 | Gate | Result | Evidence / limitation |
 | --- | --- | --- |
 | Locked install | PASS | `pnpm install --frozen-lockfile` reported an up-to-date lockfile. |
-| Lint | PASS | Current branch: `pnpm lint` checked 451 files with no fixes. |
+| Lint | PASS | Current branch: `pnpm lint` checked 458 files with no fixes. |
 | Typecheck | PASS | Current branch: `pnpm typecheck` passed for all five packages. |
-| Unit/integration suite | PASS (local) | The first root run timed out in 5 Worker launcher files. The suite now runs standard Worker tests separately from the five serial launcher tests; the current `pnpm test` passed 152 files, 878 tests, with 4 intentional opt-in skips. CI evidence is still unobserved. See [05-test-matrix.md](05-test-matrix.md). |
+| Unit/integration suite | PASS (local) | The first root run timed out in 5 Worker launcher files. The suite now runs standard Worker tests separately from the five serial launcher tests; the current `pnpm test` passed 156 files, 922 tests, with 4 intentional opt-in skips. CI evidence is still unobserved. See [05-test-matrix.md](05-test-matrix.md). |
 | Build | PASS (local) | Current branch: `pnpm build` succeeded. Next emitted an informational Edge Runtime/static-generation warning. |
 | Browser/E2E | NOT YET ACCEPTED | Existing E2E selectors are stale and the workflow is manual-only. |
+| Live-start control | PARTIAL SAFETY CONTROL | A non-mock session now returns `409 readiness_blocked` until every required readiness fact has a verified Worker implementation. Mock designation requires fresh step-up auth, config phase, and no picks; the route then attempts a separate audit-log write. Transactional state/audit coupling and audit-chain verification are not established. This is intentionally not a production-ready start path: immutable input snapshots and Durable Object initialization are still absent, and the current DO pick path does not yet evaluate the decoded policy. |
 
 ## GitHub baseline
 
@@ -28,6 +29,7 @@
 - 29 pull requests were open at audit time.
 - All 393 completed D1-backup workflow runs observed through 2026-08-26 had failed before the export/upload step because the Ubuntu runner had no `TEMP` value. No Actions-produced D1/R2 snapshot is proven usable.
 - The scheduled dependency-audit workflow also fails on current advisories; do not infer that automation makes this acceptable.
+- A subsequent locked dependency update and re-audit reduced the production dependency findings to two high-severity transitive advisories (`sharp` and `extract-zip`). The obsolete Pages adapter prevents a supported `sharp`/Next update in this branch; see [07-security-findings.md](07-security-findings.md).
 - Code scanning and Dependabot findings were present. Their exact current counts must be re-queried before a release.
 
 ## Cloudflare baseline

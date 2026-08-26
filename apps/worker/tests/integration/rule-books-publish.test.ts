@@ -20,6 +20,17 @@ async function adminJwt(): Promise<string> {
   );
 }
 
+async function seedValidDraftRule(h: TestD1) {
+  await h.db.run(
+    `INSERT INTO position_rules
+     (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+     VALUES ('2026.2', 'A101', '2026.1',
+       '{"rank":["FF"],"credentials":[],"custom":[]}',
+       '{"max":0,"items":[]}',
+       '["points","rsc_seniority","rank_seniority"]');`,
+  );
+}
+
 describe('GET /api/admin/rule-books', () => {
   let h: TestD1;
   beforeEach(async () => {
@@ -86,10 +97,12 @@ describe('POST /api/admin/rule-books', () => {
     expect(body.status).toBe('draft');
   });
 
-  it('clones position_rules from clone_from when supplied', async () => {
+  it('clones every source rule from clone_from within the create request', async () => {
     await h.db.run(`INSERT INTO position_rules
       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
-      VALUES ('2026.1', 'A101', '2026.1', '{}', '{}', '[]');`);
+      VALUES
+        ('2026.1', 'A101', '2026.1', '{}', '{}', '[]'),
+        ('2026.1', 'A102', '2026.1', '{}', '{}', '[]');`);
     const res = await app.fetch(
       new Request('http://x/api/admin/rule-books', {
         method: 'POST',
@@ -107,7 +120,7 @@ describe('POST /api/admin/rule-books', () => {
       'SELECT count(*) AS n FROM position_rules WHERE rule_book_version = ?',
       [body.version],
     );
-    expect(rows.results[0]?.n).toBe(1);
+    expect(rows.results[0]?.n).toBe(2);
   });
 
   it('returns 400 when clone_from references a non-existent version', async () => {
@@ -131,8 +144,11 @@ describe('POST /api/admin/rule-books/:version/publish', () => {
   beforeEach(async () => {
     h = await setupTestD1();
     await h.db.run(`INSERT INTO rule_books (version, effective_year, status) VALUES
-      ('2026.1', 2026, 'active'),
-      ('2026.2', 2026, 'draft');`);
+      -- Insert the draft first: the historical single-UPDATE implementation
+      -- could violate the partial active-book index when row order differed.
+      ('2026.2', 2026, 'draft'),
+      ('2026.1', 2026, 'active');`);
+    await seedValidDraftRule(h);
   });
   afterEach(async () => {
     await teardownTestD1(h);
@@ -178,6 +194,94 @@ describe('POST /api/admin/rule-books/:version/publish', () => {
     );
     expect(audit.results).toHaveLength(1);
     expect(audit.results[0]?.target_id).toBe('2026.2');
+  });
+
+  it('rejects a draft with an unsupported custom criterion without changing the active rule book', async () => {
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2026.2', 'A101', '2026.1',
+         '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/publish', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'Attempt to publish an unresolved source rule.' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'rule_book_invalid' });
+    const after = await h.db.run(
+      'SELECT version, status FROM rule_books WHERE effective_year = 2026 ORDER BY version',
+    );
+    expect(after.results).toEqual([
+      { version: '2026.1', status: 'active' },
+      { version: '2026.2', status: 'draft' },
+    ]);
+  });
+
+  it('rejects an empty draft without changing the active rule book', async () => {
+    await h.db.run("DELETE FROM position_rules WHERE rule_book_version = '2026.2';");
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/publish', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'An empty policy book cannot be approved.' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'rule_book_invalid', empty_rule_book: true });
+    const after = await h.db.run(
+      'SELECT version, status FROM rule_books WHERE effective_year = 2026 ORDER BY version',
+    );
+    expect(after.results).toEqual([
+      { version: '2026.1', status: 'active' },
+      { version: '2026.2', status: 'draft' },
+    ]);
+  });
+
+  it('rejects duplicate position identities in a draft rule book', async () => {
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2026.2', 'A101', '2026.1',
+         '{"rank":["FF"],"credentials":[],"custom":[]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/publish', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'Duplicate rules cannot be approved.' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: 'rule_book_invalid',
+      duplicate_position_ids: ['A101'],
+    });
   });
 
   it('returns 404 when publishing a non-existent version', async () => {

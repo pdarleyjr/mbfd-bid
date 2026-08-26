@@ -21,6 +21,7 @@ import {
   ruleBooks,
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
+import { decodeRuleBookRows } from '../../lib/position-rule.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -49,31 +50,45 @@ async function loadMemberWithCreds(db: DB, memberId: number) {
   };
 }
 
-async function loadActiveRule(db: DB, positionId: string, effectiveYear: number) {
+type ActiveRuleLoadResult =
+  | { kind: 'not_found' }
+  | {
+      kind: 'invalid';
+      invalidPositionIds: readonly string[];
+      duplicatePositionIds: readonly string[];
+    }
+  | { kind: 'ok'; rule: ReturnType<typeof decodeRuleBookRows>['rules'][number] };
+
+async function loadActiveRule(
+  db: DB,
+  positionId: string,
+  effectiveYear: number,
+): Promise<ActiveRuleLoadResult> {
   const ruleBook = await db
     .select()
     .from(ruleBooks)
     .where(and(eq(ruleBooks.effectiveYear, effectiveYear), eq(ruleBooks.status, 'active')))
     .get();
-  if (ruleBook === undefined) return null;
-  const r = await db
+  if (ruleBook === undefined) return { kind: 'not_found' };
+  const rows = await db
     .select()
     .from(positionRules)
-    .where(
-      and(
-        eq(positionRules.positionId, positionId),
-        eq(positionRules.ruleBookVersion, ruleBook.version),
-      ),
-    )
-    .get();
-  if (r === undefined) return null;
-  return {
-    positionId: r.positionId,
-    ruleBookVersion: r.ruleBookVersion,
-    requiredCriteria: JSON.parse(r.requiredCriteriaJson),
-    pointsPreference: JSON.parse(r.pointsPreferenceJson),
-    tieBreakChain: JSON.parse(r.tieBreakChainJson),
-  };
+    .where(eq(positionRules.ruleBookVersion, ruleBook.version))
+    .all();
+  const decodedRuleBook = decodeRuleBookRows(rows);
+  if (
+    rows.length === 0 ||
+    decodedRuleBook.invalidPositionIds.length > 0 ||
+    decodedRuleBook.duplicatePositionIds.length > 0
+  ) {
+    return {
+      kind: 'invalid',
+      invalidPositionIds: decodedRuleBook.invalidPositionIds,
+      duplicatePositionIds: decodedRuleBook.duplicatePositionIds,
+    };
+  }
+  const rule = decodedRuleBook.rules.find((entry) => entry.positionId === positionId);
+  return rule === undefined ? { kind: 'not_found' } : { kind: 'ok', rule };
 }
 
 const router = new Hono<Env>();
@@ -225,10 +240,22 @@ router.post(
     const member = await loadMemberWithCreds(db, body.member_id);
     if (member === null) return c.json({ error: 'member_not_found' }, 404);
 
-    const rule = await loadActiveRule(db, body.position_id, session.bidYear);
-    if (rule === null) return c.json({ error: 'rule_not_found_for_active_book' }, 404);
+    const loadedRule = await loadActiveRule(db, body.position_id, session.bidYear);
+    if (loadedRule.kind === 'not_found') {
+      return c.json({ error: 'rule_not_found_for_active_book' }, 404);
+    }
+    if (loadedRule.kind === 'invalid') {
+      return c.json(
+        {
+          error: 'active_rule_book_invalid',
+          invalid_position_ids: loadedRule.invalidPositionIds,
+          duplicate_position_ids: loadedRule.duplicatePositionIds,
+        },
+        409,
+      );
+    }
 
-    const evalResult = evaluateEligibility(member, rule);
+    const evalResult = evaluateEligibility(member, loadedRule.rule);
     if (!evalResult.eligible) {
       return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);
     }

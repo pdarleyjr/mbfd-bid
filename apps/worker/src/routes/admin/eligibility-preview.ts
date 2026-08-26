@@ -1,7 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { evaluateEligibility } from '@mbfd/eligibility';
 import { EligibilityPreviewSchema, type JwtPayload } from '@mbfd/shared';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { getDb } from '../../db/index.js';
 import {
@@ -11,6 +11,7 @@ import {
   positionRules,
   ruleBooks,
 } from '../../db/schema.js';
+import { decodeRuleBookRows } from '../../lib/position-rule.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -37,19 +38,47 @@ router.post('/preview', zValidator('json', EligibilityPreviewSchema), async (c) 
   if (rule_book_version !== undefined) {
     version = rule_book_version;
   } else {
-    const active = await db.select().from(ruleBooks).where(eq(ruleBooks.status, 'active')).get();
-    if (active === undefined) return c.json({ error: 'no_active_rule_book' }, 404);
-    version = active.version;
+    // Admin previews may intentionally target a named draft. Without an
+    // explicit version, though, no session/year context exists to choose
+    // safely among annual active books.
+    const activeRuleBooks = await db
+      .select({ version: ruleBooks.version })
+      .from(ruleBooks)
+      .where(eq(ruleBooks.status, 'active'))
+      .all();
+    if (activeRuleBooks.length === 0) return c.json({ error: 'no_active_rule_book' }, 404);
+    if (activeRuleBooks.length !== 1) {
+      return c.json({ error: 'active_rule_book_ambiguous', rule_book_version_required: true }, 409);
+    }
+    const activeRuleBook = activeRuleBooks.at(0);
+    if (activeRuleBook === undefined) return c.json({ error: 'no_active_rule_book' }, 404);
+    version = activeRuleBook.version;
   }
 
-  const rule = await db
+  const ruleRows = await db
     .select()
     .from(positionRules)
-    .where(
-      and(eq(positionRules.positionId, position_id), eq(positionRules.ruleBookVersion, version)),
-    )
-    .get();
-  if (rule === undefined) return c.json({ error: 'rule_not_found', position_id, version }, 404);
+    .where(eq(positionRules.ruleBookVersion, version))
+    .all();
+  const decodedRuleBook = decodeRuleBookRows(ruleRows);
+  if (
+    ruleRows.length === 0 ||
+    decodedRuleBook.invalidPositionIds.length > 0 ||
+    decodedRuleBook.duplicatePositionIds.length > 0
+  ) {
+    return c.json(
+      {
+        error: 'rule_book_invalid',
+        empty_rule_book: ruleRows.length === 0,
+        invalid_position_ids: decodedRuleBook.invalidPositionIds,
+        duplicate_position_ids: decodedRuleBook.duplicatePositionIds,
+      },
+      409,
+    );
+  }
+  const decodedRule = decodedRuleBook.rules.find((rule) => rule.positionId === position_id);
+  if (decodedRule === undefined)
+    return c.json({ error: 'rule_not_found', position_id, version }, 404);
 
   const result = evaluateEligibility(
     {
@@ -62,13 +91,7 @@ router.post('/preview', zValidator('json', EligibilityPreviewSchema), async (c) 
       isProbationary: member.isProbationary,
       credentials: creds.map((c) => ({ name: c.name })),
     },
-    {
-      positionId: rule.positionId,
-      ruleBookVersion: rule.ruleBookVersion,
-      requiredCriteria: JSON.parse(rule.requiredCriteriaJson),
-      pointsPreference: JSON.parse(rule.pointsPreferenceJson),
-      tieBreakChain: JSON.parse(rule.tieBreakChainJson),
-    },
+    decodedRule,
   );
 
   return c.json(result);

@@ -6,6 +6,7 @@ import {
   PauseSessionSchema,
   ResumeSessionSchema,
   TimerConfigSchema,
+  evaluateLiveReadiness,
 } from '@mbfd/shared';
 import { desc, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -29,6 +30,15 @@ const CreateSessionSchema = z.object({
 
 function actorIdFromClaims(claims: JwtPayload): number | null {
   return claims.sub > 0 ? claims.sub : null;
+}
+
+/**
+ * The command route must fail closed until the Worker can supply each of the
+ * required, independently verified readiness facts. Do not infer readiness
+ * from partial D1 data or an administrator's request to start.
+ */
+function evaluateUnconfiguredLiveReadiness() {
+  return evaluateLiveReadiness({ checks: [] });
 }
 
 const router = new Hono<Env>();
@@ -88,6 +98,12 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
   if (s.currentPhase !== 'config') {
     return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
   }
+  if (!s.isMock) {
+    const readiness = evaluateUnconfiguredLiveReadiness();
+    if (!readiness.canStartLiveBid) {
+      return c.json({ error: 'readiness_blocked', readiness }, 409);
+    }
+  }
   const now = new Date();
   await db
     .update(bidSessions)
@@ -104,6 +120,21 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
     afterState: { current_phase: 'position_bid' },
   });
   return c.json({ id, current_phase: 'position_bid' });
+});
+
+// GET /api/admin/bid-session/:id/readiness
+// The output is intentionally data-only. It is not an override mechanism.
+router.get('/:id/readiness', async (c) => {
+  const id = c.req.param('id');
+  const db = getDb(c.env.DB);
+  const session = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
+  if (session === undefined) return c.json({ error: 'not_found' }, 404);
+
+  return c.json({
+    id,
+    is_mock: session.isMock,
+    readiness: session.isMock ? null : evaluateUnconfiguredLiveReadiness(),
+  });
 });
 
 // POST /api/admin/bid-session/:id/pause

@@ -88,7 +88,9 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     await teardownTestD1(h);
   });
 
-  it('transitions config -> position_bid and stamps started_at', async () => {
+  it('allows a mock rehearsal to transition config -> position_bid', async () => {
+    await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
+
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
         method: 'POST',
@@ -103,7 +105,53 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     expect(after.results[0]?.current_phase).toBe('position_bid');
   });
 
+  it('fails closed for a live session until readiness facts are implemented', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await freshAdmin()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: 'readiness_blocked',
+      readiness: {
+        canStartLiveBid: false,
+        overallStatus: 'NOT_CONFIGURED',
+        blockingCheckIds: expect.arrayContaining(['policy', 'mock_test', 'portal']),
+      },
+    });
+    const after = await h.db.run('SELECT current_phase FROM bid_sessions WHERE id = ?', [
+      sessionId,
+    ]);
+    expect(after.results[0]?.current_phase).toBe('config');
+  });
+
+  it('exposes the same fail-closed readiness report to an administrator', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/readiness`, {
+        headers: { Authorization: `Bearer ${await freshAdmin()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      id: sessionId,
+      is_mock: false,
+      readiness: {
+        canStartLiveBid: false,
+        overallStatus: 'NOT_CONFIGURED',
+        blockingCheckIds: expect.arrayContaining(['policy', 'mock_test', 'portal']),
+      },
+    });
+  });
+
   it('writes audit log session_start', async () => {
+    await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
+
     await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
         method: 'POST',

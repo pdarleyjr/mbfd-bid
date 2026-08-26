@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { opCredNames } from '../../src/operations-techs.js';
 import { computePoints } from '../../src/points/sum.js';
 import type { Member, PositionRule } from '../../src/types.js';
 
@@ -57,6 +58,65 @@ describe('computePoints', () => {
       rule(items),
     );
     expect(r2.total).toBe(0);
+  });
+
+  it('honors an explicit paired-operation gate without changing the legacy boolean behavior', () => {
+    const items = [
+      {
+        points: 1,
+        credential: 'State Certified Hazardous Materials Technician',
+        requiresOpsPair: false,
+        opsGate: 'paired_operation' as const,
+      },
+    ];
+
+    expect(
+      computePoints(member(['State Certified Hazardous Materials Technician']), rule(items)).total,
+    ).toBe(0);
+    expect(
+      computePoints(
+        member([
+          'Hazardous Materials Operations',
+          'State Certified Hazardous Materials Technician',
+        ]),
+        rule(items),
+      ).total,
+    ).toBe(1);
+  });
+
+  it('does not award an all-operations-gated technician point until all six Operations credentials are held', () => {
+    const allButOneOps = opCredNames().filter(
+      (credential) => credential !== 'Trench Rescue Operations',
+    );
+    const r = computePoints(
+      member(['Rope Rescue Technician', ...allButOneOps]),
+      rule([
+        {
+          points: 2,
+          credential: 'Rope Rescue Technician',
+          requiresOpsPair: false,
+          opsGate: 'all_operations',
+        },
+      ]),
+    );
+
+    expect(r.total).toBe(0);
+  });
+
+  it('awards an all-operations-gated technician point when all six Operations credentials are held', () => {
+    const r = computePoints(
+      member(['Rope Rescue Technician', ...opCredNames()]),
+      rule([
+        {
+          points: 2,
+          credential: 'Rope Rescue Technician',
+          requiresOpsPair: false,
+          opsGate: 'all_operations',
+        },
+      ]),
+    );
+
+    expect(r.total).toBe(2);
   });
 
   it('caps total at pointsPreference.max when max > 0', () => {

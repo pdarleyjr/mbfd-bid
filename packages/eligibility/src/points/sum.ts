@@ -1,4 +1,4 @@
-import { opsForTech } from '../operations-techs.js';
+import { holdsAllOps, opsForTech } from '../operations-techs.js';
 import type { Member, PointsBreakdown, PositionRule } from '../types.js';
 
 export function computePoints(member: Member, rule: PositionRule): PointsBreakdown {
@@ -12,7 +12,18 @@ export function computePoints(member: Member, rule: PositionRule): PointsBreakdo
       continue;
     }
 
-    if (item.requiresOpsPair) {
+    const opsGate = item.opsGate ?? (item.requiresOpsPair ? 'paired_operation' : undefined);
+
+    if (opsGate === 'all_operations' && !holdsAllOps(heldCreds)) {
+      itemized.push({
+        credential: item.credential,
+        awarded: 0,
+        reason: 'Technician cert requires all six Operations certifications',
+      });
+      continue;
+    }
+
+    if (opsGate === 'paired_operation') {
       const requiredOps = opsForTech(item.credential);
       if (requiredOps !== undefined && !heldCreds.has(requiredOps)) {
         itemized.push({

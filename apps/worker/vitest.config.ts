@@ -17,6 +17,8 @@ const isNonWatchRun = process.argv.includes('run') || process.argv.includes('--r
 
 export default defineConfig({
   test: {
-    exclude: isNonWatchRun ? [...configDefaults.exclude, ...wranglerLauncherTests] : configDefaults.exclude,
+    exclude: isNonWatchRun
+      ? [...configDefaults.exclude, ...wranglerLauncherTests]
+      : configDefaults.exclude,
   },
 });
