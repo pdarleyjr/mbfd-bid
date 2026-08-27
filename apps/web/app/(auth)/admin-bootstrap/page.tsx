@@ -6,8 +6,9 @@ import { AdminBootstrapForm } from './AdminBootstrapForm';
 export const dynamic = 'force-dynamic';
 
 /**
- * This route exists only to recover an intentionally unconfigured staging
- * member-PIN record. It is not a production admin-login surface.
+ * This route exists only to initialize an absent or recover a malformed
+ * staging member-PIN record. It is not a production admin-login surface and
+ * cannot rotate an already configured PIN.
  */
 export default function AdminBootstrapPage() {
   if (cfEnv('ENV') !== 'staging') redirect('/');
@@ -18,8 +19,9 @@ export default function AdminBootstrapPage() {
       <main className="mx-auto max-w-md px-4 py-12 sm:py-16">
         <h1 className="font-heading text-2xl text-stone-800">Initialize member access</h1>
         <p className="mt-1 text-sm text-stone-600">
-          Use the separate staging admin account to configure the member PIN. This route is
-          unavailable outside staging.
+          Use the separate staging admin account to initialize an absent PIN or recover a malformed
+          record. To rotate an existing PIN, use Bid Access PIN settings after sign-in. This route
+          is unavailable outside staging.
         </p>
         <AdminBootstrapForm />
       </main>

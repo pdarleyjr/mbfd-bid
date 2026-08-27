@@ -5,10 +5,20 @@ import { getWorkerBase } from '@/lib/worker-base';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+const Pin = z.string().regex(/^\d{4,8}$/);
+
 const Body = z.object({
   password: z.string().min(1),
-  pin: z.string().regex(/^\d{4,8}$/),
+  pin: Pin,
 });
+
+const CanonicalPinState = z.discriminatedUnion('configured', [
+  z.object({ configured: z.literal(true), pin: Pin }),
+  z.object({
+    configured: z.literal(false),
+    state: z.enum(['missing', 'malformed', 'unavailable']),
+  }),
+]);
 
 function isSameOriginBootstrapRequest(req: Request): boolean {
   const expectedOrigin = isExpectedPublicWebOrigin(cfEnv('ENV'), req.headers.get('origin'));
@@ -17,10 +27,12 @@ function isSameOriginBootstrapRequest(req: Request): boolean {
 }
 
 /**
- * The narrow recovery path for an intentionally absent staging member PIN.
- * It verifies staging-local admin credentials and immediately exchanges the
- * returned signed JWT for one canonical settings write. No browser admin JWT
- * is issued, so this does not weaken the ordinary admin PIN gate.
+ * The narrow recovery path for an intentionally absent or malformed staging
+ * member PIN. It verifies staging-local admin credentials, reads canonical
+ * state, and only then performs one canonical settings write. When that
+ * canonical read reports a configured PIN, this route returns a conflict;
+ * normal authenticated admin settings remain the rotation path. No browser
+ * admin JWT is issued, so this does not weaken the ordinary admin PIN gate.
  */
 export async function POST(req: Request) {
   if (cfEnv('ENV') !== 'staging' || !isSameOriginBootstrapRequest(req)) {
@@ -59,10 +71,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'admin_required' }, { status: 403 });
   }
 
+  const authorization = `Bearer ${loginBody.jwt}`;
+  const current = await fetch(`${getWorkerBase()}/api/admin/settings/bid-pin`, {
+    method: 'GET',
+    headers: { authorization },
+  }).catch(() => null);
+  if (!current?.ok) {
+    return NextResponse.json({ error: 'bootstrap_unavailable' }, { status: 503 });
+  }
+
+  const currentState = CanonicalPinState.safeParse(await current.json().catch(() => null));
+  if (
+    !currentState.success ||
+    (!currentState.data.configured && currentState.data.state === 'unavailable')
+  ) {
+    return NextResponse.json({ error: 'bootstrap_unavailable' }, { status: 503 });
+  }
+  if (currentState.data.configured) {
+    return NextResponse.json({ error: 'PIN_ALREADY_CONFIGURED' }, { status: 409 });
+  }
+
   const upstream = await fetch(`${getWorkerBase()}/api/admin/settings/bid-pin`, {
     method: 'PUT',
     headers: {
-      authorization: `Bearer ${loginBody.jwt}`,
+      authorization,
       'content-type': 'application/json',
     },
     body: JSON.stringify({ pin: parsed.data.pin }),

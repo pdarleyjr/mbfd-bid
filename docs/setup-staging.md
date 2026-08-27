@@ -108,8 +108,11 @@ The member access PIN is not a Wrangler secret. It is the single KV record
 `settings:member_bid_pin`, initialized or rotated only through an authenticated
 staging Bid admin settings request. When the record is absent, the staging-only
 `/admin-bootstrap` page uses the separately managed local-admin credential to
-initialize it. Then enter that newly set PIN and sign in before using the Bid
-Access PIN settings page for later rotation. There is no
+initialize it; it may also recover a malformed record. If its authenticated
+pre-write read reports a valid PIN, it returns `PIN_ALREADY_CONFIGURED` without
+writing, so the authenticated Bid Access PIN settings page is the route for
+later rotation. Then enter that newly set PIN and sign in before using the Bid
+Access PIN settings page. There is no
 environment-secret fallback and no default PIN:
 when the record is missing, malformed, or unavailable, verification returns
 `PIN_NOT_CONFIGURED` with HTTP 503. Generate or receive any staging-only PIN

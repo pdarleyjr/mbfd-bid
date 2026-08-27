@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react';
 
 /**
  * Staging-only entrypoint for an independently authenticated local admin to
- * initialize the member PIN when its canonical KV record does not yet exist.
+ * initialize a missing member PIN or recover a malformed canonical KV record.
  */
 export function AdminBootstrapForm() {
   const router = useRouter();
@@ -35,9 +35,11 @@ export function AdminBootstrapForm() {
       setError(
         response?.status === 401 || response?.status === 403
           ? 'Incorrect staging admin password.'
-          : response?.status === 400
-            ? 'PIN must be 4–8 digits.'
-            : 'Could not initialize the staging PIN.',
+          : response?.status === 409
+            ? 'A member PIN is already configured. Use Bid Access PIN settings to rotate it.'
+            : response?.status === 400
+              ? 'PIN must be 4–8 digits.'
+              : 'Could not initialize the staging PIN.',
       );
     });
   }
