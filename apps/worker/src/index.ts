@@ -60,7 +60,10 @@ export type AppType = typeof routes;
 // Main application — middleware applied separately to avoid schema mutation.
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
-app.use('*', logger((message) => console.log(redactRequestLog(message))));
+app.use(
+  '*',
+  logger((message) => console.log(redactRequestLog(message))),
+);
 // Plan 09 Task 4 — every response (including 404/500) carries CSP, HSTS,
 // and the rest of the security header set.
 app.use('*', async (c, next) => {
