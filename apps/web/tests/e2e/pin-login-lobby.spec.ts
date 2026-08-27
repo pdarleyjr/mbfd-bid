@@ -2,17 +2,32 @@ import { expect, test } from '@playwright/test';
 
 test.describe('PIN gate', () => {
   test('rejects an incorrect PIN', async ({ page }) => {
+    const apiBase = process.env.E2E_TEST_API_BASE;
+    const incorrectPin = process.env.E2E_TEST_INCORRECT_PIN;
+    if (!apiBase || !incorrectPin) {
+      test.skip(true, 'Requires controlled E2E API and an explicitly supplied incorrect test PIN');
+      return;
+    }
     await page.goto('/');
-    await page.getByLabel('Access PIN').fill('9999');
+    await page.getByLabel('Access PIN').fill(incorrectPin);
     await page.getByRole('button', { name: /continue/i }).click();
     // Next.js injects a global <div role="alert" id="__next-route-announcer__">,
     // so target our own form-level error by id to avoid the strict-mode collision.
     await expect(page.locator('#pin-error')).toHaveText(/incorrect/i);
   });
 
-  test('accepts PIN 2300 and forwards to /login', async ({ page }) => {
+  test('accepts an explicitly provided E2E test PIN and forwards to /login', async ({ page }) => {
+    const apiBase = process.env.E2E_TEST_API_BASE;
+    const pin = process.env.E2E_TEST_PIN;
+    if (!apiBase || !pin) {
+      test.skip(
+        true,
+        'Requires controlled E2E API and a noncommitted E2E_TEST_PIN configured by the test environment',
+      );
+      return;
+    }
     await page.goto('/');
-    await page.getByLabel('Access PIN').fill('2300');
+    await page.getByLabel('Access PIN').fill(pin);
     await page.getByRole('button', { name: /continue/i }).click();
     // /login doesn't exist yet (Task 9) — but middleware should still try to render or redirect.
     // For Task 7 acceptance, we just confirm we navigated away from '/'.

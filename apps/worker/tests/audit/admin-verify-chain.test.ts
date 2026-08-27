@@ -63,7 +63,6 @@ function makeEnv(r2: FakeR2): WorkerEnv {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'a'.repeat(64),
-    PIN_HASH: 'x',
     PORTAL_BID_READER: 'tok',
     DB: {} as never,
     KV: {} as never,

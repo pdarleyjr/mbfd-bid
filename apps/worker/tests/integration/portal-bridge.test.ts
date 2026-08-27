@@ -138,7 +138,7 @@ describe('/api/portal/admin/bid-pin', () => {
     await teardownTestD1(h);
   });
 
-  it('GET returns the default 2300 setting when KV is empty', async () => {
+  it('GET returns an explicit unconfigured state while retaining nullable bridge fields', async () => {
     const kv = makeKv();
     const res = await app.fetch(
       new Request('http://x/api/portal/admin/bid-pin', {
@@ -148,13 +148,17 @@ describe('/api/portal/admin/bid-pin', () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      pin: string;
-      isDefault: boolean;
-      updatedAt: string | null;
+      configured: boolean;
+      state: string;
     };
-    expect(body.pin).toBe('2300');
-    expect(body.isDefault).toBe(true);
-    expect(body.updatedAt).toBeNull();
+    expect(body).toEqual({
+      configured: false,
+      state: 'missing',
+      pin: null,
+      updatedAt: null,
+      updatedBy: null,
+      isDefault: false,
+    });
   });
 
   it('GET returns 401 without bearer', async () => {
@@ -178,8 +182,13 @@ describe('/api/portal/admin/bid-pin', () => {
       { ...h.env, PORTAL_BID_READER: SHARED, KV: kv },
     );
     expect(putRes.status).toBe(200);
-    const putBody = (await putRes.json()) as { pin: string; isDefault: boolean };
+    const putBody = (await putRes.json()) as {
+      configured: boolean;
+      pin: string;
+      isDefault: boolean;
+    };
     expect(putBody.pin).toBe('4040');
+    expect(putBody.configured).toBe(true);
     expect(putBody.isDefault).toBe(false);
 
     const getRes = await app.fetch(
@@ -188,9 +197,16 @@ describe('/api/portal/admin/bid-pin', () => {
       }),
       { ...h.env, PORTAL_BID_READER: SHARED, KV: kv },
     );
-    const getBody = (await getRes.json()) as { pin: string; updatedBy: string };
+    const getBody = (await getRes.json()) as {
+      configured: boolean;
+      pin: string;
+      updatedBy: string;
+      isDefault: boolean;
+    };
+    expect(getBody.configured).toBe(true);
     expect(getBody.pin).toBe('4040');
     expect(getBody.updatedBy).toBe('hub-admin@example');
+    expect(getBody.isDefault).toBe(false);
   });
 
   it('PUT rejects PINs that fail validation', async () => {

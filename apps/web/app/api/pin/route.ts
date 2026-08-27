@@ -86,5 +86,12 @@ export async function POST(req: Request) {
       { status: 429, headers: { 'Retry-After': retryAfter } },
     );
   }
+  if (upstream.status === 503) {
+    const body = (await upstream.json().catch(() => null)) as { error?: string } | null;
+    if (body?.error === 'PIN_NOT_CONFIGURED') {
+      return NextResponse.json({ error: 'PIN_NOT_CONFIGURED' }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'misconfigured' }, { status: 503 });
+  }
   return NextResponse.json({ error: 'misconfigured' }, { status: 500 });
 }

@@ -86,7 +86,6 @@ jobs:
     timeout-minutes: 20
     env:
       JWT_SIGNING_KEY: ${{ secrets.E2E_JWT_SIGNING_KEY }}
-      PIN_PLAIN: '2300'
       E2E_REAL_JWT: '1'
     steps:
       - uses: actions/checkout@v4

@@ -177,7 +177,6 @@ describe('BidSessionDO rejects pick when R2 chain emit fails (W36)', () => {
       ENV: 'staging',
       PORTAL_BASE_URL: 'https://portal.test',
       JWT_SIGNING_KEY: 'k'.repeat(64),
-      PIN_HASH: '$2b$12$placeholder',
       PORTAL_BID_READER: 'tok',
       DB: makeStubDb(),
       KV: {} as never,

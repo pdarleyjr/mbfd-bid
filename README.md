@@ -49,7 +49,8 @@ pnpm lint         # Biome
 pnpm typecheck
 ```
 
-Open http://localhost:3000. PIN is `2300` (configurable via `PIN_HASH` Wrangler secret on deployed envs).
+Open http://localhost:3000. Member access requires an explicitly configured
+KV-backed PIN; there is no default PIN or legacy environment-secret fallback.
 
 ## Layout
 

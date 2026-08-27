@@ -13,7 +13,6 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
         JWT_SIGNING_KEY: 'test-key-with-at-least-32-characters-long',
         ENV: 'staging',
         PORTAL_BASE_URL: 'https://example.org',
-        PIN_HASH: '$2a$10$abcdefghijklmnopqrstuv',
         PORTAL_BID_READER: 'x',
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],

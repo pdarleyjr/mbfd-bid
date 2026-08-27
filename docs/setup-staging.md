@@ -96,7 +96,7 @@ Required secrets (per env):
 | Name | Purpose | Plan |
 |------|---------|------|
 | `JWT_SIGNING_KEY` | HS256 JWT signing (32-byte hex) | 01 |
-| `PIN_HASH` | bcrypt of the authorized staging access PIN; never document or use a default | 01 |
+| `LOCAL_ADMIN_PASSWORD_HASH` | bcrypt digest for the staging-only `admin` login; never document the plaintext password | 02 |
 | `PORTAL_BID_READER` | Portal `/verify-credentials` service token | 01 |
 | `AUDIT_SIGNING_PRIVKEY` | ed25519 private key for R2 audit chunks | 08 |
 
@@ -104,14 +104,23 @@ Required secrets (per env):
 `PORTAL_WRITEBACK_ENABLED=false`. Retired AI configuration is not a required
 staging secret.
 
+The member access PIN is not a Wrangler secret. It is the single KV record
+`settings:member_bid_pin`, initialized or rotated only through an authenticated
+staging Bid admin settings request. When the record is absent, the staging-only
+`/admin-bootstrap` page uses the separately managed local-admin credential to
+initialize it. Then enter that newly set PIN and sign in before using the Bid
+Access PIN settings page for later rotation. There is no
+environment-secret fallback and no default PIN:
+when the record is missing, malformed, or unavailable, verification returns
+`PIN_NOT_CONFIGURED` with HTTP 503. Generate or receive any staging-only PIN
+through the approved secret channel; never put it in source, shell history,
+documentation, screenshots, or test artifacts.
+
 Generators:
 
 ```bash
 # JWT_SIGNING_KEY (32-byte hex)
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-
-# PIN_HASH: generate only from an authorized value through a secure prompt;
-# never place a default or a real PIN in source, documentation, or shell history.
 
 # AUDIT_SIGNING_PRIVKEY (ed25519)
 openssl genpkey -algorithm Ed25519 | head -c -1

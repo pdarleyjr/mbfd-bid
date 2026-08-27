@@ -12,7 +12,6 @@ function mkEnv(): WorkerEnv {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: KEY,
-    PIN_HASH: '$2b$12$placeholder',
     PORTAL_BID_READER: 'tok',
     DB: {} as never,
     KV: {} as never,

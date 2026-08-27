@@ -4,12 +4,19 @@ import { BidPinForm } from './BidPinForm';
 
 export const dynamic = 'force-dynamic';
 
-interface PinSetting {
+interface ConfiguredPinSetting {
+  configured: true;
   pin: string;
   updatedAt: string | null;
   updatedBy: string | null;
-  isDefault: boolean;
 }
+
+interface UnconfiguredPinSetting {
+  configured: false;
+  state: 'missing' | 'malformed' | 'unavailable';
+}
+
+type PinSetting = ConfiguredPinSetting | UnconfiguredPinSetting;
 
 async function loadPin(): Promise<{ setting: PinSetting | null; error: string | null }> {
   try {
@@ -30,9 +37,9 @@ export default async function BidPinAdminPage() {
     <div className="max-w-2xl">
       <h1 className="mb-2 font-display text-2xl text-slate-50">Bid Access PIN</h1>
       <p className="mb-6 text-sm text-slate-300">
-        Members must enter this PIN before they can sign in to the bid site. Change it any time —
-        the new value applies immediately to every device, and also reflects on the MBFD Hub
-        admin&apos;s &ldquo;Bid Access PIN&rdquo; page.
+        Members must enter an explicitly configured PIN before they can sign in to the bid site.
+        Change it any time — the new value applies immediately to every device, and also reflects on
+        the MBFD Hub admin&apos;s &ldquo;Bid Access PIN&rdquo; page.
       </p>
 
       {error && (

@@ -7,7 +7,6 @@ export const EnvSchema = z.object({
   ENV: z.enum(['staging', 'production']),
   PORTAL_BASE_URL: z.string().url(),
   JWT_SIGNING_KEY: z.string().min(32),
-  PIN_HASH: z.string().min(1),
   PORTAL_BID_READER: z.string().min(1),
   // Optional in dev; required in staging/production for the admin login to
   // succeed. The username is the constant LOCAL_ADMIN_USERNAME above; this

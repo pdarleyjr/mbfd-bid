@@ -9,10 +9,11 @@ describe('LOCAL_ADMIN_USERNAME', () => {
 });
 
 describe('verifyLocalAdminPassword', () => {
-  const hash = bcrypt.hashSync('Cityofmiamibeach!', 10);
+  const fixturePassword = 'test-only-admin-password';
+  const hash = bcrypt.hashSync(fixturePassword, 10);
 
   it('returns true for the correct password', () => {
-    expect(verifyLocalAdminPassword(hash, 'Cityofmiamibeach!')).toBe(true);
+    expect(verifyLocalAdminPassword(hash, fixturePassword)).toBe(true);
   });
 
   it('returns false for the wrong password', () => {
@@ -20,7 +21,7 @@ describe('verifyLocalAdminPassword', () => {
   });
 
   it('returns false when the hash secret is empty', () => {
-    expect(verifyLocalAdminPassword('', 'Cityofmiamibeach!')).toBe(false);
+    expect(verifyLocalAdminPassword('', fixturePassword)).toBe(false);
   });
 
   it('returns false when the candidate password is empty', () => {
@@ -28,15 +29,15 @@ describe('verifyLocalAdminPassword', () => {
   });
 
   it('returns false on a malformed hash without throwing', () => {
-    expect(verifyLocalAdminPassword('not-a-valid-bcrypt-hash', 'Cityofmiamibeach!')).toBe(false);
+    expect(verifyLocalAdminPassword('not-a-valid-bcrypt-hash', fixturePassword)).toBe(false);
   });
 
   it('is case sensitive', () => {
-    expect(verifyLocalAdminPassword(hash, 'cityofmiamibeach!')).toBe(false);
-    expect(verifyLocalAdminPassword(hash, 'CITYOFMIAMIBEACH!')).toBe(false);
+    expect(verifyLocalAdminPassword(hash, fixturePassword.toUpperCase())).toBe(false);
+    expect(verifyLocalAdminPassword(hash, fixturePassword.replace('admin', 'Admin'))).toBe(false);
   });
 
   it('rejects passwords missing the trailing punctuation', () => {
-    expect(verifyLocalAdminPassword(hash, 'Cityofmiamibeach')).toBe(false);
+    expect(verifyLocalAdminPassword(hash, fixturePassword.slice(0, -1))).toBe(false);
   });
 });

@@ -1,7 +1,6 @@
 import type { KVNamespace } from '@cloudflare/workers-types';
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_MEMBER_BID_PIN,
   MEMBER_BID_PIN_KV_KEY,
   constantTimeEqual,
   getBidPin,
@@ -34,7 +33,7 @@ function makeKv(initial: Record<string, string> = {}): KVNamespace {
 
 describe('isValidPin', () => {
   it('accepts 4–8 digit strings', () => {
-    expect(isValidPin('2300')).toBe(true);
+    expect(isValidPin('1357')).toBe(true);
     expect(isValidPin('12345678')).toBe(true);
   });
 
@@ -43,31 +42,38 @@ describe('isValidPin', () => {
     expect(isValidPin('123456789')).toBe(false);
     expect(isValidPin('12a4')).toBe(false);
     expect(isValidPin('')).toBe(false);
-    expect(isValidPin(2300 as unknown as string)).toBe(false);
+    expect(isValidPin(1357 as unknown as string)).toBe(false);
   });
 });
 
 describe('getBidPin', () => {
-  it('returns the default (2300) when KV is empty', async () => {
+  it('reports a missing setting when KV is empty', async () => {
     const kv = makeKv();
-    const setting = await getBidPin(kv);
-    expect(setting.pin).toBe(DEFAULT_MEMBER_BID_PIN);
-    expect(setting.updatedAt).toBe(0);
-    expect(setting.updatedBy).toBeNull();
+    const result = await getBidPin(kv);
+    expect(result).toEqual({ kind: 'missing' });
   });
 
-  it('returns the default when KV holds malformed JSON', async () => {
+  it('reports a malformed setting when KV holds malformed JSON', async () => {
     const kv = makeKv({ [MEMBER_BID_PIN_KV_KEY]: '{not json' });
-    const setting = await getBidPin(kv);
-    expect(setting.pin).toBe(DEFAULT_MEMBER_BID_PIN);
+    const result = await getBidPin(kv);
+    expect(result).toEqual({ kind: 'malformed' });
   });
 
-  it('returns the default when the stored PIN is invalid shape', async () => {
+  it('reports a malformed setting when the stored PIN has an invalid shape', async () => {
     const kv = makeKv({
       [MEMBER_BID_PIN_KV_KEY]: JSON.stringify({ pin: 'abc', updatedAt: 1 }),
     });
-    const setting = await getBidPin(kv);
-    expect(setting.pin).toBe(DEFAULT_MEMBER_BID_PIN);
+    const result = await getBidPin(kv);
+    expect(result).toEqual({ kind: 'malformed' });
+  });
+
+  it('reports an unavailable setting when KV reads fail', async () => {
+    const kv = makeKv();
+    kv.get = async () => {
+      throw new Error('KV unavailable');
+    };
+    const result = await getBidPin(kv);
+    expect(result).toEqual({ kind: 'unavailable' });
   });
 
   it('returns the stored setting when valid', async () => {
@@ -78,10 +84,15 @@ describe('getBidPin', () => {
         updatedBy: 'admin@example',
       }),
     });
-    const setting = await getBidPin(kv);
-    expect(setting.pin).toBe('4040');
-    expect(setting.updatedAt).toBe(1700000000000);
-    expect(setting.updatedBy).toBe('admin@example');
+    const result = await getBidPin(kv);
+    expect(result).toEqual({
+      kind: 'configured',
+      setting: {
+        pin: '4040',
+        updatedAt: 1700000000000,
+        updatedBy: 'admin@example',
+      },
+    });
   });
 });
 
@@ -95,8 +106,7 @@ describe('setBidPin', () => {
     expect(setting.updatedBy).toBe('admin');
     // Round-trip through getBidPin.
     const reread = await getBidPin(kv);
-    expect(reread.pin).toBe('9090');
-    expect(reread.updatedBy).toBe('admin');
+    expect(reread).toEqual({ kind: 'configured', setting });
   });
 
   it('rejects invalid PINs', async () => {
@@ -108,14 +118,14 @@ describe('setBidPin', () => {
 
 describe('constantTimeEqual', () => {
   it('returns true for identical strings', () => {
-    expect(constantTimeEqual('2300', '2300')).toBe(true);
+    expect(constantTimeEqual('1357', '1357')).toBe(true);
   });
 
   it('returns false for different lengths', () => {
-    expect(constantTimeEqual('2300', '23001')).toBe(false);
+    expect(constantTimeEqual('1357', '13579')).toBe(false);
   });
 
   it('returns false for different content', () => {
-    expect(constantTimeEqual('2300', '2301')).toBe(false);
+    expect(constantTimeEqual('1357', '1358')).toBe(false);
   });
 });

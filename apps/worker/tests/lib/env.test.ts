@@ -6,7 +6,6 @@ describe('EnvSchema', () => {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.mbfdhub.com',
     JWT_SIGNING_KEY: 'a'.repeat(32),
-    PIN_HASH: 'xxx',
     PORTAL_BID_READER: 'xxx',
   } as const;
 

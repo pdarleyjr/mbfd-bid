@@ -5,24 +5,27 @@
  * admin surfaces all go through these helpers, so the two sides stay in
  * lockstep automatically.
  *
- * Default value: "2300" — used when the key is unset (e.g. fresh deploy or
- * after a `wrangler kv:key delete`). Storing the default explicitly is not
- * required; verifyPin falls back to it.
+ * A PIN must be explicitly configured. Missing, malformed, and unavailable
+ * KV records are reported to callers so authentication can fail closed rather
+ * than inventing a predictable fallback.
  */
 
 import type { KVNamespace } from '@cloudflare/workers-types';
 
-export const DEFAULT_MEMBER_BID_PIN = '2300';
 export const MEMBER_BID_PIN_KV_KEY = 'settings:member_bid_pin';
 
 export interface BidPinSetting {
   /** 4–8 digit access PIN. */
   pin: string;
-  /** Epoch milliseconds of last write; 0 when unset (default). */
+  /** Epoch milliseconds of the last write. */
   updatedAt: number;
   /** member id / employee id / 'system' for the last writer. */
   updatedBy: string | null;
 }
+
+export type BidPinReadResult =
+  | { kind: 'configured'; setting: BidPinSetting }
+  | { kind: 'missing' | 'malformed' | 'unavailable' };
 
 const PIN_RE = /^\d{4,8}$/;
 
@@ -31,34 +34,31 @@ export function isValidPin(value: unknown): value is string {
 }
 
 /**
- * Read the current bid-page PIN. Falls back to the compile-time default when
- * KV is empty or holds malformed JSON. Always resolves — never throws — so
- * the verify-pin endpoint can stay simple.
+ * Read the current bid-page PIN without ever synthesizing a fallback. The
+ * typed state allows the verifier to return an operator-readable 503 while
+ * authorized admin routes retain an explicit bootstrap path.
  */
-export async function getBidPin(kv: KVNamespace): Promise<BidPinSetting> {
-  const fallback: BidPinSetting = {
-    pin: DEFAULT_MEMBER_BID_PIN,
-    updatedAt: 0,
-    updatedBy: null,
-  };
+export async function getBidPin(kv: KVNamespace): Promise<BidPinReadResult> {
   let raw: string | null = null;
   try {
     raw = await kv.get(MEMBER_BID_PIN_KV_KEY);
-  } catch (err) {
-    console.error('[bid-pin] KV read failed (using default)', err);
-    return fallback;
+  } catch {
+    return { kind: 'unavailable' };
   }
-  if (!raw) return fallback;
+  if (raw === null) return { kind: 'missing' };
   try {
     const parsed = JSON.parse(raw) as Partial<BidPinSetting>;
-    if (!isValidPin(parsed.pin)) return fallback;
+    if (!isValidPin(parsed.pin)) return { kind: 'malformed' };
     return {
-      pin: parsed.pin,
-      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
-      updatedBy: typeof parsed.updatedBy === 'string' ? parsed.updatedBy : null,
+      kind: 'configured',
+      setting: {
+        pin: parsed.pin,
+        updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
+        updatedBy: typeof parsed.updatedBy === 'string' ? parsed.updatedBy : null,
+      },
     };
   } catch {
-    return fallback;
+    return { kind: 'malformed' };
   }
 }
 

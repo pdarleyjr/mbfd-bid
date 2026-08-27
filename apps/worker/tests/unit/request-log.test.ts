@@ -9,7 +9,6 @@ function env(): WorkerEnv {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'x'.repeat(64),
-    PIN_HASH: '$2b$12$placeholder',
     PORTAL_BID_READER: 'tok',
     DB: {} as never,
     KV: {} as never,

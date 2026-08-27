@@ -111,7 +111,6 @@ export async function setupTestD1(): Promise<TestD1> {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'b'.repeat(64),
-    PIN_HASH: '$2b$12$placeholder',
     PORTAL_BID_READER: 'tok',
     DB: makeD1Adapter(sqlite),
     KV: {} as never,

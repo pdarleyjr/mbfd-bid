@@ -11,7 +11,6 @@ describe('BidSession DO recovery (Plan 04 Task 15)', () => {
         JWT_SIGNING_KEY: 'test-key-with-at-least-32-characters-long',
         ENV: 'staging',
         PORTAL_BASE_URL: 'https://x.example',
-        PIN_HASH: 'x',
         PORTAL_BID_READER: 'x',
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],

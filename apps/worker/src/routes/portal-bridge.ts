@@ -12,7 +12,8 @@
  *   GET /members/:employee_id/credentials
  *     → { credentials: string[], lastUpdated: string|null }
  *   GET /admin/bid-pin
- *     → { pin, updatedAt, updatedBy, isDefault }
+ *     → configured setting or explicit unconfigured state, retaining nullable
+ *       legacy fields for the existing Hub reader
  *   PUT /admin/bid-pin { pin: "1234" }
  *     → same shape after a successful write
  *
@@ -28,7 +29,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../db/index.js';
 import { credentials as credentialsTable, memberCredentials, members } from '../db/schema.js';
-import { getBidPin, isValidPin, setBidPin } from '../lib/bid-pin.js';
+import {
+  type BidPinReadResult,
+  type BidPinSetting,
+  getBidPin,
+  isValidPin,
+  setBidPin,
+} from '../lib/bid-pin.js';
 import type { WorkerEnv } from '../types/env.js';
 
 const router = new Hono<{ Bindings: WorkerEnv }>();
@@ -92,19 +99,33 @@ router.get('/members/:employee_id/credentials', async (c) => {
   }
 });
 
-function presentPinSetting(setting: Awaited<ReturnType<typeof getBidPin>>) {
+function presentConfiguredPinSetting(setting: BidPinSetting) {
   return {
+    configured: true as const,
     pin: setting.pin,
     updatedAt: setting.updatedAt > 0 ? new Date(setting.updatedAt).toISOString() : null,
     updatedBy: setting.updatedBy,
-    isDefault: setting.updatedAt === 0,
+    // Compatibility-only field for the unversioned Hub bridge. It is never
+    // true because this Worker no longer supplies a synthetic PIN value.
+    isDefault: false,
+  };
+}
+
+function presentPinSetting(result: BidPinReadResult) {
+  if (result.kind === 'configured') return presentConfiguredPinSetting(result.setting);
+  return {
+    configured: false as const,
+    state: result.kind,
+    pin: null,
+    updatedAt: null,
+    updatedBy: null,
+    isDefault: false,
   };
 }
 
 router.get('/admin/bid-pin', async (c) => {
   try {
-    const setting = await getBidPin(c.env.KV);
-    return c.json(presentPinSetting(setting));
+    return c.json(presentPinSetting(await getBidPin(c.env.KV)));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[portal-bridge-error]', { route: 'GET /admin/bid-pin', msg });
@@ -123,7 +144,7 @@ router.put('/admin/bid-pin', async (c) => {
     }
     const updatedBy = parsed.data.updatedBy ?? 'mbfd-hub-admin';
     const setting = await setBidPin(c.env.KV, parsed.data.pin, updatedBy);
-    return c.json(presentPinSetting(setting));
+    return c.json(presentConfiguredPinSetting(setting));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[portal-bridge-error]', { route: 'PUT /admin/bid-pin', msg });

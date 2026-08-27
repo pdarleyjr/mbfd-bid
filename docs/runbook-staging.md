@@ -16,15 +16,14 @@ Two parallel jobs:
 
 ## How to rotate the PIN
 
-```bash
-cd apps/worker
-# Generate a sha256 hash of the new PIN locally (or bcrypt — see security plan)
-node -e "console.log(require('crypto').createHash('sha256').update('NEW_PIN').digest('hex'))"
-# Pipe to wrangler
-pnpm dlx wrangler secret put PIN_HASH --env staging
-# Redeploy
-gh workflow run deploy-staging.yml
-```
+The member PIN is a single explicit KV record, not a deploy-time value. When
+the record is absent, use the staging-only `/admin-bootstrap` page with the
+separately managed local-admin credential and the approved staging-only PIN to
+initialize `settings:member_bid_pin`. Then enter that PIN and sign in before
+using the authenticated Bid Access PIN settings UI for later rotation. Do not
+put the PIN in source, shell history, documentation, screenshots, or test
+artifacts. The verifier fails closed with `PIN_NOT_CONFIGURED` (503) until a
+valid record exists; it never falls back to a default.
 
 ## How to rotate the JWT signing key
 

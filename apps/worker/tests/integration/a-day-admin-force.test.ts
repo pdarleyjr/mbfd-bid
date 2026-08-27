@@ -37,7 +37,6 @@ describe('POST /api/admin/bid-session/:id/force-a-day (Plan 07 Task 14)', () => 
         JWT_SIGNING_KEY: SIGNING_KEY,
         ENV: 'staging',
         PORTAL_BASE_URL: 'https://example.org',
-        PIN_HASH: '$2a$10$abcdefghijklmnopqrstuv',
         PORTAL_BID_READER: 'x',
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],

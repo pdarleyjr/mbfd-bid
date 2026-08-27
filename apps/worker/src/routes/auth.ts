@@ -59,7 +59,7 @@ auth.post(
     // Local admin login: employee_id="admin", password verified against the
     // LOCAL_ADMIN_PASSWORD_HASH bcrypt secret. Bypasses portal entirely.
     // Plan 02 rehearsal scaffolding; Plan 05 admin console replaces this.
-    if (employee_id === LOCAL_ADMIN_USERNAME) {
+    if (env.ENV === 'staging' && employee_id === LOCAL_ADMIN_USERNAME) {
       if (!verifyLocalAdminPassword(env.LOCAL_ADMIN_PASSWORD_HASH, password)) {
         return c.json({ error: 'invalid_credentials' }, 401);
       }
@@ -131,10 +131,9 @@ auth.post(
 const VerifyPinBody = z.object({ pin: z.string() });
 
 /**
- * Verify the member bid-page PIN against the KV-stored value (default
- * "2300"). Rate-limited per IP via the existing helper. Returns 204 on
- * success — the Next.js edge proxy sets the cookie. Never returns the PIN
- * itself.
+ * Verify the member bid-page PIN against the explicitly configured KV value.
+ * Rate-limited per IP via the existing helper. Returns 204 on success — the
+ * Next.js edge proxy sets the cookie. Never returns the PIN itself.
  */
 auth.post('/verify-pin', async (c) => {
   // Rate limit. Fail-open on KV error so a transient hiccup doesn't lock
@@ -158,8 +157,11 @@ auth.post('/verify-pin', async (c) => {
     return c.json({ error: 'invalid' }, 400);
   }
 
-  const setting = await getBidPin(c.env.KV);
-  if (!constantTimeEqual(parsed.data.pin, setting.pin)) {
+  const pinState = await getBidPin(c.env.KV);
+  if (pinState.kind !== 'configured') {
+    return c.json({ error: 'PIN_NOT_CONFIGURED' }, 503);
+  }
+  if (!constantTimeEqual(parsed.data.pin, pinState.setting.pin)) {
     return c.json({ error: 'invalid_pin' }, 401);
   }
   return c.body(null, 204);

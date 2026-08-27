@@ -27,9 +27,7 @@ EOF
 
 declare -A SECRETS=(
   [JWT_SIGNING_KEY]="HS256 signing key, 64-char hex. Generate: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
-  [PIN_HASH]="bcrypt of the access PIN. Default PIN is 2300. Generate: node -e \"console.log(require('bcryptjs').hashSync('2300',12))\""
   [PORTAL_BID_READER]="Portal service token for POST /api/v2/verify-credentials"
-  [PORTAL_BID_WRITER]="Portal service token for POST /api/v2/members/:emp/bid-assignment (Plan 08 — can skip until then)"
   [AUDIT_SIGNING_PRIVKEY]="ed25519 private key (PEM) for R2 audit chunk signatures. Plan 08 — can skip until then."
 )
 
@@ -40,7 +38,17 @@ declare -A SECRETS=(
 # to clear it. The variable is silently ignored by the worker either way.
 
 # Preserve insertion order
-ORDER=(JWT_SIGNING_KEY PIN_HASH PORTAL_BID_READER PORTAL_BID_WRITER AUDIT_SIGNING_PRIVKEY)
+ORDER=(JWT_SIGNING_KEY PORTAL_BID_READER AUDIT_SIGNING_PRIVKEY)
+
+# The shared local-admin account is a staging-only bootstrap mechanism for a
+# missing member-PIN record. Never configure it for production.
+if [[ "$ENV" == "staging" ]]; then
+  SECRETS[LOCAL_ADMIN_PASSWORD_HASH]="bcrypt digest of the staging-only local admin password; never enter the plaintext here"
+  ORDER+=(LOCAL_ADMIN_PASSWORD_HASH)
+fi
+
+# Staging must never receive portal write capability. Production writer setup,
+# if separately authorized, is intentionally not part of this bootstrapper.
 
 pushd "$WORKER_DIR" > /dev/null
 

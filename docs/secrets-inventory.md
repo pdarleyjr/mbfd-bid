@@ -13,10 +13,9 @@ values are stored in this file.** All values are generated outside the repo
 | Secret name | Staging set? | Prod requires fresh value? | Source / generator |
 |---|---|---|---|
 | `JWT_SIGNING_KEY` | yes | **YES** | `openssl rand -base64 32` — different key per environment |
-| `PIN_HASH` | yes | **YES** | bcrypt of new PIN provided by the chiefs at cutover |
-| `LOCAL_ADMIN_PASSWORD_HASH` | yes | **YES** | bcrypt of new admin password; rotated post-event |
+| `LOCAL_ADMIN_PASSWORD_HASH` | yes | **must remain absent** | bcrypt of a separately managed staging-only bootstrap password |
 | `PORTAL_BID_READER` | yes | **YES** | new service token from portal team |
-| `PORTAL_BID_WRITER` | yes | **YES** | new service token from portal team |
+| `PORTAL_BID_WRITER` | **no — must remain absent** | separate future authorization | portal write capability is intentionally disabled in staging |
 | `AUDIT_SIGNING_PRIVKEY` | yes | **YES** | `openssl genpkey -algorithm Ed25519` — per-year / per-env |
 | `AUDIT_SIGNING_PUBKEY` | yes (vars) | **YES** | derived from new privkey; non-secret, set as `vars` |
 | `ANTHROPIC_API_KEY` | yes | NO (same key, separate AI Gateway env) | reused — Cloudflare AI Gateway namespaces traffic per env |
@@ -51,12 +50,9 @@ openssl genpkey -algorithm Ed25519 -out $env:TEMP\dryrun.pem
 openssl pkey -in $env:TEMP\dryrun.pem -pubout -out $env:TEMP\dryrun.pub.pem
 Remove-Item $env:TEMP\dryrun.pem, $env:TEMP\dryrun.pub.pem
 
-# bcrypt PIN hash (PIN_HASH):
-# Use the existing scripts/setup-cf-secrets.sh helper, or a one-shot:
-node -e "import('bcryptjs').then(b => console.log(b.default.hashSync(process.argv[1], 12)))" "<plain PIN>"
 ```
 
-> All three commands succeed on a clean Node 22 + OpenSSL 3.x box. Confirmed
+> Both commands succeed on a clean Node 22 + OpenSSL 3.x box. Confirmed
 > 2026-05-19 on the dev machine.
 
 ## Pre-cutover checklist
@@ -84,7 +80,6 @@ Run these checks before any prod-deployment task in Plan 09 Phase B:
 Within 7 days of A-Day completion, rotate the following secrets again:
 
 - `JWT_SIGNING_KEY`
-- `PIN_HASH`
 - `AUDIT_SIGNING_PRIVKEY` (start a new chain; archive the 2026 chunks)
 - `PRINT_TOKEN_SECRET`
 

@@ -20,7 +20,13 @@ export default defineConfig({
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    env: { ...process.env, NODE_ENV: 'test' } as Record<string, string>,
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      // E2E only contacts an API when an explicitly supplied controlled test
+      // endpoint is present. Never fall back to shared staging implicitly.
+      NEXT_PUBLIC_WORKER_BASE: process.env.E2E_TEST_API_BASE ?? '',
+    } as Record<string, string>,
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },

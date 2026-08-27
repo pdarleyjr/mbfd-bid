@@ -64,6 +64,7 @@ coverage/
 playwright-report/
 playwright/.cache/
 test-results/
+.playwright-cli/
 *.lcov
 
 # Logs

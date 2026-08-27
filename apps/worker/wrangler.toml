@@ -113,9 +113,11 @@ crons = ["15 4 * * *"]
 
 # Secrets — set via `wrangler secret put NAME --env staging`:
 #   JWT_SIGNING_KEY        (HMAC HS256, 32-byte random base64url)
-#   PIN_HASH               (bcrypt of the live PIN; rotate via `wrangler secret put`)
+#   LOCAL_ADMIN_PASSWORD_HASH (bcrypt of the staging-only local admin password;
+#                              do not configure it for production)
 #   PORTAL_BID_READER      (service token for /verify-credentials)
-#   PORTAL_BID_WRITER      (service token for /bid-assignment — used in Plan 08)
+#   PORTAL_BID_WRITER      (production-only service token for /bid-assignment;
+#                           it must remain absent from staging)
 #   AUDIT_SIGNING_PRIVKEY  (Plan 08 — ed25519 32-byte base64url; per year per env)
 #   AUDIT_SIGNING_PUBKEY   (Plan 08 — ed25519 32-byte base64url; non-secret)
 #   BROWSERLESS_TOKEN      (DEPRECATED — replaced by Cloudflare Browser

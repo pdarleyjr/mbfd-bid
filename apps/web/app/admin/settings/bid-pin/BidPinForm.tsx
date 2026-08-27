@@ -3,12 +3,19 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
-interface PinSetting {
+interface ConfiguredPinSetting {
+  configured: true;
   pin: string;
   updatedAt: string | null;
   updatedBy: string | null;
-  isDefault: boolean;
 }
+
+interface UnconfiguredPinSetting {
+  configured: false;
+  state: 'missing' | 'malformed' | 'unavailable';
+}
+
+type PinSetting = ConfiguredPinSetting | UnconfiguredPinSetting;
 
 interface Props {
   initial: PinSetting;
@@ -17,7 +24,7 @@ interface Props {
 const PIN_RE = /^\d{4,8}$/;
 
 export function BidPinForm({ initial }: Props) {
-  const [draft, setDraft] = useState(initial.pin);
+  const [draft, setDraft] = useState(initial.configured ? initial.pin : '');
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   // Re-read on a 15s cadence so concurrent edits from the MBFD Hub admin
@@ -36,7 +43,7 @@ export function BidPinForm({ initial }: Props) {
     refetchOnWindowFocus: true,
   });
 
-  const mutation = useMutation<PinSetting, Error, string>({
+  const mutation = useMutation<ConfiguredPinSetting, Error, string>({
     mutationFn: async (pin) => {
       const r = await fetch('/api/admin/settings/bid-pin', {
         method: 'PUT',
@@ -48,7 +55,7 @@ export function BidPinForm({ initial }: Props) {
         const body = (await r.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? `http_${r.status}`);
       }
-      return r.json() as Promise<PinSetting>;
+      return r.json() as Promise<ConfiguredPinSetting>;
     },
     onSuccess: (setting) => {
       setDraft(setting.pin);
@@ -80,12 +87,12 @@ export function BidPinForm({ initial }: Props) {
           data-testid="current-bid-pin"
           className="font-mono text-2xl tabular-nums text-slate-50"
         >
-          {current?.pin ?? '—'}
+          {current?.configured ? current.pin : 'Not configured'}
         </div>
         <div className="mt-1 text-xs text-slate-400">
-          {current?.isDefault
-            ? 'Using the built-in default (2300).'
-            : `Last changed ${current?.updatedAt ?? '—'} by ${current?.updatedBy ?? 'unknown'}.`}
+          {current?.configured
+            ? `Last changed ${current.updatedAt ?? '—'} by ${current.updatedBy ?? 'unknown'}.`
+            : 'No active PIN is configured. Enter a new PIN to initialize access.'}
         </div>
       </div>
 
@@ -107,18 +114,15 @@ export function BidPinForm({ initial }: Props) {
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={mutation.isPending || draft.length < 4 || draft === current?.pin}
+          disabled={
+            mutation.isPending ||
+            draft.length < 4 ||
+            (current?.configured === true && draft === current.pin)
+          }
           data-testid="save-bid-pin"
           className="inline-flex items-center rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {mutation.isPending ? 'Saving…' : 'Save PIN'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setDraft('2300')}
-          className="text-xs text-slate-300 underline hover:text-white"
-        >
-          Reset to default (2300)
         </button>
       </div>
 
