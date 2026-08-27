@@ -1,4 +1,5 @@
 import { BrandHeader } from '@/components/BrandHeader';
+import { LogoutButton } from '@/components/LogoutButton';
 import { requireAdmin } from '@/lib/require-admin';
 import { AdminLayoutShell } from './_components/AdminLayoutShell';
 import { AdminQueryProvider } from './_components/AdminQueryProvider';
@@ -10,7 +11,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-screen bg-slate-850 text-slate-50">
-      <BrandHeader subtitle="Admin Console" />
+      <BrandHeader subtitle="Admin Console" action={<LogoutButton />} />
       <AdminQueryProvider>
         <StepUpProvider>
           <AdminLayoutShell>{children}</AdminLayoutShell>

@@ -1,4 +1,5 @@
 import { BrandHeader } from '@/components/BrandHeader';
+import { LogoutButton } from '@/components/LogoutButton';
 import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
@@ -29,7 +30,10 @@ export default async function LobbyPage() {
 
   return (
     <div className="min-h-screen bg-stone-50">
-      <BrandHeader subtitle={`Hi, ${payload.first_name} — ${RANK_LABELS[payload.rank]}`} />
+      <BrandHeader
+        subtitle={`Hi, ${payload.first_name} — ${RANK_LABELS[payload.rank]}`}
+        action={<LogoutButton />}
+      />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
         <h2 className="font-heading text-2xl text-stone-800">Lobby</h2>
         <p className="mt-2 text-stone-600">
