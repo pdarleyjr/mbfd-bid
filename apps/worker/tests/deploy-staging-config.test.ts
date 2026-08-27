@@ -28,6 +28,9 @@ describe('staging release configuration', () => {
     expect(config).toContain('bucket_name = "mbfd-bid-audit-staging-v2"');
     expect(config).toContain('bucket_name = "mbfd-bid-exports-staging-v2"');
     expect(config).toContain('R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging-v2"');
+    expect(config).not.toContain('bucket_name = "mbfd-bid-audit"');
+    expect(config).not.toContain('bucket_name = "mbfd-bid-exports"');
+    expect(config).not.toContain('R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging"');
   });
 
   it('runs non-deploy validation before a staging migration or deployment', () => {
