@@ -10,6 +10,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
+import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { type DB, getDb } from '../../db/index.js';
 import {
   bidSessions,
@@ -117,6 +118,9 @@ router.post(
     const db = getDb(c.env.DB);
     const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
 
     const member = await db.select().from(members).where(eq(members.id, body.member_id)).get();
     if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
@@ -194,6 +198,9 @@ router.post('/:id/skip', requireStepUpAuth(), zValidator('json', SkipSchema), as
   const db = getDb(c.env.DB);
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
   if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+  if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+    return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+  }
 
   const member = await db.select().from(members).where(eq(members.id, body.member_id)).get();
   if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
@@ -236,6 +243,9 @@ router.post(
     const db = getDb(c.env.DB);
     const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
 
     const member = await loadMemberWithCreds(db, body.member_id);
     if (member === null) return c.json({ error: 'member_not_found' }, 404);
@@ -331,6 +341,9 @@ router.post(
     const db = getDb(c.env.DB);
     const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
     if (session.currentPhase !== 'config') {
       return c.json(
         { error: 'locks_only_in_config_phase', current_phase: session.currentPhase },

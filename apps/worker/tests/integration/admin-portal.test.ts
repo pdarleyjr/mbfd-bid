@@ -35,14 +35,47 @@ describe('admin portal endpoints (Plan 08 Task 24)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('POST /portal-retry/:bid_id returns 404 for unknown bid', async () => {
+  it('POST /portal-retry/:bid_id is unavailable while publication is disabled', async () => {
     const jwt = await adminJwt(h.env);
     const res = await mkApp().request(
       '/api/admin/portal-retry/bogus_bid',
       { method: 'POST', headers: { Authorization: `Bearer ${jwt}` } },
       h.env,
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(409);
+  });
+
+  it('POST /portal-retry/:bid_id rejects a bid that has not failed', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await h.db.run(
+      "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES ('session-retry', 2026, ?, 'position_bid', 180, 2, 1);",
+      [now],
+    );
+    await h.db.run(
+      "INSERT INTO members (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at) VALUES (9001, '9001', 'Test', 'Member', 'FF', 'FF', 1, 0, ?, ?);",
+      [now, now],
+    );
+    await h.db.run(
+      "INSERT INTO bids (id, bid_session_id, ordinal, member_id, position_id, picked_at, forced, idempotency_key, portal_sync_status, portal_sync_attempts) VALUES ('bid-retry-synced', 'session-retry', 1, 9001, 'A101', ?, 0, 'retry-request', 'synced', 1);",
+      [now],
+    );
+    const env = {
+      ...h.env,
+      PORTAL_WRITEBACK_ENABLED: 'true' as const,
+      PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
+      PORTAL_BID_WRITER: 'writer-token',
+    };
+    const jwt = await adminJwt(env);
+
+    const res = await mkApp().request(
+      '/api/admin/portal-retry/bid-retry-synced',
+      { method: 'POST', headers: { Authorization: `Bearer ${jwt}` } },
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({ error: 'portal_retry_requires_failed_bid' });
   });
 
   it('GET /portal-status/:session_id returns empty list for unknown session', async () => {

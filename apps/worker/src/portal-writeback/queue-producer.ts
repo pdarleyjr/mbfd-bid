@@ -9,7 +9,8 @@
 // reconciliation cron will re-emit it on the next pass.
 
 import type { Queue } from '@cloudflare/workers-types';
-import type { PortalPayload } from '@mbfd/shared';
+import { type PortalPayload, PortalPayloadSchema } from '@mbfd/shared';
+import { z } from 'zod';
 
 export interface QueueRowDraft {
   id: string;
@@ -26,20 +27,27 @@ export interface EnqueueArgs {
   bidId: string;
   employeeId: string;
   payload: PortalPayload;
+  /** Must come from the centralized fail-closed publication policy. */
+  publicationEnabled: boolean;
+  /** Mock/rehearsal sessions must never create a portal outbox record. */
+  isMock: boolean;
   queue: Queue<unknown>;
   insertQueueRow: (row: QueueRowDraft) => Promise<void>;
   now: () => number;
 }
 
-export interface QueueMessage {
-  bidId: string;
-  employeeId: string;
-  payload: PortalPayload;
-  attempts: number;
-  queueRowId: string;
-}
+export const QueueMessageSchema = z.object({
+  bidId: z.string().min(1),
+  employeeId: z.string().min(1),
+  payload: PortalPayloadSchema,
+  attempts: z.number().int().nonnegative(),
+  queueRowId: z.string().min(1),
+});
 
-export async function enqueuePortalWriteback(a: EnqueueArgs): Promise<void> {
+export type QueueMessage = z.infer<typeof QueueMessageSchema>;
+
+export async function enqueuePortalWriteback(a: EnqueueArgs): Promise<boolean> {
+  if (!a.publicationEnabled || a.isMock) return false;
   const now = a.now();
   const queueRowId = `qrow_${a.bidId}_${now}`;
   const nowDate = new Date(now);
@@ -61,4 +69,5 @@ export async function enqueuePortalWriteback(a: EnqueueArgs): Promise<void> {
     queueRowId,
   };
   await a.queue.send(message);
+  return true;
 }

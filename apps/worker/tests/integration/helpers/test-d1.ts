@@ -59,37 +59,17 @@ function makeD1Adapter(sqlite: Database.Database): D1Database {
 }
 
 /**
- * Strips full-line `--` comments from a SQL string. Multi-line statements
- * commonly interleave comments and DDL, and splitting on `;` first leaves
- * leading comments stuck to the next statement, which then mis-classifies
- * the whole chunk as a comment. Stripping line-by-line first avoids that.
+ * Apply every migration as one SQLite program. Splitting SQL text on `;`
+ * corrupts trigger bodies (`BEGIN ...; END`) and silently omits their
+ * integrity guards, so the test harness intentionally mirrors D1's full-file
+ * execution semantics instead.
  */
-function stripSqlComments(sql: string): string {
-  return sql
-    .split('\n')
-    .filter((line) => !/^\s*--/.test(line))
-    .join('\n');
-}
-
-/** Apply all migration SQL files in order (strips drizzle-kit statement-break markers). */
 function applyMigrations(sqlite: Database.Database): void {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort();
   for (const file of files) {
-    const sql = stripSqlComments(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8'));
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .flatMap((chunk) => chunk.split(';'))
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    for (const stmt of statements) {
-      try {
-        sqlite.exec(`${stmt};`);
-      } catch {
-        // ignore already-exists / column-exists noise across migration replays
-      }
-    }
+    sqlite.exec(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8'));
   }
 }
 

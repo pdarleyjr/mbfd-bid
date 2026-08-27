@@ -16,7 +16,8 @@ export interface DueQueueRow {
 export interface ReconciliationDeps {
   listDueQueueRows: () => Promise<DueQueueRow[]>;
   listFailedBids: () => Promise<Array<{ id: string }>>;
-  reEnqueue: (row: DueQueueRow) => Promise<void>;
+  /** True only when the row was actually sent to the Queue. */
+  reEnqueue: (row: DueQueueRow) => Promise<boolean>;
   nowMs: number;
 }
 
@@ -28,14 +29,15 @@ export interface ReconciliationResult {
 
 export async function runReconciliation(deps: ReconciliationDeps): Promise<ReconciliationResult> {
   const due = await deps.listDueQueueRows();
+  let reEnqueued = 0;
   for (const r of due) {
     try {
-      await deps.reEnqueue(r);
+      if (await deps.reEnqueue(r)) reEnqueued += 1;
     } catch (err) {
       // One stuck row shouldn't block the rest of the batch — log and proceed.
       console.error(`[portal-reconciliation] reEnqueue failed for ${r.id}`, err);
     }
   }
   const failed = await deps.listFailedBids();
-  return { reEnqueued: due.length, failedBidCount: failed.length, ranAt: deps.nowMs };
+  return { reEnqueued, failedBidCount: failed.length, ranAt: deps.nowMs };
 }

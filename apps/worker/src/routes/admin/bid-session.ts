@@ -12,8 +12,13 @@ import { desc, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
+import {
+  hasCanonicalBidSessionState,
+  loadCanonicalBidSessionState,
+} from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions, bidYears } from '../../db/schema.js';
+import type { BidSessionState } from '../../durable/bid-session-state.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -41,20 +46,44 @@ function evaluateUnconfiguredLiveReadiness() {
   return evaluateLiveReadiness({ checks: [] });
 }
 
+async function hasCanonicalCommandState(env: WorkerEnv, bidSessionId: string): Promise<boolean> {
+  return hasCanonicalBidSessionState(env.DB, bidSessionId);
+}
+
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
 
 // GET /api/admin/bid-session/active
 router.get('/active', async (c) => {
   const db = getDb(c.env.DB);
-  const session = await db
-    .select()
-    .from(bidSessions)
-    .where(ne(bidSessions.currentPhase, 'complete'))
-    .orderBy(desc(bidSessions.startedAt))
-    .get();
+  const sessions = await db.select().from(bidSessions).orderBy(desc(bidSessions.startedAt)).all();
+  for (const legacySession of sessions) {
+    let canonical: BidSessionState | null;
+    try {
+      canonical = await loadCanonicalBidSessionState(c.env.DB, legacySession.id);
+    } catch {
+      return c.json({ error: 'canonical_state_unavailable' }, 503);
+    }
+    const session =
+      canonical === null
+        ? legacySession
+        : {
+            ...legacySession,
+            currentPhase: canonical.currentPhase,
+            currentBidderId: canonical.currentBidderId,
+            currentTurnStartedAt:
+              canonical.turnStartedAtMs > 0 ? new Date(canonical.turnStartedAtMs) : null,
+            turnTimerSeconds: canonical.turnTimerSeconds,
+            pausedAt:
+              canonical.currentPhase === 'paused' && canonical.frozenAt !== null
+                ? new Date(canonical.frozenAt)
+                : legacySession.pausedAt,
+            frozenAt: canonical.frozenAt === null ? null : new Date(canonical.frozenAt),
+          };
+    if (session.currentPhase !== 'complete') return c.json({ session });
+  }
 
-  return c.json({ session: session ?? null });
+  return c.json({ session: null });
 });
 
 // POST /api/admin/bid-session
@@ -95,6 +124,9 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
   const db = getDb(c.env.DB);
   const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
   if (s === undefined) return c.json({ error: 'not_found' }, 404);
+  if (await hasCanonicalCommandState(c.env, id)) {
+    return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+  }
   if (s.currentPhase !== 'config') {
     return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
   }
@@ -148,6 +180,9 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
+    if (await hasCanonicalCommandState(c.env, id)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
     if (s.currentPhase === 'paused' || s.currentPhase === 'complete') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
@@ -181,6 +216,9 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
+    if (await hasCanonicalCommandState(c.env, id)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
     if (s.currentPhase !== 'paused') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
@@ -209,6 +247,9 @@ router.post('/:id/day-end', requireStepUpAuth(), zValidator('json', DayEndSchema
   const db = getDb(c.env.DB);
   const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
   if (s === undefined) return c.json({ error: 'not_found' }, 404);
+  if (await hasCanonicalCommandState(c.env, id)) {
+    return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+  }
   if (s.currentPhase === 'complete') {
     return c.json({ error: 'invalid_state', current_phase: 'complete' }, 409);
   }
@@ -246,6 +287,9 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
+    if (await hasCanonicalCommandState(c.env, id)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
     if (s.currentPhase !== 'paused') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
@@ -283,6 +327,9 @@ router.patch(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
+    if (await hasCanonicalCommandState(c.env, id)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
     await db
       .update(bidSessions)
       .set({ turnTimerSeconds: turn_timer_seconds })

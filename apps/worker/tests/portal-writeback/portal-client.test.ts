@@ -27,6 +27,7 @@ describe('postBidAssignment (Plan 08 Task 20)', () => {
       employeeId: '14523',
       payload,
       portalBaseUrl: 'https://portal.mbfdhub.com',
+      publicationEnabled: true,
       token: 't',
       fetchImpl,
     });
@@ -39,6 +40,7 @@ describe('postBidAssignment (Plan 08 Task 20)', () => {
       employeeId: '14523',
       payload,
       portalBaseUrl: 'https://portal.mbfdhub.com',
+      publicationEnabled: true,
       token: 't',
       fetchImpl,
     });
@@ -51,6 +53,7 @@ describe('postBidAssignment (Plan 08 Task 20)', () => {
       employeeId: '14523',
       payload,
       portalBaseUrl: 'https://portal.mbfdhub.com',
+      publicationEnabled: true,
       token: 't',
       fetchImpl,
     });
@@ -63,6 +66,7 @@ describe('postBidAssignment (Plan 08 Task 20)', () => {
       employeeId: '14523',
       payload,
       portalBaseUrl: 'https://portal.mbfdhub.com',
+      publicationEnabled: true,
       token: 't',
       fetchImpl,
     });
@@ -78,6 +82,7 @@ describe('postBidAssignment (Plan 08 Task 20)', () => {
       employeeId: '14523',
       payload,
       portalBaseUrl: 'https://portal.mbfdhub.com',
+      publicationEnabled: true,
       token: 't',
       fetchImpl,
     });
@@ -90,6 +95,7 @@ describe('postBidAssignment (Plan 08 Task 20)', () => {
       employeeId: '14523',
       payload,
       portalBaseUrl: 'https://portal.mbfdhub.com',
+      publicationEnabled: true,
       token: 'SVC_TOKEN',
       fetchImpl,
     });
@@ -97,5 +103,65 @@ describe('postBidAssignment (Plan 08 Task 20)', () => {
     const init = calls[0][1];
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer SVC_TOKEN');
+  });
+
+  it('does not make a network request when publication is not explicitly enabled', async () => {
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+    const out = await postBidAssignment({
+      employeeId: '14523',
+      payload,
+      portalBaseUrl: 'https://portal.mbfdhub.com',
+      publicationEnabled: false,
+      token: 'SVC_TOKEN',
+      fetchImpl,
+    });
+
+    expect(out.kind).toBe('permanent');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('does not make a network request without a writer credential', async () => {
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+    const out = await postBidAssignment({
+      employeeId: '14523',
+      payload,
+      portalBaseUrl: 'https://portal.mbfdhub.com',
+      publicationEnabled: true,
+      token: '',
+      fetchImpl,
+    });
+
+    expect(out.kind).toBe('permanent');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('does not send credentials to a plain HTTP writeback endpoint', async () => {
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+    const out = await postBidAssignment({
+      employeeId: '14523',
+      payload,
+      portalBaseUrl: 'http://portal-writeback.example',
+      publicationEnabled: true,
+      token: 'SVC_TOKEN',
+      fetchImpl,
+    });
+
+    expect(out.kind).toBe('permanent');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('disallows redirects at the credentialed write boundary', async () => {
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+    await postBidAssignment({
+      employeeId: '14523',
+      payload,
+      portalBaseUrl: 'https://portal-writeback.example',
+      publicationEnabled: true,
+      token: 'SVC_TOKEN',
+      fetchImpl,
+    });
+
+    const calls = fetchImpl.mock.calls as unknown as [[string, RequestInit]];
+    expect(calls[0][1].redirect).toBe('error');
   });
 });

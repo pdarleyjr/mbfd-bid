@@ -16,6 +16,7 @@ import { getDb } from '../../db/index.js';
 import { bidSessions, bids, portalWritebackQueue } from '../../db/schema.js';
 import { chunkedInArrayMutate, chunkedInArraySelect } from '../../lib/d1-batch.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
+import { isPortalPublicationEnabled } from '../../portal-writeback/publication-policy.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -27,9 +28,15 @@ router.use('*', requireAdmin);
 router.post('/portal-retry/:bid_id', requireStepUpAuth(), async (c) => {
   const bidId = c.req.param('bid_id');
   if (!bidId) return c.json({ error: 'bid_id_required' }, 400);
+  if (!isPortalPublicationEnabled(c.env)) {
+    return c.json({ error: 'portal_writeback_disabled' }, 409);
+  }
   const db = getDb(c.env.DB);
   const bid = await db.select().from(bids).where(eq(bids.id, bidId)).get();
   if (!bid) return c.json({ error: 'not_found' }, 404);
+  if (bid.portalSyncStatus !== 'failed') {
+    return c.json({ error: 'portal_retry_requires_failed_bid' }, 409);
+  }
   await db
     .update(bids)
     .set({ portalSyncStatus: 'pending', portalSyncAttempts: 0, portalLastError: null })

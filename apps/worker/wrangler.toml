@@ -12,7 +12,10 @@ name = "mbfd-bid-worker-staging"
 # Replaces the legacy `route = { pattern = "...", zone_name = "..." }` which
 # relied on Universal SSL that did not reissue to cover this 4th-level host.
 routes = [{ pattern = "api.staging.bid.mbfdhub.com", custom_domain = true }]
-vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
+# Read-only portal authentication remains available through PORTAL_BASE_URL.
+# Outbound bid publication is a separate, explicit capability and staging must
+# not obtain it merely by having a queue binding.
+vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid" }
 
 [[env.staging.d1_databases]]
 binding = "DB"
@@ -63,7 +66,9 @@ dead_letter_queue = "mbfd-portal-writebacks-staging-dlq"
 [env.production]
 name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
-vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com" }
+# Production publication remains disabled until a separate, accountable
+# configuration change explicitly sets a writer, endpoint, and literal true.
+vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid" }
 
 [[env.production.d1_databases]]
 binding = "DB"

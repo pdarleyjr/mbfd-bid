@@ -146,6 +146,59 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
     expect((bidsRows.results[0] as { n: number }).n).toBe(3);
   });
 
+  it('rejects auto-bid after a canonical command has locked the mock session', async () => {
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state
+       (bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at)
+       VALUES (?, 0, ?, NULL, ?, ?);`,
+      [
+        sessionId,
+        JSON.stringify({
+          bidSessionId: sessionId,
+          currentPhase: 'paused',
+          frozenAt: 1,
+          currentBidderId: 201,
+          lastSeq: 0,
+        }),
+        Date.now(),
+        Date.now(),
+      ],
+    );
+    const snapMap = new Map<string, unknown>([[sessionId, { currentBidderId: 201 }]]);
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(snapMap),
+    };
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ count: 1, strategy: 'first_eligible' }),
+      }),
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'canonical_mutation_requires_command' });
+    const bidsRows = await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    expect((bidsRows.results[0] as { n: number }).n).toBe(0);
+    const sessionRows = await h.db.run(
+      'SELECT current_phase, current_bidder_id FROM bid_sessions WHERE id = ?',
+      [sessionId],
+    );
+    expect(sessionRows.results[0]).toMatchObject({
+      current_phase: 'position_bid',
+      current_bidder_id: 201,
+    });
+  });
+
   it('bootstrap survives a large roster (>100 placeholders worth of rows)', async () => {
     // D1 caps params at ~100 per statement. A real bid has ~226 members ×
     // 4 cols = 904 placeholders, well past the cap; the chunked INSERT must

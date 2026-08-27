@@ -11,10 +11,22 @@ import {
 } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
+import { drainBidAuditOutbox } from '../audit/archive-outbox.js';
 import { makeChainDb } from '../audit/chain-db-d1.js';
 import { ChainEmitter } from '../audit/chain-emitter.js';
+import {
+  commitMockFreezeCommand,
+  loadCanonicalBidSessionState,
+} from '../commands/canonical-command-service.js';
 import { getDb } from '../db/index.js';
-import { auditLog, bids, members, portalWritebackQueue, positions } from '../db/schema.js';
+import {
+  auditLog,
+  bidSessions,
+  bids,
+  members,
+  portalWritebackQueue,
+  positions,
+} from '../db/schema.js';
 import {
   type AuditRowDraft,
   auditEntryForForcedPick,
@@ -23,6 +35,7 @@ import {
   auditEntryForSkip,
 } from '../lib/audit.js';
 import { buildPortalPayload } from '../portal-writeback/payload-builder.js';
+import { isPortalPublicationEnabled } from '../portal-writeback/publication-policy.js';
 import { enqueuePortalWriteback } from '../portal-writeback/queue-producer.js';
 import type { WorkerEnv } from '../types/env.js';
 import {
@@ -46,7 +59,6 @@ import {
 import {
   type BidSessionState,
   type DOStorageLike,
-  bidSessionStateStorageKey,
   emptyBidSessionState,
   loadBidSessionState,
   persistBidSessionState,
@@ -62,27 +74,15 @@ interface IdempotencyRecord {
   envelope: BidEventEnvelope;
 }
 
-interface MockFreezeCommandReceipt {
-  fingerprint: string;
-  result: MockFreezeCommandResult;
-}
-
-interface MockFreezeCommandCommit {
-  result: MockFreezeCommandResult;
-  newState: BidSessionState | null;
-  audit: {
-    bidSessionId: string;
-    seq: number;
-    adminActorId: number;
-    reason: string;
-  } | null;
-}
+type CanonicalMockIntent = 'pending' | 'active';
 
 export class BidSessionDO implements DurableObject {
   private state: DurableObjectState;
   private env: WorkerEnv;
   private clients = new Map<string, ConnectedClient>();
   private memoryState: BidSessionState | null = null;
+  /** Undefined until the private durable marker has been read for this DO instance. */
+  private canonicalMockIntent: CanonicalMockIntent | null | undefined = undefined;
   /** Plan 08 — lazy per-DO chain emitter (one per Worker isolate). */
   private emitter: ChainEmitter | null = null;
 
@@ -95,31 +95,66 @@ export class BidSessionDO implements DurableObject {
     return this.state.storage as unknown as DOStorageLike;
   }
 
-  private mockFreezeReceiptKey(commandId: string): string {
-    return `cmd:${this.state.id.toString()}:${commandId}`;
+  private namedSessionId(): string {
+    return this.state.id.name ?? this.state.id.toString();
   }
 
-  private mockFreezeFingerprint(command: MockFreezeCommand): string {
-    return JSON.stringify({
-      v: command.v,
-      type: command.type,
-      commandId: command.commandId,
-      bidSessionId: command.bidSessionId,
-      expectedSeq: command.expectedSeq,
-      actor: command.actor,
-      reason: command.reason,
-    });
+  /** Preserve the physical DO storage namespace while D1 stores the named id. */
+  private projectCanonicalState(canonicalState: BidSessionState): BidSessionState {
+    return { ...canonicalState, bidSessionId: this.state.id.toString() };
+  }
+
+  private canonicalMockIntentKey(): string {
+    return `canonical-mock-intent:${this.state.id.toString()}`;
+  }
+
+  private async canonicalMockIntentState(): Promise<CanonicalMockIntent | null> {
+    if (this.canonicalMockIntent === undefined) {
+      const marker = await this.storage.get<unknown>(this.canonicalMockIntentKey());
+      this.canonicalMockIntent =
+        marker === 'pending' || marker === 'active' || marker === true ? 'active' : null;
+    }
+    return this.canonicalMockIntent;
+  }
+
+  private async markCanonicalMockIntent(): Promise<void> {
+    await this.storage.put(this.canonicalMockIntentKey(), 'pending');
+    this.canonicalMockIntent = 'pending';
+  }
+
+  private async activateCanonicalMockIntent(): Promise<void> {
+    await this.storage.put(this.canonicalMockIntentKey(), 'active');
+    this.canonicalMockIntent = 'active';
+  }
+
+  private async clearCanonicalMockIntent(): Promise<void> {
+    await this.storage.delete(this.canonicalMockIntentKey());
+    this.canonicalMockIntent = null;
   }
 
   private async getState(): Promise<BidSessionState> {
     if (!this.memoryState) {
       const id = this.state.id.toString();
-      this.memoryState = await loadBidSessionState(this.storage, id);
-      if (this.memoryState.bidSessionId !== id) {
-        this.memoryState = emptyBidSessionState(id);
-      }
+      const persisted = await loadBidSessionState(this.storage, id);
+      this.memoryState = persisted.bidSessionId === id ? persisted : emptyBidSessionState(id);
     }
-    return this.memoryState;
+    if ((await this.canonicalMockIntentState()) === null) return this.memoryState;
+    return this.hydrateCanonicalMockState(this.memoryState);
+  }
+
+  /**
+   * The canonical D1 state exists only for the rehearsal mock command. Keep
+   * this recovery path out of ordinary snapshots and legacy commands so an
+   * unavailable or not-yet-migrated D1 binding cannot alter their behavior.
+   */
+  private async hydrateCanonicalMockState(localState: BidSessionState): Promise<BidSessionState> {
+    const canonicalState = await loadCanonicalBidSessionState(this.env.DB, this.namedSessionId());
+    if (canonicalState === null) return localState;
+
+    const projection = this.projectCanonicalState(canonicalState);
+    await persistBidSessionState(this.storage, projection);
+    this.memoryState = projection;
+    return projection;
   }
 
   private handlerEnv(): HandlerEnv {
@@ -152,6 +187,20 @@ export class BidSessionDO implements DurableObject {
         c.socket.send(json);
       } catch {}
     }
+  }
+
+  /**
+   * Archive only after the canonical D1 command has committed and clients have
+   * seen the realtime event. The retryable outbox absorbs R2 failures; it is
+   * never part of the acceptance path.
+   */
+  private scheduleCanonicalAuditArchive(): void {
+    if (!this.env.R2_AUDIT || typeof this.env.R2_AUDIT.put !== 'function') return;
+    this.state.waitUntil(
+      drainBidAuditOutbox({ db: this.env.DB, r2: this.env.R2_AUDIT }).catch((error) => {
+        console.error('[BidSessionDO] canonical audit archive retry failed', error);
+      }),
+    );
   }
 
   private send(socket: WebSocket, env: BidEventEnvelope): void {
@@ -211,10 +260,17 @@ export class BidSessionDO implements DurableObject {
    * portal queue binding is absent (local/test).
    */
   private async enqueuePortalForBid(bidId: string): Promise<void> {
+    if (!isPortalPublicationEnabled(this.env)) return;
     if (!this.env.PORTAL_QUEUE || typeof this.env.PORTAL_QUEUE.send !== 'function') return;
     const db = getDb(this.env.DB);
     const bid = await db.select().from(bids).where(eq(bids.id, bidId)).get();
     if (!bid) return;
+    const session = await db
+      .select({ isMock: bidSessions.isMock })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, bid.bidSessionId))
+      .get();
+    if (!session || session.isMock) return;
     const member = await db.select().from(members).where(eq(members.id, bid.memberId)).get();
     if (!member) return;
     // Composite PK on positions means we have to fetch by id+template; since
@@ -258,6 +314,8 @@ export class BidSessionDO implements DurableObject {
       bidId: bid.id,
       employeeId: member.employeeId,
       payload,
+      publicationEnabled: true,
+      isMock: false,
       queue: this.env.PORTAL_QUEUE,
       insertQueueRow: async (row) => {
         await db.insert(portalWritebackQueue).values({
@@ -470,7 +528,13 @@ export class BidSessionDO implements DurableObject {
       // Plan 09 / Rehearsal Tooling — Task R4. Wipes durable session state so
       // an admin can re-run a mock rehearsal from a clean slate without
       // destroying the audit chain.
-      await this.resetMock();
+      const reset = await this.resetMock();
+      if (!reset) {
+        return new Response(JSON.stringify({ error: 'canonical_reset_requires_new_epoch' }), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -482,28 +546,12 @@ export class BidSessionDO implements DurableObject {
   /**
    * Plan 09 / Rehearsal Tooling — Task R4.
    *
-   * Resets the BidSession DO's in-memory state AND persisted storage to the
-   * empty starting point so the admin can replay the rehearsal. The audit
-   * chain (R2 / `audit_log` / `audit_chunks`) is intentionally preserved —
-   * the legal-record property of the chain must survive even rehearsals so
-   * the operator can audit what was wiped and when.
-   *
-   * Note: this is destructive. The Worker route guards it with `is_mock=1`
-   * and the route is admin-only. Idempotency keys cached in storage are
-   * cleared so the same rehearsal can re-use them.
+   * Reset is intentionally disabled until a future audited reset-epoch command
+   * can serialize it with canonical mock commands. A preflight-plus-delete
+   * route is unsafe: a freeze may commit between those operations.
    */
-  async resetMock(): Promise<void> {
-    await this.state.blockConcurrencyWhile(async () => {
-      // Use the native storage handle (not the narrowed `DOStorageLike`) so we
-      // can `deleteAll()` the whole keyspace. The DOStorageLike abstraction
-      // models only the surface the state loader needs; the real DO storage
-      // exposes deleteAll, which is the only safe way to wipe idempotency
-      // records + the persisted snapshot in one shot.
-      const native = this.state.storage as unknown as { deleteAll(): Promise<void> };
-      await native.deleteAll();
-      this.memoryState = emptyBidSessionState(this.state.id.toString());
-      await persistBidSessionState(this.storage, this.memoryState);
-    });
+  async resetMock(): Promise<boolean> {
+    return false;
   }
 
   private async handleUpgrade(req: Request): Promise<Response> {
@@ -773,103 +821,52 @@ export class BidSessionDO implements DurableObject {
   }
 
   /**
-   * Rehearsal-only canonical command proof. The receipt and state update share
-   * a DO-local transaction; the subsequent D1/R2 audit work remains explicitly
-   * best-effort and is not part of this command's acceptance condition.
+   * Rehearsal-only canonical command proof. The named DO supplies ordering,
+   * while D1 atomically owns the state/receipt/event/audit/outbox bundle. DO
+   * storage is only a reconstructible local projection after that commit.
    */
   async adminMockFreezeCommand(command: MockFreezeCommand): Promise<MockFreezeCommandResult> {
     return this.state.blockConcurrencyWhile(async () => {
-      const state = await this.getState();
-      const namedSessionId = this.state.id.name ?? this.state.id.toString();
+      const localState = await this.getState();
+      const namedSessionId = this.namedSessionId();
       if (command.bidSessionId !== namedSessionId) {
         return {
           kind: 'rejected',
           commandId: command.commandId,
           code: 'SESSION_ID_MISMATCH',
-          currentSeq: state.lastSeq,
+          currentSeq: localState.lastSeq,
         };
       }
-
-      const receiptKey = this.mockFreezeReceiptKey(command.commandId);
-      const fingerprint = this.mockFreezeFingerprint(command);
-      const commit = await this.state.storage.transaction<MockFreezeCommandCommit>(async (txn) => {
-        const prior = await txn.get<MockFreezeCommandReceipt>(receiptKey);
-        if (prior) {
-          if (prior.fingerprint === fingerprint) {
-            return { result: prior.result, newState: null, audit: null };
-          }
-          return {
-            result: {
-              kind: 'rejected',
-              commandId: command.commandId,
-              code: 'COMMAND_ID_REUSED',
-              currentSeq: state.lastSeq,
-            },
-            newState: null,
-            audit: null,
-          };
-        }
-
-        if (command.expectedSeq !== state.lastSeq) {
-          const result: MockFreezeCommandResult = {
-            kind: 'rejected',
-            commandId: command.commandId,
-            code: 'STALE_SEQUENCE',
-            currentSeq: state.lastSeq,
-          };
-          await txn.put(receiptKey, { fingerprint, result } satisfies MockFreezeCommandReceipt);
-          return { result, newState: null, audit: null };
-        }
-
-        const frozen = handleFreeze(state, this.handlerEnv(), {
-          adminActorId: command.actor.id,
-          reason: command.reason,
-        });
-        if (frozen.kind === 'rejected') {
-          const result: MockFreezeCommandResult = {
-            kind: 'rejected',
-            commandId: command.commandId,
-            code: 'SESSION_FROZEN',
-            currentSeq: state.lastSeq,
-          };
-          await txn.put(receiptKey, { fingerprint, result } satisfies MockFreezeCommandReceipt);
-          return { result, newState: null, audit: null };
-        }
-
-        const envelope = this.envelope('freeze', frozen.event.payload, frozen.newState.lastSeq);
-        const result: MockFreezeCommandResult = {
-          kind: 'accepted',
-          commandId: command.commandId,
-          seq: frozen.newState.lastSeq,
-          envelope,
-        };
-        await txn.put(bidSessionStateStorageKey(frozen.newState.bidSessionId), frozen.newState);
-        await txn.put(receiptKey, { fingerprint, result } satisfies MockFreezeCommandReceipt);
-        return {
-          result,
-          newState: frozen.newState,
-          audit: {
-            bidSessionId: command.bidSessionId,
-            seq: frozen.newState.lastSeq,
-            adminActorId: command.actor.id,
-            reason: command.reason,
-          },
-        };
+      const commit = await commitMockFreezeCommand({
+        db: this.env.DB,
+        command,
+        state: localState,
+        // This durable marker is written immediately before the D1 batch. If
+        // projection fails after an accepted batch, future snapshots/reconnects
+        // know to rebuild from D1 without making legacy sessions D1-dependent.
+        beforeD1Commit: () => this.markCanonicalMockIntent(),
       });
+      const canonicalState =
+        commit.canonicalState ??
+        (await loadCanonicalBidSessionState(this.env.DB, this.namedSessionId()));
+      if (canonicalState === null) {
+        // A confirmed no-commit must not convert this DO into a D1-dependent
+        // session. An exception above deliberately leaves the pending marker
+        // intact because the D1 outcome is then unknown.
+        await this.clearCanonicalMockIntent();
+        return commit.result;
+      }
+      await this.activateCanonicalMockIntent();
 
-      if (commit.newState === null || commit.audit === null) return commit.result;
-
-      this.memoryState = commit.newState;
-      await this.writeAudit(
-        auditEntryForFreeze({
-          bidSessionId: commit.audit.bidSessionId,
-          seq: commit.audit.seq,
-          adminActorId: commit.audit.adminActorId,
-          reason: commit.audit.reason,
-          nowMs: Date.now(),
-        }),
-      );
-      if (commit.result.kind === 'accepted') this.broadcast(commit.result.envelope);
+      const projection = this.projectCanonicalState(canonicalState);
+      // If this write is interrupted, D1 still has the accepted command and a
+      // later hibernation/retry rebuilds this projection from that authority.
+      await persistBidSessionState(this.storage, projection);
+      this.memoryState = projection;
+      if (commit.result.kind === 'accepted') {
+        this.broadcast(commit.result.envelope);
+        this.scheduleCanonicalAuditArchive();
+      }
       return commit.result;
     });
   }
@@ -907,6 +904,9 @@ export class BidSessionDO implements DurableObject {
   async transitionToPhase2(input: TransitionToPhase2Input): Promise<{ ok: boolean }> {
     return this.state.blockConcurrencyWhile(async () => {
       const state = await this.getState();
+      if (state.frozenAt !== null) {
+        return { ok: false };
+      }
       if (state.currentPhase !== 'position_bid' && state.currentPhase !== 'paused') {
         return { ok: false };
       }

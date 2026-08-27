@@ -157,4 +157,46 @@ describe('GET /api/me/eligibility', () => {
     const body = (await res.json()) as { positions: { positionId: string }[] };
     expect(body.positions.map((position) => position.positionId)).toEqual(['A101']);
   });
+
+  it('uses canonical fills instead of stale legacy bids after canonical authority is established', async () => {
+    await h.db.run('DELETE FROM bids WHERE bid_session_id = ?', [SESSION_ID]);
+    await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [SESSION_ID]);
+    await h.db.run(
+      `UPDATE position_rules
+          SET required_criteria = '{"rank":["FF"],"credentials":[],"custom":[]}'
+        WHERE rule_book_version = '2026.1' AND position_id = 'B101';`,
+    );
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state (
+        bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at
+      ) VALUES (?, 1, ?, 'freeze-command', 1, 1);`,
+      [
+        SESSION_ID,
+        JSON.stringify({
+          bidSessionId: SESSION_ID,
+          currentPhase: 'paused',
+          currentBidderId: null,
+          turnStartedAtMs: 1,
+          turnTimerSeconds: 180,
+          lastSeq: 1,
+          fills: { A101: { memberId: 60, ordinal: 1, bidId: 'canonical-a101' } },
+          bidOrder: [],
+          queueCursor: 0,
+          frozenAt: 1,
+          aDay: null,
+        }),
+      ],
+    );
+
+    const res = await app.fetch(
+      new Request(`http://x/api/me/eligibility?session_id=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await memberJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { positions: { positionId: string }[] };
+    expect(body.positions.map((position) => position.positionId)).toEqual(['B101']);
+  });
 });

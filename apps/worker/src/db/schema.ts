@@ -302,6 +302,117 @@ export const auditLog = sqliteTable(
   }),
 );
 
+// ── Canonical command/audit/outbox (migration 0022) ────────────────────────
+//
+// Commands are serialized by their named Durable Object, but D1 is the
+// durable authority. The state row, receipt, immutable event, audit row, and
+// R2 archive work item are committed in one D1 batch. The outbox's delivery
+// fields are mutable; its event payload is not.
+export const canonicalBidSessionState = sqliteTable('canonical_bid_session_state', {
+  bidSessionId: text('bid_session_id')
+    .primaryKey()
+    .references(() => bidSessions.id, { onDelete: 'restrict' }),
+  currentSeq: integer('current_seq').notNull(),
+  stateJson: text('state_json').notNull(),
+  lastCommandId: text('last_command_id'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+export const bidCommandReceipts = sqliteTable(
+  'bid_command_receipts',
+  {
+    commandId: text('command_id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'restrict' }),
+    commandType: text('command_type').notNull(),
+    requestSha256: text('request_sha256').notNull(),
+    actorId: integer('actor_id').notNull(),
+    expectedSeq: integer('expected_seq').notNull(),
+    resultSeq: integer('result_seq'),
+    outcome: text('outcome', { enum: ['accepted', 'rejected'] }).notNull(),
+    resultJson: text('result_json').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    sessionCreatedIdx: index('idx_bid_command_receipts_session_created').on(
+      t.bidSessionId,
+      t.createdAt,
+    ),
+  }),
+);
+
+export const bidCommandEvents = sqliteTable(
+  'bid_command_events',
+  {
+    id: text('id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'restrict' }),
+    commandId: text('command_id')
+      .notNull()
+      .references(() => bidCommandReceipts.commandId, { onDelete: 'restrict' }),
+    auditLogId: text('audit_log_id')
+      .notNull()
+      .references(() => auditLog.id, { onDelete: 'restrict' }),
+    seq: integer('seq').notNull(),
+    eventType: text('event_type').notNull(),
+    eventJson: text('event_json').notNull(),
+    actorId: integer('actor_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    commandUnique: uniqueIndex('bid_command_events_command_id_unique').on(t.commandId),
+    auditUnique: uniqueIndex('bid_command_events_audit_log_id_unique').on(t.auditLogId),
+    sessionSeqUnique: uniqueIndex('bid_command_events_session_seq_unique').on(
+      t.bidSessionId,
+      t.seq,
+    ),
+    sessionCreatedIdx: index('idx_bid_command_events_session_created').on(
+      t.bidSessionId,
+      t.createdAt,
+    ),
+  }),
+);
+
+export const bidAuditOutbox = sqliteTable(
+  'bid_audit_outbox',
+  {
+    id: text('id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'restrict' }),
+    commandId: text('command_id')
+      .notNull()
+      .references(() => bidCommandReceipts.commandId, { onDelete: 'restrict' }),
+    eventId: text('event_id')
+      .notNull()
+      .references(() => bidCommandEvents.id, { onDelete: 'restrict' }),
+    archiveKey: text('archive_key').notNull(),
+    payloadJson: text('payload_json').notNull(),
+    payloadSha256: text('payload_sha256').notNull(),
+    status: text('status', {
+      enum: ['pending', 'leased', 'retry', 'archived', 'dead_letter'],
+    })
+      .notNull()
+      .default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: integer('next_attempt_at', { mode: 'timestamp_ms' }).notNull(),
+    leaseOwner: text('lease_owner'),
+    leaseExpiresAt: integer('lease_expires_at', { mode: 'timestamp_ms' }),
+    archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
+    lastError: text('last_error'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    eventUnique: uniqueIndex('bid_audit_outbox_event_id_unique').on(t.eventId),
+    archiveKeyUnique: uniqueIndex('bid_audit_outbox_archive_key_unique').on(t.archiveKey),
+    dueIdx: index('idx_bid_audit_outbox_due').on(t.status, t.nextAttemptAt),
+  }),
+);
+
 export const bidSessionSnapshots = sqliteTable(
   'bid_session_snapshots',
   {

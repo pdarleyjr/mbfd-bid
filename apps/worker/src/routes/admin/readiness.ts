@@ -5,8 +5,9 @@
 // definitive answer: `{ ok, openMockSessions }`.
 
 import type { JwtPayload } from '@mbfd/shared';
-import { and, eq, inArray, not } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions } from '../../db/schema.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -26,30 +27,30 @@ router.use('*', requireAdmin);
  *
  * Note: there is no `archived` phase in the current `current_phase` enum —
  * archived sessions are represented by `current_phase = 'complete'` plus
- * an explicit operator decision. We treat `complete` as the only closed
- * phase. If the schema later grows an `archived` value, this list
- * automatically expands.
+ * an explicit operator decision. We therefore treat `complete` as the only
+ * closed phase until the schema defines an archival lifecycle explicitly.
  */
-const CLOSED_PHASES = ['complete'] as const;
-
 router.get('/no-mock-sessions', async (c) => {
   const db = getDb(c.env.DB);
-  const rows = await db
-    .select({ id: bidSessions.id })
+  const sessions = await db
+    .select({ id: bidSessions.id, currentPhase: bidSessions.currentPhase })
     .from(bidSessions)
-    .where(
-      and(
-        eq(bidSessions.isMock, true),
-        not(
-          inArray(
-            bidSessions.currentPhase,
-            CLOSED_PHASES as unknown as (typeof bidSessions.currentPhase.enumValues)[number][],
-          ),
-        ),
-      ),
-    )
+    .where(eq(bidSessions.isMock, true))
     .all();
-  const openMockSessions = rows.map((r) => r.id);
+  let openMockSessions: string[];
+  try {
+    const effective = await Promise.all(
+      sessions.map(async (session) => {
+        const canonical = await loadCanonicalBidSessionState(c.env.DB, session.id);
+        return { id: session.id, currentPhase: canonical?.currentPhase ?? session.currentPhase };
+      }),
+    );
+    openMockSessions = effective
+      .filter((session) => session.currentPhase !== 'complete')
+      .map((session) => session.id);
+  } catch {
+    return c.json({ error: 'canonical_state_unavailable' }, 503);
+  }
   return c.json({ ok: openMockSessions.length === 0, openMockSessions });
 });
 

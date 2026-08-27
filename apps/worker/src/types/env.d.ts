@@ -10,6 +10,11 @@ import type {
 export interface WorkerEnv {
   ENV: 'staging' | 'production';
   PORTAL_BASE_URL: string;
+  /** Literal "true" is required before any Worker path may publish a bid. */
+  PORTAL_WRITEBACK_ENABLED?: 'true' | 'false';
+  /** Deliberately separate from PORTAL_BASE_URL so read-only portal auth does
+   * not imply an outbound publication destination. */
+  PORTAL_WRITEBACK_BASE_URL?: string;
   JWT_SIGNING_KEY: string;
   PIN_HASH: string;
   PORTAL_BID_READER: string;

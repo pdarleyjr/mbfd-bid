@@ -100,6 +100,48 @@ describe('POST /api/admin/bid-session/:id/force-pick', () => {
     expect(audit.results[0]?.n).toBe(1);
   });
 
+  it('rejects a canonical session before creating a legacy bid or audit row', async () => {
+    await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state (
+        bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at
+      ) VALUES (?, 1, ?, 'freeze-command', ?, ?)`,
+      [sessionId, JSON.stringify({ bidSessionId: sessionId, lastSeq: 1 }), Date.now(), Date.now()],
+    );
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/force-pick`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await freshAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          member_id: 42,
+          position_id: 'A205',
+          reason_code: 'force.cert_mandate',
+          reason: 'Canonical authority blocks this legacy path.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'canonical_mutation_requires_command' });
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
+        .results,
+    ).toEqual([{ n: 0 }]);
+    expect(
+      (
+        await h.db.run(
+          "SELECT count(*) AS n FROM audit_log WHERE bid_session_id = ? AND action = 'forced_pick'",
+          [sessionId],
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
+  });
+
   it('rejects skip.unreachable as a force-pick reason_code (400 invalid_reason_for_action)', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/force-pick`, {

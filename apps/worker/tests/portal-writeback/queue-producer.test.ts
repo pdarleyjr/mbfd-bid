@@ -27,6 +27,8 @@ describe('enqueuePortalWriteback (Plan 08 Task 21)', () => {
       bidId: 'bid_1',
       employeeId: '14523',
       payload,
+      publicationEnabled: true,
+      isMock: false,
       queue: { send } as unknown as Queue<unknown>,
       insertQueueRow,
       now: () => 1_000_000,
@@ -51,11 +53,51 @@ describe('enqueuePortalWriteback (Plan 08 Task 21)', () => {
         bidId: 'bid_1',
         employeeId: '14523',
         payload,
+        publicationEnabled: true,
+        isMock: false,
         queue: { send } as unknown as Queue<unknown>,
         insertQueueRow,
         now: () => 0,
       }),
     ).rejects.toThrow();
     expect(calls).toEqual(['insert', 'send']);
+  });
+
+  it('does not persist or send a queue message while publication is disabled', async () => {
+    const send = vi.fn(async () => {});
+    const insertQueueRow = vi.fn(async () => {});
+
+    await enqueuePortalWriteback({
+      bidId: 'bid_1',
+      employeeId: '14523',
+      payload,
+      publicationEnabled: false,
+      isMock: false,
+      queue: { send } as unknown as Queue<unknown>,
+      insertQueueRow,
+      now: () => 1_000_000,
+    });
+
+    expect(insertQueueRow).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('does not persist or send a queue message for a mock session', async () => {
+    const send = vi.fn(async () => {});
+    const insertQueueRow = vi.fn(async () => {});
+
+    await enqueuePortalWriteback({
+      bidId: 'bid_1',
+      employeeId: '14523',
+      payload,
+      publicationEnabled: true,
+      isMock: true,
+      queue: { send } as unknown as Queue<unknown>,
+      insertQueueRow,
+      now: () => 1_000_000,
+    } as unknown as Parameters<typeof enqueuePortalWriteback>[0]);
+
+    expect(insertQueueRow).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 });

@@ -94,6 +94,45 @@ describe('GET /api/admin/readiness/no-mock-sessions (W-MOCKSAFETY)', () => {
     expect(body.openMockSessions.sort()).toEqual(['mock-open-1', 'mock-paused']);
   });
 
+  it('treats a canonical-complete mock as closed even when its legacy phase is stale', async () => {
+    await h.db.run(
+      "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES ('mock-canonical-complete', 2026, ?, 'paused', 180, 2, 1, 1);",
+      [Date.now()],
+    );
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state (
+        bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at
+      ) VALUES ('mock-canonical-complete', 1, ?, 'complete-command', ?, ?)`,
+      [
+        JSON.stringify({
+          bidSessionId: 'mock-canonical-complete',
+          currentPhase: 'complete',
+          currentBidderId: null,
+          turnStartedAtMs: 0,
+          turnTimerSeconds: 180,
+          lastSeq: 1,
+          fills: {},
+          bidOrder: [],
+          queueCursor: 0,
+          frozenAt: null,
+          aDay: null,
+        }),
+        Date.now(),
+        Date.now(),
+      ],
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/readiness/no-mock-sessions', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true, openMockSessions: [] });
+  });
+
   it('archiving an open mock session flips the gate to ok=true', async () => {
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES ('mock-to-archive', 2026, ?, 'position_bid', 180, 2, 1, 1);",

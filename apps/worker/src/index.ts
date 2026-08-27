@@ -114,7 +114,7 @@ export { BidSessionDO } from './durable/bid-session.js';
 import type { MessageBatch as CfMessageBatch } from '@cloudflare/workers-types';
 
 import { handlePortalQueueBatch } from './portal-writeback/queue-handler.js';
-import { handlePortalReconciliation } from './scheduled.js';
+import { handleCanonicalAuditArchive, handlePortalReconciliation } from './scheduled.js';
 
 // Hono app exposed as a named export so tests can call `app.request(...)`
 // directly. Wrangler boots from the default export below which wraps
@@ -128,10 +128,22 @@ const handler = {
     env: WorkerEnv,
     _ctx: ExecutionContext,
   ): Promise<void> => {
-    // Plan 08 Task 25 — the only retained scheduled task is the 04:15 UTC
-    // portal reconciliation. Unknown/retired cron events are ignored.
+    // The retained 04:15 UTC cron repairs both portal write-backs and the
+    // post-commit canonical audit archive outbox. Unknown/retired cron events
+    // remain ignored.
     if (event.cron === '15 4 * * *') {
-      await handlePortalReconciliation(env);
+      const results = await Promise.allSettled([
+        handlePortalReconciliation(env),
+        handleCanonicalAuditArchive(env),
+      ]);
+      for (const [name, result] of [
+        ['portal reconciliation', results[0]],
+        ['canonical audit archive', results[1]],
+      ] as const) {
+        if (result.status === 'rejected') {
+          console.error(`[scheduled] ${name} failed`, result.reason);
+        }
+      }
     }
   },
   /** Plan 08 Task 22 — Cloudflare Queue consumer for portal write-backs. */

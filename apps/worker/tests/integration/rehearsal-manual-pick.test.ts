@@ -99,6 +99,50 @@ describe('POST /api/admin/rehearsal/:sessionId/manual-pick', () => {
     expect(auditRows.results[0]?.n).toBe(1);
   });
 
+  it('rejects manual-pick after a canonical command has locked the mock session', async () => {
+    await seedMockSessionWithEligibleFF(h, sessionId);
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state
+       (bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at)
+       VALUES (?, 0, ?, NULL, ?, ?);`,
+      [
+        sessionId,
+        JSON.stringify({
+          bidSessionId: sessionId,
+          currentPhase: 'paused',
+          frozenAt: 1,
+          lastSeq: 0,
+        }),
+        Date.now(),
+        Date.now(),
+      ],
+    );
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/manual-pick`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ member_id: 60, position_id: 'A101' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'canonical_mutation_requires_command' });
+    const bidRows = await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    expect(bidRows.results[0]).toMatchObject({ n: 0 });
+    const auditRows = await h.db.run(
+      'SELECT count(*) AS n FROM audit_log WHERE bid_session_id = ?',
+      [sessionId],
+    );
+    expect(auditRows.results[0]).toMatchObject({ n: 0 });
+  });
+
   it('refuses with 403 when the session is not a mock', async () => {
     await seedMockSessionWithEligibleFF(h, sessionId, { isMock: false });
     const res = await app.fetch(

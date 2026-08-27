@@ -59,11 +59,30 @@ describe('handlePortalReconciliation reEnqueue → employeeId resolution (W38)',
         'bid-w38-1',
         nowSec - 60,
         nowSec - 30,
-        JSON.stringify({ idempotency_key: adminKey, marker: 'forced' }),
+        JSON.stringify({
+          bid_year: 2026,
+          bid_session_id: sessionId,
+          rank_label: 'Lieutenant',
+          station_label: 'Station 1',
+          shift_label: 'A Shift',
+          unit_label: 'Engine 1',
+          a_day_label: 'Pending Phase 2',
+          position_id: 'A101',
+          picked_at: new Date(nowSec * 1000).toISOString(),
+          idempotency_key: 'bid-w38-1',
+          is_forced: true,
+          admin_actor_employee_id: null,
+        }),
       ],
     );
 
-    const env: WorkerEnv = { ...h.env, PORTAL_QUEUE: queue };
+    const env: WorkerEnv = {
+      ...h.env,
+      PORTAL_QUEUE: queue,
+      PORTAL_WRITEBACK_ENABLED: 'true',
+      PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
+      PORTAL_BID_WRITER: 'writer-token',
+    };
     await handlePortalReconciliation(env);
 
     expect(sentMessages).toHaveLength(1);
@@ -87,7 +106,70 @@ describe('handlePortalReconciliation reEnqueue → employeeId resolution (W38)',
       ],
     );
 
-    const env: WorkerEnv = { ...h.env, PORTAL_QUEUE: queue };
+    const env: WorkerEnv = {
+      ...h.env,
+      PORTAL_QUEUE: queue,
+      PORTAL_WRITEBACK_ENABLED: 'true',
+      PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
+      PORTAL_BID_WRITER: 'writer-token',
+    };
+    await handlePortalReconciliation(env);
+
+    expect(sentMessages).toHaveLength(0);
+  });
+
+  it('does not re-enqueue a malformed or mismatched persisted payload', async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    await h.db.run(
+      "INSERT INTO bids (id, bid_session_id, ordinal, member_id, position_id, picked_at, forced, idempotency_key, portal_sync_status, portal_sync_attempts) VALUES (?, ?, 1, 7, 'A101', ?, 0, ?, 'pending', 0);",
+      ['bid-w38-invalid', sessionId, nowSec, 'request-id'],
+    );
+    await h.db.run(
+      "INSERT INTO portal_writeback_queue (id, bid_id, enqueued_at, next_attempt_at, attempts, status, payload_json) VALUES (?, ?, ?, ?, 0, 'queued', ?);",
+      [
+        'q-w38-invalid',
+        'bid-w38-invalid',
+        nowSec - 60,
+        nowSec - 30,
+        JSON.stringify({ bid_session_id: sessionId, idempotency_key: 'bid-w38-invalid' }),
+      ],
+    );
+
+    await handlePortalReconciliation({
+      ...h.env,
+      PORTAL_QUEUE: queue,
+      PORTAL_WRITEBACK_ENABLED: 'true',
+      PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
+      PORTAL_BID_WRITER: 'writer-token',
+    });
+
+    expect(sentMessages).toHaveLength(0);
+  });
+
+  it('does not re-enqueue due rows while portal publication is disabled', async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    await h.db.run(
+      "INSERT INTO bids (id, bid_session_id, ordinal, member_id, position_id, picked_at, forced, idempotency_key, portal_sync_status, portal_sync_attempts) VALUES (?, ?, 1, 7, 'A101', ?, 1, ?, 'pending', 0);",
+      ['bid-w38-disabled', sessionId, nowSec, 'force:disabled'],
+    );
+    await h.db.run(
+      "INSERT INTO portal_writeback_queue (id, bid_id, enqueued_at, next_attempt_at, attempts, status, payload_json) VALUES (?, ?, ?, ?, 0, 'queued', ?);",
+      [
+        'q-w38-disabled',
+        'bid-w38-disabled',
+        nowSec - 60,
+        nowSec - 30,
+        JSON.stringify({ idempotency_key: 'force:disabled' }),
+      ],
+    );
+
+    const env: WorkerEnv = {
+      ...h.env,
+      PORTAL_QUEUE: queue,
+      PORTAL_WRITEBACK_ENABLED: 'false',
+      PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback-disabled.invalid',
+      PORTAL_BID_WRITER: 'writer-present-but-disabled',
+    };
     await handlePortalReconciliation(env);
 
     expect(sentMessages).toHaveLength(0);

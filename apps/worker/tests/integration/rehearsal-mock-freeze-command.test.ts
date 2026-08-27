@@ -128,6 +128,64 @@ describe('POST /api/admin/rehearsal/:sessionId/commands/freeze', () => {
     expect((row.results[0] as { frozen_at: number | null }).frozen_at).toBeNull();
   });
 
+  it('rejects legacy position-bid state before contacting the canonical command DO', async () => {
+    await h.db.run(
+      `INSERT INTO bids (
+        id, bid_session_id, ordinal, member_id, position_id, picked_at,
+        forced, idempotency_key, portal_sync_status, portal_sync_attempts
+      ) VALUES (?, ?, 1, 42, 'A101', 100, 0, ?, 'pending', 0);`,
+      ['legacy-bid-route-001', mockSessionId, `legacy-bid-route:${mockSessionId}:A101`],
+    );
+    const calls: DoFetchCall[] = [];
+
+    const res = await app.fetch(
+      request(
+        mockSessionId,
+        {
+          Authorization: `Bearer ${await jwt('admin')}`,
+          'Idempotency-Key': COMMAND_ID,
+        },
+        { expectedSeq: 7, reason: 'Mock exercise pause' },
+      ),
+      { ...h.env, JWT_SIGNING_KEY: KEY, BID_SESSION: stubBidSessionNamespace(calls) },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'canonical_seed_requires_pristine_mock' });
+    expect(calls).toEqual([]);
+  });
+
+  it('rejects legacy A-Day state before contacting the canonical command DO', async () => {
+    await h.db.run(
+      `INSERT INTO a_day_picks (
+        id, bid_session_id, member_id, shift, a_day, picked_at, forced, idempotency_key
+      ) VALUES (?, ?, 42, 'A', 'G1', 100, 0, ?);`,
+      ['legacy-a-day-route-001', mockSessionId, `legacy-a-day-route:${mockSessionId}:42`],
+    );
+    const calls: DoFetchCall[] = [];
+
+    const res = await app.fetch(
+      request(
+        mockSessionId,
+        {
+          Authorization: `Bearer ${await jwt('admin')}`,
+          'Idempotency-Key': COMMAND_ID,
+        },
+        { expectedSeq: 7, reason: 'Mock exercise pause' },
+      ),
+      { ...h.env, JWT_SIGNING_KEY: KEY, BID_SESSION: stubBidSessionNamespace(calls) },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'canonical_seed_requires_a_day_import' });
+    expect(calls).toEqual([]);
+    const state = await h.db.run(
+      'SELECT count(*) AS count FROM canonical_bid_session_state WHERE bid_session_id = ?',
+      [mockSessionId],
+    );
+    expect(state.results).toEqual([{ count: 0 }]);
+  });
+
   it('rejects a non-mock session before contacting the DO', async () => {
     const calls: DoFetchCall[] = [];
     const res = await app.fetch(

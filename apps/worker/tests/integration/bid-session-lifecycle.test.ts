@@ -343,3 +343,65 @@ describe('POST /api/admin/bid-session/:id/day-end and day-start', () => {
     expect(r?.scheduled_resume_at).toBeNull();
   });
 });
+
+describe('canonical command authority', () => {
+  let h: TestD1;
+  const sessionId = '01HZZ0000000000000000SESS05';
+
+  beforeEach(async () => {
+    h = await setupTestD1();
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await h.db.run(
+      "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1, 1);",
+      [sessionId, Date.now()],
+    );
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state (
+        bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at
+      ) VALUES (?, 1, ?, 'freeze-command', ?, ?)`,
+      [
+        sessionId,
+        JSON.stringify({
+          bidSessionId: sessionId,
+          currentPhase: 'paused',
+          currentBidderId: null,
+          turnStartedAtMs: 1,
+          turnTimerSeconds: 180,
+          lastSeq: 1,
+          fills: {},
+          bidOrder: [],
+          queueCursor: 0,
+          frozenAt: 1,
+          aDay: null,
+        }),
+        Date.now(),
+        Date.now(),
+      ],
+    );
+  });
+
+  afterEach(async () => {
+    await teardownTestD1(h);
+  });
+
+  it('returns a typed conflict instead of attempting a legacy timer mutation', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/config`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${await freshAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ turn_timer_seconds: 240 }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'canonical_mutation_requires_command' });
+    expect(
+      (await h.db.run('SELECT turn_timer_seconds FROM bid_sessions WHERE id = ?', [sessionId]))
+        .results,
+    ).toEqual([{ turn_timer_seconds: 180 }]);
+  });
+});

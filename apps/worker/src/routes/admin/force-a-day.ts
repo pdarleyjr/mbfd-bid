@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
+import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { aDayPicks, bidSessions, members as membersTable } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
@@ -46,6 +47,9 @@ router.post('/:id/force-a-day', requireStepUpAuth(), async (c) => {
   const db = getDb(c.env.DB);
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
   if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+  if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+    return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+  }
   if (session.currentPhase !== 'a_day_bid') {
     return c.json(
       {

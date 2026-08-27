@@ -17,12 +17,14 @@ import { and, asc, desc, eq, notExists, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
+import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { type DB, getDb } from '../../db/index.js';
 import {
   aDayPicks,
   bidOrder,
   bidSessions,
   bids,
+  canonicalBidSessionState,
   credentials,
   memberCredentials,
   members,
@@ -177,6 +179,31 @@ router.post(
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
     if (!session.isMock) return c.json({ error: 'not_a_mock_session' }, 403);
 
+    // A canonical command may seed only a fresh mock. Legacy position/A-Day
+    // writes lack a lossless command/event mapping, so forwarding them would
+    // falsely make a partial D1 snapshot authoritative. The D1 trigger in
+    // migration 0022 repeats this check inside the actual commit boundary.
+    if (!(await hasCanonicalSessionState(db, sessionId))) {
+      const [legacyBid, legacyADayPick] = await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(bids)
+          .where(eq(bids.bidSessionId, sessionId))
+          .get(),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(aDayPicks)
+          .where(eq(aDayPicks.bidSessionId, sessionId))
+          .get(),
+      ]);
+      if ((legacyADayPick?.count ?? 0) > 0) {
+        return c.json({ error: 'canonical_seed_requires_a_day_import' }, 409);
+      }
+      if ((legacyBid?.count ?? 0) > 0) {
+        return c.json({ error: 'canonical_seed_requires_pristine_mock' }, 409);
+      }
+    }
+
     const body = c.req.valid('json');
     const claims = c.get('claims');
     const command = MockFreezeCommandSchema.parse({
@@ -206,13 +233,12 @@ router.post(
 /**
  * Task R4 — POST /api/admin/rehearsal/:sessionId/reset-mock
  *
- * Wipes Phase 1 bids + Phase 2 a_day picks, rewinds the session row to the
- * starting `position_bid` state, and asks the BidSession DO to reset its
- * in-memory + persisted state. The audit chain is intentionally NOT touched:
- * the rehearsal record itself is part of the legal trail.
+ * Reset is fail-closed while canonical mock commands are enabled. An audited,
+ * serialized reset epoch is required before this destructive operation can be
+ * safely re-enabled.
  *
  * Returns 403 if the session isn't marked mock. 404 if it doesn't exist.
- * 204 on success (no body).
+ * 409 until the reset epoch exists.
  */
 router.post('/:sessionId/reset-mock', async (c) => {
   const sessionId = c.req.param('sessionId');
@@ -222,45 +248,7 @@ router.post('/:sessionId/reset-mock', async (c) => {
   if (!s.isMock) {
     return c.json({ error: 'not_a_mock_session' }, 403);
   }
-
-  // Order matters: clear child rows first to avoid FK conflicts in production
-  // D1 (test harness disables FKs, but production keeps them on).
-  await db.delete(bids).where(eq(bids.bidSessionId, sessionId));
-  await db.delete(aDayPicks).where(eq(aDayPicks.bidSessionId, sessionId));
-
-  // Pick the first ordinal as the next current bidder. If the session has no
-  // bid_order yet (never started) we leave currentBidderId null.
-  const firstInOrder = await db
-    .select()
-    .from(bidOrder)
-    .where(eq(bidOrder.bidSessionId, sessionId))
-    .orderBy(asc(bidOrder.ordinal))
-    .get();
-
-  await db
-    .update(bidSessions)
-    .set({
-      currentPhase: 'position_bid',
-      currentBidderId: firstInOrder?.memberId ?? null,
-      currentTurnStartedAt: null,
-      pausedAt: null,
-      completedAt: null,
-      frozenAt: null,
-    })
-    .where(eq(bidSessions.id, sessionId));
-
-  // Best-effort: tell the DO to wipe its in-memory state. If BID_SESSION is
-  // a test stub, the call may throw — we swallow so the D1 reset still
-  // surfaces as 204 to the admin.
-  try {
-    const doId = c.env.BID_SESSION.idFromName(sessionId);
-    const stub = c.env.BID_SESSION.get(doId);
-    await stub.fetch('http://do/reset-mock', { method: 'POST' });
-  } catch (err) {
-    console.error('[rehearsal] DO reset-mock call failed (best-effort)', err);
-  }
-
-  return new Response(null, { status: 204 });
+  return c.json({ error: 'canonical_reset_requires_new_epoch' }, 409);
 });
 
 const AutoBidBodySchema = z.object({
@@ -325,6 +313,21 @@ async function getCurrentBidderFromDO(
 }
 
 /**
+ * Once a canonical command has created state for a session, direct rehearsal
+ * writes are no longer authoritative. They must be expressed as an audited,
+ * sequenced canonical command instead of mutating legacy tables alongside it.
+ */
+async function hasCanonicalSessionState(db: DB, sessionId: string): Promise<boolean> {
+  return (
+    (await db
+      .select({ bidSessionId: canonicalBidSessionState.bidSessionId })
+      .from(canonicalBidSessionState)
+      .where(eq(canonicalBidSessionState.bidSessionId, sessionId))
+      .get()) !== undefined
+  );
+}
+
+/**
  * Task R5 — POST /api/admin/rehearsal/:sessionId/auto-bid
  *
  * Body: { count, strategy }
@@ -353,6 +356,16 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
     if (!session.isMock) {
       return c.json({ error: 'not_a_mock_session' }, 403);
+    }
+    if (await hasCanonicalSessionState(db, sessionId)) {
+      return c.json(
+        {
+          error: 'canonical_mutation_requires_command',
+          detail:
+            'This mock session is controlled by canonical commands; create a new mock session instead.',
+        },
+        409,
+      );
     }
     if (session.currentPhase === 'complete') {
       return c.json({ picksMade: 0, stoppedReason: 'complete' });
@@ -702,6 +715,16 @@ router.post('/:sessionId/manual-pick', zValidator('json', ManualPickBodySchema),
       403,
     );
   }
+  if (await hasCanonicalSessionState(db, sessionId)) {
+    return c.json(
+      {
+        error: 'canonical_mutation_requires_command',
+        detail:
+          'This mock session is controlled by canonical commands; create a new mock session instead.',
+      },
+      409,
+    );
+  }
 
   const activeRules = await loadActiveRulesForYear(db, session.bidYear);
   if (!activeRules.hasActiveRuleBook) {
@@ -953,9 +976,27 @@ router.get('/sessions', async (c) => {
     .where(eq(bidSessions.isMock, true))
     .all();
 
+  let effectiveSessions: typeof sessions;
+  try {
+    effectiveSessions = await Promise.all(
+      sessions.map(async (session) => {
+        const canonical = await loadCanonicalBidSessionState(c.env.DB, session.id);
+        return canonical === null
+          ? session
+          : {
+              ...session,
+              currentPhase: canonical.currentPhase,
+              currentBidderId: canonical.currentBidderId,
+            };
+      }),
+    );
+  } catch {
+    return c.json({ error: 'canonical_state_unavailable' }, 503);
+  }
+
   // Last-pick lookup per session (best-effort).
   const lastPicks = new Map<string, string>();
-  for (const s of sessions) {
+  for (const s of effectiveSessions) {
     const last = await db
       .select({ pickedAt: bids.pickedAt })
       .from(bids)
@@ -969,7 +1010,7 @@ router.get('/sessions', async (c) => {
   }
 
   return c.json({
-    sessions: sessions.map((s) => ({
+    sessions: effectiveSessions.map((s) => ({
       id: s.id,
       bidYear: s.bidYear,
       currentPhase: s.currentPhase,

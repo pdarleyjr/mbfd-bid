@@ -84,6 +84,8 @@ describe('Portal queue consumer skips mock sessions (Task R8)', () => {
       const env = {
         ...h.env,
         PORTAL_BASE_URL: 'https://portal.example',
+        PORTAL_WRITEBACK_ENABLED: 'true' as const,
+        PORTAL_WRITEBACK_BASE_URL: 'https://portal.example',
         PORTAL_BID_WRITER: 'tok',
         PORTAL_QUEUE: {
           send: vi.fn(async () => {
@@ -136,6 +138,7 @@ describe('Portal queue consumer skips mock sessions (Task R8)', () => {
       const livePayload: PortalPayload = {
         ...payload,
         bid_session_id: '01HZZLIVE00000000000000001',
+        idempotency_key: 'bid_live_1',
       };
       const liveMessage: QueueMessage = {
         bidId: 'bid_live_1',
@@ -156,6 +159,8 @@ describe('Portal queue consumer skips mock sessions (Task R8)', () => {
       await handlePortalQueueBatch(batch, {
         ...h.env,
         PORTAL_BASE_URL: 'https://portal.example',
+        PORTAL_WRITEBACK_ENABLED: 'true' as const,
+        PORTAL_WRITEBACK_BASE_URL: 'https://portal.example',
         PORTAL_BID_WRITER: 'tok',
         PORTAL_QUEUE: { send: vi.fn(async () => {}) } as never,
       });

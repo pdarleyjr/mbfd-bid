@@ -8,8 +8,9 @@ import {
 } from '@mbfd/a-day';
 import { evaluateEligibility } from '@mbfd/eligibility';
 import { SubmitADayPickRequestSchema } from '@mbfd/shared';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
+import { loadCanonicalBidSessionState } from '../commands/canonical-command-service.js';
 import { getDb } from '../db/index.js';
 import {
   bidSessions as bidSessionsTable,
@@ -56,13 +57,16 @@ async function resolveBidSessionId(
 ): Promise<string | null> {
   if (explicitSessionId && explicitSessionId.trim().length > 0) return explicitSessionId;
   const db = getDb(c.env.DB);
-  const session = await db
-    .select({ id: bidSessionsTable.id })
+  const sessions = await db
+    .select({ id: bidSessionsTable.id, currentPhase: bidSessionsTable.currentPhase })
     .from(bidSessionsTable)
-    .where(ne(bidSessionsTable.currentPhase, 'complete'))
     .orderBy(desc(bidSessionsTable.startedAt))
-    .get();
-  return session?.id ?? null;
+    .all();
+  for (const session of sessions) {
+    const canonical = await loadCanonicalBidSessionState(c.env.DB, session.id);
+    if ((canonical?.currentPhase ?? session.currentPhase) !== 'complete') return session.id;
+  }
+  return null;
 }
 
 bid.get('/me', async (c) => {
@@ -85,7 +89,12 @@ bid.get('/me/eligibility', async (c) => {
   const member = await db.select().from(membersTable).where(eq(membersTable.id, claims.sub)).get();
   if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
 
-  const sessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  let sessionId: string | null;
+  try {
+    sessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  } catch {
+    return c.json({ error: 'canonical_state_unavailable' }, 503);
+  }
   if (!sessionId) return c.json({ error: 'no_active_session' }, 404);
   const session = await db
     .select({ id: bidSessionsTable.id, bidYear: bidSessionsTable.bidYear })
@@ -93,6 +102,13 @@ bid.get('/me/eligibility', async (c) => {
     .where(eq(bidSessionsTable.id, sessionId))
     .get();
   if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+
+  let canonicalState: BidSessionState | null;
+  try {
+    canonicalState = await loadCanonicalBidSessionState(c.env.DB, sessionId);
+  } catch {
+    return c.json({ error: 'canonical_state_unavailable' }, 503);
+  }
 
   // A member route must not evaluate an arbitrary draft or archived policy.
   // Bind it to the one active book for the selected session's bid year.
@@ -147,12 +163,16 @@ bid.get('/me/eligibility', async (c) => {
   }
 
   const filled = new Set<string>();
-  const rows = await db
-    .select({ positionId: bidsTable.positionId })
-    .from(bidsTable)
-    .where(eq(bidsTable.bidSessionId, sessionId))
-    .all();
-  for (const row of rows) filled.add(row.positionId);
+  if (canonicalState !== null) {
+    for (const positionId of Object.keys(canonicalState.fills)) filled.add(positionId);
+  } else {
+    const rows = await db
+      .select({ positionId: bidsTable.positionId })
+      .from(bidsTable)
+      .where(eq(bidsTable.bidSessionId, sessionId))
+      .all();
+    for (const row of rows) filled.add(row.positionId);
+  }
 
   const eligibilityMember = {
     employeeId: member.employeeId,
@@ -198,7 +218,12 @@ interface BidderContext {
 bid.get('/board', async (c) => {
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
-  const bidSessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  let bidSessionId: string | null;
+  try {
+    bidSessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  } catch {
+    return c.json({ error: 'canonical_state_unavailable' }, 503);
+  }
   if (!bidSessionId) return c.json({ error: 'no_active_session' }, 404);
   const doId = c.env.BID_SESSION.idFromName(bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);
@@ -226,6 +251,7 @@ bid.get('/board', async (c) => {
   let sessionStartedAt: number | null = null;
   let d1Phase: string | null = null;
   let d1CurrentBidderId: number | null = null;
+  let canonicalState: BidSessionState | null = null;
   try {
     const db = getDb(c.env.DB);
     const session = await db
@@ -245,7 +271,32 @@ bid.get('/board', async (c) => {
     d1Phase = session?.currentPhase ?? null;
     d1CurrentBidderId = session?.currentBidderId ?? null;
   } catch {
-    // best-effort — banner stays off if the lookup fails
+    // Best-effort legacy enrichment remains available when D1 is unavailable.
+  }
+
+  try {
+    canonicalState = await loadCanonicalBidSessionState(c.env.DB, bidSessionId);
+  } catch {
+    // Once canonical authority is introduced, serving an unverified legacy
+    // projection would be misleading. Refuse the board response until D1 can
+    // provide or rule out that state.
+    return c.json({ error: 'canonical_state_unavailable' }, 503);
+  }
+
+  if (canonicalState !== null) {
+    // The canonical row is the only authority after a mock command commits.
+    // Do not overlay stale bid_sessions fields or a cold DO snapshot on top
+    // of its paused/frozen state.
+    body.currentPhase = canonicalState.currentPhase;
+    body.currentBidderId = canonicalState.currentBidderId;
+    body.turnStartedAtMs = canonicalState.turnStartedAtMs;
+    body.turnTimerSeconds = canonicalState.turnTimerSeconds;
+    body.lastSeq = canonicalState.lastSeq;
+    body.fills = { ...canonicalState.fills };
+    body.bidOrder = [...canonicalState.bidOrder];
+    body.queueCursor = canonicalState.queueCursor;
+    body.frozenAt = canonicalState.frozenAt;
+    body.aDay = canonicalState.aDay;
   }
 
   // Merge D1-committed bids into the fills map. Auto-bid / admin bid-for-
@@ -269,8 +320,10 @@ bid.get('/board', async (c) => {
     console.error('[bid.board] D1 fills merge failed (fail-soft)', err);
   }
 
-  body.currentPhase = resolvePhase(body.currentPhase, d1Phase);
-  body.currentBidderId = resolveCurrentBidderId(body.currentBidderId, d1CurrentBidderId);
+  if (canonicalState === null) {
+    body.currentPhase = resolvePhase(body.currentPhase, d1Phase);
+    body.currentBidderId = resolveCurrentBidderId(body.currentBidderId, d1CurrentBidderId);
+  }
 
   // Live Bid Console enrichment — hydrate the active bidder + next-5 queue
   // with member context so the UI shows "CPT Sola (14335)" instead of just
@@ -423,7 +476,12 @@ bid.get('/bid/state', async (c) => {
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
   const sinceSeq = Number(c.req.query('since_seq') ?? '0');
-  const bidSessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  let bidSessionId: string | null;
+  try {
+    bidSessionId = await resolveBidSessionId(c, readSessionQuery(c));
+  } catch {
+    return c.json({ error: 'canonical_state_unavailable' }, 503);
+  }
   if (!bidSessionId) return c.json({ error: 'no_active_session' }, 404);
   const doId = c.env.BID_SESSION.idFromName(bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);

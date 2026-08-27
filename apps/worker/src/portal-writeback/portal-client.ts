@@ -18,12 +18,28 @@ export interface PostArgs {
   employeeId: string;
   payload: PortalPayload;
   portalBaseUrl: string;
+  /** Direct callers must explicitly opt in after resolving runtime policy. */
+  publicationEnabled: boolean;
   token: string;
   fetchImpl: typeof fetch;
   timeoutMs?: number;
 }
 
 export async function postBidAssignment(a: PostArgs): Promise<PostResult> {
+  if (!a.publicationEnabled) {
+    return { kind: 'permanent', statusCode: 0, message: 'portal publication is disabled' };
+  }
+  if (a.token.trim().length === 0) {
+    return { kind: 'permanent', statusCode: 0, message: 'portal writer credential is missing' };
+  }
+  try {
+    const url = new URL(a.portalBaseUrl);
+    if (url.protocol !== 'https:' || url.username.length > 0 || url.password.length > 0) {
+      return { kind: 'permanent', statusCode: 0, message: 'portal writeback endpoint is invalid' };
+    }
+  } catch {
+    return { kind: 'permanent', statusCode: 0, message: 'portal writeback endpoint is invalid' };
+  }
   const url = `${a.portalBaseUrl}/api/v2/members/${encodeURIComponent(
     a.employeeId,
   )}/bid-assignment`;
@@ -38,6 +54,7 @@ export async function postBidAssignment(a: PostArgs): Promise<PostResult> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(a.payload),
+      redirect: 'error',
       signal: ctrl.signal,
     });
     if (res.status === 200 || res.status === 409) {

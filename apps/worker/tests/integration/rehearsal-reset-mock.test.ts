@@ -110,7 +110,7 @@ describe('POST /api/admin/rehearsal/:sessionId/reset-mock (Task R4)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 204 and clears bids+a_day_picks for a mock session', async () => {
+  it('fails closed without mutating a mock session until a reset epoch exists', async () => {
     const doCalls: DoFetchCall[] = [];
     const env: WorkerEnv = {
       ...h.env,
@@ -124,17 +124,18 @@ describe('POST /api/admin/rehearsal/:sessionId/reset-mock (Task R4)', () => {
       }),
       env,
     );
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'canonical_reset_requires_new_epoch' });
 
     const bidsRows = await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [
       sessionId,
     ]);
-    expect((bidsRows.results[0] as { n: number }).n).toBe(0);
+    expect((bidsRows.results[0] as { n: number }).n).toBe(1);
     const aDayRows = await h.db.run(
       'SELECT count(*) AS n FROM a_day_picks WHERE bid_session_id = ?',
       [sessionId],
     );
-    expect((aDayRows.results[0] as { n: number }).n).toBe(0);
+    expect((aDayRows.results[0] as { n: number }).n).toBe(1);
 
     const sessionRow = await h.db.run(
       'SELECT current_phase, current_bidder_id, current_turn_started_at, paused_at, completed_at, frozen_at FROM bid_sessions WHERE id = ?',
@@ -149,13 +150,75 @@ describe('POST /api/admin/rehearsal/:sessionId/reset-mock (Task R4)', () => {
       frozen_at: number | null;
     };
     expect(s.current_phase).toBe('position_bid');
-    expect(s.current_bidder_id).toBe(101);
+    expect(s.current_bidder_id).toBeNull();
     expect(s.current_turn_started_at).toBeNull();
     expect(s.paused_at).toBeNull();
     expect(s.completed_at).toBeNull();
     expect(s.frozen_at).toBeNull();
 
-    // DO must also be asked to reset
-    expect(doCalls.some((c) => c.pathname === '/reset-mock')).toBe(true);
+    expect(doCalls).toEqual([]);
+  });
+
+  it('fails closed before reset mutations once canonical command state exists', async () => {
+    // 0022 only permits a canonical seed for a session without legacy picks.
+    // Preserve a non-default legacy session row before the seed so the route
+    // assertion can prove it leaves that row untouched.
+    await h.db.run('DELETE FROM a_day_picks WHERE bid_session_id = ?', [sessionId]);
+    await h.db.run('DELETE FROM bids WHERE bid_session_id = ?', [sessionId]);
+    await h.db.run(
+      `UPDATE bid_sessions
+          SET current_phase = 'paused', current_bidder_id = 102, paused_at = ?, frozen_at = ?
+        WHERE id = ?`,
+      [Date.now(), Date.now(), sessionId],
+    );
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state (
+        bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at
+      ) VALUES (?, ?, ?, NULL, ?, ?)`,
+      [
+        sessionId,
+        0,
+        JSON.stringify({ bidSessionId: sessionId, lastSeq: 0 }),
+        Date.now(),
+        Date.now(),
+      ],
+    );
+    const doCalls: DoFetchCall[] = [];
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(doCalls),
+    };
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/reset-mock`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'canonical_reset_requires_new_epoch' });
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
+        .results,
+    ).toEqual([{ n: 0 }]);
+    expect(
+      (
+        await h.db.run('SELECT count(*) AS n FROM a_day_picks WHERE bid_session_id = ?', [
+          sessionId,
+        ])
+      ).results,
+    ).toEqual([{ n: 0 }]);
+    expect(
+      (
+        await h.db.run(
+          'SELECT current_phase, current_bidder_id, paused_at, frozen_at FROM bid_sessions WHERE id = ?',
+          [sessionId],
+        )
+      ).results,
+    ).toMatchObject([{ current_phase: 'paused', current_bidder_id: 102 }]);
+    expect(doCalls).toEqual([]);
   });
 });

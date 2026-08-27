@@ -293,7 +293,7 @@ this prequel is the safety harness that runs on staging.
 | Method + Path | Auth | Purpose |
 |---|---|---|
 | `POST /api/admin/rehearsal/:sessionId/mark-mock` | admin | Idempotently set `bid_sessions.is_mock=1`. 404 if session missing. |
-| `POST /api/admin/rehearsal/:sessionId/reset-mock` | admin | Wipe Phase 1 `bids` + Phase 2 `a_day_picks`, rewind `bid_sessions` row, reset DO state. 403 unless `is_mock=1`. Returns 204. |
+| `POST /api/admin/rehearsal/:sessionId/reset-mock` | admin | Temporarily fail-closed: no rows or DO state are changed until a serialized, audited reset epoch exists. 403 unless `is_mock=1`; otherwise returns 409 `canonical_reset_requires_new_epoch`. |
 | `POST /api/admin/rehearsal/:sessionId/auto-bid` | admin | Body `{ count, strategy: 'first_eligible' }`. Loops up to `count` deterministic picks; stops on `complete`, 5 consecutive `no_eligible`, or count exhaustion. Returns 200 with `{ picksMade, stoppedReason, detail? }`. 207 if `no_eligible` after some picks. 403 unless `is_mock=1`. |
 | `POST /api/admin/rehearsal/findings` | admin | Body `{ bidSessionId, note, screenshotR2Key? }`. Inserts one row. 201 on success. 404 if session missing. |
 | `GET  /api/admin/rehearsal/findings?session_id=…&limit=50` | admin | Per-session findings, newest-first. 400 if no `session_id`. |
@@ -352,8 +352,9 @@ the readiness probe when this query is non-empty.
    picks made during the rehearsal.
 7. Capture observations via **Submit Finding** (right rail) — text + an
    optional R2 key of a screenshot uploaded out-of-band.
-8. To redo from clean: **Reset** wipes bids + A-Day picks + the DO state
-   but preserves the audit chain (legal record of what happened).
+8. **Reset** is unavailable until a serialized, audited reset epoch is
+   implemented. Start a new mock session to rehearse again; do not expect any
+   existing rehearsal data to be deleted.
 9. When satisfied, complete or archive the session so the Plan 09 cutover
    check (above) does not block the deploy.
 
@@ -375,7 +376,7 @@ Run on staging before deploying the rehearsal burst:
 
 | ID | Source | Watch-item | Action by |
 |----|--------|------------|-----------|
-| W43 | Task R4 | The DO `resetMock()` method calls `state.storage.deleteAll()` on the native handle (cast bypasses the narrowed `DOStorageLike` typing). The cast is safe in production where the storage IS the real DO storage, but the DOStorageLike abstraction should grow a `deleteAll?(): Promise<void>` member to keep the type story honest. | Follow-up cleanup |
-| W44 | Task R5 | The auto-bid endpoint inserts bids directly into D1 (mirroring `bid-for-member`) rather than going through the BidSession DO. That keeps the rehearsal loop testable, but the DO's in-memory `fills` map and the D1 `bids` table will drift during a rehearsal. Reset-mock wipes both, so the only operator-visible failure mode is the DO's WebSocket clients showing a stale board until the next snapshot fetch. Plan 09 should validate this by spinning the rehearsal through a real WS-connected admin browser. | Plan 09 rehearsal |
+| W43 | Task R4 | Reset-mock is intentionally disabled until a serialized, audited reset epoch can prevent a destructive race with canonical commands. | Plan 09 rehearsal |
+| W44 | Task R5 | The auto-bid endpoint inserts bids directly into D1 (mirroring `bid-for-member`) rather than going through the BidSession DO. That keeps the rehearsal loop testable, but the DO's in-memory `fills` map and the D1 `bids` table will drift during a rehearsal. Reset-mock is intentionally unavailable until an audited reset epoch exists, so Plan 09 should validate this with a real WS-connected admin browser and treat a new mock session as the safe retry path. | Plan 09 rehearsal |
 | W45 | Task R8 | The portal write-back guard re-queries D1 per message. For batches of 100 messages this is 100 D1 reads. If batches grow, batch the `is_mock` lookup with `IN (...)`. | Follow-up cleanup |
 | W47 | Task R7 | MockBanner reads `is_mock` from `/api/board`, which is the DO snapshot enriched with one D1 query. For sessions that don't yet have a DO instance (mark-mock before start), the snapshot fetch may 404 — the banner falls back to `isMock=false`. Symptom: the banner doesn't appear until after `/start`. Either always-read D1 for `is_mock` OR have `mark-mock` initialise the DO. Recommend the former. | Plan 09 hardening |

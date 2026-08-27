@@ -61,4 +61,59 @@ describe('GET /api/admin/bid-session/active', () => {
     expect(body.session?.id).toBe('new-live');
     expect(body.session?.currentPhase).toBe('paused');
   });
+
+  it('projects canonical state over stale legacy session fields', async () => {
+    const canonicalFrozenAt = 1_700_000_000_000;
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await h.db.run(
+      "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES ('canonical-active', 2026, ?, 'position_bid', 180, 2, 1, 1);",
+      [Date.now()],
+    );
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state (
+        bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at
+      ) VALUES (?, 1, ?, 'freeze-command', ?, ?)`,
+      [
+        'canonical-active',
+        JSON.stringify({
+          bidSessionId: 'canonical-active',
+          currentPhase: 'paused',
+          currentBidderId: null,
+          turnStartedAtMs: canonicalFrozenAt - 1000,
+          turnTimerSeconds: 240,
+          lastSeq: 1,
+          fills: {},
+          bidOrder: [],
+          queueCursor: 0,
+          frozenAt: canonicalFrozenAt,
+          aDay: null,
+        }),
+        canonicalFrozenAt,
+        canonicalFrozenAt,
+      ],
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session/active', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      session: {
+        id: string;
+        currentPhase: string;
+        turnTimerSeconds: number;
+        frozenAt: string | null;
+      } | null;
+    };
+    expect(body.session).toMatchObject({
+      id: 'canonical-active',
+      currentPhase: 'paused',
+      turnTimerSeconds: 240,
+      frozenAt: new Date(canonicalFrozenAt).toISOString(),
+    });
+  });
 });
