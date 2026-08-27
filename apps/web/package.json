@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "pnpm -r --filter \"./packages/*\" build",
-    "prebuild": "pnpm -r --filter \"./packages/*\" build",
+    "predev": "pnpm -r --filter @mbfd/shared --filter @mbfd/eligibility --filter @mbfd/a-day run build",
+    "prebuild": "pnpm -r --filter @mbfd/shared --filter @mbfd/eligibility --filter @mbfd/a-day run build",
     "dev": "next dev --turbo --port 3000",
     "build": "next build",
     "start": "next start",
