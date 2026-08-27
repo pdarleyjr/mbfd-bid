@@ -6,9 +6,10 @@ import auth from '../../src/routes/auth';
 import type { WorkerEnv } from '../../src/types/env';
 
 const ORIG_FETCH = globalThis.fetch;
-// Derived rather than retained as a source literal: this is the historical
-// candidate the fail-closed regression must continue to reject.
-const RETIRED_PIN_CANDIDATE = [2, 3, 0, 0].join('');
+// Derived rather than retained as a source literal. This test-only initial
+// staging value is supplied by canonical KV where configured and must still
+// fail closed when the canonical record is unavailable.
+const INITIAL_CONFIGURED_PIN = [2, 3, 0, 0].join('');
 
 function mkEnv(): WorkerEnv {
   return {
@@ -238,22 +239,26 @@ describe('POST /api/auth/login', () => {
 });
 
 describe('POST /api/auth/verify-pin', () => {
-  it('accepts only the explicitly configured KV PIN', async () => {
+  it('accepts the initial PIN only when canonical KV explicitly configures it', async () => {
     const app = mountedAuth();
     const env = {
       ...mkEnv(),
       KV: makeKv({
-        [MEMBER_BID_PIN_KV_KEY]: JSON.stringify({ pin: '4815', updatedAt: 1, updatedBy: 'test' }),
+        [MEMBER_BID_PIN_KV_KEY]: JSON.stringify({
+          pin: INITIAL_CONFIGURED_PIN,
+          updatedAt: 1,
+          updatedBy: 'test',
+        }),
       }),
     };
 
-    expect((await verifyPin(app, env, '4815')).status).toBe(204);
+    expect((await verifyPin(app, env, INITIAL_CONFIGURED_PIN)).status).toBe(204);
     expect((await verifyPin(app, env, '4816')).status).toBe(401);
   });
 
-  it('fails closed when the PIN record is missing and never accepts the retired candidate', async () => {
+  it('fails closed when the PIN record is missing, including for the initial configured value', async () => {
     const app = mountedAuth();
-    const res = await verifyPin(app, { ...mkEnv(), KV: makeKv() }, RETIRED_PIN_CANDIDATE);
+    const res = await verifyPin(app, { ...mkEnv(), KV: makeKv() }, INITIAL_CONFIGURED_PIN);
 
     expect(res.status).toBe(503);
     await expect(res.json()).resolves.toEqual({ error: 'PIN_NOT_CONFIGURED' });
@@ -264,7 +269,7 @@ describe('POST /api/auth/verify-pin', () => {
     const res = await verifyPin(
       app,
       { ...mkEnv(), KV: makeKv({ [MEMBER_BID_PIN_KV_KEY]: '{not json' }) },
-      RETIRED_PIN_CANDIDATE,
+      INITIAL_CONFIGURED_PIN,
     );
 
     expect(res.status).toBe(503);
@@ -274,7 +279,7 @@ describe('POST /api/auth/verify-pin', () => {
   it('fails closed when the PIN KV read is unavailable without logging the candidate', async () => {
     const app = mountedAuth();
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const candidate = RETIRED_PIN_CANDIDATE;
+    const candidate = INITIAL_CONFIGURED_PIN;
 
     const res = await verifyPin(app, { ...mkEnv(), KV: makeKv({}, true) }, candidate);
 
