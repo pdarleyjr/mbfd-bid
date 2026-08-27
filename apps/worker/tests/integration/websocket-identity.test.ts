@@ -1,11 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Hono } from 'hono';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
 import { BidSessionDO } from '../../src/durable/bid-session.js';
+import { signJwt } from '../../src/lib/jwt.js';
 import {
   parseVerifiedWebSocketIdentity,
   verifiedWebSocketIdentityHeaders,
 } from '../../src/lib/websocket-identity.js';
+import ws from '../../src/routes/ws.js';
+import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 interface TestStorage {
@@ -127,5 +131,68 @@ describe('WebSocket identity handoff', () => {
     const persisted = await storage.get<BidSessionState>(`bs:${sessionId}:state`);
     expect(persisted?.fills.A101).toMatchObject({ memberId: 42, ordinal: 1 });
     expect(persisted?.currentPhase).toBe('complete');
+  });
+
+  it('forwards only verified JWT claims from the public WebSocket route to the DO', async () => {
+    const doFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response('upstream'));
+    const idFromName = vi.fn(() => ({}) as DurableObjectId);
+    const bidSession = {
+      idFromName,
+      get: vi.fn(() => ({ fetch: doFetch })),
+    } as unknown as DurableObjectNamespace;
+    const router = new Hono<{ Bindings: WorkerEnv }>().route('/api/ws', ws);
+    const jwt = await signJwt(
+      {
+        sub: 42,
+        emp: '300042',
+        role: 'member',
+        rank: 'FF',
+        first_name: 'Test',
+        last_name: 'Bidder',
+        fresh_auth_at: Math.floor(Date.now() / 1000),
+      },
+      h.env.JWT_SIGNING_KEY,
+    );
+    const sessionPath = `/api/ws/session/${sessionId}?token=${encodeURIComponent(jwt)}`;
+    const request = {
+      headers: {
+        Origin: 'https://staging.bid.mbfdhub.com',
+        Upgrade: 'websocket',
+      },
+    };
+
+    const accepted = await router.request(sessionPath, request, {
+      ...h.env,
+      BID_SESSION: bidSession,
+    });
+
+    expect(accepted.status).toBe(200);
+    expect(idFromName).toHaveBeenCalledWith(sessionId);
+    expect(doFetch).toHaveBeenCalledTimes(1);
+    const [, init] = doFetch.mock.calls[0] ?? [];
+    expect(init).toMatchObject({
+      method: 'GET',
+      headers: {
+        Upgrade: 'websocket',
+        'X-MBFD-Member-Id': '42',
+        'X-MBFD-Role': 'member',
+      },
+    });
+
+    const crossEnvironment = await router.request(
+      sessionPath,
+      {
+        headers: { ...request.headers, Origin: 'https://bid.mbfdhub.com' },
+      },
+      { ...h.env, BID_SESSION: bidSession },
+    );
+    expect(crossEnvironment.status).toBe(403);
+
+    const invalid = await router.request(`/api/ws/session/${sessionId}?token=not-a-jwt`, request, {
+      ...h.env,
+      BID_SESSION: bidSession,
+    });
+    expect(invalid.status).toBe(401);
+    expect(doFetch).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,6 @@
 # Wrangler tail PII audit (Plan 09 Task 1)
 
-Updated: 2026-05-19 (Plan 09 Phase A — investigatory).
+Updated: 2026-08-27 (request-log re-audit).
 
 ## Goal
 
@@ -45,18 +45,26 @@ Total: 19 emitter sites. None log raw PII.
 
 ## Third-party loggers
 
-### `hono/logger` (wired in `apps/worker/src/index.ts:56`)
+### `hono/logger` with whole-query redaction
 
-Logs `<-- METHOD PATH` and `--> METHOD PATH STATUS ELAPSED`. Path components
-in this worker are:
+`apps/worker/src/index.ts` supplies every Hono logger message to
+`src/lib/request-log.ts:redactRequestLog`. It replaces the entire query
+string with `?<redacted>` before `console.log`, preserving only the method,
+path, status, and elapsed time. This is intentional defense in depth because
+both the browser WebSocket fallback and roster-print flow can carry a
+short-lived token in a query string.
+
+The covered path components in this worker are:
 
 - `/api/auth/login` — employee_id is in the **JSON body**, not the URL → safe.
 - `/api/admin/...` — admin routes carry ULID session IDs and shift letters
   in the URL → safe.
-- `/api/ws/session/:id/ws` — `:id` is a ULID → safe.
+- `/api/ws/session/:id` — `:id` is a ULID; any `?token=` value is redacted.
 
-No route exposes `employee_id` or member name as a URL segment or query
-param. The Hono logger therefore cannot leak PII via the URL.
+`tests/unit/request-log.test.ts` covers both ordinary and percent-encoded
+parameter names and asserts that the emitted application logger output never
+contains the query value. This does not prove Cloudflare platform logging
+configuration; that remains a separate hosted-observability check.
 
 ### `cf-connecting-ip` header
 
@@ -67,7 +75,8 @@ which is irreversible.
 
 ## Findings
 
-**Zero source-level PII leaks.** No fix required.
+**No known source-level query-token leak remains in the application logger.**
+The logger redaction and its regression test are the current source evidence.
 
 The four forbidden-token greps from the plan would all return zero hits on
 both:
@@ -76,8 +85,9 @@ both:
 2. A `git grep` over `apps/worker/src` for any emitter that interpolates an
    employee ID, name, IP, PIN, or `Authorization` value.
 
-This audit is repeatable: re-running the static inspection any time a new
-log emitter is added is the gate. If a future review surfaces a violation,
+This audit is repeatable: re-running the static inspection and
+`tests/unit/request-log.test.ts` any time a new log emitter or query-token
+path is added is the source gate. If a future review surfaces a violation,
 the redaction pattern is the structured-log shape in the plan:
 
 ```ts
@@ -86,12 +96,15 @@ console.info(JSON.stringify({ traceId, userId: ulid, route, latencyMs, outcome }
 
 ## Re-audit checklist before each rehearsal
 
-1. `Grep -rn 'console\.(log|info|warn|error)' apps/worker/src` — confirm
-   count matches the table above (any new entry needs review).
-2. Run a staging `wrangler tail --format json` capture for 10 minutes during
+1. `Grep -rn 'console\.(log|info|warn|error)' apps/worker/src` — inspect
+   every new emitter and confirm request logging still uses whole-query
+   redaction.
+2. Run `pnpm --filter @mbfd/worker exec vitest run --config vitest.config.ts tests/unit/request-log.test.ts`.
+3. Run a staging `wrangler tail --format json` capture for 10 minutes during
    a happy-path test, save to `tail-staging-<date>.jsonl`, run the four
    `Select-String` greps from the plan, confirm all four return zero hits.
 
 ## Conclusion
 
-No code change required for Task 1. Doc-only commit lands the audit log.
+Source redaction is verified locally; hosted tail evidence is still required
+before asserting that Cloudflare-side observability also omits query values.

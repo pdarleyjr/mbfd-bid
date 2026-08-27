@@ -62,6 +62,7 @@ describe('admin portal endpoints (Plan 08 Task 24)', () => {
     );
     const env = {
       ...h.env,
+      ENV: 'production' as const,
       PORTAL_WRITEBACK_ENABLED: 'true' as const,
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
       PORTAL_BID_WRITER: 'writer-token',
