@@ -56,13 +56,6 @@ binding = "BROWSER"
 binding = "PORTAL_QUEUE"
 queue = "mbfd-portal-writebacks-staging"
 
-[[env.staging.queues.consumers]]
-queue = "mbfd-portal-writebacks-staging"
-max_batch_size = 10
-max_batch_timeout = 5
-max_retries = 0
-dead_letter_queue = "mbfd-portal-writebacks-staging-dlq"
-
 [env.production]
 name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]

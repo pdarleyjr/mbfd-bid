@@ -18,10 +18,42 @@ permissions:
   deployments: write
 
 jobs:
+  validate-artifacts:
+    name: Validate staging artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - name: Build internal packages
+        run: pnpm -r --filter "./packages/*" build
+      - run: pnpm typecheck
+      - name: Build Worker bundle without upload
+        working-directory: apps/worker
+        # Verified against the pinned Wrangler CLI: --dry-run compiles and
+        # runs checks without uploading a Worker.
+        run: pnpm exec wrangler deploy --env staging --dry-run --outdir .wrangler/ci-build
+      - name: Build OpenNext staging artifact without deploy
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_WORKER_BASE: https://api.staging.bid.mbfdhub.com
+        run: pnpm build:opennext:staging
+
   deploy-worker:
     name: Deploy worker (staging)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: validate-artifacts
     environment:
       name: staging
       url: https://api.staging.bid.mbfdhub.com
@@ -53,7 +85,7 @@ jobs:
     name: Deploy web (OpenNext Worker, staging)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: deploy-worker
+    needs: [validate-artifacts, deploy-worker]
     environment:
       name: staging
       url: https://staging.bid.mbfdhub.com
