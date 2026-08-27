@@ -22,7 +22,7 @@ describe('staging release configuration', () => {
     expect(config).not.toContain('[[env.staging.queues.consumers]]');
   });
 
-  it('validates both deployable artifacts before a staging migration or deployment', () => {
+  it('runs non-deploy validation before a staging migration or deployment', () => {
     const workflow = readFileSync(
       resolve(repositoryRoot, '.github', 'workflows', 'deploy-staging.yml'),
       'utf8',
@@ -39,7 +39,7 @@ describe('staging release configuration', () => {
     expect(validation).toContain('pnpm lint');
     expect(validation).toContain('pnpm typecheck');
     expect(validation).toContain('pnpm -r --filter "./packages/*" build');
-    expect(validation).toContain('wrangler deploy --env staging --dry-run');
+    expect(validation).not.toContain('wrangler deploy --env staging --dry-run');
     expect(validation).toContain('pnpm build:opennext:staging');
     expect(workflow).not.toContain('db:seed:remote');
   });

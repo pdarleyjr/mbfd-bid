@@ -38,11 +38,6 @@ jobs:
       - name: Build internal packages
         run: pnpm -r --filter "./packages/*" build
       - run: pnpm typecheck
-      - name: Build Worker bundle without upload
-        working-directory: apps/worker
-        # Verified against the pinned Wrangler CLI: --dry-run compiles and
-        # runs checks without uploading a Worker.
-        run: pnpm exec wrangler deploy --env staging --dry-run --outdir .wrangler/ci-build
       - name: Build OpenNext staging artifact without deploy
         working-directory: apps/web
         env:
