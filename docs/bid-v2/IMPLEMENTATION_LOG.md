@@ -2,6 +2,10 @@
 
 ## 2026-08-27 — final staging auth hardening checkpoint
 
+> This entry supersedes the authentication, credential, and operational-acceptance
+> boundaries recorded in the immediately following 2026-08-27 checkpoint. That
+> earlier entry remains a point-in-time record, not current staging status.
+
 - The exact Web source `5ead0c7df4bd1e3b69b19ea17ae0ff7c648fdd15` passed focused auth/PIN tests, frozen local validation, `pnpm lint`, typecheck, build, D1 backup preflight, and the full suite (1,102 passed; 4 intentional opt-in skips). The clean Linux Node 22.22.1 / pnpm 9.12.0 gate also passed frozen install, lint, package builds, typecheck, OpenNext staging build, and local preview smoke before the exact Web artifact was deployed as staging version `c1d49ee3-a9ab-4531-b65b-5275617345cc`.
 - The staging API and OpenNext Web Workers received one newly generated shared JWT signing key without retrieving or recording any existing value. Name-only verification was followed by fresh API login, API JWT verification, same-origin Web session finalization, secure cookie installation, and authenticated `/admin` access. The current API secret-change version is `aadd7371-417c-4a4c-9a01-d0a5dcccd4cf`; no D1 migration was applied for the auth work.
 - The staging-only local `admin` password was reset as a bcrypt digest on the API Worker. Its plaintext is available only through a user-context DPAPI-protected local handoff, not source, documentation, logs, or the PR.
