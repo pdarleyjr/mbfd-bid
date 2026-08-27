@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { isExpectedPublicWebOrigin } from '../lib/public-web-origin.js';
+import { verifiedWebSocketIdentityHeaders } from '../lib/websocket-identity.js';
 import type { WorkerEnv } from '../types/env.js';
 
 const ws = new Hono<{ Bindings: WorkerEnv }>();
@@ -61,8 +62,7 @@ ws.get('/session/:id', async (c) => {
     method: 'GET',
     headers: {
       Upgrade: 'websocket',
-      'X-MBFD-Member-Id': String(claims.sub),
-      'X-MBFD-Role': claims.role,
+      ...verifiedWebSocketIdentityHeaders({ memberId: claims.sub, role: claims.role }),
     },
   });
   return upstream as unknown as Response;

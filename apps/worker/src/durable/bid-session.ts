@@ -34,6 +34,10 @@ import {
   auditEntryForPickMade,
   auditEntryForSkip,
 } from '../lib/audit.js';
+import {
+  type VerifiedWebSocketIdentity,
+  parseVerifiedWebSocketIdentity,
+} from '../lib/websocket-identity.js';
 import { buildPortalPayload } from '../portal-writeback/payload-builder.js';
 import { isPortalPublicationEnabled } from '../portal-writeback/publication-policy.js';
 import { enqueuePortalWriteback } from '../portal-writeback/queue-producer.js';
@@ -558,13 +562,17 @@ export class BidSessionDO implements DurableObject {
     if (req.headers.get('Upgrade') !== 'websocket') {
       return new Response('Upgrade Required', { status: 426 });
     }
+    const identity = parseVerifiedWebSocketIdentity(req.headers);
+    if (identity === null) {
+      return new Response('Forbidden', { status: 403 });
+    }
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
     server.accept();
     const clientId = ulid();
 
     server.addEventListener('message', async (ev) => {
-      await this.onMessage(clientId, server, ev);
+      await this.onMessage(clientId, server, ev, identity);
     });
     server.addEventListener('close', () => {
       this.clients.delete(clientId);
@@ -576,7 +584,12 @@ export class BidSessionDO implements DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  private async onMessage(clientId: string, socket: WebSocket, ev: MessageEvent): Promise<void> {
+  private async onMessage(
+    clientId: string,
+    socket: WebSocket,
+    ev: MessageEvent,
+    identity: VerifiedWebSocketIdentity,
+  ): Promise<void> {
     let raw: unknown;
     try {
       raw = JSON.parse(String(ev.data));
@@ -614,7 +627,10 @@ export class BidSessionDO implements DurableObject {
 
     const msg = parsed.data;
     if (msg.type === 'hello') {
-      this.clients.set(clientId, { socket, memberId: 0, role: 'member' });
+      // Never trust a client-provided identity or the hello JWT: the route
+      // already verified the token and this identity crossed only the DO
+      // service binding.
+      this.clients.set(clientId, { socket, ...identity });
       const state = await this.getState();
       const snap: StateSnapshotEvent = {
         bidSessionId: state.bidSessionId,
