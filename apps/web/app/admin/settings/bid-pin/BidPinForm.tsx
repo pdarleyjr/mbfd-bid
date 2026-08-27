@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 interface ConfiguredPinSetting {
@@ -26,6 +26,7 @@ const PIN_RE = /^\d{4,8}$/;
 export function BidPinForm({ initial }: Props) {
   const [draft, setDraft] = useState(initial.configured ? initial.pin : '');
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // Re-read on a 15s cadence so concurrent edits from the MBFD Hub admin
   // surface within seconds — the user explicitly wanted bidirectional sync.
@@ -58,6 +59,7 @@ export function BidPinForm({ initial }: Props) {
       return r.json() as Promise<ConfiguredPinSetting>;
     },
     onSuccess: (setting) => {
+      queryClient.setQueryData<PinSetting>(['bid-pin-setting'], setting);
       setDraft(setting.pin);
       setStatusMsg(`Saved at ${setting.updatedAt ?? 'now'}.`);
     },
