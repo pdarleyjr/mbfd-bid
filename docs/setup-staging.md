@@ -100,6 +100,15 @@ Required secrets (per env):
 | `PORTAL_BID_READER` | Portal `/verify-credentials` service token | 01 |
 | `AUDIT_SIGNING_PRIVKEY` | ed25519 private key for R2 audit chunks | 08 |
 
+The OpenNext Web Worker is a separate Worker and must also have its own
+`JWT_SIGNING_KEY` staging secret with the same approved staging value as the
+API Worker. It verifies the API-issued JWT server-side for session finalization
+and protected pages. Treat either Worker missing that secret as a staging auth
+misconfiguration, not as an invalid user credential. Check secret names only;
+never retrieve, print, or copy an existing secret value. A permitted secret
+rotation must update the two staging Workers together through the approved
+secret-management workflow.
+
 `PORTAL_BID_WRITER` is intentionally absent from staging while
 `PORTAL_WRITEBACK_ENABLED=false`. Retired AI configuration is not a required
 staging secret.
