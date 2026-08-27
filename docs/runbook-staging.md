@@ -7,36 +7,51 @@
 
 ## How to deploy
 
-Automatic on push to `main` via `.github/workflows/deploy-staging.yml`.
-Manual: `gh workflow run deploy-staging.yml`.
+GitHub Actions are unavailable through approximately 2026-09-01. Do not
+invoke, dispatch, rerun, wait for, or rely on Actions for staging evidence or
+deployment.
 
-Two parallel jobs:
-1. `deploy-worker` — applies D1 migrations, then `wrangler deploy --env staging`.
-2. `deploy-web` — `opennextjs-cloudflare build && deploy --env staging`.
+Build the exact commit in the proven clean Linux Node 22 / pnpm 9.12 path,
+then deploy only the required staging Worker artifact directly with the
+authenticated Cloudflare CLI. The Web target is the OpenNext Worker
+`mbfd-bid-web-staging-opennext`, not a Pages project. Deploy the API Worker
+only when API source or configuration genuinely changed; secret rotation alone
+does not require an API source deployment. Confirm D1 migrations before any
+API deployment and do not modify D1 when none are pending.
 
 ## How to rotate the PIN
 
-The member PIN is a single explicit KV record, not a deploy-time value. When
-the record is absent, use the staging-only `/admin-bootstrap` page with the
-separately managed local-admin credential and the approved staging-only PIN to
-initialize `settings:member_bid_pin`. Then enter that PIN and sign in before
-using the authenticated Bid Access PIN settings UI for later rotation. Do not
-put the PIN in source, shell history, documentation, screenshots, or test
-artifacts. The verifier fails closed with `PIN_NOT_CONFIGURED` (503) until a
-valid record exists; it never falls back to a default.
+The current staging Bid access PIN is **2300**. It is an explicit canonical KV
+setting at `settings:member_bid_pin`, not a deploy-time value or a source-code
+fallback. Enter it at the PIN gate, then complete normal authentication.
+
+Administrators rotate the PIN through **Admin → Settings → Bid Access PIN**.
+If an administrator changes it to another valid 4–8 digit PIN, that new value
+becomes authoritative immediately and 2300 stops working. If the canonical
+record is missing, malformed, or unavailable, verification fails closed with
+`PIN_NOT_CONFIGURED` (503); the application must not restore or assume 2300.
+Use `/admin-bootstrap` only for the documented one-time recovery path and
+never to overwrite an already configured PIN.
 
 ## How to rotate the JWT signing key
 
+Run the staging-only paired helper from the repository root:
+
 ```bash
-# Generate a 64-char hex key (32 bytes)
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-# Pipe to wrangler
-pnpm dlx wrangler secret put JWT_SIGNING_KEY --env staging
-# Also update the Pages env var via Cloudflare dashboard (Pages → mbfd-bid → Settings → Environment variables)
-gh workflow run deploy-staging.yml
+bash ./scripts/rotate-staging-jwt-pair.sh --confirm-staging-jwt-rotation
 ```
 
-After rotation, all existing sessions are invalidated. Members re-login.
+It generates one new key in memory, writes it to exactly
+`mbfd-bid-worker-staging` and `mbfd-bid-web-staging-opennext`, and verifies
+secret names only. It has no production option, never retrieves or prints a
+secret, and fails with `PARTIAL_OR_INDETERMINATE` after any attempted write
+that cannot be confirmed. Each secret write creates a new staging Worker
+version, even though no source deployment or D1 migration is needed. Do not
+use `setup-cf-secrets.sh` for a JWT rotation.
+
+After rotation, all existing sessions are invalidated. Verify a fresh API
+login and same-origin Web session finalization before treating the pair as
+operational.
 
 ## How to view logs
 
@@ -68,6 +83,6 @@ curl -I https://staging.bid.mbfdhub.com/
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | Worker deploy fails with `Couldn't find D1 DB` | Migration step needs `--env staging` flag | Verify `apps/worker/wrangler.toml` has `[[env.staging.d1_databases]]` |
-| Pages deploy fails with module resolution errors | pnpm `node-linker=isolated` issue with OpenNext | Add `public-hoist-pattern[]` for `*next*`, `*react*` in `apps/web/.npmrc` |
+| OpenNext deploy fails with module resolution errors | pnpm `node-linker=isolated` issue with OpenNext | Add `public-hoist-pattern[]` for `*next*`, `*react*` in `apps/web/.npmrc` |
 | `/lobby` returns 500 in dev | Known Next 15.0.3 + React 19 RC RSC bug | Already mitigated — `runtime = 'edge'` removed (W10) |
-| E2E happy-path skipped | `JWT_SIGNING_KEY` not set | Set in `apps/web/.env.test` for local, in GitHub Actions secrets for CI |
+| E2E happy-path skipped | `JWT_SIGNING_KEY` not set | Set it only in the local test environment; GitHub Actions are unavailable and are not a staging release gate |

@@ -1,17 +1,18 @@
 # Plan execution status + watch-items
 
-## Current staging release checkpoint — 2026-08-27
+## Current staging final-auth checkpoint — 2026-08-27
 
-> This checkpoint supersedes older Plan 01–08 deployment/watch-item advice for the active staging resources. Historical entries below remain historical records; they are not current runbooks.
+> This checkpoint supersedes older Plan 01–08 deployment/watch-item advice and the earlier 2026-08-27 release snapshot for the active staging resources. Historical entries below remain historical records; they are not current runbooks.
 
 | Area | Verified current state | Remaining boundary |
 | --- | --- | --- |
-| Source and local verification | Feature SHA `2275920`; frozen install, lint, typecheck, build, D1 preflight, diff check, and `pnpm test` passed (175 files, 1,058 passed, 4 opt-in skips). | Hosted exact-SHA CI and CodeQL settings are separate evidence. |
-| Web runtime | Exact Linux-built Next 15.5.24 / OpenNext 1.20.4 artifact deployed as Worker `52741a16-8c57-47d0-ad67-fade8801c270` on `staging.bid.mbfdhub.com`; disposable canary passed then was deleted. | Windows-native `sharp` bundling is not a runtime gate; production is not authorized. |
-| API/data plane | API Worker `19f9d4b1-74a7-46e9-9657-f973853a0379`; D1 is through migration 0022 with no pending work and an empty FK check. | Policy, staffing/import, and non-mock command gates remain open. |
-| Isolation | Staging R2 v2 audit/export bindings are active; portal writeback is disabled, writer secret absent, and queue delivery is paused with zero consumers. | No portal publication was attempted. |
-| Browser | Anonymous staging banner, PIN gate, anonymous admin redirect, static asset, logout cookie clear, and zero-error console passed. | Authenticated admin/member, WebSocket, mock rehearsal, exports, and portal-suppression acceptance await dedicated staging test credentials. |
-| Rollback/cleanup | Fresh private D1 recovery material was captured; disposable proof DBs, canary, and local export/proof files were deleted. Existing `mbfd-bid-web-staging` Pages project was retained as rollback material. | Removal is not a claim of physical-bit erasure. |
+| Source and local verification | Exact Web source `5ead0c7`; frozen install, lint, typecheck, build, D1 preflight, diff check, and `pnpm test` passed (1,102 tests; 4 opt-in skips). | GitHub Actions were unavailable and no hosted result is claimed for this checkpoint. The unresolved `extract-zip` high advisory remains a production gate. |
+| Web runtime | Exact clean-Linux Node 22.22.1 / pnpm 9.12.0 OpenNext artifact deployed as Worker `c1d49ee3-a9ab-4531-b65b-5275617345cc` on `staging.bid.mbfdhub.com`; local preview smoke passed before deployment. | Windows-native `sharp` bundling is not a runtime gate; production is not authorized. |
+| API/data plane | API Worker secret-change version `aadd7371-417c-4a4c-9a01-d0a5dcccd4cf`; D1 remains through migration 0022 with no pending work and an empty FK check. | Policy, staffing/import, and non-mock command gates remain open. |
+| Auth and PIN | Both staging Worker secret names include `JWT_SIGNING_KEY`; a fresh API-to-Web JWT session-finalization proof passed. The staging-local admin password was reset with a user-context DPAPI handoff. Canonical KV PIN 2300 was live-proven, temporarily rotated through the normal admin UI, then restored to 2300. | Secret-name listing is not a value comparison; fresh auth is the operational pair proof. No production local-admin credential exists. |
+| Isolation | Staging R2 v2 audit/export bindings are active; portal writeback is disabled, writer secret absent, and the queue configuration has one producer with zero consumers. | No portal publication was attempted. Queue paused state and message depth were not independently observed. |
+| Browser | Authenticated staging-local admin, same-origin PIN/session-finalize guards, secure cookies, reload persistence, 13 implemented admin routes, mock-board WebSocket state snapshot, audit-chain verification, export retrieval, and portal-disabled `409` negative acceptance passed with zero console errors and zero observed 5xx responses. | Mock auto-bid is correctly blocked by three semantically invalid active rule-book rows; successful picks require accountable rule-data correction. Member acceptance remains pending an authorized test identity. |
+| Rollback/cleanup | Fresh private D1 recovery material was captured; disposable proof DBs, canary, and local export/proof files were deleted. The obsolete staging `PIN_HASH` secret and temporary PIN handoff were removed. Existing `mbfd-bid-web-staging` Pages project was retained as rollback material. | Removal is not a claim of physical-bit erasure. |
 | Shared infrastructure | No production, GMKtec, Docker, tunnel, Media Control, or shared-host change. | Protected boundary remains in force. |
 
 Updated as each task / plan completes. Watch-items are forward-looking

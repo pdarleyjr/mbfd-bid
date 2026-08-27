@@ -84,12 +84,14 @@ not rotate or recreate secrets during a routine deployment. Use the approved
 secret-management workflow only when a value change is authorized.
 
 ```bash
+# Non-JWT API-worker bootstrap only.
 ./scripts/setup-cf-secrets.sh staging
 ```
 
 That script prompts for each secret value (hidden input) and writes via
-`wrangler secret put`. No values touch source. It is not part of the 2026-08-27
-staging deployment procedure.
+`wrangler secret put`. No values touch source. It intentionally cannot rotate
+`JWT_SIGNING_KEY`; it is not part of the 2026-08-27 staging deployment
+procedure.
 
 Required secrets (per env):
 
@@ -107,58 +109,51 @@ and protected pages. Treat either Worker missing that secret as a staging auth
 misconfiguration, not as an invalid user credential. Check secret names only;
 never retrieve, print, or copy an existing secret value. A permitted secret
 rotation must update the two staging Workers together through the approved
-secret-management workflow.
+staging-only helper:
+
+```bash
+bash ./scripts/rotate-staging-jwt-pair.sh --confirm-staging-jwt-rotation
+```
+
+The helper accepts no environment selector and targets only
+`mbfd-bid-worker-staging` and `mbfd-bid-web-staging-opennext`. It generates the
+one shared replacement value in memory, never retrieves or prints a value, and
+verifies secret names after each write. Any failure after a write attempt is
+`PARTIAL_OR_INDETERMINATE` and requires a deliberate recovery decision rather
+than an automatic retry. Secret writes create staging Worker versions; they do
+not require a source deployment or a D1 migration.
 
 `PORTAL_BID_WRITER` is intentionally absent from staging while
 `PORTAL_WRITEBACK_ENABLED=false`. Retired AI configuration is not a required
 staging secret.
 
-The member access PIN is not a Wrangler secret. It is the single KV record
-`settings:member_bid_pin`, initialized or rotated only through an authenticated
-staging Bid admin settings request. When the record is absent, the staging-only
-`/admin-bootstrap` page uses the separately managed local-admin credential to
-initialize it; it may also recover a malformed record. If its authenticated
-pre-write read reports a valid PIN, it returns `PIN_ALREADY_CONFIGURED` without
-writing, so the authenticated Bid Access PIN settings page is the route for
-later rotation. Then enter that newly set PIN and sign in before using the Bid
-Access PIN settings page. There is no
-environment-secret fallback and no default PIN:
-when the record is missing, malformed, or unavailable, verification returns
-`PIN_NOT_CONFIGURED` with HTTP 503. Generate or receive any staging-only PIN
-through the approved secret channel; never put it in source, shell history,
-documentation, screenshots, or test artifacts.
+The member access PIN is not a Wrangler secret. It is the single canonical KV
+record `settings:member_bid_pin`, initialized or rotated only through an
+authenticated staging Bid admin settings request. The current staging value is
+**2300**. It is an explicitly configured value, never a source-code default or
+fallback. When the record is missing, malformed, or unavailable, verification
+returns `PIN_NOT_CONFIGURED` with HTTP 503. The application does not restore or
+assume 2300.
 
-Generators:
+Administrators change the PIN through **Admin → Settings → Bid Access PIN**.
+The newly saved valid 4–8 digit value becomes canonical immediately; a prior
+value (including 2300) must fail. `/admin-bootstrap` may only perform the
+staging one-time recovery path and returns `PIN_ALREADY_CONFIGURED` without
+overwriting a valid record.
+
+Generator for the non-JWT audit signing key:
 
 ```bash
-# JWT_SIGNING_KEY (32-byte hex)
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-
 # AUDIT_SIGNING_PRIVKEY (ed25519)
 openssl genpkey -algorithm Ed25519 | head -c -1
 ```
 
-## GitHub Actions secrets
+## GitHub Actions status
 
-Already configured (2026-05-17). To list:
-
-```bash
-gh secret list --repo pdarleyjr/mbfd-bid --app actions
-```
-
-Configured:
-- `CLOUDFLARE_API_TOKEN` (Wrangler API token)
-- `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_R2_TOKEN`
-- `R2_ACCESS_KEY_ID`
-- `R2_SECRET_ACCESS_KEY`
-- `R2_ENDPOINT`
-- `E2E_JWT_SIGNING_KEY` (generated fresh during setup)
-
-To rotate any of these:
-```bash
-echo "NEW_VALUE" | gh secret set NAME --repo pdarleyjr/mbfd-bid --app actions
-```
+GitHub Actions are unavailable through approximately 2026-09-01. Do not
+invoke, dispatch, rerun, wait for, configure, or rely on Actions for this
+staging procedure. Use the documented local validation and direct,
+authenticated Cloudflare staging operations instead.
 
 ## DNS (manual setup — when ready to deploy)
 
@@ -166,7 +161,7 @@ Add these in the `mbfdhub.com` zone via Cloudflare dashboard or `wrangler`:
 
 | Hostname | Type | Target | Proxied | Notes |
 |----------|------|--------|---------|-------|
-| `staging.bid.mbfdhub.com` | Worker custom domain | `mbfd-bid-web-staging-opennext` | n/a | Active staging Web Worker; do not detach/recreate the mapping. The `mbfd-bid-web-staging` Pages project is retained only as rollback material. |
+| `staging.bid.mbfdhub.com` | Worker custom domain | `mbfd-bid-web-staging-opennext` | n/a | Active staging OpenNext Web Worker; do not detach or recreate the mapping. The legacy `mbfd-bid-web-staging` Pages project is rollback material only and is never a routine staging deployment target. |
 | `api.staging.bid.mbfdhub.com` | Worker route | `mbfd-bid-worker-staging` | n/a | Set in wrangler.toml |
 | `bid.mbfdhub.com` | CNAME | `<pages-project>.pages.dev` | yes | Production |
 | `api.bid.mbfdhub.com` | Worker route | `mbfd-bid-worker-production` | n/a | Production |

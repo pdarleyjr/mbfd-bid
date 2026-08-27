@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Interactive secret bootstrapper for Cloudflare workers.
+# Interactive non-JWT secret bootstrapper for Cloudflare workers.
 # Run once per env (staging, production) when the worker is first deployed.
 # Inputs are read with -s (no echo); values are piped straight to `wrangler secret put`.
+# JWT_SIGNING_KEY is intentionally excluded: staging JWT rotation must update
+# the API and OpenNext Web Workers together via rotate-staging-jwt-pair.sh.
 
 set -euo pipefail
 
@@ -26,7 +28,6 @@ Each value is read with hidden input. Leave blank to skip a secret
 EOF
 
 declare -A SECRETS=(
-  [JWT_SIGNING_KEY]="HS256 signing key, 64-char hex. Generate: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
   [PORTAL_BID_READER]="Portal service token for POST /api/v2/verify-credentials"
   [AUDIT_SIGNING_PRIVKEY]="ed25519 private key (PEM) for R2 audit chunk signatures. Plan 08 — can skip until then."
 )
@@ -38,7 +39,7 @@ declare -A SECRETS=(
 # to clear it. The variable is silently ignored by the worker either way.
 
 # Preserve insertion order
-ORDER=(JWT_SIGNING_KEY PORTAL_BID_READER AUDIT_SIGNING_PRIVKEY)
+ORDER=(PORTAL_BID_READER AUDIT_SIGNING_PRIVKEY)
 
 # The shared local-admin account is a staging-only bootstrap mechanism for a
 # missing member-PIN record. Never configure it for production.
