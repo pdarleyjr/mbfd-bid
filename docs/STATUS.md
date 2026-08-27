@@ -1,5 +1,19 @@
 # Plan execution status + watch-items
 
+## Current staging release checkpoint — 2026-08-27
+
+> This checkpoint supersedes older Plan 01–08 deployment/watch-item advice for the active staging resources. Historical entries below remain historical records; they are not current runbooks.
+
+| Area | Verified current state | Remaining boundary |
+| --- | --- | --- |
+| Source and local verification | Feature SHA `2275920`; frozen install, lint, typecheck, build, D1 preflight, diff check, and `pnpm test` passed (175 files, 1,058 passed, 4 opt-in skips). | Hosted exact-SHA CI and CodeQL settings are separate evidence. |
+| Web runtime | Exact Linux-built Next 15.5.24 / OpenNext 1.20.4 artifact deployed as Worker `52741a16-8c57-47d0-ad67-fade8801c270` on `staging.bid.mbfdhub.com`; disposable canary passed then was deleted. | Windows-native `sharp` bundling is not a runtime gate; production is not authorized. |
+| API/data plane | API Worker `19f9d4b1-74a7-46e9-9657-f973853a0379`; D1 is through migration 0022 with no pending work and an empty FK check. | Policy, staffing/import, and non-mock command gates remain open. |
+| Isolation | Staging R2 v2 audit/export bindings are active; portal writeback is disabled, writer secret absent, and queue delivery is paused with zero consumers. | No portal publication was attempted. |
+| Browser | Anonymous staging banner, PIN gate, anonymous admin redirect, static asset, logout cookie clear, and zero-error console passed. | Authenticated admin/member, WebSocket, mock rehearsal, exports, and portal-suppression acceptance await dedicated staging test credentials. |
+| Rollback/cleanup | Fresh private D1 recovery material was captured; disposable proof DBs, canary, and local export/proof files were deleted. Existing `mbfd-bid-web-staging` Pages project was retained as rollback material. | Removal is not a claim of physical-bit erasure. |
+| Shared infrastructure | No production, GMKtec, Docker, tunnel, Media Control, or shared-host change. | Protected boundary remains in force. |
+
 Updated as each task / plan completes. Watch-items are forward-looking
 concerns surfaced by code review that need attention in later tasks
 (not blocking the task that surfaced them).

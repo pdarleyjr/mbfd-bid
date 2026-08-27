@@ -1,5 +1,21 @@
 # MBFD Bid v2 implementation log
 
+## 2026-08-27 — staging release checkpoint
+
+- Deployed the reviewed feature source `22759202dce37b3073b06164c46c22e424731691` to staging only. Exact local gates passed: frozen install, lint, package builds, typecheck, Next build, D1 preflight, `pnpm test` (175 files, 1,058 passed, 4 opt-in skips), and `git diff --check`.
+- Independent clean Linux proof passed with Node 22.22.1, Next 15.5.24, and OpenNext 1.20.4. The emitted OpenNext artifact had 1,514 files, no native `.node` files, and no textual `extract-zip` or `@puppeteer/browsers` reference. A disposable Workers canary passed root, static-asset, and auth-boundary checks before deletion; the same artifact now serves the staging custom domain as Worker version `52741a16-8c57-47d0-ad67-fade8801c270`.
+- Deployed API Worker version `19f9d4b1-74a7-46e9-9657-f973853a0379`. It binds `R2_AUDIT` to `mbfd-bid-audit-staging-v2` and `R2_EXPORTS` to `mbfd-bid-exports-staging-v2`, sets `R2_EXPORTS_BUCKET_NAME` accordingly, keeps portal writeback disabled, and has no `PORTAL_BID_WRITER` secret. The portal queue remains paused with one producer and zero consumers; no portal write was attempted.
+- Captured a fresh private staging D1 Time Travel bookmark and export immediately before API deployment. The remote ledger already contained migrations 0001–0022, managed apply reported no pending migration, and `foreign_key_check` was empty. A disposable Bid-only database completed managed migration, import/count/FK comparison, and proof-only Time Travel restoration; the disposable databases and the 16 named local proof files were deleted afterward. This is recovery evidence, not a claim of physical-bit erasure.
+- The existing `mbfd-bid-web-staging` Pages project was retained as rollback material. Its domain/DNS attachment was not detached or recreated; the active staging custom domain now targets the OpenNext Worker.
+- Anonymous Playwright acceptance passed for the staging banner, PIN gate, anonymous admin redirect, static asset, live logout endpoint, and a zero-error console. The logout endpoint returns `204` and clears both `mbfd_bid_jwt` and `mbfd_pin`. No dedicated staging Bid PIN or safe admin/member test credentials were available, so authenticated admin/member, WebSocket, mock rehearsal, export, and portal-suppression acceptance remain explicitly unobserved.
+- Exact-head `pnpm audit --prod --audit-level=high` has one unresolved high advisory: transitive `extract-zip@2.0.1` through `@cloudflare/puppeteer@1.1.0`. No patched release is published. This was not suppressed; emitted-artifact evidence is staging reachability evidence only, and production promotion remains blocked on the unresolved security/policy/operational gates.
+- No production, GMKtec, Docker, Media Control, tunnel, or shared-host change was made.
+
+> Earlier dated entries below are retained as point-in-time history. Their prior
+> statements about an unmerged OpenNext spike, Next 15.5.21, two advisories,
+> local-only recovery proof, or undeployed staging migrations are superseded by
+> this checkpoint for current staging status.
+
 ## 2026-08-26 — Phase 0 baseline
 
 - Captured local repository, GitHub, Cloudflare, GMKtec, and Media Control read-only baseline.

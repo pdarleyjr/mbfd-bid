@@ -1,7 +1,8 @@
 # Staging Cloudflare Resources — One-Time Setup
 
-> Provisioned 2026-05-17. Values below are the resource IDs to paste into
-> `apps/worker/wrangler.toml` when Plan 01 Task 4 builds the worker.
+> Current staging checkpoint: 2026-08-27. The active staging Worker uses the
+> v2 R2 audit/export buckets and a Worker custom domain. Historical Plan 01
+> material below is not an instruction to recreate or detach existing resources.
 
 ## Account
 
@@ -48,10 +49,8 @@ id = "ce8afe4605464683a51bf6ae9c042c01"
 
 | Name | Purpose |
 |------|---------|
-| `mbfd-bid-audit` | Hash-chained immutable audit log JSONL chunks (Plan 08) |
-| `mbfd-bid-imports` | Admin CSV/PDF uploads (Plan 02) |
-| `mbfd-bid-exports` | Generated roster PDFs + audit CSV exports (Plan 08) |
-| `mbfd-bid-logs` | Logpush sink (Plan 09) |
+| `mbfd-bid-audit-staging-v2` | Active `R2_AUDIT` binding for staging audit chunks |
+| `mbfd-bid-exports-staging-v2` | Active `R2_EXPORTS` binding for staging exports |
 
 R2 jurisdiction-specific S3-compatible endpoint:
 ```
@@ -61,20 +60,15 @@ https://265122b6d6f29457b0ca950c55f3ac6e.r2.cloudflarestorage.com
 `wrangler.toml` snippet:
 ```toml
 [[env.staging.r2_buckets]]
-binding = "AUDIT"
-bucket_name = "mbfd-bid-audit"
+binding = "R2_AUDIT"
+bucket_name = "mbfd-bid-audit-staging-v2"
 
 [[env.staging.r2_buckets]]
-binding = "IMPORTS"
-bucket_name = "mbfd-bid-imports"
+binding = "R2_EXPORTS"
+bucket_name = "mbfd-bid-exports-staging-v2"
 
-[[env.staging.r2_buckets]]
-binding = "EXPORTS"
-bucket_name = "mbfd-bid-exports"
-
-[[env.staging.r2_buckets]]
-binding = "LOGS"
-bucket_name = "mbfd-bid-logs"
+# The existing `[env.staging]` inline `vars` map includes:
+# R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging-v2"
 ```
 
 ## Production setup (when ready)
@@ -85,26 +79,30 @@ Capture IDs in `docs/setup-production.md`.
 
 ## Secrets
 
-Wrangler secrets are bound per-worker. The worker doesn't exist yet (created
-in Plan 01 Task 4). When you reach Plan 01 Task 12 (Deploy), run:
+Wrangler secrets are bound per-worker. The staging Worker already exists; do
+not rotate or recreate secrets during a routine deployment. Use the approved
+secret-management workflow only when a value change is authorized.
 
 ```bash
 ./scripts/setup-cf-secrets.sh staging
 ```
 
 That script prompts for each secret value (hidden input) and writes via
-`wrangler secret put`. No values touch source.
+`wrangler secret put`. No values touch source. It is not part of the 2026-08-27
+staging deployment procedure.
 
 Required secrets (per env):
 
 | Name | Purpose | Plan |
 |------|---------|------|
 | `JWT_SIGNING_KEY` | HS256 JWT signing (32-byte hex) | 01 |
-| `PIN_HASH` | bcrypt of access PIN (default 2300) | 01 |
+| `PIN_HASH` | bcrypt of the authorized staging access PIN; never document or use a default | 01 |
 | `PORTAL_BID_READER` | Portal `/verify-credentials` service token | 01 |
-| `PORTAL_BID_WRITER` | Portal `/bid-assignment` service token | 08 |
-| `ANTHROPIC_API_KEY` | AI Gateway → Anthropic | 06 |
 | `AUDIT_SIGNING_PRIVKEY` | ed25519 private key for R2 audit chunks | 08 |
+
+`PORTAL_BID_WRITER` is intentionally absent from staging while
+`PORTAL_WRITEBACK_ENABLED=false`. Retired AI configuration is not a required
+staging secret.
 
 Generators:
 
@@ -112,8 +110,8 @@ Generators:
 # JWT_SIGNING_KEY (32-byte hex)
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
-# PIN_HASH (bcrypt of "2300")
-node -e "require('bcryptjs').then?.(b=>b.hash('2300',12).then(console.log)) || console.log(require('bcryptjs').hashSync('2300',12))"
+# PIN_HASH: generate only from an authorized value through a secure prompt;
+# never place a default or a real PIN in source, documentation, or shell history.
 
 # AUDIT_SIGNING_PRIVKEY (ed25519)
 openssl genpkey -algorithm Ed25519 | head -c -1
@@ -147,7 +145,7 @@ Add these in the `mbfdhub.com` zone via Cloudflare dashboard or `wrangler`:
 
 | Hostname | Type | Target | Proxied | Notes |
 |----------|------|--------|---------|-------|
-| `staging.bid.mbfdhub.com` | CNAME | `<pages-project>.pages.dev` | yes | After first `pages deploy` |
+| `staging.bid.mbfdhub.com` | Worker custom domain | `mbfd-bid-web-staging-opennext` | n/a | Active staging Web Worker; do not detach/recreate the mapping. The `mbfd-bid-web-staging` Pages project is retained only as rollback material. |
 | `api.staging.bid.mbfdhub.com` | Worker route | `mbfd-bid-worker-staging` | n/a | Set in wrangler.toml |
 | `bid.mbfdhub.com` | CNAME | `<pages-project>.pages.dev` | yes | Production |
 | `api.bid.mbfdhub.com` | Worker route | `mbfd-bid-worker-production` | n/a | Production |
