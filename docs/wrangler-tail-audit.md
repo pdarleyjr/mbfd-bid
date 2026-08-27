@@ -52,7 +52,8 @@ Total: 19 emitter sites. None log raw PII.
 string with `?<redacted>` before `console.log`, preserving only the method,
 path, status, and elapsed time. This is intentional defense in depth because
 both the browser WebSocket fallback and roster-print flow can carry a
-short-lived token in a query string.
+reusable bearer token in a query string (the current default JWT lifetime is
+eight hours).
 
 The covered path components in this worker are:
 
