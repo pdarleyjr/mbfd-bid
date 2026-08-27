@@ -22,6 +22,14 @@ describe('staging release configuration', () => {
     expect(config).not.toContain('[[env.staging.queues.consumers]]');
   });
 
+  it('binds only explicit staging R2 buckets and names the exports bucket consistently', () => {
+    const config = stagingBlock(readWorkerConfig());
+
+    expect(config).toContain('bucket_name = "mbfd-bid-audit-staging-v2"');
+    expect(config).toContain('bucket_name = "mbfd-bid-exports-staging-v2"');
+    expect(config).toContain('R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging-v2"');
+  });
+
   it('runs non-deploy validation before a staging migration or deployment', () => {
     const workflow = readFileSync(
       resolve(repositoryRoot, '.github', 'workflows', 'deploy-staging.yml'),
@@ -40,7 +48,18 @@ describe('staging release configuration', () => {
     expect(validation).toContain('pnpm typecheck');
     expect(validation).toContain('pnpm -r --filter "./packages/*" build');
     expect(validation).not.toContain('wrangler deploy --env staging --dry-run');
+    expect(validation).toContain('pnpm exec wrangler dev --env staging --local');
     expect(validation).toContain('pnpm build:opennext:staging');
     expect(workflow).not.toContain('db:seed:remote');
+  });
+
+  it('makes a clean root typecheck build internal package dependencies first', () => {
+    const rootPackage = JSON.parse(
+      readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8'),
+    ) as { scripts?: Record<string, string> };
+
+    expect(rootPackage.scripts?.typecheck).toBe(
+      'pnpm -r --filter "./packages/*" build && pnpm -r typecheck',
+    );
   });
 });

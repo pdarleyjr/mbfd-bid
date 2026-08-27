@@ -38,6 +38,22 @@ jobs:
       - name: Build internal packages
         run: pnpm -r --filter "./packages/*" build
       - run: pnpm typecheck
+      - name: Build and smoke Worker locally without remote deployment
+        working-directory: apps/worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler dev --env staging --local --ip 127.0.0.1 --port 8788 --persist-to .wrangler/ci-state --log-level error > worker-dev.log 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:8788/api/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat worker-dev.log
+          exit 1
       - name: Build OpenNext staging artifact without deploy
         working-directory: apps/web
         env:

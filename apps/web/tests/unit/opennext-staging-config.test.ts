@@ -40,6 +40,8 @@ describe('staging OpenNext configuration', () => {
     expect(packageJson.devDependencies['@cloudflare/workers-types']).toBe('5.20260826.1');
     expect(packageJson.scripts['build:pages']).toBeUndefined();
     expect(packageJson.scripts['deploy:production']).toBeUndefined();
+    expect(packageJson.scripts.prebuild).toBe('pnpm -r --filter "./packages/*" build');
+    expect(packageJson.scripts.predev).toBe('pnpm -r --filter "./packages/*" build');
     expect(packageJson.scripts['build:opennext:staging']).toBe(
       'node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env staging',
     );
