@@ -3,8 +3,6 @@ import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-export const runtime = 'edge';
-
 interface RouteContext {
   params: Promise<{ path: string[] }>;
 }

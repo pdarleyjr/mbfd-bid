@@ -1,8 +1,6 @@
 import { requireAdmin } from '@/lib/require-admin';
 import { getServerRpc } from '@/lib/rpc-server';
 
-export const runtime = 'edge';
-
 interface Credential {
   id: number;
   name: string;

@@ -1,8 +1,6 @@
 import { requireAdmin } from '../../../../lib/require-admin';
 import { NewSessionForm } from './NewSessionForm';
 
-export const runtime = 'edge';
-
 export default async function NewSessionPage({
   searchParams,
 }: {

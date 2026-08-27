@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from 'next';
+import { StagingBanner } from './_components/StagingBanner';
 import './globals.css';
+import { cfEnv } from '../lib/cf-env';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'MBFD Bid',
@@ -16,9 +20,14 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const environment = cfEnv('ENV');
+
   return (
     <html lang="en">
-      <body className="min-h-screen bg-stone-50 text-stone-800 antialiased">{children}</body>
+      <body className="min-h-screen bg-stone-50 text-stone-800 antialiased">
+        <StagingBanner environment={environment} />
+        {children}
+      </body>
     </html>
   );
 }

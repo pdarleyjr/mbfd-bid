@@ -2,7 +2,6 @@ import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import { BidPinForm } from './BidPinForm';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface PinSetting {

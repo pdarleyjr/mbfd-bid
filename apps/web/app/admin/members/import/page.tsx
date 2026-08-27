@@ -1,8 +1,6 @@
 import { UploadForm } from '@/components/admin/UploadForm';
 import { requireAdmin } from '@/lib/require-admin';
 
-export const runtime = 'edge';
-
 export default async function MembersImportPage() {
   await requireAdmin();
 

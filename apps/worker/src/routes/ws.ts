@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
+import { isExpectedPublicWebOrigin } from '../lib/public-web-origin.js';
 import type { WorkerEnv } from '../types/env.js';
 
 const ws = new Hono<{ Bindings: WorkerEnv }>();
@@ -38,6 +39,12 @@ ws.get('/session/:id', async (c) => {
     claims = await verifyJwt(token, env.JWT_SIGNING_KEY);
   } catch {
     return c.json({ error: 'invalid_token' }, 401);
+  }
+
+  // CORS middleware does not enforce WebSocket upgrades. Browser clients
+  // must therefore present the exact public origin for this environment.
+  if (!isExpectedPublicWebOrigin(env, c.req.header('Origin'))) {
+    return c.json({ error: 'websocket_origin_forbidden' }, 403);
   }
 
   if (c.req.header('Upgrade') !== 'websocket') {

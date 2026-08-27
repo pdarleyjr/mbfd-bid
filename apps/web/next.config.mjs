@@ -1,4 +1,4 @@
-import { setupDevPlatform } from '@cloudflare/next-on-pages/next-dev';
+import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -8,9 +8,9 @@ const nextConfig = {
   images: { unoptimized: true },
 };
 
-// For local development with `next dev`, set up the Cloudflare dev platform
+// For local development with `next dev`, initialize the OpenNext dev platform.
 if (process.env.NODE_ENV === 'development') {
-  await setupDevPlatform();
+  initOpenNextCloudflareForDev();
 }
 
 export default nextConfig;

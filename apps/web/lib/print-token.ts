@@ -9,6 +9,8 @@ import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 
+import { cfEnv } from './cf-env';
+
 export interface PrintTokenClaims {
   kind: 'roster' | 'audit-csv';
   shift?: 'A' | 'B' | 'C' | 'D';
@@ -26,7 +28,7 @@ function base64UrlDecode(s: string): string {
 export async function verifyPrintToken(
   token: string | undefined,
   expected: Omit<PrintTokenClaims, 'exp'>,
-  secret: string | undefined = process.env.PRINT_TOKEN_SECRET,
+  secret: string | undefined = cfEnv('PRINT_TOKEN_SECRET'),
 ): Promise<boolean> {
   if (!token || !secret) return false;
   const [body, sig] = token.split('.');

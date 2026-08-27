@@ -2,6 +2,7 @@ import type { MessageBatch } from '@cloudflare/workers-types';
 import type { PortalPayload } from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resolvePortalPublicationPolicy } from '../../src/portal-writeback/publication-policy.js';
 import { handlePortalQueueBatch } from '../../src/portal-writeback/queue-handler.js';
 import type { QueueMessage } from '../../src/portal-writeback/queue-producer.js';
 import type { WorkerEnv } from '../../src/types/env.js';
@@ -114,6 +115,34 @@ describe('portal publication gate', () => {
     fetchSpy.mockRestore();
   });
 
+  it('does not publish from staging even when every other writeback signal is present', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('ok', { status: 200 }));
+    const { batch, ack, retry } = batchFor(queueMessage());
+    const env = {
+      ...h.env,
+      ENV: 'staging' as const,
+      PORTAL_WRITEBACK_ENABLED: 'true' as const,
+      PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
+      PORTAL_BID_WRITER: 'writer-token',
+    };
+
+    expect(resolvePortalPublicationPolicy(env)).toEqual({
+      enabled: false,
+      reason: 'publication_not_permitted_in_environment',
+      portalBaseUrl: null,
+      writerToken: null,
+    });
+
+    await handlePortalQueueBatch(batch, env);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(ack).toHaveBeenCalledTimes(1);
+    expect(retry).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
   it('does not post when the writer credential is absent even with the flag enabled', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
@@ -122,6 +151,7 @@ describe('portal publication gate', () => {
 
     await handlePortalQueueBatch(batch, {
       ...h.env,
+      ENV: 'production',
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
       PORTAL_BID_WRITER: '',
@@ -141,6 +171,7 @@ describe('portal publication gate', () => {
 
     await handlePortalQueueBatch(batch, {
       ...h.env,
+      ENV: 'production',
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'http://portal-writeback.example',
       PORTAL_BID_WRITER: 'writer-token',
@@ -163,6 +194,7 @@ describe('portal publication gate', () => {
 
     await handlePortalQueueBatch(batch, {
       ...h.env,
+      ENV: 'production',
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
       PORTAL_BID_WRITER: 'writer-token',
@@ -185,6 +217,7 @@ describe('portal publication gate', () => {
 
     await handlePortalQueueBatch(batch, {
       ...h.env,
+      ENV: 'production',
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
       PORTAL_BID_WRITER: 'writer-token',
@@ -204,6 +237,7 @@ describe('portal publication gate', () => {
 
     await handlePortalQueueBatch(batch, {
       ...h.env,
+      ENV: 'production',
       DB: failingLookupDb(),
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
@@ -224,6 +258,7 @@ describe('portal publication gate', () => {
 
     await handlePortalQueueBatch(batch, {
       ...h.env,
+      ENV: 'production',
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
       PORTAL_BID_WRITER: 'writer-token',

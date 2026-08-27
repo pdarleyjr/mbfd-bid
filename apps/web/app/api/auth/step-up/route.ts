@@ -6,8 +6,6 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-export const runtime = 'edge';
-
 const Body = z.object({
   employee_id: z.string().min(1),
   password: z.string().min(1),

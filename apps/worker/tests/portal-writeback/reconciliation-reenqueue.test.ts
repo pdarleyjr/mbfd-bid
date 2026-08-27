@@ -78,6 +78,7 @@ describe('handlePortalReconciliation reEnqueue → employeeId resolution (W38)',
 
     const env: WorkerEnv = {
       ...h.env,
+      ENV: 'production',
       PORTAL_QUEUE: queue,
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
@@ -108,6 +109,7 @@ describe('handlePortalReconciliation reEnqueue → employeeId resolution (W38)',
 
     const env: WorkerEnv = {
       ...h.env,
+      ENV: 'production',
       PORTAL_QUEUE: queue,
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
@@ -137,6 +139,7 @@ describe('handlePortalReconciliation reEnqueue → employeeId resolution (W38)',
 
     await handlePortalReconciliation({
       ...h.env,
+      ENV: 'production',
       PORTAL_QUEUE: queue,
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',

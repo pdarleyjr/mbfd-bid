@@ -12,7 +12,6 @@ import {
 } from '../../_lib/station-info';
 import { EligiblePillCluster } from './EligiblePillCluster';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 // Note: Next 15 disallows combining `runtime = 'edge'` with `generateStaticParams`,

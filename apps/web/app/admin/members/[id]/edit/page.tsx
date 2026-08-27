@@ -3,7 +3,6 @@ import { requireAdmin } from '../../../../../lib/require-admin';
 import { serverWorkerFetch } from '../../../../../lib/server-worker-fetch';
 import { EditForm } from './EditForm';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface MemberResponse {

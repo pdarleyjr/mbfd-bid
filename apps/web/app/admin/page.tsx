@@ -2,8 +2,6 @@ import { requireAdmin } from '@/lib/require-admin';
 import type { Route } from 'next';
 import Link from 'next/link';
 
-export const runtime = 'edge';
-
 type LinkEntry = { href: string; title: string; description: string; emphasis?: boolean };
 
 // Primary actions surfaced as larger cards at the top.

@@ -3,8 +3,6 @@ import { requireAdmin } from '@/lib/require-admin';
 import { getServerRpc } from '@/lib/rpc-server';
 import Link from 'next/link';
 
-export const runtime = 'edge';
-
 interface MemberRow {
   id: number;
   employeeId: string;

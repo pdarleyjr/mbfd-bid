@@ -42,15 +42,15 @@ jobs:
       - name: Apply D1 migrations (staging, remote)
         working-directory: apps/worker
         run: pnpm exec wrangler d1 migrations apply mbfd-bid-staging --remote --env staging
-      - name: Seed reference data (positions, credentials, rules — idempotent)
-        working-directory: apps/worker
-        run: pnpm db:seed:remote
+      # Reference-data seeding is deliberately excluded from deployment.
+      # The seed replaces records and must be a separately reviewed,
+      # export-backed staging operation.
       - name: Deploy worker
         working-directory: apps/worker
         run: pnpm exec wrangler deploy --env staging
 
   deploy-web:
-    name: Deploy web (staging)
+    name: Deploy web (OpenNext Worker, staging)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: deploy-worker
@@ -71,11 +71,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build internal packages
         run: pnpm -r --filter "./packages/*" build
-      - name: Build and deploy Next.js to Cloudflare Pages
+      - name: Build and deploy OpenNext Worker (staging only)
         working-directory: apps/web
-        # next-on-pages calls `vercel build` internally and outputs to
-        # .vercel/output/static. We then push that directly to Pages.
-        # NEXT_PUBLIC_* vars are baked into the client bundle at build time.
+        # `deploy:staging` hard-codes the staging API build target and runs
+        # OpenNext's Worker deploy with `--env staging`; it has no Pages,
+        # dirty-commit, or production path.
         env:
           NEXT_PUBLIC_WORKER_BASE: https://api.staging.bid.mbfdhub.com
         run: pnpm deploy:staging

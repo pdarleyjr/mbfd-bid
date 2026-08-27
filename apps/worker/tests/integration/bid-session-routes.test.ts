@@ -45,7 +45,10 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
 
   it('GET /api/ws/session/:id returns 426 with JWT but no Upgrade header', async () => {
     const res = await worker.fetch('/api/ws/session/01HSESS', {
-      headers: { Authorization: `Bearer ${memberJwt}` },
+      headers: {
+        Authorization: `Bearer ${memberJwt}`,
+        Origin: 'https://staging.bid.mbfdhub.com',
+      },
     });
     expect([426, 400]).toContain(res.status);
   });
@@ -55,8 +58,29 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
     // Worker falls back to ?token=. Without the Upgrade header (undici
     // strips it) we still reach the 426 branch — the assert proves the JWT
     // was read from the query and validated.
-    const res = await worker.fetch(`/api/ws/session/01HSESS?token=${memberJwt}`);
+    const res = await worker.fetch(`/api/ws/session/01HSESS?token=${memberJwt}`, {
+      headers: { Origin: 'https://staging.bid.mbfdhub.com' },
+    });
     expect([426, 400]).toContain(res.status);
+  });
+
+  it('GET /api/ws/session/:id rejects a cross-environment browser origin', async () => {
+    const res = await worker.fetch('/api/ws/session/01HSESS', {
+      headers: {
+        Authorization: `Bearer ${memberJwt}`,
+        Origin: 'https://bid.mbfdhub.com',
+      },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'websocket_origin_forbidden' });
+  });
+
+  it('GET /api/ws/session/:id rejects a JWT request without a browser origin', async () => {
+    const res = await worker.fetch('/api/ws/session/01HSESS', {
+      headers: { Authorization: `Bearer ${memberJwt}` },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'websocket_origin_forbidden' });
   });
 
   it('GET /api/ws/session/:id returns 401 with empty ?token=', async () => {
@@ -69,11 +93,12 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('GET /api/board returns 200 with member JWT', async () => {
+  it('GET /api/board fails closed when the launcher has no canonical D1 authority', async () => {
     const res = await worker.fetch('/api/board?bidSessionId=01HSESS', {
       headers: { Authorization: `Bearer ${memberJwt}` },
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: 'canonical_state_unavailable' });
   });
 
   it('GET /api/me returns the JWT subject as profile', async () => {

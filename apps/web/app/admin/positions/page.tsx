@@ -2,8 +2,6 @@ import { PositionGroup } from '@/components/admin/PositionGroup';
 import { requireAdmin } from '@/lib/require-admin';
 import { getServerRpc } from '@/lib/rpc-server';
 
-export const runtime = 'edge';
-
 interface Position {
   id: string;
   templateVersion: string;

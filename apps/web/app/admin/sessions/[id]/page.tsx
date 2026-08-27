@@ -1,8 +1,6 @@
 import { requireAdmin } from '../../../../lib/require-admin';
 import { SessionControls } from './SessionControls';
 
-export const runtime = 'edge';
-
 export default async function SessionDetailPage({
   params,
 }: {

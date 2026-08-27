@@ -7,7 +7,6 @@ import { ExportCard } from './_components/ExportCard';
 import { ExportTriggerButton } from './_components/ExportTriggerButton';
 import { PortalSyncStatus } from './_components/PortalSyncStatus';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface PageProps {

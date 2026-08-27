@@ -63,6 +63,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Build OpenNext staging artifact (non-deploy)
+        working-directory: apps/web
+        # The staging API base is intentionally fixed at build time; this
+        # job only proves the deployable Worker artifact and makes no remote
+        # Cloudflare, D1, DNS, or portal change.
+        env:
+          NEXT_PUBLIC_WORKER_BASE: https://api.staging.bid.mbfdhub.com
+        run: pnpm build:opennext:staging
       - name: Verify D1 backup preflight
         shell: pwsh
         run: ./scripts/test-d1-backup-preflight.ps1

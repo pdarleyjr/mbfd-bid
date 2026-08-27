@@ -7,8 +7,6 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { LoginForm } from './login-form';
 
-export const runtime = 'edge';
-
 export default async function LoginPage() {
   await requirePin();
   const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;

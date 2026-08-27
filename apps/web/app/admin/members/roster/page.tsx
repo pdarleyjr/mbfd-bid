@@ -7,7 +7,6 @@ import { RosterClient } from './RosterClient';
 // only had position-derived inferences.
 import memberCredentialsData from './_data/member_credentials.json';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface SearchParams {

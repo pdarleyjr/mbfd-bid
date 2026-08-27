@@ -4,8 +4,6 @@ import { AdminLayoutShell } from './_components/AdminLayoutShell';
 import { AdminQueryProvider } from './_components/AdminQueryProvider';
 import { StepUpProvider } from './_components/StepUpProvider';
 
-export const runtime = 'edge';
-
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Verifies JWT and redirects non-admins to /lobby or /login.
   await requireAdmin();

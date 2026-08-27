@@ -14,6 +14,7 @@ export type PortalPublicationPolicy =
   | {
       enabled: false;
       reason:
+        | 'publication_not_permitted_in_environment'
         | 'publication_not_explicitly_enabled'
         | 'writer_credential_missing'
         | 'writeback_endpoint_missing_or_invalid';
@@ -32,14 +33,25 @@ function isSecureWritebackUrl(value: string): boolean {
 
 /**
  * Resolve the only configuration that can permit an outbound portal write.
- * Every missing, malformed, or non-literal value fails closed.
+ * Publication is production-only: no staging configuration or credential can
+ * override that boundary. Every missing, malformed, or non-literal value also
+ * fails closed.
  */
 export function resolvePortalPublicationPolicy(
   env: Pick<
     WorkerEnv,
-    'PORTAL_WRITEBACK_ENABLED' | 'PORTAL_WRITEBACK_BASE_URL' | 'PORTAL_BID_WRITER'
+    'ENV' | 'PORTAL_WRITEBACK_ENABLED' | 'PORTAL_WRITEBACK_BASE_URL' | 'PORTAL_BID_WRITER'
   >,
 ): PortalPublicationPolicy {
+  if (env.ENV !== 'production') {
+    return {
+      enabled: false,
+      reason: 'publication_not_permitted_in_environment',
+      portalBaseUrl: null,
+      writerToken: null,
+    };
+  }
+
   if (env.PORTAL_WRITEBACK_ENABLED !== 'true') {
     return {
       enabled: false,
@@ -79,7 +91,7 @@ export function resolvePortalPublicationPolicy(
 export function isPortalPublicationEnabled(
   env: Pick<
     WorkerEnv,
-    'PORTAL_WRITEBACK_ENABLED' | 'PORTAL_WRITEBACK_BASE_URL' | 'PORTAL_BID_WRITER'
+    'ENV' | 'PORTAL_WRITEBACK_ENABLED' | 'PORTAL_WRITEBACK_BASE_URL' | 'PORTAL_BID_WRITER'
   >,
 ): boolean {
   return resolvePortalPublicationPolicy(env).enabled;

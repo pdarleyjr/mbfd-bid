@@ -4,8 +4,6 @@ import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-export const runtime = 'edge';
-
 export async function POST(req: Request) {
   try {
     await requireAdmin();

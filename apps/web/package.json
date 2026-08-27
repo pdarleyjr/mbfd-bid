@@ -12,9 +12,10 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
-    "build:pages": "next-on-pages",
-    "deploy:staging": "pnpm build:pages && wrangler pages deploy .vercel/output/static --project-name=mbfd-bid-web-staging --branch=main --commit-dirty=true",
-    "deploy:production": "pnpm build:pages && wrangler pages deploy .vercel/output/static --project-name=mbfd-bid-web-production --branch=main --commit-dirty=true"
+    "cf-typegen": "wrangler types --env staging --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "build:opennext:staging": "node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env staging",
+    "preview:opennext:staging": "pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js preview --env staging",
+    "deploy:staging": "pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env staging"
   },
   "dependencies": {
     "@mbfd/shared": "workspace:*",
@@ -29,7 +30,7 @@
     "jose": "5.9.4",
     "lucide-react": "0.453.0",
     "nanoid": "5.1.16",
-    "next": "15.5.21",
+    "next": "15.5.24",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "tailwind-merge": "2.5.4",
@@ -37,14 +38,14 @@
     "zustand": "5.0.0"
   },
   "devDependencies": {
-    "@cloudflare/next-on-pages": "^1.13.12",
-    "@cloudflare/workers-types": "4.20241011.0",
+    "@cloudflare/workers-types": "5.20260826.1",
     "@fontsource-variable/plus-jakarta-sans": "5.1.0",
     "@fontsource-variable/source-sans-3": "5.1.0",
     "@fontsource/jetbrains-mono": "5.1.1",
     "@mbfd/worker": "workspace:*",
+    "@opennextjs/cloudflare": "1.20.4",
     "@playwright/test": "1.60.0",
-    "@types/node": "22.7.7",
+    "@types/node": "22.12.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "autoprefixer": "10.5.0",
@@ -52,8 +53,7 @@
     "postcss": "8.5.23",
     "tailwindcss": "3.4.19",
     "typescript": "5.6.3",
-    "vercel": "^47.0.4",
-    "vitest": "3.2.4",
-    "wrangler": "^4.93.0"
+    "vitest": "3.2.6",
+    "wrangler": "^4.125.0"
   }
 }

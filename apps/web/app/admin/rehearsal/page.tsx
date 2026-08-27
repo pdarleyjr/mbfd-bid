@@ -14,7 +14,6 @@ import type { MockSessionRow } from './_components/MockSessionsTable';
 import { MockSessionsTable } from './_components/MockSessionsTable';
 import { NewFindingForm } from './_components/NewFindingForm';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface SessionRowRaw {

@@ -13,7 +13,6 @@ import type { MemberLite } from '../_components/bid/types';
 import { BidBoard } from './_components/BidBoard';
 import { BoardHeader } from './_components/BoardHeader';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface BoardSnapshot {

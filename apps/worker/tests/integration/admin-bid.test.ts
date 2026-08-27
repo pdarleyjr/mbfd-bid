@@ -45,7 +45,7 @@ describe('admin bid routes (Plan 04 Task 9)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('POST /api/admin/bid/freeze returns 200 with admin JWT and idem key', async () => {
+  it('POST /api/admin/bid/freeze fails closed when the launcher cannot look up the D1 session', async () => {
     const res = await worker.fetch('/api/admin/bid/freeze', {
       method: 'POST',
       headers: {
@@ -55,7 +55,8 @@ describe('admin bid routes (Plan 04 Task 9)', () => {
       },
       body: JSON.stringify({ bidSessionId: '01HSESS', reason: 'Network outage' }),
     });
-    expect([200, 409]).toContain(res.status);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: 'bid_session_lookup_unavailable' });
   });
 
   it('POST /api/admin/bid/freeze rejects when Idempotency-Key missing', async () => {

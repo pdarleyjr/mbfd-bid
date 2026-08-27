@@ -1,7 +1,7 @@
 // Plan 09 / Rehearsal Tooling — Task R9 smoke tests.
 //
 // Vitest cannot execute the Next.js page Server Component end-to-end
-// (cookies(), getRequestContext(), cfEnv() all need a real edge request),
+// (cookies(), getCloudflareContext(), cfEnv() all need a real Worker request),
 // so this test exercises just the row + form components in isolation.
 
 import { renderToString } from 'react-dom/server';
@@ -38,6 +38,8 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
     expect(html).toContain('01HZZSESS02');
     expect(html).toContain('position_bid');
     expect(html).toContain('a_day_bid');
+    expect(html).toContain('Reset unavailable');
+    expect(html).toContain('Requires audited reset epoch');
     expect(html).not.toContain('AI cost');
     expect(html).not.toContain('(AI)');
   });

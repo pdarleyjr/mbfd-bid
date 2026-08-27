@@ -1,8 +1,6 @@
 import { requireAdmin } from '../../../lib/require-admin';
 import { EligibilityPreviewForm } from './EligibilityPreviewForm';
 
-export const runtime = 'edge';
-
 export default async function EligibilityPreviewPage() {
   await requireAdmin();
   return (

@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 
+import { buildSeedSqlFromFixtures } from '../seed/2026';
+
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, '../migrations');
 const FIXTURES_DIR = resolve(__dirname, '../seed/fixtures');
@@ -274,6 +276,24 @@ describe('seed 2026 — idempotency', () => {
     expect(countAfterSecond.rules).toBe(countAfterFirst.rules);
     expect(countAfterSecond.templates).toBe(countAfterFirst.templates);
     expect(countAfterSecond.ruleBooks).toBe(countAfterFirst.ruleBooks);
+  });
+
+  it('uses the real seed SQL and creates only one deterministic audit marker on retry', () => {
+    const sqlite = new Database(':memory:');
+    applyMigrations(sqlite);
+
+    sqlite.exec(buildSeedSqlFromFixtures());
+    sqlite.exec(buildSeedSqlFromFixtures());
+
+    const auditCount = (
+      sqlite
+        .prepare(
+          "SELECT COUNT(*) as c FROM audit_log WHERE action = 'session_start' AND target_kind = 'seed' AND target_id = '2026'",
+        )
+        .get() as { c: number }
+    ).c;
+
+    expect(auditCount).toBe(1);
   });
 
   it('Station 6 positions exist with marine positionNames', () => {

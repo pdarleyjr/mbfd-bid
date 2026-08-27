@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { isExpectedPublicWebOrigin } from './lib/public-web-origin.js';
+import { redactRequestLog } from './lib/request-log.js';
 import { applySecurityHeaders } from './middleware/security-headers.js';
 import adminAudit from './routes/admin/audit.js';
 import adminBidControls from './routes/admin/bid-controls.js';
@@ -58,7 +60,7 @@ export type AppType = typeof routes;
 // Main application — middleware applied separately to avoid schema mutation.
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
-app.use('*', logger());
+app.use('*', logger((message) => console.log(redactRequestLog(message))));
 // Plan 09 Task 4 — every response (including 404/500) carries CSP, HSTS,
 // and the rest of the security header set.
 app.use('*', async (c, next) => {
@@ -70,29 +72,12 @@ app.use(
   cors({
     origin: (origin, c) => {
       if (!origin) return null;
-      // Parse the origin properly; reject anything that fails URL parsing.
-      let url: URL;
-      try {
-        url = new URL(origin);
-      } catch {
-        return null;
-      }
-
-      const isProd = c.env?.ENV === 'production';
-
-      // Production / staging: HTTPS only, exact public web hosts.
-      if (
-        url.protocol === 'https:' &&
-        (url.hostname === 'bid.mbfdhub.com' || url.hostname === 'staging.bid.mbfdhub.com')
-      ) {
+      // Deployed environments accept only their own exact public origin.
+      // In particular, staging cannot become a credentialed CORS peer for
+      // production, and vice versa.
+      if (isExpectedPublicWebOrigin(c.env, origin)) {
         return origin;
       }
-
-      // Local dev only — never in production. Allow http://localhost on any port.
-      if (!isProd && url.protocol === 'http:' && url.hostname === 'localhost') {
-        return origin;
-      }
-
       return null;
     },
     credentials: true,

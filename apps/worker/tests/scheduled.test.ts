@@ -24,7 +24,7 @@ describe('scheduled handler', () => {
       query.includes('bid_audit_outbox') ? outboxStatement : portalStatement,
     );
     env = {
-      ENV: 'staging',
+      ENV: 'production',
       PORTAL_BASE_URL: 'https://portal.example',
       PORTAL_WRITEBACK_ENABLED: 'true',
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',

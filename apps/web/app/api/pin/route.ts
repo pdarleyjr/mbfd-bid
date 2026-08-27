@@ -4,8 +4,6 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-export const runtime = 'edge';
-
 const Body = z.object({ pin: z.string().min(4).max(8) });
 const WINDOW_MS = 60_000;
 const MAX_ATTEMPTS = 8;

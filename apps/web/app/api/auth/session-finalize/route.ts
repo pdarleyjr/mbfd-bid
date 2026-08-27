@@ -5,8 +5,6 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-export const runtime = 'edge';
-
 const Body = z.object({ jwt: z.string().min(1) });
 
 export async function POST(req: Request) {

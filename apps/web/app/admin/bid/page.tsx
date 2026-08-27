@@ -13,7 +13,6 @@ import type { BidderContext } from '../../_components/bid/BidderCard';
 import type { MemberLite } from '../../_components/bid/types';
 import { AdminBidShell } from './_components/AdminBidShell';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface BoardSnapshot {

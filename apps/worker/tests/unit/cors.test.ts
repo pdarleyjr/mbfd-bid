@@ -52,6 +52,16 @@ describe('CORS origin predicate', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('https://staging.bid.mbfdhub.com');
   });
 
+  it('rejects the production web origin in staging', async () => {
+    const res = await preflight('https://bid.mbfdhub.com', 'staging');
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('rejects the staging web origin in production', async () => {
+    const res = await preflight('https://staging.bid.mbfdhub.com', 'production');
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
   it('rejects http://bid.mbfdhub.com (no TLS)', async () => {
     const res = await preflight('http://bid.mbfdhub.com', 'production');
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
@@ -72,9 +82,9 @@ describe('CORS origin predicate', () => {
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
-  it('reflects http://localhost:3000 in staging', async () => {
+  it('rejects http://localhost:3000 in staging', async () => {
     const res = await preflight('http://localhost:3000', 'staging');
-    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
   it('REJECTS http://localhost:3000 in production', async () => {
@@ -84,6 +94,26 @@ describe('CORS origin predicate', () => {
 
   it('rejects malformed origin string', async () => {
     const res = await preflight('not-a-url', 'production');
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('rejects a non-standard port on an otherwise valid staging host', async () => {
+    const res = await preflight('https://staging.bid.mbfdhub.com:8443', 'staging');
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('rejects requests with an unrecognized environment binding', async () => {
+    const res = await app.request(
+      '/api/health',
+      {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://staging.bid.mbfdhub.com',
+          'Access-Control-Request-Method': 'GET',
+        },
+      },
+      { ...mkEnv('staging'), ENV: undefined } as unknown as WorkerEnv,
+    );
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 });

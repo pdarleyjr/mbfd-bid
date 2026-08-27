@@ -15,7 +15,6 @@ import { getWorkerBase } from '@/lib/worker-base';
 
 import './print.css';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 type Shift = 'A' | 'B' | 'C' | 'D';

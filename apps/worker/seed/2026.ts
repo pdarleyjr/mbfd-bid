@@ -7,23 +7,23 @@
  *
  * Idempotency:
  *   - position_templates / rule_books: INSERT OR IGNORE
- *   - positions / credentials:          INSERT OR REPLACE
+ *   - positions / credentials:          UPSERT / INSERT OR IGNORE
  *   - position_rules:                   DELETE + INSERT per (positionId, templateVersion, ruleBookVersion)
- *   - audit_log marker:                 always appended (idempotency key on action+target_id)
+ *   - audit_log marker:                 one deterministic INSERT OR IGNORE marker
  *
  * Remote execution: writes SQL to a temp file and delegates to wrangler.
  * Local execution:  same approach (wrangler --local flag).
  */
 
 import { execSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { ulid } from 'ulid';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const FIXTURES_DIR = resolve(__dirname, 'fixtures');
+const SEED_2026_AUDIT_ID = '01JGFJJZ000000000000000000';
 
 // ---------------------------------------------------------------------------
 // Types (local mirrors of shared schemas to avoid ESM import friction in seed)
@@ -157,7 +157,7 @@ function buildSql(
     const isVacantByDesign = sqlBool(p.isVacantByDesign);
     const isExcludedFromCount = sqlBool(p.isExcludedFromCount);
     lines.push(
-      `INSERT OR REPLACE INTO positions (id, template_version, shift, station, division, unit, rank_required, position_name, is_floating, is_vacant_by_design, is_excluded_from_count) VALUES (${id}, '2026.1', ${shift}, ${station}, ${division}, ${unit}, ${rankRequired}, ${positionName}, ${isFloating}, ${isVacantByDesign}, ${isExcludedFromCount});`,
+      `INSERT INTO positions (id, template_version, shift, station, division, unit, rank_required, position_name, is_floating, is_vacant_by_design, is_excluded_from_count) VALUES (${id}, '2026.1', ${shift}, ${station}, ${division}, ${unit}, ${rankRequired}, ${positionName}, ${isFloating}, ${isVacantByDesign}, ${isExcludedFromCount}) ON CONFLICT(id, template_version) DO UPDATE SET shift = excluded.shift, station = excluded.station, division = excluded.division, unit = excluded.unit, rank_required = excluded.rank_required, position_name = excluded.position_name, is_floating = excluded.is_floating, is_vacant_by_design = excluded.is_vacant_by_design, is_excluded_from_count = excluded.is_excluded_from_count;`,
     );
   }
   lines.push('');
@@ -203,7 +203,6 @@ function buildSql(
   lines.push('');
 
   // 6. audit_log seed marker
-  const auditId = ulid();
   const now = Math.floor(Date.now() / 1000);
   const afterState = sqlStr(
     JSON.stringify({
@@ -214,11 +213,15 @@ function buildSql(
   );
   lines.push('-- audit_log seed marker');
   lines.push(
-    `INSERT OR IGNORE INTO audit_log (id, bid_session_id, seq, actor_type, actor_id, action, target_kind, target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at) VALUES (${sqlStr(auditId)}, NULL, 0, 'system', NULL, 'session_start', 'seed', '2026', NULL, ${afterState}, 'Seed run 2026.ts', NULL, NULL, ${now});`,
+    `INSERT OR IGNORE INTO audit_log (id, bid_session_id, seq, actor_type, actor_id, action, target_kind, target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at) VALUES (${sqlStr(SEED_2026_AUDIT_ID)}, NULL, 0, 'system', NULL, 'session_start', 'seed', '2026', NULL, ${afterState}, 'Seed run 2026.ts', NULL, NULL, ${now});`,
   );
   lines.push('');
 
   return lines.join('\n');
+}
+
+export function buildSeedSqlFromFixtures(): string {
+  return buildSql(loadPositions(), loadCredentials(), loadRules());
 }
 
 // ---------------------------------------------------------------------------
@@ -272,11 +275,15 @@ function main(): void {
   writeFileSync(sqlFile, sql, { encoding: 'utf-8', mode: 0o600 });
   console.info(`  Wrote SQL to ${sqlFile}`);
 
-  console.info(`Executing against ${isRemote ? 'remote staging' : 'local'} D1...`);
-  if (isRemote) {
-    executeRemote(sqlFile);
-  } else {
-    executeLocal(sqlFile);
+  try {
+    console.info(`Executing against ${isRemote ? 'remote staging' : 'local'} D1...`);
+    if (isRemote) {
+      executeRemote(sqlFile);
+    } else {
+      executeLocal(sqlFile);
+    }
+  } finally {
+    rmSync(tmpDirRoot, { recursive: true, force: true });
   }
 
   // Count rules (excludes A701)
@@ -286,4 +293,6 @@ function main(): void {
   );
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

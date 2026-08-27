@@ -2,8 +2,6 @@ import { RuleNode } from '@/components/admin/RuleNode';
 import { requireAdmin } from '@/lib/require-admin';
 import { getServerRpc } from '@/lib/rpc-server';
 
-export const runtime = 'edge';
-
 interface ParsedRule {
   id: number;
   ruleBookVersion: string;

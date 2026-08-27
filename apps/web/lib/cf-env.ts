@@ -1,20 +1,18 @@
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 /**
- * Read a secret/env var on Cloudflare Pages.
+ * Read a secret/env var on a Cloudflare Worker.
  *
- * @cloudflare/next-on-pages does NOT populate `process.env` from secrets
- * configured via `wrangler pages secret put`. Server code must read them
- * via `getRequestContext().env`. For local dev / Node runtime we fall back
- * to `process.env`.
+ * OpenNext exposes Worker bindings through `getCloudflareContext().env`.
+ * For local Node-only execution we fall back to `process.env`.
  */
 export function cfEnv(key: string): string | undefined {
   try {
-    const { env } = getRequestContext();
+    const { env } = getCloudflareContext();
     const value = (env as unknown as Record<string, string | undefined>)[key];
     if (value !== undefined) return value;
   } catch {
-    // getRequestContext throws outside an edge request (build, Node dev).
+    // Context is unavailable outside a Worker request (for example, tests).
   }
   return process.env[key];
 }

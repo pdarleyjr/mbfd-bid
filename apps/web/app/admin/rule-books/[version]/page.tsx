@@ -3,7 +3,6 @@ import { requireAdmin } from '../../../../lib/require-admin';
 import { serverWorkerFetch } from '../../../../lib/server-worker-fetch';
 import { PublishButton } from './PublishButton';
 
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface RuleBook {

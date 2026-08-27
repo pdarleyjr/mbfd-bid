@@ -83,6 +83,7 @@ describe('Portal queue consumer skips mock sessions (Task R8)', () => {
       // consumer must not enqueue a retry either.
       const env = {
         ...h.env,
+        ENV: 'production' as const,
         PORTAL_BASE_URL: 'https://portal.example',
         PORTAL_WRITEBACK_ENABLED: 'true' as const,
         PORTAL_WRITEBACK_BASE_URL: 'https://portal.example',
@@ -158,6 +159,7 @@ describe('Portal queue consumer skips mock sessions (Task R8)', () => {
 
       await handlePortalQueueBatch(batch, {
         ...h.env,
+        ENV: 'production',
         PORTAL_BASE_URL: 'https://portal.example',
         PORTAL_WRITEBACK_ENABLED: 'true' as const,
         PORTAL_WRITEBACK_BASE_URL: 'https://portal.example',
