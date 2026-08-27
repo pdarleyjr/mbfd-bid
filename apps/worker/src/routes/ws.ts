@@ -14,8 +14,9 @@ const ws = new Hono<{ Bindings: WorkerEnv }>();
  * JWT via:
  *   1. `?token=<jwt>` query param  (browser path — preferred)
  *   2. `Authorization: Bearer <jwt>` header  (server-side / curl)
- * Validation is identical in both cases; the query param value carries the
- * same short-lived JWT used everywhere else and is not logged at the edge.
+ * Validation is identical in both cases. The application request logger
+ * removes all query strings before output so this browser-only fallback is
+ * not written to Worker console logs.
  */
 ws.get('/session/:id', async (c) => {
   const env = validateEnv(c.env);
