@@ -25,12 +25,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { getDb } from '../../db/index.js';
-import { bids, members, positions } from '../../db/schema.js';
+import { bidSessions, bids } from '../../db/schema.js';
 import { auditCsvDbFromD1 } from '../../exports/audit-csv-db.js';
 import { exportAuditCsv } from '../../exports/audit-csv.js';
 import { mintPrintToken, verifyPrintToken } from '../../exports/print-token.js';
 import { generateRosterPdf } from '../../exports/roster-pdf.js';
 import { createSignedR2Url } from '../../exports/signed-url.js';
+import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -67,55 +68,101 @@ router.get('/roster-data', async (c) => {
   }
 
   const db = getDb(c.env.DB);
-  // Load all positions on this shift (joined to bids if a member picked them).
-  const allPositions = await db.select().from(positions).where(eq(positions.shift, shift)).all();
-  const allBids = await db.select().from(bids).where(eq(bids.bidSessionId, sessionId)).all();
-  const bidByPosition = new Map<string, (typeof allBids)[number]>();
-  for (const b of allBids) bidByPosition.set(b.positionId, b);
-
-  // Load members for resolved bids in one batch.
-  const memberIds = [...new Set(allBids.map((b) => b.memberId))];
-  const memberRows = memberIds.length
-    ? await Promise.all(
-        memberIds.map((id) => db.select().from(members).where(eq(members.id, id)).get()),
-      )
-    : [];
-  const memberById = new Map<number, NonNullable<(typeof memberRows)[number]>>();
-  for (const m of memberRows) {
-    if (m) memberById.set(m.id, m);
+  // An established session is rendered solely from its materialized V3 policy
+  // source. Calling current `members` or `positions` here would allow a later
+  // roster/template correction to rewrite a previously captured export.
+  const frozen = await loadFrozenSessionBidPolicy(db, sessionId);
+  if (!frozen.ok || frozen.snapshot.v !== 3) {
+    return c.json(
+      { error: frozen.ok ? 'session_policy_snapshot_material_missing' : frozen.code },
+      409,
+    );
   }
+
+  const [session, allBids] = await Promise.all([
+    db
+      .select({ bidYear: bidSessions.bidYear })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, sessionId))
+      .get(),
+    db.select().from(bids).where(eq(bids.bidSessionId, sessionId)).all(),
+  ]);
+  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+
+  const snapshot = frozen.snapshot;
+  const positionById = new Map(
+    snapshot.ruleBookMaterial.positions.map((position) => [position.id, position]),
+  );
+  const memberById = new Map(snapshot.members.map((member) => [member.memberId, member]));
+  const validBiddablePositionIds = new Set(frozen.coverage.validRulePositionIds);
+  // Deliberately avoid exposing a canonical row ID or employee identifier. A
+  // deterministic, session-scoped ordinal is enough for the print roster.
+  const pseudonymByMemberId = new Map(
+    [...snapshot.members]
+      .sort((a, b) => a.memberId - b.memberId)
+      .map((member, index) => [member.memberId, `M-${String(index + 1).padStart(3, '0')}`]),
+  );
+  const bidByPosition = new Map<string, (typeof allBids)[number]>();
+  for (const bid of allBids) {
+    // Bid records are session history, but every reference must still resolve
+    // inside the immutable material before the export can be trusted.
+    const frozenPosition = positionById.get(bid.positionId);
+    const frozenMember = memberById.get(bid.memberId);
+    if (
+      frozenPosition === undefined ||
+      frozenMember === undefined ||
+      frozenMember.pool === 'EXCLUDED' ||
+      frozenPosition.bidParticipation !== 'BIDDABLE' ||
+      !validBiddablePositionIds.has(bid.positionId) ||
+      bidByPosition.has(bid.positionId)
+    ) {
+      return c.json({ error: 'session_bid_reference_invalid' }, 409);
+    }
+    bidByPosition.set(bid.positionId, bid);
+  }
+
+  const snapshotPositions = snapshot.ruleBookMaterial.positions.filter(
+    (position) => position.shift === shift,
+  );
 
   // Group by station.
   const stationMap = new Map<
     string,
     Array<{
       position_id: string;
+      position_name: string;
       unit: string;
       rank: string;
+      member_id: string | null;
       member_name: string | null;
+      member_rank: string | null;
       rsc_seniority: number | null;
     }>
   >();
   const flatMembers: Array<{
-    memberId: number;
-    employeeId: string;
-    name: string;
+    memberId: string;
     rank: string;
     positionId: string;
     station: string;
     unit: string;
   }> = [];
 
-  for (const p of allPositions) {
+  for (const p of snapshotPositions) {
     const bid = bidByPosition.get(p.id);
     const member = bid ? memberById.get(bid.memberId) : null;
-    const memberName = member ? `${member.firstName} ${member.lastName}` : null;
+    const memberId = member ? (pseudonymByMemberId.get(member.memberId) ?? null) : null;
+    // `member_name` remains for the existing render page's stable payload
+    // contract, but is a synthetic label rather than copied roster identity.
+    const memberName = memberId === null ? null : `Member ${memberId}`;
     const rscSeniority = member ? member.rscSeniority : null;
     const row = {
       position_id: p.id,
+      position_name: p.positionName,
       unit: p.unit,
       rank: p.rankRequired,
+      member_id: memberId,
       member_name: memberName,
+      member_rank: member?.rank ?? null,
       rsc_seniority: rscSeniority,
     };
     const existing = stationMap.get(p.station);
@@ -124,11 +171,9 @@ router.get('/roster-data', async (c) => {
     } else {
       stationMap.set(p.station, [row]);
     }
-    if (member && bid) {
+    if (member && bid && memberId !== null) {
       flatMembers.push({
-        memberId: member.id,
-        employeeId: member.employeeId,
-        name: memberName ?? '',
+        memberId,
         rank: member.rank,
         positionId: bid.positionId,
         station: p.station,
@@ -145,10 +190,10 @@ router.get('/roster-data', async (c) => {
     }));
 
   return c.json({
-    year: new Date().getUTCFullYear(),
+    year: session.bidYear,
     shift,
     station_count: stations.length,
-    position_count: allPositions.length,
+    position_count: snapshotPositions.length,
     stations,
     // W35 spec — flat members array for direct consumers that don't need
     // the station-grouped print layout.

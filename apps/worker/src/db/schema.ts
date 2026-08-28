@@ -173,6 +173,9 @@ export const bidYears = sqliteTable('bid_years', {
   ),
   ruleBookVersion: text('rule_book_version').references(() => ruleBooks.version),
   configJson: text('config_json'),
+  // Optimistic token for the designated annual configuration source. It is
+  // intentionally separate from a draft rule book's own revision.
+  configurationRevision: integer('configuration_revision').notNull().default(0),
 });
 
 export const bidSessions = sqliteTable('bid_sessions', {
@@ -315,6 +318,7 @@ export const auditLog = sqliteTable(
         'credentials_import',
         'positions_clone',
         'rule_book_clone',
+        'bid_configuration_set',
         'dissent',
         'a_day_pick',
         'forced_a_day_pick',
@@ -483,6 +487,9 @@ export const bidSessionPolicySnapshots = sqliteTable(
     positionTemplateVersion: text('position_template_version')
       .notNull()
       .references(() => positionTemplates.version, { onDelete: 'restrict' }),
+    // Null only for immutable pre-0025 V1 recovery records. Fresh V3
+    // snapshots carry the exact source revision alongside immutable material.
+    ruleBookRevision: integer('rule_book_revision'),
     snapshotJson: text('snapshot_json').notNull(),
     capturedAt: integer('captured_at', { mode: 'timestamp_ms' }).notNull(),
   },

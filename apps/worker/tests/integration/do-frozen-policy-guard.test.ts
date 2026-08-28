@@ -104,14 +104,17 @@ async function seedFrozenPolicy(h: TestD1): Promise<void> {
   await h.db.run("UPDATE rule_books SET status = 'active' WHERE version = '2026.2';");
   await h.db.run(
     `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
-     VALUES (?, '2026.2', '2026.1', ?, ?);`,
+       (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+     VALUES (?, '2026.2', '2026.1', 0, ?, ?);`,
     [
       SESSION_ID,
       JSON.stringify({
-        v: 1,
+        v: 3,
         ruleBookVersion: '2026.2',
+        ruleBookRevision: 0,
         positionTemplateVersion: '2026.1',
+        configurationRevision: 0,
+        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
         capturedAtMs: CAPTURED_AT,
         members: [
           {
@@ -121,6 +124,9 @@ async function seedFrozenPolicy(h: TestD1): Promise<void> {
             rankSeniority: 42,
             exclusionReason: null,
             authoritativeAssignmentId: null,
+            rank: 'FF',
+            isProbationary: false,
+            credentialNames: [],
           },
           {
             memberId: 43,
@@ -129,6 +135,9 @@ async function seedFrozenPolicy(h: TestD1): Promise<void> {
             rankSeniority: 43,
             exclusionReason: null,
             authoritativeAssignmentId: null,
+            rank: 'LT',
+            isProbationary: false,
+            credentialNames: [],
           },
           {
             memberId: 211,
@@ -137,8 +146,48 @@ async function seedFrozenPolicy(h: TestD1): Promise<void> {
             rankSeniority: 1,
             exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
             authoritativeAssignmentId: 'assignment-A211',
+            rank: 'DC',
+            isProbationary: false,
+            credentialNames: [],
           },
         ],
+        ruleBookMaterial: {
+          v: 1,
+          rules: [
+            {
+              ruleBookVersion: '2026.2',
+              positionId: 'A101',
+              templateVersion: '2026.1',
+              requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+              pointsPreferenceJson: '{"max":0,"items":[]}',
+              tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+            },
+          ],
+          positions: [
+            {
+              id: 'A101',
+              templateVersion: '2026.1',
+              bidParticipation: 'BIDDABLE',
+              isExcludedFromCount: false,
+              shift: 'A',
+              station: '1',
+              unit: 'Engine 1',
+              rankRequired: 'FF',
+              positionName: 'Firefighter',
+            },
+            {
+              id: 'A211',
+              templateVersion: '2026.1',
+              bidParticipation: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+              isExcludedFromCount: false,
+              shift: 'A',
+              station: '2',
+              unit: '300',
+              rankRequired: 'DC',
+              positionName: 'Division Chief',
+            },
+          ],
+        },
       }),
       CAPTURED_AT,
     ],

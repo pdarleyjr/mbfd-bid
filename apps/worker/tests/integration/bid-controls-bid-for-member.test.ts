@@ -19,6 +19,104 @@ async function adminJwt(): Promise<string> {
   );
 }
 
+async function insertV3PolicySnapshot(
+  h: TestD1,
+  sessionId: string,
+  capturedAt: number,
+  options?: { requiredRank?: 'FF' | 'LT'; includeInvalidRule?: boolean },
+) {
+  const requiredRank = options?.requiredRank ?? 'FF';
+  await h.db.run(
+    `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+     VALUES (?, '2026.1', '2026.1', 0, ?, ?);`,
+    [
+      sessionId,
+      JSON.stringify({
+        v: 3,
+        ruleBookVersion: '2026.1',
+        ruleBookRevision: 0,
+        positionTemplateVersion: '2026.1',
+        configurationRevision: 0,
+        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+        capturedAtMs: capturedAt,
+        members: [
+          {
+            memberId: 60,
+            pool: 'FF',
+            rscSeniority: 80,
+            rankSeniority: null,
+            exclusionReason: null,
+            authoritativeAssignmentId: null,
+            rank: 'FF',
+            isProbationary: false,
+            credentialNames: [],
+          },
+        ],
+        ruleBookMaterial: {
+          v: 1,
+          rules: [
+            {
+              ruleBookVersion: '2026.1',
+              positionId: 'A101',
+              templateVersion: '2026.1',
+              requiredCriteriaJson: JSON.stringify({
+                rank: [requiredRank],
+                credentials: [],
+                custom: [],
+              }),
+              pointsPreferenceJson: '{"max":0,"items":[]}',
+              tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+            },
+            ...(options?.includeInvalidRule
+              ? [
+                  {
+                    ruleBookVersion: '2026.1',
+                    positionId: 'B101',
+                    templateVersion: '2026.1',
+                    requiredCriteriaJson:
+                      '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
+                    pointsPreferenceJson: '{"max":0,"items":[]}',
+                    tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+                  },
+                ]
+              : []),
+          ],
+          positions: [
+            {
+              id: 'A101',
+              templateVersion: '2026.1',
+              bidParticipation: 'BIDDABLE',
+              isExcludedFromCount: false,
+              shift: 'A',
+              station: '1',
+              unit: 'Engine 1',
+              rankRequired: 'FF',
+              positionName: 'Engine 1 FF',
+            },
+            ...(options?.includeInvalidRule
+              ? [
+                  {
+                    id: 'B101',
+                    templateVersion: '2026.1',
+                    bidParticipation: 'BIDDABLE',
+                    isExcludedFromCount: false,
+                    shift: 'B',
+                    station: '1',
+                    unit: 'Engine 1',
+                    rankRequired: 'FF',
+                    positionName: 'Invalid synthetic policy row',
+                  },
+                ]
+              : []),
+          ],
+        },
+      }),
+      capturedAt,
+    ],
+  );
+}
+
 async function seedEligibleFireFighter(h: TestD1, sessionId: string) {
   const now = Date.now();
   await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
@@ -47,31 +145,7 @@ async function seedEligibleFireFighter(h: TestD1, sessionId: string) {
        '{"max":0,"items":[]}',
        '["points","rsc_seniority","rank_seniority"]');`,
   );
-  await h.db.run(
-    `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
-     VALUES (?, '2026.1', '2026.1', ?, ?);`,
-    [
-      sessionId,
-      JSON.stringify({
-        v: 1,
-        ruleBookVersion: '2026.1',
-        positionTemplateVersion: '2026.1',
-        capturedAtMs: now,
-        members: [
-          {
-            memberId: 60,
-            pool: 'FF',
-            rscSeniority: 80,
-            rankSeniority: null,
-            exclusionReason: null,
-            authoritativeAssignmentId: null,
-          },
-        ],
-      }),
-      now,
-    ],
-  );
+  await insertV3PolicySnapshot(h, sessionId, now);
 }
 
 describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
@@ -85,7 +159,8 @@ describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
     await teardownTestD1(h);
   });
 
-  it('records a bid with forced=false and admin_actor_id set', async () => {
+  it('records a bid with forced=false and no invented actor when the admin is not a member', async () => {
+    h.sqlite.pragma('foreign_keys = ON');
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
         method: 'POST',
@@ -110,18 +185,53 @@ describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
       [body.bid_id],
     );
     const r = rows.results[0] as
-      | { forced: number; admin_actor_id: number; position_id: string }
+      | { forced: number; admin_actor_id: number | null; position_id: string }
       | undefined;
     expect(r?.forced).toBe(0);
-    expect(r?.admin_actor_id).toBe(0);
+    expect(r?.admin_actor_id).toBeNull();
   });
 
-  it('returns 422 when member is ineligible for the position (LT-only slot)', async () => {
-    // Change rule to require LT rank — our seeded member is FF.
-    await h.db.run(
-      `UPDATE position_rules SET required_criteria = '{"rank":["LT"],"credentials":[],"custom":[]}'
-       WHERE position_id = 'A101' AND rule_book_version = '2026.1';`,
+  it('does not let an unstarted live session create a proxy bid', async () => {
+    await h.db.run("UPDATE bid_sessions SET current_phase = 'config' WHERE id = ?", [sessionId]);
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          member_id: 60,
+          position_id: 'A101',
+          reason_code: 'bid_for_member.unreachable_phone',
+          reason: 'A config-phase session cannot receive a proxy bid.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
     );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'bid_session_not_active', current_phase: 'config' });
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
+        .results,
+    ).toEqual([{ n: 0 }]);
+    expect(
+      (
+        await h.db.run(
+          "SELECT count(*) AS n FROM audit_log WHERE action = 'admin_bid_for_member' AND bid_session_id = ?",
+          [sessionId],
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
+  });
+
+  it('returns 422 when the captured V3 rule is LT-only', async () => {
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    await insertV3PolicySnapshot(h, sessionId, Date.now(), { requiredRank: 'LT' });
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
         method: 'POST',
@@ -144,15 +254,11 @@ describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
     expect(body.reasons.some((r) => r.code === 'RANK_REQUIRED')).toBe(true);
   });
 
-  it('blocks a bid when any sibling rule in the active book is invalid', async () => {
-    await h.db.run(
-      `INSERT INTO position_rules
-       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
-       VALUES ('2026.1', 'B101', '2026.1',
-         '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
-         '{"max":0,"items":[]}',
-         '["points","rsc_seniority","rank_seniority"]');`,
-    );
+  it('blocks a bid when its captured V3 rule material is invalid', async () => {
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    await insertV3PolicySnapshot(h, sessionId, Date.now(), { includeInvalidRule: true });
 
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {

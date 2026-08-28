@@ -19,6 +19,100 @@ async function adminJwt(): Promise<string> {
   );
 }
 
+async function insertV3PolicySnapshot(
+  h: TestD1,
+  sessionId: string,
+  capturedAt: number,
+  options?: { requiredRank?: 'FF' | 'LT'; includeInvalidRule?: boolean },
+) {
+  const requiredRank = options?.requiredRank ?? 'FF';
+  const ruleBookMaterial = {
+    v: 1 as const,
+    rules: [
+      {
+        ruleBookVersion: '2026.2',
+        positionId: 'A101',
+        templateVersion: '2026.1',
+        requiredCriteriaJson: JSON.stringify({ rank: [requiredRank], credentials: [], custom: [] }),
+        pointsPreferenceJson: '{"max":0,"items":[]}',
+        tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+      },
+      ...(options?.includeInvalidRule
+        ? [
+            {
+              ruleBookVersion: '2026.2',
+              positionId: 'B101',
+              templateVersion: '2026.1',
+              requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
+              pointsPreferenceJson: '{"max":0,"items":[]}',
+              tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+            },
+          ]
+        : []),
+    ],
+    positions: [
+      {
+        id: 'A101',
+        templateVersion: '2026.1',
+        bidParticipation: 'BIDDABLE',
+        isExcludedFromCount: false,
+        shift: 'A',
+        station: '1',
+        unit: 'Engine 1',
+        rankRequired: 'FF',
+        positionName: 'Engine 1 FF',
+      },
+      ...(options?.includeInvalidRule
+        ? [
+            {
+              id: 'B101',
+              templateVersion: '2026.1',
+              bidParticipation: 'BIDDABLE',
+              isExcludedFromCount: false,
+              shift: 'B',
+              station: '1',
+              unit: 'Engine 1',
+              rankRequired: 'FF',
+              positionName: 'Invalid synthetic policy row',
+            },
+          ]
+        : []),
+    ],
+  };
+  await h.db.run(
+    `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+     VALUES (?, '2026.2', '2026.1', 0, ?, ?);`,
+    [
+      sessionId,
+      JSON.stringify({
+        v: 3,
+        ruleBookVersion: '2026.2',
+        ruleBookRevision: 0,
+        positionTemplateVersion: '2026.1',
+        configurationRevision: 1,
+        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+        capturedAtMs: capturedAt,
+        members: [
+          {
+            memberId: 60,
+            pool: 'FF',
+            rscSeniority: 80,
+            rankSeniority: null,
+            exclusionReason: null,
+            authoritativeAssignmentId: null,
+            rank: 'FF',
+            isProbationary: false,
+            credentialNames: [],
+          },
+        ],
+        ruleBookMaterial,
+      }),
+      capturedAt,
+    ],
+  );
+}
+
 async function seedMockSessionWithEligibleFF(
   h: TestD1,
   sessionId: string,
@@ -26,11 +120,6 @@ async function seedMockSessionWithEligibleFF(
 ) {
   const now = Date.now();
   const isMock = opts?.isMock ?? true;
-  await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
-  await h.db.run(
-    "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1, ?);",
-    [sessionId, now, isMock ? 1 : 0],
-  );
   await h.db.run(
     "INSERT INTO members (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at) VALUES (60, '60060', 'Proxy', 'Bid', 'FF', 'FF', 80, 0, ?, ?);",
     [now, now],
@@ -42,16 +131,28 @@ async function seedMockSessionWithEligibleFF(
     "INSERT INTO positions (id, template_version, shift, station, division, unit, rank_required, position_name) VALUES ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Engine 1 FF');",
   );
   await h.db.run(
-    "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
+    "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.2', 2026, 'draft');",
   );
   await h.db.run(
     `INSERT INTO position_rules
      (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
-     VALUES ('2026.1', 'A101', '2026.1',
+     VALUES ('2026.2', 'A101', '2026.1',
        '{"rank":["FF"],"credentials":[],"custom":[]}',
        '{"max":0,"items":[]}',
        '["points","rsc_seniority","rank_seniority"]');`,
   );
+  await h.db.run(
+    `INSERT INTO bid_years
+       (year, status, position_template_version, rule_book_version, config_json, configuration_revision)
+     VALUES
+       (2026, 'configuring', '2026.1', '2026.2',
+        '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}', 1);`,
+  );
+  await h.db.run(
+    "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1, ?);",
+    [sessionId, now, isMock ? 1 : 0],
+  );
+  await insertV3PolicySnapshot(h, sessionId, now);
 }
 
 describe('POST /api/admin/rehearsal/:sessionId/manual-pick', () => {
@@ -163,11 +264,12 @@ describe('POST /api/admin/rehearsal/:sessionId/manual-pick', () => {
 
   it('refuses with 422 when the member is ineligible for the position', async () => {
     await seedMockSessionWithEligibleFF(h, sessionId);
-    // Make the position LT-only so our seeded FF is ineligible.
-    await h.db.run(
-      `UPDATE position_rules SET required_criteria = '{"rank":["LT"],"credentials":[],"custom":[]}'
-       WHERE position_id = 'A101' AND rule_book_version = '2026.1';`,
-    );
+    // Rebuild this isolated fixture before the operation so its immutable
+    // material, not a mutable source row, carries the LT-only rule.
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?;', [
+      sessionId,
+    ]);
+    await insertV3PolicySnapshot(h, sessionId, Date.now(), { requiredRank: 'LT' });
     const res = await app.fetch(
       new Request(`http://x/api/admin/rehearsal/${sessionId}/manual-pick`, {
         method: 'POST',
@@ -187,10 +289,10 @@ describe('POST /api/admin/rehearsal/:sessionId/manual-pick', () => {
 
   it('honours force=true to bypass eligibility', async () => {
     await seedMockSessionWithEligibleFF(h, sessionId);
-    await h.db.run(
-      `UPDATE position_rules SET required_criteria = '{"rank":["LT"],"credentials":[],"custom":[]}'
-       WHERE position_id = 'A101' AND rule_book_version = '2026.1';`,
-    );
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?;', [
+      sessionId,
+    ]);
+    await insertV3PolicySnapshot(h, sessionId, Date.now(), { requiredRank: 'LT' });
     const res = await app.fetch(
       new Request(`http://x/api/admin/rehearsal/${sessionId}/manual-pick`, {
         method: 'POST',
@@ -212,16 +314,12 @@ describe('POST /api/admin/rehearsal/:sessionId/manual-pick', () => {
     expect(auditRows.results[0]?.n).toBe(1);
   });
 
-  it('does not let force=true bypass an invalid active rule book', async () => {
+  it('does not let force=true bypass invalid captured V3 rule material', async () => {
     await seedMockSessionWithEligibleFF(h, sessionId);
-    await h.db.run(
-      `INSERT INTO position_rules
-       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
-       VALUES ('2026.1', 'B101', '2026.1',
-         '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
-         '{"max":0,"items":[]}',
-         '["points","rsc_seniority","rank_seniority"]');`,
-    );
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?;', [
+      sessionId,
+    ]);
+    await insertV3PolicySnapshot(h, sessionId, Date.now(), { includeInvalidRule: true });
 
     const res = await app.fetch(
       new Request(`http://x/api/admin/rehearsal/${sessionId}/manual-pick`, {
@@ -238,7 +336,7 @@ describe('POST /api/admin/rehearsal/:sessionId/manual-pick', () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({
       error: 'session_policy_snapshot_unavailable',
-      policy_error: 'rule_book_invalid',
+      policy_error: 'session_rule_book_invalid',
     });
   });
 

@@ -61,9 +61,9 @@ async function seedPolicyFixture(
        ('B211', '2026.1', 'B', '2', 'Combat', '300', 'DC', 'Division Chief'),
        ('C211', '2026.1', 'C', '2', 'Combat', '300', 'DC', 'Division Chief');`,
   );
-  // POL-015 is a rule-book-scoped correction: the future book is first a
-  // draft, then becomes the sole active candidate. The position template is
-  // unchanged, so active 2026.1 data is never reinterpreted in place.
+  // POL-015 is a rule-book-scoped correction: the designated future book
+  // remains a draft during mock rehearsal. The position template is unchanged,
+  // so active 2026.1 data is never reinterpreted in place.
   await h.db.run(
     "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.2', 2026, 'draft');",
   );
@@ -124,7 +124,14 @@ async function seedPolicyFixture(
          '{"max":0,"items":[]}',
          '["points","rsc_seniority","rank_seniority"]');`,
   );
-  await h.db.run("UPDATE rule_books SET status = 'active' WHERE version = '2026.2';");
+  await h.db.run(
+    `UPDATE bid_years
+        SET rule_book_version = '2026.2',
+            position_template_version = '2026.1',
+            config_json = '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}',
+            configuration_revision = 1
+      WHERE year = 2026;`,
+  );
 }
 
 describe('Division Chief administrative-assignment Bid policy', () => {
@@ -163,9 +170,11 @@ describe('Division Chief administrative-assignment Bid policy', () => {
     expect(frozen.status).toBe(200);
     const frozenBody = (await frozen.json()) as {
       snapshot: {
+        v: number;
         members: Array<{ memberId: number; pool: string; exclusionReason: string | null }>;
       };
     };
+    expect(frozenBody.snapshot).toMatchObject({ v: 3 });
     const byMember = new Map(
       frozenBody.snapshot.members.map((member) => [member.memberId, member]),
     );

@@ -18,23 +18,23 @@ import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
-import { type DB, getDb } from '../../db/index.js';
+import { getDb } from '../../db/index.js';
+import type { DB } from '../../db/index.js';
 import {
   aDayPicks,
   bidOrder,
   bidSessions,
   bids,
   canonicalBidSessionState,
-  credentials,
-  memberCredentials,
-  members,
   rehearsalFindings,
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
-  captureLegacyMockSessionPolicySnapshot,
+  eligibilityMemberFromFrozen,
+  frozenEligibilityMemberForSession,
+  loadFrozenSessionBidPolicy,
 } from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -46,38 +46,6 @@ const router = new Hono<Env>();
 router.use('*', requireAdmin);
 
 const IdempotencyKeyHeaderSchema = z.string().uuid();
-
-interface MemberWithCreds {
-  employeeId: string;
-  firstName: string;
-  lastName: string;
-  rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
-  rscSeniority: number;
-  rankSeniority: number | undefined;
-  isProbationary: boolean;
-  credentials: { name: string }[];
-}
-
-async function loadMemberWithCreds(db: DB, memberId: number): Promise<MemberWithCreds | null> {
-  const m = await db.select().from(members).where(eq(members.id, memberId)).get();
-  if (m === undefined) return null;
-  const creds = await db
-    .select({ name: credentials.name })
-    .from(memberCredentials)
-    .innerJoin(credentials, eq(memberCredentials.credentialId, credentials.id))
-    .where(eq(memberCredentials.memberId, memberId))
-    .all();
-  return {
-    employeeId: m.employeeId,
-    firstName: m.firstName,
-    lastName: m.lastName,
-    rank: m.rank,
-    rscSeniority: m.rscSeniority,
-    rankSeniority: m.rankSeniority ?? undefined,
-    isProbationary: m.isProbationary,
-    credentials: creds.map((c) => ({ name: c.name })),
-  };
-}
 
 function orderMatchesFrozenSnapshot(
   persisted: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
@@ -351,11 +319,7 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
       return c.json({ picksMade: 0, stoppedReason: 'complete' });
     }
 
-    const frozenPolicy = await captureLegacyMockSessionPolicySnapshot(db, {
-      bidSessionId: sessionId,
-      bidYear: session.bidYear,
-      capturedAtMs: Date.now(),
-    });
+    const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
     if (!frozenPolicy.ok) {
       return c.json(
         {
@@ -390,8 +354,9 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
     // Bootstrap: mock sessions created via /admin/sessions/new sit in `config`
     // phase with an empty bid_order until someone manually calls the start
     // endpoint. Rehearsal flow should be one-click — if bid_order is empty
-    // here, compute it from the members roster (same seniority + pool rules
-    // session-start uses), insert it, and advance the session to position_bid
+    // here, compute it from the captured session snapshot (the same frozen
+    // seniority + pool rules session-start uses), insert it, and advance the
+    // session to position_bid
     // with currentBidderId set to ordinal 1. The auto-bid loop then proceeds
     // naturally.
     let bootstrapped = false;
@@ -517,12 +482,13 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
         break;
       }
 
-      const member = await loadMemberWithCreds(db, currentBidder);
-      if (member === null) {
+      const frozenMember = frozenEligibilityMemberForSession(frozenPolicy.snapshot, currentBidder);
+      if (frozenMember === null) {
         stoppedReason = 'error';
-        detail = `member ${currentBidder} not found`;
+        detail = `session policy material missing for member ${currentBidder}`;
         break;
       }
+      const member = eligibilityMemberFromFrozen(frozenMember);
 
       const taken = await db
         .select({ positionId: bids.positionId })
@@ -701,11 +667,7 @@ router.post('/:sessionId/manual-pick', zValidator('json', ManualPickBodySchema),
     );
   }
 
-  const frozenPolicy = await captureLegacyMockSessionPolicySnapshot(db, {
-    bidSessionId: sessionId,
-    bidYear: session.bidYear,
-    capturedAtMs: Date.now(),
-  });
+  const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
   if (!frozenPolicy.ok) {
     return c.json(
       {
@@ -718,16 +680,15 @@ router.post('/:sessionId/manual-pick', zValidator('json', ManualPickBodySchema),
   }
   const activeRules = frozenPolicy.coverage;
 
-  const member = await loadMemberWithCreds(db, body.member_id);
-  if (member === null) return c.json({ error: 'member_not_found' }, 404);
-  const frozenMember = frozenPolicy.snapshot.members.find(
-    (entry) => entry.memberId === body.member_id,
-  );
-  if (frozenMember === undefined || frozenMember.pool === 'EXCLUDED') {
+  const frozenMember = frozenEligibilityMemberForSession(frozenPolicy.snapshot, body.member_id);
+  if (frozenMember === null) {
+    return c.json({ error: 'session_policy_snapshot_material_missing' }, 409);
+  }
+  if (frozenMember.pool === 'EXCLUDED') {
     return c.json(
       {
         error: 'member_not_in_bid_pool',
-        exclusion_reason: frozenMember?.exclusionReason ?? null,
+        exclusion_reason: frozenMember.exclusionReason,
       },
       422,
     );
@@ -742,7 +703,7 @@ router.post('/:sessionId/manual-pick', zValidator('json', ManualPickBodySchema),
 
   // Eligibility gate — admin can override with force=true.
   if (body.force !== true) {
-    const evalResult = evaluateEligibility(member, rule);
+    const evalResult = evaluateEligibility(eligibilityMemberFromFrozen(frozenMember), rule);
     if (!evalResult.eligible) {
       return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);
     }

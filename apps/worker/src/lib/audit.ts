@@ -22,6 +22,7 @@ export type AuditAction =
   | 'credentials_import'
   | 'positions_clone'
   | 'rule_book_clone'
+  | 'bid_configuration_set'
   | 'dissent'
   | 'a_day_pick'
   | 'forced_a_day_pick';

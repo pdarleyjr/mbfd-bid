@@ -8,23 +8,21 @@ import {
 } from '@mbfd/a-day';
 import { evaluateEligibility } from '@mbfd/eligibility';
 import { SubmitADayPickRequestSchema } from '@mbfd/shared';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { loadCanonicalBidSessionState } from '../commands/canonical-command-service.js';
 import { getDb } from '../db/index.js';
-import {
-  bidSessions as bidSessionsTable,
-  bids as bidsTable,
-  credentials,
-  memberCredentials,
-  members as membersTable,
-} from '../db/schema.js';
+import { bidSessions as bidSessionsTable, bids as bidsTable } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
 import { computeBidOrder } from '../lib/bid-order.js';
-import { bidOrderInputFromSnapshot, loadFrozenSessionBidPolicy } from '../lib/bid-policy.js';
+import {
+  bidOrderInputFromSnapshot,
+  eligibilityMemberFromFrozen,
+  frozenEligibilityMemberForSession,
+  loadFrozenSessionBidPolicy,
+} from '../lib/bid-policy.js';
 import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-merge.js';
-import { chunkedInArraySelect } from '../lib/d1-batch.js';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeOnDeck } from '../lib/on-deck.js';
@@ -102,9 +100,6 @@ bid.get('/me/eligibility', async (c) => {
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
   const db = getDb(c.env.DB);
-  const member = await db.select().from(membersTable).where(eq(membersTable.id, claims.sub)).get();
-  if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
-
   let sessionId: string | null;
   try {
     sessionId = await resolveBidSessionId(c, readSessionQuery(c));
@@ -161,13 +156,6 @@ bid.get('/me/eligibility', async (c) => {
     });
   }
 
-  const memberCreds = await db
-    .select({ name: credentials.name })
-    .from(memberCredentials)
-    .innerJoin(credentials, eq(memberCredentials.credentialId, credentials.id))
-    .where(eq(memberCredentials.memberId, claims.sub))
-    .all();
-
   const filled = new Set<string>();
   if (canonicalState !== null) {
     for (const positionId of Object.keys(canonicalState.fills)) filled.add(positionId);
@@ -180,16 +168,16 @@ bid.get('/me/eligibility', async (c) => {
     for (const row of rows) filled.add(row.positionId);
   }
 
-  const eligibilityMember = {
-    employeeId: member.employeeId,
-    firstName: member.firstName,
-    lastName: member.lastName,
-    rank: member.rank,
-    rscSeniority: member.rscSeniority,
-    rankSeniority: member.rankSeniority ?? undefined,
-    isProbationary: member.isProbationary,
-    credentials: memberCreds.map((cred) => ({ name: cred.name })),
-  };
+  const eligibilityMember = frozenEligibilityMemberForSession(frozenPolicy.snapshot, claims.sub);
+  if (eligibilityMember === null) {
+    return c.json(
+      {
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: 'session_policy_snapshot_material_missing',
+      },
+      409,
+    );
+  }
 
   const positions: Array<{
     positionId: string;
@@ -199,7 +187,7 @@ bid.get('/me/eligibility', async (c) => {
   }> = [];
   for (const rule of frozenPolicy.coverage.rules) {
     if (filled.has(rule.positionId)) continue;
-    const result = evaluateEligibility(eligibilityMember, rule);
+    const result = evaluateEligibility(eligibilityMemberFromFrozen(eligibilityMember), rule);
     positions.push({
       positionId: rule.positionId,
       eligible: result.eligible,
@@ -376,14 +364,10 @@ bid.get('/board', async (c) => {
     return c.json({ error: 'bid_state_not_frozen_policy' }, 409);
   }
 
-  // Live Bid Console enrichment — hydrate the active bidder + next-5 queue
-  // with member context so the UI shows "CPT Sola (14335)" instead of just
-  // "ID 14335". Best-effort: if D1 lookup fails the legacy id-only payload
-  // still ships and the front-end renders the fallback.
-  //
-  // Also ships a `members` map covering every member id referenced in
-  // bidOrder / fills / currentBidder / onDeck so the cell renderer can show
-  // "Lt Sola" inside each filled position without further fetches.
+  // Live Bid Console enrichment derives its display map from the same immutable
+  // snapshot as the bidding mechanics. The snapshot deliberately does not
+  // retain directory PII, so historical views use a stable Member #id label
+  // and frozen rank rather than looking up today's roster.
   let currentBidder: BidderContext | null = null;
   let onDeck: BidderContext[] = [];
   const members: Record<
@@ -408,86 +392,62 @@ bid.get('/board', async (c) => {
     bidOrderPreview = true;
   }
 
-  try {
-    const currentBidderId = typeof body.currentBidderId === 'number' ? body.currentBidderId : null;
-    const fillsRec = body.fills && typeof body.fills === 'object' ? body.fills : {};
-    const filledMemberIds = new Set<number>(Object.values(fillsRec).map((f) => f.memberId));
-    const onDeckEntries = computeOnDeck(bidOrder, currentBidderId, filledMemberIds);
+  const currentBidderId = typeof body.currentBidderId === 'number' ? body.currentBidderId : null;
+  const fillsRec = body.fills && typeof body.fills === 'object' ? body.fills : {};
+  const filledMemberIds = new Set<number>(Object.values(fillsRec).map((f) => f.memberId));
+  const onDeckEntries = computeOnDeck(bidOrder, currentBidderId, filledMemberIds);
+  const snapshotMembersById = new Map(
+    frozenBoardPolicy.snapshot.members.map((member) => [member.memberId, member]),
+  );
+  const bidOrderIndex = new Map(bidOrder.map((entry) => [entry.memberId, entry]));
+  const lookupIds = new Set<number>();
+  for (const entry of bidOrder) lookupIds.add(entry.memberId);
+  for (const memberId of filledMemberIds) lookupIds.add(memberId);
+  if (currentBidderId !== null) lookupIds.add(currentBidderId);
+  for (const entry of onDeckEntries) lookupIds.add(entry.memberId);
 
-    // Lookup set: everyone in bidOrder ∪ filled ∪ currentBidder ∪ onDeck.
-    // Worst case is one row per member in the session (≈226 today). Chunked
-    // SELECT keeps the IN(...) under the D1 placeholder cap.
-    const lookupIds = new Set<number>();
-    for (const e of bidOrder) lookupIds.add(e.memberId);
-    for (const id of filledMemberIds) lookupIds.add(id);
-    if (currentBidderId !== null) lookupIds.add(currentBidderId);
-    for (const e of onDeckEntries) lookupIds.add(e.memberId);
-
-    if (lookupIds.size > 0) {
-      const db = getDb(c.env.DB);
-      const rows = await chunkedInArraySelect(Array.from(lookupIds), (chunk) =>
-        db
-          .select({
-            id: membersTable.id,
-            employeeId: membersTable.employeeId,
-            firstName: membersTable.firstName,
-            lastName: membersTable.lastName,
-            rank: membersTable.rank,
-            priorPositionId: membersTable.priorPositionId,
-          })
-          .from(membersTable)
-          .where(inArray(membersTable.id, chunk))
-          .all(),
-      );
-      const byId = new Map(rows.map((row) => [row.id, row]));
-      const bidOrderIndex = new Map(bidOrder.map((e) => [e.memberId, e]));
-      if (currentBidderId !== null) {
-        const row = byId.get(currentBidderId);
-        const order = bidOrderIndex.get(currentBidderId);
-        if (row && order) {
-          currentBidder = {
-            memberId: row.id,
-            ordinal: order.ordinal,
-            pool: order.pool,
-            firstName: row.firstName,
-            lastName: row.lastName,
-            rank: row.rank,
-            employeeId: row.employeeId,
-          };
-        }
-      }
-      onDeck = onDeckEntries.flatMap((entry) => {
-        const row = byId.get(entry.memberId);
-        if (!row) return [];
-        return [
-          {
-            memberId: row.id,
-            ordinal: entry.ordinal,
-            pool: entry.pool,
-            firstName: row.firstName,
-            lastName: row.lastName,
-            rank: row.rank,
-            employeeId: row.employeeId,
-          },
-        ];
-      });
-      // Build the members map. Keys are stringified ids so the JSON payload
-      // round-trips cleanly (numeric keys would re-serialise as strings
-      // anyway under JSON.stringify).
-      for (const row of rows) {
-        members[String(row.id)] = {
-          id: row.id,
-          firstName: row.firstName,
-          lastName: row.lastName,
-          rank: row.rank,
-          employeeId: row.employeeId,
-          priorPositionId: row.priorPositionId ?? null,
-        };
-      }
-    }
-  } catch (err) {
-    console.error('[bid.board] enrichment failed (fail-soft)', err);
+  for (const memberId of lookupIds) {
+    const member = snapshotMembersById.get(memberId);
+    if (member === undefined) continue;
+    members[String(memberId)] = {
+      id: memberId,
+      firstName: 'Member',
+      lastName: `#${memberId}`,
+      rank: member.rank,
+      employeeId: `#${memberId}`,
+      priorPositionId: null,
+    };
   }
+  if (currentBidderId !== null) {
+    const member = snapshotMembersById.get(currentBidderId);
+    const order = bidOrderIndex.get(currentBidderId);
+    if (member !== undefined && order !== undefined) {
+      currentBidder = {
+        memberId: member.memberId,
+        ordinal: order.ordinal,
+        pool: order.pool,
+        firstName: 'Member',
+        lastName: `#${member.memberId}`,
+        rank: member.rank,
+        employeeId: `#${member.memberId}`,
+      };
+    }
+  }
+  onDeck = onDeckEntries.flatMap((entry) => {
+    const member = snapshotMembersById.get(entry.memberId);
+    if (member === undefined) return [];
+    return [
+      {
+        memberId: member.memberId,
+        ordinal: entry.ordinal,
+        pool: entry.pool,
+        firstName: 'Member',
+        lastName: `#${member.memberId}`,
+        rank: member.rank,
+        employeeId: `#${member.memberId}`,
+      },
+    ];
+  });
 
   return c.json({
     ...body,
@@ -499,6 +459,7 @@ bid.get('/board', async (c) => {
     currentBidder,
     onDeck,
     members,
+    positions: frozenBoardPolicy.snapshot.ruleBookMaterial.positions,
   });
 });
 
@@ -523,23 +484,20 @@ bid.get('/bid/state', async (c) => {
 // ---------- Plan 07 Phase 2 (A-Day) REST routes ----------
 
 /**
- * Load the full member roster from D1. The DO state holds A-Day picks but not
- * member rank/name detail, so we hydrate from the database for invariant
- * lookups and meter calculation. Returns Member objects shaped for @mbfd/a-day.
+ * A-Day capacity/order checks require rank and seniority. Fresh sessions read
+ * them only from their V3 frozen member projection, never from the mutable
+ * current roster after a mock or live session has been created.
  */
-async function loadMembersForADay(c: BidContext): Promise<Member[]> {
-  const db = getDb(c.env.DB);
-  const rows = await db.select().from(membersTable);
-  return rows.map(
-    (m): Member => ({
-      employeeId: String(m.id),
-      firstName: m.firstName,
-      lastName: m.lastName,
-      rank: m.rank,
-      rscSeniority: m.rscSeniority,
-      rankSeniority: m.rankSeniority ?? undefined,
-      isProbationary: m.isProbationary,
-      credentials: [],
+async function loadFrozenMembersForADay(
+  c: BidContext,
+  bidSessionId: string,
+): Promise<Member[] | null> {
+  const policy = await loadFrozenSessionBidPolicy(getDb(c.env.DB), bidSessionId);
+  if (!policy.ok || policy.snapshot.v !== 3) return null;
+  return policy.snapshot.members.map(
+    (member): Member => ({
+      ...eligibilityMemberFromFrozen(member),
+      employeeId: String(member.memberId),
     }),
   );
 }
@@ -583,7 +541,16 @@ bid.get('/bid/a-day-state', async (c) => {
   }
 
   const memberId = Number(claims.sub);
-  const members = await loadMembersForADay(c);
+  const members = await loadFrozenMembersForADay(c, sessionId);
+  if (members === null) {
+    return c.json(
+      {
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: 'session_policy_snapshot_material_missing',
+      },
+      409,
+    );
+  }
   const membersById = new Map<number, Member>(members.map((m) => [Number(m.employeeId), m]));
   const aDayState: ADayState = hydrateADayState(snapshot.aDay, membersById);
   const phase1 = aDayState.phase1ByMember.get(memberId);
@@ -639,7 +606,16 @@ bid.post('/bid/a-day-pick', async (c) => {
     );
   }
 
-  const members = await loadMembersForADay(c);
+  const members = await loadFrozenMembersForADay(c, parsed.data.bidSessionId);
+  if (members === null) {
+    return c.json(
+      {
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: 'session_policy_snapshot_material_missing',
+      },
+      409,
+    );
+  }
   const doId = c.env.BID_SESSION.idFromName(parsed.data.bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);
   const doResp = await stub.fetch(`${new URL(c.req.url).origin}/submit-a-day-pick`, {

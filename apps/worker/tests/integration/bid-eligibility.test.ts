@@ -70,14 +70,17 @@ describe('GET /api/me/eligibility', () => {
     );
     await h.db.run(
       `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
-       VALUES (?, '2026.1', '2026.1', ?, ?);`,
+       (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', 0, ?, ?);`,
       [
         SESSION_ID,
         JSON.stringify({
-          v: 1,
+          v: 3,
           ruleBookVersion: '2026.1',
+          ruleBookRevision: 0,
           positionTemplateVersion: '2026.1',
+          configurationRevision: 0,
+          settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
           capturedAtMs: now,
           members: [
             {
@@ -87,8 +90,56 @@ describe('GET /api/me/eligibility', () => {
               rankSeniority: null,
               exclusionReason: null,
               authoritativeAssignmentId: null,
+              rank: 'FF',
+              isProbationary: false,
+              credentialNames: [],
             },
           ],
+          ruleBookMaterial: {
+            v: 1,
+            rules: [
+              {
+                ruleBookVersion: '2026.1',
+                positionId: 'A101',
+                templateVersion: '2026.1',
+                requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+                pointsPreferenceJson: '{"max":0,"items":[]}',
+                tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+              },
+              {
+                ruleBookVersion: '2026.1',
+                positionId: 'B101',
+                templateVersion: '2026.1',
+                requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+                pointsPreferenceJson: '{"max":0,"items":[]}',
+                tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+              },
+            ],
+            positions: [
+              {
+                id: 'A101',
+                templateVersion: '2026.1',
+                bidParticipation: 'BIDDABLE',
+                isExcludedFromCount: false,
+                shift: 'A',
+                station: '1',
+                unit: 'Engine 1',
+                rankRequired: 'FF',
+                positionName: 'Firefighter',
+              },
+              {
+                id: 'B101',
+                templateVersion: '2026.1',
+                bidParticipation: 'BIDDABLE',
+                isExcludedFromCount: false,
+                shift: 'B',
+                station: '1',
+                unit: 'Engine 1',
+                rankRequired: 'FF',
+                positionName: 'Firefighter',
+              },
+            ],
+          },
         }),
         now,
       ],
@@ -99,7 +150,7 @@ describe('GET /api/me/eligibility', () => {
     await teardownTestD1(h);
   });
 
-  it('fails closed when the persisted rule book no longer matches the frozen session policy', async () => {
+  it('replays immutable rule material when a later editable source rule becomes invalid', async () => {
     await h.db.run(
       `UPDATE position_rules
           SET required_criteria = '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}'
@@ -112,10 +163,55 @@ describe('GET /api/me/eligibility', () => {
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
 
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      rule_book_version: '2026.1',
+      positions: [{ positionId: 'A101' }],
+    });
+  });
+
+  it('fails closed for a legacy V1 session without immutable rule material', async () => {
+    const capturedAt = Date.now();
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
+      SESSION_ID,
+    ]);
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', ?, ?);`,
+      [
+        SESSION_ID,
+        JSON.stringify({
+          v: 1,
+          ruleBookVersion: '2026.1',
+          positionTemplateVersion: '2026.1',
+          capturedAtMs: capturedAt,
+          members: [
+            {
+              memberId: 60,
+              pool: 'FF',
+              rscSeniority: 80,
+              rankSeniority: null,
+              exclusionReason: null,
+              authoritativeAssignmentId: null,
+            },
+          ],
+        }),
+        capturedAt,
+      ],
+    );
+
+    const res = await app.fetch(
+      new Request(`http://x/api/me/eligibility?session_id=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await memberJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({
       error: 'session_policy_snapshot_unavailable',
-      policy_error: 'session_rule_book_invalid',
+      policy_error: 'session_policy_snapshot_material_missing',
     });
   });
 

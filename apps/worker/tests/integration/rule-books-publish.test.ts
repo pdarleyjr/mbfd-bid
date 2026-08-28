@@ -4,6 +4,8 @@ import { signJwt } from '../../src/lib/jwt.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'b'.repeat(64);
+const SYNTHETIC_NOW = Date.UTC(2026, 0, 1, 12, 0, 0);
+const SYNTHETIC_HASH = 'a'.repeat(64);
 
 async function adminJwt(): Promise<string> {
   return signJwt(
@@ -29,6 +31,104 @@ async function seedValidDraftRule(h: TestD1) {
        '{"max":0,"items":[]}',
        '["points","rsc_seniority","rank_seniority"]');`,
   );
+}
+
+async function designateSyntheticDraftForPublication(h: TestD1): Promise<void> {
+  await h.db.run(
+    `INSERT INTO bid_years
+       (year, status, position_template_version, rule_book_version, config_json, configuration_revision)
+     VALUES
+       (2026, 'configuring', '2026.1', '2026.2',
+        '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}', 0)
+     ON CONFLICT(year) DO UPDATE SET
+       status = excluded.status,
+       position_template_version = excluded.position_template_version,
+       rule_book_version = excluded.rule_book_version,
+       config_json = excluded.config_json,
+       configuration_revision = excluded.configuration_revision;`,
+  );
+}
+
+/** Creates one fully synthetic, committed source-backed staffing baseline. */
+async function seedCommittedSyntheticTeleStaffBaseline(h: TestD1): Promise<void> {
+  await h.db.run(
+    `INSERT INTO members
+       (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+        is_probationary, created_at, updated_at)
+     VALUES
+       (9901, 'synthetic-publish-member', 'Synthetic', 'Publisher', 'FF', 'FF', 1, 0, ?, ?);`,
+    [SYNTHETIC_NOW, SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    `INSERT INTO staffing_positions
+       (id, stable_slot_key, shift, station, unit, position_name, applicable_rank,
+        active_from, review_status, created_at, updated_at)
+     VALUES
+       ('synthetic-publish-slot', 'SYNTHETIC/2026/A101', 'A', '1', 'Engine 1', 'Firefighter',
+        'FF', '2026-01-01', 'approved', ?, ?);`,
+    [SYNTHETIC_NOW, SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    `INSERT INTO staffing_position_source_mappings
+       (id, staffing_position_id, source_system, source_locator, source_signature,
+        source_version, source_hash, effective_from, created_at)
+     VALUES
+       ('synthetic-publish-mapping', 'synthetic-publish-slot', 'telestaff', 'synthetic/2026/a101',
+        ?, 'synthetic-v1', ?, '2026-01-01', ?);`,
+    [SYNTHETIC_HASH, SYNTHETIC_HASH, SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    `INSERT INTO assignment_imports
+       (id, source_system, source_version, source_hash, status, input_row_count, created_at)
+     VALUES ('synthetic-publish-import', 'telestaff', 'synthetic-v1', ?, 'staged', 1, ?);`,
+    [SYNTHETIC_HASH, SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    `INSERT INTO assignment_import_rows
+       (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
+        resolved_member_id, staffing_position_source_mapping_id, normalized_source_topology,
+        disposition, review_status, created_at)
+     VALUES
+       ('synthetic-publish-row', 'synthetic-publish-import', 1, ?, ?, 9901,
+        'synthetic-publish-mapping', 'synthetic/2026/a101', 'unchanged', 'not_required', ?);`,
+    ['b'.repeat(64), 'c'.repeat(64), SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    "UPDATE assignment_imports SET status = 'reviewed' WHERE id = 'synthetic-publish-import';",
+  );
+  await h.db.run(
+    `UPDATE assignment_imports
+        SET status = 'approved', approved_at = ?, approved_by_member_id = 9901
+      WHERE id = 'synthetic-publish-import';`,
+    [SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    "UPDATE assignment_imports SET status = 'committed', committed_at = ? WHERE id = 'synthetic-publish-import';",
+    [SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    `INSERT INTO assignment_observations
+       (id, assignment_import_id, assignment_import_row_id, member_id, staffing_position_id,
+        staffing_position_source_mapping_id, normalized_source_topology, observed_at, created_at)
+     VALUES
+       ('synthetic-publish-observation', 'synthetic-publish-import', 'synthetic-publish-row', 9901,
+        'synthetic-publish-slot', 'synthetic-publish-mapping', 'synthetic/2026/a101', ?, ?);`,
+    [SYNTHETIC_NOW, SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    `INSERT INTO member_assignments
+       (id, member_id, staffing_position_id, origin_type, origin_ref, source_observation_id,
+        status, effective_from, created_at, updated_at)
+     VALUES
+       ('synthetic-publish-assignment', 9901, 'synthetic-publish-slot', 'TELESTAFF_IMPORT',
+        'synthetic-publish-import', 'synthetic-publish-observation', 'active', '2026-01-01', ?, ?);`,
+    [SYNTHETIC_NOW, SYNTHETIC_NOW],
+  );
+}
+
+async function seedPublishableSyntheticPreflight(h: TestD1): Promise<void> {
+  await designateSyntheticDraftForPublication(h);
+  await seedCommittedSyntheticTeleStaffBaseline(h);
 }
 
 describe('GET /api/admin/rule-books', () => {
@@ -157,6 +257,7 @@ describe('POST /api/admin/rule-books/:version/publish', () => {
       ('2026.2', 2026, 'draft'),
       ('2026.1', 2026, 'active');`);
     await seedValidDraftRule(h);
+    await seedPublishableSyntheticPreflight(h);
   });
   afterEach(async () => {
     await teardownTestD1(h);
@@ -397,7 +498,7 @@ describe('POL-015 draft rule-book lifecycle', () => {
     await teardownTestD1(h);
   });
 
-  it('uses the normal draft lifecycle to correct only A211/B211/C211 and publish complete biddable coverage', async () => {
+  it('keeps the POL-015 correction draft unpublished without authoritative staffing baseline and bindings', async () => {
     const clone = await app.fetch(
       new Request('http://x/api/admin/rule-books', {
         method: 'POST',
@@ -514,6 +615,11 @@ describe('POL-015 draft rule-book lifecycle', () => {
     ]);
     expect(draftRules.results.map((row) => row.position_id)).toEqual(['A101']);
 
+    // The draft is explicitly designated, so publication reaches the staffing
+    // preflight rather than silently relying on whichever book is active.
+    // Do not seed a baseline or DC bindings here: this is the negative proof.
+    await designateSyntheticDraftForPublication(h);
+
     const publish = await app.fetch(
       new Request('http://x/api/admin/rule-books/2026.2/publish', {
         method: 'POST',
@@ -525,19 +631,19 @@ describe('POL-015 draft rule-book lifecycle', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(publish.status).toBe(200);
+    expect(publish.status).toBe(409);
     expect(await publish.json()).toMatchObject({
-      version: '2026.2',
-      status: 'active',
-      validation: {
-        expected_biddable_position_count: 1,
-        valid_bid_rule_count: 1,
-        missing_biddable_rules: 0,
-        non_biddable_rules_present: 0,
-        duplicate_rules: 0,
-        unexpected_rule_differences: 0,
-      },
+      error: 'rule_book_publication_blocked',
+      blocker: 'authoritative_staffing_baseline_required',
+      position_ids: [],
     });
+    const books = await h.db.run(
+      'SELECT version, status FROM rule_books WHERE effective_year = 2026 ORDER BY version',
+    );
+    expect(books.results).toEqual([
+      { version: '2026.1', status: 'active' },
+      { version: '2026.2', status: 'draft' },
+    ]);
   });
 
   it('rejects an active-book participation mutation without creating an override', async () => {

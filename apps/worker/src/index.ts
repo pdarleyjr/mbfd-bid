@@ -5,6 +5,7 @@ import { isExpectedPublicWebOrigin } from './lib/public-web-origin.js';
 import { redactRequestLog } from './lib/request-log.js';
 import { applySecurityHeaders } from './middleware/security-headers.js';
 import adminAudit from './routes/admin/audit.js';
+import adminBidConfiguration from './routes/admin/bid-configuration.js';
 import adminBidControls from './routes/admin/bid-controls.js';
 import adminBidSession from './routes/admin/bid-session.js';
 import adminBid from './routes/admin/bid.js';
@@ -47,6 +48,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/rule-books', adminRuleBooks)
   .route('/api/admin/bid', adminBid)
   .route('/api/admin/bid-session', adminBidSession)
+  .route('/api/admin/bid-configuration', adminBidConfiguration)
   .route('/api/admin/bid-session', adminBidControls)
   .route('/api/admin/bid-session', adminForceADay)
   .route('/api/admin/audit', adminAudit)

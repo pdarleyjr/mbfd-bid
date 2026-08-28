@@ -12,8 +12,9 @@ import { ulid } from 'ulid';
 import { z } from 'zod';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
-import { aDayPicks, bidSessions, members as membersTable } from '../../db/schema.js';
+import { aDayPicks, bidSessions } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
+import { eligibilityMemberFromFrozen, loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -28,6 +29,23 @@ const ForceADayBodySchema = z.object({
 
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
+
+/**
+ * A forced A-Day pick still depends on rank/seniority inputs in the Durable
+ * Object. Those inputs must be replayed from the immutable session policy
+ * snapshot rather than re-read from the mutable current roster. Only V3
+ * snapshots carry the complete eligibility material required for that replay.
+ */
+async function loadFrozenMembersForADay(db: ReturnType<typeof getDb>, bidSessionId: string) {
+  const policy = await loadFrozenSessionBidPolicy(db, bidSessionId);
+  if (!policy.ok || policy.snapshot.v !== 3) return null;
+  return policy.snapshot.members.map(
+    (member): Member => ({
+      ...eligibilityMemberFromFrozen(member),
+      employeeId: String(member.memberId),
+    }),
+  );
+}
 
 /**
  * POST /api/admin/bid-session/:id/force-a-day
@@ -63,18 +81,16 @@ router.post('/:id/force-a-day', requireStepUpAuth(), async (c) => {
     );
   }
 
-  // Load full member roster so the DO has rank info for downstream meters.
-  const memberRows = await db.select().from(membersTable);
-  const members: Member[] = memberRows.map((m) => ({
-    employeeId: String(m.id),
-    firstName: m.firstName,
-    lastName: m.lastName,
-    rank: m.rank,
-    rscSeniority: m.rscSeniority,
-    rankSeniority: m.rankSeniority ?? undefined,
-    isProbationary: m.isProbationary,
-    credentials: [],
-  }));
+  const members = await loadFrozenMembersForADay(db, sessionId);
+  if (members === null) {
+    return c.json(
+      {
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: 'session_policy_snapshot_material_missing',
+      },
+      409,
+    );
+  }
 
   const claims = c.get('claims');
   const adminActorId = claims.sub > 0 ? claims.sub : 0;

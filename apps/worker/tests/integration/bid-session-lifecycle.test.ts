@@ -56,14 +56,17 @@ async function seedFrozenPolicySnapshot(
 ): Promise<void> {
   await h.db.run(
     `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
-     VALUES (?, '2026.1', '2026.1', ?, ?);`,
+       (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+     VALUES (?, '2026.1', '2026.1', 0, ?, ?);`,
     [
       sessionId,
       JSON.stringify({
-        v: 1,
+        v: 3,
         ruleBookVersion: '2026.1',
+        ruleBookRevision: 0,
         positionTemplateVersion: '2026.1',
+        configurationRevision: 0,
+        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
         capturedAtMs: capturedAt,
         members: [
           {
@@ -73,8 +76,37 @@ async function seedFrozenPolicySnapshot(
             rankSeniority: null,
             exclusionReason: null,
             authoritativeAssignmentId: null,
+            rank: 'FF',
+            isProbationary: false,
+            credentialNames: [],
           },
         ],
+        ruleBookMaterial: {
+          v: 1,
+          rules: [
+            {
+              ruleBookVersion: '2026.1',
+              positionId: 'A101',
+              templateVersion: '2026.1',
+              requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+              pointsPreferenceJson: '{"max":0,"items":[]}',
+              tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+            },
+          ],
+          positions: [
+            {
+              id: 'A101',
+              templateVersion: '2026.1',
+              bidParticipation: 'BIDDABLE',
+              isExcludedFromCount: false,
+              shift: 'A',
+              station: '1',
+              unit: 'Engine 1',
+              rankRequired: 'FF',
+              positionName: 'Firefighter',
+            },
+          ],
+        },
       }),
       capturedAt,
     ],
@@ -87,6 +119,14 @@ describe('POST /api/admin/bid-session', () => {
     h = await setupTestD1();
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'configuring');");
     await seedActiveSinglePositionPolicy(h, Date.now());
+    await h.db.run(
+      `UPDATE bid_years
+          SET rule_book_version = '2026.1',
+              position_template_version = '2026.1',
+              config_json = '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}',
+              configuration_revision = 1
+        WHERE year = 2026;`,
+    );
   });
   afterEach(async () => {
     await teardownTestD1(h);

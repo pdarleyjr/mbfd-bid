@@ -10,13 +10,18 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
 import {
+  bidYears,
   positionRules,
   positions,
   ruleBookPositionParticipation,
   ruleBooks,
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
-import { loadRuleBookCoverage, loadRuleBookPolicyDiff } from '../../lib/bid-policy.js';
+import {
+  loadRuleBookCoverage,
+  loadRuleBookPolicyDiff,
+  preflightConfiguredRuleBookPublication,
+} from '../../lib/bid-policy.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { nextVersion } from '../../lib/rule-book-version.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
@@ -365,6 +370,55 @@ router.post(
       );
     }
 
+    // A draft cannot become the annual live configuration merely because it
+    // is valid in isolation. The bid year must have explicitly designated
+    // this exact draft/template first, so mocks and the eventual live session
+    // share one configuration source rather than an opportunistic active book.
+    const configuredYear = await db
+      .select({
+        ruleBookVersion: bidYears.ruleBookVersion,
+        positionTemplateVersion: bidYears.positionTemplateVersion,
+        configurationRevision: bidYears.configurationRevision,
+      })
+      .from(bidYears)
+      .where(eq(bidYears.year, target.effectiveYear))
+      .get();
+    if (
+      configuredYear === undefined ||
+      configuredYear.ruleBookVersion !== version ||
+      configuredYear.positionTemplateVersion !== coverage.templateVersion
+    ) {
+      return c.json(
+        {
+          error: 'bid_configuration_not_designated',
+          effective_year: target.effectiveYear,
+          rule_book_version: version,
+        },
+        409,
+      );
+    }
+
+    // Coverage tells us that the draft is internally consistent. Publication
+    // additionally needs the same authoritative staffing/binding proof used
+    // for mock-session construction; otherwise a direct publish could freeze
+    // a book that no safe mock or live session can use.
+    const staffingPreflight = await preflightConfiguredRuleBookPublication(
+      db,
+      target.effectiveYear,
+      Date.now(),
+    );
+    if (!staffingPreflight.ok) {
+      return c.json(
+        {
+          error: 'rule_book_publication_blocked',
+          blocker: staffingPreflight.code,
+          position_ids:
+            'positionIds' in staffingPreflight ? (staffingPreflight.positionIds ?? []) : [],
+        },
+        409,
+      );
+    }
+
     const claims = c.get('claims');
     const actorId = claims.sub > 0 ? claims.sub : null;
 
@@ -385,14 +439,30 @@ router.post(
         c.env.DB.prepare(
           `UPDATE rule_books
                SET status = 'archived'
-             WHERE version = ?
+              WHERE version = ?
                AND effective_year = ?
                AND status = 'active'
                AND EXISTS (
                  SELECT 1 FROM rule_books
                   WHERE version = ? AND status = 'draft' AND revision = ?
+                )
+               AND EXISTS (
+                 SELECT 1 FROM bid_years
+                  WHERE year = ?
+                    AND rule_book_version = ?
+                    AND position_template_version = ?
+                    AND configuration_revision = ?
                )`,
-        ).bind(currentActive.version, target.effectiveYear, version, target.revision),
+        ).bind(
+          currentActive.version,
+          target.effectiveYear,
+          version,
+          target.revision,
+          target.effectiveYear,
+          version,
+          coverage.templateVersion,
+          configuredYear.configurationRevision,
+        ),
       );
     }
     statements.push(
@@ -402,11 +472,28 @@ router.post(
            WHERE version = ?
              AND status = 'draft'
              AND revision = ?
-             AND NOT EXISTS (
-               SELECT 1 FROM rule_books
-                WHERE effective_year = ? AND status = 'active'
-             )`,
-      ).bind(now.getTime(), actorId, version, target.revision, target.effectiveYear),
+               AND NOT EXISTS (
+                 SELECT 1 FROM rule_books
+                  WHERE effective_year = ? AND status = 'active'
+               )
+               AND EXISTS (
+                 SELECT 1 FROM bid_years
+                  WHERE year = ?
+                    AND rule_book_version = ?
+                    AND position_template_version = ?
+                    AND configuration_revision = ?
+               )`,
+      ).bind(
+        now.getTime(),
+        actorId,
+        version,
+        target.revision,
+        target.effectiveYear,
+        target.effectiveYear,
+        version,
+        coverage.templateVersion,
+        configuredYear.configurationRevision,
+      ),
     );
     const results = await c.env.DB.batch(statements);
     const publishResult = results[results.length - 1];

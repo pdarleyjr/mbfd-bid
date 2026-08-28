@@ -42,28 +42,78 @@ function stubBidSessionNamespace(snapshotFor: Map<string, unknown>): WorkerEnv['
   } as unknown as WorkerEnv['BID_SESSION'];
 }
 
+async function insertV3PolicySnapshot(
+  h: TestD1,
+  sessionId: string,
+  capturedAt: number,
+  frozenMembers: ReadonlyArray<{ id: number; seniority: number }>,
+) {
+  await h.db.run(
+    `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+     VALUES (?, '2026.2', '2026.1', 0, ?, ?);`,
+    [
+      sessionId,
+      JSON.stringify({
+        v: 3,
+        ruleBookVersion: '2026.2',
+        ruleBookRevision: 0,
+        positionTemplateVersion: '2026.1',
+        configurationRevision: 1,
+        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+        capturedAtMs: capturedAt,
+        members: frozenMembers.map((member) => ({
+          memberId: member.id,
+          pool: 'FF',
+          rscSeniority: member.seniority,
+          rankSeniority: null,
+          exclusionReason: null,
+          authoritativeAssignmentId: null,
+          rank: 'FF',
+          isProbationary: false,
+          credentialNames: [],
+        })),
+        ruleBookMaterial: {
+          v: 1,
+          rules: ['A101', 'A102', 'A103'].map((positionId) => ({
+            ruleBookVersion: '2026.2',
+            positionId,
+            templateVersion: '2026.1',
+            requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+            pointsPreferenceJson: '{"max":0,"items":[]}',
+            tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+          })),
+          positions: ['A101', 'A102', 'A103'].map((id) => ({
+            id,
+            templateVersion: '2026.1',
+            bidParticipation: 'BIDDABLE',
+            isExcludedFromCount: false,
+            shift: 'A',
+            station: '1',
+            unit: 'Engine 1',
+            rankRequired: 'FF',
+            positionName: `${id} unit`,
+          })),
+        },
+      }),
+      capturedAt,
+    ],
+  );
+}
+
 async function seedMockSessionWithThreeMembers(h: TestD1, sessionId: string) {
   const now = Date.now();
-  await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
-  await h.db.run(
-    "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, current_bidder_id, is_mock) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1, 201, 1);",
-    [sessionId, now],
-  );
-  for (const m of [
+  const frozenMembers = [
     { id: 201, emp: '201201', sen: 100 },
     { id: 202, emp: '202202', sen: 200 },
     { id: 203, emp: '203203', sen: 300 },
-  ]) {
+  ];
+  for (const m of frozenMembers) {
     await h.db.run(
       'INSERT INTO members (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?);',
       [m.id, m.emp, 'M', String(m.id), 'FF', 'FF', m.sen, now, now],
     );
   }
-  await h.db.run(
-    "INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool) VALUES (?, 1, 201, 'FF'), (?, 2, 202, 'FF'), (?, 3, 203, 'FF');",
-    [sessionId, sessionId, sessionId],
-  );
-
   await h.db.run(
     "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
   );
@@ -74,19 +124,40 @@ async function seedMockSessionWithThreeMembers(h: TestD1, sessionId: string) {
     );
   }
   await h.db.run(
-    "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
+    "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.2', 2026, 'draft');",
   );
   for (const p of ['A101', 'A102', 'A103']) {
     await h.db.run(
       `INSERT INTO position_rules
        (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
-       VALUES ('2026.1', ?, '2026.1',
+       VALUES ('2026.2', ?, '2026.1',
          '{"rank":["FF"],"credentials":[],"custom":[]}',
          '{"max":0,"items":[]}',
          '["points","rsc_seniority","rank_seniority"]');`,
       [p],
     );
   }
+  await h.db.run(
+    `INSERT INTO bid_years
+       (year, status, position_template_version, rule_book_version, config_json, configuration_revision)
+     VALUES
+       (2026, 'configuring', '2026.1', '2026.2',
+        '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}', 1);`,
+  );
+  await h.db.run(
+    "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, current_bidder_id, is_mock) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1, 201, 1);",
+    [sessionId, now],
+  );
+  await insertV3PolicySnapshot(
+    h,
+    sessionId,
+    now,
+    frozenMembers.map((member) => ({ id: member.id, seniority: member.sen })),
+  );
+  await h.db.run(
+    "INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool) VALUES (?, 1, 201, 'FF'), (?, 2, 202, 'FF'), (?, 3, 203, 'FF');",
+    [sessionId, sessionId, sessionId],
+  );
 }
 
 describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
@@ -202,29 +273,6 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
   it('fails closed instead of reusing a stale order that diverges from the frozen pool', async () => {
     const capturedAt = Date.now();
     await h.db.run(
-      `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
-       VALUES (?, '2026.1', '2026.1', ?, ?);`,
-      [
-        sessionId,
-        JSON.stringify({
-          v: 1,
-          ruleBookVersion: '2026.1',
-          positionTemplateVersion: '2026.1',
-          capturedAtMs: capturedAt,
-          members: [201, 202, 203].map((memberId, index) => ({
-            memberId,
-            pool: 'FF',
-            rscSeniority: (index + 1) * 100,
-            rankSeniority: null,
-            exclusionReason: null,
-            authoritativeAssignmentId: null,
-          })),
-        }),
-        capturedAt,
-      ],
-    );
-    await h.db.run(
       "INSERT INTO members (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at) VALUES (204, '204204', 'Stale', 'Order', 'FF', 'FF', 400, 0, ?, ?);",
       [capturedAt, capturedAt],
     );
@@ -266,6 +314,18 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         [id, String(id), 'M', String(id), 'FF', 'FF', 400 + i, now, now],
       );
     }
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?;', [
+      sessionId,
+    ]);
+    await insertV3PolicySnapshot(h, sessionId, now, [
+      { id: 201, seniority: 100 },
+      { id: 202, seniority: 200 },
+      { id: 203, seniority: 300 },
+      ...Array.from({ length: 50 }, (_, index) => ({
+        id: 300 + index,
+        seniority: 400 + index,
+      })),
+    ]);
     await h.db.run('DELETE FROM bid_order WHERE bid_session_id = ?;', [sessionId]);
     await h.db.run(
       "UPDATE bid_sessions SET current_phase = 'config', current_bidder_id = NULL WHERE id = ?;",

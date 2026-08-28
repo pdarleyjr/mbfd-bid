@@ -39,6 +39,10 @@ interface UnassignedMemberDbRow {
   bid_category: string;
 }
 
+interface BidYearPolicyDbRow {
+  rule_book_version: string | null;
+}
+
 interface AssignmentHistoryDbRow {
   id: string;
   member_id: number;
@@ -98,6 +102,20 @@ router.get('/', async (c) => {
   if (!isCalendarDate(requestedAsOf)) {
     return c.json({ error: 'invalid_as_of' }, 400);
   }
+  const requestedBidYear = Number.parseInt(requestedAsOf.slice(0, 4), 10);
+  const configuredPolicyResult = await c.env.DB.prepare(
+    'SELECT rule_book_version FROM bid_years WHERE year = ? LIMIT 1',
+  )
+    .bind(requestedBidYear)
+    .all();
+  const configuredPolicy = configuredPolicyResult.results[0] as BidYearPolicyDbRow | undefined;
+  const designatedRuleBookVersion = configuredPolicy?.rule_book_version ?? null;
+  const administrativeAssignmentPolicy = {
+    status:
+      designatedRuleBookVersion === null ? ('unconfigured' as const) : ('configured' as const),
+    bidYear: requestedBidYear,
+    ruleBookVersion: designatedRuleBookVersion,
+  };
 
   const columnByFilter: Record<string, string> = {
     shift: 'sp.shift',
@@ -123,7 +141,13 @@ router.get('/', async (c) => {
     '(sp.active_from IS NULL OR sp.active_from <= ?)',
     '(sp.active_to IS NULL OR sp.active_to >= ?)',
   ];
-  const bindings: string[] = [requestedAsOf, requestedAsOf, requestedAsOf, requestedAsOf];
+  const bindings: Array<string | null> = [
+    designatedRuleBookVersion,
+    requestedAsOf,
+    requestedAsOf,
+    requestedAsOf,
+    requestedAsOf,
+  ];
   for (const { name, value } of parsedFilters) {
     if (!value) continue;
     where.push(`${columnByFilter[name]} = ?`);
@@ -152,18 +176,19 @@ router.get('/', async (c) => {
        assigned_member.first_name AS member_first_name,
        assigned_member.last_name AS member_last_name,
        assigned_member.rank AS member_rank,
-       CASE WHEN EXISTS (
-         SELECT 1
-         FROM position_staffing_bindings binding
-         JOIN rule_book_position_participation participation
-           ON participation.position_id = binding.position_id
-           AND participation.template_version = binding.template_version
-         JOIN rule_books rule_book ON rule_book.version = participation.rule_book_version
-         WHERE binding.staffing_position_id = sp.id
-           AND binding.review_status = 'approved'
-           AND participation.bid_participation = 'ADMIN_ASSIGNED_NON_BIDDABLE'
-           AND rule_book.status = 'active'
-       ) THEN 1 ELSE 0 END AS administrative_assignment
+        CASE WHEN EXISTS (
+          SELECT 1
+          FROM position_staffing_bindings binding
+          JOIN rule_book_position_participation participation
+            ON participation.position_id = binding.position_id
+            AND participation.template_version = binding.template_version
+          WHERE binding.staffing_position_id = sp.id
+            AND binding.review_status = 'approved'
+            -- This projection is policy metadata, not a search for any active
+            -- rule book. The selected year must explicitly designate the book.
+            AND participation.rule_book_version = ?
+            AND participation.bid_participation = 'ADMIN_ASSIGNED_NON_BIDDABLE'
+        ) THEN 1 ELSE 0 END AS administrative_assignment
      FROM staffing_positions sp
      LEFT JOIN member_assignments assignment_record
        ON assignment_record.id = (
@@ -245,6 +270,7 @@ router.get('/', async (c) => {
   ).length;
   return c.json({
     asOf: requestedAsOf,
+    administrativeAssignmentPolicy,
     positions,
     summary: {
       totalPositions: positions.length,

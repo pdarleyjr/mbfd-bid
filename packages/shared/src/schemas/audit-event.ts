@@ -24,6 +24,7 @@ export const AuditActionSchema = z.enum([
   'credentials_import',
   'positions_clone',
   'rule_book_clone',
+  'bid_configuration_set',
   'dissent',
   // Plan 07 — Phase 2 A-Day picks.
   'a_day_pick',

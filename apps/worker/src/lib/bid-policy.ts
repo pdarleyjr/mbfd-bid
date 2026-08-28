@@ -1,15 +1,23 @@
 import {
+  type BidConfigurationSettings,
+  BidConfigurationSettingsSchema,
   type BidParticipation,
   type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
+  type FrozenBidEligibilityMember,
   type FrozenBidPoolMember,
 } from '@mbfd/shared';
 import { and, eq } from 'drizzle-orm';
 
 import type { DB } from '../db/index.js';
 import {
+  assignmentImports,
+  assignmentObservations,
   bidSessionPolicySnapshots,
+  bidYears,
+  credentials,
   memberAssignments,
+  memberCredentials,
   members,
   positionRules,
   positionStaffingBindings,
@@ -301,6 +309,57 @@ export function parseBidSessionPolicySnapshot(serialized: string): BidSessionPol
   }
 }
 
+/**
+ * Rebuild coverage through the same decoder used for draft validation, but
+ * only from material captured in a V3 session snapshot. This makes the
+ * session's rules/participation replayable after its source draft advances.
+ */
+function loadV3SnapshotRuleBookCoverage(
+  snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }>,
+): RuleBookCoverage {
+  return evaluateRuleBookCoverage({
+    ruleBookVersion: snapshot.ruleBookVersion,
+    rules: snapshot.ruleBookMaterial.rules,
+    positions: snapshot.ruleBookMaterial.positions,
+  });
+}
+
+/**
+ * Converts a frozen V3 member to the eligibility engine's minimum input. The
+ * engine does not use identity fields; stable non-PII placeholders prevent a
+ * later expansion from silently reading mutable member records instead.
+ */
+export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember): {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  rank: FrozenBidEligibilityMember['rank'];
+  rscSeniority: number;
+  rankSeniority: number | undefined;
+  isProbationary: boolean;
+  credentials: Array<{ name: string }>;
+} {
+  return {
+    employeeId: `snapshot-member-${member.memberId}`,
+    firstName: '',
+    lastName: '',
+    rank: member.rank,
+    rscSeniority: member.rscSeniority,
+    rankSeniority: member.rankSeniority ?? undefined,
+    isProbationary: member.isProbationary,
+    credentials: member.credentialNames.map((name) => ({ name })),
+  };
+}
+
+/** Returns the immutable eligibility projection for a fresh V3 snapshot. */
+export function frozenEligibilityMemberForSession(
+  snapshot: BidSessionPolicySnapshot,
+  memberId: number,
+): FrozenBidEligibilityMember | null {
+  if (snapshot.v !== 3) return null;
+  return snapshot.members.find((member) => member.memberId === memberId) ?? null;
+}
+
 export interface ActiveRuleBookCoverage {
   kind: 'ready';
   coverage: RuleBookCoverage;
@@ -375,10 +434,115 @@ export async function loadActiveRuleBookCoverage(
   return { kind: 'ready', coverage: await loadRuleBookCoverage(db, version) };
 }
 
+export type BidSessionMode = 'mock' | 'live';
+
+export interface ConfiguredBidYearPolicy {
+  bidYear: number;
+  configurationRevision: number;
+  settings: BidConfigurationSettings;
+  ruleBookVersion: string;
+  ruleBookRevision: number;
+  positionTemplateVersion: string;
+  coverage: RuleBookCoverage;
+}
+
+export type ConfiguredBidYearPolicyError =
+  | 'bid_year_not_found'
+  | 'bid_configuration_unconfigured'
+  | 'bid_configuration_settings_invalid'
+  | 'bid_configuration_rule_book_missing'
+  | 'bid_configuration_year_mismatch'
+  | 'bid_configuration_template_mismatch'
+  | 'bid_configuration_draft_required'
+  | 'bid_configuration_frozen_required'
+  | 'rule_book_invalid';
+
+export function parseBidConfigurationSettings(
+  serialized: string | null,
+): BidConfigurationSettings | null {
+  if (serialized === null || serialized === '') return null;
+  try {
+    const parsed = BidConfigurationSettingsSchema.safeParse(JSON.parse(serialized));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves only the year-designated configuration source. Session callers
+ * never fall back to whichever book happens to be globally active: that
+ * behavior lets mocks silently rehearse a different policy than the one being
+ * configured for the annual Bid.
+ */
+export async function loadConfiguredBidYearPolicy(
+  db: DB,
+  bidYear: number,
+  mode: BidSessionMode,
+): Promise<
+  { ok: true; policy: ConfiguredBidYearPolicy } | { ok: false; code: ConfiguredBidYearPolicyError }
+> {
+  const year = await db
+    .select({
+      year: bidYears.year,
+      ruleBookVersion: bidYears.ruleBookVersion,
+      positionTemplateVersion: bidYears.positionTemplateVersion,
+      configJson: bidYears.configJson,
+      configurationRevision: bidYears.configurationRevision,
+    })
+    .from(bidYears)
+    .where(eq(bidYears.year, bidYear))
+    .get();
+  if (year === undefined) return { ok: false, code: 'bid_year_not_found' };
+  if (year.ruleBookVersion === null || year.positionTemplateVersion === null) {
+    return { ok: false, code: 'bid_configuration_unconfigured' };
+  }
+  const settings = parseBidConfigurationSettings(year.configJson);
+  if (settings === null) return { ok: false, code: 'bid_configuration_settings_invalid' };
+
+  const book = await db
+    .select({
+      version: ruleBooks.version,
+      effectiveYear: ruleBooks.effectiveYear,
+      status: ruleBooks.status,
+      revision: ruleBooks.revision,
+    })
+    .from(ruleBooks)
+    .where(eq(ruleBooks.version, year.ruleBookVersion))
+    .get();
+  if (book === undefined) return { ok: false, code: 'bid_configuration_rule_book_missing' };
+  if (book.effectiveYear !== bidYear) return { ok: false, code: 'bid_configuration_year_mismatch' };
+  if (mode === 'mock' && book.status !== 'draft') {
+    return { ok: false, code: 'bid_configuration_draft_required' };
+  }
+  if (mode === 'live' && book.status !== 'active') {
+    return { ok: false, code: 'bid_configuration_frozen_required' };
+  }
+
+  const coverage = await loadRuleBookCoverage(db, book.version);
+  if (!coverage.valid) return { ok: false, code: 'rule_book_invalid' };
+  if (coverage.templateVersion !== year.positionTemplateVersion) {
+    return { ok: false, code: 'bid_configuration_template_mismatch' };
+  }
+
+  return {
+    ok: true,
+    policy: {
+      bidYear: year.year,
+      configurationRevision: year.configurationRevision,
+      settings,
+      ruleBookVersion: book.version,
+      ruleBookRevision: book.revision,
+      positionTemplateVersion: year.positionTemplateVersion,
+      coverage,
+    },
+  };
+}
+
 export type BidSessionPolicySnapshotPreparation =
   | {
       ok: true;
-      snapshot: BidSessionPolicySnapshot;
+      snapshot: MaterializedBidSessionPolicySnapshot;
       coverage: RuleBookCoverage;
     }
   | {
@@ -390,9 +554,63 @@ export type BidSessionPolicySnapshotPreparation =
         | 'non_biddable_position_staffing_binding_missing'
         | 'non_biddable_position_staffing_binding_not_approved'
         | 'non_biddable_staffing_position_not_approved'
-        | 'non_biddable_assignment_ambiguous';
+        | 'non_biddable_assignment_ambiguous'
+        | ConfiguredBidYearPolicyError;
       positionIds?: readonly string[];
     };
+
+/**
+ * A rule-book may only be frozen after the Bid-side staffing projection has a
+ * committed, source-backed TeleStaff baseline. A manually entered assignment
+ * or an unreviewed import is useful working data, but it is not evidence that
+ * the annual staffing baseline was reconciled and approved.
+ */
+export async function hasCommittedTeleStaffStaffingBaseline(db: DB): Promise<boolean> {
+  const baseline = await db
+    .select({ importId: assignmentImports.id })
+    .from(assignmentImports)
+    .innerJoin(
+      assignmentObservations,
+      eq(assignmentObservations.assignmentImportId, assignmentImports.id),
+    )
+    .innerJoin(
+      memberAssignments,
+      eq(memberAssignments.sourceObservationId, assignmentObservations.id),
+    )
+    .innerJoin(staffingPositions, eq(staffingPositions.id, memberAssignments.staffingPositionId))
+    .where(
+      and(
+        eq(assignmentImports.status, 'committed'),
+        eq(assignmentImports.sourceSystem, 'telestaff'),
+        eq(memberAssignments.originType, 'TELESTAFF_IMPORT'),
+        eq(memberAssignments.status, 'active'),
+        eq(staffingPositions.reviewStatus, 'approved'),
+      ),
+    )
+    .limit(1)
+    .get();
+  return baseline !== undefined;
+}
+
+/**
+ * Read-only publication preflight. It deliberately reuses the same staffing
+ * and administrative-position checks used to build a mock session snapshot,
+ * so a draft cannot be published when its future mock/live pool would fail
+ * closed. This helper does not persist a session or modify the configuration.
+ */
+export async function preflightConfiguredRuleBookPublication(
+  db: DB,
+  bidYear: number,
+  capturedAtMs: number,
+): Promise<
+  | BidSessionPolicySnapshotPreparation
+  | { ok: false; code: 'authoritative_staffing_baseline_required' }
+> {
+  if (!(await hasCommittedTeleStaffStaffingBaseline(db))) {
+    return { ok: false, code: 'authoritative_staffing_baseline_required' };
+  }
+  return prepareBidSessionPolicySnapshot(db, bidYear, capturedAtMs, 'mock');
+}
 
 function effectiveOn(date: string, effectiveFrom: string, effectiveTo: string | null): boolean {
   return effectiveFrom <= date && (effectiveTo === null || effectiveTo >= date);
@@ -412,19 +630,25 @@ export async function prepareBidSessionPolicySnapshot(
   db: DB,
   bidYear: number,
   capturedAtMs: number,
+  mode: BidSessionMode,
 ): Promise<BidSessionPolicySnapshotPreparation> {
-  const active = await loadActiveRuleBookCoverage(db, bidYear);
-  if (active.kind === 'missing') return { ok: false, code: 'no_active_rule_book' };
-  if (active.kind === 'ambiguous') return { ok: false, code: 'active_rule_book_ambiguous' };
-  const coverage = active.coverage;
-  if (!coverage.valid || coverage.templateVersion === null) {
-    return { ok: false, code: 'rule_book_invalid' };
-  }
-
-  const templateVersion = coverage.templateVersion;
+  const configured = await loadConfiguredBidYearPolicy(db, bidYear, mode);
+  if (!configured.ok) return { ok: false, code: configured.code };
+  const { policy } = configured;
+  const { coverage } = policy;
+  const templateVersion = policy.positionTemplateVersion;
   const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
 
-  const [bindings, staffingRows, assignmentRows, memberRows] = await Promise.all([
+  const [
+    bindings,
+    staffingRows,
+    assignmentRows,
+    memberRows,
+    credentialRows,
+    snapshotRuleRows,
+    snapshotPositions,
+    snapshotParticipation,
+  ] = await Promise.all([
     db
       .select({
         positionId: positionStaffingBindings.positionId,
@@ -459,10 +683,52 @@ export async function prepareBidSessionPolicySnapshot(
       .select({
         id: members.id,
         bidCategory: members.bidCategory,
+        rank: members.rank,
         rscSeniority: members.rscSeniority,
         rankSeniority: members.rankSeniority,
+        isProbationary: members.isProbationary,
       })
       .from(members)
+      .all(),
+    db
+      .select({ memberId: memberCredentials.memberId, name: credentials.name })
+      .from(memberCredentials)
+      .innerJoin(credentials, eq(memberCredentials.credentialId, credentials.id))
+      .all(),
+    db
+      .select({
+        ruleBookVersion: positionRules.ruleBookVersion,
+        positionId: positionRules.positionId,
+        templateVersion: positionRules.templateVersion,
+        requiredCriteriaJson: positionRules.requiredCriteriaJson,
+        pointsPreferenceJson: positionRules.pointsPreferenceJson,
+        tieBreakChainJson: positionRules.tieBreakChainJson,
+      })
+      .from(positionRules)
+      .where(eq(positionRules.ruleBookVersion, policy.ruleBookVersion))
+      .all(),
+    db
+      .select({
+        id: positions.id,
+        templateVersion: positions.templateVersion,
+        isExcludedFromCount: positions.isExcludedFromCount,
+        shift: positions.shift,
+        station: positions.station,
+        unit: positions.unit,
+        rankRequired: positions.rankRequired,
+        positionName: positions.positionName,
+      })
+      .from(positions)
+      .where(eq(positions.templateVersion, templateVersion))
+      .all(),
+    db
+      .select({
+        positionId: ruleBookPositionParticipation.positionId,
+        templateVersion: ruleBookPositionParticipation.templateVersion,
+        bidParticipation: ruleBookPositionParticipation.bidParticipation,
+      })
+      .from(ruleBookPositionParticipation)
+      .where(eq(ruleBookPositionParticipation.ruleBookVersion, policy.ruleBookVersion))
       .all(),
   ]);
 
@@ -556,52 +822,136 @@ export async function prepareBidSessionPolicySnapshot(
   const assignmentByMember = new Map(
     applicableAssignments.map((assignment) => [assignment.memberId, assignment]),
   );
-  const frozenMembers: FrozenBidPoolMember[] = memberRows.map((member) => {
-    const administrativeAssignment = assignmentByMember.get(member.id);
-    if (administrativeAssignment !== undefined) {
-      return {
-        memberId: member.id,
-        pool: 'EXCLUDED',
-        rscSeniority: member.rscSeniority,
-        rankSeniority: member.rankSeniority,
-        exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
-        authoritativeAssignmentId: administrativeAssignment.id,
+  const credentialNamesByMember = new Map<number, string[]>();
+  for (const credential of credentialRows) {
+    credentialNamesByMember.set(credential.memberId, [
+      ...(credentialNamesByMember.get(credential.memberId) ?? []),
+      credential.name,
+    ]);
+  }
+  for (const [memberId, names] of credentialNamesByMember.entries()) {
+    credentialNamesByMember.set(
+      memberId,
+      [...new Set(names)].sort((left, right) => left.localeCompare(right)),
+    );
+  }
+
+  const frozenMembers: FrozenBidEligibilityMember[] = memberRows
+    .map<FrozenBidEligibilityMember>((member) => {
+      const administrativeAssignment = assignmentByMember.get(member.id);
+      const eligibility = {
+        rank: member.rank,
+        isProbationary: member.isProbationary,
+        credentialNames: credentialNamesByMember.get(member.id) ?? [],
       };
-    }
-    if (member.bidCategory === 'EXCLUDED') {
+      if (administrativeAssignment !== undefined) {
+        return {
+          memberId: member.id,
+          pool: 'EXCLUDED',
+          rscSeniority: member.rscSeniority,
+          rankSeniority: member.rankSeniority,
+          exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+          authoritativeAssignmentId: administrativeAssignment.id,
+          ...eligibility,
+        };
+      }
+
+      // The database column is intentionally treated as untrusted here. A
+      // value outside the two biddable pools must not become eligible merely
+      // because a source constraint was bypassed or a legacy row is malformed.
+      const pool: FrozenBidPoolMember['pool'] =
+        member.bidCategory === 'OFC' || member.bidCategory === 'FF'
+          ? member.bidCategory
+          : 'EXCLUDED';
+      if (pool === 'EXCLUDED') {
+        return {
+          memberId: member.id,
+          pool,
+          rscSeniority: member.rscSeniority,
+          rankSeniority: member.rankSeniority,
+          exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+          authoritativeAssignmentId: null,
+          ...eligibility,
+        };
+      }
       return {
         memberId: member.id,
-        pool: 'EXCLUDED',
+        pool,
         rscSeniority: member.rscSeniority,
         rankSeniority: member.rankSeniority,
-        exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+        exclusionReason: null,
         authoritativeAssignmentId: null,
+        ...eligibility,
       };
-    }
-    return {
-      memberId: member.id,
-      pool: member.bidCategory,
-      rscSeniority: member.rscSeniority,
-      rankSeniority: member.rankSeniority,
-      exclusionReason: null,
-      authoritativeAssignmentId: null,
-    };
-  });
+    })
+    .sort((left, right) => left.memberId - right.memberId);
+
+  const participationByPositionId = new Map(
+    snapshotParticipation.map((participation) => [participation.positionId, participation]),
+  );
+  const ruleBookMaterial = {
+    v: 1 as const,
+    rules: snapshotRuleRows
+      .map((row) => ({
+        ruleBookVersion: row.ruleBookVersion,
+        positionId: row.positionId,
+        templateVersion: row.templateVersion,
+        requiredCriteriaJson: row.requiredCriteriaJson,
+        pointsPreferenceJson: row.pointsPreferenceJson,
+        tieBreakChainJson: row.tieBreakChainJson,
+      }))
+      .sort((left, right) => left.positionId.localeCompare(right.positionId)),
+    positions: snapshotPositions
+      .map((position) => {
+        const participation = participationByPositionId.get(position.id);
+        return {
+          id: position.id,
+          templateVersion: position.templateVersion,
+          bidParticipation:
+            participation?.templateVersion === position.templateVersion
+              ? participation.bidParticipation
+              : ('BIDDABLE' as const),
+          isExcludedFromCount: position.isExcludedFromCount,
+          shift: position.shift,
+          station: position.station,
+          unit: position.unit,
+          rankRequired: position.rankRequired,
+          positionName: position.positionName,
+        };
+      })
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
 
   const snapshot = BidSessionPolicySnapshotSchema.parse({
-    v: 1,
+    v: 3,
     ruleBookVersion: coverage.ruleBookVersion,
+    ruleBookRevision: policy.ruleBookRevision,
     positionTemplateVersion: templateVersion,
+    configurationRevision: policy.configurationRevision,
+    settings: policy.settings,
     capturedAtMs,
     members: frozenMembers,
+    ruleBookMaterial,
   });
-  return { ok: true, snapshot, coverage };
+  if (snapshot.v !== 3) {
+    return { ok: false, code: 'rule_book_invalid' };
+  }
+  const snapshotCoverage = loadV3SnapshotRuleBookCoverage(snapshot);
+  if (
+    !snapshotCoverage.valid ||
+    snapshotCoverage.templateVersion !== snapshot.positionTemplateVersion
+  ) {
+    return { ok: false, code: 'rule_book_invalid' };
+  }
+  return { ok: true, snapshot, coverage: snapshotCoverage };
 }
 
 export interface SessionPolicySnapshotLoad {
   snapshot: BidSessionPolicySnapshot | null;
   error: 'missing' | 'invalid' | null;
 }
+
+type MaterializedBidSessionPolicySnapshot = Extract<BidSessionPolicySnapshot, { v: 3 }>;
 
 /** Reads a frozen session policy without falling back to mutable live data. */
 export async function loadBidSessionPolicySnapshot(
@@ -612,6 +962,7 @@ export async function loadBidSessionPolicySnapshot(
     .select({
       ruleBookVersion: bidSessionPolicySnapshots.ruleBookVersion,
       positionTemplateVersion: bidSessionPolicySnapshots.positionTemplateVersion,
+      ruleBookRevision: bidSessionPolicySnapshots.ruleBookRevision,
       snapshotJson: bidSessionPolicySnapshots.snapshotJson,
       capturedAt: bidSessionPolicySnapshots.capturedAt,
     })
@@ -624,7 +975,9 @@ export async function loadBidSessionPolicySnapshot(
     snapshot === null ||
     snapshot.ruleBookVersion !== row.ruleBookVersion ||
     snapshot.positionTemplateVersion !== row.positionTemplateVersion ||
-    snapshot.capturedAtMs !== row.capturedAt.getTime()
+    snapshot.capturedAtMs !== row.capturedAt.getTime() ||
+    (snapshot.v !== 1 && snapshot.ruleBookRevision !== row.ruleBookRevision) ||
+    (snapshot.v === 1 && row.ruleBookRevision !== null)
   ) {
     return { snapshot: null, error: 'invalid' };
   }
@@ -632,13 +985,16 @@ export async function loadBidSessionPolicySnapshot(
 }
 
 export type FrozenSessionBidPolicy =
-  | { ok: true; snapshot: BidSessionPolicySnapshot; coverage: RuleBookCoverage }
+  | { ok: true; snapshot: MaterializedBidSessionPolicySnapshot; coverage: RuleBookCoverage }
   | {
       ok: false;
       code:
         | 'session_policy_snapshot_missing'
         | 'session_policy_snapshot_invalid'
-        | 'session_rule_book_invalid';
+        | 'session_policy_snapshot_material_missing'
+        | 'session_rule_book_invalid'
+        | 'session_rule_book_revision_changed'
+        | 'session_policy_snapshot_revision_missing';
     };
 
 /**
@@ -660,7 +1016,16 @@ export async function loadFrozenSessionBidPolicy(
           : 'session_policy_snapshot_missing',
     };
   }
-  const coverage = await loadRuleBookCoverage(db, loaded.snapshot.ruleBookVersion);
+  // V1/V2 retain only a pointer to mutable source data. Re-reading that source
+  // later would rewrite an established session's effective policy, so those
+  // records are intentionally inspectable only and fail closed for Bid engine
+  // actions. A session with no immutable material cannot be reconstructed
+  // accurately after the fact.
+  if (loaded.snapshot.v !== 3) {
+    return { ok: false, code: 'session_policy_snapshot_material_missing' };
+  }
+
+  const coverage = loadV3SnapshotRuleBookCoverage(loaded.snapshot);
   if (!coverage.valid || coverage.templateVersion !== loaded.snapshot.positionTemplateVersion) {
     return { ok: false, code: 'session_rule_book_invalid' };
   }
@@ -680,7 +1045,10 @@ export type FrozenSessionBidTarget =
       code:
         | 'session_policy_snapshot_missing'
         | 'session_policy_snapshot_invalid'
+        | 'session_policy_snapshot_material_missing'
         | 'session_rule_book_invalid'
+        | 'session_rule_book_revision_changed'
+        | 'session_policy_snapshot_revision_missing'
         | 'member_not_in_bid_pool'
         | 'member_excluded_from_bid_pool'
         | 'position_not_biddable';
@@ -713,33 +1081,6 @@ export async function resolveFrozenSessionBidTarget(
   const rule = frozen.coverage.rules.find((entry) => entry.positionId === input.positionId);
   if (rule === undefined) return { ok: false, code: 'position_not_biddable' };
   return { ...frozen, member, rule };
-}
-
-/**
- * Compatibility boundary for an already-created, pristine mock only. Fresh
- * sessions are always snapshotted atomically at creation. This helper lets a
- * legacy mock created before migration 0023 acquire a one-time frozen input
- * before any rehearsal action; live sessions never receive this fallback.
- */
-export async function captureLegacyMockSessionPolicySnapshot(
-  db: DB,
-  input: { bidSessionId: string; bidYear: number; capturedAtMs: number },
-): Promise<FrozenSessionBidPolicy | BidSessionPolicySnapshotPreparation> {
-  const existing = await loadFrozenSessionBidPolicy(db, input.bidSessionId);
-  if (existing.ok || existing.code !== 'session_policy_snapshot_missing') return existing;
-  const prepared = await prepareBidSessionPolicySnapshot(db, input.bidYear, input.capturedAtMs);
-  if (!prepared.ok) return prepared;
-  await db
-    .insert(bidSessionPolicySnapshots)
-    .values({
-      bidSessionId: input.bidSessionId,
-      ruleBookVersion: prepared.snapshot.ruleBookVersion,
-      positionTemplateVersion: prepared.snapshot.positionTemplateVersion,
-      snapshotJson: JSON.stringify(prepared.snapshot),
-      capturedAt: new Date(input.capturedAtMs),
-    })
-    .onConflictDoNothing();
-  return loadFrozenSessionBidPolicy(db, input.bidSessionId);
 }
 
 /** Uses the frozen session representation as the only source of pool membership. */

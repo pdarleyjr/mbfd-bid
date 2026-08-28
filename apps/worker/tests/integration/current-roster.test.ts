@@ -24,6 +24,11 @@ async function adminJwt(): Promise<string> {
 
 interface CurrentRosterResponse {
   asOf: string;
+  administrativeAssignmentPolicy: {
+    status: 'configured' | 'unconfigured';
+    bidYear: number;
+    ruleBookVersion: string | null;
+  };
   positions: Array<{
     id: string;
     shift: string | null;
@@ -72,7 +77,8 @@ describe('Current Roster admin projection', () => {
          ('assignment-b-ended', 2, 'slot-b', 'ADMIN_TRANSFER', 'synthetic-adjustment-b', 'ended', '2026-01-01', '2026-03-31', ${now}, ${now}),
          ('assignment-b211', 3, 'slot-b211', 'ADMIN_TRANSFER', 'synthetic-adjustment-b211', 'active', '2026-01-01', NULL, ${now}, ${now});
 
-       INSERT INTO bid_years (year, status) VALUES (2026, 'configuring');
+        INSERT INTO bid_years (year, status, rule_book_version)
+        VALUES (2026, 'configuring', '2026.synthetic');
        INSERT INTO position_templates (version, effective_year) VALUES ('2026.synthetic', 2026);
        INSERT INTO positions
          (id, template_version, shift, station, division, unit, rank_required, position_name)
@@ -117,6 +123,11 @@ describe('Current Roster admin projection', () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as CurrentRosterResponse;
     expect(body.asOf).toBe(AS_OF);
+    expect(body.administrativeAssignmentPolicy).toEqual({
+      status: 'configured',
+      bidYear: 2026,
+      ruleBookVersion: '2026.synthetic',
+    });
     expect(body.summary).toEqual({
       totalPositions: 3,
       occupiedPositions: 2,
@@ -155,6 +166,64 @@ describe('Current Roster admin projection', () => {
       'SELECT id, status FROM member_assignments ORDER BY id',
     );
     expect(afterAssignments.results).toEqual(beforeAssignments.results);
+  });
+
+  it('uses the requested year designated rule book rather than global active-rule-book state', async () => {
+    await h.db.run(
+      `UPDATE rule_books SET status = 'archived' WHERE version = '2026.synthetic';
+       INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.unrelated', 2026, 'draft');
+       INSERT INTO rule_book_position_participation
+         (rule_book_version, position_id, template_version, bid_participation, authoritative_source_ref, created_at)
+       VALUES
+         ('2026.unrelated', 'B211', '2026.synthetic', 'BIDDABLE', 'synthetic-unrelated-policy', 1);
+       UPDATE rule_books SET status = 'active' WHERE version = '2026.unrelated';`,
+    );
+
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/current-roster?as_of=${AS_OF}`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as CurrentRosterResponse;
+    expect(body.administrativeAssignmentPolicy).toEqual({
+      status: 'configured',
+      bidYear: 2026,
+      ruleBookVersion: '2026.synthetic',
+    });
+    expect(body.positions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'slot-b211', administrativeAssignment: true }),
+      ]),
+    );
+    expect(body.summary.administrativelyAssignedNonBiddablePositions).toBe(1);
+  });
+
+  it('reports an explicitly unconfigured policy instead of inferring from an active rule book', async () => {
+    await h.db.run('UPDATE bid_years SET rule_book_version = NULL WHERE year = 2026');
+
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/current-roster?as_of=${AS_OF}`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as CurrentRosterResponse;
+    expect(body.administrativeAssignmentPolicy).toEqual({
+      status: 'unconfigured',
+      bidYear: 2026,
+      ruleBookVersion: null,
+    });
+    expect(body.positions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'slot-b211', administrativeAssignment: false }),
+      ]),
+    );
+    expect(body.summary.administrativelyAssignedNonBiddablePositions).toBe(0);
   });
 
   it('filters by shift, station, unit, and applicable rank without interpreting a vacancy as a Bid opportunity', async () => {

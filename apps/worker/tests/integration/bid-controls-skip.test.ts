@@ -53,14 +53,17 @@ describe('POST /api/admin/bid-session/:id/skip', () => {
     );
     await h.db.run(
       `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
-       VALUES (?, '2026.1', '2026.1', ?, ?);`,
+        (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', 0, ?, ?);`,
       [
         sessionId,
         JSON.stringify({
-          v: 1,
+          v: 3,
           ruleBookVersion: '2026.1',
+          ruleBookRevision: 0,
           positionTemplateVersion: '2026.1',
+          configurationRevision: 0,
+          settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
           capturedAtMs: capturedAt,
           members: [
             {
@@ -70,8 +73,37 @@ describe('POST /api/admin/bid-session/:id/skip', () => {
               rankSeniority: null,
               exclusionReason: null,
               authoritativeAssignmentId: null,
+              rank: 'FF',
+              isProbationary: false,
+              credentialNames: [],
             },
           ],
+          ruleBookMaterial: {
+            v: 1,
+            rules: [
+              {
+                ruleBookVersion: '2026.1',
+                positionId: 'A101',
+                templateVersion: '2026.1',
+                requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+                pointsPreferenceJson: '{"max":0,"items":[]}',
+                tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+              },
+            ],
+            positions: [
+              {
+                id: 'A101',
+                templateVersion: '2026.1',
+                bidParticipation: 'BIDDABLE',
+                isExcludedFromCount: false,
+                shift: 'A',
+                station: '1',
+                unit: 'Engine 1',
+                rankRequired: 'FF',
+                positionName: 'Firefighter',
+              },
+            ],
+          },
         }),
         capturedAt,
       ],
@@ -128,7 +160,7 @@ describe('POST /api/admin/bid-session/:id/skip', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 404 when member does not exist', async () => {
+  it('rejects a member outside the captured V3 Bid pool', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/skip`, {
         method: 'POST',
@@ -144,6 +176,7 @@ describe('POST /api/admin/bid-session/:id/skip', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ error: 'member_not_in_bid_pool' });
   });
 });

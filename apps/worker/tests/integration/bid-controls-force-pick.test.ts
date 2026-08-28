@@ -58,14 +58,17 @@ describe('POST /api/admin/bid-session/:id/force-pick', () => {
     );
     await h.db.run(
       `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
-       VALUES (?, '2026.1', '2026.1', ?, ?);`,
+        (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', 0, ?, ?);`,
       [
         sessionId,
         JSON.stringify({
-          v: 1,
+          v: 3,
           ruleBookVersion: '2026.1',
+          ruleBookRevision: 0,
           positionTemplateVersion: '2026.1',
+          configurationRevision: 0,
+          settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
           capturedAtMs: capturedAt,
           members: [
             {
@@ -75,8 +78,37 @@ describe('POST /api/admin/bid-session/:id/force-pick', () => {
               rankSeniority: null,
               exclusionReason: null,
               authoritativeAssignmentId: null,
+              rank: 'FF',
+              isProbationary: false,
+              credentialNames: [],
             },
           ],
+          ruleBookMaterial: {
+            v: 1,
+            rules: [
+              {
+                ruleBookVersion: '2026.1',
+                positionId: 'A205',
+                templateVersion: '2026.1',
+                requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+                pointsPreferenceJson: '{"max":0,"items":[]}',
+                tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
+              },
+            ],
+            positions: [
+              {
+                id: 'A205',
+                templateVersion: '2026.1',
+                bidParticipation: 'BIDDABLE',
+                isExcludedFromCount: false,
+                shift: 'A',
+                station: '2',
+                unit: 'Rescue',
+                rankRequired: 'FF',
+                positionName: 'Rescue Firefighter',
+              },
+            ],
+          },
         }),
         capturedAt,
       ],
@@ -86,7 +118,8 @@ describe('POST /api/admin/bid-session/:id/force-pick', () => {
     await teardownTestD1(h);
   });
 
-  it('records a bid with forced=true and admin_actor_id', async () => {
+  it('records a bid with forced=true and no invented actor when the admin is not a member', async () => {
+    h.sqlite.pragma('foreign_keys = ON');
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/force-pick`, {
         method: 'POST',
@@ -112,10 +145,10 @@ describe('POST /api/admin/bid-session/:id/force-pick', () => {
       [body.bid_id],
     );
     const r = rows.results[0] as
-      | { forced: number; admin_actor_id: number; reason: string; position_id: string }
+      | { forced: number; admin_actor_id: number | null; reason: string; position_id: string }
       | undefined;
     expect(r?.forced).toBe(1);
-    expect(r?.admin_actor_id).toBe(0);
+    expect(r?.admin_actor_id).toBeNull();
     expect(r?.position_id).toBe('A205');
   });
 
@@ -141,6 +174,42 @@ describe('POST /api/admin/bid-session/:id/force-pick', () => {
       [sessionId],
     );
     expect(audit.results[0]?.n).toBe(1);
+  });
+
+  it('does not let an unstarted live session bypass the normal start gate', async () => {
+    await h.db.run("UPDATE bid_sessions SET current_phase = 'config' WHERE id = ?", [sessionId]);
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/force-pick`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await freshAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          member_id: 42,
+          position_id: 'A205',
+          reason_code: 'force.cert_mandate',
+          reason: 'A config-phase session cannot receive a real award.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'bid_session_not_active', current_phase: 'config' });
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
+        .results,
+    ).toEqual([{ n: 0 }]);
+    expect(
+      (
+        await h.db.run(
+          "SELECT count(*) AS n FROM audit_log WHERE action = 'forced_pick' AND bid_session_id = ?",
+          [sessionId],
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
   });
 
   it('rejects a canonical session before creating a legacy bid or audit row', async () => {

@@ -1,3 +1,4 @@
+import { evaluateEligibility } from '@mbfd/eligibility';
 import {
   type AuditEvent,
   BID_EVENT_VERSION,
@@ -37,6 +38,8 @@ import {
 import { computeBidOrder } from '../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
+  eligibilityMemberFromFrozen,
+  frozenEligibilityMemberForSession,
   loadFrozenSessionBidPolicy,
   resolveFrozenSessionBidTarget,
 } from '../lib/bid-policy.js';
@@ -93,7 +96,10 @@ type FrozenPoolGuard =
       code:
         | 'session_policy_snapshot_missing'
         | 'session_policy_snapshot_invalid'
+        | 'session_policy_snapshot_material_missing'
         | 'session_rule_book_invalid'
+        | 'session_rule_book_revision_changed'
+        | 'session_policy_snapshot_revision_missing'
         | 'member_not_in_bid_pool'
         | 'member_excluded_from_bid_pool'
         | 'bid_order_not_frozen_policy';
@@ -795,6 +801,46 @@ export class BidSessionDO implements DurableObject {
             idempotencyKey: msg.idempotencyKey,
             code: 'NOT_ELIGIBLE',
             message: frozenPolicyRejectionMessage(policyTarget.code),
+          } satisfies PickRejectedEvent,
+          state.lastSeq,
+        );
+        await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
+        this.send(client.socket, envelope);
+        return;
+      }
+
+      const frozenEligibilityMember = frozenEligibilityMemberForSession(
+        policyTarget.snapshot,
+        client.memberId,
+      );
+      if (frozenEligibilityMember === null) {
+        const envelope = this.envelope(
+          'pick_rejected',
+          {
+            idempotencyKey: msg.idempotencyKey,
+            code: 'NOT_ELIGIBLE',
+            message: 'Immutable session eligibility material is unavailable.',
+          } satisfies PickRejectedEvent,
+          state.lastSeq,
+        );
+        await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
+        this.send(client.socket, envelope);
+        return;
+      }
+      const eligibility = evaluateEligibility(
+        eligibilityMemberFromFrozen(frozenEligibilityMember),
+        policyTarget.rule,
+      );
+      if (!eligibility.eligible) {
+        const envelope = this.envelope(
+          'pick_rejected',
+          {
+            idempotencyKey: msg.idempotencyKey,
+            code: 'NOT_ELIGIBLE',
+            message: `Not eligible: ${eligibility.reasons
+              .filter((reason) => !reason.satisfied)
+              .map((reason) => reason.label)
+              .join('; ')}`,
           } satisfies PickRejectedEvent,
           state.lastSeq,
         );

@@ -18,6 +18,7 @@ const auditActionEnum = z.enum([
   'credentials_import',
   'positions_clone',
   'rule_book_clone',
+  'bid_configuration_set',
 ]);
 
 export const AuditQuerySchema = z

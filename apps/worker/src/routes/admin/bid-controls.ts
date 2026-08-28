@@ -11,10 +11,15 @@ import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
-import { type DB, getDb } from '../../db/index.js';
-import { bidSessions, bids, credentials, memberCredentials, members } from '../../db/schema.js';
+import { getDb } from '../../db/index.js';
+import { bidSessions, bids } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
-import { loadFrozenSessionBidPolicy, resolveFrozenSessionBidTarget } from '../../lib/bid-policy.js';
+import {
+  eligibilityMemberFromFrozen,
+  frozenEligibilityMemberForSession,
+  loadFrozenSessionBidPolicy,
+  resolveFrozenSessionBidTarget,
+} from '../../lib/bid-policy.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -22,29 +27,12 @@ import { requireAdmin } from './middleware.js';
 
 type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
-async function loadMemberWithCreds(db: DB, memberId: number) {
-  const m = await db.select().from(members).where(eq(members.id, memberId)).get();
-  if (m === undefined) return null;
-  const memberCreds = await db
-    .select({ name: credentials.name })
-    .from(memberCredentials)
-    .innerJoin(credentials, eq(memberCredentials.credentialId, credentials.id))
-    .where(eq(memberCredentials.memberId, memberId))
-    .all();
-  return {
-    employeeId: m.employeeId,
-    firstName: m.firstName,
-    lastName: m.lastName,
-    rank: m.rank,
-    rscSeniority: m.rscSeniority,
-    rankSeniority: m.rankSeniority ?? undefined,
-    isProbationary: m.isProbationary,
-    credentials: memberCreds.map((c) => ({ name: c.name })),
-  };
-}
-
 function frozenPolicyFailureStatus(code: string): 409 | 422 {
   return code.startsWith('session_') ? 409 : 422;
+}
+
+function isBidCommandPhase(phase: string): boolean {
+  return phase === 'position_bid' || phase === 'a_day_bid';
 }
 
 const router = new Hono<Env>();
@@ -77,9 +65,6 @@ router.post(
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
 
-    const member = await db.select().from(members).where(eq(members.id, body.member_id)).get();
-    if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
-
     // A force-pick is an override of turn order, never an override of the
     // frozen policy boundary. In particular, neither an excluded Division
     // Chief nor an administratively assigned non-biddable position can be
@@ -91,6 +76,13 @@ router.post(
     });
     if (!target.ok) {
       return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
+    }
+    // A direct administrative pick cannot create a real Bid before the normal
+    // session-start gate has admitted it. `position_bid` and `a_day_bid` are
+    // the only active command phases; a config/paused/completed session must
+    // never gain a pending award through this legacy control path.
+    if (!isBidCommandPhase(session.currentPhase)) {
+      return c.json({ error: 'bid_session_not_active', current_phase: session.currentPhase }, 409);
     }
 
     // Idempotency: header overrides; otherwise generate a stable key.
@@ -105,7 +97,10 @@ router.post(
 
     const bidId = ulid();
     const claims = c.get('claims');
-    const adminActorId = claims.sub > 0 ? claims.sub : 0;
+    // A bridge-only administrator may not have a canonical Bid member row.
+    // Persist NULL rather than the synthetic id 0 so a strict FK cannot turn
+    // an otherwise authorized, active-session action into a 500.
+    const adminActorId = claims.sub > 0 ? claims.sub : null;
     const now = new Date();
 
     // Next ordinal (max+1 in session). Best-effort — final serialization is
@@ -170,9 +165,6 @@ router.post('/:id/skip', requireStepUpAuth(), zValidator('json', SkipSchema), as
     return c.json({ error: 'canonical_mutation_requires_command' }, 409);
   }
 
-  const member = await db.select().from(members).where(eq(members.id, body.member_id)).get();
-  if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
-
   const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
   if (!frozenPolicy.ok) {
     return c.json({ error: frozenPolicy.code }, frozenPolicyFailureStatus(frozenPolicy.code));
@@ -229,9 +221,6 @@ router.post(
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
 
-    const member = await loadMemberWithCreds(db, body.member_id);
-    if (member === null) return c.json({ error: 'member_not_found' }, 404);
-
     const target = await resolveFrozenSessionBidTarget(db, {
       bidSessionId: sessionId,
       memberId: body.member_id,
@@ -240,8 +229,15 @@ router.post(
     if (!target.ok) {
       return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
     }
+    if (!isBidCommandPhase(session.currentPhase)) {
+      return c.json({ error: 'bid_session_not_active', current_phase: session.currentPhase }, 409);
+    }
 
-    const evalResult = evaluateEligibility(member, target.rule);
+    const frozenMember = frozenEligibilityMemberForSession(target.snapshot, body.member_id);
+    if (frozenMember === null) {
+      return c.json({ error: 'session_policy_snapshot_material_missing' }, 409);
+    }
+    const evalResult = evaluateEligibility(eligibilityMemberFromFrozen(frozenMember), target.rule);
     if (!evalResult.eligible) {
       return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);
     }
@@ -255,7 +251,9 @@ router.post(
     }
 
     const claims = c.get('claims');
-    const adminActorId = claims.sub > 0 ? claims.sub : 0;
+    // See force-pick: bridge-only admin identities are auditable by type but
+    // cannot be represented as a nonexistent member id 0.
+    const adminActorId = claims.sub > 0 ? claims.sub : null;
     const bidId = ulid();
 
     await db.insert(bids).values({

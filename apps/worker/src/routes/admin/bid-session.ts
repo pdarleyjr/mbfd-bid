@@ -36,8 +36,10 @@ type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
 const CreateSessionSchema = z.object({
   bid_year: z.number().int().min(2024).max(2100),
-  expected_duration_days: z.number().int().min(1).max(7).default(2),
-  turn_timer_seconds: z.number().int().min(30).max(600).default(180),
+  // These legacy request fields are accepted only to return a typed mismatch.
+  // Session settings themselves always come from the designated annual config.
+  expected_duration_days: z.number().int().min(1).max(7).optional(),
+  turn_timer_seconds: z.number().int().min(30).max(600).optional(),
   is_mock: z.boolean().optional().default(false),
 });
 
@@ -122,7 +124,12 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
   }
   const id = ulid();
   const now = new Date();
-  const policy = await prepareBidSessionPolicySnapshot(db, body.bid_year, now.getTime());
+  const policy = await prepareBidSessionPolicySnapshot(
+    db,
+    body.bid_year,
+    now.getTime(),
+    body.is_mock ? 'mock' : 'live',
+  );
   if (!policy.ok) {
     return c.json(
       {
@@ -133,37 +140,86 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       409,
     );
   }
+  if (
+    (body.expected_duration_days !== undefined &&
+      body.expected_duration_days !== policy.snapshot.settings.expectedDurationDays) ||
+    (body.turn_timer_seconds !== undefined &&
+      body.turn_timer_seconds !== policy.snapshot.settings.turnTimerSeconds)
+  ) {
+    return c.json(
+      {
+        error: 'session_configuration_settings_mismatch',
+        settings: {
+          expected_duration_days: policy.snapshot.settings.expectedDurationDays,
+          turn_timer_seconds: policy.snapshot.settings.turnTimerSeconds,
+        },
+      },
+      409,
+    );
+  }
+  const settings = policy.snapshot.settings;
+  const configurationRevision = policy.snapshot.configurationRevision;
 
   // D1 batch is the session-creation boundary: a newly visible session must
   // always carry the frozen policy input used to build its ordinary Bid pool.
   // No mutable-staffing fallback is allowed after this point.
-  await c.env.DB.batch([
+  const creation = await c.env.DB.batch([
     c.env.DB.prepare(
       `INSERT INTO bid_sessions (
           id, bid_year, started_at, current_phase, turn_timer_seconds,
           expected_duration_days, day_count, is_mock
-        ) VALUES (?, ?, ?, 'config', ?, ?, 0, ?)`,
+        )
+        SELECT ?, ?, ?, 'config', ?, ?, 0, ?
+        WHERE EXISTS (
+          SELECT 1
+          FROM rule_books
+          WHERE version = ?
+            AND revision = ?
+            AND status = ?
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM bid_years
+          WHERE year = ?
+            AND rule_book_version = ?
+            AND position_template_version = ?
+            AND configuration_revision = ?
+        )`,
     ).bind(
       id,
       body.bid_year,
       now.getTime(),
-      body.turn_timer_seconds,
-      body.expected_duration_days,
+      settings.turnTimerSeconds,
+      settings.expectedDurationDays,
       body.is_mock ? 1 : 0,
+      policy.snapshot.ruleBookVersion,
+      policy.snapshot.ruleBookRevision,
+      body.is_mock ? 'draft' : 'active',
+      body.bid_year,
+      policy.snapshot.ruleBookVersion,
+      policy.snapshot.positionTemplateVersion,
+      configurationRevision,
     ),
     c.env.DB.prepare(
       `INSERT INTO bid_session_policy_snapshots (
           bid_session_id, rule_book_version, position_template_version,
-          snapshot_json, captured_at
-        ) VALUES (?, ?, ?, ?, ?)`,
+          rule_book_revision, snapshot_json, captured_at
+        )
+        SELECT ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (SELECT 1 FROM bid_sessions WHERE id = ?)`,
     ).bind(
       id,
       policy.snapshot.ruleBookVersion,
       policy.snapshot.positionTemplateVersion,
+      policy.snapshot.ruleBookRevision,
       JSON.stringify(policy.snapshot),
       now.getTime(),
+      id,
     ),
   ]);
+  if (creation[0]?.meta.changes !== 1 || creation[1]?.meta.changes !== 1) {
+    return c.json({ error: 'bid_configuration_changed' }, 409);
+  }
   await writeAuditLog(db, {
     bidSessionId: id,
     actorType: 'admin',
@@ -176,7 +232,10 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       current_phase: 'config',
       is_mock: body.is_mock,
       rule_book_version: policy.snapshot.ruleBookVersion,
+      rule_book_revision: policy.snapshot.ruleBookRevision,
       position_template_version: policy.snapshot.positionTemplateVersion,
+      configuration_revision: policy.snapshot.configurationRevision,
+      settings,
       pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
     },
   });
@@ -186,7 +245,13 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       current_phase: 'config',
       is_mock: body.is_mock,
       rule_book_version: policy.snapshot.ruleBookVersion,
+      rule_book_revision: policy.snapshot.ruleBookRevision,
       position_template_version: policy.snapshot.positionTemplateVersion,
+      configuration_revision: policy.snapshot.configurationRevision,
+      settings: {
+        expected_duration_days: settings.expectedDurationDays,
+        turn_timer_seconds: settings.turnTimerSeconds,
+      },
       pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
     },
     201,
@@ -209,9 +274,32 @@ router.get('/:id/policy-snapshot', async (c) => {
   if (loaded.snapshot === null) {
     return c.json({ error: 'session_policy_snapshot_invalid', detail: loaded.error }, 409);
   }
+  const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);
+  if (!frozenPolicy.ok) {
+    // Older records have a syntactically valid pointer-only snapshot but no
+    // immutable material. Preserve an explicitly non-operational forensic view
+    // rather than silently resolving it through today's draft. Any malformed
+    // V3 material remains a hard failure and is never represented as valid.
+    if (
+      frozenPolicy.code === 'session_policy_snapshot_material_missing' &&
+      loaded.snapshot.v !== 3
+    ) {
+      return c.json({
+        snapshot: loaded.snapshot,
+        summary: summarizeBidSessionPolicySnapshot(loaded.snapshot),
+        operationally_valid: false,
+        policy_error: frozenPolicy.code,
+      });
+    }
+    return c.json(
+      { error: 'session_policy_snapshot_unavailable', policy_error: frozenPolicy.code },
+      409,
+    );
+  }
   return c.json({
-    snapshot: loaded.snapshot,
-    summary: summarizeBidSessionPolicySnapshot(loaded.snapshot),
+    snapshot: frozenPolicy.snapshot,
+    summary: summarizeBidSessionPolicySnapshot(frozenPolicy.snapshot),
+    operationally_valid: true,
   });
 });
 
@@ -468,35 +556,40 @@ router.post(
   },
 );
 
-// PATCH /api/admin/bid-session/:id/config  (live timer adjustment)
+// PATCH /api/admin/bid-session/:id/config  (immutable-session timer guard)
 router.patch(
   '/:id/config',
   requireStepUpAuth(),
   zValidator('json', TimerConfigSchema),
   async (c) => {
     const id = c.req.param('id');
-    const { turn_timer_seconds } = c.req.valid('json');
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
     if (await hasCanonicalCommandState(c.env, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
-    await db
-      .update(bidSessions)
-      .set({ turnTimerSeconds: turn_timer_seconds })
-      .where(eq(bidSessions.id, id));
-    await writeAuditLog(db, {
-      bidSessionId: id,
-      actorType: 'admin',
-      actorId: actorIdFromClaims(c.get('claims')),
-      action: 'override_rule',
-      targetKind: 'bid_session_config',
-      targetId: id,
-      beforeState: { turn_timer_seconds: s.turnTimerSeconds },
-      afterState: { turn_timer_seconds },
-    });
-    return c.json({ id, turn_timer_seconds });
+    const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);
+    if (!frozenPolicy.ok) {
+      return c.json(
+        {
+          error: 'session_policy_snapshot_unavailable',
+          policy_error: frozenPolicy.code,
+        },
+        409,
+      );
+    }
+    return c.json(
+      {
+        error: 'session_configuration_managed_by_bid_year',
+        configuration_revision: frozenPolicy.snapshot.configurationRevision,
+        settings: {
+          expected_duration_days: frozenPolicy.snapshot.settings.expectedDurationDays,
+          turn_timer_seconds: frozenPolicy.snapshot.settings.turnTimerSeconds,
+        },
+      },
+      409,
+    );
   },
 );
 
