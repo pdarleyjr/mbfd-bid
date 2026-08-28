@@ -1,5 +1,14 @@
 # MBFD Bid v2 implementation log
 
+## 2026-08-28 — POL-015 staging-draft lifecycle checkpoint
+
+- Captured a fresh private D1 Time Travel recovery bookmark, applied additive migration `0023_bid_position_participation.sql` to staging through managed migrations, and verified no pending migrations and zero foreign-key violations. No production database was contacted.
+- The exact runtime decoder mapped active immutable `2026.1` rows 6064/A211, 6138/B211, and 6213/C211 to `required_criteria.custom = pre_bid_pool` with `unsupported_custom`. The policy-owner direction identifies all three as Division Chief administrative staffing positions outside ordinary Bid; it is the authoritative semantic source, while repository policy material is supporting evidence.
+- Through normal authenticated application endpoints only, cloned active `2026.1` to draft `2026.2`, added only the A211/B211/C211 `ADMIN_ASSIGNED_NON_BIDDABLE` participation entries, and deleted only their cloned rules. Audit records exist for all six scoped lifecycle changes. Candidate coverage is valid: 229 expected biddable positions, 229 valid rules, zero invalid/missing/duplicate/non-biddable/unexpected rule positions, zero candidate `pre_bid_pool` rules, and a diff limited to A211/B211/C211.
+- Publication was deliberately not attempted. Staging contains zero staffing positions, zero reviewed position-to-staffing bindings, and zero member assignments, so actual-occupant Officer Pool exclusion cannot be proven and no ordinary mock can freeze truthfully. No staffing, employee, or official active-2026 rule data was invented or changed to force a result.
+- The clean Linux Node 22.22.1 / pnpm 9.12 OpenNext build passed again. Its exact Web source was deployed only to the existing staging custom-domain Worker as version `869f9cb8-ea5e-42d4-a00a-90d1857763f3`; the staging API Worker is version `123264ad-e0ec-402b-87a3-e0366b11ee0d`. A new anonymous browser session rendered the staging PIN gate with zero console errors.
+- GitHub Actions were not used. No production, portal publication/writeback, Media Control, GMKtec, Docker, Cloudflare Tunnel, or unrelated DNS change occurred. The known `extract-zip@2.0.1` high advisory remains unsuppressed and unpatched.
+
 ## 2026-08-27 — POL-015 Division Chief policy implementation checkpoint (source-local)
 
 - The policy owner resolved POL-015: A211, B211, and C211 are administratively assigned staffing positions outside ordinary Bid. They are not a preliminary pool, ranking, tie-break, pass/decline, or automatic-award workflow. Their actual occupants are excluded only when a reviewed authoritative assignment maps them to one of those three staffing slots; a vacancy never turns the slot into a Bid opportunity.
