@@ -24,6 +24,13 @@ export function EligibilityPreviewForm() {
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const selectedRuleBookVersion = version.trim();
+    if (selectedRuleBookVersion === '') {
+      setError('An explicit rule-book version is required.');
+      setResult(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -31,8 +38,8 @@ export function EligibilityPreviewForm() {
       const body: Record<string, unknown> = {
         member_id: Number(memberId),
         position_id: positionId.trim(),
+        rule_book_version: selectedRuleBookVersion,
       };
-      if (version.trim() !== '') body.rule_book_version = version.trim();
       const res = await fetch('/api/admin/eligibility/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -59,6 +66,7 @@ export function EligibilityPreviewForm() {
             type="number"
             value={memberId}
             onChange={(e) => setMemberId(e.target.value)}
+            data-testid="eligibility-member-id"
             className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
             required
           />
@@ -70,21 +78,33 @@ export function EligibilityPreviewForm() {
             value={positionId}
             onChange={(e) => setPositionId(e.target.value.toUpperCase())}
             placeholder="A101"
+            data-testid="eligibility-position-id"
             className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 font-mono text-white"
             required
           />
         </label>
         <label className="block">
-          <span className="text-sm text-slate-300">
-            Rule-book version (required when multiple active annual books exist)
-          </span>
+          <span className="text-sm text-slate-300">Rule-book version</span>
           <input
             type="text"
             value={version}
             onChange={(e) => setVersion(e.target.value)}
             placeholder="2026.1"
+            data-testid="eligibility-rule-book-version"
+            aria-describedby="eligibility-rule-book-version-help"
+            autoComplete="off"
+            pattern="\\d{4}\\.\\d+"
+            title="Enter the exact rule-book version, for example 2026.1."
             className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 font-mono text-white"
+            required
           />
+          <span
+            id="eligibility-rule-book-version-help"
+            className="mt-1 block text-xs text-slate-400"
+          >
+            Required. Preview never infers an active annual rule book; enter the exact version you
+            intend to inspect.
+          </span>
         </label>
         <button
           type="submit"

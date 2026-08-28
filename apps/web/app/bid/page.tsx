@@ -9,7 +9,7 @@ import { redirect } from 'next/navigation';
 import { MockBanner } from '../_components/MockBanner';
 import type { BidderContext } from '../_components/bid/BidderCard';
 import { OnDeckQueue } from '../_components/bid/OnDeckQueue';
-import type { MemberLite } from '../_components/bid/types';
+import type { MemberLite, PositionMeta } from '../_components/bid/types';
 import { BidBoard } from './_components/BidBoard';
 import { BoardHeader } from './_components/BoardHeader';
 
@@ -25,6 +25,9 @@ interface BoardSnapshot {
   members: Record<string, MemberLite>;
   fills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
+  /** V3 immutable rule-book position material; absent material remains a
+   * fail-closed no-data state in session-bound client components. */
+  positions?: PositionMeta[];
   isMock?: boolean;
 }
 
@@ -98,6 +101,7 @@ export default async function BidPage({
         initialFills={board.fills}
         eligiblePositionIds={eligiblePositionIds}
         members={board.members ?? {}}
+        positions={board.positions}
         wsBase={getWorkerBase()}
       />
     </main>

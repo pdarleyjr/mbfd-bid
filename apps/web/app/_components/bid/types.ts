@@ -20,13 +20,19 @@ export interface PositionMeta {
   id: string;
   shift: Shift;
   station: string;
-  division: string;
+  /** Historical display-only fallback data may have this while a frozen
+   * session position intentionally does not. */
+  division?: string;
   unit: string;
   rankRequired: string;
   positionName: string;
   isFloating?: boolean;
   isVacantByDesign?: boolean;
   isExcludedFromCount?: boolean;
+  /** Present for the immutable session material returned by /api/board. */
+  templateVersion?: string;
+  /** Present for the immutable session material returned by /api/board. */
+  bidParticipation?: 'BIDDABLE' | 'ADMIN_ASSIGNED_NON_BIDDABLE';
 }
 
 export const ALL_SHIFTS: ReadonlyArray<Shift> = ['A', 'B', 'C', 'D'];

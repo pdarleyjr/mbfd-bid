@@ -48,7 +48,7 @@ export function PublishButton({ version }: { version: string }) {
         onClick={() => setOpen(true)}
         className="rounded bg-red-700 px-4 py-2 text-white hover:bg-red-600"
       >
-        Publish
+        Review publication gate
       </button>
 
       {open && (
@@ -56,10 +56,13 @@ export function PublishButton({ version }: { version: string }) {
           open
           className="fixed inset-0 m-auto w-full max-w-md rounded border border-slate-700 bg-slate-900 p-6 text-slate-200"
         >
-          <h2 className="font-heading text-lg text-white">Publish rule book {version}</h2>
+          <h2 className="font-heading text-lg text-white">
+            Publication gate for rule book {version}
+          </h2>
           <p className="mt-2 text-sm text-slate-300">
-            This will archive the currently active book for this year and promote {version} to
-            active.
+            This request does not guarantee publication. The server independently checks draft
+            validation and designated annual-configuration state. This UI neither authorizes nor
+            proves a promotion.
           </p>
           <label className="mt-4 block">
             <span className="text-sm text-slate-300">Reason (min 4 chars)</span>
@@ -89,7 +92,7 @@ export function PublishButton({ version }: { version: string }) {
               disabled={submitting || reason.trim().length < 4}
               className="rounded bg-red-700 px-3 py-1 text-white hover:bg-red-600 disabled:opacity-50"
             >
-              Confirm publish
+              Request server-side publication review
             </button>
           </div>
         </dialog>

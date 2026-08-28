@@ -1,6 +1,6 @@
 'use client';
 import type { BidderContext } from '../../../_components/bid/BidderCard';
-import type { MemberLite } from '../../../_components/bid/types';
+import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { AdminBoard } from './AdminBoard';
 import { BidRoster } from './BidRoster';
 import { LiveCommandBar } from './LiveCommandBar';
@@ -29,6 +29,8 @@ interface Props {
   jwt: string;
   initialFills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   members: Record<string, MemberLite>;
+  /** Immutable material returned by /api/board for this exact session. */
+  positions?: readonly PositionMeta[] | undefined;
   wsBase: string;
   /** Drives which manual-pick endpoint the UI calls (mock → no step-up). */
   isMock: boolean;
@@ -44,6 +46,8 @@ export function AdminBidShell(props: Props) {
       <div className="flex h-full min-h-[calc(100vh-57px)] flex-col">
         <LiveCommandBar
           bidSessionId={props.bidSessionId}
+          isMock={props.isMock}
+          lastSeq={props.lastSeq}
           jwt={props.jwt}
           currentPhase={props.currentPhase}
           sessionStartedAt={props.sessionStartedAt}
@@ -62,6 +66,8 @@ export function AdminBidShell(props: Props) {
           currentBidderId={props.currentBidderId}
           fills={props.initialFills}
           preview={props.bidOrderPreview}
+          positions={props.positions}
+          snapshotBound
         />
 
         <div className="flex min-h-0 flex-1 flex-row">
@@ -74,6 +80,7 @@ export function AdminBidShell(props: Props) {
               initialFills={props.initialFills}
               initialCurrentBidderId={props.currentBidderId}
               members={props.members}
+              positions={props.positions}
               wsBase={props.wsBase}
             />
           </div>

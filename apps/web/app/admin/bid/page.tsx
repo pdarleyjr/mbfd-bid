@@ -10,7 +10,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { MockBanner } from '../../_components/MockBanner';
 import type { BidderContext } from '../../_components/bid/BidderCard';
-import type { MemberLite } from '../../_components/bid/types';
+import type { MemberLite, PositionMeta } from '../../_components/bid/types';
 import { AdminBidShell } from './_components/AdminBidShell';
 
 export const dynamic = 'force-dynamic';
@@ -30,6 +30,8 @@ interface BoardSnapshot {
   sessionStartedAt: number | null;
   turnStartedAtMs?: number;
   turnTimerSeconds?: number;
+  /** V3 immutable rule-book position material for this exact session. */
+  positions?: PositionMeta[];
 }
 
 interface ActiveSessionResponse {
@@ -81,8 +83,11 @@ export default async function AdminBidPage({
         </header>
         <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
           No active bid session is available.
-          <Link href={'/admin/sessions/new' as Route} className="ml-2 font-semibold underline">
-            Create a session
+          <Link
+            href={'/admin/sessions/new?mock=1' as Route}
+            className="ml-2 font-semibold underline"
+          >
+            Create a mock rehearsal session
           </Link>
         </div>
       </div>
@@ -126,6 +131,7 @@ export default async function AdminBidPage({
         jwt={jwt}
         initialFills={board.fills}
         members={board.members ?? {}}
+        positions={board.positions}
         wsBase={getWorkerBase()}
         isMock={board.isMock === true}
       />

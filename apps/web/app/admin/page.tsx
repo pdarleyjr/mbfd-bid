@@ -2,82 +2,80 @@ import { requireAdmin } from '@/lib/require-admin';
 import type { Route } from 'next';
 import Link from 'next/link';
 
-type LinkEntry = { href: string; title: string; description: string; emphasis?: boolean };
+type ControlArea = {
+  href: string;
+  title: string;
+  description: string;
+  state: string;
+  stateClassName: string;
+};
 
-// Primary actions surfaced as larger cards at the top.
-const PRIMARY_ACTIONS: LinkEntry[] = [
+const CONTROL_AREAS: readonly ControlArea[] = [
   {
-    href: '/admin/rehearsal',
-    title: 'Mock Draft / Rehearsal',
+    href: '/admin/current-rosters',
+    title: 'Current Rosters',
     description:
-      'Spin up a mock session, proxy-bid for members, run auto-bid, log findings. Use this before going live.',
-    emphasis: true,
+      'Read the Bid-side staffing projection without treating vacancies as bid openings.',
+    state: 'Baseline pending',
+    stateClassName: 'text-amber-200',
   },
   {
-    href: '/admin/sessions/new',
-    title: 'New Bid Session',
-    description: 'Configure and start a new live bid session.',
-    emphasis: true,
-  },
-  {
-    href: '/admin/bid',
-    title: 'Live Bid Console',
-    description: 'Watch picks land in real time, override, skip, and freeze the session.',
-    emphasis: true,
-  },
-];
-
-// Secondary tools below.
-const SECONDARY_LINKS: LinkEntry[] = [
-  {
-    href: '/admin/eligibility',
-    title: 'Eligibility Preview',
-    description: 'Test whether a member is eligible for a position without committing a pick.',
-  },
-  {
-    href: '/admin/audit',
-    title: 'Audit Log',
-    description: 'Search, filter, and export the event audit trail.',
-  },
-  {
-    href: '/admin/exports',
-    title: 'Exports',
-    description: 'Roster PDFs (per shift) and audit-log CSV downloads.',
-  },
-  {
-    href: '/admin/rule-books',
-    title: 'Rule Books',
-    description: 'View, draft, and publish rule book versions.',
-  },
-  {
-    href: '/admin/rules',
-    title: 'Position Rules',
-    description: 'Inspect required criteria, points preferences, and tie-break chains.',
-  },
-  {
-    href: '/admin/positions',
-    title: 'Positions',
-    description: 'View bid positions grouped by shift and station.',
+    href: '/admin/telestaff',
+    title: 'TeleStaff',
+    description: 'Review the controlled staffing-source intake and reconciliation boundary.',
+    state: 'Read-only landing',
+    stateClassName: 'text-amber-200',
   },
   {
     href: '/admin/members',
-    title: 'Members',
-    description: 'View and search all department members.',
+    title: 'Members & Credentials',
+    description: 'Review member and credential records separately from operational staffing.',
+    state: 'Administration',
+    stateClassName: 'text-slate-300',
   },
   {
-    href: '/admin/credentials',
-    title: 'Credentials',
-    description: 'Browse certification types and point values.',
+    href: '/admin/bid-setup',
+    title: 'Bid Setup',
+    description:
+      'Inspect rule books, positions, rules, and eligibility before a lifecycle decision.',
+    state: 'Configuration workspace',
+    stateClassName: 'text-slate-300',
   },
   {
-    href: '/admin/members/import',
-    title: 'Import Members',
-    description: 'Upload a Telestaff CSV to seed or refresh member records.',
+    href: '/admin/ai-assist',
+    title: 'AI Assist',
+    description: 'See the explicit non-operational state for any future advisory assistance.',
+    state: 'Unavailable',
+    stateClassName: 'text-amber-200',
   },
   {
-    href: '/admin/credentials/import',
-    title: 'Import Credentials',
-    description: 'Upload a CSV to seed credential definitions.',
+    href: '/admin/rehearsal',
+    title: 'Mock Bids',
+    description: 'Review rehearsal evidence without using mock activity as a staffing source.',
+    state: 'Baseline-gated',
+    stateClassName: 'text-amber-200',
+  },
+  {
+    href: '/admin/bid',
+    title: 'Live Bid',
+    description: 'Open the guarded live-bid surface; this dashboard does not start a session.',
+    state: 'No active session assumed',
+    stateClassName: 'text-slate-300',
+  },
+  {
+    href: '/admin/audit',
+    title: 'Results & Audit',
+    description: 'Review recorded outcomes, audit evidence, and existing exports.',
+    state: 'Review surface',
+    stateClassName: 'text-slate-300',
+  },
+  {
+    href: '/admin/system',
+    title: 'System/Integrations',
+    description:
+      'See integration boundaries without changing infrastructure or publication settings.',
+    state: 'Read-only status',
+    stateClassName: 'text-amber-200',
   },
 ];
 
@@ -85,69 +83,52 @@ export default async function AdminDashboardPage() {
   const claims = await requireAdmin();
 
   return (
-    <div>
-      <h1 className="font-heading text-2xl text-white">Admin Dashboard</h1>
-      <p className="mt-1 text-sm text-slate-300">
-        Welcome back, {claims.first_name} {claims.last_name}.
-      </p>
+    <section className="max-w-6xl space-y-8" aria-labelledby="admin-dashboard-heading">
+      <header>
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          MBFD annual bid control center
+        </p>
+        <h1 id="admin-dashboard-heading" className="mt-1 font-heading text-2xl text-white">
+          Dashboard
+        </h1>
+        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+          Year-round operator workspace for safe review, configuration, rehearsal, and audit.
+          Welcome back, {claims.first_name} {claims.last_name}.
+        </p>
+      </header>
 
-      {/* Pinned CTA — jumping directly into the live bid is the single most
-          common operator action, so it gets its own full-width card at the
-          top of the dashboard. */}
-      <Link
-        href={'/admin/bid' as Route}
-        className="mt-6 flex items-center justify-between rounded-xl border-2 border-red-700 bg-gradient-to-br from-red-900/70 to-red-950 p-5 transition-colors duration-fast ease-out-quart hover:border-red-500 hover:from-red-800/80"
-      >
-        <div>
-          <p className="font-heading text-xl font-semibold text-white">
-            <span aria-hidden className="mr-2">
-              ●
-            </span>
-            Live Bid Console
-          </p>
-          <p className="mt-1 text-sm text-red-100">
-            Watch the bid, see who is next, and use the available controls. Works for live sessions
-            and mock drafts.
-          </p>
-        </div>
-        <span className="hidden text-sm font-medium text-red-200 sm:block">Open →</span>
-      </Link>
+      <div className="border-l-4 border-amber-500 bg-amber-950/30 px-4 py-4 text-sm text-amber-100">
+        <p className="font-semibold">Readiness boundaries remain in effect</p>
+        <p className="mt-1 text-amber-100/90">
+          The authoritative staffing baseline is not loaded. Portal write-back remains disabled, and
+          no control on this dashboard starts a live bid or changes operational staffing.
+        </p>
+      </div>
 
-      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-slate-400">
-        Run a bid
-      </h2>
-      <dl className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {PRIMARY_ACTIONS.map(({ href, title, description }) => (
-          <Link
-            key={href}
-            href={href as Route}
-            className="group rounded-xl border-2 border-red-700/60 bg-gradient-to-br from-red-950/40 to-slate-800 p-5 transition-colors duration-fast ease-out-quart hover:border-red-500 hover:from-red-900/60"
-          >
-            <dt className="font-heading text-base font-semibold text-white group-hover:text-red-300">
-              {title}
-            </dt>
-            <dd className="mt-2 text-sm text-slate-300">{description}</dd>
-          </Link>
-        ))}
-      </dl>
-
-      <h2 className="mt-10 text-xs font-semibold uppercase tracking-wider text-slate-400">
-        Manage data & inspect
-      </h2>
-      <dl className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {SECONDARY_LINKS.map(({ href, title, description }) => (
-          <Link
-            key={href}
-            href={href as Route}
-            className="group rounded-xl border border-slate-700 bg-slate-800 p-5 transition-colors duration-fast ease-out-quart hover:border-red-700"
-          >
-            <dt className="font-heading text-base font-semibold text-white group-hover:text-red-400">
-              {title}
-            </dt>
-            <dd className="mt-1 text-sm text-slate-400">{description}</dd>
-          </Link>
-        ))}
-      </dl>
-    </div>
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          Control areas
+        </h2>
+        <dl className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {CONTROL_AREAS.map(({ href, title, description, state, stateClassName }) => (
+            <Link
+              key={href}
+              href={href as Route}
+              className="group rounded-xl border border-slate-700 bg-slate-800 p-5 transition-colors duration-fast ease-out-quart hover:border-red-700"
+            >
+              <dt className="font-heading text-base font-semibold text-white group-hover:text-red-400">
+                {title}
+              </dt>
+              <dd className="mt-1 text-sm text-slate-400">{description}</dd>
+              <dd
+                className={`mt-3 text-xs font-semibold uppercase tracking-wide ${stateClassName}`}
+              >
+                {state}
+              </dd>
+            </Link>
+          ))}
+        </dl>
+      </div>
+    </section>
   );
 }

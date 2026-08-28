@@ -32,16 +32,18 @@ describe('MBFD identity and operator navigation', () => {
     );
   });
 
-  it('uses operator terms for current roster and TeleStaff navigation', () => {
-    expect(ADMIN_NAV_LINKS).toContainEqual({
-      href: '/admin/current-rosters',
-      label: 'Current Rosters',
-      exact: false,
-    });
-    expect(ADMIN_NAV_LINKS).toContainEqual({
-      href: '/admin/telestaff',
-      label: 'TeleStaff',
-      exact: false,
-    });
+  it('uses the approved year-round bid control-center sections in operator navigation', () => {
+    expect(ADMIN_NAV_LINKS.map(({ href, label }) => ({ href, label }))).toEqual([
+      { href: '/admin', label: 'Dashboard' },
+      { href: '/admin/current-rosters', label: 'Current Rosters' },
+      { href: '/admin/telestaff', label: 'TeleStaff' },
+      { href: '/admin/members', label: 'Members & Credentials' },
+      { href: '/admin/bid-setup', label: 'Bid Setup' },
+      { href: '/admin/ai-assist', label: 'AI Assist' },
+      { href: '/admin/rehearsal', label: 'Mock Bids' },
+      { href: '/admin/bid', label: 'Live Bid' },
+      { href: '/admin/audit', label: 'Results & Audit' },
+      { href: '/admin/system', label: 'System/Integrations' },
+    ]);
   });
 });

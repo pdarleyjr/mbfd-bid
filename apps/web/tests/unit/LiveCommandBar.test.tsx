@@ -22,6 +22,8 @@ const BASE_PROPS = {
   currentBidder: null,
   currentBidderId: null,
   onDeck: [],
+  isMock: false,
+  lastSeq: 7,
 };
 
 describe('LiveCommandBar SSR', () => {
@@ -47,6 +49,16 @@ describe('LiveCommandBar SSR', () => {
     expect(html).not.toContain('AI cost');
     expect(html).not.toContain('Show AI');
     expect(html).not.toContain('Hide AI');
+  });
+
+  it('renders only rehearsal-safe controls for a mock session', () => {
+    const html = ssr(<LiveCommandBar {...BASE_PROPS} isMock />);
+
+    expect(html).toContain('Mock rehearsal');
+    expect(html).toContain('data-testid="mock-freeze-action"');
+    expect(html).not.toContain('data-testid="admin-action-skip"');
+    expect(html).not.toContain('data-testid="admin-action-override"');
+    expect(html).not.toContain('data-testid="admin-action-freeze"');
   });
 
   it('falls back to em-dash when the session has no start time', () => {

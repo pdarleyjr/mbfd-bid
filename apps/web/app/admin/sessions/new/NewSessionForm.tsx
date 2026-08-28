@@ -3,11 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 
-export function NewSessionForm({ defaultMock = false }: { defaultMock?: boolean }) {
+export function NewSessionForm({ defaultMock = true }: { defaultMock?: boolean }) {
   const router = useRouter();
   const [bidYear, setBidYear] = useState(new Date().getFullYear());
-  const [days, setDays] = useState(2);
-  const [timer, setTimer] = useState(180);
   const [isMock, setIsMock] = useState(defaultMock);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -23,8 +21,6 @@ export function NewSessionForm({ defaultMock = false }: { defaultMock?: boolean 
         credentials: 'include',
         body: JSON.stringify({
           bid_year: bidYear,
-          expected_duration_days: days,
-          turn_timer_seconds: timer,
           is_mock: isMock,
         }),
       });
@@ -51,28 +47,14 @@ export function NewSessionForm({ defaultMock = false }: { defaultMock?: boolean 
           className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
         />
       </label>
-      <label className="block">
-        <span className="text-sm text-slate-300">Expected duration (days)</span>
-        <input
-          type="number"
-          min={1}
-          max={7}
-          value={days}
-          onChange={(e) => setDays(Number(e.target.value))}
-          className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
-        />
-      </label>
-      <label className="block">
-        <span className="text-sm text-slate-300">Turn timer (seconds)</span>
-        <input
-          type="number"
-          min={30}
-          max={600}
-          value={timer}
-          onChange={(e) => setTimer(Number(e.target.value))}
-          className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
-        />
-      </label>
+      <p className="rounded border border-slate-700 bg-slate-800/60 px-3 py-3 text-sm text-slate-300">
+        Duration and turn-timer settings are taken from the designated annual configuration. They
+        cannot be overridden per session.
+      </p>
+      <p className="rounded border border-blue-800 bg-blue-950/40 px-3 py-3 text-sm text-blue-100">
+        Rehearsal/mock is selected by default. Clear it only when you deliberately need the
+        separately guarded live-mode request; the server remains the authority for live readiness.
+      </p>
       <label className="flex items-center gap-2 text-sm text-slate-300">
         <input
           type="checkbox"
@@ -80,7 +62,7 @@ export function NewSessionForm({ defaultMock = false }: { defaultMock?: boolean 
           onChange={(e) => setIsMock(e.target.checked)}
           className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-red-700"
         />
-        Create as rehearsal/mock session
+        Create as rehearsal/mock session (clear only to request live mode)
       </label>
 
       {error !== null && (

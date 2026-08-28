@@ -78,7 +78,7 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
                     className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-600"
                     data-testid={`watch-session-${s.id}`}
                   >
-                    Watch live
+                    Open mock board
                   </Link>
                   <ResetMockButton sessionId={s.id} />
                   <AutoBidButton sessionId={s.id} strategy="first_eligible" count={10} />

@@ -104,9 +104,19 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     const jwt = await makeJwt('admin');
     await setAuthCookies(page, jwt);
     await page.goto('/admin');
-    await expect(page.getByRole('heading', { name: /admin dashboard/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /members/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /positions/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /rules/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Current Rosters', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'TeleStaff', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'Members & Credentials', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Bid Setup', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'AI Assist', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Mock Bids', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Live Bid', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Results & Audit', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'System/Integrations', exact: true }),
+    ).toBeVisible();
   });
 });

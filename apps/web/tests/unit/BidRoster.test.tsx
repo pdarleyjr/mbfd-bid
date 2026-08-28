@@ -14,6 +14,20 @@ const ORDER = [
   { ordinal: 3, memberId: 3, pool: 'FF' as const },
 ];
 
+const SNAPSHOT_POSITIONS = [
+  {
+    id: 'A101',
+    templateVersion: 'snapshot-r1',
+    bidParticipation: 'BIDDABLE' as const,
+    isExcludedFromCount: false,
+    shift: 'A' as const,
+    station: 'Snapshot Station',
+    unit: 'Immutable Unit',
+    rankRequired: 'FF',
+    positionName: 'Immutable Position',
+  },
+];
+
 describe('BidRoster SSR', () => {
   it('renders rows for every bidder with rank and name', () => {
     const html = renderToString(
@@ -78,5 +92,39 @@ describe('BidRoster SSR', () => {
     // testid + value combination instead of the exact glyph.
     expect(html).toMatch(/data-testid="bid-roster-row-1"[\s\S]*?>1</);
     expect(html).toMatch(/data-testid="bid-roster-row-2"[\s\S]*?>2</);
+  });
+
+  it('uses the immutable session position material for picked-position labels', () => {
+    const html = renderToString(
+      <BidRoster
+        bidOrder={ORDER}
+        members={MEMBERS}
+        currentBidderId={null}
+        fills={{ A101: { memberId: 1, ordinal: 1, bidId: 'b1' } }}
+        preview={false}
+        snapshotBound
+        positions={SNAPSHOT_POSITIONS}
+      />,
+    );
+
+    expect(html).toContain('Immutable Unit');
+    expect(html).toContain('Immutable Position');
+    expect(html).not.toContain('Ladder 1');
+  });
+
+  it('does not infer a static position label for a snapshot-bound roster without material', () => {
+    const html = renderToString(
+      <BidRoster
+        bidOrder={ORDER}
+        members={MEMBERS}
+        currentBidderId={null}
+        fills={{ A101: { memberId: 1, ordinal: 1, bidId: 'b1' } }}
+        preview={false}
+        snapshotBound
+      />,
+    );
+
+    expect(html).toContain('A101');
+    expect(html).not.toContain('Ladder 1');
   });
 });

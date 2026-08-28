@@ -2,7 +2,7 @@
 import { useCallback, useMemo } from 'react';
 import { useStore } from 'zustand';
 import { StationGroupedGrid } from '../../../_components/bid/StationGroupedGrid';
-import type { MemberLite } from '../../../_components/bid/types';
+import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { ErrorToast } from '../../../bid/_components/ErrorToast';
 import { ReconnectingOverlay } from '../../../bid/_components/ReconnectingOverlay';
 import { BidStoreProvider } from '../../../bid/_hooks/BidStoreContext';
@@ -21,6 +21,8 @@ interface Props {
    *  state_snapshot ships currentBidderId=null because the DO is stale). */
   initialCurrentBidderId: number | null;
   members: Record<string, MemberLite>;
+  /** Immutable material returned by /api/board for this exact session. */
+  positions?: readonly PositionMeta[] | undefined;
   /** See BidBoard — Worker origin for the WebSocket upgrade (Pages domain
    *  doesn't proxy WS). */
   wsBase?: string;
@@ -34,6 +36,7 @@ export function AdminBoard({
   initialFills,
   initialCurrentBidderId,
   members,
+  positions,
   wsBase,
 }: Props) {
   const store = useMemo(() => {
@@ -59,7 +62,12 @@ export function AdminBoard({
 
   return (
     <BidStoreProvider store={store}>
-      <StationGroupedGrid members={members} onPositionClick={positionClickHandler} />
+      <StationGroupedGrid
+        members={members}
+        positions={positions}
+        snapshotBound
+        onPositionClick={positionClickHandler}
+      />
       {status !== 'open' ? <ReconnectingOverlay status={status} /> : null}
       {lastError ? (
         <ErrorToast error={lastError} onClose={() => store.getState().clearError()} />

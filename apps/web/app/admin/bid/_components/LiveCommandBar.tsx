@@ -3,10 +3,13 @@ import { useEffect, useState } from 'react';
 import { BidderCard, type BidderContext } from '../../../_components/bid/BidderCard';
 import { FreezeConfirmDialog } from './FreezeConfirmDialog';
 import { useManualPick } from './ManualPickContext';
+import { MockFreezeButton } from './MockFreezeButton';
 import { OverrideDialog } from './OverrideDialog';
 
 interface Props {
   bidSessionId: string;
+  isMock: boolean;
+  lastSeq: number;
   jwt: string;
   currentPhase: string;
   sessionStartedAt: number | null;
@@ -50,6 +53,8 @@ function useTick(intervalMs = 1000): number {
  */
 export function LiveCommandBar({
   bidSessionId,
+  isMock,
+  lastSeq,
   jwt,
   currentPhase,
   sessionStartedAt,
@@ -110,7 +115,9 @@ export function LiveCommandBar({
     <header data-testid="live-command-bar" className="border-b border-stone-200 bg-white">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 text-stone-900">
         <div className="flex items-baseline gap-2">
-          <h1 className="font-display text-lg font-bold">MBFD Annual Bid</h1>
+          <h1 className="font-display text-lg font-bold">
+            {isMock ? 'Mock rehearsal — MBFD Annual Bid' : 'MBFD Annual Bid'}
+          </h1>
           <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-stone-700">
             {currentPhase}
           </span>
@@ -154,31 +161,42 @@ export function LiveCommandBar({
           >
             {pickMode ? 'Pick mode: ON' : 'Pick for member'}
           </button>
-          <button
-            type="button"
-            data-testid="admin-action-skip"
-            disabled={busy}
-            onClick={onSkip}
-            className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-900 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Skip
-          </button>
-          <button
-            type="button"
-            data-testid="admin-action-override"
-            onClick={() => setOpen('override')}
-            className="rounded border border-red-700 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-100"
-          >
-            Override
-          </button>
-          <button
-            type="button"
-            data-testid="admin-action-freeze"
-            onClick={() => setOpen('freeze')}
-            className="rounded border border-amber-600 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
-          >
-            Freeze
-          </button>
+          {isMock ? (
+            <>
+              <MockFreezeButton bidSessionId={bidSessionId} expectedSeq={lastSeq} />
+              <span data-testid="mock-command-boundary" className="max-w-xs text-xs text-stone-600">
+                Skip and override are live-only. Use rehearsal controls for mock commands.
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                data-testid="admin-action-skip"
+                disabled={busy}
+                onClick={onSkip}
+                className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-900 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                data-testid="admin-action-override"
+                onClick={() => setOpen('override')}
+                className="rounded border border-red-700 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-100"
+              >
+                Override
+              </button>
+              <button
+                type="button"
+                data-testid="admin-action-freeze"
+                onClick={() => setOpen('freeze')}
+                className="rounded border border-amber-600 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+              >
+                Freeze
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -201,10 +219,10 @@ export function LiveCommandBar({
         </div>
       )}
 
-      {open === 'override' ? (
+      {!isMock && open === 'override' ? (
         <OverrideDialog bidSessionId={bidSessionId} jwt={jwt} onClose={() => setOpen(null)} />
       ) : null}
-      {open === 'freeze' ? (
+      {!isMock && open === 'freeze' ? (
         <FreezeConfirmDialog bidSessionId={bidSessionId} jwt={jwt} onClose={() => setOpen(null)} />
       ) : null}
     </header>

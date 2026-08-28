@@ -4,98 +4,119 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-// Note: hrefs typed loosely so Plan-05 stub routes (rule-books, sessions/new,
-// audit, eligibility) compile before Next's typed-routes generator has run
-// against their finished implementations.
-export const ADMIN_NAV_LINKS: { href: string; label: string; exact: boolean }[] = [
+type AdminSubNavLink = { href: string; label: string };
+
+export type AdminNavLink = {
+  href: string;
+  label: string;
+  exact: boolean;
+  activePrefixes?: readonly string[];
+  subnav?: readonly AdminSubNavLink[];
+};
+
+/**
+ * The year-round control-center IA intentionally describes work areas rather
+ * than exposing a flat list of historical implementation screens. A label is
+ * not a readiness claim: unavailable areas route to an explicit blocked state.
+ */
+export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
   { href: '/admin', label: 'Dashboard', exact: true },
   { href: '/admin/current-rosters', label: 'Current Rosters', exact: false },
   { href: '/admin/telestaff', label: 'TeleStaff', exact: false },
-  { href: '/admin/members', label: 'Members', exact: true },
-  { href: '/admin/credentials', label: 'Credentials', exact: false },
-  { href: '/admin/positions', label: 'Positions', exact: false },
-  { href: '/admin/rules', label: 'Rules', exact: false },
-  { href: '/admin/rule-books', label: 'Rule Books', exact: false },
-  { href: '/admin/sessions/new', label: 'New Session', exact: false },
-  { href: '/admin/audit', label: 'Audit Log', exact: false },
-  { href: '/admin/eligibility', label: 'Eligibility Preview', exact: false },
-  { href: '/admin/rehearsal', label: 'Rehearsal Console', exact: false },
-  { href: '/admin/settings/bid-pin', label: 'Bid Access PIN', exact: false },
+  {
+    href: '/admin/members',
+    label: 'Members & Credentials',
+    exact: false,
+    activePrefixes: ['/admin/credentials'],
+    subnav: [
+      { href: '/admin/members', label: 'Members' },
+      { href: '/admin/members/roster', label: 'Member Roster' },
+      { href: '/admin/credentials', label: 'Credentials' },
+    ],
+  },
+  {
+    href: '/admin/bid-setup',
+    label: 'Bid Setup',
+    exact: false,
+    activePrefixes: [
+      '/admin/rule-books',
+      '/admin/positions',
+      '/admin/rules',
+      '/admin/eligibility',
+      '/admin/sessions',
+      '/admin/settings/bid-pin',
+    ],
+    subnav: [
+      { href: '/admin/bid-setup', label: 'Bid Configuration' },
+      { href: '/admin/rule-books', label: 'Rule Books' },
+      { href: '/admin/positions', label: 'Positions' },
+      { href: '/admin/rules', label: 'Rules' },
+      { href: '/admin/eligibility', label: 'Eligibility Preview' },
+      { href: '/admin/settings/bid-pin', label: 'Bid Access PIN' },
+    ],
+  },
+  { href: '/admin/ai-assist', label: 'AI Assist', exact: false },
+  { href: '/admin/rehearsal', label: 'Mock Bids', exact: false },
+  { href: '/admin/bid', label: 'Live Bid', exact: false },
+  {
+    href: '/admin/audit',
+    label: 'Results & Audit',
+    exact: false,
+    activePrefixes: ['/admin/exports'],
+    subnav: [
+      { href: '/admin/audit', label: 'Audit Log' },
+      { href: '/admin/exports', label: 'Exports' },
+    ],
+  },
+  {
+    href: '/admin/system',
+    label: 'System/Integrations',
+    exact: false,
+  },
 ];
 
-// Members sub-navigation — Master Roster + 6 per-station eligibility pages.
-// Rendered indented when the current pathname starts with /admin/members.
-const MEMBERS_SUBNAV: { href: string; label: string }[] = [
-  { href: '/admin/members/roster', label: 'Master Roster' },
-  { href: '/admin/members/eligible/marine', label: 'Marine Station' },
-  { href: '/admin/members/eligible/trt', label: 'TRT Station 2' },
-  { href: '/admin/members/eligible/de', label: 'DE (Driver/Engineer)' },
-  { href: '/admin/members/eligible/air-tech', label: 'Air Tech (810)' },
-  { href: '/admin/members/eligible/captain-5', label: 'Captain 5' },
-  { href: '/admin/members/eligible/days', label: 'Days' },
-];
+function matchesPath(pathname: string, prefix: string) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
 
-const IMPORT_LINKS = [
-  { href: '/admin/members/import' as const, label: 'Import Members' },
-  { href: '/admin/credentials/import' as const, label: 'Import Credentials' },
-];
+function isActive(link: AdminNavLink, pathname: string) {
+  if (link.exact) return pathname === link.href;
+  return [link.href, ...(link.activePrefixes ?? [])].some((prefix) =>
+    matchesPath(pathname, prefix),
+  );
+}
 
 export function AdminSideNav() {
   const pathname = usePathname();
-  const membersSectionOpen = pathname.startsWith('/admin/members');
-  const liveBidActive = pathname === '/admin/bid';
 
   return (
     <nav aria-label="Admin navigation" className="flex flex-col gap-1 p-3">
-      {/* Pinned CTA — Live Bid Console. Always visible, visually distinct. */}
-      <Link
-        href={'/admin/bid' as Route}
-        className={[
-          'mb-2 flex min-h-[52px] items-center justify-between rounded-md px-3 py-2 text-sm font-semibold transition-colors duration-fast ease-out-quart',
-          liveBidActive
-            ? 'bg-red-700 text-white ring-2 ring-red-500'
-            : 'bg-red-700/80 text-white hover:bg-red-700 hover:ring-2 hover:ring-red-500',
-        ].join(' ')}
-        aria-current={liveBidActive ? 'page' : undefined}
-      >
-        <span className="flex items-center gap-2">
-          <span aria-hidden className="text-lg">
-            ●
-          </span>
-          Live Bid Console
-        </span>
-        <span className="text-xs font-normal opacity-90">Watch live</span>
-      </Link>
+      <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        Control center
+      </p>
 
-      {ADMIN_NAV_LINKS.map(({ href, label, exact }) => {
-        const isActive = exact
-          ? pathname === href
-          : pathname.startsWith(href) && pathname !== '/admin';
+      {ADMIN_NAV_LINKS.map((link) => {
+        const active = isActive(link, pathname);
 
-        const top = (
-          <Link
-            key={href}
-            href={href as Route}
-            className={[
-              'flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-fast ease-out-quart',
-              isActive
-                ? 'bg-red-700 text-white'
-                : 'text-slate-200 hover:bg-slate-700 hover:text-white',
-            ].join(' ')}
-            aria-current={isActive ? 'page' : undefined}
-          >
-            {label}
-          </Link>
-        );
+        return (
+          <div key={link.href}>
+            <Link
+              href={link.href as Route}
+              className={[
+                'flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-fast ease-out-quart',
+                active
+                  ? 'bg-red-700 text-white'
+                  : 'text-slate-200 hover:bg-slate-700 hover:text-white',
+              ].join(' ')}
+              aria-current={active ? 'page' : undefined}
+            >
+              {link.label}
+            </Link>
 
-        // Expand the Members sub-nav whenever we're under /admin/members.
-        if (href === '/admin/members' && membersSectionOpen) {
-          return (
-            <div key={href}>
-              {top}
+            {active && link.subnav && (
               <div className="mt-1 ml-3 flex flex-col gap-1 border-l border-slate-700 pl-2">
-                {MEMBERS_SUBNAV.map((sub) => {
-                  const subActive = pathname === sub.href;
+                {link.subnav.map((sub) => {
+                  const subActive = matchesPath(pathname, sub.href);
                   return (
                     <Link
                       key={sub.href}
@@ -113,24 +134,10 @@ export function AdminSideNav() {
                   );
                 })}
               </div>
-            </div>
-          );
-        }
-
-        return top;
+            )}
+          </div>
+        );
       })}
-
-      <div className="my-3 border-t border-slate-700" />
-
-      {IMPORT_LINKS.map(({ href, label }) => (
-        <Link
-          key={href}
-          href={href}
-          className="flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition-colors duration-fast ease-out-quart hover:bg-slate-700 hover:text-white"
-        >
-          {label}
-        </Link>
-      ))}
     </nav>
   );
 }

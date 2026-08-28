@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import { useStore } from 'zustand';
 import { StationGroupedGrid } from '../../_components/bid/StationGroupedGrid';
-import type { MemberLite } from '../../_components/bid/types';
+import type { MemberLite, PositionMeta } from '../../_components/bid/types';
 import { BidStoreProvider } from '../_hooks/BidStoreContext';
 import { type BidStoreState, createBidStore } from '../_hooks/useBidStore';
 import { useBidWebSocket } from '../_hooks/useBidWebSocket';
@@ -22,6 +22,8 @@ interface Props {
   initialCurrentBidderId?: number | null;
   eligiblePositionIds: string[];
   members: Record<string, MemberLite>;
+  /** Immutable material returned by /api/board for this exact session. */
+  positions?: readonly PositionMeta[] | undefined;
   /** Worker origin (https://api.staging.bid.mbfdhub.com) for the WebSocket
    *  upgrade. The Pages domain doesn't proxy WS; we must dial the Worker
    *  directly. Pass empty/undefined to fall back to same-origin (tests). */
@@ -37,6 +39,7 @@ export function BidBoard({
   initialCurrentBidderId,
   eligiblePositionIds,
   members,
+  positions,
   wsBase,
 }: Props) {
   const store = useMemo(() => {
@@ -48,7 +51,7 @@ export function BidBoard({
   const lastError = useStore(store, (s: BidStoreState) => s.lastError);
   return (
     <BidStoreProvider store={store}>
-      <StationGroupedGrid members={members} />
+      <StationGroupedGrid members={members} positions={positions} snapshotBound />
       <YourTurnPanel
         store={store}
         send={send}

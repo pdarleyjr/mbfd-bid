@@ -6,6 +6,20 @@ const MEMBERS = {
   '1': { id: 1, firstName: 'Jesus', lastName: 'Sola', rank: 'CPT', employeeId: '14335' },
 };
 
+const SNAPSHOT_POSITIONS = [
+  {
+    id: 'A901',
+    templateVersion: 'snapshot-r1',
+    bidParticipation: 'BIDDABLE' as const,
+    isExcludedFromCount: false,
+    shift: 'A' as const,
+    station: 'Snapshot Station',
+    unit: 'Snapshot Unit',
+    rankRequired: 'FF',
+    positionName: 'Immutable Position',
+  },
+];
+
 describe('StationGroupedGrid SSR snapshot', () => {
   it('renders the four combat station columns for shift A', () => {
     const html = renderToString(<StationGroupedGrid members={MEMBERS} defaultShift="A" />);
@@ -57,5 +71,30 @@ describe('StationGroupedGrid SSR snapshot', () => {
     expect(html).toContain('data-testid="apparatus-engine-1"');
     expect(html).toContain('data-testid="apparatus-rescue-1"');
     expect(html).toContain('data-testid="apparatus-float-1"');
+  });
+
+  it('uses immutable session positions instead of the bundled position catalog', () => {
+    const html = renderToString(
+      <StationGroupedGrid
+        members={MEMBERS}
+        defaultShift="A"
+        snapshotBound
+        positions={SNAPSHOT_POSITIONS}
+      />,
+    );
+
+    expect(html).toContain('A901');
+    expect(html).toContain('Snapshot Station');
+    expect(html).toContain('Immutable Position');
+    expect(html).not.toContain('A101');
+  });
+
+  it('does not infer the bundled catalog when a session lacks immutable positions', () => {
+    const html = renderToString(
+      <StationGroupedGrid members={MEMBERS} defaultShift="A" snapshotBound />,
+    );
+
+    expect(html).toContain('data-testid="immutable-positions-unavailable"');
+    expect(html).not.toContain('A101');
   });
 });

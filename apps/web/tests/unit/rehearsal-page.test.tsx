@@ -40,6 +40,8 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
     expect(html).toContain('a_day_bid');
     expect(html).toContain('Reset unavailable');
     expect(html).toContain('Requires audited reset epoch');
+    expect(html).toContain('Open mock board');
+    expect(html).not.toContain('Watch live');
     expect(html).not.toContain('AI cost');
     expect(html).not.toContain('(AI)');
   });

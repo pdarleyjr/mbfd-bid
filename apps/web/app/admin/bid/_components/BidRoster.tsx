@@ -1,8 +1,11 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { formatPositionLabel, getPositionMeta } from '../../../_components/bid/position-meta';
-import type { MemberLite } from '../../../_components/bid/types';
-import { shortRank } from '../../../_components/bid/types';
+import {
+  FALLBACK_POSITION_METADATA,
+  formatPositionLabel,
+  getPositionMeta,
+} from '../../../_components/bid/position-meta';
+import { type MemberLite, type PositionMeta, shortRank } from '../../../_components/bid/types';
 import { useManualPick } from './ManualPickContext';
 
 interface BidOrderEntry {
@@ -19,6 +22,10 @@ interface Props {
   /** True when the worker computed bidOrder on-the-fly (session not yet
    *  started); badges the panel as a preview. */
   preview: boolean;
+  /** Immutable material returned by /api/board for this exact session. */
+  positions?: readonly PositionMeta[] | undefined;
+  /** Avoid a static-policy inference if an actual session lacks material. */
+  snapshotBound?: boolean | undefined;
 }
 
 /**
@@ -31,7 +38,15 @@ interface Props {
  * sequence at a glance. Collapsible so it doesn't dominate the screen when
  * the admin is focused on the station grid.
  */
-export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }: Props) {
+export function BidRoster({
+  bidOrder,
+  members,
+  currentBidderId,
+  fills,
+  preview,
+  positions: immutablePositions,
+  snapshotBound = false,
+}: Props) {
   // Expanded by default so the chief sees the full bid order at a glance.
   // The table itself is bounded by max-h so it can't dominate the viewport.
   const [open, setOpen] = useState(true);
@@ -69,6 +84,10 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
   }, [bidOrder, filter, pickedIds]);
 
   const remainingCount = bidOrder.length - pickedIds.size;
+  const positions = useMemo(
+    () => immutablePositions ?? (snapshotBound ? [] : FALLBACK_POSITION_METADATA),
+    [immutablePositions, snapshotBound],
+  );
 
   return (
     <section
@@ -214,8 +233,14 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
                     <td className="px-3 py-1 font-mono text-xs text-stone-500">
                       {member?.employeeId ?? '—'}
                     </td>
-                    <PositionLabelCell positionId={member?.priorPositionId ?? null} />
-                    <PositionLabelCell positionId={positionByMember.get(entry.memberId) ?? null} />
+                    <PositionLabelCell
+                      positionId={member?.priorPositionId ?? null}
+                      positions={positions}
+                    />
+                    <PositionLabelCell
+                      positionId={positionByMember.get(entry.memberId) ?? null}
+                      positions={positions}
+                    />
                     <td className="px-3 py-1">
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadge}`}
@@ -246,12 +271,18 @@ export function BidRoster({ bidOrder, members, currentBidderId, fills, preview }
  * a tooltip showing the full label. Em-dash when the position is unknown or
  * the member has no record.
  */
-function PositionLabelCell({ positionId }: { positionId: string | null }) {
+function PositionLabelCell({
+  positionId,
+  positions,
+}: {
+  positionId: string | null;
+  positions: readonly PositionMeta[];
+}) {
   if (positionId === null || positionId.length === 0) {
     return <td className="px-3 py-1 text-xs text-stone-400">—</td>;
   }
-  const meta = getPositionMeta(positionId);
-  const full = formatPositionLabel(positionId);
+  const meta = getPositionMeta(positions, positionId);
+  const full = formatPositionLabel(positions, positionId);
   return (
     <td className="px-3 py-1 text-xs text-stone-900" title={full}>
       <span className="font-mono font-semibold text-stone-700">{positionId}</span>
