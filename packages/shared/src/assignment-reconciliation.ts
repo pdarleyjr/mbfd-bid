@@ -178,6 +178,7 @@ export const TeleStaffReconciliationClassificationSchema = z.enum([
   'MISSING_OBSERVATION',
   'UNKNOWN_EMPLOYEE',
   'AMBIGUOUS_MAPPING',
+  'INCOMPLETE_TOPOLOGY',
 ]);
 
 export type TeleStaffReconciliationClassification = z.infer<
@@ -195,6 +196,7 @@ export const TeleStaffReconciliationResolutionActionSchema = z.enum([
   'REJECT_SOURCE_ROW',
   'RETAIN_ASSIGNMENT',
   'END_ASSIGNMENT',
+  'RETAIN_UNMATERIALIZED_SOURCE_ROW',
 ]);
 
 export type TeleStaffReconciliationResolutionAction = z.infer<
@@ -208,23 +210,14 @@ const TELESTAFF_REVIEW_REQUIRED = [
   'MISSING_OBSERVATION',
   'UNKNOWN_EMPLOYEE',
   'AMBIGUOUS_MAPPING',
+  'INCOMPLETE_TOPOLOGY',
 ] as const;
-
-const TELESTAFF_HARD_BLOCKERS = ['UNKNOWN_EMPLOYEE', 'AMBIGUOUS_MAPPING'] as const;
 
 function requiresTeleStaffReview(
   classification: TeleStaffReconciliationClassification,
 ): classification is (typeof TELESTAFF_REVIEW_REQUIRED)[number] {
   return TELESTAFF_REVIEW_REQUIRED.includes(
     classification as (typeof TELESTAFF_REVIEW_REQUIRED)[number],
-  );
-}
-
-function isTeleStaffHardBlocker(
-  classification: TeleStaffReconciliationClassification,
-): classification is (typeof TELESTAFF_HARD_BLOCKERS)[number] {
-  return TELESTAFF_HARD_BLOCKERS.includes(
-    classification as (typeof TELESTAFF_HARD_BLOCKERS)[number],
   );
 }
 
@@ -252,6 +245,12 @@ function actionIsCompatible(
   if (classification === 'MISSING_OBSERVATION') {
     return (
       reviewStatus === 'approved' && (action === 'RETAIN_ASSIGNMENT' || action === 'END_ASSIGNMENT')
+    );
+  }
+  if (classification === 'INCOMPLETE_TOPOLOGY') {
+    return (
+      (reviewStatus === 'approved' && action === 'RETAIN_UNMATERIALIZED_SOURCE_ROW') ||
+      (reviewStatus === 'rejected' && action === 'REJECT_SOURCE_ROW')
     );
   }
   if (classification === 'UNKNOWN_EMPLOYEE' || classification === 'AMBIGUOUS_MAPPING') {
@@ -373,9 +372,9 @@ export interface TeleStaffReconciliationSummary {
 
 /**
  * Summarizes the new operator taxonomy. Unknown employees and ambiguous
- * mappings remain hard blockers even after a reviewer records a rejection;
- * resolving them requires a later, explicitly mapped import, never a
- * fail-open decision on this source evidence.
+ * mappings block while unresolved. A reviewed `REJECT_SOURCE_ROW` preserves
+ * immutable historical evidence without inventing a member, mapping,
+ * observation, or canonical assignment.
  */
 export function summarizeTeleStaffReconciliation(
   items: readonly TeleStaffReconciliationItem[],
@@ -389,6 +388,7 @@ export function summarizeTeleStaffReconciliation(
     MISSING_OBSERVATION: 0,
     UNKNOWN_EMPLOYEE: 0,
     AMBIGUOUS_MAPPING: 0,
+    INCOMPLETE_TOPOLOGY: 0,
   };
 
   for (const item of validatedItems) {
@@ -396,8 +396,11 @@ export function summarizeTeleStaffReconciliation(
   }
 
   const blockingClassifications = TeleStaffReconciliationClassificationSchema.options.filter(
-    (classification): classification is (typeof TELESTAFF_HARD_BLOCKERS)[number] =>
-      isTeleStaffHardBlocker(classification) && counts[classification] > 0,
+    (classification) =>
+      (classification === 'UNKNOWN_EMPLOYEE' || classification === 'AMBIGUOUS_MAPPING') &&
+      validatedItems.some(
+        (item) => item.classification === classification && item.reviewStatus !== 'rejected',
+      ),
   );
   const pendingReviewIds = validatedItems
     .filter(

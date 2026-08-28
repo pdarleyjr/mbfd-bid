@@ -11,8 +11,6 @@ import { and, eq } from 'drizzle-orm';
 
 import type { DB } from '../db/index.js';
 import {
-  assignmentImports,
-  assignmentObservations,
   bidSessionPolicySnapshots,
   bidYears,
   credentials,
@@ -26,6 +24,10 @@ import {
   ruleBooks,
   staffingPositions,
 } from '../db/schema.js';
+import {
+  type AuthoritativeStaffingBaselineEvaluation,
+  evaluateAuthoritativeStaffingBaseline,
+} from './authoritative-staffing-baseline.js';
 import { type DecodedPositionRule, decodeRuleBookRows } from './position-rule.js';
 
 export interface RuleBookCoverageInput {
@@ -559,38 +561,18 @@ export type BidSessionPolicySnapshotPreparation =
       positionIds?: readonly string[];
     };
 
-/**
- * A rule-book may only be frozen after the Bid-side staffing projection has a
- * committed, source-backed TeleStaff baseline. A manually entered assignment
- * or an unreviewed import is useful working data, but it is not evidence that
- * the annual staffing baseline was reconciled and approved.
- */
-export async function hasCommittedTeleStaffStaffingBaseline(db: DB): Promise<boolean> {
-  const baseline = await db
-    .select({ importId: assignmentImports.id })
-    .from(assignmentImports)
-    .innerJoin(
-      assignmentObservations,
-      eq(assignmentObservations.assignmentImportId, assignmentImports.id),
-    )
-    .innerJoin(
-      memberAssignments,
-      eq(memberAssignments.sourceObservationId, assignmentObservations.id),
-    )
-    .innerJoin(staffingPositions, eq(staffingPositions.id, memberAssignments.staffingPositionId))
-    .where(
-      and(
-        eq(assignmentImports.status, 'committed'),
-        eq(assignmentImports.sourceSystem, 'telestaff'),
-        eq(memberAssignments.originType, 'TELESTAFF_IMPORT'),
-        eq(memberAssignments.status, 'active'),
-        eq(staffingPositions.reviewStatus, 'approved'),
-      ),
-    )
-    .limit(1)
-    .get();
-  return baseline !== undefined;
-}
+export type ConfiguredRuleBookPublicationPreflight =
+  | (Extract<BidSessionPolicySnapshotPreparation, { ok: true }> & {
+      /** Exact immutable designation verified before the publish batch. */
+      baselineAcceptanceId: string;
+      baselineImportId: string;
+    })
+  | Extract<BidSessionPolicySnapshotPreparation, { ok: false }>
+  | {
+      ok: false;
+      code: 'authoritative_staffing_baseline_required';
+      baseline: AuthoritativeStaffingBaselineEvaluation;
+    };
 
 /**
  * Read-only publication preflight. It deliberately reuses the same staffing
@@ -602,14 +584,21 @@ export async function preflightConfiguredRuleBookPublication(
   db: DB,
   bidYear: number,
   capturedAtMs: number,
-): Promise<
-  | BidSessionPolicySnapshotPreparation
-  | { ok: false; code: 'authoritative_staffing_baseline_required' }
-> {
-  if (!(await hasCommittedTeleStaffStaffingBaseline(db))) {
-    return { ok: false, code: 'authoritative_staffing_baseline_required' };
+): Promise<ConfiguredRuleBookPublicationPreflight> {
+  const baseline = await evaluateAuthoritativeStaffingBaseline(db, bidYear);
+  if (baseline.status !== 'PASS') {
+    return { ok: false, code: 'authoritative_staffing_baseline_required', baseline };
   }
-  return prepareBidSessionPolicySnapshot(db, bidYear, capturedAtMs, 'mock');
+  const snapshot = await prepareBidSessionPolicySnapshot(db, bidYear, capturedAtMs, 'mock');
+  if (!snapshot.ok) return snapshot;
+  if (baseline.baselineAcceptanceId === null || baseline.importId === null) {
+    return { ok: false, code: 'authoritative_staffing_baseline_required', baseline };
+  }
+  return {
+    ...snapshot,
+    baselineAcceptanceId: baseline.baselineAcceptanceId,
+    baselineImportId: baseline.importId,
+  };
 }
 
 function effectiveOn(date: string, effectiveFrom: string, effectiveTo: string | null): boolean {

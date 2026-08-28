@@ -61,12 +61,38 @@ configuration, and its optimistic revision at the D1 transition boundary. It
 then runs the same read-only staffing/Division-Chief checks used for snapshot
 construction. No route uses a globally active-book fallback.
 
-The source guard detects committed source-backed TeleStaff staffing evidence as
-a minimum technical preflight. That guard is not a claim that MBFD's real
-annual staffing baseline is complete or approved. Real acceptance still
-requires the authoritative baseline, reviewed A211/B211/C211 bindings, and
-proof of their assigned-occupant exclusions. Test-only fixtures are synthetic
-and never represent operational TeleStaff data.
+The staffing guard requires an explicit, immutable accepted TeleStaff manifest
+for the exact Bid year; it never selects an arbitrary historic import. Its
+structured preflight rechecks the versioned source format/parser, source hash,
+data-row and opaque-identity manifest accounting, duplicate prevention,
+reviewed incomplete-topology evidence, unresolved mappings, observations, and
+canonical assignment lineage. It has no static 262-row assumption. Raw HTML,
+names, Emp IDs, HMACs, fingerprints, and source topology values do not appear
+in the publication response.
+
+The local-only HTML adapter recognizes one semantic `(EX) Export Assignments`
+table and treats structural blank/NBSP/hidden-placeholder cells as null source
+evidence. It does not infer effective dates, canonical slots, capacity, or
+portal work. The read-only admin inspection surface exposes only aggregate
+format/accounting validation; it still has no upload, apply, or external
+TeleStaff path. No local fixture is an accepted MBFD annual baseline.
+
+Import scope is immutable. Only an `official` TeleStaff source manifest may be
+designated as an annual baseline. A `synthetic_test` manifest is local test
+evidence only: database guards prohibit it from claiming an MBFD canonical
+mapping or materializing an assignment observation. A reviewed rejected source
+row remains immutable evidence without a mapping or observation; unresolved
+unknown, ambiguous, incomplete-topology, and missing-observation findings
+continue to block acceptance and publication.
+
+`official` is an externally governed ingestion designation, not cryptographic
+proof that a report is authoritative. The local staging helper has no HTTP
+route, and a future authorized workflow must select that designation only after
+policy-owner/source approval and retain the actor/reasoned ledger record.
+`legacy_unclassified` is the fail-closed default for historical manifests that
+lack this provenance contract. Ephemeral tests may simulate the official-path
+database invariant with sanitized data; that is not a real MBFD baseline
+designation.
 
 ## Operator surface and remaining gates
 

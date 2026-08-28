@@ -73,24 +73,31 @@ async function seedCommittedSyntheticTeleStaffBaseline(h: TestD1): Promise<void>
        (id, staffing_position_id, source_system, source_locator, source_signature,
         source_version, source_hash, effective_from, created_at)
      VALUES
-       ('synthetic-publish-mapping', 'synthetic-publish-slot', 'telestaff', 'synthetic/2026/a101',
+        ('synthetic-publish-mapping', 'synthetic-publish-slot', 'telestaff',
+         '{"v":1,"shift":"A Shift","division":"Suppression/Rescue","station":"1","unit":"Engine 1","position":"Firefighter"}',
         ?, 'synthetic-v1', ?, '2026-01-01', ?);`,
     [SYNTHETIC_HASH, SYNTHETIC_HASH, SYNTHETIC_NOW],
   );
   await h.db.run(
     `INSERT INTO assignment_imports
-       (id, source_system, source_version, source_hash, status, input_row_count, created_at)
-     VALUES ('synthetic-publish-import', 'telestaff', 'synthetic-v1', ?, 'staged', 1, ?);`,
+        (id, source_system, source_version, source_hash, source_format, parser_version, source_kind,
+         status, input_row_count, normalized_data_row_count, unique_employee_count,
+         report_row_count, structural_row_count, created_at)
+      VALUES ('synthetic-publish-import', 'telestaff', 'synthetic-v1', ?,
+        'TELSTAFF_ASSIGNMENTS_HTML_V1', 'telestaff-assignments-html@1',
+        'official', 'staged', 1, 1, 1, 1, 0, ?);`,
     [SYNTHETIC_HASH, SYNTHETIC_NOW],
   );
   await h.db.run(
     `INSERT INTO assignment_import_rows
        (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
         resolved_member_id, staffing_position_source_mapping_id, normalized_source_topology,
-        disposition, review_status, created_at)
+        disposition, reconciliation_classification, review_status, created_at)
      VALUES
        ('synthetic-publish-row', 'synthetic-publish-import', 1, ?, ?, 9901,
-        'synthetic-publish-mapping', 'synthetic/2026/a101', 'unchanged', 'not_required', ?);`,
+          'synthetic-publish-mapping',
+          '{"v":1,"shift":"A Shift","division":"Suppression/Rescue","station":"1","unit":"Engine 1","position":"Firefighter"}',
+          'unchanged', 'UNCHANGED', 'not_required', ?);`,
     ['b'.repeat(64), 'c'.repeat(64), SYNTHETIC_NOW],
   );
   await h.db.run(
@@ -112,7 +119,8 @@ async function seedCommittedSyntheticTeleStaffBaseline(h: TestD1): Promise<void>
         staffing_position_source_mapping_id, normalized_source_topology, observed_at, created_at)
      VALUES
        ('synthetic-publish-observation', 'synthetic-publish-import', 'synthetic-publish-row', 9901,
-        'synthetic-publish-slot', 'synthetic-publish-mapping', 'synthetic/2026/a101', ?, ?);`,
+        'synthetic-publish-slot', 'synthetic-publish-mapping',
+        '{"v":1,"shift":"A Shift","division":"Suppression/Rescue","station":"1","unit":"Engine 1","position":"Firefighter"}', ?, ?);`,
     [SYNTHETIC_NOW, SYNTHETIC_NOW],
   );
   await h.db.run(
@@ -122,6 +130,14 @@ async function seedCommittedSyntheticTeleStaffBaseline(h: TestD1): Promise<void>
      VALUES
        ('synthetic-publish-assignment', 9901, 'synthetic-publish-slot', 'TELESTAFF_IMPORT',
         'synthetic-publish-import', 'synthetic-publish-observation', 'active', '2026-01-01', ?, ?);`,
+    [SYNTHETIC_NOW, SYNTHETIC_NOW],
+  );
+  await h.db.run(
+    `INSERT INTO bid_year_staffing_baselines
+       (id, bid_year, assignment_import_id, status, accepted_at, accepted_by_member_id,
+        acceptance_reason, created_at)
+     VALUES ('synthetic-publish-baseline', 2026, 'synthetic-publish-import', 'accepted',
+       ?, 9901, 'Synthetic source baseline accepted for test only.', ?);`,
     [SYNTHETIC_NOW, SYNTHETIC_NOW],
   );
 }
@@ -283,6 +299,97 @@ describe('POST /api/admin/rule-books/:version/publish', () => {
     expect(after.results).toEqual([
       { version: '2026.1', status: 'archived' },
       { version: '2026.2', status: 'active' },
+    ]);
+  });
+
+  it('keeps the draft unpublished if the exact accepted baseline is superseded after preflight', async () => {
+    const d1 = h.env.DB;
+    const originalBatch = d1.batch.bind(d1);
+    let superseded = false;
+    d1.batch = async (statements) => {
+      if (!superseded) {
+        superseded = true;
+        h.sqlite
+          .prepare(
+            `UPDATE bid_year_staffing_baselines
+             SET status = 'superseded', superseded_at = ?, superseded_by_member_id = ?,
+                 supersession_reason = ?
+             WHERE id = 'synthetic-publish-baseline'`,
+          )
+          .run(SYNTHETIC_NOW + 1, 9901, 'Synthetic concurrent baseline replacement.');
+      }
+      return originalBatch(statements);
+    };
+
+    const response = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/publish', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'A superseded baseline cannot authorize publication.' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'rule_book_status_changed' });
+    expect(
+      (
+        await h.db.run(
+          'SELECT version, status FROM rule_books WHERE effective_year = 2026 ORDER BY version',
+        )
+      ).results,
+    ).toEqual([
+      { version: '2026.1', status: 'active' },
+      { version: '2026.2', status: 'draft' },
+    ]);
+  });
+
+  it('keeps the draft unpublished if an accepted canonical assignment ends after preflight', async () => {
+    const d1 = h.env.DB;
+    const originalBatch = d1.batch.bind(d1);
+    let ended = false;
+    d1.batch = async (statements) => {
+      if (!ended) {
+        ended = true;
+        h.sqlite
+          .prepare(
+            `UPDATE member_assignments
+             SET status = 'ended', effective_to = '2026-08-28'
+             WHERE source_observation_id = 'synthetic-publish-observation'`,
+          )
+          .run();
+      }
+      return originalBatch(statements);
+    };
+
+    const response = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/publish', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reason: 'A stale canonical projection cannot authorize publication.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'rule_book_status_changed' });
+    expect(
+      (
+        await h.db.run(
+          'SELECT version, status FROM rule_books WHERE effective_year = 2026 ORDER BY version',
+        )
+      ).results,
+    ).toEqual([
+      { version: '2026.1', status: 'active' },
+      { version: '2026.2', status: 'draft' },
     ]);
   });
 
@@ -636,6 +743,10 @@ describe('POL-015 draft rule-book lifecycle', () => {
       error: 'rule_book_publication_blocked',
       blocker: 'authoritative_staffing_baseline_required',
       position_ids: [],
+      baseline: {
+        status: 'BLOCKED',
+        blockingCodes: ['NO_ACCEPTED_TELESTAFF_BASELINE'],
+      },
     });
     const books = await h.db.run(
       'SELECT version, status FROM rule_books WHERE effective_year = 2026 ORDER BY version',

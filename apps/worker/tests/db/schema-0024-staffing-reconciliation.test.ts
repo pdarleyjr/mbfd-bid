@@ -167,7 +167,7 @@ describe('V2 staffing reconciliation schema (migration 0024)', () => {
     sqlite.close();
   });
 
-  it('allows a reviewed deferred new position to commit no capacity while unknown employees remain blocking', () => {
+  it('allows reviewed deferred/rejected source evidence to commit without creating capacity', () => {
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
     applyMigrationsStrict(sqlite);
@@ -220,13 +220,18 @@ describe('V2 staffing reconciliation schema (migration 0024)', () => {
         'rejected',
         2,
         1,
-        'Synthetic unresolved employee remains blocking.',
+        'Synthetic employee identity was reviewed and rejected as immutable source evidence.',
         'UNKNOWN_EMPLOYEE',
         'REJECT_SOURCE_ROW',
         1,
       );
     advanceImportToReviewed(sqlite, 'import-unknown');
-    expect(() => approveImport(sqlite, 'import-unknown', 1)).toThrow();
+    expect(() => approveImport(sqlite, 'import-unknown', 1)).not.toThrow();
+    expect(() => commitImport(sqlite, 'import-unknown')).not.toThrow();
+    const canonicalAssignments = sqlite
+      .prepare('SELECT COUNT(*) AS count FROM member_assignments')
+      .get() as { count: number };
+    expect(canonicalAssignments.count).toBe(0);
     sqlite.close();
   });
 });

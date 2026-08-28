@@ -117,7 +117,7 @@ describe('TeleStaff assignment reconciliation contract', () => {
     ).toBe(false);
   });
 
-  it('accounts for the seven operator-facing TeleStaff classifications without reinterpreting legacy dispositions', () => {
+  it('accounts for the eight operator-facing TeleStaff classifications without reinterpreting legacy dispositions', () => {
     const summary = summarizeTeleStaffReconciliation([
       {
         id: 'row-unchanged',
@@ -164,6 +164,16 @@ describe('TeleStaff assignment reconciliation contract', () => {
         reviewedAt: 1,
         resolutionReason: 'Synthetic negative evidence reviewed without deleting capacity.',
       },
+      {
+        id: 'incomplete-topology',
+        sourceRowNumber: 5,
+        classification: 'INCOMPLETE_TOPOLOGY',
+        reviewStatus: 'approved',
+        resolutionAction: 'RETAIN_UNMATERIALIZED_SOURCE_ROW',
+        reviewerMemberId: 7,
+        reviewedAt: 1,
+        resolutionReason: 'Synthetic source row remains immutable pending complete topology.',
+      },
     ]);
 
     expect(summary.counts).toEqual({
@@ -174,16 +184,37 @@ describe('TeleStaff assignment reconciliation contract', () => {
       MISSING_OBSERVATION: 1,
       UNKNOWN_EMPLOYEE: 0,
       AMBIGUOUS_MAPPING: 0,
+      INCOMPLETE_TOPOLOGY: 1,
     });
     expect(summary.pendingReviewIds).toEqual([]);
     expect(summary.blockingClassifications).toEqual([]);
     expect(summary.canApply).toBe(true);
   });
 
-  it('fails closed for unknown or ambiguous personnel/mapping evidence even after a reviewer records an outcome', () => {
+  it('fails closed for unknown or ambiguous personnel/mapping evidence until a reviewer records an explicit terminal outcome', () => {
     const summary = summarizeTeleStaffReconciliation([
       {
         id: 'unknown-employee',
+        sourceRowNumber: 1,
+        classification: 'UNKNOWN_EMPLOYEE',
+        reviewStatus: 'pending',
+      },
+      {
+        id: 'ambiguous-mapping',
+        sourceRowNumber: 2,
+        classification: 'AMBIGUOUS_MAPPING',
+        reviewStatus: 'pending',
+      },
+    ]);
+
+    expect(summary.blockingClassifications).toEqual(['UNKNOWN_EMPLOYEE', 'AMBIGUOUS_MAPPING']);
+    expect(summary.canApply).toBe(false);
+  });
+
+  it('allows an explicit rejected source-row exception to remain immutable evidence without creating canonical data', () => {
+    const summary = summarizeTeleStaffReconciliation([
+      {
+        id: 'unknown-reviewed',
         sourceRowNumber: 1,
         classification: 'UNKNOWN_EMPLOYEE',
         reviewStatus: 'rejected',
@@ -193,7 +224,7 @@ describe('TeleStaff assignment reconciliation contract', () => {
         resolutionReason: 'Synthetic identity could not be resolved.',
       },
       {
-        id: 'ambiguous-mapping',
+        id: 'ambiguous-reviewed',
         sourceRowNumber: 2,
         classification: 'AMBIGUOUS_MAPPING',
         reviewStatus: 'rejected',
@@ -204,8 +235,9 @@ describe('TeleStaff assignment reconciliation contract', () => {
       },
     ]);
 
-    expect(summary.blockingClassifications).toEqual(['UNKNOWN_EMPLOYEE', 'AMBIGUOUS_MAPPING']);
-    expect(summary.canApply).toBe(false);
+    expect(summary.blockingClassifications).toEqual([]);
+    expect(summary.pendingReviewIds).toEqual([]);
+    expect(summary.canApply).toBe(true);
   });
 
   it('requires explicit, compatible review actions before a classified item can apply', () => {
@@ -238,6 +270,18 @@ describe('TeleStaff assignment reconciliation contract', () => {
         reviewerMemberId: 7,
         reviewedAt: 1,
         resolutionReason: 'Synthetic move missing explicit action.',
+      }).success,
+    ).toBe(false);
+    expect(
+      TeleStaffReconciliationItemSchema.safeParse({
+        id: 'incomplete-topology-auto-map',
+        sourceRowNumber: 2,
+        classification: 'INCOMPLETE_TOPOLOGY',
+        reviewStatus: 'approved',
+        resolutionAction: 'APPLY_OBSERVATION',
+        reviewerMemberId: 7,
+        reviewedAt: 1,
+        resolutionReason: 'Synthetic incomplete source row cannot create a canonical assignment.',
       }).success,
     ).toBe(false);
   });

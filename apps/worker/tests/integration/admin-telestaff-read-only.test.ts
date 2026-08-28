@@ -25,14 +25,21 @@ async function jwt(role: 'admin' | 'member'): Promise<string> {
 interface ImportSummary {
   id: string;
   sourceSystem: string;
-  sourceVersion: string;
+  sourceFormat: string | null;
+  parserVersion: string | null;
+  sourceKind: string;
   status: string;
   inputRowCount: number;
+  normalizedDataRowCount: number | null;
+  uniqueEmployeeCount: number | null;
+  reportRowCount: number;
+  structuralRowCount: number;
   reconciliationRevision: number;
   reconciliation: {
     sourceRows: number;
     pendingSourceRows: number;
     hardBlockerSourceRows: number;
+    incompleteTopologySourceRows: number;
     missingObservationFindings: number;
     pendingMissingObservationFindings: number;
   };
@@ -46,9 +53,13 @@ describe('admin TeleStaff read-only history', () => {
 
     await h.db.run(
       `INSERT INTO assignment_imports
-         (id, source_system, source_version, source_hash, input_row_count, status, created_at)
+         (id, source_system, source_version, source_hash, source_format, parser_version, source_kind,
+          input_row_count, normalized_data_row_count, unique_employee_count,
+          report_row_count, structural_row_count, status, created_at)
        VALUES
-         ('import-synthetic-v1', 'telestaff', 'synthetic-contract-v1', '${'a'.repeat(64)}', 2, 'staged', ${NOW});
+         ('import-synthetic-v1', 'telestaff', 'synthetic-contract-v1', '${'a'.repeat(64)}',
+           'TELSTAFF_ASSIGNMENTS_HTML_V1', 'telestaff-assignments-html@1',
+           'synthetic_test', 2, 2, 2, 2, 0, 'staged', ${NOW});
 
        INSERT INTO assignment_import_rows
          (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
@@ -57,11 +68,11 @@ describe('admin TeleStaff read-only history', () => {
           reviewed_at, reviewed_by_member_id, resolution_reason, created_at)
        VALUES
          ('row-reviewed', 'import-synthetic-v1', 7, '${'b'.repeat(64)}', '${'d'.repeat(64)}',
-          'synthetic-topology-reviewed', 'G1', 'moved',
+           '{"v":1,"shift":"A Shift","division":"Suppression/Rescue","station":"1","unit":"Engine 1","position":"Firefighter"}', 'G1', 'moved',
           'MOVED', 'approved', 'APPLY_OBSERVATION',
           ${NOW}, 0, 'synthetic review', ${NOW}),
          ('row-hard-blocked', 'import-synthetic-v1', 8, '${'c'.repeat(64)}', '${'e'.repeat(64)}',
-          'synthetic-topology-blocked', 'G2', 'unknown_employee',
+           '{"v":1,"shift":"A Shift","division":"Suppression/Rescue","station":"2","unit":"Engine 2","position":"Firefighter"}', 'G2', 'unknown_employee',
           'UNKNOWN_EMPLOYEE', 'rejected', 'REJECT_SOURCE_ROW',
           ${NOW}, 0, 'synthetic rejection', ${NOW});
 
@@ -117,7 +128,7 @@ describe('admin TeleStaff read-only history', () => {
       imports: ImportSummary[];
       readiness: {
         readOnly: boolean;
-        parse: { ready: boolean; blocker: string };
+        parse: { adapterAvailable: boolean; ingestionAvailable: boolean; blocker: string };
         apply: { ready: boolean; blocker: string };
         externalSourceAccess: boolean;
         auditWrites: boolean;
@@ -127,9 +138,12 @@ describe('admin TeleStaff read-only history', () => {
     expect(body.readiness).toEqual({
       readOnly: true,
       parse: {
-        ready: false,
-        blocker: 'APPROVED_SANITIZED_SOURCE_CONTRACT_REQUIRED',
-        reason: 'Parsing remains unavailable until an approved sanitized source contract exists.',
+        adapterAvailable: true,
+        supportedSourceFormats: ['TELSTAFF_ASSIGNMENTS_HTML_V1'],
+        ingestionAvailable: false,
+        blocker: 'READ_ONLY_INGESTION_NOT_IMPLEMENTED',
+        reason:
+          'A versioned HTML adapter is available for approved local validation; this read-only route cannot upload or persist a source artifact.',
       },
       apply: {
         ready: false,
@@ -144,13 +158,20 @@ describe('admin TeleStaff read-only history', () => {
       expect.objectContaining({
         id: 'import-synthetic-v1',
         sourceSystem: 'telestaff',
-        sourceVersion: 'synthetic-contract-v1',
+        sourceFormat: 'TELSTAFF_ASSIGNMENTS_HTML_V1',
+        parserVersion: 'telestaff-assignments-html@1',
+        sourceKind: 'synthetic_test',
         status: 'staged',
         inputRowCount: 2,
+        normalizedDataRowCount: 2,
+        uniqueEmployeeCount: 2,
+        reportRowCount: 2,
+        structuralRowCount: 0,
         reconciliation: {
           sourceRows: 2,
           pendingSourceRows: 0,
-          hardBlockerSourceRows: 1,
+          hardBlockerSourceRows: 0,
+          incompleteTopologySourceRows: 0,
           missingObservationFindings: 1,
           pendingMissingObservationFindings: 1,
         },
@@ -180,6 +201,7 @@ describe('admin TeleStaff read-only history', () => {
       rows: Array<Record<string, unknown>>;
       missingObservationFindings: Array<Record<string, unknown>>;
       pagination: { limit: number; offset: number; totalRows: number };
+      sourceValidation: { status: string; blockingCodes: string[] };
     };
     expect(body.import.id).toBe('import-synthetic-v1');
     expect(body.pagination).toEqual({ limit: 25, offset: 0, totalRows: 2 });
@@ -187,11 +209,12 @@ describe('admin TeleStaff read-only history', () => {
       expect.objectContaining({
         id: 'row-reviewed',
         sourceRowNumber: 7,
-        sourceARDay: 'G1',
+        hasSourceARDay: true,
         disposition: 'moved',
         reconciliationClassification: 'MOVED',
         reviewStatus: 'approved',
         resolutionAction: 'APPLY_OBSERVATION',
+        sourceTopologyCompleteness: 'complete',
         hasResolvedMember: false,
         hasStaffingPositionSourceMapping: false,
       }),
@@ -199,9 +222,11 @@ describe('admin TeleStaff read-only history', () => {
         id: 'row-hard-blocked',
         reconciliationClassification: 'UNKNOWN_EMPLOYEE',
         resolutionAction: 'REJECT_SOURCE_ROW',
+        sourceTopologyCompleteness: 'complete',
       }),
     ]);
     expect(body.rows[0]).not.toHaveProperty('memberReferenceHmac');
+    expect(body.rows[0]).not.toHaveProperty('sourceARDay');
     expect(body.rows[0]).not.toHaveProperty('resolvedMemberId');
     expect(body.rows[0]).not.toHaveProperty('reviewedByMemberId');
     expect(body.rows[0]).not.toHaveProperty('resolutionReason');
@@ -218,6 +243,13 @@ describe('admin TeleStaff read-only history', () => {
     expect(body.missingObservationFindings[0]).not.toHaveProperty('memberAssignmentId');
     expect(body.missingObservationFindings[0]).not.toHaveProperty('reviewedByMemberId');
     expect(body.missingObservationFindings[0]).not.toHaveProperty('resolutionReason');
+    expect(body.sourceValidation).toMatchObject({
+      status: 'BLOCKED',
+      blockingCodes: expect.arrayContaining(['IMPORT_NOT_COMMITTED', 'UNREVIEWED_SOURCE_MAPPING']),
+    });
+    expect(JSON.stringify(body.sourceValidation)).not.toContain('hmac');
+    expect(JSON.stringify(body)).not.toContain('synthetic-contract-v1');
+    expect(JSON.stringify(body)).not.toContain('G1');
 
     const after = await h.db.run(
       `SELECT id, reconciliation_revision, status

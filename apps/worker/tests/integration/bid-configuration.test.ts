@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import { seedAuthoritativeBaseline } from './helpers/authoritative-staffing-baseline.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'g'.repeat(64);
@@ -86,24 +87,30 @@ async function seedCommittedTeleStaffBaseline(h: TestD1): Promise<void> {
        (id, staffing_position_id, source_system, source_locator, source_signature,
         source_version, source_hash, effective_from, created_at)
      VALUES
-       ('synthetic-mapping-701', 'synthetic-slot-701', 'telestaff', 'synthetic/2027/a101',
+        ('synthetic-mapping-701', 'synthetic-slot-701', 'telestaff',
+         '{"v":1,"shift":"A Shift","division":"Suppression/Rescue","station":"1","unit":"Engine 1","position":"Firefighter"}',
         ?, 'synthetic-v1', ?, '2027-01-01', ?);`,
     [hash, hash, now],
   );
   await h.db.run(
     `INSERT INTO assignment_imports
-       (id, source_system, source_version, source_hash, status, input_row_count, created_at)
-     VALUES ('synthetic-import-701', 'telestaff', 'synthetic-v1', ?, 'staged', 1, ?);`,
+        (id, source_system, source_version, source_hash, source_format, parser_version, source_kind,
+         status, input_row_count, normalized_data_row_count, unique_employee_count,
+         report_row_count, structural_row_count, created_at)
+      VALUES ('synthetic-import-701', 'telestaff', 'synthetic-v1', ?,
+        'TELSTAFF_ASSIGNMENTS_HTML_V1', 'telestaff-assignments-html@1',
+        'official', 'staged', 1, 1, 1, 1, 0, ?);`,
     [hash, now],
   );
   await h.db.run(
     `INSERT INTO assignment_import_rows
        (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
         resolved_member_id, staffing_position_source_mapping_id, normalized_source_topology,
-        disposition, review_status, created_at)
+        disposition, reconciliation_classification, review_status, created_at)
      VALUES
        ('synthetic-row-701', 'synthetic-import-701', 1, ?, ?, 701, 'synthetic-mapping-701',
-        'synthetic/2027/a101', 'unchanged', 'not_required', ?);`,
+         '{"v":1,"shift":"A Shift","division":"Suppression/Rescue","station":"1","unit":"Engine 1","position":"Firefighter"}',
+         'unchanged', 'UNCHANGED', 'not_required', ?);`,
     ['b'.repeat(64), 'c'.repeat(64), now],
   );
   await h.db.run(
@@ -125,7 +132,8 @@ async function seedCommittedTeleStaffBaseline(h: TestD1): Promise<void> {
         staffing_position_source_mapping_id, normalized_source_topology, observed_at, created_at)
      VALUES
        ('synthetic-observation-701', 'synthetic-import-701', 'synthetic-row-701', 701,
-        'synthetic-slot-701', 'synthetic-mapping-701', 'synthetic/2027/a101', ?, ?);`,
+        'synthetic-slot-701', 'synthetic-mapping-701',
+        '{"v":1,"shift":"A Shift","division":"Suppression/Rescue","station":"1","unit":"Engine 1","position":"Firefighter"}', ?, ?);`,
     [now, now],
   );
   await h.db.run(
@@ -135,6 +143,14 @@ async function seedCommittedTeleStaffBaseline(h: TestD1): Promise<void> {
      VALUES
        ('synthetic-assignment-701', 701, 'synthetic-slot-701', 'TELESTAFF_IMPORT',
         'synthetic-import-701', 'synthetic-observation-701', 'active', '2027-01-01', ?, ?);`,
+    [now, now],
+  );
+  await h.db.run(
+    `INSERT INTO bid_year_staffing_baselines
+       (id, bid_year, assignment_import_id, status, accepted_at, accepted_by_member_id,
+        acceptance_reason, created_at)
+     VALUES ('synthetic-import-701-acceptance', 2027, 'synthetic-import-701', 'accepted',
+       ?, 701, 'Synthetic source baseline accepted for test only.', ?);`,
     [now, now],
   );
 }
@@ -600,14 +616,63 @@ describe('annual bid configuration selection', () => {
     });
 
     expect(publish.status).toBe(409);
-    expect(await publish.json()).toEqual({
+    expect(await publish.json()).toMatchObject({
       error: 'rule_book_publication_blocked',
       blocker: 'authoritative_staffing_baseline_required',
       position_ids: [],
+      baseline: {
+        status: 'BLOCKED',
+        blockingCodes: ['NO_ACCEPTED_TELESTAFF_BASELINE'],
+      },
     });
     expect(
       (await h.db.run("SELECT status FROM rule_books WHERE version = '2027.2'")).results,
     ).toEqual([{ status: 'draft' }]);
+  });
+
+  it('blocks a partial multi-row source baseline at publication and keeps the draft/live gates closed', async () => {
+    expect((await designateDraft(h)).status).toBe(200);
+    await seedAuthoritativeBaseline(h, {
+      bidYear: 2027,
+      importId: 'partial-publication-baseline',
+      rows: [
+        {
+          sourceRowNumber: 1,
+          normalizedTopology: 'synthetic/partial-one',
+          materializeObservation: true,
+        },
+        {
+          sourceRowNumber: 2,
+          normalizedTopology: 'synthetic/partial-two',
+          materializeObservation: false,
+        },
+      ],
+      accept: false,
+    });
+
+    const publish = await adminRequest(h, '/api/admin/rule-books/2027.2/publish', {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'A partial source manifest must not freeze the draft.' }),
+    });
+    expect(publish.status).toBe(409);
+    expect(await publish.json()).toMatchObject({
+      error: 'rule_book_publication_blocked',
+      blocker: 'authoritative_staffing_baseline_required',
+      baseline: {
+        status: 'BLOCKED',
+        blockingCodes: ['NO_ACCEPTED_TELESTAFF_BASELINE'],
+      },
+    });
+    expect(
+      (await h.db.run("SELECT status FROM rule_books WHERE version = '2027.2'")).results,
+    ).toEqual([{ status: 'draft' }]);
+
+    const live = await adminRequest(h, '/api/admin/bid-session', {
+      method: 'POST',
+      body: JSON.stringify({ bid_year: 2027, is_mock: false }),
+    });
+    expect(live.status).toBe(409);
+    expect(await live.json()).toMatchObject({ policy_error: 'bid_configuration_frozen_required' });
   });
 
   it('rejects publication when the designated configuration changes at the freeze boundary', async () => {

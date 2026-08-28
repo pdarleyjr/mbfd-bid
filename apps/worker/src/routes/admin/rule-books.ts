@@ -414,6 +414,9 @@ router.post(
           blocker: staffingPreflight.code,
           position_ids:
             'positionIds' in staffingPreflight ? (staffingPreflight.positionIds ?? []) : [],
+          // Aggregate-only source-accounting evidence. It deliberately omits
+          // raw TeleStaff rows, names, Emp IDs, HMACs, and topology values.
+          baseline: 'baseline' in staffingPreflight ? staffingPreflight.baseline : undefined,
         },
         409,
       );
@@ -446,13 +449,53 @@ router.post(
                  SELECT 1 FROM rule_books
                   WHERE version = ? AND status = 'draft' AND revision = ?
                 )
-               AND EXISTS (
-                 SELECT 1 FROM bid_years
-                  WHERE year = ?
-                    AND rule_book_version = ?
-                    AND position_template_version = ?
-                    AND configuration_revision = ?
-               )`,
+                AND EXISTS (
+                  SELECT 1 FROM bid_years
+                   WHERE year = ?
+                     AND rule_book_version = ?
+                     AND position_template_version = ?
+                     AND configuration_revision = ?
+                )
+                AND EXISTS (
+                  SELECT 1 FROM bid_year_staffing_baselines
+                   WHERE id = ?
+                     AND bid_year = ?
+                     AND assignment_import_id = ?
+                     AND status = 'accepted'
+                )
+                -- Source rows and observations are immutable after commit;
+                -- re-check their mutable canonical projection inside the
+                -- D1 publication batch to close the preflight-to-publish gap.
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM assignment_import_rows row_record
+                  WHERE row_record.import_id = ?
+                    AND (
+                      row_record.reconciliation_classification = 'UNCHANGED'
+                      OR (
+                        row_record.reconciliation_classification IN ('MOVED', 'NEW_ASSIGNMENT')
+                        AND row_record.review_status = 'approved'
+                        AND row_record.resolution_action = 'APPLY_OBSERVATION'
+                      )
+                    )
+                    AND (
+                      (SELECT COUNT(*)
+                       FROM assignment_observations observation
+                       WHERE observation.assignment_import_id = ?
+                         AND observation.assignment_import_row_id = row_record.id) <> 1
+                      OR (SELECT COUNT(*)
+                          FROM member_assignments assignment_record
+                          JOIN assignment_observations observation
+                            ON observation.id = assignment_record.source_observation_id
+                          JOIN staffing_positions position_record
+                            ON position_record.id = assignment_record.staffing_position_id
+                          WHERE observation.assignment_import_id = ?
+                            AND observation.assignment_import_row_id = row_record.id
+                            AND assignment_record.origin_type = 'TELESTAFF_IMPORT'
+                            AND assignment_record.status = 'active'
+                            AND position_record.review_status = 'approved') <> 1
+                    )
+                )`,
         ).bind(
           currentActive.version,
           target.effectiveYear,
@@ -462,6 +505,12 @@ router.post(
           version,
           coverage.templateVersion,
           configuredYear.configurationRevision,
+          staffingPreflight.baselineAcceptanceId,
+          target.effectiveYear,
+          staffingPreflight.baselineImportId,
+          staffingPreflight.baselineImportId,
+          staffingPreflight.baselineImportId,
+          staffingPreflight.baselineImportId,
         ),
       );
     }
@@ -476,13 +525,52 @@ router.post(
                  SELECT 1 FROM rule_books
                   WHERE effective_year = ? AND status = 'active'
                )
-               AND EXISTS (
-                 SELECT 1 FROM bid_years
-                  WHERE year = ?
-                    AND rule_book_version = ?
-                    AND position_template_version = ?
-                    AND configuration_revision = ?
-               )`,
+                AND EXISTS (
+                  SELECT 1 FROM bid_years
+                   WHERE year = ?
+                     AND rule_book_version = ?
+                     AND position_template_version = ?
+                     AND configuration_revision = ?
+                )
+                AND EXISTS (
+                  SELECT 1 FROM bid_year_staffing_baselines
+                   WHERE id = ?
+                     AND bid_year = ?
+                     AND assignment_import_id = ?
+                     AND status = 'accepted'
+                )
+                -- Keep the exact accepted baseline's mutable canonical
+                -- projection valid in the same D1 batch as promotion.
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM assignment_import_rows row_record
+                  WHERE row_record.import_id = ?
+                    AND (
+                      row_record.reconciliation_classification = 'UNCHANGED'
+                      OR (
+                        row_record.reconciliation_classification IN ('MOVED', 'NEW_ASSIGNMENT')
+                        AND row_record.review_status = 'approved'
+                        AND row_record.resolution_action = 'APPLY_OBSERVATION'
+                      )
+                    )
+                    AND (
+                      (SELECT COUNT(*)
+                       FROM assignment_observations observation
+                       WHERE observation.assignment_import_id = ?
+                         AND observation.assignment_import_row_id = row_record.id) <> 1
+                      OR (SELECT COUNT(*)
+                          FROM member_assignments assignment_record
+                          JOIN assignment_observations observation
+                            ON observation.id = assignment_record.source_observation_id
+                          JOIN staffing_positions position_record
+                            ON position_record.id = assignment_record.staffing_position_id
+                          WHERE observation.assignment_import_id = ?
+                            AND observation.assignment_import_row_id = row_record.id
+                            AND assignment_record.origin_type = 'TELESTAFF_IMPORT'
+                            AND assignment_record.status = 'active'
+                            AND position_record.review_status = 'approved') <> 1
+                    )
+                )`,
       ).bind(
         now.getTime(),
         actorId,
@@ -493,6 +581,12 @@ router.post(
         version,
         coverage.templateVersion,
         configuredYear.configurationRevision,
+        staffingPreflight.baselineAcceptanceId,
+        target.effectiveYear,
+        staffingPreflight.baselineImportId,
+        staffingPreflight.baselineImportId,
+        staffingPreflight.baselineImportId,
+        staffingPreflight.baselineImportId,
       ),
     );
     const results = await c.env.DB.batch(statements);

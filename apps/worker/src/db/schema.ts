@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   foreignKey,
   index,
@@ -726,12 +727,35 @@ export const assignmentImports = sqliteTable(
     sourceSystem: text('source_system').notNull(),
     sourceVersion: text('source_version').notNull(),
     sourceHash: text('source_hash').notNull(),
+    /** Versioned source adapter identity; legacy imports remain nullable. */
+    sourceFormat: text('source_format'),
+    /** Immutable parser implementation version for baseline-capable imports. */
+    parserVersion: text('parser_version'),
+    /**
+     * Operational source scope. Only an authorized `official` source can be
+     * designated for a real Bid-year baseline; fixtures stay `synthetic_test`.
+     */
+    sourceKind: text('source_kind', {
+      enum: ['official', 'synthetic_test', 'legacy_unclassified'],
+    })
+      .notNull()
+      .default('legacy_unclassified'),
     status: text('status', {
       enum: ['staged', 'reviewed', 'approved', 'committed', 'rejected'],
     })
       .notNull()
       .default('staged'),
     inputRowCount: integer('input_row_count').notNull().default(0),
+    /** Number of semantic data rows after structural blank rows are excluded. */
+    normalizedDataRowCount: integer('normalized_data_row_count'),
+    /** Count of distinct opaque source employee references in the manifest. */
+    uniqueEmployeeCount: integer('unique_employee_count'),
+    /** All report rows after the semantic header, including structural blanks. */
+    reportRowCount: integer('report_row_count').notNull().default(0),
+    /** Wholly blank report rows excluded from source-row accounting. */
+    structuralRowCount: integer('structural_row_count').notNull().default(0),
+    /** Explicit source observation date if supplied; never an inferred import date. */
+    sourceSnapshotAsOf: text('source_snapshot_as_of'),
     // Optimistic-concurrency token for the TeleStaff reconciliation review surface.
     reconciliationRevision: integer('reconciliation_revision').notNull().default(0),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -746,6 +770,49 @@ export const assignmentImports = sqliteTable(
   }),
 );
 
+/**
+ * Immutable annual designation of the one accepted TeleStaff manifest. This
+ * prevents an arbitrary historic or synthetic import from qualifying a Bid
+ * year. A newer source supersedes through a new ledger row, never by editing
+ * source evidence.
+ */
+export const bidYearStaffingBaselines = sqliteTable(
+  'bid_year_staffing_baselines',
+  {
+    id: text('id').primaryKey().notNull(),
+    bidYear: integer('bid_year')
+      .notNull()
+      .references(() => bidYears.year, { onDelete: 'restrict' }),
+    assignmentImportId: text('assignment_import_id')
+      .notNull()
+      .references(() => assignmentImports.id, { onDelete: 'restrict' }),
+    status: text('status', { enum: ['accepted', 'superseded'] }).notNull(),
+    acceptedAt: integer('accepted_at', { mode: 'timestamp_ms' }).notNull(),
+    acceptedByMemberId: integer('accepted_by_member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    acceptanceReason: text('acceptance_reason').notNull(),
+    supersededAt: integer('superseded_at', { mode: 'timestamp_ms' }),
+    supersededByMemberId: integer('superseded_by_member_id').references(() => members.id, {
+      onDelete: 'restrict',
+    }),
+    supersessionReason: text('supersession_reason'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    acceptedBidYearUnique: uniqueIndex('bid_year_staffing_baselines_one_accepted_per_year')
+      .on(t.bidYear)
+      .where(sql`${t.status} = 'accepted'`),
+    assignmentImportUnique: uniqueIndex('bid_year_staffing_baselines_one_year_per_import').on(
+      t.assignmentImportId,
+    ),
+    importStatusIdx: index('idx_bid_year_staffing_baselines_import').on(
+      t.assignmentImportId,
+      t.status,
+    ),
+  }),
+);
+
 export const assignmentImportRows = sqliteTable(
   'assignment_import_rows',
   {
@@ -754,6 +821,7 @@ export const assignmentImportRows = sqliteTable(
       .notNull()
       .references(() => assignmentImports.id, { onDelete: 'cascade' }),
     sourceRowNumber: integer('source_row_number').notNull(),
+    /** HMAC-SHA-256 source-row provenance; never a plain personnel-derived hash. */
     rowFingerprint: text('row_fingerprint').notNull(),
     // HMAC-SHA-256 reference; never a plain hash of a personnel identifier.
     memberReferenceHmac: text('member_reference_hmac'),
@@ -767,6 +835,12 @@ export const assignmentImportRows = sqliteTable(
     // Source-system A/R-day notation, deliberately distinct from Bid A-Day.
     sourceARDay: text('source_a_r_day'),
     normalizedSourceTopology: text('normalized_source_topology').notNull(),
+    /** Incomplete source topology remains reviewed source evidence only. */
+    sourceTopologyCompleteness: text('source_topology_completeness', {
+      enum: ['complete', 'incomplete'],
+    })
+      .notNull()
+      .default('complete'),
     disposition: text('disposition', {
       enum: [
         'unchanged',
@@ -789,6 +863,7 @@ export const assignmentImportRows = sqliteTable(
         'MISSING_OBSERVATION',
         'UNKNOWN_EMPLOYEE',
         'AMBIGUOUS_MAPPING',
+        'INCOMPLETE_TOPOLOGY',
       ],
     }),
     reviewStatus: text('review_status', {
@@ -803,6 +878,7 @@ export const assignmentImportRows = sqliteTable(
         'REJECT_SOURCE_ROW',
         'RETAIN_ASSIGNMENT',
         'END_ASSIGNMENT',
+        'RETAIN_UNMATERIALIZED_SOURCE_ROW',
       ],
     }),
     reviewedAt: integer('reviewed_at', { mode: 'timestamp_ms' }),
@@ -817,6 +893,15 @@ export const assignmentImportRows = sqliteTable(
       t.importId,
       t.sourceRowNumber,
     ),
+    importFingerprintUnique: uniqueIndex('assignment_import_rows_import_fingerprint_unique').on(
+      t.importId,
+      t.rowFingerprint,
+    ),
+    importMemberReferenceHmacUnique: uniqueIndex(
+      'assignment_import_rows_import_member_reference_hmac_unique',
+    )
+      .on(t.importId, t.memberReferenceHmac)
+      .where(sql`${t.memberReferenceHmac} is not null`),
     importDispositionIdx: index('idx_assignment_import_rows_disposition').on(
       t.importId,
       t.disposition,

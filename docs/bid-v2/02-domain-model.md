@@ -97,20 +97,23 @@ New, explicitly classified imports use the operator taxonomy `UNCHANGED`,
 `UNKNOWN_EMPLOYEE`, and `AMBIGUOUS_MAPPING`. The nullable v2 fields are never
 backfilled: a historical `new_combination` is not silently declared to be one
 of the two new meanings. Unknown employees and ambiguous mappings are hard
-approval/commit blockers even after a reviewer rejects the source row. Moved
-and new-assignment evidence only materializes as an observation after an
-approved `APPLY_OBSERVATION`; a new position can only be deferred or rejected,
-never used to auto-create staffing capacity. The database also rejects approval
-or commit unless the declared source-row count matches the staged rows, and
-freezes human-reviewed rows/mappings and all approved, committed, or rejected
-import evidence. The same guards reject SQLite conflict-replacement writes that
-would otherwise bypass delete triggers. A rejected source row is still
-evidence, not an automatic vacancy or authorized-slot deletion.
+approval/commit blockers while pending. A reviewed `REJECT_SOURCE_ROW` is
+terminal immutable source evidence: it permits the source record to remain
+accounted for, but cannot create a mapping, observation, capacity, or fail-open
+pick. Moved and new-assignment evidence only materializes as an observation
+after an approved `APPLY_OBSERVATION`; a new position can only be deferred or
+rejected, never used to auto-create staffing capacity. The database also rejects
+approval or commit unless the declared source-row count matches the staged rows,
+and freezes human-reviewed rows/mappings and all approved, committed, or
+rejected import evidence. The same guards reject SQLite conflict-replacement
+writes that would otherwise bypass delete triggers. A rejected source row is
+still evidence, not an automatic vacancy or authorized-slot deletion.
 
 Import rows hold no raw employee identifier or unsalted identity hash. The
-current foundation deliberately has no parser, reviewer route, approval
-workflow, transactional assignment-commit service, vacancy inference, or
-bid-opportunity creation. In particular, source-version/hash compatibility and
-the source-effective-date rule for selecting an effective mapping are not yet
-authorized; importer implementation remains blocked pending those policy
-decisions and an approved sanitized baseline.
+current foundation now has a local, source-format parser and sanitized staging
+adapter only; it still has no authenticated reviewer route, approval workflow,
+transactional assignment-commit service, vacancy inference, or bid-opportunity
+creation. In particular, source-version/hash compatibility and the
+source-effective-date rule for selecting an effective mapping are not yet
+authorized; operational ingestion, reconciliation, and commit remain blocked
+pending those policy decisions and an approved authoritative baseline.

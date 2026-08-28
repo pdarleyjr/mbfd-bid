@@ -1,6 +1,8 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 
+import { getDb } from '../../db/index.js';
+import { evaluateTeleStaffImportCompleteness } from '../../lib/authoritative-staffing-baseline.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -11,9 +13,16 @@ type ImportStatus = 'staged' | 'reviewed' | 'approved' | 'committed' | 'rejected
 interface ImportDbRow {
   id: string;
   source_system: string;
-  source_version: string;
+  source_format: string | null;
+  parser_version: string | null;
+  source_kind: 'official' | 'synthetic_test' | 'legacy_unclassified';
   status: ImportStatus;
   input_row_count: number;
+  normalized_data_row_count: number | null;
+  unique_employee_count: number | null;
+  report_row_count: number;
+  structural_row_count: number;
+  source_snapshot_as_of: string | null;
   reconciliation_revision: number;
   created_at: number;
   approved_at: number | null;
@@ -21,6 +30,7 @@ interface ImportDbRow {
   source_row_count: number;
   pending_source_row_count: number;
   hard_blocker_source_row_count: number;
+  incomplete_topology_source_row_count: number;
   missing_observation_finding_count: number;
   pending_missing_observation_finding_count: number;
 }
@@ -28,11 +38,12 @@ interface ImportDbRow {
 interface ImportRowDbRow {
   id: string;
   source_row_number: number;
-  source_a_r_day: string | null;
+  has_source_a_r_day: number;
   disposition: string;
   reconciliation_classification: string | null;
   review_status: string;
   resolution_action: string | null;
+  source_topology_completeness: 'complete' | 'incomplete';
   has_resolved_member: number;
   has_staffing_position_source_mapping: number;
 }
@@ -53,9 +64,16 @@ const IMPORT_SUMMARY_SELECT = `
   SELECT
     import_record.id,
     import_record.source_system,
-    import_record.source_version,
+    import_record.source_format,
+    import_record.parser_version,
+    import_record.source_kind,
     import_record.status,
     import_record.input_row_count,
+    import_record.normalized_data_row_count,
+    import_record.unique_employee_count,
+    import_record.report_row_count,
+    import_record.structural_row_count,
+    import_record.source_snapshot_as_of,
     import_record.reconciliation_revision,
     import_record.created_at,
     import_record.approved_at,
@@ -75,14 +93,23 @@ const IMPORT_SUMMARY_SELECT = `
       SELECT COUNT(*)
       FROM assignment_import_rows source_row
       WHERE source_row.import_id = import_record.id
-        AND (
-          source_row.reconciliation_classification IN ('UNKNOWN_EMPLOYEE', 'AMBIGUOUS_MAPPING')
+         AND (
+          (
+            source_row.reconciliation_classification IN ('UNKNOWN_EMPLOYEE', 'AMBIGUOUS_MAPPING')
+            AND source_row.review_status <> 'rejected'
+          )
           OR (
             source_row.reconciliation_classification IS NULL
             AND source_row.disposition IN ('unknown_employee', 'ambiguous_mapping')
           )
         )
     ) AS hard_blocker_source_row_count,
+    (
+      SELECT COUNT(*)
+      FROM assignment_import_rows source_row
+      WHERE source_row.import_id = import_record.id
+        AND source_row.source_topology_completeness = 'incomplete'
+    ) AS incomplete_topology_source_row_count,
     (
       SELECT COUNT(*)
       FROM assignment_import_missing_observations finding
@@ -98,16 +125,19 @@ const IMPORT_SUMMARY_SELECT = `
 
 /**
  * This surface intentionally stops at inspecting sanitized reconciliation
- * metadata. It cannot upload, parse, apply, contact TeleStaff, or write an
- * audit record; those capabilities remain blocked until their separate policy
- * and data gates are satisfied.
+ * metadata. The versioned HTML adapter may validate an already-authorized
+ * in-memory source, but this route cannot upload, stage, apply, contact
+ * TeleStaff, or write an audit record.
  */
 const READINESS = {
   readOnly: true,
   parse: {
-    ready: false,
-    blocker: 'APPROVED_SANITIZED_SOURCE_CONTRACT_REQUIRED',
-    reason: 'Parsing remains unavailable until an approved sanitized source contract exists.',
+    adapterAvailable: true,
+    supportedSourceFormats: ['TELSTAFF_ASSIGNMENTS_HTML_V1'],
+    ingestionAvailable: false,
+    blocker: 'READ_ONLY_INGESTION_NOT_IMPLEMENTED',
+    reason:
+      'A versioned HTML adapter is available for approved local validation; this read-only route cannot upload or persist a source artifact.',
   },
   apply: {
     ready: false,
@@ -139,9 +169,16 @@ function mapImport(row: ImportDbRow) {
   return {
     id: row.id,
     sourceSystem: row.source_system,
-    sourceVersion: row.source_version,
+    sourceFormat: row.source_format,
+    parserVersion: row.parser_version,
+    sourceKind: row.source_kind,
     status: row.status,
     inputRowCount: row.input_row_count,
+    normalizedDataRowCount: row.normalized_data_row_count,
+    uniqueEmployeeCount: row.unique_employee_count,
+    reportRowCount: row.report_row_count,
+    structuralRowCount: row.structural_row_count,
+    sourceSnapshotAsOf: row.source_snapshot_as_of,
     reconciliationRevision: row.reconciliation_revision,
     createdAt: row.created_at,
     approvedAt: row.approved_at,
@@ -150,6 +187,7 @@ function mapImport(row: ImportDbRow) {
       sourceRows: row.source_row_count,
       pendingSourceRows: row.pending_source_row_count,
       hardBlockerSourceRows: row.hard_blocker_source_row_count,
+      incompleteTopologySourceRows: row.incomplete_topology_source_row_count,
       missingObservationFindings: row.missing_observation_finding_count,
       pendingMissingObservationFindings: row.pending_missing_observation_finding_count,
     },
@@ -215,11 +253,12 @@ router.get('/imports/:importId', async (c) => {
       `SELECT
          id,
          source_row_number,
-         source_a_r_day,
+         CASE WHEN source_a_r_day IS NULL THEN 0 ELSE 1 END AS has_source_a_r_day,
          disposition,
          reconciliation_classification,
          review_status,
          resolution_action,
+         source_topology_completeness,
          CASE WHEN resolved_member_id IS NULL THEN 0 ELSE 1 END AS has_resolved_member,
          CASE WHEN staffing_position_source_mapping_id IS NULL THEN 0 ELSE 1 END
            AS has_staffing_position_source_mapping
@@ -254,11 +293,12 @@ router.get('/imports/:importId', async (c) => {
   const rows = (rowsResult.results as unknown as ImportRowDbRow[]).map((row) => ({
     id: row.id,
     sourceRowNumber: row.source_row_number,
-    sourceARDay: row.source_a_r_day,
+    hasSourceARDay: row.has_source_a_r_day === 1,
     disposition: row.disposition,
     reconciliationClassification: row.reconciliation_classification,
     reviewStatus: row.review_status,
     resolutionAction: row.resolution_action,
+    sourceTopologyCompleteness: row.source_topology_completeness,
     hasResolvedMember: row.has_resolved_member === 1,
     hasStaffingPositionSourceMapping: row.has_staffing_position_source_mapping === 1,
   }));
@@ -279,6 +319,7 @@ router.get('/imports/:importId', async (c) => {
     import: mapImport(importRow),
     rows,
     missingObservationFindings,
+    sourceValidation: await evaluateTeleStaffImportCompleteness(getDb(c.env.DB), importId),
     pagination: {
       limit: parsedLimit.value,
       offset: parsedOffset.value,
