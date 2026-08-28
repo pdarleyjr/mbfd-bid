@@ -105,3 +105,10 @@
 ## Next checkpoint
 
 Resolve the CodeQL repository setting, complete the isolated adapter spike on a supported Linux-compatible path, and keep staging migrations blocked until managed migration metadata and deployment ownership are proven. Obtain the approved sanitized TeleStaff baseline before implementing a parser or commit workflow.
+
+## 2026-08-28 — forward-only TeleStaff reconciliation contract
+
+- Added un-deployed additive migration `0024_staffing_reconciliation_v2.sql` and matching Drizzle schema fields. It preserves historical nullable legacy dispositions, adds a reconciliation revision token, and provides the seven explicit operator classifications without guessing what an old `new_combination` meant.
+- Negative `MISSING_OBSERVATION` evidence now has a distinct import-scoped finding with a reviewer/actor/timestamp/reason and an explicit `RETAIN_ASSIGNMENT` or `END_ASSIGNMENT` action. It never becomes a fabricated source row, cannot inflate the import manifest count, and does not delete canonical staffing capacity.
+- Unknown employees and ambiguous mappings remain hard approval/commit blockers even after a reviewed rejection. Moved/new-assignment rows require an approved `APPLY_OBSERVATION` before observation materialization; a new position can be deferred or rejected but cannot create a staffing position or source observation.
+- Local verification for this bounded phase: the Worker database suite passed 9 files / 55 tests, the shared suite passed 18 files / 139 tests, and Worker/shared TypeScript checks passed. No GitHub Actions, deployment, staging migration, production change, or shared-infrastructure action occurred.

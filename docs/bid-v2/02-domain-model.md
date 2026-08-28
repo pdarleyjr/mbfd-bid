@@ -32,7 +32,7 @@
 
 These anchors are implementation evidence, not approval of the currently seeded rule values.
 
-## Additive source-only foundation (migration 0021; not deployed)
+## Additive source-only foundation (migrations 0021 and 0024; not deployed)
 
 The V2 branch defines the following separation without replacing the legacy
 `positions`/`position_rules` model:
@@ -54,13 +54,21 @@ The V2 branch defines the following separation without replacing the legacy
 - `assignment_imports` and `assignment_import_rows` — staged source evidence,
   including source A/R Day, normalized topology, a keyed opaque
   member-reference HMAC, resolved internal member/mapping references, complete
-  reconciliation disposition, and reviewer evidence where required. Non-null
-  fingerprints and HMACs are text-only lowercase hexadecimal values; source
-  versions reject common surrounding whitespace. The import manifest (identity,
-  source system/version/hash, declared count, and creation time) is immutable
-  at creation. An import must traverse
+  reconciliation disposition, and reviewer evidence where required. The
+  forward-only `reconciliation_revision` supports later optimistic review
+  concurrency. Non-null fingerprints and HMACs are text-only lowercase
+  hexadecimal values; source versions reject common surrounding whitespace. The
+  import manifest (identity, source system/version/hash, declared count, and
+  creation time) is immutable at creation. An import must traverse
   `staged → reviewed → approved → committed` (or terminate as `rejected`);
   approval is refused until the reconciled row set and count are complete.
+- `assignment_import_missing_observations` — negative evidence that an existing
+  authoritative assignment was absent from a source export. It is intentionally
+  separate from source rows, so it cannot manufacture a row or alter the
+  declared input-row count. A reviewer must resolve it with either
+  `RETAIN_ASSIGNMENT` or `END_ASSIGNMENT`; neither action deletes or retires a
+  canonical staffing position. The finding is immutable after resolution or
+  import finalization.
 - `assignment_observations` — immutable evidence that a particular imported
   row observed a resolved member in a canonical slot at a point in time. An
   observation can only be inserted after its import is committed and must
@@ -83,16 +91,21 @@ observations. It is not a canonical slot property and is not treated as the
 Bid's G1/G2/G3/G4 A-Day award. An authoritative mapping between those concepts
 is still a policy blocker.
 
-The reconciliation contract classifies `unchanged` as informational;
-`moved`, `new_combination`, and `missing_vanished` as review-required; and
-`unknown_employee` and `ambiguous_mapping` as blocking. It fails closed while
-blocking rows exist or a review-required row lacks an explicit human approval
-or rejection with reviewer, timestamp, and reason. The database also rejects a
-approval or commit unless the declared source-row count matches the staged rows,
-and freezes human-reviewed rows/mappings and all approved, committed, or
-rejected import evidence. The same guards reject SQLite conflict-replacement
-writes that would otherwise bypass delete triggers. A rejected source row is
-still evidence, not an automatic vacancy or authorized-slot deletion.
+The original lowercase disposition contract remains intact for historical rows.
+New, explicitly classified imports use the operator taxonomy `UNCHANGED`,
+`MOVED`, `NEW_ASSIGNMENT`, `NEW_POSITION`, `MISSING_OBSERVATION`,
+`UNKNOWN_EMPLOYEE`, and `AMBIGUOUS_MAPPING`. The nullable v2 fields are never
+backfilled: a historical `new_combination` is not silently declared to be one
+of the two new meanings. Unknown employees and ambiguous mappings are hard
+approval/commit blockers even after a reviewer rejects the source row. Moved
+and new-assignment evidence only materializes as an observation after an
+approved `APPLY_OBSERVATION`; a new position can only be deferred or rejected,
+never used to auto-create staffing capacity. The database also rejects approval
+or commit unless the declared source-row count matches the staged rows, and
+freezes human-reviewed rows/mappings and all approved, committed, or rejected
+import evidence. The same guards reject SQLite conflict-replacement writes that
+would otherwise bypass delete triggers. A rejected source row is still
+evidence, not an automatic vacancy or authorized-slot deletion.
 
 Import rows hold no raw employee identifier or unsalted identity hash. The
 current foundation deliberately has no parser, reviewer route, approval

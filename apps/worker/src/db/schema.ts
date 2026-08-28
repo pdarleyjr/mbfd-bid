@@ -725,6 +725,8 @@ export const assignmentImports = sqliteTable(
       .notNull()
       .default('staged'),
     inputRowCount: integer('input_row_count').notNull().default(0),
+    // Optimistic-concurrency token for the TeleStaff reconciliation review surface.
+    reconciliationRevision: integer('reconciliation_revision').notNull().default(0),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     approvedAt: integer('approved_at', { mode: 'timestamp_ms' }),
     approvedByMemberId: integer('approved_by_member_id').references(() => members.id, {
@@ -770,11 +772,32 @@ export const assignmentImportRows = sqliteTable(
     })
       .notNull()
       .default('ambiguous_mapping'),
+    // Nullable for pre-v2 history. New imports record an explicit operator taxonomy.
+    reconciliationClassification: text('reconciliation_classification', {
+      enum: [
+        'UNCHANGED',
+        'MOVED',
+        'NEW_ASSIGNMENT',
+        'NEW_POSITION',
+        'MISSING_OBSERVATION',
+        'UNKNOWN_EMPLOYEE',
+        'AMBIGUOUS_MAPPING',
+      ],
+    }),
     reviewStatus: text('review_status', {
       enum: ['not_required', 'pending', 'approved', 'rejected'],
     })
       .notNull()
       .default('pending'),
+    resolutionAction: text('resolution_action', {
+      enum: [
+        'APPLY_OBSERVATION',
+        'DEFER_NEW_POSITION',
+        'REJECT_SOURCE_ROW',
+        'RETAIN_ASSIGNMENT',
+        'END_ASSIGNMENT',
+      ],
+    }),
     reviewedAt: integer('reviewed_at', { mode: 'timestamp_ms' }),
     reviewedByMemberId: integer('reviewed_by_member_id').references(() => members.id, {
       onDelete: 'restrict',
@@ -790,6 +813,11 @@ export const assignmentImportRows = sqliteTable(
     importDispositionIdx: index('idx_assignment_import_rows_disposition').on(
       t.importId,
       t.disposition,
+      t.reviewStatus,
+    ),
+    reconciliationIdx: index('idx_assignment_import_rows_v2_reconciliation').on(
+      t.importId,
+      t.reconciliationClassification,
       t.reviewStatus,
     ),
     idImportUnique: uniqueIndex('assignment_import_rows_id_import_unique').on(t.id, t.importId),
@@ -910,6 +938,48 @@ export const memberAssignments = sqliteTable(
     ),
     sourceObservationUnique: uniqueIndex('member_assignments_source_observation_unique').on(
       t.sourceObservationId,
+    ),
+  }),
+);
+
+/**
+ * Negative source evidence is separate from assignment_import_rows so it never
+ * inflates the source manifest's input-row count. A resolved finding records a
+ * review decision; it does not delete capacity by itself.
+ */
+export const assignmentImportMissingObservations = sqliteTable(
+  'assignment_import_missing_observations',
+  {
+    id: text('id').primaryKey().notNull(),
+    importId: text('import_id')
+      .notNull()
+      .references(() => assignmentImports.id, { onDelete: 'restrict' }),
+    memberAssignmentId: text('member_assignment_id')
+      .notNull()
+      .references(() => memberAssignments.id, { onDelete: 'restrict' }),
+    classification: text('classification', { enum: ['MISSING_OBSERVATION'] })
+      .notNull()
+      .default('MISSING_OBSERVATION'),
+    reviewStatus: text('review_status', { enum: ['pending', 'resolved'] })
+      .notNull()
+      .default('pending'),
+    resolutionAction: text('resolution_action', {
+      enum: ['RETAIN_ASSIGNMENT', 'END_ASSIGNMENT'],
+    }),
+    reviewedAt: integer('reviewed_at', { mode: 'timestamp_ms' }),
+    reviewedByMemberId: integer('reviewed_by_member_id').references(() => members.id, {
+      onDelete: 'restrict',
+    }),
+    resolutionReason: text('resolution_reason'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    importAssignmentUnique: uniqueIndex(
+      'assignment_import_missing_observations_import_assignment_unique',
+    ).on(t.importId, t.memberAssignmentId),
+    importReviewIdx: index('idx_assignment_import_missing_observations_review').on(
+      t.importId,
+      t.reviewStatus,
     ),
   }),
 );
