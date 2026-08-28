@@ -15,7 +15,7 @@ routes = [{ pattern = "api.staging.bid.mbfdhub.com", custom_domain = true }]
 # Read-only portal authentication remains available through PORTAL_BASE_URL.
 # Outbound bid publication is a separate, explicit capability and staging must
 # not obtain it merely by having a queue binding.
-vars = { ENV = "staging", PORTAL_BASE_URL = "https://portal.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid", R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging-v2" }
+vars = { ENV = "staging", PORTAL_BASE_URL = "https://www.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid", R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging-v2" }
 
 [[env.staging.d1_databases]]
 binding = "DB"
