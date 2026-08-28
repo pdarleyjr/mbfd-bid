@@ -1,5 +1,13 @@
 # MBFD Bid v2 implementation log
 
+## 2026-08-28 — Year-round Bid Control Center Phase 0 reconciliation
+
+- Confirmed the accepted staging credential-bridge source checkpoint `d7dc0118991c38431c5afc876fa8daeeb185327a` on draft PR #96. The staging API Worker bridge uses `https://www.mbfdhub.com`, with the reader token present on both sides of the narrow verification boundary; invalid/no-bearer verification remains fail-closed. Staging portal writeback remains disabled, its writer is absent, and the PIN remains `2300`.
+- Corrected the current readiness terminology: `STAGING_ADMIN_UI_TEST_READY=YES`, `STAGING_AUTH_BRIDGE_READY=YES`, `STAGING_MEMBER_VALID_LOGIN=PENDING_AUTHORIZED_TEST_IDENTITY`, `STAGING_FULL_BID_WORKFLOW_READY=NO_AUTHORITATIVE_STAFFING_BASELINE`, and `PRODUCTION_READY=NO`. POL-015 is resolved and is not the remaining full-workflow blocker.
+- Recorded the production-origin blocker without touching production resources: checked-in production configuration still names known-invalid `https://portal.mbfdhub.com`; future production provisioning must use the verified MBFD Hub origin.
+- The staging API Worker was last updated for the accepted bridge repair as `499bccc6-2681-45ab-b5ab-eada27d4ae6b`; the existing staging Web Worker remains `869f9cb8-ea5e-42d4-a00a-90d1857763f3`. The local CI equivalent at the exact source checkpoint passed, including a clean Linux Node 22 / pnpm 9.12 OpenNext build and local preview smoke.
+- GitHub Actions were not used. No production, portal publication/writeback, Media Control, GMKtec, Docker, Cloudflare Tunnel, unrelated DNS, or active-rule data change occurred in this Phase 0 reconciliation.
+
 ## 2026-08-28 — POL-015 staging-draft lifecycle checkpoint
 
 - Captured a fresh private D1 Time Travel recovery bookmark, applied additive migration `0023_bid_position_participation.sql` to staging through managed migrations, and verified no pending migrations and zero foreign-key violations. No production database was contacted.

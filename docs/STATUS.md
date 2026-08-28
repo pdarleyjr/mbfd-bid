@@ -1,5 +1,19 @@
 # Plan execution status + watch-items
 
+## Current control-plane checkpoint — 2026-08-28
+
+> This is the current MBFD Bid V2 readiness classification. Dated entries below
+> preserve their point-in-time evidence; they do not override these states.
+
+| Area | Current verified state | Remaining boundary |
+| --- | --- | --- |
+| PR and source | Draft PR [#96](https://github.com/pdarleyjr/mbfd-bid/pull/96) remains unmerged. The accepted staging credential-bridge source checkpoint is `d7dc0118991c38431c5afc876fa8daeeb185327a`. | Do not merge or deploy production. Follow-on control-plane work must remain reviewable, with one logical checkpoint at a time. |
+| Staging auth bridge | `STAGING_AUTH_BRIDGE_READY=YES`. Staging uses `PORTAL_BASE_URL=https://www.mbfdhub.com`; the Hub reader-token bridge rejects invalid/no-bearer requests correctly, and the staging PIN remains `2300`. | `STAGING_MEMBER_VALID_LOGIN=PENDING_AUTHORIZED_TEST_IDENTITY`; no member identity was invented or reset for acceptance. |
+| Staging readiness | `STAGING_ADMIN_UI_TEST_READY=YES`. `STAGING_FULL_BID_WORKFLOW_READY=NO_AUTHORITATIVE_STAFFING_BASELINE`. | The remaining full-workflow gate is a reviewed authoritative staffing baseline, bindings, and member assignments—not POL-015. |
+| Division Chief policy | `POL-015` is resolved: A211/B211/C211 are administratively assigned, non-biddable staffing positions. Draft `2026.2` contains the valid 229-position candidate set and remains unpublished. | Do not publish the draft until reviewed staffing bindings and actual-occupant exclusion proof exist. Active `2026.1` remains untouched. |
+| Production origin | Checked-in production configuration still references `https://portal.mbfdhub.com`. That hostname is known invalid. | `PRODUCTION_PORTAL_URL_BLOCKER_RECORDED=YES`. Before any production provisioning, production must use the verified MBFD Hub origin; this checkpoint makes no production-resource change. |
+| Safety and validation | `PORTAL_WRITEBACK_ENABLED=false`; `PORTAL_BID_WRITER` is absent; no portal consumers exist. Frozen install, lint, package build, typecheck, Next build, D1 preflight, full tests (1,125 passed; 4 intended skips), clean-Linux OpenNext build/preview, and diff check passed at the accepted source checkpoint. | The known `extract-zip@2.0.1` high advisory remains unsuppressed. `GITHUB_ACTIONS_USED=NO`; no production, Media Control, GMKtec, Docker, tunnel, or unrelated DNS change occurred. |
+
 ## POL-015 staging-draft checkpoint — 2026-08-28
 
 | Area | Current verified state | Remaining boundary |
@@ -9,11 +23,13 @@
 | Pool/session model | Reviewed authoritative staffing assignments exclude only their actual occupants; the normalized pool and order freeze with the session. Vacancy does not create a Bid opportunity. | Staging has zero staffing positions, zero position-to-staffing bindings, and zero member assignments. No staffing or employee data was invented or modified to force a proof. |
 | Validation | Final source-local gate passed: frozen install, lint, package builds, workspace typecheck, Next build, D1 preflight, full suite (1,125 passed; 4 intentional opt-in skips), and diff check. The Web surface passed a clean Linux Node 22.22.1 / pnpm 9.12 OpenNext build and was deployed to the existing staging Web Worker as `869f9cb8-ea5e-42d4-a00a-90d1857763f3`. | The unsuppressed `extract-zip@2.0.1` high advisory remains; it is not waived. |
 | Staging mock acceptance | Not attempted. A read-only investigation found no safe completely isolated synthetic rule-book/session scope, and the absent authoritative assignment data prevents a truthful ordinary-mock freeze/exclusion proof. | Do not create a synthetic or ordinary staging mock merely to force a pass. The full workflow remains unaccepted. |
-| Safety | No GitHub Actions, production, Media Control, GMKtec, Docker, tunnel, unrelated DNS, portal publication, or portal writeback changed. Staging-only changes were migration `0023`, the audited `2026.2` draft lifecycle, API Worker `123264ad-e0ec-402b-87a3-e0366b11ee0d`, and the existing staging Web Worker deployment. | Existing staging auth/UI acceptance remains separately valid; production remains blocked. |
+| Safety | No GitHub Actions, production, Media Control, GMKtec, Docker, tunnel, unrelated DNS, portal publication, or portal writeback changed. Staging-only changes were migration `0023`, the audited `2026.2` draft lifecycle, the historical precursor API Worker `123264ad-e0ec-402b-87a3-e0366b11ee0d`, and the existing staging Web Worker deployment. The accepted credential-bridge repair supersedes the precursor API version and is recorded in the current checkpoint above. | Existing staging auth/UI acceptance remains separately valid; production remains blocked. |
 
-## Current staging final-auth checkpoint — 2026-08-27
+## Historical staging final-auth checkpoint — 2026-08-27
 
-> This checkpoint supersedes older Plan 01–08 deployment/watch-item advice and the earlier 2026-08-27 release snapshot for the active staging resources. Historical entries below remain historical records; they are not current runbooks.
+> This checkpoint was superseded by the later 2026-08-28 staging policy lifecycle
+> and credential-bridge checkpoints. It remains point-in-time authentication
+> evidence, not current runtime or readiness metadata.
 
 | Area | Verified current state | Remaining boundary |
 | --- | --- | --- |

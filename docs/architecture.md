@@ -9,16 +9,22 @@ companion `MBFD_Hub` repository:
 ```
 ┌──────────────────┐    PIN cookie    ┌──────────────────┐    /api/auth/login
 │  staging.bid.    │ ◄───────────────│  Cloudflare      │ ──────────────────►
-│  mbfdhub.com     │                  │  Pages           │
+│  mbfdhub.com     │                  │  OpenNext Worker │
 │  (Next.js 15)    │ ───────────────► │  middleware      │ ◄────────────────── 
 │                  │   JWT cookie     │                  │     api.staging.bid.mbfdhub.com
 └──────────────────┘                  └──────────────────┘     (Hono Worker)
                                                                        │
                                                                        │ POST /verify-credentials
                                                                        ▼
-                                                              portal.mbfdhub.com
-                                                              (Laravel — external)
+                                                              www.mbfdhub.com
+                                                              (Laravel Hub — verified staging bridge origin)
 ```
+
+> **Current origin note:** staging authentication uses
+> `https://www.mbfdhub.com`. The checked-in production configuration still
+> names the known-invalid `https://portal.mbfdhub.com`; correct that value only
+> as part of separately authorized production provisioning, never by copying
+> staging resources or credentials.
 
 ## Cookies
 
@@ -27,7 +33,7 @@ companion `MBFD_Hub` repository:
 | `mbfd_pin` | PIN gate pass | 7 days | yes | strict |
 | `mbfd_bid_jwt` | Session JWT | 8 hours | yes | strict |
 
-## Middleware chain (Next.js Pages)
+## Middleware chain (Web application)
 
 1. `/_next/static/*`, `/_next/image/*`, `/favicon.ico`, `/api/pin` — bypass
 2. `/` and `/api/auth/session-finalize` — bypass
