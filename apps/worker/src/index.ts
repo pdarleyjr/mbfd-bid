@@ -22,6 +22,7 @@ import adminRehearsal from './routes/admin/rehearsal.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
 import adminSettings from './routes/admin/settings.js';
+import adminTelestaff from './routes/admin/telestaff.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
 import health from './routes/health.js';
@@ -40,6 +41,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/members', adminMembers)
   .route('/api/admin/credentials', adminCredentials)
   .route('/api/admin/current-roster', adminCurrentRoster)
+  .route('/api/admin/telestaff', adminTelestaff)
   .route('/api/admin/positions', adminPositions)
   .route('/api/admin/rules', adminRules)
   .route('/api/admin/rule-books', adminRuleBooks)
