@@ -7,8 +7,10 @@ import { usePathname } from 'next/navigation';
 // Note: hrefs typed loosely so Plan-05 stub routes (rule-books, sessions/new,
 // audit, eligibility) compile before Next's typed-routes generator has run
 // against their finished implementations.
-const NAV_LINKS: { href: string; label: string; exact: boolean }[] = [
+export const ADMIN_NAV_LINKS: { href: string; label: string; exact: boolean }[] = [
   { href: '/admin', label: 'Dashboard', exact: true },
+  { href: '/admin/current-rosters', label: 'Current Rosters', exact: false },
+  { href: '/admin/telestaff', label: 'TeleStaff', exact: false },
   { href: '/admin/members', label: 'Members', exact: true },
   { href: '/admin/credentials', label: 'Credentials', exact: false },
   { href: '/admin/positions', label: 'Positions', exact: false },
@@ -65,7 +67,7 @@ export function AdminSideNav() {
         <span className="text-xs font-normal opacity-90">Watch live</span>
       </Link>
 
-      {NAV_LINKS.map(({ href, label, exact }) => {
+      {ADMIN_NAV_LINKS.map(({ href, label, exact }) => {
         const isActive = exact
           ? pathname === href
           : pathname.startsWith(href) && pathname !== '/admin';

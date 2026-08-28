@@ -6,9 +6,13 @@ import { cfEnv } from '../lib/cf-env';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'MBFD Bid',
-  description: 'Miami Beach Fire Department — Annual Shift Bid',
+  title: 'MBFD Annual Bid Control Center',
+  description: 'Miami Beach Fire Department — Annual Bid Control Center',
   robots: { index: false, follow: false }, // unlisted; PIN-gated
+  icons: {
+    icon: [{ url: '/icon.png', type: 'image/png' }],
+    apple: [{ url: '/apple-icon.png', type: 'image/png' }],
+  },
 };
 
 export const viewport: Viewport = {

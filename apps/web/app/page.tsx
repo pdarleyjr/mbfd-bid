@@ -1,3 +1,4 @@
+import { BrandHeader } from '@/components/BrandHeader';
 import { PinForm } from '@/components/PinForm';
 import { PIN_COOKIE_NAME } from '@/lib/cookies';
 import { cookies } from 'next/headers';
@@ -9,12 +10,15 @@ export default async function Home() {
     redirect('/login');
   }
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-16">
-      <header className="mb-8">
-        <h1 className="font-heading text-3xl text-stone-800">MBFD Bid</h1>
-        <p className="mt-2 text-stone-600">Authorized access only.</p>
-      </header>
-      <PinForm />
-    </main>
+    <div className="min-h-screen bg-stone-50">
+      <BrandHeader subtitle="Authorized access only" />
+      <main className="mx-auto flex min-h-[calc(100vh-64px)] max-w-md flex-col justify-center px-4 py-16">
+        <header className="mb-8">
+          <h2 className="font-heading text-3xl text-stone-800">Enter access PIN</h2>
+          <p className="mt-2 text-stone-600">Use the PIN provided for MBFD Annual Bid access.</p>
+        </header>
+        <PinForm />
+      </main>
+    </div>
   );
 }
