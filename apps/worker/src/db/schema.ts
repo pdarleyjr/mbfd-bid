@@ -126,6 +126,41 @@ export const positionRules = sqliteTable(
   }),
 );
 
+/**
+ * Versioned policy override for an annual position inside one rule book.
+ * Default participation is BIDDABLE; records exist only when policy explicitly
+ * makes a canonical staffing position administratively assigned outside the
+ * ordinary Bid. This keeps an active rule book immutable while its clone can
+ * carry the approved correction through the normal draft/publish lifecycle.
+ */
+export const ruleBookPositionParticipation = sqliteTable(
+  'rule_book_position_participation',
+  {
+    ruleBookVersion: text('rule_book_version')
+      .notNull()
+      .references(() => ruleBooks.version, { onDelete: 'restrict' }),
+    positionId: text('position_id').notNull(),
+    templateVersion: text('template_version').notNull(),
+    bidParticipation: text('bid_participation', {
+      enum: ['BIDDABLE', 'ADMIN_ASSIGNED_NON_BIDDABLE'],
+    }).notNull(),
+    authoritativeSourceRef: text('authoritative_source_ref').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.ruleBookVersion, t.positionId] }),
+    templateIdx: index('idx_rule_book_position_participation_template').on(
+      t.ruleBookVersion,
+      t.templateVersion,
+    ),
+    positionTemplateFk: foreignKey({
+      columns: [t.positionId, t.templateVersion],
+      foreignColumns: [positions.id, positions.templateVersion],
+      name: 'rule_book_position_participation_position_template_fkey',
+    }).onDelete('restrict'),
+  }),
+);
+
 // ── Plan 02 Task 4: bid-execution, audit, AI advisory, snapshot, portal ──────
 
 export const bidYears = sqliteTable('bid_years', {
@@ -431,6 +466,31 @@ export const bidSessionSnapshots = sqliteTable(
   }),
 );
 
+/**
+ * Immutable normalized input used to derive a session's ordinary Bid pool.
+ * It binds the session to one archived-or-active rule book and template so a
+ * later staffing update cannot silently alter the pool mid-session.
+ */
+export const bidSessionPolicySnapshots = sqliteTable(
+  'bid_session_policy_snapshots',
+  {
+    bidSessionId: text('bid_session_id')
+      .primaryKey()
+      .references(() => bidSessions.id, { onDelete: 'cascade' }),
+    ruleBookVersion: text('rule_book_version')
+      .notNull()
+      .references(() => ruleBooks.version, { onDelete: 'restrict' }),
+    positionTemplateVersion: text('position_template_version')
+      .notNull()
+      .references(() => positionTemplates.version, { onDelete: 'restrict' }),
+    snapshotJson: text('snapshot_json').notNull(),
+    capturedAt: integer('captured_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    ruleBookIdx: index('idx_bid_session_policy_snapshots_rule_book').on(t.ruleBookVersion),
+  }),
+);
+
 // Plan 07: Phase 2 A-Day picks
 export const aDayPicks = sqliteTable(
   'a_day_picks',
@@ -582,6 +642,40 @@ export const staffingPositions = sqliteTable(
       t.stableSlotKey,
     ),
     reviewStatusIdx: index('idx_staffing_positions_review_status').on(t.reviewStatus),
+  }),
+);
+
+/**
+ * Explicit bridge from the annual Bid template to an approved canonical
+ * staffing slot. The bridge is required before an administrative assignment
+ * can alter Bid-pool membership; IDs are never assumed to be equivalent.
+ */
+export const positionStaffingBindings = sqliteTable(
+  'position_staffing_bindings',
+  {
+    positionId: text('position_id').notNull(),
+    templateVersion: text('template_version').notNull(),
+    staffingPositionId: text('staffing_position_id')
+      .notNull()
+      .references(() => staffingPositions.id, { onDelete: 'restrict' }),
+    authoritativeSourceRef: text('authoritative_source_ref').notNull(),
+    reviewStatus: text('review_status', { enum: ['draft', 'approved', 'retired'] })
+      .notNull()
+      .default('draft'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.positionId, t.templateVersion] }),
+    staffingTemplateUnique: uniqueIndex('position_staffing_bindings_staffing_template_unique').on(
+      t.staffingPositionId,
+      t.templateVersion,
+    ),
+    reviewStatusIdx: index('idx_position_staffing_bindings_review_status').on(t.reviewStatus),
+    positionTemplateFk: foreignKey({
+      columns: [t.positionId, t.templateVersion],
+      foreignColumns: [positions.id, positions.templateVersion],
+      name: 'position_staffing_bindings_position_template_fkey',
+    }).onDelete('restrict'),
   }),
 );
 

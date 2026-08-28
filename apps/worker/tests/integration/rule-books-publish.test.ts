@@ -143,6 +143,14 @@ describe('POST /api/admin/rule-books/:version/publish', () => {
   let h: TestD1;
   beforeEach(async () => {
     h = await setupTestD1();
+    await h.db.run(
+      "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
+    );
+    await h.db.run(
+      `INSERT INTO positions
+       (id, template_version, shift, station, division, unit, rank_required, position_name)
+       VALUES ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter');`,
+    );
     await h.db.run(`INSERT INTO rule_books (version, effective_year, status) VALUES
       -- Insert the draft first: the historical single-UPDATE implementation
       -- could violate the partial active-book index when row order differed.
@@ -339,5 +347,228 @@ describe('POST /api/admin/rule-books/:version/publish', () => {
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
     expect(res.status).toBe(401);
+  });
+});
+
+describe('POL-015 draft rule-book lifecycle', () => {
+  let h: TestD1;
+
+  beforeEach(async () => {
+    h = await setupTestD1();
+    await h.db.run(
+      "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
+    );
+    await h.db.run(
+      `INSERT INTO positions
+       (id, template_version, shift, station, division, unit, rank_required, position_name)
+       VALUES
+         ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter'),
+         ('A211', '2026.1', 'A', '2', 'Combat', '300', 'DC', 'Division Chief'),
+         ('B211', '2026.1', 'B', '2', 'Combat', '300', 'DC', 'Division Chief'),
+         ('C211', '2026.1', 'C', '2', 'Combat', '300', 'DC', 'Division Chief');`,
+    );
+    await h.db.run(
+      "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
+    );
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES
+         ('2026.1', 'A101', '2026.1',
+           '{"rank":["FF"],"credentials":[],"custom":[]}',
+           '{"max":0,"items":[]}',
+           '["points","rsc_seniority","rank_seniority"]'),
+         ('2026.1', 'A211', '2026.1',
+           '{"rank":["DC"],"credentials":[],"custom":["pre_bid_pool"]}',
+           '{"max":0,"items":[]}',
+           '["points","rsc_seniority","rank_seniority"]'),
+         ('2026.1', 'B211', '2026.1',
+           '{"rank":["DC"],"credentials":[],"custom":["pre_bid_pool"]}',
+           '{"max":0,"items":[]}',
+           '["points","rsc_seniority","rank_seniority"]'),
+         ('2026.1', 'C211', '2026.1',
+           '{"rank":["DC"],"credentials":[],"custom":["pre_bid_pool"]}',
+           '{"max":0,"items":[]}',
+           '["points","rsc_seniority","rank_seniority"]');`,
+    );
+  });
+
+  afterEach(async () => {
+    await teardownTestD1(h);
+  });
+
+  it('uses the normal draft lifecycle to correct only A211/B211/C211 and publish complete biddable coverage', async () => {
+    const clone = await app.fetch(
+      new Request('http://x/api/admin/rule-books', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ effective_year: 2026, clone_from: '2026.1' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(clone.status).toBe(201);
+    expect(await clone.json()).toMatchObject({ version: '2026.2', status: 'draft' });
+
+    for (const positionId of ['A211', 'B211', 'C211']) {
+      const participation = await app.fetch(
+        new Request(`http://x/api/admin/rule-books/2026.2/position-participation/${positionId}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${await adminJwt()}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            template_version: '2026.1',
+            bid_participation: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+            authoritative_source_ref: 'POL-015-approved-direction',
+            reason_code: 'rule_override.policy_direction',
+            reason: 'Approved POL-015 administrative staffing correction.',
+          }),
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(participation.status).toBe(200);
+
+      const rule = await h.db.run(
+        'SELECT id FROM position_rules WHERE rule_book_version = ? AND position_id = ?',
+        ['2026.2', positionId],
+      );
+      const deleteRule = await app.fetch(
+        new Request(`http://x/api/admin/rules/${rule.results[0]?.id}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${await adminJwt()}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reason_code: 'rule_override.policy_direction',
+            reason: 'Remove approved non-biddable staffing position rule.',
+          }),
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(deleteRule.status).toBe(200);
+      expect(await deleteRule.json()).toMatchObject({
+        deleted: true,
+        rule_book_version: '2026.2',
+        position_id: positionId,
+      });
+    }
+
+    const coverage = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/coverage', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(coverage.status).toBe(200);
+    expect(await coverage.json()).toMatchObject({
+      rule_book_version: '2026.2',
+      valid: true,
+      rule_count: 1,
+      expected_biddable_position_ids: ['A101'],
+      valid_rule_position_ids: ['A101'],
+      administratively_assigned_position_ids: ['A211', 'B211', 'C211'],
+      missing_biddable_position_ids: [],
+      non_biddable_position_ids: [],
+      duplicate_position_ids: [],
+      unexpected_position_ids: [],
+    });
+
+    const diff = await app.fetch(
+      new Request(
+        'http://x/api/admin/rule-books/2026.2/diff?baseline=2026.1&expected_position_ids=A211,B211,C211',
+        {
+          headers: { Authorization: `Bearer ${await adminJwt()}` },
+        },
+      ),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(diff.status).toBe(200);
+    expect(await diff.json()).toMatchObject({
+      baselineRuleBookVersion: '2026.1',
+      candidateRuleBookVersion: '2026.2',
+      removedRulePositionIds: ['A211', 'B211', 'C211'],
+      addedParticipationPositionIds: ['A211', 'B211', 'C211'],
+      changedPositionIds: ['A211', 'B211', 'C211'],
+      unexpected_position_ids: [],
+      missing_expected_position_ids: [],
+    });
+
+    const sourceRules = await h.db.run(
+      'SELECT position_id FROM position_rules WHERE rule_book_version = ? ORDER BY position_id',
+      ['2026.1'],
+    );
+    const draftRules = await h.db.run(
+      'SELECT position_id FROM position_rules WHERE rule_book_version = ? ORDER BY position_id',
+      ['2026.2'],
+    );
+    expect(sourceRules.results.map((row) => row.position_id)).toEqual([
+      'A101',
+      'A211',
+      'B211',
+      'C211',
+    ]);
+    expect(draftRules.results.map((row) => row.position_id)).toEqual(['A101']);
+
+    const publish = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/publish', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'Publish the verified POL-015 correction.' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(publish.status).toBe(200);
+    expect(await publish.json()).toMatchObject({
+      version: '2026.2',
+      status: 'active',
+      validation: {
+        expected_biddable_position_count: 1,
+        valid_bid_rule_count: 1,
+        missing_biddable_rules: 0,
+        non_biddable_rules_present: 0,
+        duplicate_rules: 0,
+        unexpected_rule_differences: 0,
+      },
+    });
+  });
+
+  it('rejects an active-book participation mutation without creating an override', async () => {
+    const res = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.1/position-participation/A211', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          template_version: '2026.1',
+          bid_participation: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+          authoritative_source_ref: 'POL-015-approved-direction',
+          reason_code: 'rule_override.policy_direction',
+          reason: 'This must not alter the active rule book.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'rule_book_immutable', status: 'active' });
+    const overrides = await h.db.run(
+      'SELECT position_id FROM rule_book_position_participation WHERE rule_book_version = ?',
+      ['2026.1'],
+    );
+    expect(overrides.results).toEqual([]);
+    const activeBook = await h.db.run('SELECT status, revision FROM rule_books WHERE version = ?', [
+      '2026.1',
+    ]);
+    expect(activeBook.results).toEqual([{ status: 'active', revision: 0 }]);
   });
 });

@@ -10,7 +10,10 @@ const ACTION_TO_REASONS: ReadonlyMap<AuditAction, ReadonlySet<ReasonCode>> = new
   ['forced_pick', new Set<ReasonCode>(['force.reverse_seniority', 'force.cert_mandate'])],
   ['skip', new Set<ReasonCode>(['skip.unreachable', 'skip.declined'])],
   ['admin_bid_for_member', new Set<ReasonCode>(['bid_for_member.unreachable_phone'])],
-  ['override_rule', new Set<ReasonCode>(['rule_override.fix_misconfig'])],
+  [
+    'override_rule',
+    new Set<ReasonCode>(['rule_override.fix_misconfig', 'rule_override.policy_direction']),
+  ],
   ['override_cert', new Set<ReasonCode>(['cert_override.late_correction'])],
   [
     'lock_position',

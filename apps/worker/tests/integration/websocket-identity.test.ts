@@ -60,11 +60,63 @@ function makeStateMock(id: string, storage: TestStorage): DurableObjectState {
 
 describe('WebSocket identity handoff', () => {
   const sessionId = '01HZZ000000000000WSIDENT1';
+  const capturedAt = Date.UTC(2026, 7, 27, 12, 0, 0);
   let h: TestD1;
   let storage: TestStorage;
 
   beforeEach(async () => {
     h = await setupTestD1();
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await h.db.run(
+      `INSERT INTO bid_sessions
+         (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count)
+       VALUES (?, 2026, ?, 'position_bid', 180, 2, 0);`,
+      [sessionId, capturedAt],
+    );
+    await h.db.run(
+      "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
+    );
+    await h.db.run(
+      `INSERT INTO positions
+         (id, template_version, shift, station, division, unit, rank_required, position_name)
+       VALUES ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter');`,
+    );
+    await h.db.run(
+      "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
+    );
+    await h.db.run(
+      `INSERT INTO position_rules
+         (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2026.1', 'A101', '2026.1',
+         '{"rank":["FF"],"credentials":[],"custom":[]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
+    );
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots
+         (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', ?, ?);`,
+      [
+        sessionId,
+        JSON.stringify({
+          v: 1,
+          ruleBookVersion: '2026.1',
+          positionTemplateVersion: '2026.1',
+          capturedAtMs: capturedAt,
+          members: [
+            {
+              memberId: 42,
+              pool: 'FF',
+              rscSeniority: 42,
+              rankSeniority: 42,
+              exclusionReason: null,
+              authoritativeAssignmentId: null,
+            },
+          ],
+        }),
+        capturedAt,
+      ],
+    );
     storage = makeStorage();
     const state: BidSessionState = {
       ...emptyBidSessionState(sessionId),

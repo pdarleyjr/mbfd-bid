@@ -34,6 +34,12 @@ import {
   auditEntryForPickMade,
   auditEntryForSkip,
 } from '../lib/audit.js';
+import { computeBidOrder } from '../lib/bid-order.js';
+import {
+  bidOrderInputFromSnapshot,
+  loadFrozenSessionBidPolicy,
+  resolveFrozenSessionBidTarget,
+} from '../lib/bid-policy.js';
 import {
   type VerifiedWebSocketIdentity,
   parseVerifiedWebSocketIdentity,
@@ -79,6 +85,33 @@ interface IdempotencyRecord {
 }
 
 type CanonicalMockIntent = 'pending' | 'active';
+
+type FrozenPoolGuard =
+  | { ok: true }
+  | {
+      ok: false;
+      code:
+        | 'session_policy_snapshot_missing'
+        | 'session_policy_snapshot_invalid'
+        | 'session_rule_book_invalid'
+        | 'member_not_in_bid_pool'
+        | 'member_excluded_from_bid_pool'
+        | 'bid_order_not_frozen_policy';
+    };
+
+type FrozenPhaseOneGuard = FrozenPoolGuard | { ok: false; code: 'position_not_biddable' };
+
+function frozenPolicyRejectionMessage(code: string): string {
+  switch (code) {
+    case 'position_not_biddable':
+      return 'The requested position is not biddable under the frozen session policy.';
+    case 'member_not_in_bid_pool':
+    case 'member_excluded_from_bid_pool':
+      return 'The requested member is not in the frozen Bid pool.';
+    default:
+      return 'The immutable session policy is unavailable or invalid; the pick was rejected.';
+  }
+}
 
 export class BidSessionDO implements DurableObject {
   private state: DurableObjectState;
@@ -174,6 +207,77 @@ export class BidSessionDO implements DurableObject {
         breakdown: { total: 0, soTotal: 0, moTotal: 0, itemized: [] },
       }),
     };
+  }
+
+  /**
+   * Reads policy only from the immutable session snapshot. It is deliberately
+   * shared by non-position actions (skip/A-Day/order initialization), while
+   * position picks use resolveFrozenSessionBidTarget below for the additional
+   * rule-book membership check.
+   */
+  private async guardFrozenPoolMembers(memberIds: Iterable<number>): Promise<FrozenPoolGuard> {
+    const frozen = await loadFrozenSessionBidPolicy(getDb(this.env.DB), this.namedSessionId());
+    if (!frozen.ok) return { ok: false, code: frozen.code };
+
+    const membersById = new Map(frozen.snapshot.members.map((member) => [member.memberId, member]));
+    for (const memberId of memberIds) {
+      const member = membersById.get(memberId);
+      if (member === undefined) return { ok: false, code: 'member_not_in_bid_pool' };
+      if (member.pool === 'EXCLUDED') {
+        return { ok: false, code: 'member_excluded_from_bid_pool' };
+      }
+    }
+    return { ok: true };
+  }
+
+  /** Accept only the exact order computed from the frozen session policy. */
+  private async guardFrozenBidOrder(order: BidSessionState['bidOrder']): Promise<FrozenPoolGuard> {
+    const frozen = await loadFrozenSessionBidPolicy(getDb(this.env.DB), this.namedSessionId());
+    if (!frozen.ok) return { ok: false, code: frozen.code };
+
+    const expected = computeBidOrder(bidOrderInputFromSnapshot(frozen.snapshot));
+    if (
+      order.length !== expected.length ||
+      order.some((entry, index) => {
+        const expectedEntry = expected[index];
+        return (
+          expectedEntry === undefined ||
+          entry.ordinal !== expectedEntry.ordinal ||
+          entry.memberId !== expectedEntry.memberId ||
+          entry.pool !== expectedEntry.pool
+        );
+      })
+    ) {
+      return { ok: false, code: 'bid_order_not_frozen_policy' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Phase-two setup accepts a supplied record of phase-one picks. Validate the
+   * complete batch against one frozen policy read so an administrative
+   * position cannot be smuggled into A-Day setup without issuing one D1 read
+   * per completed pick.
+   */
+  private async guardFrozenPhaseOnePicks(
+    picks: TransitionToPhase2Input['phase1Picks'],
+  ): Promise<FrozenPhaseOneGuard> {
+    const frozen = await loadFrozenSessionBidPolicy(getDb(this.env.DB), this.namedSessionId());
+    if (!frozen.ok) return { ok: false, code: frozen.code };
+
+    const membersById = new Map(frozen.snapshot.members.map((member) => [member.memberId, member]));
+    const biddablePositionIds = new Set(frozen.coverage.rules.map((rule) => rule.positionId));
+    for (const pick of picks) {
+      const member = membersById.get(pick.memberId);
+      if (member === undefined) return { ok: false, code: 'member_not_in_bid_pool' };
+      if (member.pool === 'EXCLUDED') {
+        return { ok: false, code: 'member_excluded_from_bid_pool' };
+      }
+      if (!biddablePositionIds.has(pick.positionId)) {
+        return { ok: false, code: 'position_not_biddable' };
+      }
+    }
+    return { ok: true };
   }
 
   private envelope(
@@ -673,13 +777,38 @@ export class BidSessionDO implements DurableObject {
 
     await this.state.blockConcurrencyWhile(async () => {
       const idemKey = `idem:${this.state.id.toString()}:${msg.idempotencyKey}`;
+      const state = await this.getState();
+
+      // The DO is an independent mutation boundary. Never trust a queued or
+      // websocket-supplied target merely because its legacy state happens to
+      // contain it: resolve the member and position against the frozen policy
+      // before idempotency replay or handler execution.
+      const policyTarget = await resolveFrozenSessionBidTarget(getDb(this.env.DB), {
+        bidSessionId: this.namedSessionId(),
+        memberId: client.memberId,
+        positionId: msg.positionId,
+      });
+      if (!policyTarget.ok) {
+        const envelope = this.envelope(
+          'pick_rejected',
+          {
+            idempotencyKey: msg.idempotencyKey,
+            code: 'NOT_ELIGIBLE',
+            message: frozenPolicyRejectionMessage(policyTarget.code),
+          } satisfies PickRejectedEvent,
+          state.lastSeq,
+        );
+        await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
+        this.send(client.socket, envelope);
+        return;
+      }
+
       const prior = await this.storage.get<IdempotencyRecord>(idemKey);
       if (prior) {
         this.send(client.socket, prior.envelope);
         return;
       }
 
-      const state = await this.getState();
       const input: SubmitPickInput = {
         senderMemberId: client.memberId,
         positionId: msg.positionId,
@@ -754,6 +883,9 @@ export class BidSessionDO implements DurableObject {
   async adminSkip(input: SkipInput): Promise<{ ok: boolean; envelope?: BidEventEnvelope }> {
     return this.state.blockConcurrencyWhile(async () => {
       const state = await this.getState();
+      if (state.currentBidderId === null) return { ok: false };
+      const policy = await this.guardFrozenPoolMembers([state.currentBidderId]);
+      if (!policy.ok) return { ok: false };
       const r = handleSkip(state, this.handlerEnv(), input);
       if (r.kind === 'rejected') {
         return { ok: false };
@@ -778,8 +910,15 @@ export class BidSessionDO implements DurableObject {
 
   async adminForcePick(
     input: ForcePickInput,
-  ): Promise<{ ok: boolean; envelope?: BidEventEnvelope }> {
+  ): Promise<{ ok: boolean; envelope?: BidEventEnvelope; error?: string }> {
     return this.state.blockConcurrencyWhile(async () => {
+      const policyTarget = await resolveFrozenSessionBidTarget(getDb(this.env.DB), {
+        bidSessionId: this.namedSessionId(),
+        memberId: input.targetMemberId,
+        positionId: input.positionId,
+      });
+      if (!policyTarget.ok) return { ok: false, error: policyTarget.code };
+
       const state = await this.getState();
       const r = handleForcePick(state, this.handlerEnv(), input);
       if (r.kind === 'rejected') {
@@ -896,6 +1035,8 @@ export class BidSessionDO implements DurableObject {
       if (state.currentPhase !== 'config') {
         return;
       }
+      const policy = await this.guardFrozenBidOrder(input.bidOrder);
+      if (!policy.ok) return;
       const first = input.bidOrder[0]?.memberId ?? null;
       const newState: BidSessionState = {
         ...state,
@@ -926,6 +1067,14 @@ export class BidSessionDO implements DurableObject {
       if (state.currentPhase !== 'position_bid' && state.currentPhase !== 'paused') {
         return { ok: false };
       }
+      const participantIds = [
+        ...input.phase1Order,
+        ...(input.preSeededPicks?.map((pick) => pick.memberId) ?? []),
+      ];
+      const policy = await this.guardFrozenPoolMembers(participantIds);
+      if (!policy.ok) return { ok: false };
+      const phaseOnePolicy = await this.guardFrozenPhaseOnePicks(input.phase1Picks);
+      if (!phaseOnePolicy.ok) return { ok: false };
       const nowMs = Date.now();
       const newState = transitionToPhase2(state, input, nowMs);
       await persistBidSessionState(this.storage, newState);
@@ -952,6 +1101,15 @@ export class BidSessionDO implements DurableObject {
   async submitADayPick(input: SubmitADayPickInput): Promise<SubmitADayPickResult> {
     return this.state.blockConcurrencyWhile(async () => {
       const idemKey = `idem-aday:${this.state.id.toString()}:${input.idempotencyKey}`;
+      const policy = await this.guardFrozenPoolMembers([input.senderMemberId]);
+      if (!policy.ok) {
+        return {
+          kind: 'rejected',
+          code: 'UNKNOWN_MEMBER',
+          message: frozenPolicyRejectionMessage(policy.code),
+          idempotencyKey: input.idempotencyKey,
+        };
+      }
       const prior = await this.storage.get<IdempotencyRecord>(idemKey);
       if (prior) {
         // Replay the prior envelope to the caller via broadcast for parity, but

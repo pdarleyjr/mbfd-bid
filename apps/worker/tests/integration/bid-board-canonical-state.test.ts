@@ -89,7 +89,28 @@ describe('GET /api/board canonical mock state', () => {
       `INSERT INTO members (
         id, employee_id, first_name, last_name, rank, bid_category,
         rsc_seniority, is_probationary, created_at, updated_at
-      ) VALUES (77, '770077', 'Canonical', 'Member', 'FF', 'FF', 1, 0, 1, 1);`,
+      ) VALUES
+        (77, '770077', 'Canonical', 'Member', 'FF', 'FF', 1, 0, 1, 1),
+        (78, '770078', 'Mutable', 'Roster', 'DC', 'OFC', 0, 0, 1, 1);`,
+    );
+    await h.db.run(
+      "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
+    );
+    await h.db.run(
+      `INSERT INTO positions
+       (id, template_version, shift, station, division, unit, rank_required, position_name)
+       VALUES ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter');`,
+    );
+    await h.db.run(
+      "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
+    );
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2026.1', 'A101', '2026.1',
+         '{"rank":["FF"],"credentials":[],"custom":[]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
     );
     await h.db.run(
       `INSERT INTO bid_sessions (
@@ -97,6 +118,30 @@ describe('GET /api/board canonical mock state', () => {
         turn_timer_seconds, expected_duration_days, day_count, is_mock
       ) VALUES (?, 2026, 1, 'position_bid', 77, 180, 2, 0, 1);`,
       [SESSION_ID],
+    );
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', ?, 1);`,
+      [
+        SESSION_ID,
+        JSON.stringify({
+          v: 1,
+          ruleBookVersion: '2026.1',
+          positionTemplateVersion: '2026.1',
+          capturedAtMs: 1,
+          members: [
+            {
+              memberId: 77,
+              pool: 'FF',
+              rscSeniority: 1,
+              rankSeniority: null,
+              exclusionReason: null,
+              authoritativeAssignmentId: null,
+            },
+          ],
+        }),
+      ],
     );
     await h.db.run(
       `INSERT INTO canonical_bid_session_state (
@@ -140,6 +185,8 @@ describe('GET /api/board canonical mock state', () => {
       currentBidderId: null,
       lastSeq: 8,
       frozenAt: 1,
+      bidOrder: [{ ordinal: 1, memberId: 77, pool: 'FF' }],
+      bidOrderPreview: true,
     });
   });
 

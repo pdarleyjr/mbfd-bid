@@ -237,8 +237,8 @@ describe('POST /api/admin/rehearsal/:sessionId/manual-pick', () => {
 
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({
-      error: 'active_rule_book_invalid',
-      invalid_position_ids: ['B101'],
+      error: 'session_policy_snapshot_unavailable',
+      policy_error: 'rule_book_invalid',
     });
   });
 

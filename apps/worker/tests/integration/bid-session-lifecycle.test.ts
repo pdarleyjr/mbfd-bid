@@ -20,11 +20,73 @@ async function freshAdmin(): Promise<string> {
   );
 }
 
+const POLICY_MEMBER_ID = 61;
+
+async function seedActiveSinglePositionPolicy(h: TestD1, now: number): Promise<void> {
+  await h.db.run(
+    `INSERT INTO members
+       (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at)
+     VALUES (${POLICY_MEMBER_ID}, '60061', 'Frozen', 'Member', 'FF', 'FF', 1, 0, ${now}, ${now});`,
+  );
+  await h.db.run(
+    "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
+  );
+  await h.db.run(
+    `INSERT INTO positions
+       (id, template_version, shift, station, division, unit, rank_required, position_name)
+     VALUES ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter');`,
+  );
+  await h.db.run(
+    "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
+  );
+  await h.db.run(
+    `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+     VALUES ('2026.1', 'A101', '2026.1',
+       '{"rank":["FF"],"credentials":[],"custom":[]}',
+       '{"max":0,"items":[]}',
+       '["points","rsc_seniority","rank_seniority"]');`,
+  );
+}
+
+async function seedFrozenPolicySnapshot(
+  h: TestD1,
+  sessionId: string,
+  capturedAt: number,
+): Promise<void> {
+  await h.db.run(
+    `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
+     VALUES (?, '2026.1', '2026.1', ?, ?);`,
+    [
+      sessionId,
+      JSON.stringify({
+        v: 1,
+        ruleBookVersion: '2026.1',
+        positionTemplateVersion: '2026.1',
+        capturedAtMs: capturedAt,
+        members: [
+          {
+            memberId: POLICY_MEMBER_ID,
+            pool: 'FF',
+            rscSeniority: 1,
+            rankSeniority: null,
+            exclusionReason: null,
+            authoritativeAssignmentId: null,
+          },
+        ],
+      }),
+      capturedAt,
+    ],
+  );
+}
+
 describe('POST /api/admin/bid-session', () => {
   let h: TestD1;
   beforeEach(async () => {
     h = await setupTestD1();
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'configuring');");
+    await seedActiveSinglePositionPolicy(h, Date.now());
   });
   afterEach(async () => {
     await teardownTestD1(h);
@@ -79,10 +141,13 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     h = await setupTestD1();
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'configuring');");
     sessionId = '01HZZ0000000000000000SESS01';
+    const now = Date.now();
+    await seedActiveSinglePositionPolicy(h, now);
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2026, ?, 'config', 180, 2, 0);",
-      [sessionId, Date.now()],
+      [sessionId, now],
     );
+    await seedFrozenPolicySnapshot(h, sessionId, now);
   });
   afterEach(async () => {
     await teardownTestD1(h);
@@ -103,6 +168,13 @@ describe('POST /api/admin/bid-session/:id/start', () => {
       sessionId,
     ]);
     expect(after.results[0]?.current_phase).toBe('position_bid');
+    expect(
+      (
+        await h.db.run('SELECT member_id, pool FROM bid_order WHERE bid_session_id = ?', [
+          sessionId,
+        ])
+      ).results,
+    ).toEqual([{ member_id: POLICY_MEMBER_ID, pool: 'FF' }]);
   });
 
   it('fails closed for a live session until readiness facts are implemented', async () => {
@@ -164,6 +236,25 @@ describe('POST /api/admin/bid-session/:id/start', () => {
       [sessionId],
     );
     expect(audit.results[0]?.n).toBe(1);
+  });
+
+  it('fails closed when a config session lacks its frozen policy snapshot', async () => {
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await freshAdmin()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: 'session_policy_snapshot_unavailable',
+      policy_error: 'session_policy_snapshot_missing',
+    });
   });
 
   it('returns 409 when session is already past config', async () => {

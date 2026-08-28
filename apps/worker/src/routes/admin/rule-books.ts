@@ -1,11 +1,23 @@
 import { zValidator } from '@hono/zod-validator';
-import { CreateRuleBookSchema, type JwtPayload, PublishRuleBookSchema } from '@mbfd/shared';
+import {
+  CreateRuleBookSchema,
+  type JwtPayload,
+  PublishRuleBookSchema,
+  ReasonCodeSchema,
+} from '@mbfd/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { getDb } from '../../db/index.js';
-import { positionRules, ruleBooks } from '../../db/schema.js';
+import {
+  positionRules,
+  positions,
+  ruleBookPositionParticipation,
+  ruleBooks,
+} from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
-import { decodeRuleBookRows } from '../../lib/position-rule.js';
+import { loadRuleBookCoverage, loadRuleBookPolicyDiff } from '../../lib/bid-policy.js';
+import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { nextVersion } from '../../lib/rule-book-version.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -15,6 +27,16 @@ type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
+
+const SetPositionParticipationSchema = z
+  .object({
+    template_version: z.string().trim().min(1).max(100),
+    bid_participation: z.literal('ADMIN_ASSIGNED_NON_BIDDABLE'),
+    authoritative_source_ref: z.string().trim().min(1).max(500),
+    reason_code: ReasonCodeSchema,
+    reason: z.string().trim().min(4).max(500),
+  })
+  .strict();
 
 // GET /api/admin/rule-books
 router.get('/', async (c) => {
@@ -81,11 +103,232 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), 
              FROM position_rules
             WHERE rule_book_version = ?`,
       ).bind(newVersion, clone_from),
+      c.env.DB.prepare(
+        `INSERT INTO rule_book_position_participation (
+              rule_book_version,
+              position_id,
+              template_version,
+              bid_participation,
+              authoritative_source_ref,
+              created_at
+            )
+            SELECT ?, position_id, template_version, bid_participation,
+                   authoritative_source_ref, created_at
+              FROM rule_book_position_participation
+             WHERE rule_book_version = ?`,
+      ).bind(newVersion, clone_from),
     ]);
   }
 
   return c.json({ version: newVersion, status: 'draft' }, 201);
 });
+
+// GET /api/admin/rule-books/:version/coverage
+// Read-only, identifier-only policy coverage for a draft review or active
+// administrative verification. It contains no roster or assignment data.
+router.get('/:version/coverage', async (c) => {
+  const version = c.req.param('version');
+  const db = getDb(c.env.DB);
+  const book = await db.select().from(ruleBooks).where(eq(ruleBooks.version, version)).get();
+  if (book === undefined) return c.json({ error: 'not_found' }, 404);
+  const coverage = await loadRuleBookCoverage(db, version);
+  return c.json({
+    rule_book_version: version,
+    status: book.status,
+    valid: coverage.valid,
+    rule_count: coverage.ruleCount,
+    template_version: coverage.templateVersion,
+    expected_biddable_position_ids: coverage.expectedBiddablePositionIds,
+    valid_rule_position_ids: coverage.validRulePositionIds,
+    administratively_assigned_position_ids: coverage.administrativelyAssignedPositionIds,
+    legacy_excluded_position_ids: coverage.legacyExcludedPositionIds,
+    invalid_position_ids: coverage.invalidPositionIds,
+    duplicate_position_ids: coverage.duplicatePositionIds,
+    missing_biddable_position_ids: coverage.missingBiddablePositionIds,
+    non_biddable_position_ids: coverage.nonBiddablePositionIds,
+    unexpected_position_ids: coverage.unexpectedPositionIds,
+    template_version_issues: coverage.templateVersionIssues,
+  });
+});
+
+// GET /api/admin/rule-books/:version/diff?baseline=2026.1&expected_position_ids=A211,B211,C211
+// An identifier-only exact diff for the draft publication review. Supplying
+// expected ids does not authorize a change; it simply calculates which
+// changed positions still require an operator's explanation.
+router.get('/:version/diff', async (c) => {
+  const version = c.req.param('version');
+  const baseline = c.req.query('baseline')?.trim();
+  if (!baseline) return c.json({ error: 'baseline_required' }, 400);
+  const expectedPositionIds = (c.req.query('expected_position_ids') ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .sort((a, b) => a.localeCompare(b));
+  const db = getDb(c.env.DB);
+  const [baselineBook, candidateBook] = await Promise.all([
+    db
+      .select({ version: ruleBooks.version })
+      .from(ruleBooks)
+      .where(eq(ruleBooks.version, baseline))
+      .get(),
+    db
+      .select({ version: ruleBooks.version })
+      .from(ruleBooks)
+      .where(eq(ruleBooks.version, version))
+      .get(),
+  ]);
+  if (baselineBook === undefined) return c.json({ error: 'baseline_not_found', baseline }, 404);
+  if (candidateBook === undefined) return c.json({ error: 'not_found' }, 404);
+  const diff = await loadRuleBookPolicyDiff(db, baseline, version);
+  const unexpectedPositionIds = diff.changedPositionIds.filter(
+    (positionId) => !expectedPositionIds.includes(positionId),
+  );
+  const missingExpectedPositionIds = expectedPositionIds.filter(
+    (positionId) => !diff.changedPositionIds.includes(positionId),
+  );
+  return c.json({
+    ...diff,
+    expected_position_ids: expectedPositionIds,
+    unexpected_position_ids: unexpectedPositionIds,
+    missing_expected_position_ids: missingExpectedPositionIds,
+  });
+});
+
+// PUT /api/admin/rule-books/:version/position-participation/:positionId
+// A participation override is versioned with a draft rule book. This is the
+// normal lifecycle boundary for an approved administrative-staffing decision;
+// it cannot reinterpret the immutable active book in place.
+router.put(
+  '/:version/position-participation/:positionId',
+  requireStepUpAuth(),
+  zValidator('json', SetPositionParticipationSchema),
+  async (c) => {
+    const version = c.req.param('version');
+    const positionId = c.req.param('positionId');
+    const body = c.req.valid('json');
+    if (!isReasonValidForAction('override_rule', body.reason_code)) {
+      return c.json(
+        {
+          error: 'invalid_reason_for_action',
+          action: 'override_rule',
+          reason_code: body.reason_code,
+        },
+        400,
+      );
+    }
+
+    const db = getDb(c.env.DB);
+    const book = await db.select().from(ruleBooks).where(eq(ruleBooks.version, version)).get();
+    if (book === undefined) return c.json({ error: 'not_found' }, 404);
+    if (book.status !== 'draft') {
+      return c.json({ error: 'rule_book_immutable', status: book.status }, 409);
+    }
+
+    const [bookTemplates, position] = await Promise.all([
+      db
+        .select({ templateVersion: positionRules.templateVersion })
+        .from(positionRules)
+        .where(eq(positionRules.ruleBookVersion, version))
+        .all(),
+      db
+        .select({ id: positions.id, isExcludedFromCount: positions.isExcludedFromCount })
+        .from(positions)
+        .where(
+          and(eq(positions.id, positionId), eq(positions.templateVersion, body.template_version)),
+        )
+        .get(),
+    ]);
+    const templateVersions = [...new Set(bookTemplates.map((row) => row.templateVersion))];
+    if (templateVersions.length !== 1 || templateVersions[0] !== body.template_version) {
+      return c.json(
+        {
+          error: 'rule_book_template_mismatch',
+          rule_book_template_versions: templateVersions,
+          requested_template_version: body.template_version,
+        },
+        409,
+      );
+    }
+    if (position === undefined) return c.json({ error: 'position_not_found' }, 404);
+    if (position.isExcludedFromCount) {
+      return c.json({ error: 'legacy_excluded_position_not_administrative' }, 409);
+    }
+
+    const before = await db
+      .select()
+      .from(ruleBookPositionParticipation)
+      .where(
+        and(
+          eq(ruleBookPositionParticipation.ruleBookVersion, version),
+          eq(ruleBookPositionParticipation.positionId, positionId),
+        ),
+      )
+      .get();
+    const now = Date.now();
+    const results = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO rule_book_position_participation (
+             rule_book_version, position_id, template_version, bid_participation,
+             authoritative_source_ref, created_at
+           )
+           SELECT ?, ?, ?, ?, ?, ?
+            WHERE EXISTS (
+              SELECT 1 FROM rule_books
+               WHERE version = ? AND status = 'draft' AND revision = ?
+            )
+           ON CONFLICT(rule_book_version, position_id) DO UPDATE SET
+             template_version = excluded.template_version,
+             bid_participation = excluded.bid_participation,
+             authoritative_source_ref = excluded.authoritative_source_ref,
+             created_at = excluded.created_at`,
+      ).bind(
+        version,
+        positionId,
+        body.template_version,
+        body.bid_participation,
+        body.authoritative_source_ref,
+        now,
+        version,
+        book.revision,
+      ),
+      c.env.DB.prepare(
+        `UPDATE rule_books
+              SET revision = revision + 1
+            WHERE version = ? AND status = 'draft' AND revision = ?`,
+      ).bind(version, book.revision),
+    ]);
+    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+      const current = await db.select().from(ruleBooks).where(eq(ruleBooks.version, version)).get();
+      if (current?.status !== 'draft') {
+        return c.json({ error: 'rule_book_immutable', status: current?.status ?? 'missing' }, 409);
+      }
+      return c.json({ error: 'rule_book_changed' }, 409);
+    }
+
+    const after = await db
+      .select()
+      .from(ruleBookPositionParticipation)
+      .where(
+        and(
+          eq(ruleBookPositionParticipation.ruleBookVersion, version),
+          eq(ruleBookPositionParticipation.positionId, positionId),
+        ),
+      )
+      .get();
+    await writeAuditLog(db, {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : null,
+      action: 'override_rule',
+      targetKind: 'rule_book_position_participation',
+      targetId: `${version}:${positionId}`,
+      reason: body.reason,
+      beforeState: before,
+      afterState: after,
+    });
+    return c.json({ participation: after, rule_book_revision: book.revision + 1 });
+  },
+);
 
 // POST /api/admin/rule-books/:version/publish   (step-up; atomic swap)
 router.post(
@@ -102,23 +345,21 @@ router.post(
     if (target.status === 'active') return c.json({ error: 'already_active' }, 409);
     if (target.status === 'archived') return c.json({ error: 'archived_cannot_republish' }, 409);
 
-    const candidateRules = await db
-      .select()
-      .from(positionRules)
-      .where(eq(positionRules.ruleBookVersion, version))
-      .all();
-    const decodedRuleBook = decodeRuleBookRows(candidateRules);
-    if (
-      candidateRules.length === 0 ||
-      decodedRuleBook.invalidPositionIds.length > 0 ||
-      decodedRuleBook.duplicatePositionIds.length > 0
-    ) {
+    // Decoder validity alone is insufficient: a candidate book must cover
+    // every BIDDABLE annual position exactly once and must never carry a
+    // rule for an administratively assigned/non-biddable staffing slot.
+    const coverage = await loadRuleBookCoverage(db, version);
+    if (!coverage.valid) {
       return c.json(
         {
           error: 'rule_book_invalid',
-          empty_rule_book: candidateRules.length === 0,
-          invalid_position_ids: decodedRuleBook.invalidPositionIds,
-          duplicate_position_ids: decodedRuleBook.duplicatePositionIds,
+          empty_rule_book: coverage.ruleCount === 0,
+          invalid_position_ids: coverage.invalidPositionIds,
+          duplicate_position_ids: coverage.duplicatePositionIds,
+          missing_biddable_position_ids: coverage.missingBiddablePositionIds,
+          non_biddable_position_ids: coverage.nonBiddablePositionIds,
+          unexpected_position_ids: coverage.unexpectedPositionIds,
+          template_version_issues: coverage.templateVersionIssues,
         },
         409,
       );
@@ -184,7 +425,19 @@ router.post(
       afterState: { effective_year: target.effectiveYear, status: 'active' },
     });
 
-    return c.json({ version, status: 'active', published_at: now.toISOString() });
+    return c.json({
+      version,
+      status: 'active',
+      published_at: now.toISOString(),
+      validation: {
+        expected_biddable_position_count: coverage.expectedBiddablePositionIds.length,
+        valid_bid_rule_count: coverage.validRulePositionIds.length,
+        missing_biddable_rules: coverage.missingBiddablePositionIds.length,
+        non_biddable_rules_present: coverage.nonBiddablePositionIds.length,
+        duplicate_rules: coverage.duplicatePositionIds.length,
+        unexpected_rule_differences: coverage.unexpectedPositionIds.length,
+      },
+    });
   },
 );
 

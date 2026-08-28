@@ -154,6 +154,13 @@ const RulePatchSchema = z
     { message: 'at least one rule field must be patched' },
   );
 
+const RuleDeleteSchema = z
+  .object({
+    reason_code: ReasonCodeSchema,
+    reason: z.string().trim().min(4).max(500),
+  })
+  .strict();
+
 router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   const id = Number(c.req.param('id'));
   const raw = await c.req.json().catch(() => null);
@@ -270,6 +277,89 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   });
 
   return c.json({ rule: after });
+});
+
+// DELETE /api/admin/rules/:id
+// Only a draft may be changed. This is intentionally a rule-book lifecycle
+// action, rather than a direct D1 recipe, so a verified non-biddable position
+// can be removed from a cloned draft without ever mutating the active book.
+router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
+  const id = Number(c.req.param('id'));
+  const raw = await c.req.json().catch(() => null);
+  const parsed = RuleDeleteSchema.safeParse(raw);
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const body = parsed.data;
+
+  if (!isReasonValidForAction('override_rule', body.reason_code)) {
+    return c.json({ error: 'invalid_reason_for_action', reason_code: body.reason_code }, 400);
+  }
+
+  const db = getDb(c.env.DB);
+  const existing = await db.select().from(positionRules).where(eq(positionRules.id, id)).get();
+  if (existing === undefined) return c.json({ error: 'not_found' }, 404);
+  const book = await db
+    .select()
+    .from(ruleBooks)
+    .where(eq(ruleBooks.version, existing.ruleBookVersion))
+    .get();
+  if (book === undefined) return c.json({ error: 'rule_book_missing' }, 500);
+  if (book.status !== 'draft') {
+    return c.json({ error: 'rule_book_immutable', status: book.status }, 409);
+  }
+
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `DELETE FROM position_rules
+        WHERE id = ?
+          AND EXISTS (
+            SELECT 1 FROM rule_books
+             WHERE version = ? AND status = 'draft' AND revision = ?
+          )`,
+    ).bind(id, existing.ruleBookVersion, book.revision),
+    c.env.DB.prepare(
+      `UPDATE rule_books
+          SET revision = revision + 1
+        WHERE version = ? AND status = 'draft' AND revision = ?`,
+    ).bind(existing.ruleBookVersion, book.revision),
+  ]);
+  if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+    const currentBook = await db
+      .select()
+      .from(ruleBooks)
+      .where(eq(ruleBooks.version, existing.ruleBookVersion))
+      .get();
+    if (currentBook?.status !== 'draft') {
+      return c.json(
+        { error: 'rule_book_immutable', status: currentBook?.status ?? 'missing' },
+        409,
+      );
+    }
+    return c.json({ error: 'rule_book_changed' }, 409);
+  }
+
+  await writeAuditLog(db, {
+    bidSessionId: null,
+    actorType: 'admin',
+    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+    action: 'override_rule',
+    targetKind: 'position_rule',
+    targetId: String(id),
+    reason: body.reason,
+    beforeState: existing,
+    afterState: {
+      deleted: true,
+      rule_book_version: existing.ruleBookVersion,
+      position_id: existing.positionId,
+    },
+  });
+
+  return c.json({
+    deleted: true,
+    id,
+    rule_book_version: existing.ruleBookVersion,
+    position_id: existing.positionId,
+    revision: book.revision + 1,
+  });
 });
 
 export default router;

@@ -43,7 +43,7 @@ does not establish D1/R2 audit atomicity, and does not create a live command
 path. A rehearsal reset clears DO receipts and remains separately best-effort
 across D1 and the DO.
 
-The current Durable Object member-pick handler also receives an always-eligible placeholder instead of a decoded, frozen rule book. The HTTP policy guards do not make that handler safe by implication. A canonical live command must either evaluate a verified snapshot in the DO or delegate to a guarded Worker command before any live enablement.
+The source-local Durable Object now resolves a proposed member/position against the immutable session snapshot and decoded frozen rule book before a selection handler runs. That blocks an excluded Division Chief and A211/B211/C211 from being injected through the DO. The handler's individual eligibility evaluator is still an always-eligible placeholder, so this boundary does not make a live command path safe by implication. A canonical live command must still evaluate verified individual eligibility in the DO or delegate to a guarded Worker command before any live enablement.
 
 ## Client reconnect contract
 

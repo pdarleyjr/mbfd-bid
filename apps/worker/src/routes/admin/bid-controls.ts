@@ -7,22 +7,14 @@ import {
   LockPositionSchema,
   SkipSchema,
 } from '@mbfd/shared';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { type DB, getDb } from '../../db/index.js';
-import {
-  bidSessions,
-  bids,
-  credentials,
-  memberCredentials,
-  members,
-  positionRules,
-  ruleBooks,
-} from '../../db/schema.js';
+import { bidSessions, bids, credentials, memberCredentials, members } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
-import { decodeRuleBookRows } from '../../lib/position-rule.js';
+import { loadFrozenSessionBidPolicy, resolveFrozenSessionBidTarget } from '../../lib/bid-policy.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -51,45 +43,8 @@ async function loadMemberWithCreds(db: DB, memberId: number) {
   };
 }
 
-type ActiveRuleLoadResult =
-  | { kind: 'not_found' }
-  | {
-      kind: 'invalid';
-      invalidPositionIds: readonly string[];
-      duplicatePositionIds: readonly string[];
-    }
-  | { kind: 'ok'; rule: ReturnType<typeof decodeRuleBookRows>['rules'][number] };
-
-async function loadActiveRule(
-  db: DB,
-  positionId: string,
-  effectiveYear: number,
-): Promise<ActiveRuleLoadResult> {
-  const ruleBook = await db
-    .select()
-    .from(ruleBooks)
-    .where(and(eq(ruleBooks.effectiveYear, effectiveYear), eq(ruleBooks.status, 'active')))
-    .get();
-  if (ruleBook === undefined) return { kind: 'not_found' };
-  const rows = await db
-    .select()
-    .from(positionRules)
-    .where(eq(positionRules.ruleBookVersion, ruleBook.version))
-    .all();
-  const decodedRuleBook = decodeRuleBookRows(rows);
-  if (
-    rows.length === 0 ||
-    decodedRuleBook.invalidPositionIds.length > 0 ||
-    decodedRuleBook.duplicatePositionIds.length > 0
-  ) {
-    return {
-      kind: 'invalid',
-      invalidPositionIds: decodedRuleBook.invalidPositionIds,
-      duplicatePositionIds: decodedRuleBook.duplicatePositionIds,
-    };
-  }
-  const rule = decodedRuleBook.rules.find((entry) => entry.positionId === positionId);
-  return rule === undefined ? { kind: 'not_found' } : { kind: 'ok', rule };
+function frozenPolicyFailureStatus(code: string): 409 | 422 {
+  return code.startsWith('session_') ? 409 : 422;
 }
 
 const router = new Hono<Env>();
@@ -124,6 +79,19 @@ router.post(
 
     const member = await db.select().from(members).where(eq(members.id, body.member_id)).get();
     if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
+
+    // A force-pick is an override of turn order, never an override of the
+    // frozen policy boundary. In particular, neither an excluded Division
+    // Chief nor an administratively assigned non-biddable position can be
+    // injected through this direct administrative route.
+    const target = await resolveFrozenSessionBidTarget(db, {
+      bidSessionId: sessionId,
+      memberId: body.member_id,
+      positionId: body.position_id,
+    });
+    if (!target.ok) {
+      return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
+    }
 
     // Idempotency: header overrides; otherwise generate a stable key.
     const idemKey =
@@ -205,6 +173,20 @@ router.post('/:id/skip', requireStepUpAuth(), zValidator('json', SkipSchema), as
   const member = await db.select().from(members).where(eq(members.id, body.member_id)).get();
   if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
 
+  const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
+  if (!frozenPolicy.ok) {
+    return c.json({ error: frozenPolicy.code }, frozenPolicyFailureStatus(frozenPolicy.code));
+  }
+  const frozenMember = frozenPolicy.snapshot.members.find(
+    (entry) => entry.memberId === body.member_id,
+  );
+  if (frozenMember === undefined) {
+    return c.json({ error: 'member_not_in_bid_pool' }, 422);
+  }
+  if (frozenMember.pool === 'EXCLUDED') {
+    return c.json({ error: 'member_excluded_from_bid_pool' }, 422);
+  }
+
   const claims = c.get('claims');
   await writeAuditLog(db, {
     bidSessionId: sessionId,
@@ -250,22 +232,16 @@ router.post(
     const member = await loadMemberWithCreds(db, body.member_id);
     if (member === null) return c.json({ error: 'member_not_found' }, 404);
 
-    const loadedRule = await loadActiveRule(db, body.position_id, session.bidYear);
-    if (loadedRule.kind === 'not_found') {
-      return c.json({ error: 'rule_not_found_for_active_book' }, 404);
-    }
-    if (loadedRule.kind === 'invalid') {
-      return c.json(
-        {
-          error: 'active_rule_book_invalid',
-          invalid_position_ids: loadedRule.invalidPositionIds,
-          duplicate_position_ids: loadedRule.duplicatePositionIds,
-        },
-        409,
-      );
+    const target = await resolveFrozenSessionBidTarget(db, {
+      bidSessionId: sessionId,
+      memberId: body.member_id,
+      positionId: body.position_id,
+    });
+    if (!target.ok) {
+      return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
     }
 
-    const evalResult = evaluateEligibility(member, loadedRule.rule);
+    const evalResult = evaluateEligibility(member, target.rule);
     if (!evalResult.eligible) {
       return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);
     }
@@ -349,6 +325,15 @@ router.post(
         { error: 'locks_only_in_config_phase', current_phase: session.currentPhase },
         409,
       );
+    }
+
+    const target = await resolveFrozenSessionBidTarget(db, {
+      bidSessionId: sessionId,
+      memberId: body.member_id,
+      positionId: body.position_id,
+    });
+    if (!target.ok) {
+      return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
     }
 
     const cfg: { position_locks?: { position_id: string; member_id: number }[] } =

@@ -37,6 +37,16 @@ describe('GET /api/me/eligibility', () => {
       [now, now],
     );
     await h.db.run(
+      "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
+    );
+    await h.db.run(
+      `INSERT INTO positions
+       (id, template_version, shift, station, division, unit, rank_required, position_name)
+       VALUES
+         ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter'),
+         ('B101', '2026.1', 'B', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter');`,
+    );
+    await h.db.run(
       "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
     );
     await h.db.run(
@@ -47,8 +57,8 @@ describe('GET /api/me/eligibility', () => {
            '{"rank":["FF"],"credentials":[],"custom":[]}',
            '{"max":0,"items":[]}',
            '["points","rsc_seniority","rank_seniority"]'),
-         ('2026.1', 'B101', '2026.1',
-           '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
+          ('2026.1', 'B101', '2026.1',
+            '{"rank":["FF"],"credentials":[],"custom":[]}',
            '{"max":0,"items":[]}',
            '["points","rsc_seniority","rank_seniority"]');`,
     );
@@ -58,13 +68,43 @@ describe('GET /api/me/eligibility', () => {
        VALUES ('filled-invalid-rule', ?, 1, 60, 'B101', ?, 0, 'filled-invalid-rule-key', 'pending', 0);`,
       [SESSION_ID, now],
     );
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', ?, ?);`,
+      [
+        SESSION_ID,
+        JSON.stringify({
+          v: 1,
+          ruleBookVersion: '2026.1',
+          positionTemplateVersion: '2026.1',
+          capturedAtMs: now,
+          members: [
+            {
+              memberId: 60,
+              pool: 'FF',
+              rscSeniority: 80,
+              rankSeniority: null,
+              exclusionReason: null,
+              authoritativeAssignmentId: null,
+            },
+          ],
+        }),
+        now,
+      ],
+    );
   });
 
   afterEach(async () => {
     await teardownTestD1(h);
   });
 
-  it('blocks when a filled sibling position has an invalid persisted rule', async () => {
+  it('fails closed when the persisted rule book no longer matches the frozen session policy', async () => {
+    await h.db.run(
+      `UPDATE position_rules
+          SET required_criteria = '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}'
+        WHERE rule_book_version = '2026.1' AND position_id = 'B101';`,
+    );
     const res = await app.fetch(
       new Request(`http://x/api/me/eligibility?session_id=${SESSION_ID}`, {
         headers: { Authorization: `Bearer ${await memberJwt()}` },
@@ -74,8 +114,8 @@ describe('GET /api/me/eligibility', () => {
 
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({
-      error: 'active_rule_book_invalid',
-      invalid_position_ids: ['B101'],
+      error: 'session_policy_snapshot_unavailable',
+      policy_error: 'session_rule_book_invalid',
     });
   });
 
@@ -107,20 +147,11 @@ describe('GET /api/me/eligibility', () => {
     });
   });
 
-  it('fails closed when only another bid year has an active rule book', async () => {
+  it('keeps evaluating a valid frozen rule book after it is archived for a later cycle', async () => {
     await h.db.run("UPDATE rule_books SET status = 'archived' WHERE version = '2026.1';");
     await h.db.run(
       "INSERT INTO rule_books (version, effective_year, status) VALUES ('2027.1', 2027, 'active');",
     );
-    await h.db.run(
-      `INSERT INTO position_rules
-       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
-       VALUES ('2027.1', 'C101', '2027.1',
-         '{"rank":["FF"],"credentials":[],"custom":[]}',
-         '{"max":0,"items":[]}',
-         '["points","rsc_seniority","rank_seniority"]');`,
-    );
-
     const res = await app.fetch(
       new Request(`http://x/api/me/eligibility?session_id=${SESSION_ID}`, {
         headers: { Authorization: `Bearer ${await memberJwt()}` },
@@ -128,22 +159,19 @@ describe('GET /api/me/eligibility', () => {
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
 
-    expect(res.status).toBe(404);
-    expect(await res.json()).toMatchObject({ error: 'no_active_rule_book' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rule_book_version: string;
+      positions: { positionId: string }[];
+    };
+    expect(body.rule_book_version).toBe('2026.1');
+    expect(body.positions.map((position) => position.positionId)).toEqual(['A101']);
   });
 
-  it('uses the active book that matches the selected session year', async () => {
-    await h.db.run("DELETE FROM position_rules WHERE position_id = 'B101';");
+  it('does not replace a frozen session rule book with a later active book', async () => {
+    await h.db.run("UPDATE rule_books SET status = 'archived' WHERE version = '2026.1';");
     await h.db.run(
       "INSERT INTO rule_books (version, effective_year, status) VALUES ('2027.1', 2027, 'active');",
-    );
-    await h.db.run(
-      `INSERT INTO position_rules
-       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
-       VALUES ('2027.1', 'C101', '2027.1',
-         '{"rank":["FF"],"credentials":[],"custom":[]}',
-         '{"max":0,"items":[]}',
-         '["points","rsc_seniority","rank_seniority"]');`,
     );
 
     const res = await app.fetch(
@@ -154,7 +182,11 @@ describe('GET /api/me/eligibility', () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { positions: { positionId: string }[] };
+    const body = (await res.json()) as {
+      rule_book_version: string;
+      positions: { positionId: string }[];
+    };
+    expect(body.rule_book_version).toBe('2026.1');
     expect(body.positions.map((position) => position.positionId)).toEqual(['A101']);
   });
 

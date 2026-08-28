@@ -11,7 +11,7 @@
 // audited reclassification and therefore also requires fresh step-up auth.
 
 import { zValidator } from '@hono/zod-validator';
-import { type PositionRule, evaluateEligibility } from '@mbfd/eligibility';
+import { evaluateEligibility } from '@mbfd/eligibility';
 import { type JwtPayload, MockFreezeCommandSchema, MockFreezeRequestSchema } from '@mbfd/shared';
 import { and, asc, desc, eq, notExists, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -28,13 +28,14 @@ import {
   credentials,
   memberCredentials,
   members,
-  positionRules,
   rehearsalFindings,
-  ruleBooks,
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
-import { decodeRuleBookRows } from '../../lib/position-rule.js';
+import {
+  bidOrderInputFromSnapshot,
+  captureLegacyMockSessionPolicySnapshot,
+} from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -76,6 +77,24 @@ async function loadMemberWithCreds(db: DB, memberId: number): Promise<MemberWith
     isProbationary: m.isProbationary,
     credentials: creds.map((c) => ({ name: c.name })),
   };
+}
+
+function orderMatchesFrozenSnapshot(
+  persisted: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+  expected: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+): boolean {
+  return (
+    persisted.length === expected.length &&
+    persisted.every((entry, index) => {
+      const candidate = expected[index];
+      return (
+        candidate !== undefined &&
+        entry.ordinal === candidate.ordinal &&
+        entry.memberId === candidate.memberId &&
+        entry.pool === candidate.pool
+      );
+    })
+  );
 }
 
 /**
@@ -256,45 +275,6 @@ const AutoBidBodySchema = z.object({
   strategy: z.literal('first_eligible'),
 });
 
-async function loadActiveRulesForYear(
-  db: DB,
-  effectiveYear: number,
-): Promise<{
-  ruleBookVersion: string;
-  rules: readonly PositionRule[];
-  invalidRulePositionIds: readonly string[];
-  duplicateRulePositionIds: readonly string[];
-  hasActiveRuleBook: boolean;
-}> {
-  const rb = await db
-    .select()
-    .from(ruleBooks)
-    .where(and(eq(ruleBooks.status, 'active'), eq(ruleBooks.effectiveYear, effectiveYear)))
-    .get();
-  if (rb === undefined) {
-    return {
-      ruleBookVersion: '',
-      rules: [],
-      invalidRulePositionIds: [],
-      duplicateRulePositionIds: [],
-      hasActiveRuleBook: false,
-    };
-  }
-  const rows = await db
-    .select()
-    .from(positionRules)
-    .where(eq(positionRules.ruleBookVersion, rb.version))
-    .all();
-  const decodedRuleBook = decodeRuleBookRows(rows);
-  return {
-    ruleBookVersion: rb.version,
-    rules: decodedRuleBook.rules,
-    invalidRulePositionIds: decodedRuleBook.invalidPositionIds,
-    duplicateRulePositionIds: decodedRuleBook.duplicatePositionIds,
-    hasActiveRuleBook: true,
-  };
-}
-
 async function getCurrentBidderFromDO(
   env: WorkerEnv,
   sessionId: string,
@@ -371,25 +351,22 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
       return c.json({ picksMade: 0, stoppedReason: 'complete' });
     }
 
-    const { rules, invalidRulePositionIds, duplicateRulePositionIds, hasActiveRuleBook } =
-      await loadActiveRulesForYear(db, session.bidYear);
-    if (!hasActiveRuleBook) {
-      return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_active_rule_book' }, 200);
-    }
-    if (
-      rules.length === 0 ||
-      invalidRulePositionIds.length > 0 ||
-      duplicateRulePositionIds.length > 0
-    ) {
+    const frozenPolicy = await captureLegacyMockSessionPolicySnapshot(db, {
+      bidSessionId: sessionId,
+      bidYear: session.bidYear,
+      capturedAtMs: Date.now(),
+    });
+    if (!frozenPolicy.ok) {
       return c.json(
         {
-          error: 'active_rule_book_invalid',
-          invalid_position_ids: invalidRulePositionIds,
-          duplicate_position_ids: duplicateRulePositionIds,
+          error: 'session_policy_snapshot_unavailable',
+          policy_error: frozenPolicy.code,
+          position_ids: 'positionIds' in frozenPolicy ? (frozenPolicy.positionIds ?? []) : [],
         },
         409,
       );
     }
+    const { rules } = frozenPolicy.coverage;
     const rulesByPosition = new Map(rules.map((r) => [r.positionId, r]));
 
     let orderRows = await db
@@ -398,6 +375,17 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
       .where(eq(bidOrder.bidSessionId, sessionId))
       .orderBy(asc(bidOrder.ordinal))
       .all();
+    const expectedOrder = computeBidOrder(bidOrderInputFromSnapshot(frozenPolicy.snapshot));
+    if (expectedOrder.length === 0) {
+      return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
+    }
+    // A legacy mock may predate the frozen policy boundary. Never reuse an
+    // order that could contain an administratively assigned Division Chief or
+    // a mutable-roster member. A fresh mock starts empty and is bootstrapped
+    // below; an old inconsistent mock is safely blocked for operator review.
+    if (orderRows.length > 0 && !orderMatchesFrozenSnapshot(orderRows, expectedOrder)) {
+      return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
+    }
 
     // Bootstrap: mock sessions created via /admin/sessions/new sit in `config`
     // phase with an empty bid_order until someone manually calls the start
@@ -409,24 +397,11 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
     let bootstrapped = false;
     if (orderRows.length === 0) {
       try {
-        const memberRows = await db
-          .select({
-            id: members.id,
-            bidCategory: members.bidCategory,
-            rscSeniority: members.rscSeniority,
-            rankSeniority: members.rankSeniority,
-          })
-          .from(members)
-          .all();
-        const computed = computeBidOrder(memberRows);
-        if (computed.length === 0) {
-          return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
-        }
         // D1 caps bound parameters at ~100 per statement. 226 members × 4 cols =
         // 904 placeholders blows the limit in one INSERT. Chunk to 20 rows
         // (80 placeholders) per statement to stay safely under.
         const BID_ORDER_INSERT_CHUNK = 20;
-        const rowsToInsert = computed.map((e) => ({
+        const rowsToInsert = expectedOrder.map((e) => ({
           bidSessionId: sessionId,
           ordinal: e.ordinal,
           memberId: e.memberId,
@@ -436,7 +411,7 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
           const chunk = rowsToInsert.slice(i, i + BID_ORDER_INSERT_CHUNK);
           await db.insert(bidOrder).values(chunk);
         }
-        const first = computed[0];
+        const first = expectedOrder[0];
         const firstMemberId = first ? first.memberId : null;
         await db
           .update(bidSessions)
@@ -726,34 +701,47 @@ router.post('/:sessionId/manual-pick', zValidator('json', ManualPickBodySchema),
     );
   }
 
-  const activeRules = await loadActiveRulesForYear(db, session.bidYear);
-  if (!activeRules.hasActiveRuleBook) {
-    return c.json({ error: 'no_active_rule_book' }, 422);
-  }
-  if (
-    activeRules.rules.length === 0 ||
-    activeRules.invalidRulePositionIds.length > 0 ||
-    activeRules.duplicateRulePositionIds.length > 0
-  ) {
+  const frozenPolicy = await captureLegacyMockSessionPolicySnapshot(db, {
+    bidSessionId: sessionId,
+    bidYear: session.bidYear,
+    capturedAtMs: Date.now(),
+  });
+  if (!frozenPolicy.ok) {
     return c.json(
       {
-        error: 'active_rule_book_invalid',
-        invalid_position_ids: activeRules.invalidRulePositionIds,
-        duplicate_position_ids: activeRules.duplicateRulePositionIds,
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: frozenPolicy.code,
+        position_ids: 'positionIds' in frozenPolicy ? (frozenPolicy.positionIds ?? []) : [],
       },
       409,
     );
   }
+  const activeRules = frozenPolicy.coverage;
 
   const member = await loadMemberWithCreds(db, body.member_id);
   if (member === null) return c.json({ error: 'member_not_found' }, 404);
+  const frozenMember = frozenPolicy.snapshot.members.find(
+    (entry) => entry.memberId === body.member_id,
+  );
+  if (frozenMember === undefined || frozenMember.pool === 'EXCLUDED') {
+    return c.json(
+      {
+        error: 'member_not_in_bid_pool',
+        exclusion_reason: frozenMember?.exclusionReason ?? null,
+      },
+      422,
+    );
+  }
+
+  // Force may bypass an individual eligibility criterion during a rehearsal;
+  // it can never turn a non-biddable staffing position into an opportunity.
+  const rule = activeRules.rules.find((entry) => entry.positionId === body.position_id);
+  if (rule === undefined) {
+    return c.json({ error: 'position_not_biddable' }, 422);
+  }
 
   // Eligibility gate — admin can override with force=true.
   if (body.force !== true) {
-    const rule = activeRules.rules.find((entry) => entry.positionId === body.position_id);
-    if (rule === undefined) {
-      return c.json({ error: 'rule_not_found_for_position' }, 422);
-    }
     const evalResult = evaluateEligibility(member, rule);
     if (!evalResult.eligible) {
       return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);

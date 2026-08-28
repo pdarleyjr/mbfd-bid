@@ -33,7 +33,7 @@ async function stale(): Promise<string> {
   );
 }
 
-describe('PATCH /api/admin/rules/:id', () => {
+describe('PATCH and DELETE /api/admin/rules/:id', () => {
   let h: TestD1;
   let ruleId: number;
   beforeEach(async () => {
@@ -43,6 +43,11 @@ describe('PATCH /api/admin/rules/:id', () => {
     );
     await h.db.run(
       "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
+    );
+    await h.db.run(
+      `INSERT INTO positions
+       (id, template_version, shift, station, division, unit, rank_required, position_name)
+       VALUES ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter');`,
     );
     await h.db.run(
       `INSERT INTO position_rules
@@ -239,5 +244,57 @@ describe('PATCH /api/admin/rules/:id', () => {
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
     expect(res.status).toBe(409);
+  });
+
+  it('deletes a draft rule, increments the draft revision, and records the override audit', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rules/${ruleId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${await fresh()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason_code: 'rule_override.fix_misconfig',
+          reason: 'Remove an accidental duplicate draft rule.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      deleted: true,
+      id: ruleId,
+      rule_book_version: '2026.1',
+      position_id: 'A101',
+      revision: 1,
+    });
+    const rows = await h.db.run('SELECT id FROM position_rules WHERE id = ?', [ruleId]);
+    expect(rows.results).toEqual([]);
+    const audit = await h.db.run(
+      "SELECT action, target_id FROM audit_log WHERE action = 'override_rule' AND target_id = ?",
+      [String(ruleId)],
+    );
+    expect(audit.results).toEqual([{ action: 'override_rule', target_id: String(ruleId) }]);
+  });
+
+  it('refuses to delete an active-book rule and leaves its data unchanged', async () => {
+    await h.db.run("UPDATE rule_books SET status = 'active' WHERE version = '2026.1';");
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rules/${ruleId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${await fresh()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason_code: 'rule_override.policy_direction',
+          reason: 'Active rule books are immutable.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'rule_book_immutable', status: 'active' });
+    const rows = await h.db.run('SELECT id FROM position_rules WHERE id = ?', [ruleId]);
+    expect(rows.results).toHaveLength(1);
+    const book = await h.db.run("SELECT revision FROM rule_books WHERE version = '2026.1';");
+    expect(book.results[0]?.revision).toBe(0);
   });
 });

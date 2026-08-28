@@ -8,7 +8,7 @@ import {
   TimerConfigSchema,
   evaluateLiveReadiness,
 } from '@mbfd/shared';
-import { desc, eq, ne } from 'drizzle-orm';
+import { asc, desc, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
@@ -17,9 +17,17 @@ import {
   loadCanonicalBidSessionState,
 } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
-import { bidSessions, bidYears } from '../../db/schema.js';
+import { bidOrder, bidSessions, bidYears } from '../../db/schema.js';
 import type { BidSessionState } from '../../durable/bid-session-state.js';
 import { writeAuditLog } from '../../lib/audit.js';
+import { computeBidOrder } from '../../lib/bid-order.js';
+import {
+  bidOrderInputFromSnapshot,
+  loadBidSessionPolicySnapshot,
+  loadFrozenSessionBidPolicy,
+  prepareBidSessionPolicySnapshot,
+  summarizeBidSessionPolicySnapshot,
+} from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -35,6 +43,24 @@ const CreateSessionSchema = z.object({
 
 function actorIdFromClaims(claims: JwtPayload): number | null {
   return claims.sub > 0 ? claims.sub : null;
+}
+
+function orderMatchesFrozenSnapshot(
+  persisted: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+  expected: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+): boolean {
+  return (
+    persisted.length === expected.length &&
+    persisted.every((entry, index) => {
+      const candidate = expected[index];
+      return (
+        candidate !== undefined &&
+        entry.ordinal === candidate.ordinal &&
+        entry.memberId === candidate.memberId &&
+        entry.pool === candidate.pool
+      );
+    })
+  );
 }
 
 /**
@@ -96,16 +122,48 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
   }
   const id = ulid();
   const now = new Date();
-  await db.insert(bidSessions).values({
-    id,
-    bidYear: body.bid_year,
-    startedAt: now,
-    currentPhase: 'config',
-    turnTimerSeconds: body.turn_timer_seconds,
-    expectedDurationDays: body.expected_duration_days,
-    dayCount: 0,
-    isMock: body.is_mock,
-  });
+  const policy = await prepareBidSessionPolicySnapshot(db, body.bid_year, now.getTime());
+  if (!policy.ok) {
+    return c.json(
+      {
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: policy.code,
+        position_ids: policy.positionIds ?? [],
+      },
+      409,
+    );
+  }
+
+  // D1 batch is the session-creation boundary: a newly visible session must
+  // always carry the frozen policy input used to build its ordinary Bid pool.
+  // No mutable-staffing fallback is allowed after this point.
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO bid_sessions (
+          id, bid_year, started_at, current_phase, turn_timer_seconds,
+          expected_duration_days, day_count, is_mock
+        ) VALUES (?, ?, ?, 'config', ?, ?, 0, ?)`,
+    ).bind(
+      id,
+      body.bid_year,
+      now.getTime(),
+      body.turn_timer_seconds,
+      body.expected_duration_days,
+      body.is_mock ? 1 : 0,
+    ),
+    c.env.DB.prepare(
+      `INSERT INTO bid_session_policy_snapshots (
+          bid_session_id, rule_book_version, position_template_version,
+          snapshot_json, captured_at
+        ) VALUES (?, ?, ?, ?, ?)`,
+    ).bind(
+      id,
+      policy.snapshot.ruleBookVersion,
+      policy.snapshot.positionTemplateVersion,
+      JSON.stringify(policy.snapshot),
+      now.getTime(),
+    ),
+  ]);
   await writeAuditLog(db, {
     bidSessionId: id,
     actorType: 'admin',
@@ -113,9 +171,48 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     action: 'session_start',
     targetKind: 'bid_session',
     targetId: id,
-    afterState: { bid_year: body.bid_year, current_phase: 'config', is_mock: body.is_mock },
+    afterState: {
+      bid_year: body.bid_year,
+      current_phase: 'config',
+      is_mock: body.is_mock,
+      rule_book_version: policy.snapshot.ruleBookVersion,
+      position_template_version: policy.snapshot.positionTemplateVersion,
+      pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
+    },
   });
-  return c.json({ id, current_phase: 'config', is_mock: body.is_mock }, 201);
+  return c.json(
+    {
+      id,
+      current_phase: 'config',
+      is_mock: body.is_mock,
+      rule_book_version: policy.snapshot.ruleBookVersion,
+      position_template_version: policy.snapshot.positionTemplateVersion,
+      pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
+    },
+    201,
+  );
+});
+
+// GET /api/admin/bid-session/:id/policy-snapshot
+// Admin read-only view used to verify the frozen Officer/FF pool before a
+// session is initialized. It intentionally returns normalized identifiers only.
+router.get('/:id/policy-snapshot', async (c) => {
+  const id = c.req.param('id');
+  const db = getDb(c.env.DB);
+  const session = await db
+    .select({ id: bidSessions.id })
+    .from(bidSessions)
+    .where(eq(bidSessions.id, id))
+    .get();
+  if (session === undefined) return c.json({ error: 'not_found' }, 404);
+  const loaded = await loadBidSessionPolicySnapshot(db, id);
+  if (loaded.snapshot === null) {
+    return c.json({ error: 'session_policy_snapshot_invalid', detail: loaded.error }, 409);
+  }
+  return c.json({
+    snapshot: loaded.snapshot,
+    summary: summarizeBidSessionPolicySnapshot(loaded.snapshot),
+  });
 });
 
 // POST /api/admin/bid-session/:id/start
@@ -130,6 +227,29 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
   if (s.currentPhase !== 'config') {
     return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
   }
+  const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);
+  if (!frozenPolicy.ok) {
+    return c.json(
+      {
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: frozenPolicy.code,
+      },
+      409,
+    );
+  }
+  const expectedOrder = computeBidOrder(bidOrderInputFromSnapshot(frozenPolicy.snapshot));
+  if (expectedOrder.length === 0) {
+    return c.json({ error: 'session_policy_bid_order_empty' }, 409);
+  }
+  const existingOrder = await db
+    .select({ ordinal: bidOrder.ordinal, memberId: bidOrder.memberId, pool: bidOrder.pool })
+    .from(bidOrder)
+    .where(eq(bidOrder.bidSessionId, id))
+    .orderBy(asc(bidOrder.ordinal))
+    .all();
+  if (existingOrder.length > 0 && !orderMatchesFrozenSnapshot(existingOrder, expectedOrder)) {
+    return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
+  }
   if (!s.isMock) {
     const readiness = evaluateUnconfiguredLiveReadiness();
     if (!readiness.canStartLiveBid) {
@@ -137,10 +257,37 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
     }
   }
   const now = new Date();
-  await db
-    .update(bidSessions)
-    .set({ currentPhase: 'position_bid', startedAt: now })
-    .where(eq(bidSessions.id, id));
+  const statements: D1PreparedStatement[] = [];
+  if (existingOrder.length === 0) {
+    // D1 has a conservative bound-parameter cap. Keep each insert safely
+    // below it while retaining the whole session-start transition in one D1
+    // batch. A session is not visible as position_bid until its frozen order
+    // has been written.
+    const orderInsertChunkSize = 20;
+    for (let index = 0; index < expectedOrder.length; index += orderInsertChunkSize) {
+      const chunk = expectedOrder.slice(index, index + orderInsertChunkSize);
+      const values = chunk.map(() => '(?, ?, ?, ?)').join(', ');
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool) VALUES ${values}`,
+        ).bind(...chunk.flatMap((entry) => [id, entry.ordinal, entry.memberId, entry.pool])),
+      );
+    }
+  }
+  statements.push(
+    c.env.DB.prepare(
+      `UPDATE bid_sessions
+            SET current_phase = 'position_bid',
+                current_bidder_id = ?,
+                current_turn_started_at = ?,
+                started_at = ?
+          WHERE id = ? AND current_phase = 'config'`,
+    ).bind(expectedOrder[0]?.memberId ?? null, now.getTime(), now.getTime(), id),
+  );
+  const results = await c.env.DB.batch(statements);
+  if (results[results.length - 1]?.meta.changes !== 1) {
+    return c.json({ error: 'session_state_changed' }, 409);
+  }
   await writeAuditLog(db, {
     bidSessionId: id,
     actorType: 'admin',
@@ -148,10 +295,15 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
     action: 'session_start',
     targetKind: 'bid_session',
     targetId: id,
-    beforeState: { current_phase: 'config' },
-    afterState: { current_phase: 'position_bid' },
+    beforeState: { current_phase: 'config', bid_order_count: existingOrder.length },
+    afterState: {
+      current_phase: 'position_bid',
+      bid_order_count: expectedOrder.length,
+      rule_book_version: frozenPolicy.snapshot.ruleBookVersion,
+      position_template_version: frozenPolicy.snapshot.positionTemplateVersion,
+    },
   });
-  return c.json({ id, current_phase: 'position_bid' });
+  return c.json({ id, current_phase: 'position_bid', bid_order_count: expectedOrder.length });
 });
 
 // GET /api/admin/bid-session/:id/readiness

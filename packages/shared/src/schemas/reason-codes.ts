@@ -18,6 +18,7 @@ export const ReasonCodeSchema = z.enum([
   'skip.declined',
   'bid_for_member.unreachable_phone',
   'rule_override.fix_misconfig',
+  'rule_override.policy_direction',
   'cert_override.late_correction',
   'lock_position.probationary_placement',
   'lock_position.swat_medic_placement',
@@ -38,6 +39,8 @@ export const REASON_CODE_DESCRIPTIONS: Record<ReasonCode, string> = {
     'Admin enters the chosen pick on the members behalf (member phone down, pick is eligible).',
   'rule_override.fix_misconfig':
     'Mid-bid rule correction — a misconfigured rule is being patched with the chiefs present.',
+  'rule_override.policy_direction':
+    'Approved policy direction — a draft rule book is being corrected through the normal lifecycle.',
   'cert_override.late_correction':
     'Credential added or removed for a member after roster freeze — late paperwork correction.',
   'lock_position.probationary_placement':

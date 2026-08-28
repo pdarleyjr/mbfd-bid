@@ -11,6 +11,7 @@ export * from './schemas/eligibility-preview.js';
 export * from './schemas/member-import.js';
 export * from './schemas/credential-import.js';
 export * from './schemas/position-import.js';
+export * from './schemas/bid-policy.js';
 export * from './schemas/rule-book-import.js';
 export * from './constants/bid-events.js';
 export * from './schemas/bid-events.js';

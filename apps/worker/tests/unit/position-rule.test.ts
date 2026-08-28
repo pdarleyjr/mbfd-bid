@@ -200,20 +200,25 @@ describe('decodePositionRule', () => {
     }
   });
 
-  it('rejects unsupported custom criteria instead of silently ignoring them', () => {
-    const result = decodePositionRule(
-      row({
-        requiredCriteriaJson: JSON.stringify({
-          ...validCriteria,
-          custom: ['pre_bid_pool'],
+  it.each(['pre_bid_pool', 'unapproved_custom_condition'])(
+    'rejects unsupported custom criterion %s instead of silently ignoring it',
+    (custom) => {
+      const result = decodePositionRule(
+        row({
+          requiredCriteriaJson: JSON.stringify({
+            ...validCriteria,
+            custom: [custom],
+          }),
         }),
-      }),
-    );
+      );
 
-    expect(result).toMatchObject({ ok: false });
-    if (!result.ok)
-      expect(result.issues).toContainEqual(expect.objectContaining({ code: 'unsupported_custom' }));
-  });
+      expect(result).toMatchObject({ ok: false });
+      if (!result.ok)
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({ code: 'unsupported_custom' }),
+        );
+    },
+  );
 
   it.each([
     {

@@ -228,8 +228,16 @@
 - **Tie-break**: Seniority → Rank Seniority
 
 ### Division Chief (XX211)
-- Pre-bid pool of 3 active Division Chiefs; allocate one per shift A/B/C.
-- Tie-break: Seniority → Rank Seniority.
+- **Current approved policy (2026-08-27):** A211, B211, and C211 are administratively
+  assigned staffing positions outside the ordinary Bid. They are not Bid opportunities,
+  do not form a pre-bid pool, and have no Bid seniority, tie-break, pass/decline, or
+  automatic-award workflow.
+- A current occupant is excluded from the ordinary Officer Pool only through the reviewed
+  authoritative assignment to one of those positions. A vacancy does not make the position
+  biddable.
+- **Historical fixture wording (superseded):** "Pre-bid pool of 3 active Division Chiefs;
+  allocate one per shift A/B/C." It is retained here only to explain the previously invalid
+  `pre_bid_pool` fixture abstraction; it is not a runtime policy semantic.
 
 ---
 

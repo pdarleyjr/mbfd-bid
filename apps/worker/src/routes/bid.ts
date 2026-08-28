@@ -8,7 +8,7 @@ import {
 } from '@mbfd/a-day';
 import { evaluateEligibility } from '@mbfd/eligibility';
 import { SubmitADayPickRequestSchema } from '@mbfd/shared';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { loadCanonicalBidSessionState } from '../commands/canonical-command-service.js';
 import { getDb } from '../db/index.js';
@@ -18,18 +18,16 @@ import {
   credentials,
   memberCredentials,
   members as membersTable,
-  positionRules,
-  ruleBooks,
 } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
 import { computeBidOrder } from '../lib/bid-order.js';
+import { bidOrderInputFromSnapshot, loadFrozenSessionBidPolicy } from '../lib/bid-policy.js';
 import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-merge.js';
 import { chunkedInArraySelect } from '../lib/d1-batch.js';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeOnDeck } from '../lib/on-deck.js';
-import { decodeRuleBookRows } from '../lib/position-rule.js';
 import type { WorkerEnv } from '../types/env.js';
 
 type BidContext = Context<{ Bindings: WorkerEnv }>;
@@ -67,6 +65,24 @@ async function resolveBidSessionId(
     if ((canonical?.currentPhase ?? session.currentPhase) !== 'complete') return session.id;
   }
   return null;
+}
+
+function orderMatchesFrozenSnapshot(
+  persisted: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+  expected: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+): boolean {
+  return (
+    persisted.length === expected.length &&
+    persisted.every((entry, index) => {
+      const candidate = expected[index];
+      return (
+        candidate !== undefined &&
+        entry.ordinal === candidate.ordinal &&
+        entry.memberId === candidate.memberId &&
+        entry.pool === candidate.pool
+      );
+    })
+  );
 }
 
 bid.get('/me', async (c) => {
@@ -110,18 +126,20 @@ bid.get('/me/eligibility', async (c) => {
     return c.json({ error: 'canonical_state_unavailable' }, 503);
   }
 
-  // A member route must not evaluate an arbitrary draft or archived policy.
-  // Bind it to the one active book for the selected session's bid year.
-  const activeRuleBooks = await db
-    .select({ version: ruleBooks.version })
-    .from(ruleBooks)
-    .where(and(eq(ruleBooks.status, 'active'), eq(ruleBooks.effectiveYear, session.bidYear)))
-    .all();
-  if (activeRuleBooks.length === 0) return c.json({ error: 'no_active_rule_book' }, 404);
-  if (activeRuleBooks.length !== 1) return c.json({ error: 'active_rule_book_ambiguous' }, 409);
-  const activeRuleBook = activeRuleBooks.at(0);
-  if (activeRuleBook === undefined) return c.json({ error: 'no_active_rule_book' }, 404);
-  const version = activeRuleBook.version;
+  // Session pool membership and the associated policy version are frozen at
+  // creation. Never fall back to the mutable active rule book here.
+  const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
+  if (!frozenPolicy.ok) {
+    return c.json(
+      { error: 'session_policy_snapshot_unavailable', policy_error: frozenPolicy.code },
+      409,
+    );
+  }
+  const frozenMember = frozenPolicy.snapshot.members.find((entry) => entry.memberId === claims.sub);
+  if (frozenMember === undefined) {
+    return c.json({ error: 'member_not_in_session_policy_snapshot' }, 403);
+  }
+  const version = frozenPolicy.snapshot.ruleBookVersion;
   const requestedVersion = c.req.query('rule_book_version');
   if (requestedVersion !== undefined && requestedVersion !== version) {
     return c.json(
@@ -133,6 +151,15 @@ bid.get('/me/eligibility', async (c) => {
       409,
     );
   }
+  if (frozenMember.pool === 'EXCLUDED') {
+    return c.json({
+      memberId: claims.sub,
+      excluded_from_bid_pool: true,
+      exclusion_reason: frozenMember.exclusionReason,
+      rule_book_version: version,
+      positions: [],
+    });
+  }
 
   const memberCreds = await db
     .select({ name: credentials.name })
@@ -140,27 +167,6 @@ bid.get('/me/eligibility', async (c) => {
     .innerJoin(credentials, eq(memberCredentials.credentialId, credentials.id))
     .where(eq(memberCredentials.memberId, claims.sub))
     .all();
-
-  const rules = await db
-    .select()
-    .from(positionRules)
-    .where(eq(positionRules.ruleBookVersion, version))
-    .all();
-  const decodedRuleBook = decodeRuleBookRows(rules);
-  if (
-    rules.length === 0 ||
-    decodedRuleBook.invalidPositionIds.length > 0 ||
-    decodedRuleBook.duplicatePositionIds.length > 0
-  ) {
-    return c.json(
-      {
-        error: 'active_rule_book_invalid',
-        invalid_position_ids: decodedRuleBook.invalidPositionIds,
-        duplicate_position_ids: decodedRuleBook.duplicatePositionIds,
-      },
-      409,
-    );
-  }
 
   const filled = new Set<string>();
   if (canonicalState !== null) {
@@ -191,7 +197,7 @@ bid.get('/me/eligibility', async (c) => {
     reasons: ReturnType<typeof evaluateEligibility>['reasons'];
     points: number;
   }> = [];
-  for (const rule of decodedRuleBook.rules) {
+  for (const rule of frozenPolicy.coverage.rules) {
     if (filled.has(rule.positionId)) continue;
     const result = evaluateEligibility(eligibilityMember, rule);
     positions.push({
@@ -202,7 +208,12 @@ bid.get('/me/eligibility', async (c) => {
     });
   }
 
-  return c.json({ memberId: claims.sub, positions });
+  return c.json({
+    memberId: claims.sub,
+    rule_book_version: version,
+    position_template_version: frozenPolicy.snapshot.positionTemplateVersion,
+    positions,
+  });
 });
 
 interface BidderContext {
@@ -325,6 +336,46 @@ bid.get('/board', async (c) => {
     body.currentBidderId = resolveCurrentBidderId(body.currentBidderId, d1CurrentBidderId);
   }
 
+  // The durable state and direct-D1 rehearsal paths may both surface an
+  // order/fill projection. Validate every element against the session's
+  // frozen policy before enriching it for the board: an old global-roster
+  // order or a Division Chief fill must never be rendered as ordinary Bid.
+  const db = getDb(c.env.DB);
+  let frozenBoardPolicy: Awaited<ReturnType<typeof loadFrozenSessionBidPolicy>>;
+  try {
+    frozenBoardPolicy = await loadFrozenSessionBidPolicy(db, bidSessionId);
+  } catch {
+    return c.json({ error: 'session_policy_snapshot_unavailable' }, 503);
+  }
+  if (!frozenBoardPolicy.ok) {
+    return c.json(
+      { error: 'session_policy_snapshot_unavailable', policy_error: frozenBoardPolicy.code },
+      409,
+    );
+  }
+  const frozenOrder = computeBidOrder(bidOrderInputFromSnapshot(frozenBoardPolicy.snapshot));
+  const frozenMemberIds = new Set(
+    frozenBoardPolicy.snapshot.members
+      .filter((member) => member.pool !== 'EXCLUDED')
+      .map((member) => member.memberId),
+  );
+  const biddablePositionIds = new Set(
+    frozenBoardPolicy.coverage.rules.map((rule) => rule.positionId),
+  );
+  const bodyOrder = Array.isArray(body.bidOrder) ? body.bidOrder : [];
+  if (bodyOrder.length > 0 && !orderMatchesFrozenSnapshot(bodyOrder, frozenOrder)) {
+    return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
+  }
+  const boardFills = body.fills && typeof body.fills === 'object' ? body.fills : {};
+  for (const [positionId, fill] of Object.entries(boardFills)) {
+    if (!biddablePositionIds.has(positionId) || !frozenMemberIds.has(fill.memberId)) {
+      return c.json({ error: 'bid_state_not_frozen_policy' }, 409);
+    }
+  }
+  if (typeof body.currentBidderId === 'number' && !frozenMemberIds.has(body.currentBidderId)) {
+    return c.json({ error: 'bid_state_not_frozen_policy' }, 409);
+  }
+
   // Live Bid Console enrichment — hydrate the active bidder + next-5 queue
   // with member context so the UI shows "CPT Sola (14335)" instead of just
   // "ID 14335". Best-effort: if D1 lookup fails the legacy id-only payload
@@ -346,36 +397,15 @@ bid.get('/board', async (c) => {
       priorPositionId: string | null;
     }
   > = {};
-  // When the session is in `config` phase (or otherwise hasn't materialised
-  // its persisted bid_order yet) the DO snapshot ships `bidOrder: []`. That
-  // hides the "who's next" queue from the admin console even though we can
-  // compute it deterministically from the roster (computeBidOrder applies
-  // the same seniority + pool rules the session-start codepath uses).
-  // Compute it on-the-fly here as a preview so the dashboard surfaces the
-  // upcoming order from the moment the session is created.
+  // When a brand-new session is in `config` phase, the DO projection has no
+  // materialized order yet. Preview only the order derived from its frozen
+  // policy snapshot; do not substitute the mutable global roster.
   let bidOrder: ReadonlyArray<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }> =
-    Array.isArray(body.bidOrder) ? body.bidOrder : [];
+    bodyOrder;
   let bidOrderPreview = false;
-  try {
-    if (bidOrder.length === 0) {
-      const db = getDb(c.env.DB);
-      const memberRows = await db
-        .select({
-          id: membersTable.id,
-          bidCategory: membersTable.bidCategory,
-          rscSeniority: membersTable.rscSeniority,
-          rankSeniority: membersTable.rankSeniority,
-        })
-        .from(membersTable)
-        .all();
-      const computed = computeBidOrder(memberRows);
-      if (computed.length > 0) {
-        bidOrder = computed;
-        bidOrderPreview = true;
-      }
-    }
-  } catch (err) {
-    console.error('[bid.board] bidOrder preview failed (fail-soft)', err);
+  if (bidOrder.length === 0 && frozenOrder.length > 0) {
+    bidOrder = frozenOrder;
+    bidOrderPreview = true;
   }
 
   try {

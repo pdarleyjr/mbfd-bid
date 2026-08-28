@@ -199,6 +199,60 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
     });
   });
 
+  it('fails closed instead of reusing a stale order that diverges from the frozen pool', async () => {
+    const capturedAt = Date.now();
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', ?, ?);`,
+      [
+        sessionId,
+        JSON.stringify({
+          v: 1,
+          ruleBookVersion: '2026.1',
+          positionTemplateVersion: '2026.1',
+          capturedAtMs: capturedAt,
+          members: [201, 202, 203].map((memberId, index) => ({
+            memberId,
+            pool: 'FF',
+            rscSeniority: (index + 1) * 100,
+            rankSeniority: null,
+            exclusionReason: null,
+            authoritativeAssignmentId: null,
+          })),
+        }),
+        capturedAt,
+      ],
+    );
+    await h.db.run(
+      "INSERT INTO members (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at) VALUES (204, '204204', 'Stale', 'Order', 'FF', 'FF', 400, 0, ?, ?);",
+      [capturedAt, capturedAt],
+    );
+    await h.db.run(
+      "INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool) VALUES (?, 4, 204, 'FF');",
+      [sessionId],
+    );
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ count: 1, strategy: 'first_eligible' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'bid_order_not_frozen_policy' });
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
+        .results[0],
+    ).toMatchObject({ n: 0 });
+  });
+
   it('bootstrap survives a large roster (>100 placeholders worth of rows)', async () => {
     // D1 caps params at ~100 per statement. A real bid has ~226 members ×
     // 4 cols = 904 placeholders, well past the cap; the chunked INSERT must

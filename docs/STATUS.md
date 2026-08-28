@@ -1,5 +1,16 @@
 # Plan execution status + watch-items
 
+## POL-015 source-local checkpoint — 2026-08-27
+
+| Area | Current source-local state | Remaining boundary |
+| --- | --- | --- |
+| Policy decision | **Resolved:** A211/B211/C211 are administratively assigned staffing positions outside ordinary Bid; `pre_bid_pool` is a superseded inaccurate fixture abstraction. | Active staging `2026.1` remains immutable and unchanged. |
+| Rule-book model | Versioned `ADMIN_ASSIGNED_NON_BIDDABLE` participation, exact annual-template coverage, draft-only lifecycle, identifier-only diff, and publish guard are implemented locally. | Apply migration 0023 and execute the clone → correction → coverage/diff → publish lifecycle only after a fresh private staging recovery bookmark and approved actual staffing bindings are verified. |
+| Pool/session model | Reviewed authoritative staffing assignments exclude only their actual occupants; the normalized pool and order freeze with the session. Vacancy does not create a Bid opportunity. | No staging staffing/assignment row has been created or modified to force a proof. |
+| Validation | Final source-local gate passed: frozen install, lint, package builds, workspace typecheck, Next build, D1 preflight, full suite (1,125 passed; 4 intentional opt-in skips), and diff check. The unchanged Web surface also passed clean Linux Node 22.22.1 / pnpm 9.12 OpenNext build and local preview smoke. | The unsuppressed `extract-zip@2.0.1` high advisory remains; staging migration, recovery bookmark, staffing-binding verification, and candidate lifecycle are separate gates. |
+| Staging mock acceptance | Not attempted. A read-only investigation found no safe completely isolated synthetic rule-book/session scope in current staging. | Do not create a synthetic or ordinary staging mock merely to force a pass. The full workflow remains unaccepted pending safe isolation and staging candidate activation. |
+| Safety | No GitHub Actions, production, Media Control, GMKtec, Docker, tunnel, DNS, portal, or staging D1 mutation occurred for this checkpoint. | Existing staging auth/UI acceptance remains separately valid; production remains blocked. |
+
 ## Current staging final-auth checkpoint — 2026-08-27
 
 > This checkpoint supersedes older Plan 01–08 deployment/watch-item advice and the earlier 2026-08-27 release snapshot for the active staging resources. Historical entries below remain historical records; they are not current runbooks.

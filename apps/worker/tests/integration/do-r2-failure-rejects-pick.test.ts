@@ -15,7 +15,7 @@
 // `emitPickToChain` and the `emitter.emit` call path that ends in the
 // "force-pick rejected — audit chain unavailable" log line.
 
-import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
+import type { R2Bucket } from '@cloudflare/workers-types';
 import * as ed from '@noble/ed25519';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -23,6 +23,7 @@ import { encodeKey } from '../../src/audit/signer.js';
 import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
 import { BidSessionDO } from '../../src/durable/bid-session.js';
 import type { WorkerEnv } from '../../src/types/env.js';
+import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 interface Storage {
   data: Map<string, unknown>;
@@ -104,26 +105,6 @@ function makeBrokenR2(): R2Bucket {
   } as unknown as R2Bucket;
 }
 
-function makeStubDb(): D1Database {
-  // The DO's writeAudit catches D1 errors, so a no-op-friendly stub is fine.
-  // The audit chain DB (makeChainDb) only matters when emitter actually flushes
-  // a chunk — and here R2.put throws BEFORE that, so we never reach the D1
-  // chain write.
-  return {
-    prepare: () => ({
-      bind: () => ({
-        run: async () => ({ success: true, meta: { changes: 0, last_row_id: 0 } }),
-        all: async () => ({ results: [], success: true, meta: {} }),
-        first: async () => null,
-        raw: async () => [],
-      }),
-    }),
-    batch: async () => [],
-    exec: async () => ({ count: 0, duration: 0 }),
-    dump: async () => new ArrayBuffer(0),
-  } as unknown as D1Database;
-}
-
 let priv: Uint8Array;
 let pub: Uint8Array;
 
@@ -138,6 +119,7 @@ describe('BidSessionDO rejects pick when R2 chain emit fails (W36)', () => {
   let env: WorkerEnv;
   let doInstance: BidSessionDO;
   let initialState: BidSessionState;
+  let h: TestD1;
   const sessionId = '01HZZ0000000000000000W36';
 
   // Pre-fill the per-isolate ChainEmitter buffer to 99 events. The 100th
@@ -171,23 +153,66 @@ describe('BidSessionDO rejects pick when R2 chain emit fails (W36)', () => {
   }
 
   beforeEach(async () => {
+    h = await setupTestD1();
+    const capturedAt = Date.now();
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await h.db.run(
+      `INSERT INTO bid_sessions
+       (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count)
+     VALUES ('${sessionId}', 2026, ${capturedAt}, 'position_bid', 180, 2, 1);`,
+    );
+    await h.db.run(
+      "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
+    );
+    await h.db.run(
+      "INSERT INTO positions (id, template_version, shift, station, division, unit, rank_required, position_name) VALUES ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Firefighter');",
+    );
+    await h.db.run(
+      "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
+    );
+    await h.db.run(
+      `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
+       VALUES ('2026.1', 'A101', '2026.1',
+         '{"rank":["FF"],"credentials":[],"custom":[]}',
+         '{"max":0,"items":[]}',
+         '["points","rsc_seniority","rank_seniority"]');`,
+    );
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
+       VALUES (?, '2026.1', '2026.1', ?, ?);`,
+      [
+        sessionId,
+        JSON.stringify({
+          v: 1,
+          ruleBookVersion: '2026.1',
+          positionTemplateVersion: '2026.1',
+          capturedAtMs: capturedAt,
+          members: [
+            {
+              memberId: 42,
+              pool: 'FF',
+              rscSeniority: 42,
+              rankSeniority: null,
+              exclusionReason: null,
+              authoritativeAssignmentId: null,
+            },
+          ],
+        }),
+        capturedAt,
+      ],
+    );
+
     storage = makeStorage();
     state = makeStateMock(sessionId, storage);
     env = {
-      ENV: 'staging',
-      PORTAL_BASE_URL: 'https://portal.test',
+      ...h.env,
       JWT_SIGNING_KEY: 'k'.repeat(64),
-      PORTAL_BID_READER: 'tok',
-      DB: makeStubDb(),
-      KV: {} as never,
       BID_SESSION: {} as never,
       AUDIT_SIGNING_PRIVKEY: encodeKey(priv),
       AUDIT_SIGNING_PUBKEY: encodeKey(pub),
-      BROWSERLESS_TOKEN: '',
       R2_AUDIT: makeBrokenR2(),
-      R2_EXPORTS: {} as never,
-      PORTAL_QUEUE: {} as never,
-      BROWSER: {} as never,
     };
 
     // Seed initial state: 1 bidder in position_bid phase, ready to be force-picked.
@@ -206,8 +231,9 @@ describe('BidSessionDO rejects pick when R2 chain emit fails (W36)', () => {
     doInstance = new BidSessionDO(state, env);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     storage.data.clear();
+    await teardownTestD1(h);
   });
 
   it('adminForcePick returns { ok: false } when R2.put throws on flush', async () => {

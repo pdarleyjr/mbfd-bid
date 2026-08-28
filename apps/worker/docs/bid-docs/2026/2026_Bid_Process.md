@@ -19,7 +19,7 @@ Phase 0 — Pre-Bid Preparation
   └─ Generate the Bid Order (two pools: OFC, then FF, each by RscSeniorityIn)
 
 Phase 1 — Officer Pool (OFC) bids
-  ├─ Division Chiefs (3 picks across A/B/C)
+  ├─ Division Chiefs — administratively assigned outside ordinary Bid (no picks)
   ├─ D-Shift Captains (4 picks: D101 Prevention, D102 SpEv, D201 EMS, D301 Support Svcs)
   ├─ D-Shift Lieutenants (4 picks: D103 PubEd, D104 SpEv, D401/D402 Training)
   ├─ 24-Shift Captains (15 picks: 4 station Captains × 3 shifts + Captain 5 × 3)
@@ -55,7 +55,7 @@ Phase 4 — Post-Bid Finalization
 
 | Pool | Members | Sort Key |
 |------|---------|----------|
-| **OFC** | DC + Captain + Lieutenant | `RscSeniorityIn` ascending (1 = most senior dept-wide) |
+| **OFC** | Officers in ordinary Bid participation, excluding an occupant whose reviewed authoritative assignment is A211/B211/C211 | `RscSeniorityIn` ascending (1 = most senior dept-wide) |
 | **FF** | All Firefighters (incl. DE, AT, INV, Marine, FBO) | `RscSeniorityIn` ascending within FF range |
 
 Equal seniority resolves to **Rank Seniority** (date of promotion to current rank).

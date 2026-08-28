@@ -47,6 +47,31 @@ async function seedEligibleFireFighter(h: TestD1, sessionId: string) {
        '{"max":0,"items":[]}',
        '["points","rsc_seniority","rank_seniority"]');`,
   );
+  await h.db.run(
+    `INSERT INTO bid_session_policy_snapshots
+       (bid_session_id, rule_book_version, position_template_version, snapshot_json, captured_at)
+     VALUES (?, '2026.1', '2026.1', ?, ?);`,
+    [
+      sessionId,
+      JSON.stringify({
+        v: 1,
+        ruleBookVersion: '2026.1',
+        positionTemplateVersion: '2026.1',
+        capturedAtMs: now,
+        members: [
+          {
+            memberId: 60,
+            pool: 'FF',
+            rscSeniority: 80,
+            rankSeniority: null,
+            exclusionReason: null,
+            authoritativeAssignmentId: null,
+          },
+        ],
+      }),
+      now,
+    ],
+  );
 }
 
 describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
@@ -148,8 +173,7 @@ describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
 
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({
-      error: 'active_rule_book_invalid',
-      invalid_position_ids: ['B101'],
+      error: 'session_rule_book_invalid',
     });
     const rows = await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [
       sessionId,
