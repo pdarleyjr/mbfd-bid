@@ -21,6 +21,16 @@ export const members = sqliteTable('members', {
   hiredAt: text('hired_at'),
   promotedAt: text('promoted_at'),
   isProbationary: integer('is_probationary', { mode: 'boolean' }).notNull().default(false),
+  /** Explicit current projection; legacy records remain intentionally unknown. */
+  employmentStatus: text('employment_status', {
+    enum: ['unknown', 'active', 'inactive', 'retired', 'separated'],
+  })
+    .notNull()
+    .default('unknown'),
+  /** Effective date of the current employment-state projection, when known. */
+  employmentStatusEffectiveOn: text('employment_status_effective_on'),
+  /** Typed administrative separation/retirement classification where supplied. */
+  separationType: text('separation_type'),
   /**
    * Prior-year bid position (e.g. each member's 2025 assignment when running
    * the 2026 bid). Nullable for new hires and members not yet backfilled.
@@ -52,6 +62,52 @@ export const memberCredentials = sqliteTable(
   (t) => ({
     pk: primaryKey({ columns: [t.memberId, t.credentialId] }),
     credIdx: index('member_credentials_credential_id_idx').on(t.credentialId),
+  }),
+);
+
+export const memberQualificationEvents = sqliteTable(
+  'member_qualification_events',
+  {
+    id: text('id').primaryKey(),
+    memberId: integer('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    credentialId: integer('credential_id').references(() => credentials.id, {
+      onDelete: 'restrict',
+    }),
+    specialtyCode: text('specialty_code'),
+    kind: text('kind', {
+      enum: [
+        'CERTIFICATION_GAINED',
+        'CERTIFICATION_EXPIRED',
+        'CERTIFICATION_REVOKED',
+        'SPECIALTY_QUALIFIED',
+      ],
+    }).notNull(),
+    effectiveOn: text('effective_on').notNull(),
+    expiresOn: text('expires_on'),
+    evidenceSource: text('evidence_source').notNull(),
+    evidenceReference: text('evidence_reference'),
+    reason: text('reason').notNull(),
+    actorSubject: text('actor_subject').notNull(),
+    idempotencyKey: text('idempotency_key').notNull().unique(),
+    beforeState: text('before_state').notNull(),
+    afterState: text('after_state').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    memberEffectiveIdx: index('idx_member_qualification_events_member_effective').on(
+      t.memberId,
+      t.effectiveOn,
+      t.createdAt,
+      t.id,
+    ),
+    credentialEffectiveIdx: index('idx_member_qualification_events_credential_effective').on(
+      t.credentialId,
+      t.effectiveOn,
+      t.createdAt,
+      t.id,
+    ),
   }),
 );
 
@@ -320,6 +376,9 @@ export const auditLog = sqliteTable(
         'positions_clone',
         'rule_book_clone',
         'bid_configuration_set',
+        'bid_award_transition',
+        'telestaff_apply',
+        'qualification_lifecycle',
         'dissent',
         'a_day_pick',
         'forced_a_day_pick',
@@ -696,6 +755,8 @@ export const staffingPositionSourceMappings = sqliteTable(
       .references(() => staffingPositions.id, { onDelete: 'restrict' }),
     sourceSystem: text('source_system').notNull(),
     sourceLocator: text('source_locator').notNull(),
+    /** Reviewer-controlled stable seat discriminator for repeated topology. */
+    sourceDiscriminator: text('source_discriminator').notNull().default('primary'),
     sourceSignature: text('source_signature').notNull(),
     sourceVersion: text('source_version').notNull(),
     sourceHash: text('source_hash').notNull(),
@@ -707,6 +768,7 @@ export const staffingPositionSourceMappings = sqliteTable(
     locatorUnique: uniqueIndex('staffing_position_source_mapping_locator_unique').on(
       t.sourceSystem,
       t.sourceLocator,
+      t.sourceDiscriminator,
       t.effectiveFrom,
     ),
     slotEffectiveIdx: index('idx_staffing_position_source_mappings_slot_effective').on(
@@ -756,6 +818,13 @@ export const assignmentImports = sqliteTable(
     structuralRowCount: integer('structural_row_count').notNull().default(0),
     /** Explicit source observation date if supplied; never an inferred import date. */
     sourceSnapshotAsOf: text('source_snapshot_as_of'),
+    /** Exact source time only when metadata or an operator confirmation supports it. */
+    sourceObservedAt: integer('source_observed_at', { mode: 'timestamp_ms' }),
+    sourceObservationTimeBasis: text('source_observation_time_basis', {
+      enum: ['date_only', 'source_metadata', 'administrator_confirmed'],
+    })
+      .notNull()
+      .default('date_only'),
     // Optimistic-concurrency token for the TeleStaff reconciliation review surface.
     reconciliationRevision: integer('reconciliation_revision').notNull().default(0),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -941,7 +1010,10 @@ export const assignmentObservations = sqliteTable(
     staffingPositionSourceMappingId: text('staffing_position_source_mapping_id').notNull(),
     sourceARDay: text('source_a_r_day'),
     normalizedSourceTopology: text('normalized_source_topology').notNull(),
+    /** Import/application record time retained for existing audit continuity. */
     observedAt: integer('observed_at', { mode: 'timestamp_ms' }).notNull(),
+    /** Source-observation timestamp; null deliberately represents date-only source evidence. */
+    sourceObservedAt: integer('source_observed_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (t) => ({
@@ -1031,6 +1103,84 @@ export const memberAssignments = sqliteTable(
     sourceObservationUnique: uniqueIndex('member_assignments_source_observation_unique').on(
       t.sourceObservationId,
     ),
+  }),
+);
+
+/**
+ * Append-only administrative lifecycle evidence.  This is deliberately not a
+ * second member or assignment model: `members` remains identity/current state,
+ * while `member_assignments` remains effective-dated placement history.
+ */
+export const personnelLifecycleEvents = sqliteTable(
+  'personnel_lifecycle_events',
+  {
+    id: text('id').primaryKey().notNull(),
+    memberId: integer('member_id').references(() => members.id, { onDelete: 'restrict' }),
+    staffingPositionId: text('staffing_position_id').references(() => staffingPositions.id, {
+      onDelete: 'restrict',
+    }),
+    memberAssignmentId: text('member_assignment_id').references(() => memberAssignments.id, {
+      onDelete: 'restrict',
+    }),
+    kind: text('kind', {
+      enum: [
+        'NEW_HIRE',
+        'REACTIVATION',
+        'PROMOTION',
+        'DEMOTION',
+        'TRANSFER',
+        'ADMIN_REASSIGNMENT',
+        'RETIREMENT',
+        'SEPARATION',
+        'VACATE',
+        'POSITION_CREATE',
+        'POSITION_RETIRE',
+        'CORRECTION',
+      ],
+    }).notNull(),
+    effectiveOn: text('effective_on').notNull(),
+    employmentStatusBefore: text('employment_status_before', {
+      enum: ['unknown', 'active', 'inactive', 'retired', 'separated'],
+    }),
+    employmentStatusAfter: text('employment_status_after', {
+      enum: ['unknown', 'active', 'inactive', 'retired', 'separated'],
+    }),
+    rankBefore: text('rank_before', { enum: ['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'] }),
+    rankAfter: text('rank_after', { enum: ['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'] }),
+    separationType: text('separation_type'),
+    reason: text('reason').notNull(),
+    origin: text('origin', { enum: ['ADMIN', 'SYSTEM', 'BID', 'TELESTAFF'] }).notNull(),
+    actorSubject: text('actor_subject').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    beforeState: text('before_state').notNull(),
+    afterState: text('after_state').notNull(),
+    supersedesEventId: text('supersedes_event_id'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    idempotencyUnique: uniqueIndex('personnel_lifecycle_events_idempotency_key_unique').on(
+      t.idempotencyKey,
+    ),
+    memberEffectiveIdx: index('idx_personnel_lifecycle_events_member_effective').on(
+      t.memberId,
+      t.effectiveOn,
+      t.createdAt,
+    ),
+    positionEffectiveIdx: index('idx_personnel_lifecycle_events_position_effective').on(
+      t.staffingPositionId,
+      t.effectiveOn,
+      t.createdAt,
+    ),
+    assignmentIdx: index('idx_personnel_lifecycle_events_assignment').on(
+      t.memberAssignmentId,
+      t.effectiveOn,
+      t.createdAt,
+    ),
+    supersedesEventFk: foreignKey({
+      columns: [t.supersedesEventId],
+      foreignColumns: [t.id],
+      name: 'personnel_lifecycle_events_supersedes_event_fkey',
+    }).onDelete('restrict'),
   }),
 );
 

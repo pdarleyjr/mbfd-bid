@@ -2,6 +2,9 @@
 # Real values set in CF dashboard for staging/production.
 
 JWT_SIGNING_KEY=DEV_ONLY_REPLACE_WITH_32_BYTE_BASE64URL_VALUE
+# Separate, rotation-stable source identity key for the TeleStaff ingestion
+# route. Never reuse JWT_SIGNING_KEY, and never commit a real value.
+TELESTAFF_HMAC_KEY=DEV_ONLY_REPLACE_WITH_32_BYTE_RANDOM_VALUE
 LOCAL_ADMIN_PASSWORD_HASH=DEV_ONLY_REPLACE_WITH_BCRYPT_DIGEST_IF_LOCAL_ADMIN_LOGIN_IS_NEEDED
 PORTAL_BID_READER=DEV_ONLY_NOT_A_REAL_TOKEN
 

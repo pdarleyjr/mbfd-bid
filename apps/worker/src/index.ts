@@ -4,7 +4,9 @@ import { logger } from 'hono/logger';
 import { isExpectedPublicWebOrigin } from './lib/public-web-origin.js';
 import { redactRequestLog } from './lib/request-log.js';
 import { applySecurityHeaders } from './middleware/security-headers.js';
+import adminAiAssist from './routes/admin/ai-assist.js';
 import adminAudit from './routes/admin/audit.js';
+import adminBidAwardTransition from './routes/admin/bid-award-transition.js';
 import adminBidConfiguration from './routes/admin/bid-configuration.js';
 import adminBidControls from './routes/admin/bid-controls.js';
 import adminBidSession from './routes/admin/bid-session.js';
@@ -15,14 +17,17 @@ import adminEligibilityPreview from './routes/admin/eligibility-preview.js';
 import adminExports from './routes/admin/exports.js';
 import adminForceADay from './routes/admin/force-a-day.js';
 import adminMembers from './routes/admin/members.js';
+import adminPersonnel from './routes/admin/personnel.js';
 import adminPlacements from './routes/admin/placements.js';
 import adminPortal from './routes/admin/portal.js';
 import adminPositions from './routes/admin/positions.js';
+import adminQualificationLifecycle from './routes/admin/qualification-lifecycle.js';
 import adminReadiness from './routes/admin/readiness.js';
 import adminRehearsal from './routes/admin/rehearsal.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
 import adminSettings from './routes/admin/settings.js';
+import adminSpecialtyAdjudication from './routes/admin/specialty-adjudication.js';
 import adminTelestaff from './routes/admin/telestaff.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
@@ -39,7 +44,10 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/auth', auth)
   .route('/api', bid)
   .route('/api/ws', ws)
+  .route('/api/admin/ai-assist', adminAiAssist)
   .route('/api/admin/members', adminMembers)
+  .route('/api/admin/personnel', adminPersonnel)
+  .route('/api/admin/qualification-lifecycle', adminQualificationLifecycle)
   .route('/api/admin/credentials', adminCredentials)
   .route('/api/admin/current-roster', adminCurrentRoster)
   .route('/api/admin/telestaff', adminTelestaff)
@@ -48,10 +56,12 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/rule-books', adminRuleBooks)
   .route('/api/admin/bid', adminBid)
   .route('/api/admin/bid-session', adminBidSession)
+  .route('/api/admin/bid-session', adminSpecialtyAdjudication)
   .route('/api/admin/bid-configuration', adminBidConfiguration)
   .route('/api/admin/bid-session', adminBidControls)
   .route('/api/admin/bid-session', adminForceADay)
   .route('/api/admin/audit', adminAudit)
+  .route('/api/admin/bid-award-transition', adminBidAwardTransition)
   .route('/api/admin/exports', adminExports)
   .route('/api/admin', adminPortal)
   .route('/api/admin/eligibility', adminEligibilityPreview)

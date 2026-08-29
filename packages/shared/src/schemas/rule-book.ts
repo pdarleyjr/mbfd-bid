@@ -15,5 +15,6 @@ export const CreateRuleBookSchema = z.object({
     .regex(/^\d{4}\.\d+$/)
     .optional(),
   notes: z.string().max(2000).optional(),
+  reason: z.string().trim().min(4).max(500),
 });
 export type CreateRuleBook = z.infer<typeof CreateRuleBookSchema>;

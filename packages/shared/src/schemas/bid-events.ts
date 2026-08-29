@@ -31,7 +31,10 @@ export type PingMessage = z.infer<typeof PingMessageSchema>;
 
 export const ClientHelloMessageSchema = z.object({
   type: z.literal('hello'),
-  jwt: z.string().min(20),
+  // Connection authentication is completed during the WebSocket upgrade via
+  // a short-lived, protocol-bound ticket. Keeping a bearer JWT out of the
+  // application message prevents it from being retained in client logs,
+  // reconnect payloads, or Durable Object message traces.
   lastSeq: z.number().int().nonnegative().optional(),
 });
 export type ClientHelloMessage = z.infer<typeof ClientHelloMessageSchema>;

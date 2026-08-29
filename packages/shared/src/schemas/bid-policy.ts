@@ -13,7 +13,14 @@ export const FrozenBidPoolMemberSchema = z
     pool: z.enum(['OFC', 'FF', 'EXCLUDED']),
     rscSeniority: z.number().int().nonnegative(),
     rankSeniority: z.number().int().nonnegative().nullable(),
-    exclusionReason: z.enum(['ADMIN_ASSIGNED_NON_BIDDABLE', 'MEMBER_CATEGORY_EXCLUDED']).nullable(),
+    exclusionReason: z
+      .enum([
+        'ADMIN_ASSIGNED_NON_BIDDABLE',
+        'MEMBER_CATEGORY_EXCLUDED',
+        'MEMBER_NOT_ACTIVE',
+        'MEMBER_EMPLOYMENT_UNCONFIRMED',
+      ])
+      .nullable(),
     authoritativeAssignmentId: z.string().min(1).nullable(),
   })
   .strict();

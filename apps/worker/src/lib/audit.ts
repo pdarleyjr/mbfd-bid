@@ -23,6 +23,9 @@ export type AuditAction =
   | 'positions_clone'
   | 'rule_book_clone'
   | 'bid_configuration_set'
+  | 'bid_award_transition'
+  | 'telestaff_apply'
+  | 'qualification_lifecycle'
   | 'dissent'
   | 'a_day_pick'
   | 'forced_a_day_pick';

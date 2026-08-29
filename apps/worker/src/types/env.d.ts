@@ -16,6 +16,9 @@ export interface WorkerEnv {
    * not imply an outbound publication destination. */
   PORTAL_WRITEBACK_BASE_URL?: string;
   JWT_SIGNING_KEY: string;
+  /** Dedicated, rotation-stable HMAC key for persisted TeleStaff source references.
+   *  It must never fall back to the JWT signing key. */
+  TELESTAFF_HMAC_KEY?: string;
   PORTAL_BID_READER: string;
   /** Plan 08 — bearer token used by portal-client to POST /bid-assignment. */
   PORTAL_BID_WRITER?: string;

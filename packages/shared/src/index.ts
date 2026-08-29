@@ -16,6 +16,7 @@ export * from './schemas/rule-book-import.js';
 export * from './constants/bid-events.js';
 export * from './schemas/bid-events.js';
 export * from './schemas/bid-command.js';
+export * from './schemas/websocket-ticket.js';
 // Plan 08 — audit chain wire types.
 export * from './schemas/audit-event.js';
 export * from './schemas/audit-chunk.js';

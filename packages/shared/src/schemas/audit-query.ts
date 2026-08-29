@@ -19,6 +19,9 @@ const auditActionEnum = z.enum([
   'positions_clone',
   'rule_book_clone',
   'bid_configuration_set',
+  'bid_award_transition',
+  'telestaff_apply',
+  'qualification_lifecycle',
 ]);
 
 export const AuditQuerySchema = z
