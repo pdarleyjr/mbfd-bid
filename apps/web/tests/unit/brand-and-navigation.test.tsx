@@ -38,6 +38,7 @@ describe('MBFD identity and operator navigation', () => {
       { href: '/admin/current-rosters', label: 'Current Rosters' },
       { href: '/admin/telestaff', label: 'TeleStaff' },
       { href: '/admin/members', label: 'Members & Credentials' },
+      { href: '/admin/personnel', label: 'Personnel Changes' },
       { href: '/admin/bid-setup', label: 'Bid Setup' },
       { href: '/admin/ai-assist', label: 'AI Assist' },
       { href: '/admin/rehearsal', label: 'Mock Bids' },
@@ -45,5 +46,21 @@ describe('MBFD identity and operator navigation', () => {
       { href: '/admin/audit', label: 'Results & Audit' },
       { href: '/admin/system', label: 'System/Integrations' },
     ]);
+  });
+
+  it('makes the read-only award-transition review workspace discoverable from Results & Audit', () => {
+    const resultsAndAudit = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/audit');
+    expect(resultsAndAudit?.subnav).toContainEqual({
+      href: '/admin/award-transition',
+      label: 'Bid Award Transition',
+    });
+  });
+
+  it('makes the effective-dated qualification evidence workspace discoverable from Personnel Changes', () => {
+    const personnel = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/personnel');
+    expect(personnel?.subnav).toContainEqual({
+      href: '/admin/personnel/qualifications',
+      label: 'Qualification Evidence',
+    });
   });
 });

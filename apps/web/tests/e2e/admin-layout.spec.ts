@@ -119,4 +119,30 @@ test.describe('Admin dashboard — role=admin JWT', () => {
       page.getByRole('link', { name: 'System/Integrations', exact: true }),
     ).toBeVisible();
   });
+
+  test('a 390px viewport exposes an accessible admin navigation replacement', async ({ page }) => {
+    if (!process.env.JWT_SIGNING_KEY) {
+      test.skip(true, 'No JWT_SIGNING_KEY — cannot sign test JWT');
+      return;
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    const jwt = await makeJwt('admin');
+    await setAuthCookies(page, jwt);
+    await page.goto('/admin');
+
+    const mobileNavigation = page.locator('#admin-mobile-navigation');
+    const toggle = page.getByRole('button', { name: 'Open admin navigation', exact: true });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(mobileNavigation).toBeHidden();
+
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(mobileNavigation).toBeVisible();
+    await expect(
+      mobileNavigation.getByRole('link', { name: 'Current Rosters', exact: true }),
+    ).toBeVisible();
+  });
 });

@@ -57,4 +57,19 @@ describe('AuditEventSchema', () => {
       ).not.toThrow();
     }
   });
+
+  it('accepts qualification lifecycle evidence audit events', () => {
+    expect(() =>
+      AuditEventSchema.parse({
+        seq: 1,
+        bid_session_id: 'x',
+        action: 'qualification_lifecycle',
+        actor_type: 'admin',
+        actor_id: 1,
+        target_kind: 'credential',
+        target_id: '1:10',
+        created_at: '2026-09-22T14:23:00Z',
+      }),
+    ).not.toThrow();
+  });
 });

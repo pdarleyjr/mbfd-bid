@@ -1,14 +1,20 @@
 import { expect, test } from '@playwright/test';
+import { PENDING_AUTHORIZED_TEST_IDENTITY, authorizedJwt } from './authorized-test-identity.js';
+
+const memberJwt = authorizedJwt('E2E_MEMBER_JWT');
 
 test('GET /bid as authenticated member renders the board header + grid', async ({
   page,
   context,
 }) => {
-  // Helper: prime PIN + member JWT cookies. Implementer lifts the helper used
-  // by existing Plan 01/02 E2E tests (apps/web/tests/e2e/_helpers/auth.ts).
+  if (!memberJwt) {
+    test.skip(true, PENDING_AUTHORIZED_TEST_IDENTITY);
+    return;
+  }
+
   await context.addCookies([
     { name: 'mbfd_pin', value: '1', domain: 'localhost', path: '/' },
-    { name: 'mbfd_jwt', value: process.env.E2E_MEMBER_JWT ?? '', domain: 'localhost', path: '/' },
+    { name: 'mbfd_jwt', value: memberJwt, domain: 'localhost', path: '/' },
   ]);
   await page.goto('http://localhost:3000/bid');
   await expect(page.getByTestId('bid-board-header')).toBeVisible();

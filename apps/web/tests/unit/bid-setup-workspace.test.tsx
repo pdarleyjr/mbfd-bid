@@ -36,6 +36,27 @@ describe('BidSetupWorkspace', () => {
     expect(html).toContain('Bid Access PIN');
   });
 
+  it('carries the exact designated configuration into every downstream policy tool', () => {
+    const html = renderToString(
+      <BidSetupWorkspace
+        year={2027}
+        configuration={DRAFT_CONFIGURATION}
+        ruleBooks={[{ version: '2027.2', effectiveYear: 2027, status: 'draft' }]}
+        configurationError={null}
+        ruleBooksError={null}
+      />,
+    );
+
+    const selection =
+      'year=2027&amp;rule_book_version=2027.2&amp;template_version=2027.1&amp;configuration_revision=4';
+    expect(html).toContain(`/admin/positions?${selection}`);
+    expect(html).toContain(`/admin/rules?${selection}`);
+    expect(html).toContain(`/admin/eligibility?${selection}`);
+    expect(html).not.toContain('href="/admin/positions"');
+    expect(html).not.toContain('href="/admin/rules"');
+    expect(html).not.toContain('href="/admin/eligibility"');
+  });
+
   it('fails closed when the selected year has no configuration record', () => {
     const html = renderToString(
       <BidSetupWorkspace
@@ -49,5 +70,33 @@ describe('BidSetupWorkspace', () => {
 
     expect(html).toContain('No configuration is available for this bid year');
     expect(html).not.toContain('data-testid="bid-configuration-save"');
+  });
+
+  it('does not preselect the first draft when a year has no designated configuration', () => {
+    const html = renderToString(
+      <BidSetupWorkspace
+        year={2028}
+        configuration={{
+          bidYear: 2028,
+          bidYearStatus: 'configuring',
+          ruleBookVersion: null,
+          positionTemplateVersion: null,
+          configurationRevision: 0,
+          ruleBookRevision: null,
+          settings: null,
+          lifecycle: 'UNCONFIGURED',
+        }}
+        ruleBooks={[
+          { version: '2028.1', effectiveYear: 2028, status: 'draft' },
+          { version: '2028.2', effectiveYear: 2028, status: 'draft' },
+        ]}
+        configurationError={null}
+        ruleBooksError={null}
+      />,
+    );
+
+    expect(html).toContain('Select a draft candidate');
+    expect(html).toContain('<option value="" selected="">Select a draft candidate</option>');
+    expect(html).not.toContain('<option value="2028.1" selected="">');
   });
 });

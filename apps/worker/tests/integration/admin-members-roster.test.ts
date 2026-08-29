@@ -5,6 +5,44 @@ import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'r'.repeat(64);
 
+async function memberWriteState(h: TestD1) {
+  const [members, credentials, assignments, lifecycleEvents, audit] = await Promise.all([
+    h.db.run('SELECT * FROM members ORDER BY id'),
+    h.db.run('SELECT * FROM member_credentials ORDER BY member_id, credential_id'),
+    h.db.run('SELECT * FROM member_assignments ORDER BY id'),
+    h.db.run('SELECT * FROM personnel_lifecycle_events ORDER BY id'),
+    h.db.run('SELECT * FROM audit_log ORDER BY id'),
+  ]);
+  return {
+    members: members.results,
+    credentials: credentials.results,
+    assignments: assignments.results,
+    lifecycleEvents: lifecycleEvents.results,
+    audit: audit.results,
+  };
+}
+
+async function expectRetiredCredentialChange(
+  h: TestD1,
+  before: Awaited<ReturnType<typeof memberWriteState>>,
+  res: Response,
+) {
+  expect(res.status).toBe(410);
+  await expect(res.json()).resolves.toMatchObject({
+    error: 'legacy_member_write_retired',
+    operation: 'credential_change',
+    credential_lifecycle: {
+      status: 'configured',
+      api: '/api/admin/qualification-lifecycle/events',
+    },
+    operator_workflows: {
+      personnel: { ui: '/admin/personnel', api: '/api/admin/personnel/changes' },
+      telestaff: { ui: '/admin/telestaff', api: '/api/admin/telestaff/imports' },
+    },
+  });
+  expect(await memberWriteState(h)).toEqual(before);
+}
+
 async function adminJwt(): Promise<string> {
   return signJwt(
     {
@@ -159,8 +197,8 @@ describe('GET /api/admin/members/roster', () => {
     expect(m3?.manual_override_ordinal).toBe(1);
   });
 
-  it('POST /:id/credentials/:credentialId toggles a credential on then off', async () => {
-    // First call: member 1 does not yet hold credential 2 — toggle inserts.
+  it('retires direct credential toggles without mutating credentials or audit evidence', async () => {
+    const before = await memberWriteState(h);
     const first = await app.fetch(
       new Request('http://x/api/admin/members/1/credentials/2', {
         method: 'POST',
@@ -168,16 +206,8 @@ describe('GET /api/admin/members/roster', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(first.status).toBe(200);
-    const firstBody = (await first.json()) as { held: boolean };
-    expect(firstBody.held).toBe(true);
+    await expectRetiredCredentialChange(h, before, first);
 
-    const afterInsert = await h.db.run(
-      'SELECT count(*) AS n FROM member_credentials WHERE member_id = 1 AND credential_id = 2',
-    );
-    expect(afterInsert.results[0]?.n).toBe(1);
-
-    // Second call removes it.
     const second = await app.fetch(
       new Request('http://x/api/admin/members/1/credentials/2', {
         method: 'POST',
@@ -185,13 +215,6 @@ describe('GET /api/admin/members/roster', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(second.status).toBe(200);
-    const secondBody = (await second.json()) as { held: boolean };
-    expect(secondBody.held).toBe(false);
-
-    const afterDelete = await h.db.run(
-      'SELECT count(*) AS n FROM member_credentials WHERE member_id = 1 AND credential_id = 2',
-    );
-    expect(afterDelete.results[0]?.n).toBe(0);
+    await expectRetiredCredentialChange(h, before, second);
   });
 });

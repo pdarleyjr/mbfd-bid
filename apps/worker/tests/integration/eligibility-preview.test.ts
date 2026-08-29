@@ -98,6 +98,51 @@ describe('POST /api/admin/eligibility/preview', () => {
     expect(body.eligible).toBe(true);
   });
 
+  it('uses effective-dated qualification evidence instead of a timeless legacy credential row', async () => {
+    await h.db.run("INSERT INTO credentials (id, name) VALUES (1, 'Paramedic');");
+    await h.db.run(
+      "INSERT INTO member_credentials (member_id, credential_id, start_date, expiration_date) VALUES (80, 1, '2026-10-01', '2026-12-31');",
+    );
+    const requestAt = async (asOf: string) =>
+      app.fetch(
+        new Request('http://x/api/admin/eligibility/preview', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${await adminJwt()}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            member_id: 80,
+            position_id: 'A205',
+            rule_book_version: '2026.1',
+            as_of: asOf,
+          }),
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+
+    const beforeStart = await requestAt('2026-09-30');
+    expect(beforeStart.status).toBe(200);
+    await expect(beforeStart.json()).resolves.toMatchObject({ eligible: false });
+
+    const whileActive = await requestAt('2026-10-02');
+    expect(whileActive.status).toBe(200);
+    await expect(whileActive.json()).resolves.toMatchObject({ eligible: true });
+
+    await h.db.run(
+      `INSERT INTO member_qualification_events
+         (id, member_id, credential_id, specialty_code, kind, effective_on, expires_on,
+          evidence_source, evidence_reference, reason, actor_subject, idempotency_key,
+          before_state, after_state, created_at)
+       VALUES ('preview-paramedic-revocation', 80, 1, NULL, 'CERTIFICATION_REVOKED', '2026-11-01', NULL,
+        'synthetic-state-registry', 'SYNTH-PREVIEW-REVOKE', 'Synthetic revocation evidence.', '0',
+        'preview-paramedic-revocation', '{}', '{}', 1);`,
+    );
+    const afterRevocation = await requestAt('2026-11-02');
+    expect(afterRevocation.status).toBe(200);
+    await expect(afterRevocation.json()).resolves.toMatchObject({ eligible: false });
+  });
+
   it('uses the specified rule_book_version when provided', async () => {
     await h.db.run(
       "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.2', 2026, 'draft');",

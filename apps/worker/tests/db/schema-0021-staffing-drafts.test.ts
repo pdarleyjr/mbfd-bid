@@ -1712,7 +1712,7 @@ describe('V2 canonical staffing schema (migration 0021)', () => {
     sqlite.close();
   });
 
-  it('rejects overlapping authoritative assignments to the same singular canonical slot', () => {
+  it('rejects overlapping authoritative assignments to the same singular canonical slot or member', () => {
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
     applyMigrationsStrict(sqlite);
@@ -1798,6 +1798,20 @@ describe('V2 canonical staffing schema (migration 0021)', () => {
         'bid-award:synthetic-4',
         'planned',
         '2027-06-01',
+        null,
+        1,
+        1,
+      ),
+    ).toThrow(/overlapping authoritative assignment for member/);
+    expect(() =>
+      insertAssignment.run(
+        'assignment-distinct-slot-sequential',
+        1,
+        'slot-2',
+        'BID_AWARD',
+        'bid-award:synthetic-5',
+        'planned',
+        '2028-01-01',
         null,
         1,
         1,

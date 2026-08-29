@@ -46,8 +46,9 @@ async function seedConfigFixture(h: TestD1): Promise<void> {
   await h.db.run(
     `INSERT INTO members
        (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
-        is_probationary, created_at, updated_at)
-     VALUES (701, 'synthetic-701', 'Synthetic', 'Member', 'FF', 'FF', 1, 0, ${NOW}, ${NOW});`,
+        is_probationary, employment_status, employment_status_effective_on, created_at, updated_at)
+     VALUES (701, 'synthetic-701', 'Synthetic', 'Member', 'FF', 'FF', 1, 0,
+        'active', '2027-01-01', ${NOW}, ${NOW});`,
   );
   await h.db.run(
     `INSERT INTO rule_books (version, effective_year, status)

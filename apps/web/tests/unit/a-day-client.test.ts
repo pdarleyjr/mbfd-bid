@@ -76,7 +76,7 @@ describe('classifyADayEvent', () => {
 });
 
 describe('fetchADayState', () => {
-  it('GETs the snapshot endpoint with bearer auth', async () => {
+  it('GETs the cookie-authenticated same-origin snapshot proxy without exposing a bearer token', async () => {
     const fakeFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -87,11 +87,11 @@ describe('fetchADayState', () => {
         meters: { groups: [], weekdays: [] },
       }),
     } as Response);
-    const state = await fetchADayState('sess-1', 'jwt-token', fakeFetch as never);
+    const state = await fetchADayState('sess-1', fakeFetch as never);
     expect(fakeFetch).toHaveBeenCalledWith(
       '/api/bid/a-day-state?session=sess-1',
       expect.objectContaining({
-        headers: { Authorization: 'Bearer jwt-token' },
+        credentials: 'same-origin',
       }),
     );
     expect(state.currentPhase).toBe('a_day_bid');
@@ -104,7 +104,7 @@ describe('fetchADayState', () => {
       status: 401,
       json: async () => ({}),
     } as Response);
-    await expect(fetchADayState('sess-1', 'jwt', fakeFetch as never)).rejects.toThrow(/401/);
+    await expect(fetchADayState('sess-1', fakeFetch as never)).rejects.toThrow(/401/);
   });
 });
 
@@ -121,13 +121,16 @@ describe('submitADayPickViaRest', () => {
         aDay: 'G1',
         idempotencyKey: '550e8400-e29b-41d4-a716-446655440000',
       },
-      'jwt',
       fakeFetch as never,
     );
     expect(result.status).toBe(200);
     expect(fakeFetch).toHaveBeenCalledWith(
       '/api/bid/a-day-pick',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+      }),
     );
   });
 });

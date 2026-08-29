@@ -1,5 +1,7 @@
+import { WEBSOCKET_TICKET_AUDIENCE, WebSocketTicketClaimsSchema } from '@mbfd/shared';
+import { decodeJwt, jwtVerify } from 'jose';
 import { describe, expect, it } from 'vitest';
-import { signJwt, verifyJwt } from '../../lib/jwt';
+import { signJwt, signWebSocketTicket, verifyJwt } from '../../lib/jwt';
 
 const TEST_KEY = 'A'.repeat(64); // 32-byte hex placeholder
 
@@ -33,5 +35,26 @@ describe('signJwt / verifyJwt', () => {
   it('rejects an expired token', async () => {
     const token = await signJwt(payload, TEST_KEY, '-1s');
     await expect(verifyJwt(token, TEST_KEY)).rejects.toThrow();
+  });
+
+  it('serializes the numeric member id to an RFC-compliant subject while preserving the typed ticket API', async () => {
+    const ticket = await signWebSocketTicket(
+      { sub: 555, role: 'member', session_id: 'session-1' },
+      TEST_KEY,
+    );
+    const raw = decodeJwt(ticket);
+    expect(raw.sub).toBe('555');
+    expect(raw.aud).toBe(WEBSOCKET_TICKET_AUDIENCE);
+
+    const key = Uint8Array.from(
+      TEST_KEY.match(/.{1,2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? [],
+    );
+    const { payload: verified } = await jwtVerify(ticket, key, {
+      algorithms: ['HS256'],
+      audience: WEBSOCKET_TICKET_AUDIENCE,
+    });
+    const claims = WebSocketTicketClaimsSchema.parse(verified);
+    expect(claims).toMatchObject({ sub: 555, role: 'member', session_id: 'session-1' });
+    expect(claims.exp - claims.iat).toBe(60);
   });
 });

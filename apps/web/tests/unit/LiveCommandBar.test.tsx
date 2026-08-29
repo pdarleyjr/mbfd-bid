@@ -14,7 +14,6 @@ function ssr(node: React.ReactElement): string {
 
 const BASE_PROPS = {
   bidSessionId: 'test-session',
-  jwt: 'test-jwt',
   currentPhase: 'position_bid',
   sessionStartedAt: Date.now() - 60_000,
   turnStartedAtMs: Date.now(),

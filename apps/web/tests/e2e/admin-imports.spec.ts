@@ -56,10 +56,12 @@ async function setAdminCookies(page: Page, jwt: string) {
 // Members import
 // ---------------------------------------------------------------------------
 
-test.describe('Admin members import', () => {
+test.describe('Retired admin members import', () => {
   test.skip(!!process.env.CI && !process.env.E2E_FULL, 'Skip in CI without E2E_FULL');
 
-  test('renders upload form and shows results after upload', async ({ page }) => {
+  test('does not expose a legacy upload and directs the operator to controlled workflows', async ({
+    page,
+  }) => {
     if (!process.env.JWT_SIGNING_KEY) {
       test.skip(true, 'No JWT_SIGNING_KEY');
       return;
@@ -68,58 +70,19 @@ test.describe('Admin members import', () => {
     const jwt = await makeAdminJwt();
     await setAdminCookies(page, jwt);
 
-    // Mock the worker import endpoint
-    await page.route('**/api/admin/members/import', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ inserted: 233, updated: 0, errors: [] }),
-      });
-    });
-
     await page.goto('/admin/members/import');
 
-    // Form should be present
-    await expect(page.getByRole('heading', { name: /import members/i })).toBeVisible();
-    const fileInput = page.locator('input[type="file"]');
-    await expect(fileInput).toBeVisible();
-
-    // Upload a tiny fixture CSV
-    const fixtureCsvPath = path.resolve(__dirname, '../fixtures/members-fixture.csv');
-    await fileInput.setInputFiles(fixtureCsvPath);
-
-    // Submit
-    await page.getByRole('button', { name: /upload/i }).click();
-
-    // Result panel should show counts
-    await expect(page.getByText('233')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('0')).toBeVisible();
-  });
-
-  test('shows error message when worker returns error', async ({ page }) => {
-    if (!process.env.JWT_SIGNING_KEY) {
-      test.skip(true, 'No JWT_SIGNING_KEY');
-      return;
-    }
-
-    const jwt = await makeAdminJwt();
-    await setAdminCookies(page, jwt);
-
-    await page.route('**/api/admin/members/import', (route) => {
-      route.fulfill({
-        status: 400,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'Invalid CSV format' }),
-      });
-    });
-
-    await page.goto('/admin/members/import');
-
-    const fixtureCsvPath = path.resolve(__dirname, '../fixtures/members-fixture.csv');
-    await page.locator('input[type="file"]').setInputFiles(fixtureCsvPath);
-    await page.getByRole('button', { name: /upload/i }).click();
-
-    await expect(page.getByText(/worker returned/i)).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByRole('heading', { name: /legacy member import retired/i }),
+    ).toBeVisible();
+    await expect(page.locator('input[type="file"]')).toHaveCount(0);
+    await expect(
+      page.getByRole('link', { name: /open telestaff reconciliation/i }),
+    ).toHaveAttribute('href', '/admin/telestaff');
+    await expect(page.getByRole('link', { name: /open personnel lifecycle/i })).toHaveAttribute(
+      'href',
+      '/admin/personnel',
+    );
   });
 });
 

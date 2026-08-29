@@ -14,14 +14,25 @@ describe('year-round admin control-center safety', () => {
     expect(source('app/admin/page.tsx')).not.toMatch(/Telestaff CSV/i);
   });
 
-  it.each([
-    ['AI Assist', 'app/admin/ai-assist/page.tsx', 'ai-assist-unavailable'],
-    ['System/Integrations', 'app/admin/system/page.tsx', 'system-integrations-unavailable'],
-  ])('%s is an authenticated, non-operational landing state', (_label, relativePath, testId) => {
-    const page = source(relativePath);
+  it('keeps AI Assist authenticated while delegating only to the advisory workspace', () => {
+    const page = source('app/admin/ai-assist/page.tsx');
+    const workspace = source('app/admin/ai-assist/AiAssistWorkspace.tsx');
 
     expect(page).toContain('requireAdmin');
-    expect(page).toContain(`data-testid="${testId}"`);
+    expect(page).toContain('AiAssistWorkspace');
+    expect(page).not.toMatch(/<(?:form|button)\b/i);
+    expect(page).not.toMatch(/serverWorkerFetch|\bfetch\(/);
+    expect(workspace).toContain('mayCommitBid: false');
+    expect(workspace).toContain('mayMutatePolicy: false');
+    expect(workspace).toContain('mayMutateAssignments: false');
+    expect(workspace).toContain('PENDING_CONFIGURATION');
+  });
+
+  it('keeps System/Integrations as an authenticated, non-operational landing state', () => {
+    const page = source('app/admin/system/page.tsx');
+
+    expect(page).toContain('requireAdmin');
+    expect(page).toContain('data-testid="system-integrations-unavailable"');
     expect(page).not.toMatch(/<(?:form|button)\b/i);
     expect(page).not.toMatch(/serverWorkerFetch|\bfetch\(/);
   });

@@ -73,6 +73,22 @@ function applyMigrations(sqlite: Database.Database): void {
   }
 }
 
+function inactiveSpecialtyBidSessionNamespace(): WorkerEnv['BID_SESSION'] {
+  const stub = {
+    fetch: async (input: Request | string) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (new URL(url).pathname === '/admin/specialty-adjudication') {
+        return new Response(JSON.stringify({ state: { active: null } }), { status: 200 });
+      }
+      return new Response('not found', { status: 404 });
+    },
+  };
+  return {
+    idFromName: (name: string) => ({ toString: () => name }) as unknown as DurableObjectId,
+    get: () => stub as unknown as DurableObjectStub,
+  } as unknown as WorkerEnv['BID_SESSION'];
+}
+
 /**
  * In-memory D1 harness for integration tests. Returns an object with:
  *   - `env`: a `WorkerEnv` (DB-only; KV / BID_SESSION are stubs) for passing
@@ -114,7 +130,7 @@ export async function setupTestD1(): Promise<TestD1> {
     PORTAL_BID_READER: 'tok',
     DB: makeD1Adapter(sqlite),
     KV: {} as never,
-    BID_SESSION: {} as never,
+    BID_SESSION: inactiveSpecialtyBidSessionNamespace(),
     // Plan 08 — audit + exports + portal bindings/secrets (test placeholders).
     AUDIT_SIGNING_PRIVKEY: '',
     AUDIT_SIGNING_PUBKEY: '',

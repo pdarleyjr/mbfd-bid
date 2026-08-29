@@ -77,13 +77,14 @@ async function seedPolicyFixture(
   );
   await h.db.run(
     `INSERT INTO members
-       (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, rank_seniority, is_probationary, created_at, updated_at)
+       (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, rank_seniority,
+        is_probationary, employment_status, employment_status_effective_on, created_at, updated_at)
      VALUES
-       (101, 'member-101', 'Member', '101', 'DC', 'OFC', 1, 1, 0, ${now}, ${now}),
-       (102, 'member-102', 'Member', '102', 'DC', 'OFC', 2, 2, 0, ${now}, ${now}),
-       (103, 'member-103', 'Member', '103', 'DC', 'OFC', 3, 3, 0, ${now}, ${now}),
-       (104, 'member-104', 'Member', '104', 'LT', 'OFC', 4, 4, 0, ${now}, ${now}),
-       (105, 'member-105', 'Member', '105', 'FF', 'FF', 5, 5, 0, ${now}, ${now});`,
+       (101, 'member-101', 'Member', '101', 'DC', 'OFC', 1, 1, 0, 'active', '2026-01-01', ${now}, ${now}),
+       (102, 'member-102', 'Member', '102', 'DC', 'OFC', 2, 2, 0, 'active', '2026-01-01', ${now}, ${now}),
+       (103, 'member-103', 'Member', '103', 'DC', 'OFC', 3, 3, 0, 'active', '2026-01-01', ${now}, ${now}),
+       (104, 'member-104', 'Member', '104', 'LT', 'OFC', 4, 4, 0, 'active', '2026-01-01', ${now}, ${now}),
+       (105, 'member-105', 'Member', '105', 'FF', 'FF', 5, 5, 0, 'active', '2026-01-01', ${now}, ${now});`,
   );
   await h.db.run(
     `INSERT INTO staffing_positions

@@ -32,16 +32,40 @@ describe('CreateRuleBookSchema', () => {
       effective_year: 2026,
       clone_from: '2025.4',
       notes: 'Mid-year corrections.',
+      reason: 'Clone the reviewed prior-year rule book for draft revision.',
     });
     expect(ok.effective_year).toBe(2026);
   });
 
   it('accepts a fresh request (no clone_from)', () => {
-    const ok = CreateRuleBookSchema.parse({ effective_year: 2027, notes: 'Fresh.' });
+    const ok = CreateRuleBookSchema.parse({
+      effective_year: 2027,
+      notes: 'Fresh.',
+      reason: 'Create an independently reviewed draft rule book.',
+    });
     expect(ok.clone_from).toBeUndefined();
   });
 
+  it('requires a trimmed operator reason between 4 and 500 characters', () => {
+    expect(() => CreateRuleBookSchema.parse({ effective_year: 2027 })).toThrow();
+    expect(() => CreateRuleBookSchema.parse({ effective_year: 2027, reason: 'no' })).toThrow();
+    expect(() =>
+      CreateRuleBookSchema.parse({ effective_year: 2027, reason: 'x'.repeat(501) }),
+    ).toThrow();
+    expect(
+      CreateRuleBookSchema.parse({
+        effective_year: 2027,
+        reason: '  Create a reviewed annual policy draft.  ',
+      }).reason,
+    ).toBe('Create a reviewed annual policy draft.');
+  });
+
   it('rejects year < 2024', () => {
-    expect(() => CreateRuleBookSchema.parse({ effective_year: 1999 })).toThrow();
+    expect(() =>
+      CreateRuleBookSchema.parse({
+        effective_year: 1999,
+        reason: 'Create a reviewed annual policy draft.',
+      }),
+    ).toThrow();
   });
 });

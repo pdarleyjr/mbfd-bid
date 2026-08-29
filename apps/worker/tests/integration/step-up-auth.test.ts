@@ -38,6 +38,11 @@ describe('isStepUpFresh', () => {
     expect(isStepUpFresh(now - STEP_UP_MAX_AGE_SEC - 1, now)).toBe(false);
   });
 
+  it('returns false when fresh_auth_at is in the future', () => {
+    const now = 1_700_000_000;
+    expect(isStepUpFresh(now + 1, now)).toBe(false);
+  });
+
   it('STEP_UP_MAX_AGE_SEC is exactly 300', () => {
     expect(STEP_UP_MAX_AGE_SEC).toBe(300);
   });

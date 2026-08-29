@@ -61,7 +61,12 @@ describe('Current Roster admin projection', () => {
        VALUES
          (1, 'synthetic-1', 'Synthetic', 'One', 'FF', 'FF', 1, 0, ${now}, ${now}),
          (2, 'synthetic-2', 'Synthetic', 'Two', 'LT', 'OFC', 2, 0, ${now}, ${now}),
-         (3, 'synthetic-3', 'Synthetic', 'Three', 'DC', 'OFC', 3, 0, ${now}, ${now});
+         (3, 'synthetic-3', 'Synthetic', 'Three', 'DC', 'OFC', 3, 0, ${now}, ${now}),
+         (4, 'synthetic-4', 'Synthetic', 'Retired', 'FF', 'FF', 4, 0, ${now}, ${now});
+       UPDATE members
+       SET employment_status = 'retired', employment_status_effective_on = '2026-08-01',
+           separation_type = 'RETIREMENT'
+       WHERE id = 4;
 
        INSERT INTO staffing_positions
          (id, stable_slot_key, shift, station, unit, position_name, applicable_rank, active_from, review_status, created_at, updated_at)
@@ -168,6 +173,56 @@ describe('Current Roster admin projection', () => {
     expect(afterAssignments.results).toEqual(beforeAssignments.results);
   });
 
+  it('keeps an effective-dated ending assignment visible until its boundary and projects lifecycle rank/status as of the requested date', async () => {
+    await h.db.run(
+      `UPDATE member_assignments
+         SET status = 'ended', effective_to = '2026-12-31'
+       WHERE id = 'assignment-a';
+       INSERT INTO personnel_lifecycle_events
+         (id, member_id, staffing_position_id, member_assignment_id, kind, effective_on,
+          employment_status_before, employment_status_after, rank_before, rank_after,
+          separation_type, reason, origin, actor_subject, idempotency_key,
+          before_state, after_state, supersedes_event_id, created_at)
+       VALUES
+         ('synthetic-promotion-as-of', 1, 'slot-a', 'assignment-a', 'PROMOTION', '2026-08-28',
+          'active', 'active', 'FF', 'LT', NULL, 'Synthetic effective-dated promotion.', 'ADMIN',
+          'synthetic-admin', 'synthetic-promotion-as-of',
+          '{"employmentStatus":"active","rank":"FF"}',
+          '{"employmentStatus":"active","rank":"LT"}', NULL, ${Date.UTC(2026, 7, 28, 13, 0, 0)}),
+         ('synthetic-retirement-as-of', 2, NULL, NULL, 'RETIREMENT', '2026-08-28',
+          'unknown', 'retired', 'LT', 'LT', 'RETIREMENT', 'Synthetic effective-dated retirement.', 'ADMIN',
+          'synthetic-admin', 'synthetic-retirement-as-of',
+          '{"employmentStatus":"unknown","rank":"LT"}',
+          '{"employmentStatus":"retired","rank":"LT"}', NULL, ${Date.UTC(2026, 7, 28, 13, 1, 0)});`,
+    );
+
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/current-roster?as_of=${AS_OF}`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as CurrentRosterResponse;
+    expect(body.positions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'slot-a',
+          occupancy: 'occupied',
+          member: expect.objectContaining({ id: 1, rank: 'LT' }),
+          assignment: expect.objectContaining({ id: 'assignment-a', status: 'ended' }),
+        }),
+      ]),
+    );
+    expect(body.unassignedMembers).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 1 })]),
+    );
+    expect(body.unassignedMembers).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 2 })]),
+    );
+  });
+
   it('uses the requested year designated rule book rather than global active-rule-book state', async () => {
     await h.db.run(
       `UPDATE rule_books SET status = 'archived' WHERE version = '2026.synthetic';
@@ -249,6 +304,53 @@ describe('Current Roster admin projection', () => {
       }),
     ]);
     expect(body.summary.vacantPositions).toBe(1);
+  });
+
+  it('exports the same effective-dated, filtered projection as an administrator-only CSV without mutation', async () => {
+    const beforeAssignments = await h.db.run(
+      'SELECT id, status, effective_to FROM member_assignments ORDER BY id',
+    );
+
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/current-roster/export.csv?as_of=${AS_OF}&shift=A&station=1`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toMatch(/text\/csv/);
+    expect(response.headers.get('Content-Disposition')).toContain(
+      'mbfd-current-roster-2026-08-28.csv',
+    );
+    const lines = (await response.text()).split('\r\n').filter((line) => line.length > 0);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('as_of,stable_slot_key,shift,station');
+    expect(lines[1]).toContain('2026-08-28,SYNTHETIC/A/1/ENGINE,A,1');
+    expect(lines[1]).toContain('synthetic-1');
+    expect(lines[1]).not.toContain('slot-b');
+
+    const afterAssignments = await h.db.run(
+      'SELECT id, status, effective_to FROM member_assignments ORDER BY id',
+    );
+    expect(afterAssignments.results).toEqual(beforeAssignments.results);
+  });
+
+  it('keeps unclassified members visible for reconciliation but excludes separated or retired people from the active unassigned list', async () => {
+    await h.db.run(
+      "UPDATE members SET employment_status = 'separated', employment_status_effective_on = '2026-08-01' WHERE id = 2",
+    );
+
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/current-roster?as_of=${AS_OF}`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as CurrentRosterResponse;
+    expect(body.unassignedMembers).toEqual([]);
   });
 
   it('rejects malformed as-of values and returns assignment history only to administrators', async () => {

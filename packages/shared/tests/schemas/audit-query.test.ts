@@ -40,6 +40,16 @@ describe('AuditQuerySchema', () => {
     expect(ok.action).toBe('forced_pick');
   });
 
+  it('accepts the TeleStaff canonical-apply audit action', () => {
+    const ok = AuditQuerySchema.parse({ action: 'telestaff_apply' });
+    expect(ok.action).toBe('telestaff_apply');
+  });
+
+  it('accepts qualification lifecycle audit filters', () => {
+    const ok = AuditQuerySchema.parse({ action: 'qualification_lifecycle' });
+    expect(ok.action).toBe('qualification_lifecycle');
+  });
+
   it('rejects unknown action filter', () => {
     expect(() => AuditQuerySchema.parse({ action: 'sandwich' })).toThrow();
   });

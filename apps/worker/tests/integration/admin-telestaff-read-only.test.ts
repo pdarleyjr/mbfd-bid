@@ -45,7 +45,7 @@ interface ImportSummary {
   };
 }
 
-describe('admin TeleStaff read-only history', () => {
+describe('admin TeleStaff sanitized import history', () => {
   let h: TestD1;
 
   beforeEach(async () => {
@@ -113,9 +113,23 @@ describe('admin TeleStaff read-only history', () => {
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
     expect(member.status).toBe(403);
+
+    const exportMissingAuth = await app.fetch(
+      new Request('http://x/api/admin/telestaff/imports/import-synthetic-v1/reconciliation.csv'),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(exportMissingAuth.status).toBe(401);
+
+    const exportMember = await app.fetch(
+      new Request('http://x/api/admin/telestaff/imports/import-synthetic-v1/reconciliation.csv', {
+        headers: { Authorization: `Bearer ${await jwt('member')}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(exportMember.status).toBe(403);
   });
 
-  it('lists import history with explicit parse/apply blockers and no raw personnel identifiers', async () => {
+  it('lists import history with explicit operator safeguards and no raw personnel identifiers', async () => {
     const response = await app.fetch(
       new Request('http://x/api/admin/telestaff/imports', {
         headers: { Authorization: `Bearer ${await jwt('admin')}` },
@@ -128,31 +142,33 @@ describe('admin TeleStaff read-only history', () => {
       imports: ImportSummary[];
       readiness: {
         readOnly: boolean;
-        parse: { adapterAvailable: boolean; ingestionAvailable: boolean; blocker: string };
-        apply: { ready: boolean; blocker: string };
+        manualUploadAvailable: boolean;
+        rawSourcePersistence: boolean;
+        sourceSnapshotRequired: boolean;
+        preapprovedCanonicalMappingsOnly: boolean;
+        syntheticCanonicalWrites: boolean;
+        apply: { ready: string; blockers: string[] };
         externalSourceAccess: boolean;
-        auditWrites: boolean;
       };
     };
 
     expect(body.readiness).toEqual({
-      readOnly: true,
-      parse: {
-        adapterAvailable: true,
-        supportedSourceFormats: ['TELSTAFF_ASSIGNMENTS_HTML_V1'],
-        ingestionAvailable: false,
-        blocker: 'READ_ONLY_INGESTION_NOT_IMPLEMENTED',
-        reason:
-          'A versioned HTML adapter is available for approved local validation; this read-only route cannot upload or persist a source artifact.',
-      },
+      readOnly: false,
+      manualUploadAvailable: true,
+      rawSourcePersistence: false,
+      sourceSnapshotRequired: true,
       apply: {
-        ready: false,
-        blocker: 'AUTHORITATIVE_STAFFING_BASELINE_REQUIRED',
-        reason:
-          'Applying reconciliation remains unavailable until an authoritative staffing baseline exists.',
+        ready: 'per_import',
+        blockers: [
+          'OFFICIAL_SOURCE_REQUIRED',
+          'EXPLICIT_CANONICAL_EFFECTIVE_DATE_REQUIRED',
+          'TERMINAL_RECONCILIATION_REQUIRED',
+          'CURRENT_CANONICAL_STATE_MUST_MATCH_REVIEW',
+        ],
       },
       externalSourceAccess: false,
-      auditWrites: false,
+      preapprovedCanonicalMappingsOnly: true,
+      syntheticCanonicalWrites: false,
     });
     expect(body.imports).toEqual([
       expect.objectContaining({
@@ -259,7 +275,53 @@ describe('admin TeleStaff read-only history', () => {
     expect(after.results).toEqual(before.results);
   });
 
-  it('rejects invalid pagination and reports a missing import without exposing an alternate write path', async () => {
+  it('exports a selected import as a no-store sanitized reconciliation CSV without mutating it', async () => {
+    const before = await h.db.run(
+      `SELECT id, status, reconciliation_revision, source_observed_at
+       FROM assignment_imports
+       WHERE id = 'import-synthetic-v1'`,
+    );
+
+    const response = await app.fetch(
+      new Request('http://x/api/admin/telestaff/imports/import-synthetic-v1/reconciliation.csv', {
+        headers: { Authorization: `Bearer ${await jwt('admin')}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toMatch(/text\/csv/);
+    expect(response.headers.get('Content-Disposition')).toBe(
+      'attachment; filename="mbfd-telestaff-reconciliation.csv"',
+    );
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    const csv = await response.text();
+    expect(csv).toContain(
+      'record_type,import_status,source_kind,source_snapshot_as_of,source_observed_at,source_observation_time_basis,reconciliation_revision',
+    );
+    expect(csv).toContain('import_summary,staged,synthetic_test');
+    expect(csv).toContain('source_row');
+    expect(csv).toContain(',7,MOVED,approved,APPLY_OBSERVATION,');
+    expect(csv).toContain('missing_observation_finding');
+    expect(csv).toContain('MISSING_OBSERVATION,pending');
+    expect(csv).not.toContain('synthetic-contract-v1');
+    expect(csv).not.toContain('Engine 1');
+    expect(csv).not.toContain('Firefighter');
+    expect(csv).not.toContain('G1');
+    expect(csv).not.toContain('row-reviewed');
+    expect(csv).not.toContain('missing-synthetic');
+    expect(csv).not.toContain('b'.repeat(64));
+    expect(csv).not.toContain('d'.repeat(64));
+
+    const after = await h.db.run(
+      `SELECT id, status, reconciliation_revision, source_observed_at
+       FROM assignment_imports
+       WHERE id = 'import-synthetic-v1'`,
+    );
+    expect(after.results).toEqual(before.results);
+  });
+
+  it('rejects invalid pagination, missing imports, and unconfigured mutation safely', async () => {
     const invalid = await app.fetch(
       new Request('http://x/api/admin/telestaff/imports/import-synthetic-v1?limit=0', {
         headers: { Authorization: `Bearer ${await jwt('admin')}` },
@@ -285,6 +347,7 @@ describe('admin TeleStaff read-only history', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(post.status).toBe(404);
+    expect(post.status).toBe(503);
+    await expect(post.json()).resolves.toEqual({ error: 'telestaff_configuration_unavailable' });
   });
 });

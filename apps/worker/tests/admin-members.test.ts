@@ -68,15 +68,20 @@ function applyMigrations(sqlite: Database.Database): void {
     '0005_audit_log_session_nullable.sql',
     '0013_audit_chain_bookkeeping.sql',
     '0018_members_prior_position.sql',
+    '0027_personnel_lifecycle.sql',
   ];
   for (const file of files) {
     const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8');
     // drizzle-kit adds `--> statement-breakpoint` markers; split on those + semicolons.
     const statements = sql
+      // A migration can begin with documentation comments before its first
+      // statement. Remove only full-line SQL comments so that first DDL is not
+      // accidentally discarded by the legacy lightweight test runner.
+      .replace(/^--.*$/gm, '')
       .split('--> statement-breakpoint')
       .flatMap((chunk) => chunk.split(';'))
       .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !s.startsWith('--'));
+      .filter((s) => s.length > 0);
     for (const stmt of statements) {
       try {
         sqlite.exec(`${stmt};`);
@@ -130,6 +135,54 @@ const SAMPLE_CSV = `Employee Id,Last Name,First Name,Current Rank,Bid Category,B
 99999,BadRow,Tester,UnknownRank,OFC,Include,5
 20001,Smith,John,Captain,FF,Include,7`;
 
+function seedMember(
+  sqlite: Database.Database,
+  values: Partial<{
+    employeeId: string;
+    firstName: string;
+    lastName: string;
+    rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+    bidCategory: 'OFC' | 'FF' | 'EXCLUDED';
+    rscSeniority: number;
+  }> = {},
+): number {
+  const now = Date.now();
+  const result = sqlite
+    .prepare(
+      `INSERT INTO members (
+        employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+        is_probationary, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      values.employeeId ?? '14335',
+      values.firstName ?? 'Jesus',
+      values.lastName ?? 'Sola',
+      values.rank ?? 'DC',
+      values.bidCategory ?? 'OFC',
+      values.rscSeniority ?? 4,
+      0,
+      now,
+      now,
+    );
+  return Number(result.lastInsertRowid);
+}
+
+function seedCredential(sqlite: Database.Database, name = 'Test credential'): number {
+  const result = sqlite.prepare('INSERT INTO credentials (name) VALUES (?)').run(name);
+  return Number(result.lastInsertRowid);
+}
+
+function memberWriteCounts(sqlite: Database.Database) {
+  const count = (table: 'members' | 'member_credentials' | 'audit_log') =>
+    (sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+  return {
+    members: count('members'),
+    memberCredentials: count('member_credentials'),
+    audit: count('audit_log'),
+  };
+}
+
 describe('admin members routes', () => {
   it('GET /admin/members returns 401 without auth', async () => {
     const { app, sqlite } = makeApp();
@@ -162,55 +215,96 @@ describe('admin members routes', () => {
     expect(body.total).toBe(0);
   });
 
-  it('POST /admin/members/import upserts members and returns counts', async () => {
+  it('retires legacy CSV import before parsing and leaves members and audit evidence untouched', async () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
     const form = new FormData();
     form.append('file', new Blob([SAMPLE_CSV], { type: 'text/csv' }), 'members.csv');
+    const before = memberWriteCounts(sqlite);
     const res = await app.request(
       '/admin/members/import',
       { method: 'POST', body: form, headers: { Authorization: `Bearer ${jwt}` } },
       mkEnv(sqlite),
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      inserted: number;
-      updated: number;
-      errors: { rowNumber: number }[];
-    };
-    expect(body.inserted).toBe(2); // 14335 (DC) and 20001 (CPT) are valid
-    expect(body.updated).toBe(0);
-    expect(body.errors).toHaveLength(1);
-    expect(body.errors[0]?.rowNumber).toBe(3); // BadRow is data row 3 (header=1, first=2, bad=3)
-
-    const auditCount = sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get() as { n: number };
-    expect(auditCount.n).toBe(1);
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({
+      error: 'legacy_member_write_retired',
+      operation: 'member_import',
+      operator_workflows: { telestaff: { ui: '/admin/telestaff' } },
+    });
+    expect(memberWriteCounts(sqlite)).toEqual(before);
   });
 
-  it('POST /admin/members/import is idempotent — re-running updates instead of duplicating', async () => {
+  it('retires synthesis bootstrap before it can mutate current members or credentials', async () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
-    const singleRowCsv = `Employee Id,Last Name,First Name,Current Rank,Bid Category,Bid,RscSeniorityIn
-14335,Sola,Jesus,Division Chief,OFC,Include,4`;
-
-    const form1 = new FormData();
-    form1.append('file', new Blob([singleRowCsv], { type: 'text/csv' }), 'members.csv');
-    await app.request(
-      '/admin/members/import',
-      { method: 'POST', body: form1, headers: { Authorization: `Bearer ${jwt}` } },
+    const before = memberWriteCounts(sqlite);
+    const res = await app.request(
+      '/admin/members/seed-from-synthesis',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ members: [{ employee_id: '14335' }] }),
+      },
       mkEnv(sqlite),
     );
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({
+      error: 'legacy_member_write_retired',
+      operation: 'synthesis_seed',
+      operator_workflows: { telestaff: { api: '/api/admin/telestaff/imports' } },
+    });
+    expect(memberWriteCounts(sqlite)).toEqual(before);
+  });
 
-    const form2 = new FormData();
-    form2.append('file', new Blob([singleRowCsv], { type: 'text/csv' }), 'members.csv');
-    const res2 = await app.request(
-      '/admin/members/import',
-      { method: 'POST', body: form2, headers: { Authorization: `Bearer ${jwt}` } },
+  it('retires legacy member PATCH before parsing and leaves the projection and audit untouched', async () => {
+    const { app, sqlite } = makeApp();
+    const memberId = seedMember(sqlite);
+    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+    const beforeMember = sqlite.prepare('SELECT * FROM members WHERE id = ?').get(memberId);
+    const before = memberWriteCounts(sqlite);
+    const res = await app.request(
+      `/admin/members/${memberId}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+        body: '{not-json',
+      },
       mkEnv(sqlite),
     );
-    const body2 = (await res2.json()) as { inserted: number; updated: number; errors: unknown[] };
-    expect(body2.inserted).toBe(0);
-    expect(body2.updated).toBe(1);
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({
+      error: 'legacy_member_write_retired',
+      operation: 'member_patch',
+      operator_workflows: { personnel: { api: '/api/admin/personnel/changes' } },
+    });
+    expect(sqlite.prepare('SELECT * FROM members WHERE id = ?').get(memberId)).toEqual(
+      beforeMember,
+    );
+    expect(memberWriteCounts(sqlite)).toEqual(before);
+  });
+
+  it('retires direct credential toggles with no credential or audit mutation', async () => {
+    const { app, sqlite } = makeApp();
+    const memberId = seedMember(sqlite);
+    const credentialId = seedCredential(sqlite);
+    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+    const before = memberWriteCounts(sqlite);
+    const res = await app.request(
+      `/admin/members/${memberId}/credentials/${credentialId}`,
+      { method: 'POST', headers: { Authorization: `Bearer ${jwt}` } },
+      mkEnv(sqlite),
+    );
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({
+      error: 'legacy_member_write_retired',
+      operation: 'credential_change',
+      credential_lifecycle: {
+        status: 'configured',
+        api: '/api/admin/qualification-lifecycle/events',
+      },
+    });
+    expect(memberWriteCounts(sqlite)).toEqual(before);
   });
 
   it('GET /admin/members/:id returns 404 when member not found', async () => {
@@ -227,16 +321,15 @@ describe('admin members routes', () => {
   it('GET /admin/members?bid_category=OFC filters by bid category', async () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
-    const csv = `Employee Id,Last Name,First Name,Current Rank,Bid Category,Bid,RscSeniorityIn
-14335,Sola,Jesus,Division Chief,OFC,Include,4
-20001,Smith,John,Captain,FF,Include,7`;
-    const form = new FormData();
-    form.append('file', new Blob([csv], { type: 'text/csv' }), 'members.csv');
-    await app.request(
-      '/admin/members/import',
-      { method: 'POST', body: form, headers: { Authorization: `Bearer ${jwt}` } },
-      mkEnv(sqlite),
-    );
+    seedMember(sqlite, { employeeId: '14335', bidCategory: 'OFC' });
+    seedMember(sqlite, {
+      employeeId: '20001',
+      firstName: 'John',
+      lastName: 'Smith',
+      rank: 'CPT',
+      bidCategory: 'FF',
+      rscSeniority: 7,
+    });
 
     const res = await app.request(
       '/admin/members?bid_category=OFC',
@@ -252,25 +345,7 @@ describe('admin members routes', () => {
   it('GET /admin/members/:id returns the member when found', async () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
-    const csv = `Employee Id,Last Name,First Name,Current Rank,Bid Category,Bid,RscSeniorityIn
-14335,Sola,Jesus,Division Chief,OFC,Include,4`;
-    const form = new FormData();
-    form.append('file', new Blob([csv], { type: 'text/csv' }), 'members.csv');
-    await app.request(
-      '/admin/members/import',
-      { method: 'POST', body: form, headers: { Authorization: `Bearer ${jwt}` } },
-      mkEnv(sqlite),
-    );
-
-    // Get the inserted member's id from the list
-    const listRes = await app.request(
-      '/admin/members',
-      { headers: { Authorization: `Bearer ${jwt}` } },
-      mkEnv(sqlite),
-    );
-    const listBody = (await listRes.json()) as { members: { id: number; employeeId: string }[] };
-    const insertedId = listBody.members[0]?.id;
-    expect(insertedId).toBeDefined();
+    const insertedId = seedMember(sqlite);
 
     const res = await app.request(
       `/admin/members/${insertedId}`,

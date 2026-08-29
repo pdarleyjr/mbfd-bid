@@ -395,3 +395,56 @@ describe('GET /api/admin/placements/export', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /api/admin/exports/:sessionId/progress.csv', () => {
+  let h: TestD1;
+  const sessionId = '01HZZ0000000000000000PROG50';
+
+  beforeEach(async () => {
+    h = await setupTestD1();
+    await seedTwoBids(h, sessionId);
+  });
+
+  afterEach(async () => {
+    await teardownTestD1(h);
+  });
+
+  it('exports self-describing current progress from the immutable session policy', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/exports/${sessionId}/progress.csv`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/text\/csv/);
+    const csv = await res.text();
+    expect(csv).toContain(
+      'export_kind,bid_session_id,bid_year,is_mock,bid_state,configuration_revision,rule_book_version,rule_book_revision,position_template_version,roster_snapshot_at,last_committed_command_id,last_committed_command_sequence,awards_committed,exported_at',
+    );
+    expect(csv).toContain(`bid_progress,${sessionId},2026,false,position_bid,0,2026.1,0,2026.1,`);
+    expect(csv).toContain(',0,2,');
+    expect(csv).not.toContain('EMP100');
+    expect(csv).not.toContain('Anna');
+  });
+
+  it('fails closed when immutable V3 material is unavailable', async () => {
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/exports/${sessionId}/progress.csv`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'session_policy_snapshot_unavailable',
+      policy_error: 'session_policy_snapshot_missing',
+    });
+  });
+});

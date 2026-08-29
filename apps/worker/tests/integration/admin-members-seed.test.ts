@@ -20,12 +20,40 @@ async function adminJwt(): Promise<string> {
   );
 }
 
-interface SeedResponse {
-  membersInserted: number;
-  membersUpdated: number;
-  certsInserted: number;
-  skippedMembers: Array<{ employee_id: string; reason: string }>;
-  missingCredentials: string[];
+async function memberWriteState(h: TestD1) {
+  const [members, credentials, assignments, lifecycleEvents, audit] = await Promise.all([
+    h.db.run('SELECT * FROM members ORDER BY id'),
+    h.db.run('SELECT * FROM member_credentials ORDER BY member_id, credential_id'),
+    h.db.run('SELECT * FROM member_assignments ORDER BY id'),
+    h.db.run('SELECT * FROM personnel_lifecycle_events ORDER BY id'),
+    h.db.run('SELECT * FROM audit_log ORDER BY id'),
+  ]);
+  return {
+    members: members.results,
+    credentials: credentials.results,
+    assignments: assignments.results,
+    lifecycleEvents: lifecycleEvents.results,
+    audit: audit.results,
+  };
+}
+
+async function expectRetiredSynthesisSeed(
+  h: TestD1,
+  before: Awaited<ReturnType<typeof memberWriteState>>,
+  res: Response,
+) {
+  expect(res.status).toBe(410);
+  await expect(res.json()).resolves.toMatchObject({
+    error: 'legacy_member_write_retired',
+    operation: 'synthesis_seed',
+    operator_workflows: {
+      telestaff: {
+        ui: '/admin/telestaff',
+        api: '/api/admin/telestaff/imports',
+      },
+    },
+  });
+  expect(await memberWriteState(h)).toEqual(before);
 }
 
 describe('POST /api/admin/members/seed-from-synthesis', () => {
@@ -59,7 +87,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
     await teardownTestD1(h);
   });
 
-  it('updates known members in place and links inferred certs', async () => {
+  it('retires legacy synthesis updates without mutating current projections', async () => {
     const payload = [
       {
         employee_id: 14335,
@@ -83,6 +111,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
         inferred_certs_2025: ['Paramedic'],
       },
     ];
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/seed-from-synthesis', {
         method: 'POST',
@@ -94,18 +123,10 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as SeedResponse;
-    expect(body.membersInserted).toBe(0);
-    expect(body.membersUpdated).toBe(2);
-    expect(body.certsInserted).toBe(3);
-    expect(body.skippedMembers).toEqual([]);
-
-    const rows = await h.db.run('SELECT count(*) AS n FROM member_credentials');
-    expect(rows.results[0]?.n).toBe(3);
+    await expectRetiredSynthesisSeed(h, before, res);
   });
 
-  it('inserts missing members (bootstraps a fresh DB)', async () => {
+  it('retires legacy synthesis bootstraps without creating a member', async () => {
     const payload = [
       {
         employee_id: 99999,
@@ -119,6 +140,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
         inferred_certs_2025: ['Paramedic'],
       },
     ];
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/seed-from-synthesis', {
         method: 'POST',
@@ -130,23 +152,10 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as SeedResponse;
-    expect(body.membersInserted).toBe(1);
-    expect(body.membersUpdated).toBe(0);
-    expect(body.certsInserted).toBe(1);
-
-    const rows = await h.db.run(
-      "SELECT employee_id, rank, rsc_seniority FROM members WHERE employee_id = '99999'",
-    );
-    expect(rows.results[0]).toMatchObject({
-      employee_id: '99999',
-      rank: 'LT',
-      rsc_seniority: 42,
-    });
+    await expectRetiredSynthesisSeed(h, before, res);
   });
 
-  it('skips members with bid=Exclude or missing seniority/name', async () => {
+  it('retires invalid legacy synthesis payloads before they can mutate state', async () => {
     const payload = [
       {
         employee_id: 30001,
@@ -167,6 +176,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
         inferred_certs_2025: [],
       },
     ];
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/seed-from-synthesis', {
         method: 'POST',
@@ -178,17 +188,10 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as SeedResponse;
-    expect(body.membersInserted).toBe(0);
-    expect(body.skippedMembers).toHaveLength(2);
-    expect(body.skippedMembers.map((s) => s.reason).sort()).toEqual([
-      'bid=Exclude',
-      'missing_rsc_seniority',
-    ]);
+    await expectRetiredSynthesisSeed(h, before, res);
   });
 
-  it('reports missing credentials separately without skipping the member', async () => {
+  it('retires unresolved credential synthesis without mutating credentials', async () => {
     const payload = [
       {
         employee_id: 14335,
@@ -202,6 +205,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
         inferred_certs_2025: ['Mystery Cert That Does Not Exist'],
       },
     ];
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/seed-from-synthesis', {
         method: 'POST',
@@ -213,14 +217,10 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as SeedResponse;
-    expect(body.missingCredentials).toEqual(['Mystery Cert That Does Not Exist']);
-    expect(body.certsInserted).toBe(0);
-    expect(body.membersUpdated).toBe(1);
+    await expectRetiredSynthesisSeed(h, before, res);
   });
 
-  it('is idempotent — re-running inserts zero new rows', async () => {
+  it('remains retired when the same legacy synthesis request is retried', async () => {
     const payload = [
       {
         employee_id: 14335,
@@ -234,6 +234,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
         inferred_certs_2025: ['Paramedic'],
       },
     ];
+    const before = await memberWriteState(h);
     const req1 = new Request('http://x/api/admin/members/seed-from-synthesis', {
       method: 'POST',
       headers: {
@@ -243,9 +244,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       body: JSON.stringify(payload),
     });
     const res1 = await app.fetch(req1, { ...h.env, JWT_SIGNING_KEY: KEY });
-    expect(res1.status).toBe(200);
-    const body1 = (await res1.json()) as SeedResponse;
-    expect(body1.certsInserted).toBe(1);
+    await expectRetiredSynthesisSeed(h, before, res1);
 
     const req2 = new Request('http://x/api/admin/members/seed-from-synthesis', {
       method: 'POST',
@@ -256,14 +255,10 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       body: JSON.stringify(payload),
     });
     const res2 = await app.fetch(req2, { ...h.env, JWT_SIGNING_KEY: KEY });
-    expect(res2.status).toBe(200);
-    const body2 = (await res2.json()) as SeedResponse;
-    expect(body2.certsInserted).toBe(0);
-    expect(body2.membersInserted).toBe(0);
-    expect(body2.membersUpdated).toBe(1);
+    await expectRetiredSynthesisSeed(h, before, res2);
   });
 
-  it('derives TRT Ops certs for any member who held a Station-2 position in 2025', async () => {
+  it('retires legacy specialty derivation without changing member credentials', async () => {
     // Two LT/CPT members; one held a TRT slot, the other a non-TRT slot.
     // The TRT row has no explicit inferred_certs_2025 — derivation must come
     // from position_2025.
@@ -292,6 +287,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
         position_2025: 'A102',
       },
     ];
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/seed-from-synthesis', {
         method: 'POST',
@@ -303,23 +299,11 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as SeedResponse;
-    expect(body.certsInserted).toBe(6); // exactly the 6 TRT Ops certs
-
-    // The TRT-position member should now have all 6 Ops certs; the non-TRT
-    // member should have zero linked certs.
-    const trtMember = await h.db.run(
-      "SELECT count(*) AS n FROM member_credentials mc INNER JOIN members m ON mc.member_id = m.id WHERE m.employee_id = '18912'",
-    );
-    expect(trtMember.results[0]?.n).toBe(6);
-    const nonTrt = await h.db.run(
-      "SELECT count(*) AS n FROM member_credentials mc INNER JOIN members m ON mc.member_id = m.id WHERE m.employee_id = '20001'",
-    );
-    expect(nonTrt.results[0]?.n).toBe(0);
+    await expectRetiredSynthesisSeed(h, before, res);
   });
 
-  it('rejects non-array payloads with 400', async () => {
+  it('retires malformed legacy synthesis input before parsing it', async () => {
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/seed-from-synthesis', {
         method: 'POST',
@@ -331,10 +315,10 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(400);
+    await expectRetiredSynthesisSeed(h, before, res);
   });
 
-  it('accepts the wrapped { members: [...] } shape from the credentials PDF extract', async () => {
+  it('retires wrapped legacy synthesis input without changing member records', async () => {
     // Sends the new shape — `credentials[]` instead of `inferred_certs_2025[]`,
     // `straight_seniority` instead of `rsc_seniority`, `rank` instead of
     // `current_rank`, top-level wrapper instead of bare array.
@@ -352,6 +336,7 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       ],
       unmatched_credentials: ['Some Cert The Reference Doesnt Know'],
     };
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/seed-from-synthesis', {
         method: 'POST',
@@ -363,16 +348,6 @@ describe('POST /api/admin/members/seed-from-synthesis', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as SeedResponse;
-    expect(body.membersUpdated).toBe(1);
-    expect(body.certsInserted).toBe(2);
-    expect(body.skippedMembers).toEqual([]);
-
-    // Verify both certs landed on the actual member row.
-    const rows = await h.db.run(
-      "SELECT count(*) AS n FROM member_credentials mc INNER JOIN members m ON mc.member_id = m.id WHERE m.employee_id = '14335'",
-    );
-    expect(rows.results[0]?.n).toBe(2);
+    await expectRetiredSynthesisSeed(h, before, res);
   });
 });

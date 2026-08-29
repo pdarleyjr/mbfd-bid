@@ -196,6 +196,7 @@ describe('POST /api/admin/rule-books', () => {
   });
 
   it('creates a fresh draft and returns 201 with the new version', async () => {
+    const reason = 'Create a reviewed mid-year policy correction draft.';
     const res = await app.fetch(
       new Request('http://x/api/admin/rule-books', {
         method: 'POST',
@@ -203,7 +204,11 @@ describe('POST /api/admin/rule-books', () => {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ effective_year: 2026, notes: 'mid-year corrections' }),
+        body: JSON.stringify({
+          effective_year: 2026,
+          notes: 'mid-year corrections',
+          reason,
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
@@ -211,6 +216,51 @@ describe('POST /api/admin/rule-books', () => {
     const body = (await res.json()) as { version: string; status: string };
     expect(body.version).toBe('2026.2');
     expect(body.status).toBe('draft');
+    expect(
+      await h.db.run(
+        `SELECT action, target_id, reason, before_state, after_state
+         FROM audit_log
+         WHERE action = 'rule_book_clone' AND target_id = '2026.2'`,
+      ),
+    ).toMatchObject({
+      results: [
+        {
+          action: 'rule_book_clone',
+          target_id: '2026.2',
+          reason,
+          before_state: JSON.stringify({ clone_from: null, source_rule_book: null }),
+          after_state: JSON.stringify({
+            version: '2026.2',
+            effective_year: 2026,
+            status: 'draft',
+            clone_from: null,
+            notes: 'mid-year corrections',
+          }),
+        },
+      ],
+    });
+  });
+
+  it('rejects a creation request without an operator reason before inserting a draft', async () => {
+    const res = await app.fetch(
+      new Request('http://x/api/admin/rule-books', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ effective_year: 2026, notes: 'No reason was supplied.' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(400);
+    expect(await h.db.run('SELECT version FROM rule_books ORDER BY version')).toMatchObject({
+      results: [{ version: '2026.1' }],
+    });
+    expect(
+      await h.db.run("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'rule_book_clone'"),
+    ).toMatchObject({ results: [{ n: 0 }] });
   });
 
   it('clones every source rule from clone_from within the create request', async () => {
@@ -226,7 +276,11 @@ describe('POST /api/admin/rule-books', () => {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ effective_year: 2026, clone_from: '2026.1' }),
+        body: JSON.stringify({
+          effective_year: 2026,
+          clone_from: '2026.1',
+          reason: 'Clone the established policy into a reviewed draft.',
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
@@ -239,6 +293,55 @@ describe('POST /api/admin/rule-books', () => {
     expect(rows.results[0]?.n).toBe(2);
   });
 
+  it('records an atomic, actor-attributed audit receipt when creating a draft clone', async () => {
+    const reason = 'Clone the established policy into a reviewed annual draft.';
+    const res = await app.fetch(
+      new Request('http://x/api/admin/rule-books', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          effective_year: 2026,
+          clone_from: '2026.1',
+          notes: 'Synthetic clone audit proof.',
+          reason,
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(201);
+    const audit = await h.db.run(
+      `SELECT action, actor_type, actor_id, target_kind, target_id, reason,
+              before_state, after_state, created_at
+       FROM audit_log
+       WHERE action = 'rule_book_clone' AND target_id = '2026.2'`,
+    );
+    expect(audit.results).toHaveLength(1);
+    expect(audit.results[0]).toMatchObject({
+      action: 'rule_book_clone',
+      actor_type: 'admin',
+      actor_id: 0,
+      target_kind: 'rule_book',
+      target_id: '2026.2',
+      reason,
+    });
+    expect(Number(audit.results[0]?.created_at)).toBeGreaterThan(0);
+    expect(JSON.parse(String(audit.results[0]?.before_state))).toMatchObject({
+      clone_from: '2026.1',
+      source_rule_book: { version: '2026.1', status: 'active' },
+    });
+    expect(JSON.parse(String(audit.results[0]?.after_state))).toMatchObject({
+      version: '2026.2',
+      effective_year: 2026,
+      status: 'draft',
+      clone_from: '2026.1',
+      notes: 'Synthetic clone audit proof.',
+    });
+  });
+
   it('returns 400 when clone_from references a non-existent version', async () => {
     const res = await app.fetch(
       new Request('http://x/api/admin/rule-books', {
@@ -247,7 +350,11 @@ describe('POST /api/admin/rule-books', () => {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ effective_year: 2026, clone_from: '2099.99' }),
+        body: JSON.stringify({
+          effective_year: 2026,
+          clone_from: '2099.99',
+          reason: 'Attempt to clone an unknown policy must be rejected.',
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
@@ -613,7 +720,11 @@ describe('POL-015 draft rule-book lifecycle', () => {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ effective_year: 2026, clone_from: '2026.1' }),
+        body: JSON.stringify({
+          effective_year: 2026,
+          clone_from: '2026.1',
+          reason: 'Create a synthetic POL-015 correction draft for review.',
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );

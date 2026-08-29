@@ -31,6 +31,9 @@ function stubBidSessionNamespace(snapshotFor: Map<string, unknown>): WorkerEnv['
         const snap = snapshotFor.get(id) ?? { currentBidderId: null };
         return new Response(JSON.stringify(snap), { status: 200 });
       }
+      if (u.pathname === '/admin/specialty-adjudication') {
+        return new Response(JSON.stringify({ state: { active: null } }), { status: 200 });
+      }
       return new Response('{}', { status: 200 });
     },
   };

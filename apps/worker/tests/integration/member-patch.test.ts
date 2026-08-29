@@ -4,6 +4,43 @@ import { signJwt } from '../../src/lib/jwt.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'l'.repeat(64);
+
+async function memberWriteState(h: TestD1) {
+  const [members, credentials, assignments, lifecycleEvents, audit] = await Promise.all([
+    h.db.run('SELECT * FROM members ORDER BY id'),
+    h.db.run('SELECT * FROM member_credentials ORDER BY member_id, credential_id'),
+    h.db.run('SELECT * FROM member_assignments ORDER BY id'),
+    h.db.run('SELECT * FROM personnel_lifecycle_events ORDER BY id'),
+    h.db.run('SELECT * FROM audit_log ORDER BY id'),
+  ]);
+  return {
+    members: members.results,
+    credentials: credentials.results,
+    assignments: assignments.results,
+    lifecycleEvents: lifecycleEvents.results,
+    audit: audit.results,
+  };
+}
+
+async function expectRetiredMemberPatch(
+  h: TestD1,
+  before: Awaited<ReturnType<typeof memberWriteState>>,
+  res: Response,
+) {
+  expect(res.status).toBe(410);
+  await expect(res.json()).resolves.toMatchObject({
+    error: 'legacy_member_write_retired',
+    operation: 'member_patch',
+    operator_workflows: {
+      personnel: {
+        ui: '/admin/personnel',
+        api: '/api/admin/personnel/changes',
+      },
+    },
+  });
+  expect(await memberWriteState(h)).toEqual(before);
+}
+
 async function adminJwt(): Promise<string> {
   return signJwt(
     {
@@ -36,7 +73,8 @@ describe('PATCH /api/admin/members/:id', () => {
     await teardownTestD1(h);
   });
 
-  it('updates rank and writes audit before/after', async () => {
+  it('retires direct rank patches before they can mutate the projection or audit', async () => {
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/1', {
         method: 'PATCH',
@@ -48,19 +86,11 @@ describe('PATCH /api/admin/members/:id', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
-    const rows = await h.db.run('SELECT rank FROM members WHERE id = 1');
-    expect(rows.results[0]?.rank).toBe('LT');
-
-    const audit = await h.db.run(
-      "SELECT before_state, after_state FROM audit_log WHERE action = 'override_cert' ORDER BY seq DESC LIMIT 1",
-    );
-    const a = audit.results[0] as { before_state: string; after_state: string } | undefined;
-    expect(a?.before_state).toMatch(/"rank":"FF"/);
-    expect(a?.after_state).toMatch(/"rank":"LT"/);
+    await expectRetiredMemberPatch(h, before, res);
   });
 
-  it('replaces the credentials set (by name) when credentials array is provided', async () => {
+  it('retires direct credential-set patches without changing credentials', async () => {
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/1', {
         method: 'PATCH',
@@ -72,14 +102,11 @@ describe('PATCH /api/admin/members/:id', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
-    const after = await h.db.run(
-      'SELECT count(*) AS n FROM member_credentials WHERE member_id = 1',
-    );
-    expect(after.results[0]?.n).toBe(1);
+    await expectRetiredMemberPatch(h, before, res);
   });
 
-  it('rejects unknown credential name with 400', async () => {
+  it('retires invalid direct credential patches before validation can mutate state', async () => {
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/1', {
         method: 'PATCH',
@@ -91,10 +118,11 @@ describe('PATCH /api/admin/members/:id', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(400);
+    await expectRetiredMemberPatch(h, before, res);
   });
 
-  it('returns 404 for unknown member id', async () => {
+  it('retires direct patches even when the member id is unknown', async () => {
+    const before = await memberWriteState(h);
     const res = await app.fetch(
       new Request('http://x/api/admin/members/999', {
         method: 'PATCH',
@@ -106,6 +134,6 @@ describe('PATCH /api/admin/members/:id', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(404);
+    await expectRetiredMemberPatch(h, before, res);
   });
 });

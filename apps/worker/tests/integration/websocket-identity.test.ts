@@ -1,4 +1,6 @@
+import { WEBSOCKET_TICKET_AUDIENCE } from '@mbfd/shared';
 import { Hono } from 'hono';
+import { SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
@@ -56,6 +58,25 @@ function makeStateMock(id: string, storage: TestStorage): DurableObjectState {
     getWebSocketAutoResponseTimestamp: () => null,
     abort() {},
   } as unknown as DurableObjectState;
+}
+
+function keyBytes(key: string): Uint8Array {
+  const bytes = key.match(/.{1,2}/g) ?? [];
+  return Uint8Array.from(bytes.map((byte) => Number.parseInt(byte, 16)));
+}
+
+async function websocketTicket(
+  sessionId: string,
+  memberId: number,
+  role: 'member' | 'admin',
+  signingKey: string,
+): Promise<string> {
+  return new SignJWT({ sub: String(memberId), role, session_id: sessionId })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setAudience(WEBSOCKET_TICKET_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime('60s')
+    .sign(keyBytes(signingKey));
 }
 
 describe('WebSocket identity handoff', () => {
@@ -195,7 +216,7 @@ describe('WebSocket identity handoff', () => {
     await onMessage.onMessage(
       'connection-1',
       socket,
-      { data: JSON.stringify({ type: 'hello', jwt: 'j'.repeat(20) }) } as MessageEvent,
+      { data: JSON.stringify({ type: 'hello' }) } as MessageEvent,
       { memberId: 42, role: 'member' },
     );
     await onMessage.onMessage(
@@ -217,7 +238,7 @@ describe('WebSocket identity handoff', () => {
     expect(persisted?.currentPhase).toBe('complete');
   });
 
-  it('forwards only verified JWT claims from the public WebSocket route to the DO', async () => {
+  it('forwards only verified, session-scoped ticket claims from the public WebSocket route to the DO', async () => {
     const doFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response('upstream'));
     const idFromName = vi.fn(() => ({}) as DurableObjectId);
     const bidSession = {
@@ -225,23 +246,13 @@ describe('WebSocket identity handoff', () => {
       get: vi.fn(() => ({ fetch: doFetch })),
     } as unknown as DurableObjectNamespace;
     const router = new Hono<{ Bindings: WorkerEnv }>().route('/api/ws', ws);
-    const jwt = await signJwt(
-      {
-        sub: 42,
-        emp: '300042',
-        role: 'member',
-        rank: 'FF',
-        first_name: 'Test',
-        last_name: 'Bidder',
-        fresh_auth_at: Math.floor(Date.now() / 1000),
-      },
-      h.env.JWT_SIGNING_KEY,
-    );
-    const sessionPath = `/api/ws/session/${sessionId}?token=${encodeURIComponent(jwt)}`;
+    const ticket = await websocketTicket(sessionId, 42, 'member', h.env.JWT_SIGNING_KEY);
+    const sessionPath = `/api/ws/session/${sessionId}`;
     const request = {
       headers: {
         Origin: 'https://staging.bid.mbfdhub.com',
         Upgrade: 'websocket',
+        'Sec-WebSocket-Protocol': `mbfd-bid-v1, ${ticket}`,
       },
     };
 
@@ -277,6 +288,45 @@ describe('WebSocket identity handoff', () => {
       BID_SESSION: bidSession,
     });
     expect(invalid.status).toBe(401);
+    expect(doFetch).toHaveBeenCalledTimes(1);
+
+    const queryCredential = await signJwt(
+      {
+        sub: 42,
+        emp: '300042',
+        role: 'member',
+        rank: 'FF',
+        first_name: 'Test',
+        last_name: 'Bidder',
+        fresh_auth_at: Math.floor(Date.now() / 1000),
+      },
+      h.env.JWT_SIGNING_KEY,
+    );
+    const retiredQuery = await router.request(
+      `/api/ws/session/${sessionId}?token=${encodeURIComponent(queryCredential)}`,
+      request,
+      { ...h.env, BID_SESSION: bidSession },
+    );
+    expect(retiredQuery.status).toBe(401);
+    expect(doFetch).toHaveBeenCalledTimes(1);
+
+    const wrongSessionTicket = await websocketTicket(
+      '01HZZ0000000000000DIFFERENT',
+      42,
+      'member',
+      h.env.JWT_SIGNING_KEY,
+    );
+    const wrongSession = await router.request(
+      sessionPath,
+      {
+        headers: {
+          ...request.headers,
+          'Sec-WebSocket-Protocol': `mbfd-bid-v1, ${wrongSessionTicket}`,
+        },
+      },
+      { ...h.env, BID_SESSION: bidSession },
+    );
+    expect(wrongSession.status).toBe(401);
     expect(doFetch).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,0 +1,97 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  cfEnv: vi.fn(),
+  cookies: vi.fn(),
+  signWebSocketTicket: vi.fn(),
+  verifyJwt: vi.fn(),
+}));
+
+vi.mock('next/headers', () => ({ cookies: mocks.cookies }));
+vi.mock('@/lib/cf-env', () => ({ cfEnv: mocks.cfEnv }));
+vi.mock('@/lib/jwt', () => ({
+  signWebSocketTicket: mocks.signWebSocketTicket,
+  verifyJwt: mocks.verifyJwt,
+}));
+
+const csrfToken = 'csrf_123e4567-e89b-12d3-a456-426614174000';
+
+function request({
+  origin = 'https://staging.bid.mbfdhub.com',
+  fetchSite = 'same-origin',
+  csrf = csrfToken,
+  body = { session_id: 'session-1' },
+}: {
+  origin?: string | null;
+  fetchSite?: string | null;
+  csrf?: string | null;
+  body?: unknown;
+} = {}): Request {
+  const headers = new Headers({ 'content-type': 'application/json' });
+  if (origin !== null) headers.set('Origin', origin);
+  if (fetchSite !== null) headers.set('Sec-Fetch-Site', fetchSite);
+  if (csrf !== null) headers.set('X-MBFD-CSRF', csrf);
+  return new Request('https://staging.bid.mbfdhub.com/api/auth/ws-ticket', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
+describe('POST /api/auth/ws-ticket', () => {
+  beforeEach(() => {
+    mocks.cfEnv.mockImplementation((key: string) => {
+      if (key === 'ENV') return 'staging';
+      if (key === 'JWT_SIGNING_KEY') return 'test-signing-key';
+      return undefined;
+    });
+    mocks.cookies.mockReset();
+    mocks.cookies.mockResolvedValue({
+      get: vi.fn((name: string) => {
+        if (name === 'mbfd_bid_jwt') return { value: 'session-jwt' };
+        if (name === 'mbfd_bid_csrf') return { value: csrfToken };
+        return undefined;
+      }),
+    });
+    mocks.verifyJwt.mockReset();
+    mocks.verifyJwt.mockResolvedValue({ sub: 7, role: 'member' });
+    mocks.signWebSocketTicket.mockReset();
+    mocks.signWebSocketTicket.mockResolvedValue('opaque-short-lived-ticket');
+  });
+
+  it('verifies the HttpOnly session then returns a session-scoped opaque ticket', async () => {
+    const { POST } = await import('../../app/api/auth/ws-ticket/route');
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ticket: 'opaque-short-lived-ticket' });
+    expect(mocks.verifyJwt).toHaveBeenCalledWith('session-jwt', 'test-signing-key');
+    expect(mocks.signWebSocketTicket).toHaveBeenCalledWith(
+      { sub: 7, role: 'member', session_id: 'session-1' },
+      'test-signing-key',
+    );
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('rejects a request without the matching CSRF nonce before reading the access JWT', async () => {
+    const { POST } = await import('../../app/api/auth/ws-ticket/route');
+
+    const response = await POST(request({ csrf: null }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: 'csrf_token_forbidden' });
+    expect(mocks.verifyJwt).not.toHaveBeenCalled();
+    expect(mocks.signWebSocketTicket).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for malformed session IDs after authenticating the browser session', async () => {
+    const { POST } = await import('../../app/api/auth/ws-ticket/route');
+
+    const response = await POST(request({ body: { session_id: '' } }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'invalid_body' });
+    expect(mocks.signWebSocketTicket).not.toHaveBeenCalled();
+  });
+});

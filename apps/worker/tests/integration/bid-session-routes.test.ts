@@ -34,12 +34,13 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
     await worker.stop();
   });
 
-  it('GET /api/ws/session/:id returns 401 without JWT', async () => {
+  it('GET /api/ws/session/:id rejects a request without the exact browser origin before auth', async () => {
     // Note: undici forbids the `Upgrade` header on Fetch API Requests, so we
-    // can't include it from the test client. The route checks JWT first, so
-    // 401 still asserts the no-auth branch.
+    // can't include it from the test client. The public WebSocket endpoint
+    // deliberately validates the exact browser origin before authentication.
     const res = await worker.fetch('/api/ws/session/01HSESS');
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'websocket_origin_forbidden' });
   });
 
   it('GET /api/ws/session/:id returns 426 with JWT but no Upgrade header', async () => {
@@ -48,17 +49,6 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
         Authorization: `Bearer ${memberJwt}`,
         Origin: 'https://staging.bid.mbfdhub.com',
       },
-    });
-    expect([426, 400]).toContain(res.status);
-  });
-
-  it('GET /api/ws/session/:id accepts ?token= query param (browser path)', async () => {
-    // Browsers cannot set Authorization on a WebSocket upgrade, so the
-    // Worker falls back to ?token=. Without the Upgrade header (undici
-    // strips it) we still reach the 426 branch — the assert proves the JWT
-    // was read from the query and validated.
-    const res = await worker.fetch(`/api/ws/session/01HSESS?token=${memberJwt}`, {
-      headers: { Origin: 'https://staging.bid.mbfdhub.com' },
     });
     expect([426, 400]).toContain(res.status);
   });
@@ -82,14 +72,16 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
     expect(await res.json()).toMatchObject({ error: 'websocket_origin_forbidden' });
   });
 
-  it('GET /api/ws/session/:id returns 401 with empty ?token=', async () => {
+  it('GET /api/ws/session/:id rejects an empty query credential without a browser origin', async () => {
     const res = await worker.fetch('/api/ws/session/01HSESS?token=');
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'websocket_origin_forbidden' });
   });
 
-  it('GET /api/ws/session/:id returns 401 with invalid ?token=', async () => {
+  it('GET /api/ws/session/:id rejects an invalid query credential without a browser origin', async () => {
     const res = await worker.fetch('/api/ws/session/01HSESS?token=not-a-jwt');
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'websocket_origin_forbidden' });
   });
 
   it('GET /api/board fails closed when the launcher has no canonical D1 authority', async () => {

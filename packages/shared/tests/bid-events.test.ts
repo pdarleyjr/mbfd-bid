@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BID_EVENT_VERSION,
   BidEventEnvelopeSchema,
+  ClientHelloMessageSchema,
   PickMadeEventSchema,
   PickRejectedEventSchema,
   StateSnapshotEventSchema,
@@ -9,6 +10,10 @@ import {
 } from '../src/index.js';
 
 describe('bid event schemas (Plan 04 Task 2)', () => {
+  it('accepts a reconnect hello without a bearer credential', () => {
+    expect(ClientHelloMessageSchema.safeParse({ type: 'hello', lastSeq: 7 }).success).toBe(true);
+  });
+
   it('BID_EVENT_VERSION is a positive integer', () => {
     expect(BID_EVENT_VERSION).toBeGreaterThanOrEqual(1);
     expect(Number.isInteger(BID_EVENT_VERSION)).toBe(true);
