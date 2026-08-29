@@ -97,7 +97,6 @@ export default async function BidPage({
         bidSessionId={board.bidSessionId}
         initialSeq={board.lastSeq}
         meMemberId={claims.sub}
-        jwt={jwt}
         initialFills={board.fills}
         eligiblePositionIds={eligiblePositionIds}
         members={board.members ?? {}}

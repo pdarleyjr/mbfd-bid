@@ -26,7 +26,6 @@ interface Props {
   turnStartedAtMs: number;
   turnTimerSeconds: number;
   meMemberId: number;
-  jwt: string;
   initialFills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   members: Record<string, MemberLite>;
   /** Immutable material returned by /api/board for this exact session. */
@@ -48,7 +47,6 @@ export function AdminBidShell(props: Props) {
           bidSessionId={props.bidSessionId}
           isMock={props.isMock}
           lastSeq={props.lastSeq}
-          jwt={props.jwt}
           currentPhase={props.currentPhase}
           sessionStartedAt={props.sessionStartedAt}
           turnStartedAtMs={props.turnStartedAtMs > 0 ? props.turnStartedAtMs : null}
@@ -76,7 +74,6 @@ export function AdminBidShell(props: Props) {
               bidSessionId={props.bidSessionId}
               initialSeq={props.lastSeq}
               meMemberId={props.meMemberId}
-              jwt={props.jwt}
               initialFills={props.initialFills}
               initialCurrentBidderId={props.currentBidderId}
               members={props.members}

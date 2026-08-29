@@ -1,4 +1,6 @@
+import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
+import { csrfFailureForUnsafeRequest } from '@/lib/server-csrf';
 import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
@@ -34,6 +36,13 @@ function copyHeaders(source: Headers, names: readonly string[]): Headers {
 }
 
 async function proxyAdminRequest(req: Request, context: RouteContext): Promise<Response> {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const csrfFailure = await csrfFailureForUnsafeRequest(req, cfEnv('ENV'));
+    if (csrfFailure !== null) {
+      return NextResponse.json({ error: `csrf_${csrfFailure}_forbidden` }, { status: 403 });
+    }
+  }
+
   const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
   if (!jwt) {
     return NextResponse.json({ error: 'missing_auth' }, { status: 401 });

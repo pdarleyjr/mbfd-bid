@@ -14,7 +14,6 @@ interface Props {
   bidSessionId: string;
   initialSeq: number;
   meMemberId: number;
-  jwt: string;
   initialFills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   /** Bidder the SSR snapshot believed was up — seeds the Zustand store so
    *  the UI shows the right name before WS connects and survives a stale
@@ -34,7 +33,6 @@ export function BidBoard({
   bidSessionId,
   initialSeq,
   meMemberId,
-  jwt,
   initialFills,
   initialCurrentBidderId,
   eligiblePositionIds,
@@ -47,7 +45,7 @@ export function BidBoard({
     s.setState({ fills: initialFills, currentBidderId: initialCurrentBidderId ?? null });
     return s;
   }, [bidSessionId, initialSeq, meMemberId, initialFills, initialCurrentBidderId]);
-  const { status, send } = useBidWebSocket(store, { bidSessionId, jwt, wsBase });
+  const { status, send } = useBidWebSocket(store, { bidSessionId, wsBase });
   const lastError = useStore(store, (s: BidStoreState) => s.lastError);
   return (
     <BidStoreProvider store={store}>

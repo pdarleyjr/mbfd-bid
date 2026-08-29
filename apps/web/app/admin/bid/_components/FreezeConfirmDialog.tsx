@@ -3,11 +3,10 @@ import { useState } from 'react';
 
 interface Props {
   bidSessionId: string;
-  jwt: string;
   onClose: () => void;
 }
 
-export function FreezeConfirmDialog({ bidSessionId, jwt, onClose }: Props) {
+export function FreezeConfirmDialog({ bidSessionId, onClose }: Props) {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +19,6 @@ export function FreezeConfirmDialog({ bidSessionId, jwt, onClose }: Props) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${jwt}`,
           'Idempotency-Key': crypto.randomUUID(),
         },
         body: JSON.stringify({ bidSessionId, reason }),

@@ -10,7 +10,6 @@ interface Props {
   bidSessionId: string;
   isMock: boolean;
   lastSeq: number;
-  jwt: string;
   currentPhase: string;
   sessionStartedAt: number | null;
   turnStartedAtMs: number | null;
@@ -55,7 +54,6 @@ export function LiveCommandBar({
   bidSessionId,
   isMock,
   lastSeq,
-  jwt,
   currentPhase,
   sessionStartedAt,
   turnStartedAtMs,
@@ -101,7 +99,6 @@ export function LiveCommandBar({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${jwt}`,
           'Idempotency-Key': crypto.randomUUID(),
         },
         body: JSON.stringify({ bidSessionId, reason }),
@@ -220,10 +217,10 @@ export function LiveCommandBar({
       )}
 
       {!isMock && open === 'override' ? (
-        <OverrideDialog bidSessionId={bidSessionId} jwt={jwt} onClose={() => setOpen(null)} />
+        <OverrideDialog bidSessionId={bidSessionId} onClose={() => setOpen(null)} />
       ) : null}
       {!isMock && open === 'freeze' ? (
-        <FreezeConfirmDialog bidSessionId={bidSessionId} jwt={jwt} onClose={() => setOpen(null)} />
+        <FreezeConfirmDialog bidSessionId={bidSessionId} onClose={() => setOpen(null)} />
       ) : null}
     </header>
   );

@@ -1,13 +1,8 @@
-import { cfEnv } from '@/lib/cf-env';
-import { JWT_COOKIE_NAME } from '@/lib/cookies';
-import { verifyJwt } from '@/lib/jwt';
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import { getWorkerBase } from '@/lib/worker-base';
 import type { Route } from 'next';
-import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import { MockBanner } from '../../_components/MockBanner';
 import type { BidderContext } from '../../_components/bid/BidderCard';
 import type { MemberLite, PositionMeta } from '../../_components/bid/types';
@@ -65,13 +60,7 @@ export default async function AdminBidPage({
 }: {
   searchParams: Promise<{ session_id?: string; bidSessionId?: string }>;
 }) {
-  await requireAdmin();
-  const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
-  if (!jwt) redirect('/login');
-
-  const signingKey = cfEnv('JWT_SIGNING_KEY');
-  if (!signingKey) throw new Error('JWT_SIGNING_KEY not set');
-  const claims = await verifyJwt(jwt, signingKey);
+  const claims = await requireAdmin();
 
   const sp = await searchParams;
   const sessionId = sp.session_id ?? sp.bidSessionId ?? (await loadActiveSession());
@@ -128,7 +117,6 @@ export default async function AdminBidPage({
         turnStartedAtMs={board.turnStartedAtMs ?? 0}
         turnTimerSeconds={board.turnTimerSeconds ?? 180}
         meMemberId={claims.sub}
-        jwt={jwt}
         initialFills={board.fills}
         members={board.members ?? {}}
         positions={board.positions}

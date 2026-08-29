@@ -1,3 +1,4 @@
+import { CsrfFetchBoundary } from '@/components/CsrfFetchBoundary';
 import type { Metadata, Viewport } from 'next';
 import { StagingBanner } from './_components/StagingBanner';
 import './globals.css';
@@ -30,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="min-h-screen bg-stone-50 text-stone-800 antialiased">
         <StagingBanner environment={environment} />
-        {children}
+        <CsrfFetchBoundary>{children}</CsrfFetchBoundary>
       </body>
     </html>
   );

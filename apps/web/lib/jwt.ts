@@ -1,5 +1,5 @@
-import type { JwtPayload } from '@mbfd/shared';
-import { JwtPayloadSchema } from '@mbfd/shared';
+import type { JwtPayload, WebSocketTicketClaims } from '@mbfd/shared';
+import { JwtPayloadSchema, WEBSOCKET_TICKET_AUDIENCE } from '@mbfd/shared';
 import { SignJWT, jwtVerify } from 'jose';
 
 function keyToUint8(key: string): Uint8Array {
@@ -28,4 +28,21 @@ export async function verifyJwt(token: string, signingKey: string): Promise<JwtP
   const key = keyToUint8(signingKey);
   const { payload } = await jwtVerify(token, key, { algorithms: ['HS256'] });
   return JwtPayloadSchema.parse(payload);
+}
+
+/**
+ * Signs a narrowly-scoped, one-minute browser WebSocket upgrade ticket. It
+ * deliberately excludes the access JWT's employee and personnel claims.
+ */
+export async function signWebSocketTicket(
+  claims: Pick<WebSocketTicketClaims, 'sub' | 'role' | 'session_id'>,
+  signingKey: string,
+): Promise<string> {
+  const key = keyToUint8(signingKey);
+  return new SignJWT({ ...claims, sub: String(claims.sub) })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setAudience(WEBSOCKET_TICKET_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime('60s')
+    .sign(key);
 }

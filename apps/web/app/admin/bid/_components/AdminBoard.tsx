@@ -14,7 +14,6 @@ interface Props {
   bidSessionId: string;
   initialSeq: number;
   meMemberId: number;
-  jwt: string;
   initialFills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
   /** Bidder the SSR snapshot believed was up — fed into the store so the
    *  client UI shows the right member before the WS connects (or if the WS
@@ -32,7 +31,6 @@ export function AdminBoard({
   bidSessionId,
   initialSeq,
   meMemberId,
-  jwt,
   initialFills,
   initialCurrentBidderId,
   members,
@@ -44,7 +42,7 @@ export function AdminBoard({
     s.setState({ fills: initialFills, currentBidderId: initialCurrentBidderId });
     return s;
   }, [bidSessionId, initialSeq, meMemberId, initialFills, initialCurrentBidderId]);
-  const { status } = useBidWebSocket(store, { bidSessionId, jwt, wsBase });
+  const { status } = useBidWebSocket(store, { bidSessionId, wsBase });
   const lastError = useStore(store, (s: BidStoreState) => s.lastError);
   const { pickMode, selectedMemberId, submitPick } = useManualPick();
 

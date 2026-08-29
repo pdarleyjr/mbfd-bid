@@ -3,11 +3,10 @@ import { useState } from 'react';
 
 interface Props {
   bidSessionId: string;
-  jwt: string;
   onClose: () => void;
 }
 
-export function OverrideDialog({ bidSessionId, jwt, onClose }: Props) {
+export function OverrideDialog({ bidSessionId, onClose }: Props) {
   const [memberId, setMemberId] = useState('');
   const [positionId, setPositionId] = useState('');
   const [reason, setReason] = useState('');
@@ -22,7 +21,6 @@ export function OverrideDialog({ bidSessionId, jwt, onClose }: Props) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${jwt}`,
           'Idempotency-Key': crypto.randomUUID(),
         },
         body: JSON.stringify({

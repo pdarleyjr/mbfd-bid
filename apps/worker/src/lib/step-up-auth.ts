@@ -10,9 +10,10 @@ export const STEP_UP_MAX_AGE_SEC = 300;
  * window relative to `nowSec`. Boundary is exclusive: an auth that is
  * exactly STEP_UP_MAX_AGE_SEC seconds old is NOT fresh.
  *
- * Both parameters are unix seconds. Pass `Math.floor(Date.now() / 1000)`
+ * Both parameters are unix seconds. A future claim is rejected rather than
+ * extending the authorization window. Pass `Math.floor(Date.now() / 1000)`
  * for the production clock; tests can pass a fixed value.
  */
 export function isStepUpFresh(freshAuthAtSec: number, nowSec: number): boolean {
-  return nowSec - freshAuthAtSec < STEP_UP_MAX_AGE_SEC;
+  return freshAuthAtSec <= nowSec && nowSec - freshAuthAtSec < STEP_UP_MAX_AGE_SEC;
 }

@@ -1,10 +1,17 @@
+import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { requireAdmin } from '@/lib/require-admin';
+import { csrfFailureForUnsafeRequest } from '@/lib/server-csrf';
 import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
+  const csrfFailure = await csrfFailureForUnsafeRequest(req, cfEnv('ENV'));
+  if (csrfFailure !== null) {
+    return NextResponse.json({ error: `csrf_${csrfFailure}_forbidden` }, { status: 403 });
+  }
+
   try {
     await requireAdmin();
   } catch {

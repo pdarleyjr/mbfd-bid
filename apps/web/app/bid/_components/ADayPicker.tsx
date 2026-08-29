@@ -18,13 +18,12 @@ import { ADayInvariantBadge } from './ADayInvariantBadge';
 
 interface Props {
   bidSessionId: string;
-  jwt: string;
   state: ADayBoardState;
   /** Called after a successful submission so the parent can refetch state. */
   onPicked?: (aDay: ADayValue) => void;
 }
 
-export function ADayPicker({ bidSessionId, jwt, state, onPicked }: Props) {
+export function ADayPicker({ bidSessionId, state, onPicked }: Props) {
   const [selecting, setSelecting] = useState<ADayValue | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,15 +33,12 @@ export function ADayPicker({ bidSessionId, jwt, state, onPicked }: Props) {
       setSubmitting(true);
       setError(null);
       try {
-        const result = await submitADayPickViaRest(
-          {
-            v: 1,
-            bidSessionId,
-            aDay,
-            idempotencyKey: newIdempotencyKey(),
-          },
-          jwt,
-        );
+        const result = await submitADayPickViaRest({
+          v: 1,
+          bidSessionId,
+          aDay,
+          idempotencyKey: newIdempotencyKey(),
+        });
         if (result.status >= 400) {
           const body = result.body as { reasonLabel?: string; error?: string };
           setError(body.reasonLabel ?? body.error ?? `HTTP ${result.status}`);
@@ -56,7 +52,7 @@ export function ADayPicker({ bidSessionId, jwt, state, onPicked }: Props) {
         setSelecting(null);
       }
     },
-    [bidSessionId, jwt, onPicked],
+    [bidSessionId, onPicked],
   );
 
   if (state.currentPhase !== 'a_day_bid') {

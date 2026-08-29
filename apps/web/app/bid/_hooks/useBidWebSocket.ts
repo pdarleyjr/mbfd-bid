@@ -12,24 +12,43 @@ export type BidWebSocketStatus = 'connecting' | 'open' | 'closed';
 /**
  * Build the WebSocket URL.
  *
- * The Pages site (staging.bid.mbfdhub.com) has no `/api/ws/...` route — the
- * WebSocket endpoint lives on the Worker (api.staging.bid.mbfdhub.com). The
- * server-rendered page passes `wsBase` so the client connects directly to
- * the Worker. `?token=` carries the JWT because the browser WebSocket API
- * cannot set the Authorization header. The Worker accepts both forms; the
- * query path is the one browsers can actually use.
+ * The Pages site has no `/api/ws/...` route — the WebSocket endpoint lives on
+ * the Worker. The server-rendered page passes `wsBase` so the client connects
+ * directly to it. Authentication uses a short-lived opaque ticket in the
+ * WebSocket subprotocol rather than putting the access JWT in the URL.
  */
-function buildWsUrl(wsBase: string | undefined, bidSessionId: string, jwt: string): string {
+function buildWsUrl(wsBase: string | undefined, bidSessionId: string): string {
   const httpBase = wsBase ?? (typeof window === 'undefined' ? '' : window.location.origin);
   const wsHttp = httpBase.startsWith('http')
     ? httpBase.replace(/^http/, 'ws')
     : `${typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${typeof window !== 'undefined' ? window.location.host : ''}`;
-  return `${wsHttp.replace(/\/$/, '')}/api/ws/session/${encodeURIComponent(bidSessionId)}?token=${encodeURIComponent(jwt)}`;
+  return `${wsHttp.replace(/\/$/, '')}/api/ws/session/${encodeURIComponent(bidSessionId)}`;
+}
+
+function ticketFromResponseBody(body: unknown): string | null {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return null;
+  const ticket = (body as Record<string, unknown>).ticket;
+  return typeof ticket === 'string' && ticket.length > 0 ? ticket : null;
+}
+
+async function requestWebSocketTicket(bidSessionId: string): Promise<string> {
+  const response = await fetch('/api/auth/ws-ticket', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ session_id: bidSessionId }),
+  });
+  const body: unknown = await response.json().catch(() => null);
+  const ticket = ticketFromResponseBody(body);
+  if (!response.ok || ticket === null) {
+    throw new Error('websocket_ticket_unavailable');
+  }
+  return ticket;
 }
 
 export function useBidWebSocket(
   store: StoreApi<BidStoreState>,
-  opts: { bidSessionId: string; jwt: string; wsBase?: string | undefined },
+  opts: { bidSessionId: string; wsBase?: string | undefined },
 ): { status: BidWebSocketStatus; send: (data: object) => boolean } {
   const [status, setStatus] = useState<BidWebSocketStatus>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
@@ -37,19 +56,39 @@ export function useBidWebSocket(
 
   useEffect(() => {
     let cancelled = false;
-    function connect() {
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function scheduleReconnect() {
       if (cancelled) return;
-      const url = buildWsUrl(opts.wsBase, opts.bidSessionId, opts.jwt);
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
+      setStatus('closed');
+      const backoff =
+        RECONNECT_BACKOFF_MS[Math.min(attemptRef.current, RECONNECT_BACKOFF_MS.length - 1)] ?? 8000;
+      attemptRef.current += 1;
+      reconnectTimer = setTimeout(() => {
+        void connect();
+      }, backoff);
+    }
+
+    async function connect() {
+      if (cancelled) return;
       setStatus('connecting');
+      let ticket: string;
+      try {
+        ticket = await requestWebSocketTicket(opts.bidSessionId);
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      if (cancelled) return;
+
+      const ws = new WebSocket(buildWsUrl(opts.wsBase, opts.bidSessionId), ['mbfd-bid-v1', ticket]);
+      wsRef.current = ws;
       ws.onopen = () => {
         attemptRef.current = 0;
         setStatus('open');
         ws.send(
           JSON.stringify({
             type: 'hello',
-            jwt: opts.jwt,
             lastSeq: store.getState().lastSeq,
           }),
         );
@@ -66,21 +105,19 @@ export function useBidWebSocket(
         }
       };
       ws.onclose = () => {
-        setStatus('closed');
-        const backoff =
-          RECONNECT_BACKOFF_MS[Math.min(attemptRef.current, RECONNECT_BACKOFF_MS.length - 1)] ??
-          8000;
-        attemptRef.current += 1;
-        setTimeout(connect, backoff);
+        if (wsRef.current === ws) wsRef.current = null;
+        scheduleReconnect();
       };
       ws.onerror = () => ws.close();
     }
-    connect();
+    void connect();
     return () => {
       cancelled = true;
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
       wsRef.current?.close();
+      wsRef.current = null;
     };
-  }, [opts.bidSessionId, opts.jwt, opts.wsBase, store]);
+  }, [opts.bidSessionId, opts.wsBase, store]);
 
   return {
     status,

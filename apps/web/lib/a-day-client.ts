@@ -53,11 +53,10 @@ export type ADayBoardState = {
  */
 export async function fetchADayState(
   sessionId: string,
-  jwt: string,
   fetcher: typeof fetch = fetch,
 ): Promise<ADayBoardState> {
   const res = await fetcher(`/api/bid/a-day-state?session=${encodeURIComponent(sessionId)}`, {
-    headers: { Authorization: `Bearer ${jwt}` },
+    credentials: 'same-origin',
   });
   if (!res.ok) {
     throw new Error(`fetchADayState failed: ${res.status}`);
@@ -78,14 +77,13 @@ export type SubmitADayPickResponse =
  */
 export async function submitADayPickViaRest(
   request: SubmitADayPickRequest,
-  jwt: string,
   fetcher: typeof fetch = fetch,
 ): Promise<{ status: number; body: SubmitADayPickResponse }> {
   const res = await fetcher('/api/bid/a-day-pick', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: {
       'content-type': 'application/json',
-      Authorization: `Bearer ${jwt}`,
     },
     body: JSON.stringify(request),
   });
