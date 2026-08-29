@@ -36,6 +36,7 @@ import {
   frozenEligibilityMemberForSession,
   loadFrozenSessionBidPolicy,
 } from '../../lib/bid-policy.js';
+import { guardNormalBidMutation } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -315,6 +316,8 @@ router.post('/:sessionId/auto-bid', zValidator('json', AutoBidBodySchema), async
         409,
       );
     }
+    const specialtyGuard = await guardNormalBidMutation(c.env, sessionId);
+    if (!specialtyGuard.ok) return c.json({ error: specialtyGuard.error }, 409);
     if (session.currentPhase === 'complete') {
       return c.json({ picksMade: 0, stoppedReason: 'complete' });
     }
@@ -666,6 +669,8 @@ router.post('/:sessionId/manual-pick', zValidator('json', ManualPickBodySchema),
       409,
     );
   }
+  const specialtyGuard = await guardNormalBidMutation(c.env, sessionId);
+  if (!specialtyGuard.ok) return c.json({ error: specialtyGuard.error }, 409);
 
   const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
   if (!frozenPolicy.ok) {

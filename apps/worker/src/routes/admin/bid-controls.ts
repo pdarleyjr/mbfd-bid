@@ -21,6 +21,7 @@ import {
   resolveFrozenSessionBidTarget,
 } from '../../lib/bid-policy.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
+import { guardNormalBidMutation } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -64,6 +65,8 @@ router.post(
     if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
+    const specialtyGuard = await guardNormalBidMutation(c.env, sessionId);
+    if (!specialtyGuard.ok) return c.json({ error: specialtyGuard.error }, 409);
 
     // A force-pick is an override of turn order, never an override of the
     // frozen policy boundary. In particular, neither an excluded Division
@@ -220,6 +223,8 @@ router.post(
     if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
+    const specialtyGuard = await guardNormalBidMutation(c.env, sessionId);
+    if (!specialtyGuard.ok) return c.json({ error: specialtyGuard.error }, 409);
 
     const target = await resolveFrozenSessionBidTarget(db, {
       bidSessionId: sessionId,

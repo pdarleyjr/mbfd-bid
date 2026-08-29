@@ -5,6 +5,8 @@
 // verify audit chain), shows the most recent findings, and exposes a form
 // for submitting new findings. Admin role-gated.
 
+import type { Route } from 'next';
+import Link from 'next/link';
 import type { ReactElement } from 'react';
 import { requireAdmin } from '../../../lib/require-admin';
 import { serverWorkerFetch } from '../../../lib/server-worker-fetch';
@@ -65,11 +67,19 @@ export default async function RehearsalDashboardPage(): Promise<ReactElement> {
 
   return (
     <div>
-      <header className="mb-6 flex items-baseline justify-between">
-        <h1 className="font-heading text-2xl text-white">Rehearsal Console</h1>
-        <p className="text-sm text-slate-400">
-          Mock-draft sessions are excluded from portal write-back.
-        </p>
+      <header className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-2xl text-white">Rehearsal Console</h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Mock-draft sessions are excluded from portal write-back.
+          </p>
+        </div>
+        <Link
+          href={'/admin/specialty-adjudication' as Route}
+          className="min-h-11 rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-950/40"
+        >
+          Specialty rehearsal
+        </Link>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">

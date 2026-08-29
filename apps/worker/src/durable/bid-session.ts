@@ -12,6 +12,7 @@ import {
 } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
+import { z } from 'zod';
 import { drainBidAuditOutbox } from '../audit/archive-outbox.js';
 import { makeChainDb } from '../audit/chain-db-d1.js';
 import { ChainEmitter } from '../audit/chain-emitter.js';
@@ -43,6 +44,14 @@ import {
   loadFrozenSessionBidPolicy,
   resolveFrozenSessionBidTarget,
 } from '../lib/bid-policy.js';
+import type {
+  ResolveOriginalSpecialtyRequestInput,
+  ResolveSpecialtyCandidateInput,
+  ResumeSpecialtyAdjudicationInput,
+  SpecialtyAdjudicationRequest,
+  SpecialtyNormalTurn,
+} from '../lib/specialty-adjudication.js';
+import { SpecialtyTestPolicySchema } from '../lib/specialty-test-policy.js';
 import {
   type VerifiedWebSocketIdentity,
   parseVerifiedWebSocketIdentity,
@@ -70,6 +79,14 @@ import {
   handleSubmitPick,
 } from './bid-session-handlers.js';
 import {
+  type AcceptedSpecialtyEngineTransitionResult,
+  BidSessionSpecialtyAdapter,
+  type SpecialtyCommandReceipt,
+  type SpecialtyEngineTransitionResult,
+  bidSessionSpecialtyReceiptPrefix,
+  bidSessionSpecialtyReceiptStorageKey,
+} from './bid-session-specialty.js';
+import {
   type BidSessionState,
   type DOStorageLike,
   emptyBidSessionState,
@@ -86,6 +103,143 @@ interface ConnectedClient {
 interface IdempotencyRecord {
   envelope: BidEventEnvelope;
 }
+
+const SpecialtyOpaqueIdSchema = z.string().trim().min(1).max(160);
+const SpecialtyEligibleSchema = z.object({ status: z.literal('eligible') }).strict();
+const SpecialtyIneligibleSchema = z
+  .object({
+    status: z.literal('ineligible'),
+    reasonCodes: z.array(SpecialtyOpaqueIdSchema).min(1).max(30),
+  })
+  .strict();
+const SpecialtyEligibilitySchema = z.discriminatedUnion('status', [
+  SpecialtyEligibleSchema,
+  SpecialtyIneligibleSchema,
+]);
+const SyntheticSpecialtyPolicySchema = z
+  .object({
+    policyReference: SpecialtyOpaqueIdSchema.refine(
+      (value) => value.toLowerCase().startsWith('synthetic-'),
+      'synthetic policy references must be explicitly labelled',
+    ),
+    source: z.literal('synthetic'),
+    testPolicy: SpecialtyTestPolicySchema,
+    candidateReleasePolicy: z
+      .object({
+        status: z.literal('configured'),
+        onRelease: z.enum(['continue_to_next_higher_priority', 'return_to_original_bidder']),
+      })
+      .strict(),
+    candidates: z
+      .array(
+        z
+          .object({
+            memberId: z.number().int().positive(),
+            priorityRank: z.number().int().nonnegative(),
+            generalEligibility: SpecialtyEligibilitySchema,
+            specialtyEligibility: SpecialtyEligibilitySchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(250),
+  })
+  .strict();
+const SpecialtyOutcomeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('award'), awardReference: SpecialtyOpaqueIdSchema }).strict(),
+  z
+    .object({
+      kind: z.literal('release'),
+      reason: z.enum(['declined', 'unreachable', 'withdrawn', 'ineligible_on_recheck']),
+    })
+    .strict(),
+]);
+const SpecialtyAuditSchema = z
+  .object({
+    actorId: z.number().int().nonnegative(),
+    reason: z.string().trim().min(4).max(500),
+    origin: z.literal('synthetic_specialty_test'),
+    effectiveDate: z.null(),
+  })
+  .strict();
+const SpecialtyBeginPayloadSchema = z
+  .object({
+    command: z
+      .object({
+        commandId: SpecialtyOpaqueIdSchema,
+        expectedRevision: z.number().int().nonnegative(),
+        requestId: SpecialtyOpaqueIdSchema,
+        positionId: SpecialtyOpaqueIdSchema,
+        policy: SyntheticSpecialtyPolicySchema,
+      })
+      .strict(),
+    audit: SpecialtyAuditSchema,
+  })
+  .strict();
+const SpecialtyCandidatePayloadSchema = z
+  .object({
+    command: z
+      .object({
+        commandId: SpecialtyOpaqueIdSchema,
+        expectedRevision: z.number().int().nonnegative(),
+        requestId: SpecialtyOpaqueIdSchema,
+        memberId: z.number().int().positive(),
+        outcome: SpecialtyOutcomeSchema,
+      })
+      .strict(),
+    audit: SpecialtyAuditSchema,
+  })
+  .strict();
+const SpecialtyOriginalPayloadSchema = z
+  .object({
+    command: z
+      .object({
+        commandId: SpecialtyOpaqueIdSchema,
+        expectedRevision: z.number().int().nonnegative(),
+        requestId: SpecialtyOpaqueIdSchema,
+        outcome: SpecialtyOutcomeSchema,
+      })
+      .strict(),
+    audit: SpecialtyAuditSchema,
+  })
+  .strict();
+const SpecialtyResumePayloadSchema = z
+  .object({
+    command: z
+      .object({
+        commandId: SpecialtyOpaqueIdSchema,
+        expectedRevision: z.number().int().nonnegative(),
+        requestId: SpecialtyOpaqueIdSchema,
+      })
+      .strict(),
+    audit: SpecialtyAuditSchema,
+  })
+  .strict();
+
+type SpecialtyOperation = 'begin' | 'resolve_candidate' | 'resolve_original' | 'resume';
+type SpecialtyBeginPayload = z.infer<typeof SpecialtyBeginPayloadSchema>;
+type SpecialtyCandidatePayload = z.infer<typeof SpecialtyCandidatePayloadSchema>;
+type SpecialtyOriginalPayload = z.infer<typeof SpecialtyOriginalPayloadSchema>;
+type SpecialtyResumePayload = z.infer<typeof SpecialtyResumePayloadSchema>;
+type SpecialtyPayload =
+  | SpecialtyBeginPayload
+  | SpecialtyCandidatePayload
+  | SpecialtyOriginalPayload
+  | SpecialtyResumePayload;
+
+type SpecialtyTransportResult =
+  | {
+      kind: 'accepted';
+      idempotentReplay: boolean;
+      result: AcceptedSpecialtyEngineTransitionResult;
+      receipt: SpecialtyCommandReceipt;
+    }
+  | {
+      kind: 'rejected';
+      code: string;
+      message: string;
+      result: SpecialtyEngineTransitionResult | null;
+    };
 
 type CanonicalMockIntent = 'pending' | 'active';
 
@@ -183,6 +337,204 @@ export class BidSessionDO implements DurableObject {
     }
     if ((await this.canonicalMockIntentState()) === null) return this.memoryState;
     return this.hydrateCanonicalMockState(this.memoryState);
+  }
+
+  /**
+   * Specialty adjudication deliberately remains a separate, synthetic test
+   * state machine until a frozen MBFD specialty policy model exists. Keeping
+   * its state out of BidSessionState avoids falsely representing a rehearsal
+   * decision as an ordinary committed Bid fill.
+   */
+  private specialtyNormalTurn(state: BidSessionState): SpecialtyNormalTurn | null {
+    if (state.currentPhase !== 'position_bid' || state.currentBidderId === null) return null;
+    const entry = state.bidOrder[state.queueCursor];
+    if (entry === undefined || entry.memberId !== state.currentBidderId) return null;
+    return {
+      turnId: `normal:${this.namedSessionId()}:${state.lastSeq}:${entry.ordinal}:${state.queueCursor}:${entry.memberId}`,
+      bidderId: entry.memberId,
+      ordinal: entry.ordinal,
+      queueCursor: state.queueCursor,
+    };
+  }
+
+  private sameSpecialtyNormalTurn(left: SpecialtyNormalTurn, right: SpecialtyNormalTurn): boolean {
+    return (
+      left.turnId === right.turnId &&
+      left.bidderId === right.bidderId &&
+      left.ordinal === right.ordinal &&
+      left.queueCursor === right.queueCursor
+    );
+  }
+
+  private async syntheticSpecialtyStatus(): Promise<{
+    mode: 'synthetic_test_only';
+    does_not_commit_bid: true;
+    database_audit_log: 'not_written';
+    state: Awaited<ReturnType<BidSessionSpecialtyAdapter['load']>>;
+    audit_receipts: SpecialtyCommandReceipt[];
+  }> {
+    const adapter = new BidSessionSpecialtyAdapter(this.storage, this.namedSessionId());
+    const [specialtyState, receiptMap] = await Promise.all([
+      adapter.load(),
+      this.state.storage.list<SpecialtyCommandReceipt>({
+        prefix: bidSessionSpecialtyReceiptPrefix(this.namedSessionId()),
+      }),
+    ]);
+    const receipts = [...receiptMap.values()].sort(
+      (left, right) => left.afterState.revision - right.afterState.revision,
+    );
+    return {
+      mode: 'synthetic_test_only',
+      does_not_commit_bid: true,
+      database_audit_log: 'not_written',
+      state: specialtyState,
+      audit_receipts: receipts,
+    };
+  }
+
+  /**
+   * A successful synthetic command writes the engine state and immutable
+   * receipt inside one Durable Object storage transaction. A retry can then
+   * return the original exact result instead of attempting a duplicate engine
+   * command. This intentionally does not write D1/R2 canonical audit records:
+   * there is no approved specialty policy or award command to archive.
+   */
+  private async runSyntheticSpecialtyCommand(
+    operation: SpecialtyOperation,
+    payload: SpecialtyPayload,
+  ): Promise<SpecialtyTransportResult> {
+    const bidSessionId = this.namedSessionId();
+    const commandId = payload.command.commandId;
+    return this.state.blockConcurrencyWhile(async () => {
+      const normalState = await this.getState();
+      return this.state.storage.transaction(async (transaction) => {
+        const receiptKey = bidSessionSpecialtyReceiptStorageKey(bidSessionId, commandId);
+        const replay = await transaction.get<SpecialtyCommandReceipt>(receiptKey);
+        if (replay !== undefined) {
+          return {
+            kind: 'accepted',
+            idempotentReplay: true,
+            result: replay.result,
+            receipt: replay,
+          };
+        }
+
+        const adapter = new BidSessionSpecialtyAdapter(transaction, bidSessionId);
+        const beforeState = await adapter.load();
+        let result: SpecialtyEngineTransitionResult;
+        switch (operation) {
+          case 'begin': {
+            const normalTurn = this.specialtyNormalTurn(normalState);
+            if (normalTurn === null) {
+              return {
+                kind: 'rejected',
+                code: 'NORMAL_TURN_UNAVAILABLE',
+                message: 'The current normal position-Bid turn cannot be captured.',
+                result: null,
+              };
+            }
+            const beginPayload = payload as SpecialtyBeginPayload;
+            const command: SpecialtyAdjudicationRequest = {
+              ...beginPayload.command,
+              normalTurn,
+            };
+            result = await adapter.begin(command);
+            break;
+          }
+          case 'resolve_candidate': {
+            const candidatePayload = payload as SpecialtyCandidatePayload;
+            const command: ResolveSpecialtyCandidateInput = candidatePayload.command;
+            result = await adapter.resolveCandidate(command);
+            break;
+          }
+          case 'resolve_original': {
+            const originalPayload = payload as SpecialtyOriginalPayload;
+            const command: ResolveOriginalSpecialtyRequestInput = originalPayload.command;
+            result = await adapter.resolveOriginal(command);
+            break;
+          }
+          case 'resume': {
+            const active = beforeState.active;
+            if (active !== null) {
+              const currentNormalTurn = this.specialtyNormalTurn(normalState);
+              if (
+                currentNormalTurn === null ||
+                !this.sameSpecialtyNormalTurn(active.originalTurn, currentNormalTurn)
+              ) {
+                return {
+                  kind: 'rejected',
+                  code: 'NORMAL_TURN_CHANGED',
+                  message:
+                    'The captured normal turn changed while specialty adjudication was active.',
+                  result: null,
+                };
+              }
+            }
+            const resumePayload = payload as SpecialtyResumePayload;
+            const command: ResumeSpecialtyAdjudicationInput = resumePayload.command;
+            result = await adapter.resume(command);
+            break;
+          }
+        }
+
+        if (result.kind === 'rejected') {
+          return {
+            kind: 'rejected',
+            code: result.code,
+            message: result.message,
+            result,
+          };
+        }
+
+        const receipt: SpecialtyCommandReceipt = {
+          version: 1,
+          commandId,
+          operation,
+          acceptedAtMs: Date.now(),
+          actorType: 'admin',
+          actorId: payload.audit.actorId,
+          reason: payload.audit.reason,
+          effectiveDate: payload.audit.effectiveDate,
+          origin: payload.audit.origin,
+          beforeState,
+          afterState: result.state,
+          events: result.events,
+          result,
+        };
+        await transaction.put(receiptKey, receipt);
+        return {
+          kind: 'accepted',
+          idempotentReplay: false,
+          result,
+          receipt,
+        };
+      });
+    });
+  }
+
+  private specialtyResponse(result: SpecialtyTransportResult): Response {
+    const payload =
+      result.kind === 'accepted'
+        ? {
+            mode: 'synthetic_test_only',
+            does_not_commit_bid: true,
+            kind: result.kind,
+            idempotent_replay: result.idempotentReplay,
+            result: result.result,
+            audit_receipt: result.receipt,
+          }
+        : {
+            mode: 'synthetic_test_only',
+            does_not_commit_bid: true,
+            kind: result.kind,
+            error: result.code,
+            message: result.message,
+            result: result.result,
+          };
+    return new Response(JSON.stringify(payload), {
+      status: result.kind === 'accepted' ? 200 : 409,
+      headers: { 'content-type': 'application/json' },
+    });
   }
 
   /**
@@ -575,6 +927,60 @@ export class BidSessionDO implements DurableObject {
         headers: { 'content-type': 'application/json' },
       });
     }
+    if (url.pathname === '/admin/specialty-adjudication') {
+      if (req.method !== 'GET') return new Response('Method Not Allowed', { status: 405 });
+      return new Response(JSON.stringify(await this.syntheticSpecialtyStatus()), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.pathname === '/admin/specialty-adjudication/begin') {
+      const raw = await req.json().catch(() => null);
+      const parsed = SpecialtyBeginPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        return new Response(JSON.stringify({ error: 'invalid_synthetic_specialty_command' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return this.specialtyResponse(await this.runSyntheticSpecialtyCommand('begin', parsed.data));
+    }
+    if (url.pathname === '/admin/specialty-adjudication/resolve-candidate') {
+      const raw = await req.json().catch(() => null);
+      const parsed = SpecialtyCandidatePayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        return new Response(JSON.stringify({ error: 'invalid_synthetic_specialty_command' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return this.specialtyResponse(
+        await this.runSyntheticSpecialtyCommand('resolve_candidate', parsed.data),
+      );
+    }
+    if (url.pathname === '/admin/specialty-adjudication/resolve-original') {
+      const raw = await req.json().catch(() => null);
+      const parsed = SpecialtyOriginalPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        return new Response(JSON.stringify({ error: 'invalid_synthetic_specialty_command' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return this.specialtyResponse(
+        await this.runSyntheticSpecialtyCommand('resolve_original', parsed.data),
+      );
+    }
+    if (url.pathname === '/admin/specialty-adjudication/resume') {
+      const raw = await req.json().catch(() => null);
+      const parsed = SpecialtyResumePayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        return new Response(JSON.stringify({ error: 'invalid_synthetic_specialty_command' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return this.specialtyResponse(await this.runSyntheticSpecialtyCommand('resume', parsed.data));
+    }
     if (url.pathname === '/admin/skip') {
       const body = (await req.json()) as SkipInput;
       const result = await this.adminSkip(body);
@@ -784,6 +1190,32 @@ export class BidSessionDO implements DurableObject {
     await this.state.blockConcurrencyWhile(async () => {
       const idemKey = `idem:${this.state.id.toString()}:${msg.idempotencyKey}`;
       const state = await this.getState();
+
+      // A synthetic specialty rehearsal captures this exact normal turn in a
+      // separate durable state record. Do not allow the websocket path to
+      // advance it until the adjudication has explicitly resumed it. There is
+      // deliberately no idempotency record for this temporary rejection so the
+      // same normal pick can be retried after the exact captured turn resumes.
+      const specialtyState = await new BidSessionSpecialtyAdapter(
+        this.storage,
+        this.namedSessionId(),
+      ).load();
+      if (specialtyState.active !== null) {
+        this.send(
+          client.socket,
+          this.envelope(
+            'pick_rejected',
+            {
+              idempotencyKey: msg.idempotencyKey,
+              code: 'SESSION_PAUSED',
+              message:
+                'The normal turn is suspended for synthetic specialty adjudication and has not resumed.',
+            } satisfies PickRejectedEvent,
+            state.lastSeq,
+          ),
+        );
+        return;
+      }
 
       // The DO is an independent mutation boundary. Never trust a queued or
       // websocket-supplied target merely because its legacy state happens to

@@ -3,9 +3,14 @@
 import type { ReactElement } from 'react';
 
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
+import { DirectCsvExports } from './_components/DirectCsvExports';
 import { ExportCard } from './_components/ExportCard';
 import { ExportTriggerButton } from './_components/ExportTriggerButton';
 import { PortalSyncStatus } from './_components/PortalSyncStatus';
+import {
+  type ActiveExportSession,
+  SessionSelectionPanel,
+} from './_components/SessionSelectionPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +32,48 @@ interface PortalBidRow {
   pickedAt: string;
   portalSyncStatus: string;
   portalSyncAttempts: number;
+}
+
+interface ActiveSessionResponse {
+  session: ActiveExportSession | null;
+}
+
+function validSessionId(value: string | undefined): string | null {
+  if (value === undefined || !/^[A-Za-z0-9_-]{1,256}$/.test(value)) return null;
+  return value;
+}
+
+async function fetchActiveSession(): Promise<{
+  session: ActiveExportSession | null;
+  fetchError: string | null;
+}> {
+  try {
+    const response = await serverWorkerFetch('/api/admin/bid-session/active');
+    if (!response.ok) {
+      return { session: null, fetchError: `Active-session service returned ${response.status}.` };
+    }
+    const body = (await response.json()) as ActiveSessionResponse;
+    const session = body.session;
+    if (
+      session === null ||
+      typeof session !== 'object' ||
+      !/^[A-Za-z0-9_-]{1,256}$/.test(session.id) ||
+      !Number.isSafeInteger(session.bidYear) ||
+      typeof session.isMock !== 'boolean' ||
+      typeof session.currentPhase !== 'string'
+    ) {
+      return { session: null, fetchError: null };
+    }
+    return { session, fetchError: null };
+  } catch (caught) {
+    return {
+      session: null,
+      fetchError:
+        caught instanceof Error
+          ? 'The active-session service could not be reached.'
+          : 'fetch failed',
+    };
+  }
 }
 
 async function fetchExports(
@@ -60,12 +107,22 @@ async function fetchPortalStatus(
 }
 
 export default async function ExportsPage({ searchParams }: PageProps): Promise<ReactElement> {
-  const { session_id: sid } = await searchParams;
-  if (!sid) {
+  const { session_id: requestedSessionId } = await searchParams;
+  const sid = validSessionId(requestedSessionId);
+  if (sid === null) {
+    const active = await fetchActiveSession();
     return (
       <main className="admin-exports">
         <h1>Exports &amp; Portal Sync</h1>
-        <p>Provide a session_id query parameter.</p>
+        <p>Select the Bid session whose progress, awards, roster, and audit evidence you need.</p>
+        <SessionSelectionPanel
+          activeSession={active.session}
+          error={
+            requestedSessionId === undefined
+              ? active.fetchError
+              : 'The selected session link is invalid. Return to its session controls and choose the action again.'
+          }
+        />
       </main>
     );
   }
@@ -76,7 +133,10 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
 
   return (
     <main className="admin-exports">
-      <h1>Exports &amp; Portal Sync — {sid}</h1>
+      <h1>Exports &amp; Portal Sync</h1>
+      <p>Session evidence selected from the Bid session controls.</p>
+
+      <DirectCsvExports sessionId={sid} />
 
       <section>
         <h2>Generate</h2>

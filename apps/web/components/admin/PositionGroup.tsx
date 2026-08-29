@@ -1,5 +1,6 @@
 import type { Route } from 'next';
 import Link from 'next/link';
+import { type BidConfiguration, buildBoundToolHref } from '../../lib/bid-configuration-selection';
 
 interface Position {
   id: string;
@@ -25,9 +26,10 @@ const RANK_LABELS: Record<string, string> = {
 interface PositionGroupProps {
   station: string;
   positions: Position[];
+  configuration: BidConfiguration;
 }
 
-export function PositionGroup({ station, positions }: PositionGroupProps) {
+export function PositionGroup({ station, positions, configuration }: PositionGroupProps) {
   return (
     <details open className="mt-4 rounded-lg border border-slate-700">
       <summary className="flex cursor-pointer select-none items-center justify-between rounded-lg px-4 py-3 bg-slate-800 text-sm font-semibold text-slate-200 hover:bg-slate-750 transition-colors duration-fast ease-out-quart">
@@ -88,12 +90,21 @@ export function PositionGroup({ station, positions }: PositionGroupProps) {
                 ].join(' ')}
               >
                 <td className="px-4 py-2 font-mono text-xs text-red-400 [font-variant-numeric:tabular-nums]">
-                  <Link
-                    href={`/admin/positions/${pos.id}/edit` as Route}
-                    className="hover:text-red-300"
-                  >
-                    {pos.id}
-                  </Link>
+                  {configuration.lifecycle === 'DRAFT' ? (
+                    <Link
+                      href={
+                        buildBoundToolHref(
+                          `/admin/positions/${encodeURIComponent(pos.id)}/edit`,
+                          configuration,
+                        ) as Route
+                      }
+                      className="hover:text-red-300"
+                    >
+                      {pos.id}
+                    </Link>
+                  ) : (
+                    <span>{pos.id}</span>
+                  )}
                 </td>
                 <td className="px-4 py-2 text-slate-300">
                   {RANK_LABELS[pos.rankRequired] ?? pos.rankRequired}

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { formatET } from '../../../lib/et-time';
 import { requireAdmin } from '../../../lib/require-admin';
 import { serverWorkerFetch } from '../../../lib/server-worker-fetch';
+import { RuleBookCreateForm } from './RuleBookCreateForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,17 +42,16 @@ export default async function RuleBooksPage() {
       <p className="mt-2 text-sm text-slate-300">
         Each year has at most one active book. Drafts can be edited; archived books are immutable.
       </p>
+      <RuleBookCreateForm ruleBooks={rule_books} />
       {fetchError && (
         <div className="mt-6 rounded-lg border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-200">
-          Could not load rule books: {fetchError}.{' '}
-          <span className="text-amber-300">
-            Check the Worker logs and JWT validity. The page is rendering with an empty list.
-          </span>
+          Could not load rule books: {fetchError}. The current list is unavailable; no policy state
+          is inferred.
         </div>
       )}
       {!fetchError && rule_books.length === 0 && (
         <div className="mt-6 rounded-lg border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300">
-          No rule books yet. Use the Worker API or seed script to create one.
+          No rule books yet. Create the first reviewed draft above.
         </div>
       )}
       <table className="mt-6 w-full border border-slate-700 text-sm text-slate-200">

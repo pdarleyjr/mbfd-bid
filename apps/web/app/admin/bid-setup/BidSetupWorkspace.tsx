@@ -4,23 +4,14 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
+import {
+  type BidConfiguration,
+  type BidConfigurationLifecycle,
+  buildBoundToolHref,
+  isBoundBidConfiguration,
+} from '../../../lib/bid-configuration-selection';
 
-export type BidConfigurationLifecycle = 'UNCONFIGURED' | 'DRAFT' | 'FROZEN' | 'INCONSISTENT';
-
-export interface BidConfiguration {
-  bidYear: number;
-  bidYearStatus: 'configuring' | 'live' | 'paused' | 'complete' | 'archived';
-  ruleBookVersion: string | null;
-  positionTemplateVersion: string | null;
-  configurationRevision: number;
-  ruleBookRevision: number | null;
-  settings: {
-    v: 1;
-    expectedDurationDays: number;
-    turnTimerSeconds: number;
-  } | null;
-  lifecycle: BidConfigurationLifecycle;
-}
+export type { BidConfiguration, BidConfigurationLifecycle };
 
 export interface RuleBookSummary {
   version: string;
@@ -75,12 +66,17 @@ export function BidSetupWorkspace({
   ruleBooksError,
 }: Props) {
   const router = useRouter();
+  const positionsHref = configuration
+    ? buildBoundToolHref('/admin/positions', configuration)
+    : null;
+  const rulesHref = configuration ? buildBoundToolHref('/admin/rules', configuration) : null;
+  const eligibilityHref = configuration
+    ? buildBoundToolHref('/admin/eligibility', configuration)
+    : null;
   const draftRuleBooks = ruleBooks.filter(
     (ruleBook) => ruleBook.effectiveYear === year && ruleBook.status === 'draft',
   );
-  const [selectedVersion, setSelectedVersion] = useState(
-    configuration?.ruleBookVersion ?? draftRuleBooks[0]?.version ?? '',
-  );
+  const [selectedVersion, setSelectedVersion] = useState(configuration?.ruleBookVersion ?? '');
   const [expectedDurationDays, setExpectedDurationDays] = useState(
     configuration?.settings?.expectedDurationDays ?? 2,
   );
@@ -282,6 +278,9 @@ export function BidSetupWorkspace({
                     onChange={(event) => setSelectedVersion(event.target.value)}
                     className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 font-mono text-white"
                   >
+                    {configuration.lifecycle === 'UNCONFIGURED' && (
+                      <option value="">Select a draft candidate</option>
+                    )}
                     {draftRuleBooks.map((ruleBook) => (
                       <option key={ruleBook.version} value={ruleBook.version}>
                         {ruleBook.version} (draft)
@@ -372,15 +371,31 @@ export function BidSetupWorkspace({
           <Link href={'/admin/rule-books' as Route} className="font-medium text-red-300 underline">
             Rule Books
           </Link>
-          <Link href={'/admin/positions' as Route} className="font-medium text-red-300 underline">
-            Positions
-          </Link>
-          <Link href={'/admin/rules' as Route} className="font-medium text-red-300 underline">
-            Rules
-          </Link>
-          <Link href={'/admin/eligibility' as Route} className="font-medium text-red-300 underline">
-            Eligibility Preview
-          </Link>
+          {positionsHref !== null ? (
+            <Link href={positionsHref as Route} className="font-medium text-red-300 underline">
+              Positions
+            </Link>
+          ) : (
+            <span className="text-slate-500">
+              Positions (designate a complete configuration first)
+            </span>
+          )}
+          {rulesHref !== null ? (
+            <Link href={rulesHref as Route} className="font-medium text-red-300 underline">
+              Rules
+            </Link>
+          ) : (
+            <span className="text-slate-500">Rules (designate a complete configuration first)</span>
+          )}
+          {eligibilityHref !== null ? (
+            <Link href={eligibilityHref as Route} className="font-medium text-red-300 underline">
+              Eligibility Preview
+            </Link>
+          ) : (
+            <span className="text-slate-500">
+              Eligibility Preview (designate a complete configuration first)
+            </span>
+          )}
           <Link
             href={'/admin/settings/bid-pin' as Route}
             className="font-medium text-red-300 underline"
@@ -388,6 +403,12 @@ export function BidSetupWorkspace({
             Bid Access PIN
           </Link>
         </div>
+        {!isBoundBidConfiguration(configuration) && (
+          <p className="mt-3 text-sm text-amber-200">
+            Positions, Rules, and Eligibility Preview remain unavailable until this bid year has a
+            complete designated configuration. No tool will substitute a default version.
+          </p>
+        )}
       </section>
     </div>
   );

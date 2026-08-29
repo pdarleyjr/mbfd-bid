@@ -20,18 +20,20 @@
 // Paid plan.
 
 import type { JwtPayload } from '@mbfd/shared';
-import { eq } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
+import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
-import { bidSessions, bids } from '../../db/schema.js';
+import { bidSessions, bids, canonicalBidSessionState } from '../../db/schema.js';
 import { auditCsvDbFromD1 } from '../../exports/audit-csv-db.js';
 import { exportAuditCsv } from '../../exports/audit-csv.js';
 import { mintPrintToken, verifyPrintToken } from '../../exports/print-token.js';
 import { generateRosterPdf } from '../../exports/roster-pdf.js';
 import { createSignedR2Url } from '../../exports/signed-url.js';
 import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
+import { createCsvStream } from '../../lib/csv-stream.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -329,6 +331,96 @@ router.post('/audit-csv', requireStepUpAuth(), async (c) => {
   } catch (err) {
     return c.json({ error: 'audit_csv_failed', message: (err as Error).message }, 500);
   }
+});
+
+/**
+ * A direct, immutable-policy progress download deliberately avoids the R2
+ * rendering path. Operators can obtain it mid-Bid even when the optional
+ * Browser Rendering/R2 export services are unavailable.
+ */
+router.get('/:session_id/progress.csv', async (c) => {
+  const sessionId = c.req.param('session_id');
+  const db = getDb(c.env.DB);
+  const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+
+  const frozen = await loadFrozenSessionBidPolicy(db, sessionId);
+  if (!frozen.ok || frozen.snapshot.v !== 3) {
+    return c.json(
+      {
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: !frozen.ok ? frozen.code : 'session_policy_snapshot_material_missing',
+      },
+      409,
+    );
+  }
+
+  let canonical: Awaited<ReturnType<typeof loadCanonicalBidSessionState>>;
+  try {
+    canonical = await loadCanonicalBidSessionState(c.env.DB, sessionId);
+  } catch {
+    return c.json({ error: 'canonical_state_invalid' }, 409);
+  }
+  const [canonicalRow, awards] = await Promise.all([
+    db
+      .select({ lastCommandId: canonicalBidSessionState.lastCommandId })
+      .from(canonicalBidSessionState)
+      .where(eq(canonicalBidSessionState.bidSessionId, sessionId))
+      .get(),
+    db.select({ count: count() }).from(bids).where(eq(bids.bidSessionId, sessionId)).get(),
+  ]);
+
+  const row = {
+    exportKind: 'bid_progress',
+    bidSessionId: sessionId,
+    bidYear: session.bidYear,
+    isMock: session.isMock,
+    bidState: canonical?.currentPhase ?? session.currentPhase,
+    configurationRevision: frozen.snapshot.configurationRevision,
+    ruleBookVersion: frozen.snapshot.ruleBookVersion,
+    ruleBookRevision: frozen.snapshot.ruleBookRevision,
+    positionTemplateVersion: frozen.snapshot.positionTemplateVersion,
+    rosterSnapshotAt: new Date(frozen.snapshot.capturedAtMs).toISOString(),
+    lastCommittedCommandId: canonicalRow?.lastCommandId ?? null,
+    lastCommittedCommandSequence: canonical?.lastSeq ?? 0,
+    awardsCommitted: awards?.count ?? 0,
+    exportedAt: new Date().toISOString(),
+  };
+
+  async function* rows() {
+    yield row;
+  }
+
+  const safeSessionId = sessionId.replace(/[^A-Za-z0-9_-]/g, '_');
+  return new Response(
+    createCsvStream(rows(), [
+      { header: 'export_kind', value: (value) => value.exportKind },
+      { header: 'bid_session_id', value: (value) => value.bidSessionId },
+      { header: 'bid_year', value: (value) => value.bidYear },
+      { header: 'is_mock', value: (value) => value.isMock },
+      { header: 'bid_state', value: (value) => value.bidState },
+      { header: 'configuration_revision', value: (value) => value.configurationRevision },
+      { header: 'rule_book_version', value: (value) => value.ruleBookVersion },
+      { header: 'rule_book_revision', value: (value) => value.ruleBookRevision },
+      { header: 'position_template_version', value: (value) => value.positionTemplateVersion },
+      { header: 'roster_snapshot_at', value: (value) => value.rosterSnapshotAt },
+      { header: 'last_committed_command_id', value: (value) => value.lastCommittedCommandId },
+      {
+        header: 'last_committed_command_sequence',
+        value: (value) => value.lastCommittedCommandSequence,
+      },
+      { header: 'awards_committed', value: (value) => value.awardsCommitted },
+      { header: 'exported_at', value: (value) => value.exportedAt },
+    ]),
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="mbfd-bid-progress-${safeSessionId}.csv"`,
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
 });
 
 router.get('/:session_id', async (c) => {

@@ -7,6 +7,7 @@ import {
 } from '@mbfd/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { ulid } from 'ulid';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
 import {
@@ -64,7 +65,7 @@ router.get('/', async (c) => {
 
 // POST /api/admin/rule-books   (step-up; creates draft, optionally clones)
 router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), async (c) => {
-  const { effective_year, clone_from, notes } = c.req.valid('json');
+  const { effective_year, clone_from, notes, reason } = c.req.valid('json');
   const db = getDb(c.env.DB);
 
   const allVersions = await db.select({ v: ruleBooks.version }).from(ruleBooks).all();
@@ -73,11 +74,13 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), 
     allVersions.map((r) => r.v),
   );
 
+  let sourceRuleBook: typeof ruleBooks.$inferSelect | null = null;
   if (clone_from !== undefined) {
     const src = await db.select().from(ruleBooks).where(eq(ruleBooks.version, clone_from)).get();
     if (src === undefined) {
       return c.json({ error: 'clone_from_not_found', clone_from }, 400);
     }
+    sourceRuleBook = src;
   }
 
   // A predicted draft version must never be externally visible with only a
@@ -88,11 +91,47 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), 
     `INSERT INTO rule_books (version, effective_year, notes, status)
        VALUES (?, ?, ?, 'draft')`,
   ).bind(newVersion, effective_year, notes ?? null);
-  if (clone_from === undefined) {
-    await insertRuleBook.run();
-  } else {
-    await c.env.DB.batch([
-      insertRuleBook,
+  const claims = c.get('claims');
+  const beforeState = {
+    clone_from: clone_from ?? null,
+    source_rule_book:
+      sourceRuleBook === null
+        ? null
+        : {
+            version: sourceRuleBook.version,
+            effective_year: sourceRuleBook.effectiveYear,
+            status: sourceRuleBook.status,
+            revision: sourceRuleBook.revision,
+          },
+  };
+  const afterState = {
+    version: newVersion,
+    effective_year,
+    status: 'draft',
+    clone_from: clone_from ?? null,
+    notes: notes ?? null,
+  };
+  const auditStatement = c.env.DB.prepare(
+    `INSERT INTO audit_log (
+         id, bid_session_id, seq, actor_type, actor_id, action, target_kind,
+         target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at
+       )
+       SELECT ?, NULL, COALESCE(MAX(seq), 0) + 1, 'admin', ?, 'rule_book_clone',
+              'rule_book', ?, ?, ?, ?, NULL, NULL, ?
+         FROM audit_log
+        WHERE bid_session_id IS NULL`,
+  ).bind(
+    ulid(),
+    claims.sub ?? null,
+    newVersion,
+    JSON.stringify(beforeState),
+    JSON.stringify(afterState),
+    reason,
+    Math.floor(Date.now() / 1000),
+  );
+  const statements: D1PreparedStatement[] = [insertRuleBook];
+  if (clone_from !== undefined) {
+    statements.push(
       c.env.DB.prepare(
         `INSERT INTO position_rules (
              rule_book_version,
@@ -120,10 +159,14 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), 
             SELECT ?, position_id, template_version, bid_participation,
                    authoritative_source_ref, created_at
               FROM rule_book_position_participation
-             WHERE rule_book_version = ?`,
+            WHERE rule_book_version = ?`,
       ).bind(newVersion, clone_from),
-    ]);
+    );
   }
+  // The draft, all copied policy rows, and its receipt must be one D1
+  // transaction: no partial clone can be exposed or audited independently.
+  statements.push(auditStatement);
+  await c.env.DB.batch(statements);
 
   return c.json({ version: newVersion, status: 'draft' }, 201);
 });
