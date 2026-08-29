@@ -7,12 +7,17 @@ export type TeleStaffHtmlStagingErrorCode =
   | 'SOURCE_PARSE_REJECTED'
   | 'INVALID_IMPORT_ID'
   | 'INVALID_SOURCE_KIND'
+  | 'INVALID_SOURCE_OBSERVATION_TIME'
   | 'INVALID_EMPLOYEE_REFERENCE_HMAC'
   | 'DUPLICATE_EMPLOYEE_REFERENCE_HMAC'
   | 'INVALID_ROW_FINGERPRINT_HMAC'
   | 'DUPLICATE_ROW_FINGERPRINT_HMAC';
 
 export type TeleStaffSourceKind = 'official' | 'synthetic_test';
+export type TeleStaffSourceObservationTimeBasis =
+  | 'date_only'
+  | 'source_metadata'
+  | 'administrator_confirmed';
 
 export interface TeleStaffHtmlStagingOptions {
   /** Server-generated ULID import identifier; never an Emp ID or filename. */
@@ -25,6 +30,10 @@ export interface TeleStaffHtmlStagingOptions {
   sourceKind: TeleStaffSourceKind;
   /** Import observation time, explicitly distinct from assignment effective dates. */
   importedAtMs: number;
+  /** Exact source time, never inferred from a source date or this import time. */
+  sourceObservedAt?: number | null;
+  /** Why an exact source time is trustworthy; defaults to date-only/null. */
+  sourceObservationTimeBasis?: TeleStaffSourceObservationTimeBasis;
   /**
    * Caller-owned keyed HMAC operation. The adapter never receives the key and
    * no raw Emp ID is persisted. Return a SHA-256 hex digest.
@@ -73,6 +82,18 @@ function isSourceKind(value: string): value is TeleStaffSourceKind {
   return value === 'official' || value === 'synthetic_test';
 }
 
+function hasConsistentSourceObservationTime(
+  sourceObservedAt: number | null,
+  sourceObservationTimeBasis: TeleStaffSourceObservationTimeBasis,
+): boolean {
+  return (
+    (sourceObservedAt === null && sourceObservationTimeBasis === 'date_only') ||
+    (Number.isSafeInteger(sourceObservedAt) &&
+      (sourceObservationTimeBasis === 'source_metadata' ||
+        sourceObservationTimeBasis === 'administrator_confirmed'))
+  );
+}
+
 function canonicalSourceRowForHmac(row: ParsedTeleStaffAssignmentsHtml['rows'][number]): string {
   return JSON.stringify({
     schema: 'telestaff-assignment-row-hmac-v1',
@@ -115,6 +136,11 @@ export async function stageParsedTeleStaffAssignmentsHtml(
   if (!parsed.ok) return { ok: false, code: 'SOURCE_PARSE_REJECTED' };
   if (!isCanonicalUlid(options.importId)) return { ok: false, code: 'INVALID_IMPORT_ID' };
   if (!isSourceKind(options.sourceKind)) return { ok: false, code: 'INVALID_SOURCE_KIND' };
+  const sourceObservedAt = options.sourceObservedAt ?? null;
+  const sourceObservationTimeBasis = options.sourceObservationTimeBasis ?? 'date_only';
+  if (!hasConsistentSourceObservationTime(sourceObservedAt, sourceObservationTimeBasis)) {
+    return { ok: false, code: 'INVALID_SOURCE_OBSERVATION_TIME' };
+  }
 
   let employeeReferenceHmacs: Array<string | null>;
   try {
@@ -178,8 +204,8 @@ export async function stageParsedTeleStaffAssignmentsHtml(
         `INSERT INTO assignment_imports
            (id, source_system, source_version, source_hash, source_format, parser_version, source_kind,
             input_row_count, normalized_data_row_count, unique_employee_count, report_row_count, structural_row_count,
-            source_snapshot_as_of, status, created_at)
-         VALUES (?, 'telestaff', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?)`,
+            source_snapshot_as_of, source_observed_at, source_observation_time_basis, status, created_at)
+         VALUES (?, 'telestaff', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?)`,
       )
       .bind(
         options.importId,
@@ -194,6 +220,8 @@ export async function stageParsedTeleStaffAssignmentsHtml(
         parsed.reportRowCount,
         parsed.structuralRowCount,
         parsed.sourceSnapshotAsOf,
+        sourceObservedAt,
+        sourceObservationTimeBasis,
         options.importedAtMs,
       ),
   ];
