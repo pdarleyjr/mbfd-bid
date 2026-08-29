@@ -16,7 +16,9 @@ import {
   credentials,
   memberAssignments,
   memberCredentials,
+  memberQualificationEvents,
   members,
+  personnelLifecycleEvents,
   positionRules,
   positionStaffingBindings,
   positions,
@@ -28,7 +30,9 @@ import {
   type AuthoritativeStaffingBaselineEvaluation,
   evaluateAuthoritativeStaffingBaseline,
 } from './authoritative-staffing-baseline.js';
+import { derivePersonnelMemberAsOf } from './personnel-lifecycle.js';
 import { type DecodedPositionRule, decodeRuleBookRows } from './position-rule.js';
+import { activeCredentialNamesByMemberAsOf } from './qualification-lifecycle.js';
 
 export interface RuleBookCoverageInput {
   ruleBookVersion: string;
@@ -627,13 +631,19 @@ export async function prepareBidSessionPolicySnapshot(
   const { coverage } = policy;
   const templateVersion = policy.positionTemplateVersion;
   const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
+  // V3 has no independent qualification-evaluation-date field. Its immutable
+  // `capturedAtMs` is therefore the sole evaluation date for credential
+  // evidence; later expiration/revocation cannot rewrite a saved snapshot.
+  const asOfDate = snapshotDate(capturedAtMs);
 
   const [
     bindings,
     staffingRows,
     assignmentRows,
     memberRows,
+    personnelEventRows,
     credentialRows,
+    qualificationEventRows,
     snapshotRuleRows,
     snapshotPositions,
     snapshotParticipation,
@@ -662,27 +672,75 @@ export async function prepareBidSessionPolicySnapshot(
         id: memberAssignments.id,
         memberId: memberAssignments.memberId,
         staffingPositionId: memberAssignments.staffingPositionId,
+        status: memberAssignments.status,
         effectiveFrom: memberAssignments.effectiveFrom,
         effectiveTo: memberAssignments.effectiveTo,
       })
       .from(memberAssignments)
-      .where(eq(memberAssignments.status, 'active'))
       .all(),
     db
       .select({
         id: members.id,
+        employeeId: members.employeeId,
+        firstName: members.firstName,
+        lastName: members.lastName,
         bidCategory: members.bidCategory,
         rank: members.rank,
         rscSeniority: members.rscSeniority,
         rankSeniority: members.rankSeniority,
         isProbationary: members.isProbationary,
+        employmentStatus: members.employmentStatus,
+        employmentStatusEffectiveOn: members.employmentStatusEffectiveOn,
+        separationType: members.separationType,
       })
       .from(members)
       .all(),
     db
-      .select({ memberId: memberCredentials.memberId, name: credentials.name })
+      .select({
+        id: personnelLifecycleEvents.id,
+        memberId: personnelLifecycleEvents.memberId,
+        kind: personnelLifecycleEvents.kind,
+        effectiveOn: personnelLifecycleEvents.effectiveOn,
+        employmentStatusAfter: personnelLifecycleEvents.employmentStatusAfter,
+        rankAfter: personnelLifecycleEvents.rankAfter,
+        separationType: personnelLifecycleEvents.separationType,
+        beforeState: personnelLifecycleEvents.beforeState,
+        createdAt: personnelLifecycleEvents.createdAt,
+      })
+      .from(personnelLifecycleEvents)
+      .all(),
+    db
+      .select({
+        memberId: memberCredentials.memberId,
+        credentialId: memberCredentials.credentialId,
+        name: credentials.name,
+        startDate: memberCredentials.startDate,
+        expirationDate: memberCredentials.expirationDate,
+      })
       .from(memberCredentials)
       .innerJoin(credentials, eq(memberCredentials.credentialId, credentials.id))
+      .all(),
+    db
+      .select({
+        id: memberQualificationEvents.id,
+        memberId: memberQualificationEvents.memberId,
+        credentialId: memberQualificationEvents.credentialId,
+        credentialName: credentials.name,
+        specialtyCode: memberQualificationEvents.specialtyCode,
+        kind: memberQualificationEvents.kind,
+        effectiveOn: memberQualificationEvents.effectiveOn,
+        expiresOn: memberQualificationEvents.expiresOn,
+        evidenceSource: memberQualificationEvents.evidenceSource,
+        evidenceReference: memberQualificationEvents.evidenceReference,
+        reason: memberQualificationEvents.reason,
+        actorSubject: memberQualificationEvents.actorSubject,
+        idempotencyKey: memberQualificationEvents.idempotencyKey,
+        beforeState: memberQualificationEvents.beforeState,
+        afterState: memberQualificationEvents.afterState,
+        createdAt: memberQualificationEvents.createdAt,
+      })
+      .from(memberQualificationEvents)
+      .leftJoin(credentials, eq(memberQualificationEvents.credentialId, credentials.id))
       .all(),
     db
       .select({
@@ -743,7 +801,6 @@ export async function prepareBidSessionPolicySnapshot(
   }
 
   const staffingById = new Map(staffingRows.map((position) => [position.id, position]));
-  const asOfDate = snapshotDate(capturedAtMs);
   const notApproved = nonBiddablePositionIds.filter((positionId) => {
     const binding = bindingByPosition.get(positionId);
     const staffing = binding ? staffingById.get(binding.staffingPositionId) : undefined;
@@ -771,6 +828,11 @@ export async function prepareBidSessionPolicySnapshot(
   const applicableAssignments = assignmentRows.filter(
     (assignment) =>
       positionByStaffingId.has(assignment.staffingPositionId) &&
+      assignment.status !== 'cancelled' &&
+      (assignment.status === 'planned' ||
+        assignment.status === 'active' ||
+        ((assignment.status === 'ended' || assignment.status === 'superseded') &&
+          assignment.effectiveTo !== null)) &&
       effectiveOn(asOfDate, assignment.effectiveFrom, assignment.effectiveTo),
   );
   const assignmentsByPosition = new Map<string, typeof applicableAssignments>();
@@ -811,28 +873,94 @@ export async function prepareBidSessionPolicySnapshot(
   const assignmentByMember = new Map(
     applicableAssignments.map((assignment) => [assignment.memberId, assignment]),
   );
-  const credentialNamesByMember = new Map<number, string[]>();
-  for (const credential of credentialRows) {
-    credentialNamesByMember.set(credential.memberId, [
-      ...(credentialNamesByMember.get(credential.memberId) ?? []),
-      credential.name,
+  const personnelEventsByMember = new Map<number, typeof personnelEventRows>();
+  for (const event of personnelEventRows) {
+    if (event.memberId === null) continue;
+    personnelEventsByMember.set(event.memberId, [
+      ...(personnelEventsByMember.get(event.memberId) ?? []),
+      event,
     ]);
   }
-  for (const [memberId, names] of credentialNamesByMember.entries()) {
-    credentialNamesByMember.set(
-      memberId,
-      [...new Set(names)].sort((left, right) => left.localeCompare(right)),
-    );
-  }
+  const personnelStateByMember = new Map(
+    memberRows.map((member) => [
+      member.id,
+      derivePersonnelMemberAsOf(
+        {
+          id: member.id,
+          employeeId: member.employeeId,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          rank: member.rank,
+          employmentStatus: member.employmentStatus,
+          employmentStatusEffectiveOn: member.employmentStatusEffectiveOn,
+          separationType: member.separationType,
+        },
+        (personnelEventsByMember.get(member.id) ?? []).map((event) => ({
+          id: event.id,
+          kind: event.kind,
+          effectiveOn: event.effectiveOn,
+          employmentStatusAfter: event.employmentStatusAfter,
+          rankAfter: event.rankAfter,
+          separationType: event.separationType,
+          beforeState: event.beforeState,
+          createdAt: event.createdAt.getTime(),
+        })),
+        asOfDate,
+      ),
+    ]),
+  );
+  const credentialNamesByMember = activeCredentialNamesByMemberAsOf({
+    asOf: asOfDate,
+    legacyCredentials: credentialRows.map((credential) => ({
+      memberId: credential.memberId,
+      credentialId: credential.credentialId,
+      credentialName: credential.name,
+      startDate: credential.startDate,
+      expirationDate: credential.expirationDate,
+    })),
+    events: qualificationEventRows.map((event) => ({
+      id: event.id,
+      memberId: event.memberId,
+      credentialId: event.credentialId,
+      credentialName: event.credentialName,
+      specialtyCode: event.specialtyCode,
+      kind: event.kind,
+      effectiveOn: event.effectiveOn,
+      expiresOn: event.expiresOn,
+      evidenceSource: event.evidenceSource,
+      evidenceReference: event.evidenceReference,
+      reason: event.reason,
+      actorSubject: event.actorSubject,
+      idempotencyKey: event.idempotencyKey,
+      beforeState: event.beforeState,
+      afterState: event.afterState,
+      createdAt: event.createdAt.getTime(),
+    })),
+  });
 
   const frozenMembers: FrozenBidEligibilityMember[] = memberRows
     .map<FrozenBidEligibilityMember>((member) => {
+      const personnelState = personnelStateByMember.get(member.id);
       const administrativeAssignment = assignmentByMember.get(member.id);
       const eligibility = {
-        rank: member.rank,
+        rank: personnelState?.rank ?? member.rank,
         isProbationary: member.isProbationary,
         credentialNames: credentialNamesByMember.get(member.id) ?? [],
       };
+      if (personnelState?.employmentStatus !== 'active') {
+        return {
+          memberId: member.id,
+          pool: 'EXCLUDED',
+          rscSeniority: member.rscSeniority,
+          rankSeniority: member.rankSeniority,
+          exclusionReason:
+            personnelState?.employmentStatus === 'unknown'
+              ? 'MEMBER_EMPLOYMENT_UNCONFIRMED'
+              : 'MEMBER_NOT_ACTIVE',
+          authoritativeAssignmentId: null,
+          ...eligibility,
+        };
+      }
       if (administrativeAssignment !== undefined) {
         return {
           memberId: member.id,

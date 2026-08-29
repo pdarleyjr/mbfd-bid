@@ -35,6 +35,15 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
     ],
   },
   {
+    href: '/admin/personnel',
+    label: 'Personnel Changes',
+    exact: false,
+    subnav: [
+      { href: '/admin/personnel', label: 'Personnel lifecycle' },
+      { href: '/admin/personnel/qualifications', label: 'Qualification Evidence' },
+    ],
+  },
+  {
     href: '/admin/bid-setup',
     label: 'Bid Setup',
     exact: false,
@@ -62,10 +71,11 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
     href: '/admin/audit',
     label: 'Results & Audit',
     exact: false,
-    activePrefixes: ['/admin/exports'],
+    activePrefixes: ['/admin/exports', '/admin/award-transition'],
     subnav: [
       { href: '/admin/audit', label: 'Audit Log' },
       { href: '/admin/exports', label: 'Exports' },
+      { href: '/admin/award-transition', label: 'Bid Award Transition' },
     ],
   },
   {

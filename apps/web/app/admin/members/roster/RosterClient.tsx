@@ -1,5 +1,7 @@
 'use client';
 
+import type { Route } from 'next';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import {
@@ -17,22 +19,33 @@ const RANK_FILTERS: ReadonlyArray<{ value: ''; label: 'All' } | { value: string;
     { value: 'FF', label: 'Firefighters' },
   ];
 
+const LEGACY_CREDENTIAL_NOTICE =
+  'Legacy credential references in this members master roster are read-only credential evidence and do not establish current qualification; use the effective-dated qualification lifecycle for current status.';
+
+export interface BidOrderSessionContext {
+  sessionId: string;
+  label: string;
+}
+
 interface Props {
   initialMembers: RosterMember[];
   credentials: CredentialRow[];
   initialSearch: string;
-  /** Bundled synthesis JSON string for the pre-fill button. */
-  synthesisJson: string;
+  bidOrderSession?: BidOrderSessionContext | null;
 }
 
-export function RosterClient({ initialMembers, credentials, initialSearch, synthesisJson }: Props) {
+export function RosterClient({
+  initialMembers,
+  credentials,
+  initialSearch,
+  bidOrderSession = null,
+}: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [members, setMembers] = useState<RosterMember[]>(initialMembers);
   const [searchValue, setSearchValue] = useState(initialSearch);
   const [toast, setToast] = useState<string | null>(null);
-  const [seeding, setSeeding] = useState(false);
 
   // Keep local state in sync when the server re-renders after a router.refresh().
   useEffect(() => {
@@ -52,6 +65,8 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
       const params = new URLSearchParams(searchParams.toString());
+      params.delete('session_id');
+      params.delete('bidSessionId');
       if (next.trim().length === 0) params.delete('search');
       else params.set('search', next.trim());
       startTransition(() => {
@@ -62,6 +77,8 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
 
   function onRankChange(next: string) {
     const params = new URLSearchParams(searchParams.toString());
+    params.delete('session_id');
+    params.delete('bidSessionId');
     if (next === '') params.delete('rank');
     else params.set('rank', next);
     startTransition(() => {
@@ -69,56 +86,13 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
     });
   }
 
-  async function toggleCred(memberId: number, credentialId: number) {
-    // Optimistic update — flip the cert locally; revert on error.
-    setMembers((prev) =>
-      prev.map((m) => {
-        if (m.id !== memberId) return m;
-        const has = m.credential_ids.includes(credentialId);
-        return {
-          ...m,
-          credential_ids: has
-            ? m.credential_ids.filter((c) => c !== credentialId)
-            : [...m.credential_ids, credentialId],
-        };
-      }),
-    );
-
-    try {
-      const res = await fetch(`/api/admin/members/${memberId}/credentials/${credentialId}`, {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        throw new Error(`status ${res.status}`);
-      }
-      setToast('Saved.');
-      startTransition(() => router.refresh());
-    } catch (err) {
-      // Revert optimistic change.
-      setMembers((prev) =>
-        prev.map((m) => {
-          if (m.id !== memberId) return m;
-          const has = m.credential_ids.includes(credentialId);
-          return {
-            ...m,
-            credential_ids: has
-              ? m.credential_ids.filter((c) => c !== credentialId)
-              : [...m.credential_ids, credentialId],
-          };
-        }),
-      );
-      setToast(`Toggle failed: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-  }
-
   async function moveMember(memberId: number, direction: 'up' | 'down') {
-    // Lightweight reorder: swap with neighbor in local state, then PATCH
-    // bid-order with the new ordinals. session_id is required by the worker —
-    // for now we surface "no active session" if no session is in URL.
-    const sessionId = searchParams.get('session_id');
+    // The server supplies the verified active session context. Its internal
+    // key never needs to be copied into the browser URL or an operator form.
+    const sessionId = bidOrderSession?.sessionId;
     if (!sessionId) {
       setToast(
-        'Manual reorder requires an active bid session. Open this page with ?session_id=...',
+        'Manual bid-order reordering is unavailable because no active Bid session is verified.',
       );
       return;
     }
@@ -152,49 +126,6 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
     } catch (err) {
       setMembers(members); // revert
       setToast(`Reorder failed: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-  }
-
-  async function preFillFromSynthesis() {
-    const ok = window.confirm(
-      'Bootstrap the bid roster from the canonical credentials extract? Missing members are inserted, existing members have their rank and seniority refreshed, and every credential each member holds is linked. Already-present credentials are not touched. Admin can still toggle individual certs from this page at any time.',
-    );
-    if (!ok) return;
-    setSeeding(true);
-    try {
-      const res = await fetch('/api/admin/members/seed-from-synthesis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: synthesisJson,
-      });
-      if (!res.ok) {
-        setToast(`Seed failed: ${res.status}`);
-        return;
-      }
-      const body = (await res.json()) as {
-        membersInserted: number;
-        membersUpdated: number;
-        certsInserted: number;
-        skippedMembers: Array<{ employee_id: string; reason: string }>;
-        missingCredentials: string[];
-      };
-      const parts = [
-        `${body.membersInserted} inserted`,
-        `${body.membersUpdated} updated`,
-        `${body.certsInserted} certs linked`,
-      ];
-      if (body.skippedMembers.length > 0) {
-        parts.push(`${body.skippedMembers.length} skipped`);
-      }
-      if (body.missingCredentials.length > 0) {
-        parts.push(`${body.missingCredentials.length} unknown cert names`);
-      }
-      setToast(parts.join('; '));
-      startTransition(() => router.refresh());
-    } catch (err) {
-      setToast(`Seed failed: ${err instanceof Error ? err.message : 'unknown'}`);
-    } finally {
-      setSeeding(false);
     }
   }
 
@@ -242,21 +173,27 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
           })}
         </fieldset>
 
-        <div className="ml-auto">
-          <button
-            type="button"
-            onClick={preFillFromSynthesis}
-            disabled={seeding}
-            className="min-h-10 rounded-md bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50"
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Link
+            href={'/admin/telestaff' as Route}
+            className="inline-flex min-h-10 items-center rounded-md bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-600"
           >
-            {seeding
-              ? 'Bootstrapping...'
-              : members.length === 0
-                ? 'Bootstrap roster from credentials extract'
-                : 'Re-sync credentials from extract'}
-          </button>
+            TeleStaff reconciliation
+          </Link>
+          <Link
+            href={'/admin/personnel' as Route}
+            className="inline-flex min-h-10 items-center rounded-md border border-slate-600 px-4 text-sm font-semibold text-slate-100 hover:border-slate-400"
+          >
+            Personnel lifecycle
+          </Link>
         </div>
       </div>
+
+      <p data-testid="bid-order-session-context" className="mt-3 text-sm text-slate-300">
+        {bidOrderSession === null
+          ? 'Manual bid-order reordering is unavailable because no active Bid session is verified.'
+          : `Manual bid order applies to ${bidOrderSession.label}. The selected session remains attached automatically.`}
+      </p>
 
       {toast !== null && (
         <output aria-live="polite" className="mt-3 block text-sm text-emerald-400">
@@ -266,7 +203,7 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-slate-700">
         <table className="w-full border-collapse text-sm">
-          <caption className="sr-only">Members master roster with credential toggles</caption>
+          <caption className="sr-only">{LEGACY_CREDENTIAL_NOTICE}</caption>
           <thead className="bg-slate-900">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-300">#</th>
@@ -275,7 +212,9 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
               <th className="px-3 py-2 text-left font-medium text-slate-300">Rank</th>
               <th className="px-3 py-2 text-left font-medium text-slate-300">RSC</th>
               <th className="px-3 py-2 text-left font-medium text-slate-300">Rank Sen.</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Credentials</th>
+              <th className="px-3 py-2 text-left font-medium text-slate-300">
+                Credential references
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -293,7 +232,7 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
                       type="button"
                       aria-label={`Move ${m.last_name} up`}
                       onClick={() => moveMember(m.id, 'up')}
-                      disabled={idx === 0 || isPending}
+                      disabled={idx === 0 || isPending || bidOrderSession === null}
                       className="rounded border border-slate-700 px-1 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-30"
                     >
                       ↑
@@ -302,7 +241,7 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
                       type="button"
                       aria-label={`Move ${m.last_name} down`}
                       onClick={() => moveMember(m.id, 'down')}
-                      disabled={idx === members.length - 1 || isPending}
+                      disabled={idx === members.length - 1 || isPending || bidOrderSession === null}
                       className="rounded border border-slate-700 px-1 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-30"
                     >
                       ↓
@@ -339,28 +278,32 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
                 </td>
                 <td className="px-3 py-2 align-top">
                   <div className="flex flex-wrap gap-1">
-                    {sortedCredentials.map((cred) => {
-                      const held = m.credential_ids.includes(cred.id);
-                      const note = CREDENTIAL_NOTES[cred.name];
-                      return (
-                        <button
-                          key={cred.id}
-                          type="button"
-                          title={note ? `${cred.name} — ${note}` : cred.name}
-                          aria-pressed={held}
-                          onClick={() => toggleCred(m.id, cred.id)}
-                          className={[
-                            'inline-flex max-w-[160px] truncate rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
-                            held
-                              ? 'bg-red-700 text-white'
-                              : 'border border-slate-600 text-slate-300 hover:border-slate-400',
-                          ].join(' ')}
-                        >
-                          {cred.name}
-                        </button>
-                      );
-                    })}
+                    {sortedCredentials
+                      .filter((cred) => m.credential_ids.includes(cred.id))
+                      .map((cred) => {
+                        const note = CREDENTIAL_NOTES[cred.name];
+                        return (
+                          <span
+                            key={cred.id}
+                            title={note ? `${cred.name} — ${note}` : cred.name}
+                            className="inline-flex max-w-[160px] truncate rounded bg-slate-700 px-2 py-0.5 text-[10px] font-medium text-slate-100"
+                          >
+                            {cred.name}
+                          </span>
+                        );
+                      })}
+                    {m.credential_ids.length === 0 && (
+                      <span className="text-xs text-slate-500">
+                        No legacy credential references on file
+                      </span>
+                    )}
                   </div>
+                  <Link
+                    href={`/admin/personnel/qualifications?memberId=${m.id}` as Route}
+                    className="mt-2 inline-flex text-xs font-medium text-red-300 hover:text-red-200"
+                  >
+                    Review qualification lifecycle
+                  </Link>
                 </td>
               </tr>
             ))}
@@ -369,8 +312,8 @@ export function RosterClient({ initialMembers, credentials, initialSearch, synth
                 <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
                   <p className="font-medium text-slate-200">No members in the bid roster.</p>
                   <p className="mt-1 text-xs text-slate-400">
-                    Click "Bootstrap roster from credentials extract" above to load every member and
-                    the credentials they hold in one click.
+                    Bring an approved official staffing source through TeleStaff reconciliation; do
+                    not bootstrap a current roster from a local credentials extract.
                   </p>
                 </td>
               </tr>

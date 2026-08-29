@@ -100,12 +100,20 @@ export default async function MemberDetailPage({
         <span className="text-sm text-slate-200">
           {member.lastName}, {member.firstName}
         </span>
-        <Link
-          href={`/admin/members/${member.id}/edit` as Route}
-          className="ml-auto rounded bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600"
-        >
-          Edit
-        </Link>
+        <div className="ml-auto flex flex-wrap justify-end gap-2">
+          <Link
+            href={`/admin/personnel/qualifications?memberId=${member.id}` as Route}
+            className="rounded border border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-100 hover:border-slate-400"
+          >
+            Review qualification lifecycle
+          </Link>
+          <Link
+            href={`/admin/personnel?memberId=${member.id}` as Route}
+            className="rounded bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600"
+          >
+            Personnel change
+          </Link>
+        </div>
       </div>
 
       <h1 className="font-heading text-2xl text-white">
@@ -134,9 +142,13 @@ export default async function MemberDetailPage({
       </dl>
 
       <section className="mt-8">
-        <h2 className="font-heading text-lg text-white">Credentials</h2>
+        <h2 className="font-heading text-lg text-white">Legacy credential references</h2>
+        <p className="mt-2 text-sm text-slate-400">
+          These references do not establish current qualification. Review the effective-dated
+          qualification lifecycle for status, expiration, evidence, and history.
+        </p>
         {memberCredentials.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-400">No credentials on file.</p>
+          <p className="mt-3 text-sm text-slate-400">No legacy credential references on file.</p>
         ) : (
           <ul className="mt-3 flex flex-wrap gap-2">
             {memberCredentials.map((cred) => (

@@ -1,7 +1,6 @@
-import { MemberImportRowSchema } from '@mbfd/shared';
 import type { JwtPayload } from '@mbfd/shared';
 import { type SQL, and, eq, inArray, like, or, sql } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
 import {
@@ -13,7 +12,6 @@ import {
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
-import { parseCsv } from '../../lib/csv-parser.js';
 import { chunkedInArraySelect } from '../../lib/d1-batch.js';
 import {
   STATIONS,
@@ -27,6 +25,58 @@ import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
 type AdminEnv = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
+
+type RetiredLegacyMemberWriteOperation =
+  | 'member_import'
+  | 'member_patch'
+  | 'credential_change'
+  | 'synthesis_seed';
+
+const RETIRED_LEGACY_MEMBER_WRITE_WORKFLOWS = {
+  personnel: {
+    ui: '/admin/personnel',
+    api: '/api/admin/personnel/changes',
+  },
+  telestaff: {
+    ui: '/admin/telestaff',
+    api: '/api/admin/telestaff/imports',
+  },
+} as const;
+
+const RETIRED_LEGACY_MEMBER_WRITE_OPERATIONS: ReadonlySet<RetiredLegacyMemberWriteOperation> =
+  new Set(['member_import', 'member_patch', 'credential_change', 'synthesis_seed']);
+
+/**
+ * Legacy member writes cannot produce the effective-dated, idempotent, immutable
+ * evidence now required for current-member projections. They are intentionally
+ * retired instead of accepting a partial audit record.
+ */
+function retiredLegacyMemberWrite(
+  c: Context<AdminEnv>,
+  operation: RetiredLegacyMemberWriteOperation,
+) {
+  return c.json(
+    {
+      error: 'legacy_member_write_retired',
+      operation,
+      message:
+        'This legacy member write endpoint is retired. It does not mutate the current member projection or create audit evidence.',
+      operator_workflows: RETIRED_LEGACY_MEMBER_WRITE_WORKFLOWS,
+      ...(operation === 'credential_change'
+        ? {
+            credential_lifecycle: {
+              status: 'configured',
+              api: '/api/admin/qualification-lifecycle/events',
+              history_api: '/api/admin/qualification-lifecycle/members/:memberId',
+              message:
+                'Direct credential toggles remain retired. Use the effective-dated qualification evidence workflow instead.',
+            },
+          }
+        : {}),
+    },
+    410,
+  );
+}
 
 /**
  * Roster row shape — what the Members Master Roster table consumes.
@@ -60,86 +110,11 @@ export const CREDENTIAL_NOTES: Readonly<Record<string, string>> = {
   'Pediatric Advanced Life Support (PALS) INSTRUCTOR AHA': 'Count 1 max',
 };
 
-const MemberPatchSchema = z
-  .object({
-    rank: z.enum(['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF']).optional(),
-    bid_category: z.enum(['OFC', 'FF', 'EXCLUDED']).optional(),
-    rsc_seniority: z.number().int().nonnegative().optional(),
-    rank_seniority: z.number().int().nonnegative().nullable().optional(),
-    is_probationary: z.boolean().optional(),
-    credentials: z.array(z.string().min(1)).optional(),
-  })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, { message: 'at least one field is required' });
-
 const router = new Hono<AdminEnv>();
 
 router.use('*', requireAdmin);
 
-router.post('/import', requireStepUpAuth(), async (c) => {
-  const form = await c.req.formData();
-  const file = form.get('file');
-  if (!(file instanceof File)) {
-    return c.json({ error: 'file_required' }, 400);
-  }
-
-  const text = await file.text();
-  const { ok, errors } = await parseCsv(text, MemberImportRowSchema);
-
-  const db = getDb(c.env.DB);
-  const now = new Date();
-  let inserted = 0;
-  let updated = 0;
-
-  for (const row of ok) {
-    const existing = await db
-      .select({ id: members.id })
-      .from(members)
-      .where(eq(members.employeeId, row.employeeId))
-      .get();
-
-    if (existing !== undefined) {
-      await db
-        .update(members)
-        .set({
-          firstName: row.firstName,
-          lastName: row.lastName,
-          rank: row.rank,
-          bidCategory: row.bidCategory,
-          rscSeniority: row.rscSeniority,
-          hiredAt: row.hiredAt ?? null,
-          promotedAt: row.promotedAt ?? null,
-          updatedAt: now,
-        })
-        .where(eq(members.employeeId, row.employeeId));
-      updated += 1;
-    } else {
-      await db.insert(members).values({
-        employeeId: row.employeeId,
-        firstName: row.firstName,
-        lastName: row.lastName,
-        rank: row.rank,
-        bidCategory: row.bidCategory,
-        rscSeniority: row.rscSeniority,
-        hiredAt: row.hiredAt ?? null,
-        promotedAt: row.promotedAt ?? null,
-        isProbationary: false,
-        createdAt: now,
-        updatedAt: now,
-      });
-      inserted += 1;
-    }
-  }
-
-  await writeAuditLog(db, {
-    bidSessionId: null,
-    actorType: 'admin',
-    actorId: c.get('claims').sub ?? null,
-    action: 'members_import',
-    afterState: { inserted, updated, errorCount: errors.length },
-  });
-  return c.json({ inserted, updated, errors });
-});
+router.post('/import', requireStepUpAuth(), (c) => retiredLegacyMemberWrite(c, 'member_import'));
 
 router.get('/', async (c) => {
   const limitParam = c.req.query('limit');
@@ -190,70 +165,8 @@ router.get('/:id{\\d+}', async (c) => {
   return c.json({ member, credentials: creds });
 });
 
-// PATCH /api/admin/members/:id
-router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
-  const id = Number(c.req.param('id'));
-  const raw = await c.req.json().catch(() => null);
-  const parsed = MemberPatchSchema.safeParse(raw);
-  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
-  const patch = parsed.data;
-
-  const db = getDb(c.env.DB);
-  const existing = await db.select().from(members).where(eq(members.id, id)).get();
-  if (existing === undefined) return c.json({ error: 'not_found' }, 404);
-
-  // Resolve credential names -> ids; reject unknown names.
-  let resolvedCredIds: number[] | undefined;
-  if (patch.credentials !== undefined) {
-    const all = await db
-      .select({ id: credentialsTable.id, name: credentialsTable.name })
-      .from(credentialsTable)
-      .all();
-    const byName = new Map(all.map((r) => [r.name, r.id]));
-    const missing: string[] = [];
-    resolvedCredIds = [];
-    for (const name of patch.credentials) {
-      const cid = byName.get(name);
-      if (cid === undefined) missing.push(name);
-      else resolvedCredIds.push(cid);
-    }
-    if (missing.length > 0) {
-      return c.json({ error: 'unknown_credentials', missing }, 400);
-    }
-  }
-
-  const now = new Date();
-  const setObj: Partial<typeof members.$inferInsert> = { updatedAt: now };
-  if (patch.rank !== undefined) setObj.rank = patch.rank;
-  if (patch.bid_category !== undefined) setObj.bidCategory = patch.bid_category;
-  if (patch.rsc_seniority !== undefined) setObj.rscSeniority = patch.rsc_seniority;
-  if (patch.rank_seniority !== undefined) setObj.rankSeniority = patch.rank_seniority;
-  if (patch.is_probationary !== undefined) setObj.isProbationary = patch.is_probationary;
-
-  await db.update(members).set(setObj).where(eq(members.id, id));
-
-  if (resolvedCredIds !== undefined) {
-    await db.delete(memberCredentials).where(eq(memberCredentials.memberId, id));
-    for (const cid of resolvedCredIds) {
-      await db.insert(memberCredentials).values({ memberId: id, credentialId: cid });
-    }
-  }
-
-  const updated = await db.select().from(members).where(eq(members.id, id)).get();
-
-  await writeAuditLog(db, {
-    bidSessionId: null,
-    actorType: 'admin',
-    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
-    action: 'override_cert',
-    targetKind: 'member',
-    targetId: String(id),
-    beforeState: existing,
-    afterState: updated,
-  });
-
-  return c.json({ member: updated });
-});
+// PATCH /api/admin/members/:id is retained only as an explicit retirement response.
+router.patch('/:id{\\d+}', requireStepUpAuth(), (c) => retiredLegacyMemberWrite(c, 'member_patch'));
 
 // ── Members section / Master Roster — Task A5 ─────────────────────────────
 //
@@ -464,63 +377,10 @@ router.get('/eligible-for/:station', async (c) => {
   }
 });
 
-// POST /api/admin/members/:id/credentials/:credentialId — toggle a single cert.
-router.post('/:id{\\d+}/credentials/:credentialId{\\d+}', requireStepUpAuth(), async (c) => {
-  const memberId = Number(c.req.param('id'));
-  const credentialId = Number(c.req.param('credentialId'));
-
-  const db = getDb(c.env.DB);
-
-  const member = await db.select().from(members).where(eq(members.id, memberId)).get();
-  if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
-
-  const cred = await db
-    .select()
-    .from(credentialsTable)
-    .where(eq(credentialsTable.id, credentialId))
-    .get();
-  if (cred === undefined) return c.json({ error: 'credential_not_found' }, 404);
-
-  const existing = await db
-    .select()
-    .from(memberCredentials)
-    .where(
-      and(
-        eq(memberCredentials.memberId, memberId),
-        eq(memberCredentials.credentialId, credentialId),
-      ),
-    )
-    .get();
-
-  let held: boolean;
-  if (existing === undefined) {
-    await db.insert(memberCredentials).values({ memberId, credentialId });
-    held = true;
-  } else {
-    await db
-      .delete(memberCredentials)
-      .where(
-        and(
-          eq(memberCredentials.memberId, memberId),
-          eq(memberCredentials.credentialId, credentialId),
-        ),
-      );
-    held = false;
-  }
-
-  await writeAuditLog(db, {
-    bidSessionId: null,
-    actorType: 'admin',
-    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
-    action: 'override_cert',
-    targetKind: 'member_credential',
-    targetId: `${memberId}:${credentialId}`,
-    beforeState: existing === undefined ? { held: false } : { held: true },
-    afterState: { held },
-  });
-
-  return c.json({ held });
-});
+// Direct credential toggles lack an approved effective-dated credential ledger.
+router.post('/:id{\\d+}/credentials/:credentialId{\\d+}', requireStepUpAuth(), (c) =>
+  retiredLegacyMemberWrite(c, 'credential_change'),
+);
 
 const BidOrderPatchSchema = z
   .object({
@@ -684,6 +544,13 @@ interface SynthesisRow {
 }
 
 router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
+  // Keep the old normalizer physically unreachable while the deprecated source
+  // is removed from the codebase. The guard executes before request parsing or
+  // database access, so it cannot create a partial bootstrap or audit record.
+  if (RETIRED_LEGACY_MEMBER_WRITE_OPERATIONS.has('synthesis_seed')) {
+    return retiredLegacyMemberWrite(c, 'synthesis_seed');
+  }
+
   let raw: unknown;
   const contentType = c.req.header('content-type') ?? '';
   if (contentType.includes('multipart/form-data')) {

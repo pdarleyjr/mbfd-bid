@@ -1,12 +1,44 @@
 import { requireAdmin } from '@/lib/require-admin';
+import { serverWorkerFetch } from '@/lib/server-worker-fetch';
+import { type CurrentRosterResponse, CurrentRostersWorkspace } from './CurrentRostersWorkspace';
+
+export const dynamic = 'force-dynamic';
+
+function validAsOf(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
+}
 
 /**
  * Deliberately read-only until an approved TeleStaff baseline and reviewed
  * position bindings exist. It must not be confused with the member bid-order
  * roster or imply that operational staffing was imported.
  */
-export default async function CurrentRostersPage() {
+export default async function CurrentRostersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ as_of?: string }>;
+}) {
   await requireAdmin();
+
+  const asOf = validAsOf((await searchParams).as_of);
+  let roster: CurrentRosterResponse | null = null;
+  let error: string | null = null;
+  try {
+    const response = await serverWorkerFetch(
+      `/api/admin/current-roster${asOf === undefined ? '' : `?as_of=${encodeURIComponent(asOf)}`}`,
+    );
+    if (!response.ok) {
+      error = `The staffing projection service returned ${response.status}.`;
+    } else {
+      roster = (await response.json()) as CurrentRosterResponse;
+    }
+  } catch (caught) {
+    error =
+      caught instanceof Error ? caught.message : 'The staffing projection could not be loaded.';
+  }
+
+  if (roster !== null) return <CurrentRostersWorkspace roster={roster} />;
 
   return (
     <section className="max-w-3xl space-y-6" aria-labelledby="current-rosters-heading">
@@ -23,14 +55,11 @@ export default async function CurrentRostersPage() {
         </p>
       </header>
 
-      <div
-        data-testid="current-rosters-baseline-blocker"
-        className="border-l-4 border-amber-500 bg-amber-950/30 px-4 py-4 text-sm text-amber-100"
-      >
-        <p className="font-semibold">Authoritative staffing baseline not loaded</p>
+      <div className="border-l-4 border-red-500 bg-red-950/30 px-4 py-4 text-sm text-red-100">
+        <p className="font-semibold">Current roster data is temporarily unavailable</p>
         <p className="mt-1 text-amber-100/90">
-          TeleStaff remains authoritative for operational staffing. Current-roster data will remain
-          unavailable until an approved baseline and reviewed position bindings are in place.
+          {error ??
+            'Retry this screen after confirming the administrator session and Worker health.'}
         </p>
       </div>
     </section>

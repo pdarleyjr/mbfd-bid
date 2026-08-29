@@ -34,6 +34,14 @@ const CONTROL_AREAS: readonly ControlArea[] = [
     stateClassName: 'text-slate-300',
   },
   {
+    href: '/admin/personnel',
+    title: 'Personnel Changes',
+    description:
+      'Record effective-dated hires, rank changes, transfers, separations, vacancies, and position changes.',
+    state: 'Effective-dated workflow',
+    stateClassName: 'text-slate-300',
+  },
+  {
     href: '/admin/bid-setup',
     title: 'Bid Setup',
     description:

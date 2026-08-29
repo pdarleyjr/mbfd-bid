@@ -14,19 +14,49 @@ interface PreviewResult {
   points: number;
 }
 
-export function EligibilityPreviewForm() {
+export interface EligibilityMemberOption {
+  id: number;
+  firstName: string;
+  lastName: string;
+  rank: string;
+}
+
+export interface EligibilityPositionOption {
+  id: string;
+  positionName: string;
+  station: string;
+  unit: string;
+  rankRequired: string;
+}
+
+interface Props {
+  ruleBookVersion: string;
+  positionTemplateVersion: string;
+  members: readonly EligibilityMemberOption[];
+  positions: readonly EligibilityPositionOption[];
+}
+
+export function EligibilityPreviewForm({
+  ruleBookVersion,
+  positionTemplateVersion,
+  members,
+  positions,
+}: Props) {
   const [memberId, setMemberId] = useState('');
   const [positionId, setPositionId] = useState('');
-  const [version, setVersion] = useState('');
   const [result, setResult] = useState<PreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const selectedRuleBookVersion = version.trim();
-    if (selectedRuleBookVersion === '') {
-      setError('An explicit rule-book version is required.');
+    if (memberId === '') {
+      setError('Select a member from the configured roster.');
+      setResult(null);
+      return;
+    }
+    if (positionId === '') {
+      setError('Select a position from the configured template.');
       setResult(null);
       return;
     }
@@ -37,8 +67,8 @@ export function EligibilityPreviewForm() {
     try {
       const body: Record<string, unknown> = {
         member_id: Number(memberId),
-        position_id: positionId.trim(),
-        rule_book_version: selectedRuleBookVersion,
+        position_id: positionId,
+        rule_book_version: ruleBookVersion,
       };
       const res = await fetch('/api/admin/eligibility/preview', {
         method: 'POST',
@@ -61,51 +91,49 @@ export function EligibilityPreviewForm() {
     <div className="mt-6">
       <form onSubmit={onSubmit} className="space-y-4">
         <label className="block">
-          <span className="text-sm text-slate-300">Member ID</span>
-          <input
-            type="number"
+          <span className="text-sm text-slate-300">Member</span>
+          <select
             value={memberId}
             onChange={(e) => setMemberId(e.target.value)}
             data-testid="eligibility-member-id"
-            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
+            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-white"
             required
-          />
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-300">Position ID</span>
-          <input
-            type="text"
-            value={positionId}
-            onChange={(e) => setPositionId(e.target.value.toUpperCase())}
-            placeholder="A101"
-            data-testid="eligibility-position-id"
-            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 font-mono text-white"
-            required
-          />
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-300">Rule-book version</span>
-          <input
-            type="text"
-            value={version}
-            onChange={(e) => setVersion(e.target.value)}
-            placeholder="2026.1"
-            data-testid="eligibility-rule-book-version"
-            aria-describedby="eligibility-rule-book-version-help"
-            autoComplete="off"
-            pattern="\\d{4}\\.\\d+"
-            title="Enter the exact rule-book version, for example 2026.1."
-            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 font-mono text-white"
-            required
-          />
-          <span
-            id="eligibility-rule-book-version-help"
-            className="mt-1 block text-xs text-slate-400"
           >
-            Required. Preview never infers an active annual rule book; enter the exact version you
-            intend to inspect.
-          </span>
+            <option value="">Select a member</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.lastName}, {member.firstName} — {member.rank}
+              </option>
+            ))}
+          </select>
         </label>
+        <label className="block">
+          <span className="text-sm text-slate-300">Position</span>
+          <select
+            value={positionId}
+            onChange={(e) => setPositionId(e.target.value)}
+            data-testid="eligibility-position-id"
+            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-white"
+            required
+          >
+            <option value="">Select a configured position</option>
+            {positions.map((position) => (
+              <option key={position.id} value={position.id}>
+                {position.id} — {position.positionName} ({position.station} / {position.unit} /{' '}
+                {position.rankRequired})
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
+          <span className="font-medium">Selected annual configuration</span>
+          <span className="ml-2 text-slate-400">Rule book:</span>{' '}
+          <output data-testid="eligibility-rule-book-version" className="font-mono text-white">
+            {ruleBookVersion}
+          </output>
+          <span className="ml-3 text-slate-400">Position template:</span>{' '}
+          <span className="font-mono text-white">{positionTemplateVersion}</span>
+        </div>
         <button
           type="submit"
           disabled={loading}

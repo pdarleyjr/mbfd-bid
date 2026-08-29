@@ -13,6 +13,7 @@ const STORAGE_KEY = 'mbfd-admin-sidebar-collapsed';
  */
 export function AdminLayoutShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState<boolean>(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   // Read the persisted preference on mount. Two-phase render avoids the SSR
@@ -41,7 +42,7 @@ export function AdminLayoutShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-57px)]">
+    <div className="flex min-h-[calc(100vh-57px)] flex-col md:flex-row">
       <aside
         data-testid="admin-sidebar"
         data-collapsed={hydrated ? collapsed : false}
@@ -66,7 +67,29 @@ export function AdminLayoutShell({ children }: { children: ReactNode }) {
         {!collapsed && <AdminSideNav />}
       </aside>
 
-      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <div className="min-w-0 flex-1">
+        <div className="border-b border-slate-700 bg-slate-900 px-4 py-2 md:hidden">
+          <button
+            type="button"
+            data-testid="admin-mobile-nav-toggle"
+            onClick={() => setMobileNavOpen((open) => !open)}
+            aria-controls="admin-mobile-navigation"
+            aria-expanded={mobileNavOpen}
+            aria-label={mobileNavOpen ? 'Close admin navigation' : 'Open admin navigation'}
+            className="inline-flex min-h-11 items-center rounded-md border border-slate-600 px-3 text-sm font-semibold text-slate-100 hover:border-slate-400 hover:bg-slate-800"
+          >
+            Navigation
+          </button>
+        </div>
+        <div
+          id="admin-mobile-navigation"
+          hidden={!mobileNavOpen}
+          className="border-b border-slate-700 bg-slate-900 md:hidden"
+        >
+          <AdminSideNav />
+        </div>
+        <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      </div>
     </div>
   );
 }

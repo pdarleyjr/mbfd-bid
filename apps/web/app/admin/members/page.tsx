@@ -59,10 +59,10 @@ export default async function AdminMembersPage() {
           )}
         </div>
         <Link
-          href={'/admin/members/import' as const}
+          href={'/admin/telestaff' as const}
           className="flex min-h-[44px] items-center rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white transition-colors duration-fast ease-out-quart hover:bg-red-600"
         >
-          Member file import
+          TeleStaff reconciliation
         </Link>
       </div>
 

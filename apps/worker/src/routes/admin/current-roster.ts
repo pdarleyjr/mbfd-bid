@@ -1,6 +1,7 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 
+import { createCsvStream } from '../../lib/csv-stream.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -55,6 +56,59 @@ interface AssignmentHistoryDbRow {
   updated_at: number;
 }
 
+interface CurrentRosterPosition {
+  id: string;
+  stableSlotKey: string;
+  division: string | null;
+  shift: string | null;
+  station: string | null;
+  unit: string | null;
+  positionName: string | null;
+  applicableRank: string | null;
+  reviewStatus: 'draft' | 'approved' | 'retired';
+  occupancy: 'occupied' | 'vacant';
+  administrativeAssignment: boolean;
+  assignment: {
+    id: string;
+    memberId: number;
+    originType: string | null;
+    status: string | null;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+  } | null;
+  member: {
+    id: number;
+    employeeId: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    rank: string | null;
+  } | null;
+}
+
+interface CurrentRosterProjection {
+  asOf: string;
+  administrativeAssignmentPolicy: {
+    status: 'configured' | 'unconfigured';
+    bidYear: number;
+    ruleBookVersion: string | null;
+  };
+  positions: CurrentRosterPosition[];
+  summary: {
+    totalPositions: number;
+    occupiedPositions: number;
+    vacantPositions: number;
+    administrativelyAssignedNonBiddablePositions: number;
+  };
+  unassignedMembers: Array<{
+    id: number;
+    employeeId: string;
+    firstName: string;
+    lastName: string;
+    rank: string;
+    bidCategory: string;
+  }>;
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function isCalendarDate(value: string): boolean {
@@ -88,24 +142,23 @@ function mapAssignment(row: AssignmentHistoryDbRow) {
   };
 }
 
-const router = new Hono<AdminEnv>();
-
-router.use('*', requireAdmin);
+type RosterProjectionResult =
+  | { ok: true; projection: CurrentRosterProjection }
+  | { ok: false; error: string };
 
 /**
- * Read-only canonical roster projection. It intentionally reports staffing
- * capacity and current occupancy separately; a vacant slot is never inferred
- * to be a Bid opportunity.
+ * A single, read-only roster projection drives both the operator screen and
+ * its CSV download. Keeping the query here prevents the export from drifting
+ * into a different effective-date or policy interpretation than the screen.
  */
-router.get('/', async (c) => {
-  const requestedAsOf = c.req.query('as_of') ?? currentUtcDate();
-  if (!isCalendarDate(requestedAsOf)) {
-    return c.json({ error: 'invalid_as_of' }, 400);
-  }
+async function loadCurrentRosterProjection(
+  db: D1Database,
+  requestedAsOf: string,
+  filterInputs: ReadonlyArray<{ name: string; value: string | undefined }>,
+): Promise<RosterProjectionResult> {
   const requestedBidYear = Number.parseInt(requestedAsOf.slice(0, 4), 10);
-  const configuredPolicyResult = await c.env.DB.prepare(
-    'SELECT rule_book_version FROM bid_years WHERE year = ? LIMIT 1',
-  )
+  const configuredPolicyResult = await db
+    .prepare('SELECT rule_book_version FROM bid_years WHERE year = ? LIMIT 1')
     .bind(requestedBidYear)
     .all();
   const configuredPolicy = configuredPolicyResult.results[0] as BidYearPolicyDbRow | undefined;
@@ -123,18 +176,12 @@ router.get('/', async (c) => {
     unit: 'sp.unit',
     rank: 'sp.applicable_rank',
   };
-  const filterInputs: ReadonlyArray<{ name: string; value: string | undefined }> = [
-    { name: 'shift', value: c.req.query('shift') },
-    { name: 'station', value: c.req.query('station') },
-    { name: 'unit', value: c.req.query('unit') },
-    { name: 'rank', value: c.req.query('rank') },
-  ];
   const parsedFilters = filterInputs.map(({ name, value }) => ({
     name,
     ...readFilter(value, name),
   }));
   const invalid = parsedFilters.find((result) => result.error !== undefined)?.error;
-  if (invalid) return c.json({ error: invalid }, 400);
+  if (invalid) return { ok: false, error: invalid };
 
   const where = [
     "sp.review_status IN ('approved', 'retired')",
@@ -142,6 +189,7 @@ router.get('/', async (c) => {
     '(sp.active_to IS NULL OR sp.active_to >= ?)',
   ];
   const bindings: Array<string | null> = [
+    requestedAsOf,
     designatedRuleBookVersion,
     requestedAsOf,
     requestedAsOf,
@@ -154,83 +202,136 @@ router.get('/', async (c) => {
     bindings.push(value);
   }
 
-  const rosterResult = await c.env.DB.prepare(
-    `SELECT
-       sp.id,
-       sp.stable_slot_key,
-       sp.division,
-       sp.shift,
-       sp.station,
-       sp.unit,
-       sp.position_name,
-       sp.applicable_rank,
-       sp.review_status,
-       assignment_record.id AS assignment_id,
-       assignment_record.member_id AS assignment_member_id,
-       assignment_record.origin_type AS assignment_origin_type,
-       assignment_record.status AS assignment_status,
-       assignment_record.effective_from AS assignment_effective_from,
-       assignment_record.effective_to AS assignment_effective_to,
-       assigned_member.id AS member_id,
-       assigned_member.employee_id AS member_employee_id,
-       assigned_member.first_name AS member_first_name,
-       assigned_member.last_name AS member_last_name,
-       assigned_member.rank AS member_rank,
-        CASE WHEN EXISTS (
-          SELECT 1
-          FROM position_staffing_bindings binding
-          JOIN rule_book_position_participation participation
-            ON participation.position_id = binding.position_id
-            AND participation.template_version = binding.template_version
-          WHERE binding.staffing_position_id = sp.id
-            AND binding.review_status = 'approved'
-            -- This projection is policy metadata, not a search for any active
-            -- rule book. The selected year must explicitly designate the book.
-            AND participation.rule_book_version = ?
-            AND participation.bid_participation = 'ADMIN_ASSIGNED_NON_BIDDABLE'
-        ) THEN 1 ELSE 0 END AS administrative_assignment
-     FROM staffing_positions sp
-     LEFT JOIN member_assignments assignment_record
-       ON assignment_record.id = (
-         SELECT candidate.id
-         FROM member_assignments candidate
-         WHERE candidate.staffing_position_id = sp.id
-           AND candidate.status IN ('planned', 'active')
-           AND candidate.effective_from <= ?
-           AND (candidate.effective_to IS NULL OR candidate.effective_to >= ?)
-         ORDER BY candidate.effective_from DESC, candidate.created_at DESC, candidate.id DESC
-         LIMIT 1
-       )
-     LEFT JOIN members assigned_member ON assigned_member.id = assignment_record.member_id
-     WHERE ${where.join(' AND ')}
-     ORDER BY
-       COALESCE(sp.shift, ''),
-       COALESCE(sp.station, ''),
-       COALESCE(sp.unit, ''),
-       sp.stable_slot_key`,
-  )
+  const rosterResult = await db
+    .prepare(
+      `SELECT
+         sp.id,
+         sp.stable_slot_key,
+         sp.division,
+         sp.shift,
+         sp.station,
+         sp.unit,
+         sp.position_name,
+         sp.applicable_rank,
+         sp.review_status,
+         assignment_record.id AS assignment_id,
+         assignment_record.member_id AS assignment_member_id,
+         assignment_record.origin_type AS assignment_origin_type,
+         assignment_record.status AS assignment_status,
+         assignment_record.effective_from AS assignment_effective_from,
+         assignment_record.effective_to AS assignment_effective_to,
+         assigned_member.id AS member_id,
+         assigned_member.employee_id AS member_employee_id,
+         assigned_member.first_name AS member_first_name,
+         assigned_member.last_name AS member_last_name,
+         COALESCE(
+           (
+             SELECT lifecycle_event.rank_after
+             FROM personnel_lifecycle_events lifecycle_event
+             WHERE lifecycle_event.member_id = assigned_member.id
+               AND lifecycle_event.effective_on <= ?
+               AND lifecycle_event.rank_after IS NOT NULL
+             ORDER BY lifecycle_event.effective_on DESC, lifecycle_event.created_at DESC,
+                      lifecycle_event.id DESC
+             LIMIT 1
+           ),
+           assigned_member.rank
+         ) AS member_rank,
+          CASE WHEN EXISTS (
+            SELECT 1
+            FROM position_staffing_bindings binding
+            JOIN rule_book_position_participation participation
+              ON participation.position_id = binding.position_id
+              AND participation.template_version = binding.template_version
+            WHERE binding.staffing_position_id = sp.id
+              AND binding.review_status = 'approved'
+              -- This projection is policy metadata, not a search for any active
+              -- rule book. The selected year must explicitly designate the book.
+              AND participation.rule_book_version = ?
+              AND participation.bid_participation = 'ADMIN_ASSIGNED_NON_BIDDABLE'
+          ) THEN 1 ELSE 0 END AS administrative_assignment
+       FROM staffing_positions sp
+       LEFT JOIN member_assignments assignment_record
+         ON assignment_record.id = (
+           SELECT candidate.id
+           FROM member_assignments candidate
+           WHERE candidate.staffing_position_id = sp.id
+             AND (
+               candidate.status IN ('planned', 'active')
+               OR (
+                 candidate.status IN ('ended', 'superseded')
+                 AND candidate.effective_to IS NOT NULL
+               )
+             )
+             AND candidate.effective_from <= ?
+             AND (candidate.effective_to IS NULL OR candidate.effective_to >= ?)
+           ORDER BY candidate.effective_from DESC, candidate.created_at DESC, candidate.id DESC
+           LIMIT 1
+         )
+       LEFT JOIN members assigned_member ON assigned_member.id = assignment_record.member_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY
+         COALESCE(sp.shift, ''),
+         COALESCE(sp.station, ''),
+         COALESCE(sp.unit, ''),
+         sp.stable_slot_key`,
+    )
     .bind(...bindings)
     .all();
   const rosterRows = rosterResult.results as unknown as CurrentRosterDbRow[];
 
-  const unassignedResult = await c.env.DB.prepare(
-    `SELECT id, employee_id, first_name, last_name, rank, bid_category
-     FROM members member_record
-     WHERE NOT EXISTS (
-       SELECT 1
-       FROM member_assignments assignment_record
-       WHERE assignment_record.member_id = member_record.id
-         AND assignment_record.status IN ('planned', 'active')
-         AND assignment_record.effective_from <= ?
-         AND (assignment_record.effective_to IS NULL OR assignment_record.effective_to >= ?)
-     )
-     ORDER BY last_name, first_name, id`,
-  )
-    .bind(requestedAsOf, requestedAsOf)
+  const unassignedResult = await db
+    .prepare(
+      `SELECT id, employee_id, first_name, last_name,
+              COALESCE(
+                (
+                  SELECT lifecycle_event.rank_after
+                  FROM personnel_lifecycle_events lifecycle_event
+                  WHERE lifecycle_event.member_id = member_record.id
+                    AND lifecycle_event.effective_on <= ?
+                    AND lifecycle_event.rank_after IS NOT NULL
+                  ORDER BY lifecycle_event.effective_on DESC, lifecycle_event.created_at DESC,
+                           lifecycle_event.id DESC
+                  LIMIT 1
+                ),
+                member_record.rank
+              ) AS rank,
+              bid_category
+       FROM members member_record
+       WHERE COALESCE(
+         (
+           SELECT lifecycle_event.employment_status_after
+           FROM personnel_lifecycle_events lifecycle_event
+           WHERE lifecycle_event.member_id = member_record.id
+             AND lifecycle_event.effective_on <= ?
+             AND lifecycle_event.employment_status_after IS NOT NULL
+           ORDER BY lifecycle_event.effective_on DESC, lifecycle_event.created_at DESC,
+                    lifecycle_event.id DESC
+           LIMIT 1
+         ),
+         member_record.employment_status
+       ) NOT IN ('retired', 'separated')
+         AND NOT EXISTS (
+         SELECT 1
+         FROM member_assignments assignment_record
+         WHERE assignment_record.member_id = member_record.id
+           AND (
+             assignment_record.status IN ('planned', 'active')
+             OR (
+               assignment_record.status IN ('ended', 'superseded')
+               AND assignment_record.effective_to IS NOT NULL
+             )
+           )
+           AND assignment_record.effective_from <= ?
+           AND (assignment_record.effective_to IS NULL OR assignment_record.effective_to >= ?)
+       )
+       ORDER BY last_name, first_name, id`,
+    )
+    .bind(requestedAsOf, requestedAsOf, requestedAsOf, requestedAsOf)
     .all();
   const unassignedRows = unassignedResult.results as unknown as UnassignedMemberDbRow[];
 
-  const positions = rosterRows.map((row) => ({
+  const positions: CurrentRosterPosition[] = rosterRows.map((row) => ({
     id: row.id,
     stableSlotKey: row.stable_slot_key,
     division: row.division,
@@ -268,27 +369,130 @@ router.get('/', async (c) => {
   const occupiedPositions = positions.filter(
     (position) => position.occupancy === 'occupied',
   ).length;
-  return c.json({
-    asOf: requestedAsOf,
-    administrativeAssignmentPolicy,
-    positions,
-    summary: {
-      totalPositions: positions.length,
-      occupiedPositions,
-      vacantPositions: positions.length - occupiedPositions,
-      administrativelyAssignedNonBiddablePositions: positions.filter(
-        (position) => position.administrativeAssignment,
-      ).length,
+  return {
+    ok: true,
+    projection: {
+      asOf: requestedAsOf,
+      administrativeAssignmentPolicy,
+      positions,
+      summary: {
+        totalPositions: positions.length,
+        occupiedPositions,
+        vacantPositions: positions.length - occupiedPositions,
+        administrativelyAssignedNonBiddablePositions: positions.filter(
+          (position) => position.administrativeAssignment,
+        ).length,
+      },
+      unassignedMembers: unassignedRows.map((member) => ({
+        id: member.id,
+        employeeId: member.employee_id,
+        firstName: member.first_name,
+        lastName: member.last_name,
+        rank: member.rank,
+        bidCategory: member.bid_category,
+      })),
     },
-    unassignedMembers: unassignedRows.map((member) => ({
-      id: member.id,
-      employeeId: member.employee_id,
-      firstName: member.first_name,
-      lastName: member.last_name,
-      rank: member.rank,
-      bidCategory: member.bid_category,
-    })),
-  });
+  };
+}
+
+function requestProjectionInput(c: { req: { query(name: string): string | undefined } }):
+  | {
+      requestedAsOf: string;
+      filterInputs: ReadonlyArray<{ name: string; value: string | undefined }>;
+    }
+  | { error: string } {
+  const requestedAsOf = c.req.query('as_of') ?? currentUtcDate();
+  if (!isCalendarDate(requestedAsOf)) return { error: 'invalid_as_of' };
+  return {
+    requestedAsOf,
+    filterInputs: [
+      { name: 'shift', value: c.req.query('shift') },
+      { name: 'station', value: c.req.query('station') },
+      { name: 'unit', value: c.req.query('unit') },
+      { name: 'rank', value: c.req.query('rank') },
+    ],
+  };
+}
+
+const router = new Hono<AdminEnv>();
+
+router.use('*', requireAdmin);
+
+/**
+ * Read-only canonical roster projection. It intentionally reports staffing
+ * capacity and current occupancy separately; a vacant slot is never inferred
+ * to be a Bid opportunity.
+ */
+router.get('/', async (c) => {
+  const input = requestProjectionInput(c);
+  if ('error' in input) return c.json({ error: input.error }, 400);
+  const result = await loadCurrentRosterProjection(
+    c.env.DB,
+    input.requestedAsOf,
+    input.filterInputs,
+  );
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json(result.projection);
+});
+
+/**
+ * Download the exact effective-dated staffing projection currently visible to
+ * an administrator. This is intentionally direct CSV (no R2/PDF dependency)
+ * and does not alter the canonical roster.
+ */
+router.get('/export.csv', async (c) => {
+  const input = requestProjectionInput(c);
+  if ('error' in input) return c.json({ error: input.error }, 400);
+  const result = await loadCurrentRosterProjection(
+    c.env.DB,
+    input.requestedAsOf,
+    input.filterInputs,
+  );
+  if (!result.ok) return c.json({ error: result.error }, 400);
+
+  const { projection } = result;
+  async function* rows() {
+    for (const position of projection.positions) {
+      yield position;
+    }
+  }
+
+  return new Response(
+    createCsvStream(rows(), [
+      { header: 'as_of', value: () => projection.asOf },
+      { header: 'stable_slot_key', value: (row) => row.stableSlotKey },
+      { header: 'shift', value: (row) => row.shift },
+      { header: 'station', value: (row) => row.station },
+      { header: 'division', value: (row) => row.division },
+      { header: 'unit', value: (row) => row.unit },
+      { header: 'position_name', value: (row) => row.positionName },
+      { header: 'applicable_rank', value: (row) => row.applicableRank },
+      { header: 'review_status', value: (row) => row.reviewStatus },
+      { header: 'occupancy', value: (row) => row.occupancy },
+      {
+        header: 'administratively_assigned_non_biddable',
+        value: (row) => row.administrativeAssignment,
+      },
+      { header: 'assignment_id', value: (row) => row.assignment?.id },
+      { header: 'assignment_status', value: (row) => row.assignment?.status },
+      { header: 'assignment_origin_type', value: (row) => row.assignment?.originType },
+      { header: 'assignment_effective_from', value: (row) => row.assignment?.effectiveFrom },
+      { header: 'assignment_effective_to', value: (row) => row.assignment?.effectiveTo },
+      { header: 'member_id', value: (row) => row.member?.id },
+      { header: 'employee_id', value: (row) => row.member?.employeeId },
+      { header: 'member_first_name', value: (row) => row.member?.firstName },
+      { header: 'member_last_name', value: (row) => row.member?.lastName },
+      { header: 'member_rank', value: (row) => row.member?.rank },
+    ]),
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="mbfd-current-roster-${projection.asOf}.csv"`,
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
 });
 
 /**

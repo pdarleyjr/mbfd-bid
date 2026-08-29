@@ -1,11 +1,7 @@
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import type { CredentialRow, RosterMember } from '../_lib/station-info';
-import { RosterClient } from './RosterClient';
-// Canonical member-credentials extract from the official Bid Credentials PDF
-// (235 members, 3,877 cert links). Replaces the older `synthesis.json` which
-// only had position-derived inferences.
-import memberCredentialsData from './_data/member_credentials.json';
+import { type BidOrderSessionContext, RosterClient } from './RosterClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +20,32 @@ interface CredentialsResponse {
   total: number;
 }
 
+interface ActiveBidSession {
+  id: string;
+  bidYear: number;
+  isMock: boolean;
+  currentPhase: string;
+}
+
+function activeBidOrderContext(value: unknown): BidOrderSessionContext | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const session = value as Partial<ActiveBidSession>;
+  if (
+    typeof session.id !== 'string' ||
+    !/^[A-Za-z0-9_-]{1,256}$/.test(session.id) ||
+    !Number.isSafeInteger(session.bidYear) ||
+    typeof session.isMock !== 'boolean' ||
+    typeof session.currentPhase !== 'string'
+  ) {
+    return null;
+  }
+  const mode = session.isMock ? 'rehearsal Bid' : 'Bid';
+  return {
+    sessionId: session.id,
+    label: `${session.bidYear} ${mode} · ${session.currentPhase.replaceAll('_', ' ')}`,
+  };
+}
+
 export default async function MasterRosterPage({
   searchParams,
 }: {
@@ -36,13 +58,20 @@ export default async function MasterRosterPage({
   const qs = new URLSearchParams();
   if (sp.search) qs.set('search', sp.search);
   if (sp.rank) qs.set('rank', sp.rank);
-  const qsStr = qs.toString();
 
   let members: RosterMember[] = [];
   let credentials: CredentialRow[] = [];
   let fetchError: string | null = null;
+  let bidOrderSession: BidOrderSessionContext | null = null;
 
   try {
+    const activeResponse = await serverWorkerFetch('/api/admin/bid-session/active');
+    if (activeResponse.ok) {
+      const body = (await activeResponse.json()) as { session?: unknown };
+      bidOrderSession = activeBidOrderContext(body.session ?? null);
+    }
+    if (bidOrderSession !== null) qs.set('session_id', bidOrderSession.sessionId);
+    const qsStr = qs.toString();
     const [rosterRes, credsRes] = await Promise.all([
       serverWorkerFetch(`/api/admin/members/roster${qsStr ? `?${qsStr}` : ''}`),
       serverWorkerFetch('/api/admin/credentials?limit=500'),
@@ -71,8 +100,9 @@ export default async function MasterRosterPage({
       <div>
         <h1 className="font-heading text-2xl text-white">Master Roster</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Computed bid order across both pools. Toggle credential pills to grant or revoke certs;
-          changes write a single override_cert audit row each.
+          Computed bid order across both pools. Credentials are read-only evidence; official
+          staffing reconciliation and effective-dated personnel changes use their controlled
+          workflows.
         </p>
         {fetchError ? (
           <p className="mt-2 text-sm text-red-400">{fetchError}</p>
@@ -87,7 +117,7 @@ export default async function MasterRosterPage({
         initialMembers={members}
         credentials={credentials}
         initialSearch={sp.search ?? ''}
-        synthesisJson={JSON.stringify(memberCredentialsData)}
+        bidOrderSession={bidOrderSession}
       />
     </div>
   );
