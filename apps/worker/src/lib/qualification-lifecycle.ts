@@ -11,10 +11,14 @@ export const QUALIFICATION_LIFECYCLE_KINDS = [
   'CERTIFICATION_EXPIRED',
   'CERTIFICATION_REVOKED',
   'SPECIALTY_QUALIFIED',
+  'SPECIALTY_EXPIRED',
+  'SPECIALTY_REVOKED',
+  'SPECIALTY_REMOVED',
 ] as const;
 
 export type QualificationLifecycleKind = (typeof QUALIFICATION_LIFECYCLE_KINDS)[number];
-export type QualificationStatus = 'active' | 'expired' | 'revoked';
+export type QualificationStatus = 'active' | 'expired' | 'revoked' | 'removed';
+export type SpecialtyTerminalStatus = 'EXPIRED' | 'REVOKED' | 'REMOVED';
 
 export interface QualificationLifecycleEvent {
   id: string;
@@ -35,6 +39,17 @@ export interface QualificationLifecycleEvent {
   createdAt: number;
 }
 
+/**
+ * Raw D1 row shape used at the snapshot boundary. Specialty terminal events
+ * retain `SPECIALTY_QUALIFIED` in the immutable legacy `kind` column and use
+ * the additive discriminator to express their logical terminal state.
+ */
+export interface PersistedQualificationLifecycleEvent
+  extends Omit<QualificationLifecycleEvent, 'kind'> {
+  kind: string;
+  specialtyTerminalStatus: string | null;
+}
+
 export interface LegacyCredentialBaseline {
   memberId: number;
   credentialId: number;
@@ -48,7 +63,7 @@ export interface LegacyCredentialBaseline {
 export interface CertificationQualification {
   credentialId: number;
   credentialName: string | null;
-  status: QualificationStatus;
+  status: Exclude<QualificationStatus, 'removed'>;
   effectiveOn: string | null;
   expiresOn: string | null;
   evidenceSource: string | null;
@@ -59,7 +74,7 @@ export interface CertificationQualification {
 
 export interface SpecialtyQualification {
   specialtyCode: string;
-  status: Exclude<QualificationStatus, 'revoked'>;
+  status: QualificationStatus;
   effectiveOn: string;
   expiresOn: string | null;
   evidenceSource: string;
@@ -86,6 +101,85 @@ export function isQualificationCalendarDate(value: unknown): value is string {
 }
 
 /**
+ * Converts an immutable D1 evidence row into the logical lifecycle event used
+ * by projections. A malformed terminal discriminator is rejected rather than
+ * silently interpreted as a new specialty qualification.
+ */
+export function normalizePersistedQualificationLifecycleEvent(
+  input: PersistedQualificationLifecycleEvent,
+): QualificationLifecycleEvent | null {
+  if (input.specialtyTerminalStatus === null) {
+    // The pre-0033 ledger could not persist direct specialty terminal kinds.
+    // Seeing one without its companion discriminator means a corrupt/imported
+    // row, never a safe qualification fact.
+    if (
+      input.kind === 'SPECIALTY_EXPIRED' ||
+      input.kind === 'SPECIALTY_REVOKED' ||
+      input.kind === 'SPECIALTY_REMOVED' ||
+      !isQualificationLifecycleKind(input.kind)
+    ) {
+      return null;
+    }
+    return {
+      id: input.id,
+      memberId: input.memberId,
+      credentialId: input.credentialId,
+      credentialName: input.credentialName,
+      specialtyCode: input.specialtyCode,
+      kind: input.kind,
+      effectiveOn: input.effectiveOn,
+      expiresOn: input.expiresOn,
+      evidenceSource: input.evidenceSource,
+      evidenceReference: input.evidenceReference,
+      reason: input.reason,
+      actorSubject: input.actorSubject,
+      idempotencyKey: input.idempotencyKey,
+      beforeState: input.beforeState,
+      afterState: input.afterState,
+      createdAt: input.createdAt,
+    };
+  }
+
+  if (
+    !isSpecialtyTerminalStatus(input.specialtyTerminalStatus) ||
+    input.kind !== 'SPECIALTY_QUALIFIED' ||
+    input.credentialId !== null ||
+    !isValidSpecialtyCode(input.specialtyCode) ||
+    !isQualificationCalendarDate(input.effectiveOn) ||
+    (input.expiresOn !== null && !isQualificationCalendarDate(input.expiresOn)) ||
+    (input.expiresOn !== null && input.expiresOn < input.effectiveOn) ||
+    (input.specialtyTerminalStatus === 'EXPIRED' && input.expiresOn !== input.effectiveOn) ||
+    (input.specialtyTerminalStatus !== 'EXPIRED' && input.expiresOn !== null)
+  ) {
+    return null;
+  }
+
+  return {
+    id: input.id,
+    memberId: input.memberId,
+    credentialId: null,
+    credentialName: input.credentialName,
+    specialtyCode: input.specialtyCode,
+    kind:
+      input.specialtyTerminalStatus === 'EXPIRED'
+        ? 'SPECIALTY_EXPIRED'
+        : input.specialtyTerminalStatus === 'REVOKED'
+          ? 'SPECIALTY_REVOKED'
+          : 'SPECIALTY_REMOVED',
+    effectiveOn: input.effectiveOn,
+    expiresOn: input.expiresOn,
+    evidenceSource: input.evidenceSource,
+    evidenceReference: input.evidenceReference,
+    reason: input.reason,
+    actorSubject: input.actorSubject,
+    idempotencyKey: input.idempotencyKey,
+    beforeState: input.beforeState,
+    afterState: input.afterState,
+    createdAt: input.createdAt,
+  };
+}
+
+/**
  * Resolves the evidence state that an operator or policy snapshot could have
  * known on `asOf`. Later evidence must not rewrite that historical view.
  */
@@ -104,7 +198,7 @@ export function deriveMemberQualificationProjection(input: {
 
   const specialties = new Map<string, SpecialtyQualification>();
   for (const event of sortApplicableEvents(input.events, input.memberId, input.asOf)) {
-    if (event.kind === 'SPECIALTY_QUALIFIED') {
+    if (isSpecialtyLifecycleKind(event.kind)) {
       if (event.specialtyCode === null) continue;
       specialties.set(event.specialtyCode, specialtyFromEvent(event, input.asOf));
       continue;
@@ -158,9 +252,8 @@ export function deriveMemberQualificationProjection(input: {
 }
 
 /**
- * The V3 Bid snapshot retains only credential display names. This adapter
- * intentionally excludes specialty evidence until a rule-book criterion is
- * explicitly modeled for it; no specialty name is guessed as a credential.
+ * The V3 Bid snapshot retains credential display names separately from
+ * specialty evidence. No specialty code is guessed as a credential.
  */
 export function activeCredentialNamesByMemberAsOf(input: {
   asOf: string;
@@ -187,6 +280,32 @@ export function activeCredentialNamesByMemberAsOf(input: {
       .map((qualification) => qualification.credentialName as string)
       .sort((left, right) => left.localeCompare(right));
     output.set(memberId, [...new Set(names)]);
+  }
+  return output;
+}
+
+/**
+ * Projects specialty evidence independently of credentials. The resulting
+ * state includes active and terminal facts so a frozen V3 policy can preserve
+ * why a code was ineligible at its configured evaluation date without copying
+ * raw source evidence into the session snapshot.
+ */
+export function specialtyQualificationsByMemberAsOf(input: {
+  asOf: string;
+  events: readonly QualificationLifecycleEvent[];
+}): Map<number, SpecialtyQualification[]> {
+  const memberIds = new Set<number>(input.events.map((event) => event.memberId));
+  const output = new Map<number, SpecialtyQualification[]>();
+  for (const memberId of memberIds) {
+    output.set(
+      memberId,
+      deriveMemberQualificationProjection({
+        memberId,
+        asOf: input.asOf,
+        legacyCredentials: [],
+        events: input.events,
+      }).specialties,
+    );
   }
   return output;
 }
@@ -225,6 +344,23 @@ function certificationFromEvent(
   };
 }
 
+function isSpecialtyLifecycleKind(kind: QualificationLifecycleKind): boolean {
+  return kind.startsWith('SPECIALTY_');
+}
+
+function isSpecialtyTerminalStatus(value: unknown): value is SpecialtyTerminalStatus {
+  return value === 'EXPIRED' || value === 'REVOKED' || value === 'REMOVED';
+}
+
+function isValidSpecialtyCode(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 1 &&
+    value.length <= 128 &&
+    value === value.trim()
+  );
+}
+
 function qualificationFromLegacyBaseline(
   baseline: LegacyCredentialBaseline,
   asOf: string,
@@ -260,9 +396,19 @@ function specialtyFromEvent(
   event: QualificationLifecycleEvent,
   asOf: string,
 ): SpecialtyQualification {
+  const status: QualificationStatus =
+    event.kind === 'SPECIALTY_EXPIRED'
+      ? 'expired'
+      : event.kind === 'SPECIALTY_REVOKED'
+        ? 'revoked'
+        : event.kind === 'SPECIALTY_REMOVED'
+          ? 'removed'
+          : event.expiresOn !== null && event.expiresOn < asOf
+            ? 'expired'
+            : 'active';
   return {
     specialtyCode: event.specialtyCode as string,
-    status: event.expiresOn !== null && event.expiresOn < asOf ? 'expired' : 'active',
+    status,
     effectiveOn: event.effectiveOn,
     expiresOn: event.expiresOn,
     evidenceSource: event.evidenceSource,

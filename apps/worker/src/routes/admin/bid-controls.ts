@@ -21,7 +21,7 @@ import {
   resolveFrozenSessionBidTarget,
 } from '../../lib/bid-policy.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
-import { guardNormalBidMutation } from '../../lib/specialty-interruption-guard.js';
+import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -62,12 +62,12 @@ router.post(
     const db = getDb(c.env.DB);
     const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (session.isMock) {
+      return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+    }
     if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
-    const specialtyGuard = await guardNormalBidMutation(c.env, sessionId);
-    if (!specialtyGuard.ok) return c.json({ error: specialtyGuard.error }, 409);
-
     // A force-pick is an override of turn order, never an override of the
     // frozen policy boundary. In particular, neither an excluded Division
     // Chief nor an administratively assigned non-biddable position can be
@@ -106,46 +106,61 @@ router.post(
     const adminActorId = claims.sub > 0 ? claims.sub : null;
     const now = new Date();
 
-    // Next ordinal (max+1 in session). Best-effort — final serialization is
-    // the BidSession DO's job; this REST path is for offline admin overrides.
-    const maxOrdRow = await db
-      .select({ m: sql<number | null>`max(${bids.ordinal})` })
-      .from(bids)
-      .where(eq(bids.bidSessionId, sessionId))
-      .get();
-    const ordinal = (maxOrdRow?.m ?? 0) + 1;
+    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      // A different request can have acquired and released the permit after
+      // the fast-path read above. Recheck while holding this permit so a
+      // duplicate request is a replay rather than a D1 unique-key failure.
+      const existingAfterLease = await db
+        .select()
+        .from(bids)
+        .where(eq(bids.idempotencyKey, idemKey))
+        .get();
+      if (existingAfterLease !== undefined) {
+        return c.json({ bid_id: existingAfterLease.id, forced: true, idempotent_replay: true });
+      }
 
-    await db.insert(bids).values({
-      id: bidId,
-      bidSessionId: sessionId,
-      ordinal,
-      memberId: body.member_id,
-      positionId: body.position_id,
-      pickedAt: now,
-      forced: true,
-      adminActorId,
-      reason: body.reason,
-      idempotencyKey: idemKey,
-      portalSyncStatus: 'pending',
-      portalSyncAttempts: 0,
+      // Read and advance the legacy ordinal only after holding the session
+      // permit, so two direct D1 writers cannot both derive the same value.
+      const maxOrdRow = await db
+        .select({ m: sql<number | null>`max(${bids.ordinal})` })
+        .from(bids)
+        .where(eq(bids.bidSessionId, sessionId))
+        .get();
+      const ordinal = (maxOrdRow?.m ?? 0) + 1;
+      await db.insert(bids).values({
+        id: bidId,
+        bidSessionId: sessionId,
+        ordinal,
+        memberId: body.member_id,
+        positionId: body.position_id,
+        pickedAt: now,
+        forced: true,
+        adminActorId,
+        reason: body.reason,
+        idempotencyKey: idemKey,
+        portalSyncStatus: 'pending',
+        portalSyncAttempts: 0,
+      });
+
+      await writeAuditLog(db, {
+        bidSessionId: sessionId,
+        actorType: 'admin',
+        actorId: adminActorId,
+        action: 'forced_pick',
+        targetKind: 'bid',
+        targetId: bidId,
+        reason: body.reason,
+        afterState: {
+          member_id: body.member_id,
+          position_id: body.position_id,
+          reason_code: body.reason_code,
+        },
+      });
+
+      return c.json({ bid_id: bidId, forced: true }, 201);
     });
-
-    await writeAuditLog(db, {
-      bidSessionId: sessionId,
-      actorType: 'admin',
-      actorId: adminActorId,
-      action: 'forced_pick',
-      targetKind: 'bid',
-      targetId: bidId,
-      reason: body.reason,
-      afterState: {
-        member_id: body.member_id,
-        position_id: body.position_id,
-        reason_code: body.reason_code,
-      },
-    });
-
-    return c.json({ bid_id: bidId, forced: true }, 201);
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
   },
 );
 
@@ -164,6 +179,9 @@ router.post('/:id/skip', requireStepUpAuth(), zValidator('json', SkipSchema), as
   const db = getDb(c.env.DB);
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
   if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+  if (session.isMock) {
+    return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+  }
   if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
     return c.json({ error: 'canonical_mutation_requires_command' }, 409);
   }
@@ -183,18 +201,22 @@ router.post('/:id/skip', requireStepUpAuth(), zValidator('json', SkipSchema), as
   }
 
   const claims = c.get('claims');
-  await writeAuditLog(db, {
-    bidSessionId: sessionId,
-    actorType: 'admin',
-    actorId: claims.sub > 0 ? claims.sub : 0,
-    action: 'skip',
-    targetKind: 'member',
-    targetId: String(body.member_id),
-    reason: body.reason,
-    afterState: { skipped_member_id: body.member_id, reason_code: body.reason_code },
-  });
+  const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+    await writeAuditLog(db, {
+      bidSessionId: sessionId,
+      actorType: 'admin',
+      actorId: claims.sub > 0 ? claims.sub : 0,
+      action: 'skip',
+      targetKind: 'member',
+      targetId: String(body.member_id),
+      reason: body.reason,
+      afterState: { skipped_member_id: body.member_id, reason_code: body.reason_code },
+    });
 
-  return c.json({ skipped_member_id: body.member_id, reason_code: body.reason_code });
+    return c.json({ skipped_member_id: body.member_id, reason_code: body.reason_code });
+  });
+  if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+  return mutation.value;
 });
 
 // POST /api/admin/bid-session/:id/bid-for-member
@@ -220,12 +242,12 @@ router.post(
     const db = getDb(c.env.DB);
     const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (session.isMock) {
+      return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+    }
     if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
-    const specialtyGuard = await guardNormalBidMutation(c.env, sessionId);
-    if (!specialtyGuard.ok) return c.json({ error: specialtyGuard.error }, 409);
-
     const target = await resolveFrozenSessionBidTarget(db, {
       bidSessionId: sessionId,
       memberId: body.member_id,
@@ -261,39 +283,55 @@ router.post(
     const adminActorId = claims.sub > 0 ? claims.sub : null;
     const bidId = ulid();
 
-    await db.insert(bids).values({
-      id: bidId,
-      bidSessionId: sessionId,
-      ordinal: 0, // DO assigns the real ordinal at Plan 04 time; we use 0 as placeholder
-      memberId: body.member_id,
-      positionId: body.position_id,
-      aDay: body.a_day ?? null,
-      pickedAt: new Date(),
-      forced: false,
-      adminActorId,
-      reason: body.reason,
-      idempotencyKey: idemKey,
-      portalSyncStatus: 'pending',
-      portalSyncAttempts: 0,
-    });
+    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      // Recheck after the permit is acquired. A concurrent same-key request
+      // may have committed between the optimistic fast-path lookup and this
+      // serialized D1 write.
+      const existingAfterLease = await db
+        .select()
+        .from(bids)
+        .where(eq(bids.idempotencyKey, idemKey))
+        .get();
+      if (existingAfterLease !== undefined) {
+        return c.json({ bid_id: existingAfterLease.id, forced: false, idempotent_replay: true });
+      }
 
-    await writeAuditLog(db, {
-      bidSessionId: sessionId,
-      actorType: 'admin',
-      actorId: adminActorId,
-      action: 'admin_bid_for_member',
-      targetKind: 'bid',
-      targetId: bidId,
-      reason: body.reason,
-      afterState: {
-        member_id: body.member_id,
-        position_id: body.position_id,
-        a_day: body.a_day ?? null,
-        reason_code: body.reason_code,
-      },
-    });
+      await db.insert(bids).values({
+        id: bidId,
+        bidSessionId: sessionId,
+        ordinal: 0, // DO assigns the real ordinal at Plan 04 time; we use 0 as placeholder
+        memberId: body.member_id,
+        positionId: body.position_id,
+        aDay: body.a_day ?? null,
+        pickedAt: new Date(),
+        forced: false,
+        adminActorId,
+        reason: body.reason,
+        idempotencyKey: idemKey,
+        portalSyncStatus: 'pending',
+        portalSyncAttempts: 0,
+      });
 
-    return c.json({ bid_id: bidId, forced: false }, 201);
+      await writeAuditLog(db, {
+        bidSessionId: sessionId,
+        actorType: 'admin',
+        actorId: adminActorId,
+        action: 'admin_bid_for_member',
+        targetKind: 'bid',
+        targetId: bidId,
+        reason: body.reason,
+        afterState: {
+          member_id: body.member_id,
+          position_id: body.position_id,
+          a_day: body.a_day ?? null,
+          reason_code: body.reason_code,
+        },
+      });
+
+      return c.json({ bid_id: bidId, forced: false }, 201);
+    });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
   },
 );
 
@@ -320,6 +358,9 @@ router.post(
     const db = getDb(c.env.DB);
     const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (session.isMock) {
+      return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+    }
     if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
@@ -339,39 +380,43 @@ router.post(
       return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
     }
 
-    const cfg: { position_locks?: { position_id: string; member_id: number }[] } =
-      session.configJson !== null && session.configJson !== ''
-        ? JSON.parse(session.configJson)
-        : {};
-    cfg.position_locks = Array.isArray(cfg.position_locks) ? cfg.position_locks : [];
-    const conflict = cfg.position_locks.find((l) => l.position_id === body.position_id);
-    if (conflict !== undefined) {
-      return c.json({ error: 'position_already_locked', existing: conflict }, 409);
-    }
-    cfg.position_locks.push({ position_id: body.position_id, member_id: body.member_id });
+    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      const cfg: { position_locks?: { position_id: string; member_id: number }[] } =
+        session.configJson !== null && session.configJson !== ''
+          ? JSON.parse(session.configJson)
+          : {};
+      cfg.position_locks = Array.isArray(cfg.position_locks) ? cfg.position_locks : [];
+      const conflict = cfg.position_locks.find((l) => l.position_id === body.position_id);
+      if (conflict !== undefined) {
+        return c.json({ error: 'position_already_locked', existing: conflict }, 409);
+      }
+      cfg.position_locks.push({ position_id: body.position_id, member_id: body.member_id });
 
-    await db
-      .update(bidSessions)
-      .set({ configJson: JSON.stringify(cfg) })
-      .where(eq(bidSessions.id, sessionId));
+      await db
+        .update(bidSessions)
+        .set({ configJson: JSON.stringify(cfg) })
+        .where(eq(bidSessions.id, sessionId));
 
-    const claims = c.get('claims');
-    await writeAuditLog(db, {
-      bidSessionId: sessionId,
-      actorType: 'admin',
-      actorId: claims.sub > 0 ? claims.sub : 0,
-      action: 'lock_position',
-      targetKind: 'position',
-      targetId: body.position_id,
-      reason: body.reason,
-      afterState: { member_id: body.member_id, reason_code: body.reason_code },
+      const claims = c.get('claims');
+      await writeAuditLog(db, {
+        bidSessionId: sessionId,
+        actorType: 'admin',
+        actorId: claims.sub > 0 ? claims.sub : 0,
+        action: 'lock_position',
+        targetKind: 'position',
+        targetId: body.position_id,
+        reason: body.reason,
+        afterState: { member_id: body.member_id, reason_code: body.reason_code },
+      });
+
+      return c.json({
+        position_id: body.position_id,
+        member_id: body.member_id,
+        reason_code: body.reason_code,
+      });
     });
-
-    return c.json({
-      position_id: body.position_id,
-      member_id: body.member_id,
-      reason_code: body.reason_code,
-    });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
   },
 );
 

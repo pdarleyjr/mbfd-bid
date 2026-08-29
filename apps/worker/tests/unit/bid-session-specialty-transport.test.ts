@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  bidSessionSpecialtyReceiptStorageKey,
+  specialtyCommandReceiptFingerprint,
+} from '../../src/durable/bid-session-specialty.js';
+import {
   type BidSessionState,
   bidSessionStateStorageKey,
 } from '../../src/durable/bid-session-state.js';
@@ -76,9 +80,13 @@ function syntheticPolicy() {
         source: 'EXPLICIT_TEST_PRIORITY' as const,
         reference: 'synthetic-marine-priority-v1',
       },
+      scoring: {
+        source: 'EXPLICIT_TEST_PRIORITY' as const,
+        direction: 'LOWER_SCORE_WINS' as const,
+      },
       tie_break_chain: ['rsc_seniority', 'rank_seniority', 'member_id'] as const,
       normal_bid_interruption: 'SUSPEND_EXACT_NORMAL_TURN' as const,
-      candidate_outcomes: ['award', 'declined', 'unavailable'] as const,
+      candidate_outcomes: ['award', 'declined', 'unreachable'] as const,
       original_bidder_resume: 'RESUME_EXACT_ORIGINAL_TURN' as const,
     },
     candidateReleasePolicy: {
@@ -115,7 +123,33 @@ async function json(response: Response): Promise<Record<string, unknown>> {
   return (await response.json()) as Record<string, unknown>;
 }
 
+function reverseObjectKeyOrder(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reverseObjectKeyOrder);
+  if (typeof value !== 'object' || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .reverse()
+      .map(([key, entry]) => [key, reverseObjectKeyOrder(entry)]),
+  );
+}
+
 describe('BidSessionDO synthetic specialty transport', () => {
+  it('uses deterministic canonical payload ordering for specialty receipt fingerprints', () => {
+    const payload = {
+      command: {
+        commandId: 'specialty-canonical-fingerprint-1',
+        expectedRevision: 0,
+        requestId: 'specialty-canonical-request-1',
+        positionId: 'A101',
+        policy: syntheticPolicy(),
+      },
+      audit: audit('Synthetic specialty canonicalization rehearsal.'),
+    };
+    expect(specialtyCommandReceiptFingerprint('begin', payload)).toBe(
+      specialtyCommandReceiptFingerprint('begin', reverseObjectKeyOrder(payload)),
+    );
+  });
+
   it('atomically persists a revisioned synthetic interruption receipt and returns the exact normal turn after reconnect', async () => {
     const storage = new MemoryDurableStorage();
     await storage.put(bidSessionStateStorageKey(SESSION_ID), initialNormalState());
@@ -269,5 +303,165 @@ describe('BidSessionDO synthetic specialty transport', () => {
         { commandId: 'specialty-resume-1' },
       ],
     });
+  });
+
+  it('replays only an identical specialty operation, command payload, and audit record', async () => {
+    const storage = new MemoryDurableStorage();
+    await storage.put(bidSessionStateStorageKey(SESSION_ID), initialNormalState());
+    const subject = new BidSessionDO(fakeState(storage), {} as WorkerEnv);
+    const beginPayload = {
+      command: {
+        commandId: 'specialty-fingerprint-payload-1',
+        expectedRevision: 0,
+        requestId: 'specialty-fingerprint-request-1',
+        positionId: 'A101',
+        policy: syntheticPolicy(),
+      },
+      audit: audit('Synthetic specialty fingerprint rehearsal.'),
+    };
+
+    const accepted = await subject.fetch(
+      new Request('https://do/admin/specialty-adjudication/begin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(beginPayload),
+      }),
+    );
+    expect(accepted.status).toBe(200);
+
+    const exactReplay = await subject.fetch(
+      new Request('https://do/admin/specialty-adjudication/begin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(beginPayload),
+      }),
+    );
+    expect(exactReplay.status).toBe(200);
+    await expect(json(exactReplay)).resolves.toMatchObject({
+      kind: 'accepted',
+      idempotent_replay: true,
+    });
+
+    const changedPayload = {
+      command: {
+        ...beginPayload.command,
+        positionId: 'A102',
+      },
+      audit: audit('A materially different synthetic specialty rehearsal.'),
+    };
+    const mismatch = await subject.fetch(
+      new Request('https://do/admin/specialty-adjudication/begin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(changedPayload),
+      }),
+    );
+    expect(mismatch.status).toBe(409);
+    await expect(json(mismatch)).resolves.toMatchObject({
+      kind: 'rejected',
+      error: 'SPECIALTY_COMMAND_ID_REUSE_CONFLICT',
+      result: null,
+    });
+
+    const afterMismatch = await subject.fetch(
+      new Request('https://do/admin/specialty-adjudication'),
+    );
+    await expect(json(afterMismatch)).resolves.toMatchObject({
+      state: { revision: 1 },
+      audit_receipts: [{ commandId: beginPayload.command.commandId }],
+    });
+  });
+
+  it('rejects cross-operation specialty command ID reuse without mutating state', async () => {
+    const storage = new MemoryDurableStorage();
+    await storage.put(bidSessionStateStorageKey(SESSION_ID), initialNormalState());
+    const subject = new BidSessionDO(fakeState(storage), {} as WorkerEnv);
+    const commandId = 'specialty-fingerprint-cross-operation-1';
+    const beginPayload = {
+      command: {
+        commandId,
+        expectedRevision: 0,
+        requestId: 'specialty-fingerprint-cross-operation-request-1',
+        positionId: 'A101',
+        policy: syntheticPolicy(),
+      },
+      audit: audit('Synthetic specialty cross-operation rehearsal.'),
+    };
+    const begin = await subject.fetch(
+      new Request('https://do/admin/specialty-adjudication/begin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(beginPayload),
+      }),
+    );
+    expect(begin.status).toBe(200);
+
+    const crossOperation = await subject.fetch(
+      new Request('https://do/admin/specialty-adjudication/resolve-candidate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          command: {
+            commandId,
+            expectedRevision: 1,
+            requestId: beginPayload.command.requestId,
+            memberId: 11,
+            outcome: { kind: 'award', awardReference: 'synthetic-cross-operation-award' },
+          },
+          audit: audit('Attempted cross-operation command ID reuse.'),
+        }),
+      }),
+    );
+    expect(crossOperation.status).toBe(409);
+    await expect(json(crossOperation)).resolves.toMatchObject({
+      kind: 'rejected',
+      error: 'SPECIALTY_COMMAND_ID_REUSE_CONFLICT',
+      result: null,
+    });
+
+    const afterMismatch = await subject.fetch(
+      new Request('https://do/admin/specialty-adjudication'),
+    );
+    await expect(json(afterMismatch)).resolves.toMatchObject({
+      state: { revision: 1, active: { phase: 'resolving_higher_priority_candidates' } },
+      audit_receipts: [{ commandId }],
+    });
+  });
+
+  it('fails closed for a historical specialty receipt without a fingerprint', async () => {
+    const storage = new MemoryDurableStorage();
+    await storage.put(bidSessionStateStorageKey(SESSION_ID), initialNormalState());
+    const commandId = 'specialty-historical-receipt-1';
+    await storage.put(bidSessionSpecialtyReceiptStorageKey(SESSION_ID, commandId), {
+      version: 1,
+      commandId,
+      operation: 'begin',
+    });
+    const subject = new BidSessionDO(fakeState(storage), {} as WorkerEnv);
+    const rejected = await subject.fetch(
+      new Request('https://do/admin/specialty-adjudication/begin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          command: {
+            commandId,
+            expectedRevision: 0,
+            requestId: 'specialty-historical-request-1',
+            positionId: 'A101',
+            policy: syntheticPolicy(),
+          },
+          audit: audit('Historical specialty receipt must not replay.'),
+        }),
+      }),
+    );
+    expect(rejected.status).toBe(409);
+    await expect(json(rejected)).resolves.toMatchObject({
+      kind: 'rejected',
+      error: 'SPECIALTY_COMMAND_ID_REUSE_CONFLICT',
+      result: null,
+    });
+    await expect(
+      storage.get<BidSessionState>(bidSessionStateStorageKey(SESSION_ID)),
+    ).resolves.toEqual(initialNormalState());
   });
 });

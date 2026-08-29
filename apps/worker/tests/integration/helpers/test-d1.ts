@@ -77,8 +77,33 @@ function inactiveSpecialtyBidSessionNamespace(): WorkerEnv['BID_SESSION'] {
   const stub = {
     fetch: async (input: Request | string) => {
       const url = typeof input === 'string' ? input : input.url;
-      if (new URL(url).pathname === '/admin/specialty-adjudication') {
-        return new Response(JSON.stringify({ state: { active: null } }), { status: 200 });
+      const pathname = new URL(url).pathname;
+      if (pathname === '/admin/normal-mutation-lease/acquire') {
+        return new Response(JSON.stringify({ ok: true, lease_id: 'test-normal-mutation-lease' }), {
+          status: 200,
+        });
+      }
+      if (pathname === '/admin/normal-mutation-lease/release') {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (pathname === '/admin/specialty-adjudication') {
+        return new Response(
+          JSON.stringify({
+            mode: 'synthetic_test_only',
+            does_not_commit_bid: true,
+            database_audit_log: 'not_written',
+            state: {
+              version: 1,
+              revision: 0,
+              active: null,
+              consumedCommandIds: [],
+              processedRequestIds: [],
+              resumedRequestIds: [],
+            },
+            audit_receipts: [],
+          }),
+          { status: 200 },
+        );
       }
       return new Response('not found', { status: 404 });
     },

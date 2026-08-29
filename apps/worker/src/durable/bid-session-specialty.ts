@@ -1,3 +1,7 @@
+import { sha256 } from '@noble/hashes/sha256';
+import { bytesToHex } from '@noble/hashes/utils';
+
+import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import {
   type BeginSpecialtyAdjudicationResult,
   type ResolveOriginalSpecialtyRequestInput,
@@ -22,6 +26,20 @@ export interface SpecialtyDOStorageLike {
   put<T>(key: string, value: T): Promise<void>;
 }
 
+export type SpecialtyCommandOperation =
+  | 'begin'
+  | 'resolve_candidate'
+  | 'resolve_original'
+  | 'resume';
+
+/**
+ * A command ID names one immutable synthetic specialty command. It must never
+ * be re-used for altered payloads, audit metadata, or another operation.
+ */
+export const SPECIALTY_COMMAND_ID_REUSE_CONFLICT = 'SPECIALTY_COMMAND_ID_REUSE_CONFLICT';
+
+const SPECIALTY_COMMAND_FINGERPRINT_VERSION = 1;
+
 /**
  * Kept separate from the central BidSessionState key so the adapter can be
  * introduced and recovered without changing the existing session state shape.
@@ -45,6 +63,24 @@ export function bidSessionSpecialtyReceiptStorageKey(
   commandId: string,
 ): string {
   return `${bidSessionSpecialtyReceiptPrefix(bidSessionId)}${encodeURIComponent(commandId)}`;
+}
+
+/**
+ * Hash the normalized, parsed specialty transport command with RFC 8785-style
+ * canonical JSON. Object insertion order can therefore never change replay
+ * semantics, while array order remains part of the command because it can be
+ * meaningful to a policy payload.
+ */
+export function specialtyCommandReceiptFingerprint(
+  operation: SpecialtyCommandOperation,
+  payload: unknown,
+): string {
+  const canonicalPayload = canonicalize({
+    fingerprintVersion: SPECIALTY_COMMAND_FINGERPRINT_VERSION,
+    operation,
+    payload: payload as JsonValue,
+  });
+  return `sha256:${bytesToHex(sha256(new TextEncoder().encode(canonicalPayload)))}`;
 }
 
 /**
@@ -80,9 +116,11 @@ export type AcceptedSpecialtyEngineTransitionResult = Exclude<
  * transition in its Durable Object transaction.
  */
 export interface SpecialtyCommandReceipt {
-  readonly version: 1;
+  readonly version: 2;
   readonly commandId: string;
   readonly operation: 'begin' | 'resolve_candidate' | 'resolve_original' | 'resume';
+  /** SHA-256 of the canonical operation, parsed command payload, and audit metadata. */
+  readonly commandFingerprint: string;
   readonly acceptedAtMs: number;
   readonly actorType: 'admin';
   readonly actorId: number;
@@ -93,6 +131,34 @@ export interface SpecialtyCommandReceipt {
   readonly afterState: SpecialtyAdjudicationState;
   readonly events: readonly SpecialtyAuditEvent[];
   readonly result: AcceptedSpecialtyEngineTransitionResult;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * V1 receipts predate payload fingerprints. They are deliberately not
+ * replayable because their stored result cannot prove it belongs to the
+ * caller's current operation/payload/audit tuple.
+ */
+export function isVerifiedSpecialtyCommandReplay(
+  receipt: unknown,
+  commandId: string,
+  operation: SpecialtyCommandOperation,
+  commandFingerprint: string,
+): receipt is SpecialtyCommandReceipt {
+  if (!isRecord(receipt)) return false;
+  return (
+    receipt.version === 2 &&
+    receipt.commandId === commandId &&
+    receipt.operation === operation &&
+    receipt.commandFingerprint === commandFingerprint &&
+    isRecord(receipt.beforeState) &&
+    isRecord(receipt.afterState) &&
+    isRecord(receipt.result) &&
+    Array.isArray(receipt.events)
+  );
 }
 
 /**

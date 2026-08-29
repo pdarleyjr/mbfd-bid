@@ -295,6 +295,52 @@ describe('QualificationLifecycleWorkspace', () => {
     );
   });
 
+  it('represents specialty revocation as its own terminal event and does not send an expiration date', async () => {
+    const fetchMock = lifecycleFetchMock((init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        member_id: 7,
+        specialty_code: 'TECHNICAL_RESCUE',
+        kind: 'SPECIALTY_REVOKED',
+        effective_on: '2026-08-28',
+        evidence_source: 'Specialty board',
+        evidence_reference: 'specialty-revocation-456',
+        reason: 'Technical rescue revocation reviewed',
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const container = renderWorkspace();
+    await settle();
+
+    await setControl(
+      requiredControl<HTMLSelectElement>(container, 'qualification-kind'),
+      'SPECIALTY_REVOKED',
+    );
+    await setControl(
+      requiredControl<HTMLInputElement>(container, 'qualification-specialty-code'),
+      'TECHNICAL_RESCUE',
+    );
+    await setControl(
+      requiredControl<HTMLInputElement>(container, 'qualification-source'),
+      'Specialty board',
+    );
+    await setControl(
+      requiredControl<HTMLInputElement>(container, 'qualification-evidence-reference'),
+      'specialty-revocation-456',
+    );
+    await setControl(
+      requiredControl<HTMLTextAreaElement>(container, 'qualification-reason'),
+      'Technical rescue revocation reviewed',
+    );
+    await submit(requiredControl<HTMLFormElement>(container, 'qualification-event-form'));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/qualification-lifecycle/events',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(container.textContent).toContain('Specialty revoked');
+  });
+
   it('labels an unavailable mounted lifecycle endpoint as fail-closed and never infers a qualification status', async () => {
     vi.stubGlobal(
       'fetch',

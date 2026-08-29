@@ -13,9 +13,16 @@ type TestPolicyTieBreak = 'rsc_seniority' | 'rank_seniority' | 'member_id';
 
 const SPECIALTY_TEST_POLICY_LABEL = 'TEST POLICY — NOT APPROVED MBFD POLICY' as const;
 const TEST_POLICY_RANKING_SOURCE = 'EXPLICIT_TEST_PRIORITY' as const;
+const TEST_POLICY_SCORING_DIRECTION = 'LOWER_SCORE_WINS' as const;
 const TEST_POLICY_NORMAL_BID_INTERRUPTION = 'SUSPEND_EXACT_NORMAL_TURN' as const;
 const TEST_POLICY_ORIGINAL_BIDDER_RESUME = 'RESUME_EXACT_ORIGINAL_TURN' as const;
-const TEST_POLICY_CANDIDATE_OUTCOMES = ['award', 'declined', 'unavailable'] as const;
+const TEST_POLICY_CANDIDATE_OUTCOMES = [
+  'award',
+  'declined',
+  'unreachable',
+  'withdrawn',
+  'ineligible_on_recheck',
+] as const;
 const TEST_POLICY_TIE_BREAKS = ['rsc_seniority', 'rank_seniority', 'member_id'] as const;
 
 const TEST_POLICY_TIE_BREAK_LABELS: Record<TestPolicyTieBreak, string> = {
@@ -28,8 +35,16 @@ interface SpecialtyTestPolicyEnvelope {
   policy_label: typeof SPECIALTY_TEST_POLICY_LABEL;
   policy_version: string;
   specialty_pool: { id: string; label: string };
-  qualification_requirements: string[];
+  qualification_requirements: {
+    v: 1;
+    credential_names: string[];
+    specialty_codes: string[];
+  };
   ranking: { source: typeof TEST_POLICY_RANKING_SOURCE; reference: string };
+  scoring: {
+    source: typeof TEST_POLICY_RANKING_SOURCE;
+    direction: typeof TEST_POLICY_SCORING_DIRECTION;
+  };
   tie_break_chain: TestPolicyTieBreak[];
   normal_bid_interruption: typeof TEST_POLICY_NORMAL_BID_INTERRUPTION;
   candidate_outcomes: typeof TEST_POLICY_CANDIDATE_OUTCOMES;
@@ -59,6 +74,13 @@ interface SpecialtyState {
   active: ActiveSpecialtyState | null;
 }
 
+interface SpecialtyNormalTurn {
+  bidderId: number;
+  ordinal: number;
+  queueCursor: number;
+  mockControlRevision: number | null;
+}
+
 interface SpecialtyReceipt {
   commandId: string | null;
   operation: string | null;
@@ -70,6 +92,7 @@ interface SpecialtyReceipt {
 
 interface SpecialtyStatus {
   state: SpecialtyState;
+  normalTurn: SpecialtyNormalTurn | null;
   receipts: SpecialtyReceipt[];
   databaseAuditLog: string | null;
 }
@@ -154,6 +177,22 @@ function parseState(value: unknown): SpecialtyState | null {
   return active === null ? null : { revision, active };
 }
 
+function parseNormalTurn(value: unknown): SpecialtyNormalTurn | null | undefined {
+  if (value === null) return null;
+  const turn = asRecord(value);
+  if (turn === null) return undefined;
+  const bidderId = asPositiveInteger(turn.bidder_id);
+  const ordinal = asPositiveInteger(turn.ordinal);
+  const queueCursor = asNonNegativeInteger(turn.queue_cursor);
+  const mockControlRevision =
+    turn.mock_control_revision === null
+      ? null
+      : asNonNegativeInteger(turn.mock_control_revision);
+  if (bidderId === null || ordinal === null || queueCursor === null) return undefined;
+  if (mockControlRevision === null && turn.mock_control_revision !== null) return undefined;
+  return { bidderId, ordinal, queueCursor, mockControlRevision };
+}
+
 function parseReceipt(value: unknown, replayed = false): SpecialtyReceipt | null {
   const receipt = asRecord(value);
   if (receipt === null) return null;
@@ -177,10 +216,12 @@ function parseStatus(value: unknown): SpecialtyStatus | null {
     return null;
   }
   const state = parseState(response.state);
-  if (state === null || !Array.isArray(response.audit_receipts)) return null;
+  const normalTurn = parseNormalTurn(response.normal_turn);
+  if (state === null || normalTurn === undefined || !Array.isArray(response.audit_receipts)) return null;
   const receipts = response.audit_receipts.map((receipt) => parseReceipt(receipt)).filter(Boolean);
   return {
     state,
+    normalTurn,
     receipts: receipts as SpecialtyReceipt[],
     databaseAuditLog: asString(response.database_audit_log),
   };
@@ -216,7 +257,8 @@ function buildSpecialtyTestPolicy(input: {
   policyVersion: string;
   poolId: string;
   poolLabel: string;
-  qualificationRequirements: string;
+  credentialRequirements: string;
+  specialtyRequirements: string;
   rankingReference: string;
   tieBreaks: readonly [TestPolicyTieBreak, TestPolicyTieBreak, TestPolicyTieBreak | ''];
 }): { ok: true; policy: SpecialtyTestPolicyEnvelope } | { ok: false; error: string } {
@@ -232,21 +274,32 @@ function buildSpecialtyTestPolicy(input: {
   if (poolLabel.length === 0 || poolLabel.length > 200) {
     return { ok: false, error: 'Synthetic specialty-pool label must contain 1–200 characters.' };
   }
-  const qualificationRequirements = lineItems(input.qualificationRequirements);
-  if (qualificationRequirements.length === 0 || qualificationRequirements.length > 30) {
+  const credentialRequirements = lineItems(input.credentialRequirements);
+  const specialtyRequirements = lineItems(input.specialtyRequirements);
+  const totalRequirements = credentialRequirements.length + specialtyRequirements.length;
+  if (totalRequirements === 0 || totalRequirements > 30) {
     return {
       ok: false,
-      error: 'Provide 1–30 unique synthetic qualification requirements, one per line.',
+      error: 'Provide 1–30 synthetic credential names and specialty codes in total.',
     };
   }
-  if (qualificationRequirements.some((requirement) => requirement.length > 160)) {
+  if (credentialRequirements.some((requirement) => requirement.length > 160)) {
     return {
       ok: false,
-      error: 'Each synthetic qualification requirement must be 160 characters or less.',
+      error: 'Each synthetic credential name must be 160 characters or less.',
     };
   }
-  if (new Set(qualificationRequirements).size !== qualificationRequirements.length) {
-    return { ok: false, error: 'Synthetic qualification requirements must be unique.' };
+  if (specialtyRequirements.some((requirement) => requirement.length > 160)) {
+    return {
+      ok: false,
+      error: 'Each synthetic specialty qualification code must be 160 characters or less.',
+    };
+  }
+  if (new Set(credentialRequirements).size !== credentialRequirements.length) {
+    return { ok: false, error: 'Synthetic credential names must be unique.' };
+  }
+  if (new Set(specialtyRequirements).size !== specialtyRequirements.length) {
+    return { ok: false, error: 'Synthetic specialty qualification codes must be unique.' };
   }
   const rankingReference = input.rankingReference.trim();
   if (rankingReference.length === 0 || rankingReference.length > 160) {
@@ -261,14 +314,25 @@ function buildSpecialtyTestPolicy(input: {
   if (new Set(tieBreakChain).size !== tieBreakChain.length) {
     return { ok: false, error: 'Synthetic tie-break entries must be unique.' };
   }
+  if (tieBreakChain.at(-1) !== 'member_id') {
+    return { ok: false, error: 'Synthetic tie-break chain must end with Member ID.' };
+  }
   return {
     ok: true,
     policy: {
       policy_label: SPECIALTY_TEST_POLICY_LABEL,
       policy_version: policyVersion,
       specialty_pool: { id: poolId, label: poolLabel },
-      qualification_requirements: qualificationRequirements,
+      qualification_requirements: {
+        v: 1,
+        credential_names: credentialRequirements,
+        specialty_codes: specialtyRequirements,
+      },
       ranking: { source: TEST_POLICY_RANKING_SOURCE, reference: rankingReference },
+      scoring: {
+        source: TEST_POLICY_RANKING_SOURCE,
+        direction: TEST_POLICY_SCORING_DIRECTION,
+      },
       tie_break_chain: tieBreakChain,
       normal_bid_interruption: TEST_POLICY_NORMAL_BID_INTERRUPTION,
       candidate_outcomes: TEST_POLICY_CANDIDATE_OUTCOMES,
@@ -280,7 +344,7 @@ function buildSpecialtyTestPolicy(input: {
 function candidateRows(
   value: string,
 ):
-  | { ok: true; candidates: Array<{ member_id: number; priority_rank: number }> }
+  | { ok: true; candidates: Array<{ member_id: number; explicit_priority: number }> }
   | { ok: false; error: string } {
   const rows = value
     .split(/\r?\n/)
@@ -288,15 +352,14 @@ function candidateRows(
     .filter(Boolean);
   if (rows.length === 0)
     return { ok: false, error: 'At least one synthetic candidate is required.' };
-  const candidates: Array<{ member_id: number; priority_rank: number }> = [];
+  const candidates: Array<{ member_id: number; explicit_priority: number }> = [];
   const memberIds = new Set<number>();
-  const priorityRanks = new Set<number>();
   for (const row of rows) {
     const parts = row.split(/[,:\s]+/).filter(Boolean);
     if (parts.length !== 2) {
       return {
         ok: false,
-        error: 'Each synthetic candidate must use exactly “member ID, priority rank”.',
+        error: 'Each synthetic candidate must use exactly “member ID, explicit priority score”.',
       };
     }
     const memberId = Number(parts[0]);
@@ -309,18 +372,18 @@ function candidateRows(
     ) {
       return {
         ok: false,
-        error: 'Candidate member IDs must be positive integers and ranks must be zero or greater.',
+        error:
+          'Candidate member IDs must be positive integers and explicit priority scores must be zero or greater.',
       };
     }
-    if (memberIds.has(memberId) || priorityRanks.has(priorityRank)) {
+    if (memberIds.has(memberId)) {
       return {
         ok: false,
-        error: 'Synthetic candidates must not repeat a member ID or priority rank.',
+        error: 'Synthetic candidates must not repeat a member ID.',
       };
     }
     memberIds.add(memberId);
-    priorityRanks.add(priorityRank);
-    candidates.push({ member_id: memberId, priority_rank: priorityRank });
+    candidates.push({ member_id: memberId, explicit_priority: priorityRank });
   }
   return { ok: true, candidates };
 }
@@ -350,19 +413,17 @@ export function SpecialtyAdjudicationWorkspace() {
   const [status, setStatus] = useState<SpecialtyStatus | null>(null);
   const [receipts, setReceipts] = useState<SpecialtyReceipt[]>([]);
   const [positionId, setPositionId] = useState('');
-  const [originalMemberId, setOriginalMemberId] = useState('');
   const [candidateRowsText, setCandidateRowsText] = useState('');
-  const [policyReference, setPolicyReference] = useState('synthetic-specialty-fixture-v1');
-  const [testPolicyVersion, setTestPolicyVersion] = useState('synthetic-specialty-v1');
-  const [testPolicyPoolId, setTestPolicyPoolId] = useState('MARINE_TEST_POOL');
-  const [testPolicyPoolLabel, setTestPolicyPoolLabel] = useState(
-    'Marine Operations synthetic test pool',
-  );
-  const [testPolicyQualificationRequirements, setTestPolicyQualificationRequirements] = useState(
-    'Marine Operations\nDriver Operator',
-  );
+  const [policyReference, setPolicyReference] = useState('synthetic-specialty-fixture-v2');
+  const [testPolicyVersion, setTestPolicyVersion] = useState('synthetic-specialty-v2');
+  const [testPolicyPoolId, setTestPolicyPoolId] = useState('SYNTHETIC_SPECIALTY_TEST_POOL');
+  const [testPolicyPoolLabel, setTestPolicyPoolLabel] = useState('Synthetic specialty test pool');
+  const [testPolicyCredentialRequirements, setTestPolicyCredentialRequirements] =
+    useState('SYNTHETIC_CREDENTIAL_A');
+  const [testPolicySpecialtyRequirements, setTestPolicySpecialtyRequirements] =
+    useState('SYNTHETIC_SPECIALTY_A');
   const [testPolicyRankingReference, setTestPolicyRankingReference] = useState(
-    'synthetic-specialty-ranking-v1',
+    'synthetic-specialty-ranking-v2',
   );
   const [testPolicyTieBreakOne, setTestPolicyTieBreakOne] =
     useState<TestPolicyTieBreak>('rsc_seniority');
@@ -519,6 +580,7 @@ export function SpecialtyAdjudicationWorkspace() {
       );
       setStatus((current) => ({
         state: nextState,
+        normalTurn: current?.normalTurn ?? null,
         receipts:
           receipt === null ? (current?.receipts ?? []) : [...(current?.receipts ?? []), receipt],
         databaseAuditLog: current?.databaseAuditLog ?? null,
@@ -551,9 +613,15 @@ export function SpecialtyAdjudicationWorkspace() {
       );
       return;
     }
-    const originalId = Number(originalMemberId);
-    if (!Number.isSafeInteger(originalId) || originalId <= 0) {
-      setError('Enter the original normal-bidder member ID as a positive integer.');
+    const normalTurn = status?.normalTurn;
+    if (
+      normalTurn === null ||
+      normalTurn === undefined ||
+      normalTurn.mockControlRevision === null
+    ) {
+      setError(
+        'The current mock normal turn and its control revision are unavailable. Reload after the ordinary mock Bid is initialized.',
+      );
       return;
     }
     if (positionId.trim().length === 0 || positionId.trim().length > 160) {
@@ -562,12 +630,6 @@ export function SpecialtyAdjudicationWorkspace() {
     }
     if (!normalizedCandidateRows.ok) {
       setError(normalizedCandidateRows.error);
-      return;
-    }
-    if (
-      !normalizedCandidateRows.candidates.some((candidate) => candidate.member_id === originalId)
-    ) {
-      setError('The original normal bidder must appear in the synthetic candidate list.');
       return;
     }
     const trimmedReference = policyReference.trim();
@@ -579,7 +641,8 @@ export function SpecialtyAdjudicationWorkspace() {
       policyVersion: testPolicyVersion,
       poolId: testPolicyPoolId,
       poolLabel: testPolicyPoolLabel,
-      qualificationRequirements: testPolicyQualificationRequirements,
+      credentialRequirements: testPolicyCredentialRequirements,
+      specialtyRequirements: testPolicySpecialtyRequirements,
       rankingReference: testPolicyRankingReference,
       tieBreaks: [testPolicyTieBreakOne, testPolicyTieBreakTwo, testPolicyTieBreakThree],
     });
@@ -603,6 +666,7 @@ export function SpecialtyAdjudicationWorkspace() {
       {
         command_id: commandId,
         expected_revision: state.revision,
+        expected_normal_control_revision: normalTurn.mockControlRevision,
         request_id: requestId,
         position_id: positionId.trim(),
         policy: {
@@ -610,11 +674,7 @@ export function SpecialtyAdjudicationWorkspace() {
           policy_reference: trimmedReference,
           test_policy: testPolicy.policy,
           candidate_release_policy: { status: 'configured', on_release: releasePolicy },
-          candidates: normalizedCandidateRows.candidates.map((candidate) => ({
-            ...candidate,
-            general_eligibility: { status: 'eligible' },
-            specialty_eligibility: { status: 'eligible' },
-          })),
+          candidates: normalizedCandidateRows.candidates,
         },
         reason: trimmedReason,
       },
@@ -914,8 +974,9 @@ export function SpecialtyAdjudicationWorkspace() {
                   Begin labelled synthetic scenario
                 </h2>
                 <p className="mt-1 max-w-3xl text-sm text-slate-300">
-                  Candidate rank and eligibility here are synthetic test inputs only. The Worker
-                  independently requires a frozen mock session and rejects candidates outside its
+                  Enter synthetic explicit-priority scores only. The Worker independently derives
+                  general eligibility and specialty qualifications from the frozen mock snapshot,
+                  preserves the actual normal bidder, and requires this list to exactly cover its
                   frozen bid pool.
                 </p>
               </div>
@@ -929,22 +990,6 @@ export function SpecialtyAdjudicationWorkspace() {
                     value={positionId}
                     onChange={(event) => {
                       setPositionId(event.target.value);
-                      resetBeginKey();
-                    }}
-                    className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-200">
-                    Original normal-bidder member ID
-                  </span>
-                  <input
-                    name="original_member_id"
-                    required
-                    inputMode="numeric"
-                    value={originalMemberId}
-                    onChange={(event) => {
-                      setOriginalMemberId(event.target.value);
                       resetBeginKey();
                     }}
                     className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white"
@@ -1034,23 +1079,44 @@ export function SpecialtyAdjudicationWorkspace() {
                     </label>
                     <label className="block lg:col-span-2">
                       <span className="text-sm font-medium text-slate-100">
-                        Qualification requirements
+                        Required credential names
                       </span>
                       <textarea
-                        name="test_policy_qualification_requirements"
-                        required
+                        name="test_policy_credential_requirements"
                         rows={3}
                         maxLength={5000}
-                        value={testPolicyQualificationRequirements}
+                        value={testPolicyCredentialRequirements}
                         onChange={(event) => {
-                          setTestPolicyQualificationRequirements(event.target.value);
+                          setTestPolicyCredentialRequirements(event.target.value);
                           resetBeginKey();
                         }}
                         className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
                       />
                       <span className="mt-1 block text-xs text-slate-400">
-                        One synthetic requirement per line (1–30 unique entries). This fixture does
-                        not infer member credential records.
+                        One synthetic credential name per line. The Worker checks only frozen
+                        evaluation-date evidence; this form cannot assert a credential or
+                        eligibility result.
+                      </span>
+                    </label>
+                    <label className="block lg:col-span-2">
+                      <span className="text-sm font-medium text-slate-100">
+                        Required specialty qualification codes
+                      </span>
+                      <textarea
+                        name="test_policy_specialty_requirements"
+                        rows={3}
+                        maxLength={5000}
+                        value={testPolicySpecialtyRequirements}
+                        onChange={(event) => {
+                          setTestPolicySpecialtyRequirements(event.target.value);
+                          resetBeginKey();
+                        }}
+                        className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                      />
+                      <span className="mt-1 block text-xs text-slate-400">
+                        One synthetic specialty code per line. A code requires source-safe frozen
+                        lifecycle evidence at the configured evaluation date; pre-bridge snapshots
+                        are rejected rather than treated as qualified.
                       </span>
                     </label>
                     <label className="block">
@@ -1080,12 +1146,25 @@ export function SpecialtyAdjudicationWorkspace() {
                         className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white"
                       />
                     </label>
+                    <label className="block">
+                      <span className="text-sm font-medium text-slate-100">Scoring direction</span>
+                      <input
+                        name="test_policy_scoring_direction"
+                        readOnly
+                        value={TEST_POLICY_SCORING_DIRECTION}
+                        className="mt-1 min-h-11 w-full rounded border border-amber-700 bg-slate-950 px-3 font-mono text-sm text-amber-100"
+                      />
+                      <span className="mt-1 block text-xs text-slate-400">
+                        Lower score wins; configured tie-breaks resolve equal scores.
+                      </span>
+                    </label>
                     <fieldset className="rounded border border-slate-700 p-3 lg:col-span-2">
                       <legend className="px-1 text-sm font-medium text-slate-100">
                         Tie-break chain
                       </legend>
                       <p className="mt-1 text-xs text-slate-400">
-                        Configure two or three unique synthetic tie-breaks in order.
+                        Configure two or three unique synthetic tie-breaks in order, ending with
+                        Member ID.
                       </p>
                       <div className="mt-3 grid gap-3 sm:grid-cols-3">
                         <label className="block">
@@ -1147,7 +1226,7 @@ export function SpecialtyAdjudicationWorkspace() {
                         </label>
                       </div>
                     </fieldset>
-                    <dl className="grid gap-3 rounded border border-slate-700 bg-slate-950/40 p-3 text-sm lg:col-span-2 sm:grid-cols-3">
+                    <dl className="grid gap-3 rounded border border-slate-700 bg-slate-950/40 p-3 text-sm lg:col-span-2 sm:grid-cols-4">
                       <div>
                         <dt className="text-slate-400">Normal Bid interruption</dt>
                         <dd className="mt-1 font-mono text-xs text-amber-100">
@@ -1162,6 +1241,13 @@ export function SpecialtyAdjudicationWorkspace() {
                         <dd className="mt-1 font-mono text-xs text-amber-100">
                           {TEST_POLICY_CANDIDATE_OUTCOMES.join(' · ')}
                         </dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-400">Scoring</dt>
+                        <dd className="mt-1 font-mono text-xs text-amber-100">
+                          {TEST_POLICY_SCORING_DIRECTION}
+                        </dd>
+                        <dd className="mt-1 text-xs text-slate-300">Lower score wins</dd>
                       </div>
                       <div>
                         <dt className="text-slate-400">Original-bidder resumption</dt>
@@ -1207,12 +1293,15 @@ export function SpecialtyAdjudicationWorkspace() {
                       setCandidateRowsText(event.target.value);
                       resetBeginKey();
                     }}
-                    placeholder={'One candidate per line: member ID, priority rank\n11, 1\n17, 2'}
+                    placeholder={
+                      'One candidate per line: member ID, explicit priority score\n11, 1\n17, 1'
+                    }
                     className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-500"
                   />
                   <span className="mt-1 block text-xs text-slate-400">
-                    All rows are marked synthetic eligible. Include the original bidder exactly
-                    once.
+                    Equal scores are resolved by the configured tie-break chain. Include every
+                    non-excluded frozen mock-pool member exactly once; eligibility is evaluated by
+                    the Worker, never asserted by this form.
                   </span>
                 </label>
                 <label className="block lg:col-span-2">

@@ -9,7 +9,7 @@ import {
   type QualificationLifecycleKind,
   deriveMemberQualificationProjection,
   isQualificationCalendarDate,
-  isQualificationLifecycleKind,
+  normalizePersistedQualificationLifecycleEvent,
 } from '../../lib/qualification-lifecycle.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -23,6 +23,7 @@ interface QualificationEventDbRow {
   credential_id: number | null;
   credential_name: string | null;
   specialty_code: string | null;
+  specialty_terminal_status: 'EXPIRED' | 'REVOKED' | 'REMOVED' | null;
   kind: string;
   effective_on: string;
   expires_on: string | null;
@@ -49,6 +50,17 @@ const CertificationKinds = new Set<QualificationLifecycleKind>([
   'CERTIFICATION_EXPIRED',
   'CERTIFICATION_REVOKED',
 ]);
+const SpecialtyKinds = new Set<QualificationLifecycleKind>([
+  'SPECIALTY_QUALIFIED',
+  'SPECIALTY_EXPIRED',
+  'SPECIALTY_REVOKED',
+  'SPECIALTY_REMOVED',
+]);
+const SpecialtyTerminalKinds = new Set<QualificationLifecycleKind>([
+  'SPECIALTY_EXPIRED',
+  'SPECIALTY_REVOKED',
+  'SPECIALTY_REMOVED',
+]);
 
 const EventInputSchema = z
   .object({
@@ -57,6 +69,9 @@ const EventInputSchema = z
       'CERTIFICATION_EXPIRED',
       'CERTIFICATION_REVOKED',
       'SPECIALTY_QUALIFIED',
+      'SPECIALTY_EXPIRED',
+      'SPECIALTY_REVOKED',
+      'SPECIALTY_REMOVED',
     ]),
     member_id: z.number().int().positive(),
     credential_id: z.number().int().positive().optional(),
@@ -80,10 +95,10 @@ const EventInputSchema = z
         message: 'not allowed',
       });
     }
-    if (value.kind === 'SPECIALTY_QUALIFIED' && value.specialty_code === undefined) {
+    if (SpecialtyKinds.has(value.kind) && value.specialty_code === undefined) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['specialty_code'], message: 'required' });
     }
-    if (value.kind === 'SPECIALTY_QUALIFIED' && value.credential_id !== undefined) {
+    if (SpecialtyKinds.has(value.kind) && value.credential_id !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['credential_id'],
@@ -117,14 +132,15 @@ async function all<T>(db: D1Database, query: string, ...bindings: unknown[]): Pr
   return result.results as T[];
 }
 
-function mapEvent(row: QualificationEventDbRow): QualificationLifecycleEvent {
-  return {
+function mapEvent(row: QualificationEventDbRow): QualificationLifecycleEvent | null {
+  return normalizePersistedQualificationLifecycleEvent({
     id: row.id,
     memberId: row.member_id,
     credentialId: row.credential_id,
     credentialName: row.credential_name,
     specialtyCode: row.specialty_code,
-    kind: row.kind as QualificationLifecycleKind,
+    kind: row.kind,
+    specialtyTerminalStatus: row.specialty_terminal_status,
     effectiveOn: row.effective_on,
     expiresOn: row.expires_on,
     evidenceSource: row.evidence_source,
@@ -135,7 +151,7 @@ function mapEvent(row: QualificationEventDbRow): QualificationLifecycleEvent {
     beforeState: row.before_state,
     afterState: row.after_state,
     createdAt: row.created_at,
-  };
+  });
 }
 
 function presentEvent(event: QualificationLifecycleEvent) {
@@ -159,14 +175,13 @@ function presentEvent(event: QualificationLifecycleEvent) {
   };
 }
 
-async function loadEvents(
-  db: D1Database,
-  memberId: number,
-): Promise<QualificationLifecycleEvent[]> {
+type LoadedEvents = { ok: true; events: QualificationLifecycleEvent[] } | { ok: false };
+
+async function loadEvents(db: D1Database, memberId: number): Promise<LoadedEvents> {
   const rows = await all<QualificationEventDbRow>(
     db,
     `SELECT event.id, event.member_id, event.credential_id, credential.name AS credential_name,
-            event.specialty_code, event.kind, event.effective_on, event.expires_on,
+            event.specialty_code, event.specialty_terminal_status, event.kind, event.effective_on, event.expires_on,
             event.evidence_source, event.evidence_reference, event.reason, event.actor_subject,
             event.idempotency_key, event.before_state, event.after_state, event.created_at
        FROM member_qualification_events event
@@ -175,7 +190,13 @@ async function loadEvents(
       ORDER BY event.effective_on ASC, event.created_at ASC, event.id ASC`,
     memberId,
   );
-  return rows.filter((row) => isQualificationLifecycleKind(row.kind)).map(mapEvent);
+  const events: QualificationLifecycleEvent[] = [];
+  for (const row of rows) {
+    const event = mapEvent(row);
+    if (event === null) return { ok: false };
+    events.push(event);
+  }
+  return { ok: true, events };
 }
 
 async function loadLegacyCredentials(
@@ -226,10 +247,22 @@ function sameReceipt(
   );
 }
 
-function afterStatus(kind: QualificationLifecycleKind): 'active' | 'expired' | 'revoked' {
-  if (kind === 'CERTIFICATION_EXPIRED') return 'expired';
-  if (kind === 'CERTIFICATION_REVOKED') return 'revoked';
+function afterStatus(
+  kind: QualificationLifecycleKind,
+): 'active' | 'expired' | 'revoked' | 'removed' {
+  if (kind === 'CERTIFICATION_EXPIRED' || kind === 'SPECIALTY_EXPIRED') return 'expired';
+  if (kind === 'CERTIFICATION_REVOKED' || kind === 'SPECIALTY_REVOKED') return 'revoked';
+  if (kind === 'SPECIALTY_REMOVED') return 'removed';
   return 'active';
+}
+
+function specialtyTerminalStatus(
+  kind: QualificationLifecycleKind,
+): 'EXPIRED' | 'REVOKED' | 'REMOVED' | null {
+  if (kind === 'SPECIALTY_EXPIRED') return 'EXPIRED';
+  if (kind === 'SPECIALTY_REVOKED') return 'REVOKED';
+  if (kind === 'SPECIALTY_REMOVED') return 'REMOVED';
+  return null;
 }
 
 router.get('/members/:memberId{\\d+}', async (c) => {
@@ -238,22 +271,23 @@ router.get('/members/:memberId{\\d+}', async (c) => {
   if (!isQualificationCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
   if (!(await memberExists(c.env.DB, memberId))) return c.json({ error: 'member_not_found' }, 404);
 
-  const [legacyCredentials, events] = await Promise.all([
+  const [legacyCredentials, loadedEvents] = await Promise.all([
     loadLegacyCredentials(c.env.DB, memberId),
     loadEvents(c.env.DB, memberId),
   ]);
+  if (!loadedEvents.ok) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
   const projection = deriveMemberQualificationProjection({
     memberId,
     asOf,
     legacyCredentials,
-    events,
+    events: loadedEvents.events,
   });
   return c.json({
     memberId,
     asOf,
     certifications: projection.certifications,
     specialties: projection.specialties,
-    events: events.map(presentEvent),
+    events: loadedEvents.events.map(presentEvent),
   });
 });
 
@@ -271,11 +305,20 @@ router.post('/events', requireStepUpAuth(), async (c) => {
   if (input.expires_on !== undefined && input.expires_on < input.effective_on) {
     return c.json({ error: 'expires_before_effective_on' }, 422);
   }
-  if (input.kind === 'CERTIFICATION_EXPIRED' && input.expires_on !== input.effective_on) {
+  if (
+    (input.kind === 'CERTIFICATION_EXPIRED' || input.kind === 'SPECIALTY_EXPIRED') &&
+    input.expires_on !== input.effective_on
+  ) {
     return c.json({ error: 'expiration_must_match_effective_on' }, 422);
   }
-  if (input.kind === 'CERTIFICATION_REVOKED' && input.expires_on !== undefined) {
+  if (
+    (input.kind === 'CERTIFICATION_REVOKED' || input.kind === 'SPECIALTY_REVOKED') &&
+    input.expires_on !== undefined
+  ) {
     return c.json({ error: 'revocation_cannot_set_expiration' }, 422);
+  }
+  if (input.kind === 'SPECIALTY_REMOVED' && input.expires_on !== undefined) {
+    return c.json({ error: 'removal_cannot_set_expiration' }, 422);
   }
 
   const idempotencyKey = c.req.header('Idempotency-Key');
@@ -293,7 +336,7 @@ router.post('/events', requireStepUpAuth(), async (c) => {
   const existing = await first<QualificationEventDbRow>(
     c.env.DB,
     `SELECT event.id, event.member_id, event.credential_id, credential.name AS credential_name,
-            event.specialty_code, event.kind, event.effective_on, event.expires_on,
+            event.specialty_code, event.specialty_terminal_status, event.kind, event.effective_on, event.expires_on,
             event.evidence_source, event.evidence_reference, event.reason, event.actor_subject,
             event.idempotency_key, event.before_state, event.after_state, event.created_at
        FROM member_qualification_events event
@@ -303,6 +346,7 @@ router.post('/events', requireStepUpAuth(), async (c) => {
   );
   if (existing !== undefined) {
     const receipt = mapEvent(existing);
+    if (receipt === null) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
     if (sameReceipt(receipt, input, actorSubject))
       return c.json({ replayed: true, event: presentEvent(receipt) });
     return c.json({ error: 'idempotency_key_reused' }, 409);
@@ -319,15 +363,16 @@ router.post('/events', requireStepUpAuth(), async (c) => {
     if (credential === undefined) return c.json({ error: 'credential_not_found' }, 404);
   }
 
-  const [legacyCredentials, events] = await Promise.all([
+  const [legacyCredentials, loadedEvents] = await Promise.all([
     loadLegacyCredentials(c.env.DB, input.member_id),
     loadEvents(c.env.DB, input.member_id),
   ]);
+  if (!loadedEvents.ok) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
   const beforeProjection = deriveMemberQualificationProjection({
     memberId: input.member_id,
     asOf: input.effective_on,
     legacyCredentials,
-    events,
+    events: loadedEvents.events,
   });
   const beforeQualification =
     input.credential_id === undefined
@@ -338,11 +383,14 @@ router.post('/events', requireStepUpAuth(), async (c) => {
           (credential) => credential.credentialId === input.credential_id,
         ) ?? null);
 
-  if (
-    (input.kind === 'CERTIFICATION_EXPIRED' || input.kind === 'CERTIFICATION_REVOKED') &&
-    beforeQualification?.status !== 'active'
-  ) {
+  const certificationTerminal =
+    input.kind === 'CERTIFICATION_EXPIRED' || input.kind === 'CERTIFICATION_REVOKED';
+  const specialtyTerminal = SpecialtyTerminalKinds.has(input.kind);
+  if (certificationTerminal && beforeQualification?.status !== 'active') {
     return c.json({ error: 'credential_not_active_at_effective_on' }, 422);
+  }
+  if (specialtyTerminal && beforeQualification?.status !== 'active') {
+    return c.json({ error: 'specialty_not_active_at_effective_on' }, 422);
   }
 
   const eventId = ulid();
@@ -370,21 +418,24 @@ router.post('/events', requireStepUpAuth(), async (c) => {
       ? `${input.member_id}:${input.specialty_code}`
       : `${input.member_id}:${input.credential_id}`;
   const actorId = typeof c.get('claims').sub === 'number' ? c.get('claims').sub : null;
+  const terminalStatus = specialtyTerminalStatus(input.kind);
+  const persistedKind = terminalStatus === null ? input.kind : 'SPECIALTY_QUALIFIED';
 
   try {
     const results = await c.env.DB.batch([
       c.env.DB.prepare(
         `INSERT INTO member_qualification_events
-           (id, member_id, credential_id, specialty_code, kind, effective_on, expires_on,
-            evidence_source, evidence_reference, reason, actor_subject, idempotency_key,
-            before_state, after_state, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, member_id, credential_id, specialty_code, specialty_terminal_status, kind, effective_on, expires_on,
+             evidence_source, evidence_reference, reason, actor_subject, idempotency_key,
+             before_state, after_state, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         eventId,
         input.member_id,
         input.credential_id ?? null,
         input.specialty_code ?? null,
-        input.kind,
+        terminalStatus,
+        persistedKind,
         input.effective_on,
         input.expires_on ?? null,
         input.evidence_source,
@@ -422,7 +473,7 @@ router.post('/events', requireStepUpAuth(), async (c) => {
     const raced = await first<QualificationEventDbRow>(
       c.env.DB,
       `SELECT event.id, event.member_id, event.credential_id, credential.name AS credential_name,
-              event.specialty_code, event.kind, event.effective_on, event.expires_on,
+              event.specialty_code, event.specialty_terminal_status, event.kind, event.effective_on, event.expires_on,
               event.evidence_source, event.evidence_reference, event.reason, event.actor_subject,
               event.idempotency_key, event.before_state, event.after_state, event.created_at
          FROM member_qualification_events event
@@ -430,8 +481,12 @@ router.post('/events', requireStepUpAuth(), async (c) => {
         WHERE event.idempotency_key = ?`,
       idempotencyKey,
     );
-    if (raced !== undefined && sameReceipt(mapEvent(raced), input, actorSubject)) {
-      return c.json({ replayed: true, event: presentEvent(mapEvent(raced)) });
+    if (raced !== undefined) {
+      const receipt = mapEvent(raced);
+      if (receipt === null) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
+      if (sameReceipt(receipt, input, actorSubject)) {
+        return c.json({ replayed: true, event: presentEvent(receipt) });
+      }
     }
     return c.json({ error: 'qualification_write_rejected' }, 409);
   }
@@ -439,7 +494,7 @@ router.post('/events', requireStepUpAuth(), async (c) => {
   const saved = await first<QualificationEventDbRow>(
     c.env.DB,
     `SELECT event.id, event.member_id, event.credential_id, credential.name AS credential_name,
-            event.specialty_code, event.kind, event.effective_on, event.expires_on,
+            event.specialty_code, event.specialty_terminal_status, event.kind, event.effective_on, event.expires_on,
             event.evidence_source, event.evidence_reference, event.reason, event.actor_subject,
             event.idempotency_key, event.before_state, event.after_state, event.created_at
        FROM member_qualification_events event
@@ -448,7 +503,9 @@ router.post('/events', requireStepUpAuth(), async (c) => {
     eventId,
   );
   if (saved === undefined) return c.json({ error: 'qualification_write_rejected' }, 409);
-  return c.json({ replayed: false, event: presentEvent(mapEvent(saved)) }, 201);
+  const event = mapEvent(saved);
+  if (event === null) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
+  return c.json({ replayed: false, event: presentEvent(event) }, 201);
 });
 
 export default router;

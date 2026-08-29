@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'f'.repeat(64);
@@ -189,6 +190,73 @@ describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
       | undefined;
     expect(r?.forced).toBe(0);
     expect(r?.admin_actor_id).toBeNull();
+  });
+
+  it('replays a bid committed after the pre-lease idempotency lookup', async () => {
+    const key = 'proxy-idem-race-after-lease-1';
+    const bidId = '01HZZ0000000000000PROXYREPLAY';
+    let injected = false;
+    const bidSessionNamespace: WorkerEnv['BID_SESSION'] = {
+      idFromName: (name: string) => ({ toString: () => name }) as unknown as DurableObjectId,
+      get: () =>
+        ({
+          fetch: async (input: Request | string) => {
+            const url = typeof input === 'string' ? input : input.url;
+            const pathname = new URL(url).pathname;
+            if (pathname === '/admin/normal-mutation-lease/acquire') {
+              // The route's pre-lease lookup has found no row. Model another
+              // writer committing the same key before this request is granted
+              // its serialized mutation permit.
+              if (!injected) {
+                injected = true;
+                await h.db.run(
+                  `INSERT INTO bids
+                    (id, bid_session_id, ordinal, member_id, position_id, picked_at, forced,
+                     idempotency_key, portal_sync_status, portal_sync_attempts)
+                   VALUES (?, ?, 0, 60, 'A101', ?, 0, ?, 'pending', 0);`,
+                  [bidId, sessionId, Date.now(), key],
+                );
+              }
+              return new Response(
+                JSON.stringify({ ok: true, lease_id: 'bid-for-member-race-test-lease' }),
+                { status: 200 },
+              );
+            }
+            if (pathname === '/admin/normal-mutation-lease/release') {
+              return new Response(JSON.stringify({ ok: true }), { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+          },
+        }) as unknown as DurableObjectStub,
+    } as unknown as WorkerEnv['BID_SESSION'];
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': key,
+        },
+        body: JSON.stringify({
+          member_id: 60,
+          position_id: 'A101',
+          reason_code: 'bid_for_member.unreachable_phone',
+          reason: 'Replay after the normal mutation permit is held.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY, BID_SESSION: bidSessionNamespace },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      bid_id: bidId,
+      forced: false,
+      idempotent_replay: true,
+    });
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE idempotency_key = ?', [key])).results,
+    ).toEqual([{ n: 1 }]);
   });
 
   it('does not let an unstarted live session create a proxy bid', async () => {

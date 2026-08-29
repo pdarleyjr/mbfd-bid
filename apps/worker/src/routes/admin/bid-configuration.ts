@@ -1,5 +1,9 @@
 import { zValidator } from '@hono/zod-validator';
-import { BidConfigurationSettingsSchema, type JwtPayload } from '@mbfd/shared';
+import {
+  BidConfigurationSettingsV2Schema,
+  CredentialEvaluationDateSchema,
+  type JwtPayload,
+} from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -26,13 +30,19 @@ const SetBidConfigurationSchema = z
       .object({
         expected_duration_days: z.number().int().min(1).max(7),
         turn_timer_seconds: z.number().int().min(30).max(600),
+        credential_evaluation_on: CredentialEvaluationDateSchema,
       })
       .strict(),
     reason: z.string().trim().min(4).max(500),
   })
   .strict();
 
-type ConfigurationLifecycle = 'UNCONFIGURED' | 'DRAFT' | 'FROZEN' | 'INCONSISTENT';
+type ConfigurationLifecycle =
+  | 'UNCONFIGURED'
+  | 'DRAFT'
+  | 'FROZEN'
+  | 'LEGACY_EVALUATION_DATE_REQUIRED'
+  | 'INCONSISTENT';
 
 function actorIdFromClaims(claims: JwtPayload): number | null {
   return claims.sub > 0 ? claims.sub : null;
@@ -66,8 +76,12 @@ function configurationResponse(
     year.positionTemplateVersion !== null &&
     settings !== null
   ) {
-    lifecycle =
-      book.status === 'draft' ? 'DRAFT' : book.status === 'active' ? 'FROZEN' : 'INCONSISTENT';
+    if (settings.v === 1) {
+      lifecycle = 'LEGACY_EVALUATION_DATE_REQUIRED';
+    } else {
+      lifecycle =
+        book.status === 'draft' ? 'DRAFT' : book.status === 'active' ? 'FROZEN' : 'INCONSISTENT';
+    }
   }
 
   return {
@@ -129,10 +143,11 @@ router.put(
     const parsedYear = YearParamSchema.safeParse(c.req.param('year'));
     if (!parsedYear.success) return c.json({ error: 'invalid_bid_year' }, 400);
     const body = c.req.valid('json');
-    const settings = BidConfigurationSettingsSchema.parse({
-      v: 1,
+    const settings = BidConfigurationSettingsV2Schema.parse({
+      v: 2,
       expectedDurationDays: body.settings.expected_duration_days,
       turnTimerSeconds: body.settings.turn_timer_seconds,
+      credentialEvaluationOn: body.settings.credential_evaluation_on,
     });
     const db = getDb(c.env.DB);
     const year = await db.select().from(bidYears).where(eq(bidYears.year, parsedYear.data)).get();

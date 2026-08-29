@@ -76,6 +76,14 @@ export const memberQualificationEvents = sqliteTable(
       onDelete: 'restrict',
     }),
     specialtyCode: text('specialty_code'),
+    /**
+     * Additive terminal discriminator for specialty evidence. The legacy
+     * ledger `kind` remains `SPECIALTY_QUALIFIED` so its immutable CHECK
+     * contract and all historic audit rows remain intact.
+     */
+    specialtyTerminalStatus: text('specialty_terminal_status', {
+      enum: ['EXPIRED', 'REVOKED', 'REMOVED'],
+    }),
     kind: text('kind', {
       enum: [
         'CERTIFICATION_GAINED',
@@ -104,6 +112,13 @@ export const memberQualificationEvents = sqliteTable(
     ),
     credentialEffectiveIdx: index('idx_member_qualification_events_credential_effective').on(
       t.credentialId,
+      t.effectiveOn,
+      t.createdAt,
+      t.id,
+    ),
+    specialtyEffectiveIdx: index('idx_member_qualification_events_specialty_effective').on(
+      t.memberId,
+      t.specialtyCode,
       t.effectiveOn,
       t.createdAt,
       t.id,
@@ -264,7 +279,41 @@ export const bidSessions = sqliteTable('bid_sessions', {
   // Marks the session as a rehearsal/mock. Portal writeback consumer skips
   // bids belonging to mock sessions; admin dashboard exposes reset/auto-bid.
   isMock: integer('is_mock', { mode: 'boolean' }).notNull().default(false),
+  // Optimistic control-plane revision for legacy mock rehearsal mutations.
+  // It is distinct from canonical command sequence state.
+  mockControlRevision: integer('mock_control_revision').notNull().default(0),
 });
+
+/**
+ * Durable idempotency receipts for the legacy mock rehearsal controls. A row
+ * starts pending, then becomes an immutable completed response exactly once.
+ */
+export const mockRehearsalCommandReceipts = sqliteTable(
+  'mock_rehearsal_command_receipts',
+  {
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'restrict' }),
+    idempotencyKey: text('idempotency_key').notNull(),
+    operation: text('operation', { enum: ['auto_bid', 'manual_pick'] }).notNull(),
+    actorSubject: text('actor_subject').notNull(),
+    requestFingerprint: text('request_fingerprint').notNull(),
+    expectedMockControlRevision: integer('expected_mock_control_revision').notNull(),
+    state: text('state', { enum: ['pending', 'completed'] }).notNull(),
+    responseStatus: integer('response_status'),
+    responseJson: text('response_json'),
+    resultingMockControlRevision: integer('resulting_mock_control_revision'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.bidSessionId, t.idempotencyKey] }),
+    sessionCreatedIdx: index('idx_mock_rehearsal_command_receipts_session_created').on(
+      t.bidSessionId,
+      t.createdAt,
+    ),
+  }),
+);
 
 export const bidOrder = sqliteTable(
   'bid_order',

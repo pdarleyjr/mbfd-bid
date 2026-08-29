@@ -100,6 +100,83 @@ describe('Bid configuration and session policy contracts', () => {
     });
   });
 
+  it('keeps legacy V3 specialty evidence absent-but-distinguishable and validates new frozen specialty facts', () => {
+    const legacyV3 = BidSessionPolicySnapshotSchema.parse(completeV3Snapshot);
+    if (legacyV3.v !== 3) throw new Error('expected V3 test fixture');
+    expect(legacyV3.members[0]).not.toHaveProperty('specialtyQualifications');
+
+    const withSpecialtyFacts = {
+      ...completeV3Snapshot,
+      members: [
+        {
+          ...completeV3Snapshot.members[0],
+          specialtyQualifications: [
+            {
+              specialtyCode: 'SYNTHETIC_MARINE',
+              status: 'active',
+              effectiveOn: '2027-01-15',
+              expiresOn: null,
+            },
+            {
+              specialtyCode: 'SYNTHETIC_RESCUE',
+              status: 'revoked',
+              effectiveOn: '2027-01-10',
+              expiresOn: null,
+            },
+          ],
+        },
+      ],
+    };
+    expect(BidSessionPolicySnapshotSchema.parse(withSpecialtyFacts)).toMatchObject({
+      v: 3,
+      members: [
+        {
+          specialtyQualifications: [
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_MARINE', status: 'active' }),
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_RESCUE', status: 'revoked' }),
+          ],
+        },
+      ],
+    });
+    expect(
+      BidSessionPolicySnapshotSchema.safeParse({
+        ...withSpecialtyFacts,
+        members: [
+          {
+            ...withSpecialtyFacts.members[0],
+            specialtyQualifications: [
+              ...withSpecialtyFacts.members[0].specialtyQualifications,
+              {
+                specialtyCode: 'SYNTHETIC_MARINE',
+                status: 'expired',
+                effectiveOn: '2027-01-16',
+                expiresOn: '2027-01-16',
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      BidSessionPolicySnapshotSchema.safeParse({
+        ...withSpecialtyFacts,
+        members: [
+          {
+            ...withSpecialtyFacts.members[0],
+            specialtyQualifications: [
+              {
+                specialtyCode: 'SYNTHETIC_INVALID',
+                status: 'expired',
+                effectiveOn: '2027-01-16',
+                expiresOn: null,
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects missing, corrupt, and duplicate V3 material', () => {
     const duplicateRule = completeV3Snapshot.ruleBookMaterial.rules[0];
     const duplicatePosition = completeV3Snapshot.ruleBookMaterial.positions[0];
@@ -145,6 +222,68 @@ describe('Bid configuration and session policy contracts', () => {
         v: 1,
         expectedDurationDays: 0,
         turnTimerSeconds: 10,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('keeps V1 configuration readable as legacy but requires an explicit credential evaluation date in V2', () => {
+    expect(
+      BidConfigurationSettingsSchema.parse({
+        v: 1,
+        expectedDurationDays: 2,
+        turnTimerSeconds: 180,
+      }),
+    ).toMatchObject({ v: 1 });
+    expect(
+      BidConfigurationSettingsSchema.parse({
+        v: 2,
+        expectedDurationDays: 2,
+        turnTimerSeconds: 180,
+        credentialEvaluationOn: '2027-01-15',
+      }),
+    ).toMatchObject({ v: 2, credentialEvaluationOn: '2027-01-15' });
+    expect(
+      BidConfigurationSettingsSchema.safeParse({
+        v: 2,
+        expectedDurationDays: 2,
+        turnTimerSeconds: 180,
+      }).success,
+    ).toBe(false);
+    expect(
+      BidConfigurationSettingsSchema.safeParse({
+        v: 2,
+        expectedDurationDays: 2,
+        turnTimerSeconds: 180,
+        credentialEvaluationOn: '2027-02-30',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires a V3 snapshot that uses V2 settings to retain the configured credential evaluation date', () => {
+    const configured = {
+      ...completeV3Snapshot,
+      settings: {
+        v: 2 as const,
+        expectedDurationDays: 2,
+        turnTimerSeconds: 180,
+        credentialEvaluationOn: '2027-01-15',
+      },
+      credentialEvaluationOn: '2027-01-15',
+    };
+    expect(BidSessionPolicySnapshotSchema.parse(configured)).toMatchObject({
+      v: 3,
+      credentialEvaluationOn: '2027-01-15',
+    });
+    expect(
+      BidSessionPolicySnapshotSchema.safeParse({
+        ...configured,
+        credentialEvaluationOn: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      BidSessionPolicySnapshotSchema.safeParse({
+        ...configured,
+        credentialEvaluationOn: '2027-01-16',
       }).success,
     ).toBe(false);
   });

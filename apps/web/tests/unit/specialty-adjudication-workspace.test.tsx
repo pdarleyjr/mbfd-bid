@@ -236,22 +236,21 @@ describe('SpecialtyAdjudicationWorkspace', () => {
       '[data-testid="specialty-begin-form"]',
     );
     const positionId = container.querySelector<HTMLInputElement>('input[name="position_id"]');
-    const originalMemberId = container.querySelector<HTMLInputElement>(
-      'input[name="original_member_id"]',
-    );
     const candidates = container.querySelector<HTMLTextAreaElement>(
       'textarea[name="candidate_rows"]',
     );
     const reason = container.querySelector<HTMLTextAreaElement>('textarea[name="begin_reason"]');
-    if (!beginForm || !positionId || !originalMemberId || !candidates || !reason) {
+    if (!beginForm || !positionId || !candidates || !reason) {
       throw new Error('Synthetic scenario controls did not render.');
     }
     expect(
       beginForm.querySelector<HTMLInputElement>('input[name="test_policy_label"]')?.value,
     ).toBe('TEST POLICY — NOT APPROVED MBFD POLICY');
     expect(beginForm.textContent).toContain('Specialty pool');
-    expect(beginForm.textContent).toContain('Qualification requirements');
+    expect(beginForm.textContent).toContain('Required credential names');
+    expect(beginForm.textContent).toContain('Required specialty qualification codes');
     expect(beginForm.textContent).toContain('Explicit test ranking');
+    expect(beginForm.textContent).toContain('Lower score wins');
     expect(beginForm.textContent).toContain('Tie-break chain');
     expect(beginForm.textContent).toContain('Suspend exact normal Bid turn');
     expect(beginForm.textContent).toContain('Resume exact original Bid turn');
@@ -263,8 +262,11 @@ describe('SpecialtyAdjudicationWorkspace', () => {
     const poolLabel = beginForm.querySelector<HTMLInputElement>(
       'input[name="test_policy_pool_label"]',
     );
-    const qualificationRequirements = beginForm.querySelector<HTMLTextAreaElement>(
-      'textarea[name="test_policy_qualification_requirements"]',
+    const credentialRequirements = beginForm.querySelector<HTMLTextAreaElement>(
+      'textarea[name="test_policy_credential_requirements"]',
+    );
+    const specialtyRequirements = beginForm.querySelector<HTMLTextAreaElement>(
+      'textarea[name="test_policy_specialty_requirements"]',
     );
     const rankingReference = beginForm.querySelector<HTMLInputElement>(
       'input[name="test_policy_ranking_reference"]',
@@ -273,18 +275,19 @@ describe('SpecialtyAdjudicationWorkspace', () => {
       !policyVersion ||
       !poolId ||
       !poolLabel ||
-      !qualificationRequirements ||
+      !credentialRequirements ||
+      !specialtyRequirements ||
       !rankingReference
     ) {
       throw new Error('Typed synthetic test-policy controls did not render.');
     }
     await setValue(positionId, 'A101');
-    await setValue(originalMemberId, '17');
-    await setValue(candidates, '11, 1\n17, 2');
+    await setValue(candidates, '11, 1\n17, 1');
     await setValue(policyVersion, 'synthetic-specialty-v2');
     await setValue(poolId, 'RESCUE_TEST_POOL');
     await setValue(poolLabel, 'Rescue Operations synthetic test pool');
-    await setValue(qualificationRequirements, 'Rope Rescue Technician\nDriver Operator');
+    await setValue(credentialRequirements, 'Rope Rescue Technician\nDriver Operator');
+    await setValue(specialtyRequirements, 'SYNTHETIC_RESCUE');
     await setValue(rankingReference, 'synthetic-rescue-priority-v2');
     await setValue(reason, 'Run the controlled fixture.');
     await submit(beginForm);
@@ -303,19 +306,33 @@ describe('SpecialtyAdjudicationWorkspace', () => {
           id: 'RESCUE_TEST_POOL',
           label: 'Rescue Operations synthetic test pool',
         },
-        qualification_requirements: ['Rope Rescue Technician', 'Driver Operator'],
+        qualification_requirements: {
+          v: 1,
+          credential_names: ['Rope Rescue Technician', 'Driver Operator'],
+          specialty_codes: ['SYNTHETIC_RESCUE'],
+        },
         ranking: {
           source: 'EXPLICIT_TEST_PRIORITY',
           reference: 'synthetic-rescue-priority-v2',
         },
+        scoring: {
+          source: 'EXPLICIT_TEST_PRIORITY',
+          direction: 'LOWER_SCORE_WINS',
+        },
         tie_break_chain: ['rsc_seniority', 'rank_seniority', 'member_id'],
         normal_bid_interruption: 'SUSPEND_EXACT_NORMAL_TURN',
-        candidate_outcomes: ['award', 'declined', 'unavailable'],
+        candidate_outcomes: [
+          'award',
+          'declined',
+          'unreachable',
+          'withdrawn',
+          'ineligible_on_recheck',
+        ],
         original_bidder_resume: 'RESUME_EXACT_ORIGINAL_TURN',
       },
       candidates: [
-        { member_id: 11, priority_rank: 1 },
-        { member_id: 17, priority_rank: 2 },
+        { member_id: 11, explicit_priority: 1 },
+        { member_id: 17, explicit_priority: 1 },
       ],
     });
     expect(body.reason).toBe('Run the controlled fixture.');

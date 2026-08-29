@@ -74,14 +74,32 @@ async function freshAdmin(): Promise<string> {
   );
 }
 
-function frozenV3Snapshot() {
+function frozenV3Snapshot({
+  includeSpecialtyQualifications = true,
+  member17SpecialtyStatus = 'active',
+}: {
+  includeSpecialtyQualifications?: boolean;
+  member17SpecialtyStatus?: 'active' | 'expired' | 'revoked' | 'removed';
+} = {}) {
+  const specialtyQualification = (status: 'active' | 'expired' | 'revoked' | 'removed') => ({
+    specialtyCode: 'SYNTHETIC_MARINE',
+    status,
+    effectiveOn: '2026-08-01',
+    expiresOn: status === 'expired' ? '2026-08-31' : null,
+  });
   return {
     v: 3,
     ruleBookVersion: 'synthetic-2026.2',
     ruleBookRevision: 7,
     positionTemplateVersion: 'synthetic-template',
     configurationRevision: 4,
-    settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+    settings: {
+      v: 2,
+      expectedDurationDays: 2,
+      turnTimerSeconds: 180,
+      credentialEvaluationOn: '2026-08-31',
+    },
+    credentialEvaluationOn: '2026-08-31',
     capturedAtMs: CAPTURED_AT,
     members: [
       {
@@ -93,7 +111,10 @@ function frozenV3Snapshot() {
         authoritativeAssignmentId: null,
         rank: 'FF',
         isProbationary: false,
-        credentialNames: ['Synthetic credential'],
+        credentialNames: ['Synthetic credential', 'Marine Operations'],
+        ...(includeSpecialtyQualifications
+          ? { specialtyQualifications: [specialtyQualification('active')] }
+          : {}),
       },
       {
         memberId: 17,
@@ -104,7 +125,10 @@ function frozenV3Snapshot() {
         authoritativeAssignmentId: null,
         rank: 'FF',
         isProbationary: false,
-        credentialNames: ['Synthetic credential'],
+        credentialNames: ['Synthetic credential', 'Marine Operations'],
+        ...(includeSpecialtyQualifications
+          ? { specialtyQualifications: [specialtyQualification(member17SpecialtyStatus)] }
+          : {}),
       },
     ],
     ruleBookMaterial: {
@@ -150,8 +174,7 @@ async function seedSession(h: TestD1, isMock: boolean): Promise<void> {
   );
 }
 
-async function seedFrozenV3Snapshot(h: TestD1): Promise<void> {
-  const snapshot = frozenV3Snapshot();
+async function seedFrozenV3Snapshot(h: TestD1, snapshot = frozenV3Snapshot()): Promise<void> {
   await h.db.run(
     `INSERT INTO bid_session_policy_snapshots
        (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
@@ -178,14 +201,22 @@ function syntheticPolicy() {
         id: 'MARINE_TEST_POOL',
         label: 'Marine Operations synthetic test pool',
       },
-      qualification_requirements: ['Marine Operations'],
+      qualification_requirements: {
+        v: 1,
+        credential_names: ['Marine Operations'],
+        specialty_codes: ['SYNTHETIC_MARINE'],
+      },
       ranking: {
         source: 'EXPLICIT_TEST_PRIORITY',
         reference: 'synthetic-marine-priority-v1',
       },
+      scoring: {
+        source: 'EXPLICIT_TEST_PRIORITY',
+        direction: 'LOWER_SCORE_WINS',
+      },
       tie_break_chain: ['rsc_seniority', 'rank_seniority', 'member_id'],
       normal_bid_interruption: 'SUSPEND_EXACT_NORMAL_TURN',
-      candidate_outcomes: ['award', 'declined', 'unavailable'],
+      candidate_outcomes: ['award', 'declined', 'unreachable'],
       original_bidder_resume: 'RESUME_EXACT_ORIGINAL_TURN',
     },
     candidate_release_policy: {
@@ -195,15 +226,11 @@ function syntheticPolicy() {
     candidates: [
       {
         member_id: 11,
-        priority_rank: 1,
-        general_eligibility: { status: 'eligible' },
-        specialty_eligibility: { status: 'eligible' },
+        explicit_priority: 1,
       },
       {
         member_id: 17,
-        priority_rank: 2,
-        general_eligibility: { status: 'eligible' },
-        specialty_eligibility: { status: 'eligible' },
+        explicit_priority: 2,
       },
     ],
   };
@@ -339,6 +366,152 @@ describe('synthetic specialty-adjudication admin transport', () => {
         }),
       },
     ]);
+    const forwarded = calls[0]?.body as {
+      command?: { policy?: { candidates?: unknown[] } };
+    };
+    expect(forwarded.command?.policy?.candidates).toEqual([
+      {
+        memberId: 11,
+        priorityRank: 0,
+        generalEligibility: { status: 'eligible' },
+        specialtyEligibility: { status: 'eligible' },
+      },
+      {
+        memberId: 17,
+        priorityRank: 1,
+        generalEligibility: { status: 'eligible' },
+        specialtyEligibility: { status: 'eligible' },
+      },
+    ]);
+  });
+
+  it('fails closed when a legacy V3 snapshot omits specialty lifecycle facts', async () => {
+    await seedSession(h, true);
+    await seedFrozenV3Snapshot(h, frozenV3Snapshot({ includeSpecialtyQualifications: false }));
+    const calls: DurableCall[] = [];
+
+    const response = await request(h, calls, `/${SESSION_ID}/specialty-adjudication/requests`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'specialty-missing-facts-command-1' },
+      body: JSON.stringify({
+        command_id: 'specialty-missing-facts-command-1',
+        expected_revision: 0,
+        request_id: 'specialty-missing-facts-request-1',
+        position_id: 'A101',
+        policy: syntheticPolicy(),
+        reason: 'Do not infer specialty evidence from a pre-bridge snapshot.',
+      }),
+    });
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({
+      error: 'synthetic_specialty_qualification_snapshot_unavailable',
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it.each(['expired', 'revoked', 'removed'] as const)(
+    'uses configured-date frozen %s specialty status instead of caller evidence',
+    async (member17SpecialtyStatus) => {
+      await seedSession(h, true);
+      await seedFrozenV3Snapshot(h, frozenV3Snapshot({ member17SpecialtyStatus }));
+      const calls: DurableCall[] = [];
+
+      const response = await request(h, calls, `/${SESSION_ID}/specialty-adjudication/requests`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'specialty-revoked-command-1' },
+        body: JSON.stringify({
+          command_id: 'specialty-revoked-command-1',
+          expected_revision: 0,
+          request_id: 'specialty-revoked-request-1',
+          position_id: 'A101',
+          policy: syntheticPolicy(),
+          reason: 'Use only frozen specialty qualification status at the configured date.',
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const forwarded = calls.at(0)?.body as {
+        command?: { policy?: { candidates?: unknown[] } };
+      };
+      expect(forwarded.command?.policy?.candidates).toEqual([
+        {
+          memberId: 11,
+          priorityRank: 0,
+          generalEligibility: { status: 'eligible' },
+          specialtyEligibility: { status: 'eligible' },
+        },
+        {
+          memberId: 17,
+          priorityRank: 1,
+          generalEligibility: { status: 'eligible' },
+          specialtyEligibility: {
+            status: 'ineligible',
+            reasonCodes: ['SYNTHETIC_SPECIALTY_CODE_NOT_ACTIVE:SYNTHETIC_MARINE'],
+          },
+        },
+      ]);
+    },
+  );
+
+  it('does not accept caller-supplied eligibility or an incomplete frozen candidate ranking', async () => {
+    await seedSession(h, true);
+    await seedFrozenV3Snapshot(h);
+    const calls: DurableCall[] = [];
+    const policy = syntheticPolicy();
+
+    const callerEligibility = await request(
+      h,
+      calls,
+      `/${SESSION_ID}/specialty-adjudication/requests`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'specialty-untrusted-eligibility-1' },
+        body: JSON.stringify({
+          command_id: 'specialty-untrusted-eligibility-1',
+          expected_revision: 0,
+          request_id: 'specialty-untrusted-request-1',
+          position_id: 'A101',
+          policy: {
+            ...policy,
+            candidates: [
+              {
+                member_id: 11,
+                explicit_priority: 1,
+                general_eligibility: { status: 'eligible' },
+              },
+              { member_id: 17, explicit_priority: 2 },
+            ],
+          },
+          reason: 'Caller eligibility must not become synthetic engine evidence.',
+        }),
+      },
+    );
+    expect(callerEligibility.status).toBe(400);
+    await expect(callerEligibility.json()).resolves.toEqual({ error: 'invalid_payload' });
+
+    const incompleteRanking = await request(
+      h,
+      calls,
+      `/${SESSION_ID}/specialty-adjudication/requests`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'specialty-incomplete-ranking-1' },
+        body: JSON.stringify({
+          command_id: 'specialty-incomplete-ranking-1',
+          expected_revision: 0,
+          request_id: 'specialty-incomplete-request-1',
+          position_id: 'A101',
+          policy: { ...policy, candidates: [{ member_id: 17, explicit_priority: 1 }] },
+          reason: 'Synthetic policy must rank the full frozen Bid pool.',
+        }),
+      },
+    );
+    expect(incompleteRanking.status).toBe(422);
+    await expect(incompleteRanking.json()).resolves.toEqual({
+      error: 'synthetic_candidate_set_must_match_frozen_bid_pool',
+    });
+    expect(calls).toEqual([]);
   });
 
   it('rejects an official policy label before it contacts the Durable Object', async () => {

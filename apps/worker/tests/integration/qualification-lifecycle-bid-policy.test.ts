@@ -36,10 +36,10 @@ async function seedPolicy(h: TestD1): Promise<void> {
         ('qualification.v1', 'A101', 'qualification.v1', 'BIDDABLE', 'synthetic/A101', 1),
         ('qualification.v1', 'A211', 'qualification.v1', 'ADMIN_ASSIGNED_NON_BIDDABLE', 'synthetic/A211', 1);
      UPDATE rule_books SET status = 'active' WHERE version = 'qualification.v1';
-     INSERT INTO bid_years
-       (year, status, position_template_version, rule_book_version, config_json, configuration_revision)
-       VALUES (2026, 'live', 'qualification.v1', 'qualification.v1',
-        '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}', 0);
+      INSERT INTO bid_years
+        (year, status, position_template_version, rule_book_version, config_json, configuration_revision)
+        VALUES (2026, 'live', 'qualification.v1', 'qualification.v1',
+         '{"v":2,"expectedDurationDays":2,"turnTimerSeconds":180,"credentialEvaluationOn":"2026-09-01"}', 0);
      INSERT INTO members
        (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
         is_probationary, employment_status, employment_status_effective_on, created_at, updated_at)
@@ -72,7 +72,13 @@ async function seedPolicy(h: TestD1): Promise<void> {
         before_state, after_state, created_at)
        VALUES ('qualification-gain-policy', 1, 10, NULL, 'CERTIFICATION_GAINED', '2026-08-01', NULL,
        'synthetic-state-registry', 'SYNTH-POLICY-GAIN', 'Synthetic certification evidence.', '0',
-        'qualification-gain-policy', '{}', '{}', 1);
+        'qualification-gain-policy', '{}', '{}', 1),
+       ('specialty-gain-marine', 1, NULL, 'SYNTHETIC_MARINE', 'SPECIALTY_QUALIFIED', '2026-08-01', NULL,
+        'synthetic-specialty-registry', 'SYNTH-MARINE-GAIN', 'Synthetic specialty evidence.', '0',
+        'specialty-gain-marine', '{}', '{}', 2),
+       ('specialty-gain-rescue', 1, NULL, 'SYNTHETIC_RESCUE', 'SPECIALTY_QUALIFIED', '2026-08-01', NULL,
+        'synthetic-specialty-registry', 'SYNTH-RESCUE-GAIN', 'Synthetic specialty evidence.', '0',
+        'specialty-gain-rescue', '{}', '{}', 3);
      INSERT INTO personnel_lifecycle_events
        (id, member_id, staffing_position_id, member_assignment_id, kind, effective_on,
         employment_status_before, employment_status_after, rank_before, rank_after,
@@ -97,7 +103,7 @@ describe('qualification evidence in frozen Bid policy', () => {
     await teardownTestD1(h);
   });
 
-  it('uses evidence and dated legacy credentials as of the immutable capture date, excludes expiration, and leaves an established snapshot unchanged', async () => {
+  it('uses the configured immutable credential evaluation date instead of a later capture timestamp and leaves an established snapshot unchanged', async () => {
     const db = getDb(h.env.DB);
     const beforeExpiry = await prepareBidSessionPolicySnapshot(
       db,
@@ -110,6 +116,31 @@ describe('qualification evidence in frozen Bid policy', () => {
     expect(beforeExpiry.snapshot.members).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ memberId: 1, credentialNames: ['Synthetic EMT'] }),
+      ]),
+    );
+    expect(beforeExpiry.snapshot).toMatchObject({
+      credentialEvaluationOn: '2026-09-01',
+      settings: { v: 2, credentialEvaluationOn: '2026-09-01' },
+    });
+    expect(beforeExpiry.snapshot.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: 1,
+          specialtyQualifications: [
+            {
+              specialtyCode: 'SYNTHETIC_MARINE',
+              status: 'active',
+              effectiveOn: '2026-08-01',
+              expiresOn: null,
+            },
+            {
+              specialtyCode: 'SYNTHETIC_RESCUE',
+              status: 'active',
+              effectiveOn: '2026-08-01',
+              expiresOn: null,
+            },
+          ],
+        }),
       ]),
     );
 
@@ -135,13 +166,33 @@ describe('qualification evidence in frozen Bid policy', () => {
         'synthetic-state-registry', 'SYNTH-POLICY-EXP', 'Synthetic expiration evidence.', '0',
         'qualification-expire-policy', '{}', '{}', 2);`,
     );
+    await h.db.run(
+      `INSERT INTO member_qualification_events
+         (id, member_id, credential_id, specialty_code, specialty_terminal_status, kind,
+          effective_on, expires_on, evidence_source, evidence_reference, reason, actor_subject,
+          idempotency_key, before_state, after_state, created_at)
+       VALUES
+        ('specialty-revoke-marine', 1, NULL, 'SYNTHETIC_MARINE', 'REVOKED', 'SPECIALTY_QUALIFIED',
+         '2026-08-15', NULL, 'synthetic-specialty-registry', 'SYNTH-MARINE-REVOKE',
+         'Synthetic specialty revocation.', '0', 'specialty-revoke-marine', '{}', '{}', 4),
+        ('specialty-expire-rescue', 1, NULL, 'SYNTHETIC_RESCUE', 'EXPIRED', 'SPECIALTY_QUALIFIED',
+         '2026-08-16', '2026-08-16', 'synthetic-specialty-registry', 'SYNTH-RESCUE-EXPIRE',
+         'Synthetic specialty expiration.', '0', 'specialty-expire-rescue', '{}', '{}', 5);`,
+    );
 
     const preserved = await loadFrozenSessionBidPolicy(db, SESSION_ID);
     expect(preserved).toMatchObject({ ok: true });
     if (!preserved.ok || preserved.snapshot.v !== 3) return;
     expect(preserved.snapshot.members).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ memberId: 1, credentialNames: ['Synthetic EMT'] }),
+        expect.objectContaining({
+          memberId: 1,
+          credentialNames: ['Synthetic EMT'],
+          specialtyQualifications: [
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_MARINE', status: 'active' }),
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_RESCUE', status: 'active' }),
+          ],
+        }),
       ]),
     );
 
@@ -155,7 +206,18 @@ describe('qualification evidence in frozen Bid policy', () => {
     if (!afterExpiry.ok) return;
     expect(afterExpiry.snapshot.members).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ memberId: 1, credentialNames: ['Legacy Dated Credential'] }),
+        expect.objectContaining({
+          memberId: 1,
+          credentialNames: ['Synthetic EMT'],
+          specialtyQualifications: [
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_MARINE', status: 'revoked' }),
+            expect.objectContaining({
+              specialtyCode: 'SYNTHETIC_RESCUE',
+              status: 'expired',
+              expiresOn: '2026-08-16',
+            }),
+          ],
+        }),
       ]),
     );
 
@@ -168,8 +230,67 @@ describe('qualification evidence in frozen Bid policy', () => {
     expect(afterLegacyExpiry).toMatchObject({ ok: true });
     if (!afterLegacyExpiry.ok) return;
     expect(afterLegacyExpiry.snapshot.members).toEqual(
-      expect.arrayContaining([expect.objectContaining({ memberId: 1, credentialNames: [] })]),
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: 1,
+          credentialNames: ['Synthetic EMT'],
+          specialtyQualifications: [
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_MARINE', status: 'revoked' }),
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_RESCUE', status: 'expired' }),
+          ],
+        }),
+      ]),
     );
+  });
+
+  it('fails closed when a raw specialty terminal kind lacks its companion discriminator', async () => {
+    // Simulate a legacy/manual import that bypassed the immutable ledger's
+    // original kind constraint. A direct terminal kind has no valid persisted
+    // representation without the additive discriminator.
+    h.sqlite.pragma('ignore_check_constraints = ON');
+    await h.db.run(
+      `INSERT INTO member_qualification_events
+         (id, member_id, credential_id, specialty_code, specialty_terminal_status, kind,
+          effective_on, expires_on, evidence_source, evidence_reference, reason, actor_subject,
+          idempotency_key, before_state, after_state, created_at)
+       VALUES ('missing-specialty-terminal-discriminator', 1, NULL, 'SYNTHETIC_MARINE', NULL,
+         'SPECIALTY_REVOKED', '2026-08-15', NULL, 'synthetic-specialty-registry',
+         'SYNTHETIC-MISSING-TERMINAL', 'Synthetic missing terminal discriminator.', '0',
+         'missing-specialty-terminal-discriminator', '{}', '{}', 6);`,
+    );
+
+    const prepared = await prepareBidSessionPolicySnapshot(
+      getDb(h.env.DB),
+      2026,
+      CAPTURED_AFTER_EXPIRY,
+      'live',
+    );
+    expect(prepared).toEqual({ ok: false, code: 'qualification_lifecycle_data_invalid' });
+  });
+
+  it('fails closed when a persisted specialty terminal row is structurally inconsistent', async () => {
+    // Simulate legacy/manual corruption after schema enforcement is bypassed:
+    // a terminal discriminator may never coexist with a credential target.
+    h.sqlite.exec('DROP TRIGGER member_qualification_events_specialty_terminal_shape;');
+    h.sqlite.pragma('ignore_check_constraints = ON');
+    await h.db.run(
+      `INSERT INTO member_qualification_events
+         (id, member_id, credential_id, specialty_code, specialty_terminal_status, kind,
+          effective_on, expires_on, evidence_source, evidence_reference, reason, actor_subject,
+          idempotency_key, before_state, after_state, created_at)
+       VALUES ('invalid-specialty-terminal', 1, 10, 'SYNTHETIC_MARINE', 'REVOKED',
+         'SPECIALTY_QUALIFIED', '2026-08-15', NULL, 'synthetic-specialty-registry',
+         'SYNTHETIC-INVALID-TERMINAL', 'Synthetic invalid terminal evidence.', '0',
+         'invalid-specialty-terminal', '{}', '{}', 7);`,
+    );
+
+    const prepared = await prepareBidSessionPolicySnapshot(
+      getDb(h.env.DB),
+      2026,
+      CAPTURED_AFTER_EXPIRY,
+      'live',
+    );
+    expect(prepared).toEqual({ ok: false, code: 'qualification_lifecycle_data_invalid' });
   });
 
   it('uses lifecycle status and planned administrative occupancy as of the immutable capture date', async () => {

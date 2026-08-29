@@ -4,7 +4,10 @@ import {
   type BidSessionState,
   bidSessionStateStorageKey,
 } from '../../src/durable/bid-session-state.js';
-import { BidSessionDO } from '../../src/durable/bid-session.js';
+import {
+  BidSessionDO,
+  bidSessionNormalMutationLeaseStorageKey,
+} from '../../src/durable/bid-session.js';
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import { SPECIALTY_TEST_POLICY_LABEL } from '../../src/lib/specialty-test-policy.js';
@@ -91,19 +94,27 @@ async function freshAdmin(): Promise<string> {
 function syntheticPolicy() {
   return {
     source: 'synthetic',
-    policy_reference: 'synthetic-specialty-rehearsal-v1',
+    policy_reference: 'synthetic-specialty-rehearsal-v2',
     test_policy: {
       policy_label: SPECIALTY_TEST_POLICY_LABEL,
-      policy_version: 'synthetic-specialty-rehearsal-v1',
-      specialty_pool: { id: 'MARINE_TEST_POOL', label: 'Marine Operations synthetic test pool' },
-      qualification_requirements: ['Marine Operations'],
+      policy_version: 'synthetic-specialty-rehearsal-v2',
+      specialty_pool: { id: 'SYNTHETIC_SPECIALTY_POOL', label: 'Synthetic specialty test pool' },
+      qualification_requirements: {
+        v: 1,
+        credential_names: ['SYNTHETIC_CREDENTIAL_A'],
+        specialty_codes: ['SYNTHETIC_SPECIALTY_A'],
+      },
       ranking: {
         source: 'EXPLICIT_TEST_PRIORITY',
-        reference: 'synthetic-marine-priority-v1',
+        reference: 'synthetic-specialty-priority-v2',
+      },
+      scoring: {
+        source: 'EXPLICIT_TEST_PRIORITY',
+        direction: 'LOWER_SCORE_WINS',
       },
       tie_break_chain: ['rsc_seniority', 'rank_seniority', 'member_id'],
       normal_bid_interruption: 'SUSPEND_EXACT_NORMAL_TURN',
-      candidate_outcomes: ['award', 'declined', 'unavailable'],
+      candidate_outcomes: ['award', 'declined', 'unreachable'],
       original_bidder_resume: 'RESUME_EXACT_ORIGINAL_TURN',
     },
     candidate_release_policy: {
@@ -114,27 +125,19 @@ function syntheticPolicy() {
     candidates: [
       {
         member_id: 11,
-        priority_rank: 1,
-        general_eligibility: { status: 'eligible' },
-        specialty_eligibility: { status: 'eligible' },
+        explicit_priority: 1,
       },
       {
         member_id: 12,
-        priority_rank: 2,
-        general_eligibility: { status: 'eligible' },
-        specialty_eligibility: { status: 'eligible' },
+        explicit_priority: 2,
       },
       {
         member_id: 13,
-        priority_rank: 3,
-        general_eligibility: { status: 'eligible' },
-        specialty_eligibility: { status: 'eligible' },
+        explicit_priority: 3,
       },
       {
         member_id: 17,
-        priority_rank: 4,
-        general_eligibility: { status: 'eligible' },
-        specialty_eligibility: { status: 'eligible' },
+        explicit_priority: 4,
       },
     ],
   };
@@ -221,7 +224,15 @@ async function seed(h: TestD1): Promise<void> {
     authoritativeAssignmentId: null,
     rank: 'FF',
     isProbationary: false,
-    credentialNames: [],
+    credentialNames: ['SYNTHETIC_CREDENTIAL_A'],
+    specialtyQualifications: [
+      {
+        specialtyCode: 'SYNTHETIC_SPECIALTY_A',
+        status: 'active',
+        effectiveOn: '2026-08-01',
+        expiresOn: null,
+      },
+    ],
   }));
   await h.db.run(
     `INSERT INTO bid_session_policy_snapshots
@@ -235,7 +246,13 @@ async function seed(h: TestD1): Promise<void> {
         ruleBookRevision: 7,
         positionTemplateVersion: 'synthetic-template',
         configurationRevision: 4,
-        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+        settings: {
+          v: 2,
+          expectedDurationDays: 2,
+          turnTimerSeconds: 180,
+          credentialEvaluationOn: '2026-08-28',
+        },
+        credentialEvaluationOn: '2026-08-28',
         capturedAtMs: CAPTURED_AT,
         members,
         ruleBookMaterial: {
@@ -361,6 +378,170 @@ describe('mock normal-bid specialty rehearsal', () => {
     expect(await storage.get<BidSessionState>(bidSessionStateStorageKey(SESSION_ID))).toEqual(
       normalBidState(),
     );
+  });
+
+  it('serializes a durable normal-mutation permit, never expires an unresolved permit, and fails closed for unknown state', async () => {
+    const storage = new MemoryDurableStorage();
+    await storage.put(bidSessionStateStorageKey(SESSION_ID), normalBidState());
+    const subject = new BidSessionDO(makeState(storage), h.env);
+    const instance = () => subject;
+
+    const acquire = await subject.fetch(
+      new Request('https://do/admin/normal-mutation-lease/acquire', { method: 'POST' }),
+    );
+    expect(acquire.status).toBe(200);
+    const acquired = (await acquire.json()) as { ok: true; lease_id: string };
+
+    const contention = await subject.fetch(
+      new Request('https://do/admin/normal-mutation-lease/acquire', { method: 'POST' }),
+    );
+    expect(contention.status).toBe(409);
+    await expect(contention.json()).resolves.toEqual({ error: 'normal_mutation_lease_active' });
+
+    const blockedBegin = await routeRequest(
+      h,
+      instance,
+      `/${SESSION_ID}/specialty-adjudication/requests`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'specialty-begin-held-lease-1' },
+        body: JSON.stringify({
+          command_id: 'specialty-begin-held-lease-1',
+          expected_revision: 0,
+          request_id: 'specialty-held-lease-request-1',
+          position_id: 'A101',
+          policy: syntheticPolicy(),
+          reason: 'Specialty begin must wait for an acquired normal D1 mutation permit.',
+        }),
+      },
+    );
+    expect(blockedBegin.status).toBe(409);
+    await expect(blockedBegin.json()).resolves.toMatchObject({
+      error: 'normal_mutation_lease_active',
+    });
+
+    const release = await subject.fetch(
+      new Request('https://do/admin/normal-mutation-lease/release', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ lease_id: acquired.lease_id }),
+      }),
+    );
+    expect(release.status).toBe(200);
+    await expect(release.json()).resolves.toEqual({ ok: true });
+
+    const beginAfterRelease = await routeRequest(
+      h,
+      instance,
+      `/${SESSION_ID}/specialty-adjudication/requests`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'specialty-begin-released-lease-1' },
+        body: JSON.stringify({
+          command_id: 'specialty-begin-released-lease-1',
+          expected_revision: 0,
+          request_id: 'specialty-released-lease-request-1',
+          position_id: 'A101',
+          policy: syntheticPolicy(),
+          reason: 'Specialty begin may continue only after the normal D1 permit releases.',
+        }),
+      },
+    );
+    expect(beginAfterRelease.status).toBe(200);
+
+    // A worker that crashed after acquiring a permit has an unknowable D1
+    // outcome. An old-but-well-formed record must therefore remain active;
+    // there is no TTL that would silently let a specialty interruption pass.
+    const crashedStorage = new MemoryDurableStorage();
+    await crashedStorage.put(bidSessionStateStorageKey(SESSION_ID), normalBidState());
+    await crashedStorage.put(bidSessionNormalMutationLeaseStorageKey(SESSION_ID), {
+      version: 1,
+      leaseId: 'crashed-lease',
+      acquiredAtMs: 0,
+    });
+    const crashedSubject = new BidSessionDO(makeState(crashedStorage), h.env);
+    const crashedAcquire = await crashedSubject.fetch(
+      new Request('https://do/admin/normal-mutation-lease/acquire', { method: 'POST' }),
+    );
+    expect(crashedAcquire.status).toBe(409);
+    await expect(crashedAcquire.json()).resolves.toEqual({ error: 'normal_mutation_lease_active' });
+
+    const unknownStorage = new MemoryDurableStorage();
+    await unknownStorage.put(bidSessionStateStorageKey(SESSION_ID), normalBidState());
+    await unknownStorage.put(bidSessionNormalMutationLeaseStorageKey(SESSION_ID), {
+      version: 99,
+      leaseId: 'unknown-lease',
+      acquiredAtMs: 0,
+    });
+    const unknownSubject = new BidSessionDO(makeState(unknownStorage), h.env);
+    const unknownInstance = () => unknownSubject;
+    const unknownAcquire = await unknownSubject.fetch(
+      new Request('https://do/admin/normal-mutation-lease/acquire', { method: 'POST' }),
+    );
+    expect(unknownAcquire.status).toBe(409);
+    await expect(unknownAcquire.json()).resolves.toEqual({
+      error: 'normal_mutation_lease_state_unknown',
+    });
+
+    const unknownBegin = await routeRequest(
+      h,
+      unknownInstance,
+      `/${SESSION_ID}/specialty-adjudication/requests`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'specialty-begin-unknown-lease-1' },
+        body: JSON.stringify({
+          command_id: 'specialty-begin-unknown-lease-1',
+          expected_revision: 0,
+          request_id: 'specialty-unknown-lease-request-1',
+          position_id: 'A101',
+          policy: syntheticPolicy(),
+          reason: 'Unknown normal D1 permit state must remain fail-closed.',
+        }),
+      },
+    );
+    expect(unknownBegin.status).toBe(409);
+    await expect(unknownBegin.json()).resolves.toMatchObject({
+      error: 'normal_mutation_lease_state_unknown',
+    });
+  });
+
+  it('releases a representative direct normal writer permit before a later specialty begin', async () => {
+    const storage = new MemoryDurableStorage();
+    await storage.put(bidSessionStateStorageKey(SESSION_ID), normalBidState());
+    const subject = new BidSessionDO(makeState(storage), h.env);
+    const instance = () => subject;
+
+    const manualPick = await directNormalBidRequest(
+      h,
+      instance,
+      `/api/admin/rehearsal/${SESSION_ID}/manual-pick`,
+      {
+        member_id: 17,
+        position_id: 'A101',
+        reason: 'Representative direct normal D1 writer must release its permit.',
+      },
+    );
+    expect(manualPick.status).toBe(201);
+
+    const begin = await routeRequest(
+      h,
+      instance,
+      `/${SESSION_ID}/specialty-adjudication/requests`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'specialty-begin-after-direct-writer-1' },
+        body: JSON.stringify({
+          command_id: 'specialty-begin-after-direct-writer-1',
+          expected_revision: 0,
+          request_id: 'specialty-after-direct-writer-request-1',
+          position_id: 'A101',
+          policy: syntheticPolicy(),
+          reason: 'Synthetic specialty begins after the direct normal writer released its permit.',
+        }),
+      },
+    );
+    expect(begin.status).toBe(200);
   });
 
   it('suspends an actual mock normal turn, survives reconnect, resolves configured priority, and resumes the exact bidder without canonical staffing or portal publication', async () => {

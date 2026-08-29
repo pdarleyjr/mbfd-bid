@@ -31,8 +31,32 @@ function stubBidSessionNamespace(snapshotFor: Map<string, unknown>): WorkerEnv['
         const snap = snapshotFor.get(id) ?? { currentBidderId: null };
         return new Response(JSON.stringify(snap), { status: 200 });
       }
+      if (u.pathname === '/admin/normal-mutation-lease/acquire') {
+        return new Response(JSON.stringify({ ok: true, lease_id: 'rehearsal-auto-test-lease' }), {
+          status: 200,
+        });
+      }
+      if (u.pathname === '/admin/normal-mutation-lease/release') {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
       if (u.pathname === '/admin/specialty-adjudication') {
-        return new Response(JSON.stringify({ state: { active: null } }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            mode: 'synthetic_test_only',
+            does_not_commit_bid: true,
+            database_audit_log: 'not_written',
+            state: {
+              version: 1,
+              revision: 0,
+              active: null,
+              consumedCommandIds: [],
+              processedRequestIds: [],
+              resumedRequestIds: [],
+            },
+            audit_receipts: [],
+          }),
+          { status: 200 },
+        );
       }
       return new Response('{}', { status: 200 });
     },

@@ -35,6 +35,8 @@ function lifecycleLabel(lifecycle: BidConfigurationLifecycle): string {
       return 'Draft designated';
     case 'FROZEN':
       return 'Frozen';
+    case 'LEGACY_EVALUATION_DATE_REQUIRED':
+      return 'Credential date required';
     case 'INCONSISTENT':
       return 'Inconsistent';
   }
@@ -50,6 +52,12 @@ function describeError(body: unknown, fallback: string): string {
     return body.error;
   }
   return fallback;
+}
+
+function isIsoCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 /**
@@ -83,6 +91,9 @@ export function BidSetupWorkspace({
   const [turnTimerSeconds, setTurnTimerSeconds] = useState(
     configuration?.settings?.turnTimerSeconds ?? 180,
   );
+  const [credentialEvaluationOn, setCredentialEvaluationOn] = useState(
+    configuration?.settings?.v === 2 ? configuration.settings.credentialEvaluationOn : '',
+  );
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -91,11 +102,17 @@ export function BidSetupWorkspace({
   const editable =
     configuration !== null &&
     configuration.bidYearStatus === 'configuring' &&
-    (configuration.lifecycle === 'UNCONFIGURED' || configuration.lifecycle === 'DRAFT');
+    (configuration.lifecycle === 'UNCONFIGURED' ||
+      configuration.lifecycle === 'DRAFT' ||
+      configuration.lifecycle === 'LEGACY_EVALUATION_DATE_REQUIRED');
 
   async function saveConfiguration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (configuration === null || !selectedVersion) return;
+    if (!isIsoCalendarDate(credentialEvaluationOn)) {
+      setError('Select a valid credential evaluation date before saving this configuration.');
+      return;
+    }
 
     setError(null);
     setSuccess(null);
@@ -111,6 +128,7 @@ export function BidSetupWorkspace({
           settings: {
             expected_duration_days: expectedDurationDays,
             turn_timer_seconds: turnTimerSeconds,
+            credential_evaluation_on: credentialEvaluationOn,
           },
           reason: reason.trim(),
         }),
@@ -214,6 +232,14 @@ export function BidSetupWorkspace({
                 </dd>
               </div>
               <div>
+                <dt className="text-slate-400">Credential evaluation date</dt>
+                <dd className="mt-0.5 font-mono text-white">
+                  {configuration.settings?.v === 2
+                    ? configuration.settings.credentialEvaluationOn
+                    : 'Required before a new session'}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-slate-400">Bid-year lifecycle</dt>
                 <dd className="mt-0.5 text-white">{configuration.bidYearStatus}</dd>
               </div>
@@ -240,6 +266,14 @@ export function BidSetupWorkspace({
               </p>
             )}
 
+            {configuration.lifecycle === 'LEGACY_EVALUATION_DATE_REQUIRED' && (
+              <p className="mt-4 rounded border border-amber-700 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+                Legacy configuration settings are displayed for review, but they cannot create a new
+                mock or live session because no credential evaluation date was frozen. Select the
+                approved calendar date and save a new configuration revision before continuing.
+              </p>
+            )}
+
             {configuration.bidYearStatus !== 'configuring' && (
               <p className="mt-4 rounded border border-slate-600 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
                 This bid year is {configuration.bidYearStatus}; configuration changes are not
@@ -263,7 +297,9 @@ export function BidSetupWorkspace({
                   <h3 className="font-heading text-base text-white">
                     {configuration.lifecycle === 'DRAFT'
                       ? 'Update designated draft configuration'
-                      : 'Designate draft configuration'}
+                      : configuration.lifecycle === 'LEGACY_EVALUATION_DATE_REQUIRED'
+                        ? 'Upgrade legacy designated configuration'
+                        : 'Designate draft configuration'}
                   </h3>
                   <p className="mt-1 text-sm text-slate-300">
                     Draft candidates come from the existing rule-book listing. The designated
@@ -316,6 +352,22 @@ export function BidSetupWorkspace({
                   </label>
                 </div>
 
+                <label className="block max-w-lg">
+                  <span className="text-sm text-slate-200">Credential evaluation date</span>
+                  <input
+                    data-testid="credential-evaluation-on"
+                    type="date"
+                    required
+                    value={credentialEvaluationOn}
+                    onChange={(event) => setCredentialEvaluationOn(event.target.value)}
+                    className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+                  />
+                  <span className="mt-1 block text-xs text-slate-400">
+                    Credential lifecycle evidence for new sessions is frozen as of this approved
+                    date; it is not inferred from the session start time.
+                  </span>
+                </label>
+
                 <label className="block max-w-2xl">
                   <span className="text-sm text-slate-200">Reason (4–500 characters)</span>
                   <textarea
@@ -343,7 +395,12 @@ export function BidSetupWorkspace({
                 <button
                   type="submit"
                   data-testid="bid-configuration-save"
-                  disabled={submitting || reason.trim().length < 4 || !selectedVersion}
+                  disabled={
+                    submitting ||
+                    reason.trim().length < 4 ||
+                    !selectedVersion ||
+                    !isIsoCalendarDate(credentialEvaluationOn)
+                  }
                   className="rounded bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting ? 'Saving…' : 'Save designated configuration'}

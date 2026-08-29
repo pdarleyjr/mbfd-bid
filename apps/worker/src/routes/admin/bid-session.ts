@@ -8,7 +8,7 @@ import {
   TimerConfigSchema,
   evaluateLiveReadiness,
 } from '@mbfd/shared';
-import { asc, desc, eq, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
@@ -28,6 +28,7 @@ import {
   prepareBidSessionPolicySnapshot,
   summarizeBidSessionPolicySnapshot,
 } from '../../lib/bid-policy.js';
+import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -368,30 +369,35 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
             SET current_phase = 'position_bid',
                 current_bidder_id = ?,
                 current_turn_started_at = ?,
-                started_at = ?
+                started_at = ?,
+                mock_control_revision = mock_control_revision + 1
           WHERE id = ? AND current_phase = 'config'`,
     ).bind(expectedOrder[0]?.memberId ?? null, now.getTime(), now.getTime(), id),
   );
-  const results = await c.env.DB.batch(statements);
-  if (results[results.length - 1]?.meta.changes !== 1) {
-    return c.json({ error: 'session_state_changed' }, 409);
-  }
-  await writeAuditLog(db, {
-    bidSessionId: id,
-    actorType: 'admin',
-    actorId: actorIdFromClaims(c.get('claims')),
-    action: 'session_start',
-    targetKind: 'bid_session',
-    targetId: id,
-    beforeState: { current_phase: 'config', bid_order_count: existingOrder.length },
-    afterState: {
-      current_phase: 'position_bid',
-      bid_order_count: expectedOrder.length,
-      rule_book_version: frozenPolicy.snapshot.ruleBookVersion,
-      position_template_version: frozenPolicy.snapshot.positionTemplateVersion,
-    },
+  const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+    const results = await c.env.DB.batch(statements);
+    if (results[results.length - 1]?.meta.changes !== 1) {
+      return c.json({ error: 'session_state_changed' }, 409);
+    }
+    await writeAuditLog(db, {
+      bidSessionId: id,
+      actorType: 'admin',
+      actorId: actorIdFromClaims(c.get('claims')),
+      action: 'session_start',
+      targetKind: 'bid_session',
+      targetId: id,
+      beforeState: { current_phase: 'config', bid_order_count: existingOrder.length },
+      afterState: {
+        current_phase: 'position_bid',
+        bid_order_count: expectedOrder.length,
+        rule_book_version: frozenPolicy.snapshot.ruleBookVersion,
+        position_template_version: frozenPolicy.snapshot.positionTemplateVersion,
+      },
+    });
+    return c.json({ id, current_phase: 'position_bid', bid_order_count: expectedOrder.length });
   });
-  return c.json({ id, current_phase: 'position_bid', bid_order_count: expectedOrder.length });
+  if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+  return mutation.value;
 });
 
 // GET /api/admin/bid-session/:id/readiness
@@ -426,23 +432,45 @@ router.post(
     if (s.currentPhase === 'paused' || s.currentPhase === 'complete') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
-    const now = new Date();
-    await db
-      .update(bidSessions)
-      .set({ currentPhase: 'paused', pausedAt: now })
-      .where(eq(bidSessions.id, id));
-    await writeAuditLog(db, {
-      bidSessionId: id,
-      actorType: 'admin',
-      actorId: actorIdFromClaims(c.get('claims')),
-      action: 'pause',
-      targetKind: 'bid_session',
-      targetId: id,
-      reason: body.reason,
-      beforeState: { current_phase: s.currentPhase },
-      afterState: { current_phase: 'paused' },
+    const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+      const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
+      if (current === undefined) return c.json({ error: 'not_found' }, 404);
+      if (current.currentPhase === 'paused' || current.currentPhase === 'complete') {
+        return c.json({ error: 'invalid_state', current_phase: current.currentPhase }, 409);
+      }
+      const now = new Date();
+      const updated = await db
+        .update(bidSessions)
+        .set({
+          currentPhase: 'paused',
+          pausedAt: now,
+          mockControlRevision: sql`${bidSessions.mockControlRevision} + 1`,
+        })
+        .where(
+          and(
+            eq(bidSessions.id, id),
+            ne(bidSessions.currentPhase, 'paused'),
+            ne(bidSessions.currentPhase, 'complete'),
+          ),
+        )
+        .returning({ id: bidSessions.id })
+        .get();
+      if (updated === undefined) return c.json({ error: 'session_state_changed' }, 409);
+      await writeAuditLog(db, {
+        bidSessionId: id,
+        actorType: 'admin',
+        actorId: actorIdFromClaims(c.get('claims')),
+        action: 'pause',
+        targetKind: 'bid_session',
+        targetId: id,
+        reason: body.reason,
+        beforeState: { current_phase: current.currentPhase },
+        afterState: { current_phase: 'paused' },
+      });
+      return c.json({ id, current_phase: 'paused', paused_at: now.toISOString() });
     });
-    return c.json({ id, current_phase: 'paused', paused_at: now.toISOString() });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
   },
 );
 
@@ -462,21 +490,37 @@ router.post(
     if (s.currentPhase !== 'paused') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
-    await db
-      .update(bidSessions)
-      .set({ currentPhase: 'position_bid', pausedAt: null })
-      .where(eq(bidSessions.id, id));
-    await writeAuditLog(db, {
-      bidSessionId: id,
-      actorType: 'admin',
-      actorId: actorIdFromClaims(c.get('claims')),
-      action: 'resume',
-      targetKind: 'bid_session',
-      targetId: id,
-      beforeState: { current_phase: 'paused' },
-      afterState: { current_phase: 'position_bid' },
+    const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+      const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
+      if (current === undefined) return c.json({ error: 'not_found' }, 404);
+      if (current.currentPhase !== 'paused') {
+        return c.json({ error: 'invalid_state', current_phase: current.currentPhase }, 409);
+      }
+      const updated = await db
+        .update(bidSessions)
+        .set({
+          currentPhase: 'position_bid',
+          pausedAt: null,
+          mockControlRevision: sql`${bidSessions.mockControlRevision} + 1`,
+        })
+        .where(and(eq(bidSessions.id, id), eq(bidSessions.currentPhase, 'paused')))
+        .returning({ id: bidSessions.id })
+        .get();
+      if (updated === undefined) return c.json({ error: 'session_state_changed' }, 409);
+      await writeAuditLog(db, {
+        bidSessionId: id,
+        actorType: 'admin',
+        actorId: actorIdFromClaims(c.get('claims')),
+        action: 'resume',
+        targetKind: 'bid_session',
+        targetId: id,
+        beforeState: { current_phase: 'paused' },
+        afterState: { current_phase: 'position_bid' },
+      });
+      return c.json({ id, current_phase: 'position_bid' });
     });
-    return c.json({ id, current_phase: 'position_bid' });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
   },
 );
 

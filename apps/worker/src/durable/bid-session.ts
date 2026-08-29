@@ -10,7 +10,7 @@ import {
   type PickRejectedEvent,
   type StateSnapshotEvent,
 } from '@mbfd/shared';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 import { drainBidAuditOutbox } from '../audit/archive-outbox.js';
@@ -23,6 +23,7 @@ import {
 import { getDb } from '../db/index.js';
 import {
   auditLog,
+  bidOrder,
   bidSessions,
   bids,
   members,
@@ -44,12 +45,13 @@ import {
   loadFrozenSessionBidPolicy,
   resolveFrozenSessionBidTarget,
 } from '../lib/bid-policy.js';
-import type {
-  ResolveOriginalSpecialtyRequestInput,
-  ResolveSpecialtyCandidateInput,
-  ResumeSpecialtyAdjudicationInput,
-  SpecialtyAdjudicationRequest,
-  SpecialtyNormalTurn,
+import {
+  type ResolveOriginalSpecialtyRequestInput,
+  type ResolveSpecialtyCandidateInput,
+  type ResumeSpecialtyAdjudicationInput,
+  type SpecialtyAdjudicationRequest,
+  type SpecialtyNormalTurn,
+  isValidSpecialtyAdjudicationState,
 } from '../lib/specialty-adjudication.js';
 import { SpecialtyTestPolicySchema } from '../lib/specialty-test-policy.js';
 import {
@@ -81,10 +83,14 @@ import {
 import {
   type AcceptedSpecialtyEngineTransitionResult,
   BidSessionSpecialtyAdapter,
+  SPECIALTY_COMMAND_ID_REUSE_CONFLICT,
+  type SpecialtyCommandOperation,
   type SpecialtyCommandReceipt,
   type SpecialtyEngineTransitionResult,
   bidSessionSpecialtyReceiptPrefix,
   bidSessionSpecialtyReceiptStorageKey,
+  isVerifiedSpecialtyCommandReplay,
+  specialtyCommandReceiptFingerprint,
 } from './bid-session-specialty.js';
 import {
   type BidSessionState,
@@ -168,6 +174,12 @@ const SpecialtyBeginPayloadSchema = z
       .object({
         commandId: SpecialtyOpaqueIdSchema,
         expectedRevision: z.number().int().nonnegative(),
+        /**
+         * Mock rehearsal controls have their own D1 sequence. It is never
+         * inferred from canonical DO `lastSeq`, because legacy rehearsal
+         * writes intentionally do not create canonical Bid commands.
+         */
+        expectedNormalControlRevision: z.number().int().nonnegative(),
         requestId: SpecialtyOpaqueIdSchema,
         positionId: SpecialtyOpaqueIdSchema,
         policy: SyntheticSpecialtyPolicySchema,
@@ -216,7 +228,6 @@ const SpecialtyResumePayloadSchema = z
   })
   .strict();
 
-type SpecialtyOperation = 'begin' | 'resolve_candidate' | 'resolve_original' | 'resume';
 type SpecialtyBeginPayload = z.infer<typeof SpecialtyBeginPayloadSchema>;
 type SpecialtyCandidatePayload = z.infer<typeof SpecialtyCandidatePayloadSchema>;
 type SpecialtyOriginalPayload = z.infer<typeof SpecialtyOriginalPayloadSchema>;
@@ -226,6 +237,60 @@ type SpecialtyPayload =
   | SpecialtyCandidatePayload
   | SpecialtyOriginalPayload
   | SpecialtyResumePayload;
+
+interface NormalMutationLeaseRecord {
+  readonly version: 1;
+  readonly leaseId: string;
+  readonly acquiredAtMs: number;
+}
+
+type NormalMutationLeaseStatus =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'active'; readonly lease: NormalMutationLeaseRecord }
+  | { readonly kind: 'unknown' };
+
+type NormalMutationLeaseAcquireResult =
+  | { readonly ok: true; readonly leaseId: string }
+  | {
+      readonly ok: false;
+      readonly error:
+        | 'specialty_adjudication_active'
+        | 'specialty_adjudication_state_unavailable'
+        | 'normal_mutation_lease_active'
+        | 'normal_mutation_lease_state_unknown';
+    };
+
+type NormalMutationLeaseReleaseResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly error:
+        | 'normal_mutation_lease_state_unknown'
+        | 'normal_mutation_lease_not_held'
+        | 'normal_mutation_lease_not_owner';
+    };
+
+const NormalMutationLeaseReleasePayloadSchema = z
+  .object({ lease_id: SpecialtyOpaqueIdSchema })
+  .strict();
+
+export function bidSessionNormalMutationLeaseStorageKey(bidSessionId: string): string {
+  return `bs:${bidSessionId}:normal-mutation-lease`;
+}
+
+function isNormalMutationLeaseRecord(value: unknown): value is NormalMutationLeaseRecord {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.version === 1 &&
+    typeof record.leaseId === 'string' &&
+    record.leaseId.trim().length > 0 &&
+    record.leaseId.length <= 160 &&
+    typeof record.acquiredAtMs === 'number' &&
+    Number.isSafeInteger(record.acquiredAtMs) &&
+    record.acquiredAtMs >= 0
+  );
+}
 
 type SpecialtyTransportResult =
   | {
@@ -239,7 +304,13 @@ type SpecialtyTransportResult =
       code: string;
       message: string;
       result: SpecialtyEngineTransitionResult | null;
-    };
+  };
+
+interface CurrentSpecialtyNormalTurn {
+  readonly turn: SpecialtyNormalTurn;
+  /** Present only when the turn is derived from a direct mock D1 session. */
+  readonly mockControlRevision: number | null;
+}
 
 type CanonicalMockIntent = 'pending' | 'active';
 
@@ -357,6 +428,68 @@ export class BidSessionDO implements DurableObject {
     };
   }
 
+  /**
+   * Legacy rehearsal commands deliberately mutate D1 rather than canonical
+   * DO state. For a mock session, D1 is therefore the only authoritative
+   * source for the normal turn that a synthetic specialty interruption may
+   * suspend or later resume. A missing/corrupt D1 turn fails closed instead
+   * of falling back to an unrelated empty or stale DO snapshot.
+   */
+  private async currentSpecialtyNormalTurn(): Promise<CurrentSpecialtyNormalTurn | null> {
+    let session:
+      | {
+          isMock: boolean;
+          currentPhase: string;
+          currentBidderId: number | null;
+          mockControlRevision: number;
+        }
+      | undefined;
+    try {
+      session = await getDb(this.env.DB)
+        .select({
+          isMock: bidSessions.isMock,
+          currentPhase: bidSessions.currentPhase,
+          currentBidderId: bidSessions.currentBidderId,
+          mockControlRevision: bidSessions.mockControlRevision,
+        })
+        .from(bidSessions)
+        .where(eq(bidSessions.id, this.namedSessionId()))
+        .get();
+    } catch {
+      return null;
+    }
+
+    if (session?.isMock) {
+      if (session.currentPhase !== 'position_bid' || session.currentBidderId === null) return null;
+      let order: Array<{ ordinal: number; memberId: number }>;
+      try {
+        order = await getDb(this.env.DB)
+          .select({ ordinal: bidOrder.ordinal, memberId: bidOrder.memberId })
+          .from(bidOrder)
+          .where(eq(bidOrder.bidSessionId, this.namedSessionId()))
+          .orderBy(asc(bidOrder.ordinal))
+          .all();
+      } catch {
+        return null;
+      }
+      const queueCursor = order.findIndex((entry) => entry.memberId === session.currentBidderId);
+      const entry = queueCursor < 0 ? undefined : order[queueCursor];
+      if (entry === undefined) return null;
+      return {
+        turn: {
+          turnId: `mock-normal:${this.namedSessionId()}:${session.mockControlRevision}:${entry.ordinal}:${queueCursor}:${entry.memberId}`,
+          bidderId: entry.memberId,
+          ordinal: entry.ordinal,
+          queueCursor,
+        },
+        mockControlRevision: session.mockControlRevision,
+      };
+    }
+
+    const turn = this.specialtyNormalTurn(await this.getState());
+    return turn === null ? null : { turn, mockControlRevision: null };
+  }
+
   private sameSpecialtyNormalTurn(left: SpecialtyNormalTurn, right: SpecialtyNormalTurn): boolean {
     return (
       left.turnId === right.turnId &&
@@ -366,19 +499,123 @@ export class BidSessionDO implements DurableObject {
     );
   }
 
+  /**
+   * A normal D1 writer owns this durable permit until it calls release. There
+   * is deliberately no timer or implicit expiry: after a crashed writer the
+   * D1 outcome is unknowable, so another writer or synthetic interruption
+   * must fail closed instead of guessing that the old operation is finished.
+   */
+  private async normalMutationLeaseStatus(
+    storage: Pick<DOStorageLike, 'get'> = this.storage,
+  ): Promise<NormalMutationLeaseStatus> {
+    try {
+      const record = await storage.get<unknown>(
+        bidSessionNormalMutationLeaseStorageKey(this.namedSessionId()),
+      );
+      if (record === undefined) return { kind: 'none' };
+      if (!isNormalMutationLeaseRecord(record)) return { kind: 'unknown' };
+      return { kind: 'active', lease: record };
+    } catch {
+      return { kind: 'unknown' };
+    }
+  }
+
+  private async acquireNormalMutationLease(): Promise<NormalMutationLeaseAcquireResult> {
+    return this.state.blockConcurrencyWhile(async () => {
+      const existingLease = await this.normalMutationLeaseStatus();
+      if (existingLease.kind === 'unknown') {
+        return { ok: false, error: 'normal_mutation_lease_state_unknown' };
+      }
+      if (existingLease.kind === 'active') {
+        return { ok: false, error: 'normal_mutation_lease_active' };
+      }
+
+      let specialtyState: unknown;
+      try {
+        specialtyState = await new BidSessionSpecialtyAdapter(
+          this.storage,
+          this.namedSessionId(),
+        ).load();
+      } catch {
+        return { ok: false, error: 'specialty_adjudication_state_unavailable' };
+      }
+      if (!isValidSpecialtyAdjudicationState(specialtyState)) {
+        return { ok: false, error: 'specialty_adjudication_state_unavailable' };
+      }
+      if (specialtyState.active !== null) {
+        return { ok: false, error: 'specialty_adjudication_active' };
+      }
+
+      const leaseId = ulid();
+      await this.storage.put(bidSessionNormalMutationLeaseStorageKey(this.namedSessionId()), {
+        version: 1,
+        leaseId,
+        acquiredAtMs: Date.now(),
+      } satisfies NormalMutationLeaseRecord);
+      return { ok: true, leaseId };
+    });
+  }
+
+  private async releaseNormalMutationLease(
+    leaseId: string,
+  ): Promise<NormalMutationLeaseReleaseResult> {
+    return this.state.blockConcurrencyWhile(async () => {
+      const existingLease = await this.normalMutationLeaseStatus();
+      if (existingLease.kind === 'unknown') {
+        return { ok: false, error: 'normal_mutation_lease_state_unknown' };
+      }
+      if (existingLease.kind === 'none') {
+        return { ok: false, error: 'normal_mutation_lease_not_held' };
+      }
+      if (existingLease.lease.leaseId !== leaseId) {
+        return { ok: false, error: 'normal_mutation_lease_not_owner' };
+      }
+      await this.storage.delete(bidSessionNormalMutationLeaseStorageKey(this.namedSessionId()));
+      return { ok: true };
+    });
+  }
+
+  private normalMutationLeaseRejection(
+    lease: Exclude<NormalMutationLeaseStatus, { readonly kind: 'none' }>,
+  ): SpecialtyTransportResult {
+    if (lease.kind === 'active') {
+      return {
+        kind: 'rejected',
+        code: 'normal_mutation_lease_active',
+        message:
+          'A direct normal Bid mutation is in progress; synthetic specialty interruption is blocked.',
+        result: null,
+      };
+    }
+    return {
+      kind: 'rejected',
+      code: 'normal_mutation_lease_state_unknown',
+      message:
+        'The normal Bid mutation permit has an unknown state; synthetic specialty interruption is blocked.',
+      result: null,
+    };
+  }
+
   private async syntheticSpecialtyStatus(): Promise<{
     mode: 'synthetic_test_only';
     does_not_commit_bid: true;
     database_audit_log: 'not_written';
+    normal_turn: {
+      bidder_id: number;
+      ordinal: number;
+      queue_cursor: number;
+      mock_control_revision: number | null;
+    } | null;
     state: Awaited<ReturnType<BidSessionSpecialtyAdapter['load']>>;
     audit_receipts: SpecialtyCommandReceipt[];
   }> {
     const adapter = new BidSessionSpecialtyAdapter(this.storage, this.namedSessionId());
-    const [specialtyState, receiptMap] = await Promise.all([
+    const [specialtyState, receiptMap, currentNormalTurn] = await Promise.all([
       adapter.load(),
       this.state.storage.list<SpecialtyCommandReceipt>({
         prefix: bidSessionSpecialtyReceiptPrefix(this.namedSessionId()),
       }),
+      this.currentSpecialtyNormalTurn(),
     ]);
     const receipts = [...receiptMap.values()].sort(
       (left, right) => left.afterState.revision - right.afterState.revision,
@@ -387,8 +624,41 @@ export class BidSessionDO implements DurableObject {
       mode: 'synthetic_test_only',
       does_not_commit_bid: true,
       database_audit_log: 'not_written',
+      normal_turn:
+        currentNormalTurn === null
+          ? null
+          : {
+              bidder_id: currentNormalTurn.turn.bidderId,
+              ordinal: currentNormalTurn.turn.ordinal,
+              queue_cursor: currentNormalTurn.turn.queueCursor,
+              mock_control_revision: currentNormalTurn.mockControlRevision,
+            },
       state: specialtyState,
       audit_receipts: receipts,
+    };
+  }
+
+  private specialtyReplayResult(
+    receipt: unknown | undefined,
+    commandId: string,
+    operation: SpecialtyCommandOperation,
+    commandFingerprint: string,
+  ): SpecialtyTransportResult | null {
+    if (receipt === undefined) return null;
+    if (!isVerifiedSpecialtyCommandReplay(receipt, commandId, operation, commandFingerprint)) {
+      return {
+        kind: 'rejected',
+        code: SPECIALTY_COMMAND_ID_REUSE_CONFLICT,
+        message:
+          'This specialty command ID was previously used with a different or unverifiable command.',
+        result: null,
+      };
+    }
+    return {
+      kind: 'accepted',
+      idempotentReplay: true,
+      result: receipt.result,
+      receipt,
     };
   }
 
@@ -400,32 +670,47 @@ export class BidSessionDO implements DurableObject {
    * there is no approved specialty policy or award command to archive.
    */
   private async runSyntheticSpecialtyCommand(
-    operation: SpecialtyOperation,
+    operation: SpecialtyCommandOperation,
     payload: SpecialtyPayload,
   ): Promise<SpecialtyTransportResult> {
     const bidSessionId = this.namedSessionId();
     const commandId = payload.command.commandId;
+    const commandFingerprint = specialtyCommandReceiptFingerprint(operation, payload);
     return this.state.blockConcurrencyWhile(async () => {
-      const normalState = await this.getState();
+      const receiptKey = bidSessionSpecialtyReceiptStorageKey(bidSessionId, commandId);
+      const priorReceipt = this.specialtyReplayResult(
+        await this.state.storage.get<unknown>(receiptKey),
+        commandId,
+        operation,
+        commandFingerprint,
+      );
+      if (priorReceipt !== null) return priorReceipt;
+
       return this.state.storage.transaction(async (transaction) => {
-        const receiptKey = bidSessionSpecialtyReceiptStorageKey(bidSessionId, commandId);
-        const replay = await transaction.get<SpecialtyCommandReceipt>(receiptKey);
-        if (replay !== undefined) {
-          return {
-            kind: 'accepted',
-            idempotentReplay: true,
-            result: replay.result,
-            receipt: replay,
-          };
-        }
+        const replay = this.specialtyReplayResult(
+          await transaction.get<unknown>(receiptKey),
+          commandId,
+          operation,
+          commandFingerprint,
+        );
+        if (replay !== null) return replay;
 
         const adapter = new BidSessionSpecialtyAdapter(transaction, bidSessionId);
         const beforeState = await adapter.load();
         let result: SpecialtyEngineTransitionResult;
         switch (operation) {
           case 'begin': {
-            const normalTurn = this.specialtyNormalTurn(normalState);
-            if (normalTurn === null) {
+            // The direct normal D1 routes acquire this permit from this same
+            // DO before writing. Checking it inside the synthetic command's
+            // serialized storage transaction closes the status-read -> D1
+            // TOCTOU: a specialty begin cannot suspend a turn while that
+            // normal mutation remains unresolved.
+            const normalMutationLease = await this.normalMutationLeaseStatus(transaction);
+            if (normalMutationLease.kind !== 'none') {
+              return this.normalMutationLeaseRejection(normalMutationLease);
+            }
+            const currentNormalTurn = await this.currentSpecialtyNormalTurn();
+            if (currentNormalTurn === null) {
               return {
                 kind: 'rejected',
                 code: 'NORMAL_TURN_UNAVAILABLE',
@@ -434,9 +719,24 @@ export class BidSessionDO implements DurableObject {
               };
             }
             const beginPayload = payload as SpecialtyBeginPayload;
+            if (
+              currentNormalTurn.mockControlRevision !== null &&
+              beginPayload.command.expectedNormalControlRevision !==
+                currentNormalTurn.mockControlRevision
+            ) {
+              return {
+                kind: 'rejected',
+                code: 'STALE_MOCK_CONTROL_REVISION',
+                message:
+                  'The mock normal Bid turn changed before the specialty interruption command was accepted.',
+                result: null,
+              };
+            }
+            const { expectedNormalControlRevision: _expectedNormalControlRevision, ...beginCommand } =
+              beginPayload.command;
             const command: SpecialtyAdjudicationRequest = {
-              ...beginPayload.command,
-              normalTurn,
+              ...beginCommand,
+              normalTurn: currentNormalTurn.turn,
             };
             result = await adapter.begin(command);
             break;
@@ -456,10 +756,10 @@ export class BidSessionDO implements DurableObject {
           case 'resume': {
             const active = beforeState.active;
             if (active !== null) {
-              const currentNormalTurn = this.specialtyNormalTurn(normalState);
+              const currentNormalTurn = await this.currentSpecialtyNormalTurn();
               if (
                 currentNormalTurn === null ||
-                !this.sameSpecialtyNormalTurn(active.originalTurn, currentNormalTurn)
+                !this.sameSpecialtyNormalTurn(active.originalTurn, currentNormalTurn.turn)
               ) {
                 return {
                   kind: 'rejected',
@@ -487,9 +787,10 @@ export class BidSessionDO implements DurableObject {
         }
 
         const receipt: SpecialtyCommandReceipt = {
-          version: 1,
+          version: 2,
           commandId,
           operation,
+          commandFingerprint,
           acceptedAtMs: Date.now(),
           actorType: 'admin',
           actorId: payload.audit.actorId,
@@ -924,6 +1225,35 @@ export class BidSessionDO implements DurableObject {
     if (url.pathname.endsWith('/snapshot')) {
       const state = await this.getState();
       return new Response(JSON.stringify(state), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.pathname === '/admin/normal-mutation-lease/acquire') {
+      if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+      const result = await this.acquireNormalMutationLease();
+      return new Response(
+        JSON.stringify(
+          result.ok ? { ok: true, lease_id: result.leaseId } : { error: result.error },
+        ),
+        {
+          status: result.ok ? 200 : 409,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    }
+    if (url.pathname === '/admin/normal-mutation-lease/release') {
+      if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+      const raw = await req.json().catch(() => null);
+      const parsed = NormalMutationLeaseReleasePayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        return new Response(JSON.stringify({ error: 'normal_mutation_lease_invalid' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      const result = await this.releaseNormalMutationLease(parsed.data.lease_id);
+      return new Response(JSON.stringify(result.ok ? { ok: true } : { error: result.error }), {
+        status: result.ok ? 200 : 409,
         headers: { 'content-type': 'application/json' },
       });
     }

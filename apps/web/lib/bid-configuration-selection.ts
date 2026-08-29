@@ -1,4 +1,9 @@
-export type BidConfigurationLifecycle = 'UNCONFIGURED' | 'DRAFT' | 'FROZEN' | 'INCONSISTENT';
+export type BidConfigurationLifecycle =
+  | 'UNCONFIGURED'
+  | 'DRAFT'
+  | 'FROZEN'
+  | 'LEGACY_EVALUATION_DATE_REQUIRED'
+  | 'INCONSISTENT';
 
 export interface BidConfiguration {
   bidYear: number;
@@ -7,11 +12,19 @@ export interface BidConfiguration {
   positionTemplateVersion: string | null;
   configurationRevision: number;
   ruleBookRevision: number | null;
-  settings: {
-    v: 1;
-    expectedDurationDays: number;
-    turnTimerSeconds: number;
-  } | null;
+  settings:
+    | {
+        v: 1;
+        expectedDurationDays: number;
+        turnTimerSeconds: number;
+      }
+    | {
+        v: 2;
+        expectedDurationDays: number;
+        turnTimerSeconds: number;
+        credentialEvaluationOn: string;
+      }
+    | null;
   lifecycle: BidConfigurationLifecycle;
 }
 
@@ -55,6 +68,7 @@ export function isBoundBidConfiguration(
     configuration.ruleBookVersion.length > 0 &&
     typeof configuration.positionTemplateVersion === 'string' &&
     configuration.positionTemplateVersion.length > 0 &&
+    configuration.settings?.v === 2 &&
     Number.isSafeInteger(configuration.configurationRevision) &&
     configuration.configurationRevision >= 0
   );

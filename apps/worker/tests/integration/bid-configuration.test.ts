@@ -159,9 +159,14 @@ async function seedCommittedTeleStaffBaseline(h: TestD1): Promise<void> {
 async function designateDraft(
   h: TestD1,
   expectedRevision = 0,
-  settings: { expected_duration_days: number; turn_timer_seconds: number } = {
+  settings: {
+    expected_duration_days: number;
+    turn_timer_seconds: number;
+    credential_evaluation_on?: string;
+  } = {
     expected_duration_days: 2,
     turn_timer_seconds: 180,
+    credential_evaluation_on: '2027-01-15',
   },
 ): Promise<Response> {
   return adminRequest(h, '/api/admin/bid-configuration/2027', {
@@ -211,6 +216,10 @@ describe('annual bid configuration selection', () => {
         positionTemplateVersion: '2027.1',
         configurationRevision: 1,
         ruleBookRevision: 0,
+        settings: {
+          v: 2,
+          credentialEvaluationOn: '2027-01-15',
+        },
         lifecycle: 'DRAFT',
       },
     });
@@ -225,6 +234,55 @@ describe('annual bid configuration selection', () => {
     const stale = await designateDraft(h, 0);
     expect(stale.status).toBe(409);
     expect(await stale.json()).toEqual({ error: 'bid_configuration_changed' });
+  });
+
+  it('rejects a new designation that omits the credential evaluation date instead of treating V1 settings as compliant', async () => {
+    const selected = await adminRequest(h, '/api/admin/bid-configuration/2027', {
+      method: 'PUT',
+      body: JSON.stringify({
+        rule_book_version: '2027.2',
+        expected_configuration_revision: 0,
+        settings: {
+          expected_duration_days: 2,
+          turn_timer_seconds: 180,
+        },
+        reason: 'Attempt an incomplete synthetic configuration.',
+      }),
+    });
+
+    expect(selected.status).toBe(400);
+    expect((await h.db.run('SELECT config_json FROM bid_years WHERE year = 2027')).results).toEqual(
+      [{ config_json: null }],
+    );
+  });
+
+  it('keeps a legacy V1 configuration readable for repair but fails closed for new sessions', async () => {
+    await h.db.run(
+      `UPDATE bid_years
+          SET rule_book_version = '2027.2',
+              position_template_version = '2027.1',
+              config_json = '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}'
+        WHERE year = 2027`,
+    );
+
+    const read = await adminRequest(h, '/api/admin/bid-configuration/2027');
+    expect(read.status).toBe(200);
+    expect(await read.json()).toMatchObject({
+      configuration: {
+        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+        lifecycle: 'LEGACY_EVALUATION_DATE_REQUIRED',
+      },
+    });
+
+    const session = await adminRequest(h, '/api/admin/bid-session', {
+      method: 'POST',
+      body: JSON.stringify({ bid_year: 2027, is_mock: true }),
+    });
+    expect(session.status).toBe(409);
+    expect(await session.json()).toMatchObject({
+      error: 'session_policy_snapshot_unavailable',
+      policy_error: 'bid_configuration_credential_evaluation_date_required',
+    });
   });
 
   it('rejects a session when the designated configuration changes at the creation boundary', async () => {
@@ -300,7 +358,12 @@ describe('annual bid configuration selection', () => {
     const snapshot = await adminRequest(h, `/api/admin/bid-session/${body.id}/policy-snapshot`);
     expect(snapshot.status).toBe(200);
     expect(await snapshot.json()).toMatchObject({
-      snapshot: { ruleBookVersion: '2027.2', ruleBookRevision: 0 },
+      snapshot: {
+        ruleBookVersion: '2027.2',
+        ruleBookRevision: 0,
+        credentialEvaluationOn: '2027-01-15',
+        settings: { v: 2, credentialEvaluationOn: '2027-01-15' },
+      },
     });
   });
 
@@ -403,6 +466,7 @@ describe('annual bid configuration selection', () => {
     const revised = await designateDraft(h, 1, {
       expected_duration_days: 3,
       turn_timer_seconds: 240,
+      credential_evaluation_on: '2027-01-15',
     });
     expect(revised.status).toBe(200);
     await h.db.run(
@@ -462,7 +526,13 @@ describe('annual bid configuration selection', () => {
         ruleBookVersion: '2027.2',
         ruleBookRevision: 1,
         configurationRevision: 2,
-        settings: { expectedDurationDays: 3, turnTimerSeconds: 240 },
+        credentialEvaluationOn: '2027-01-15',
+        settings: {
+          v: 2,
+          expectedDurationDays: 3,
+          turnTimerSeconds: 240,
+          credentialEvaluationOn: '2027-01-15',
+        },
         ruleBookMaterial: {
           v: 1,
           rules: [

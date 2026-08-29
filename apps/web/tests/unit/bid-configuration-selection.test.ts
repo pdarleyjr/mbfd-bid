@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type BidConfiguration,
   buildBoundToolHref,
+  isBoundBidConfiguration,
   parseBoundToolSelection,
 } from '../../lib/bid-configuration-selection';
 
@@ -13,7 +14,12 @@ const CONFIGURATION: BidConfiguration = {
   positionTemplateVersion: '2027.1',
   configurationRevision: 4,
   ruleBookRevision: 9,
-  settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+  settings: {
+    v: 2,
+    expectedDurationDays: 2,
+    turnTimerSeconds: 180,
+    credentialEvaluationOn: '2027-01-15',
+  },
   lifecycle: 'DRAFT',
 };
 
@@ -47,5 +53,15 @@ describe('bound Bid Setup tool selection', () => {
         configuration_revision: 'not-a-revision',
       }),
     ).toBeNull();
+  });
+
+  it('does not treat legacy V1 settings without an explicit credential evaluation date as a complete bound configuration', () => {
+    const legacy: BidConfiguration = {
+      ...CONFIGURATION,
+      settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+      lifecycle: 'LEGACY_EVALUATION_DATE_REQUIRED',
+    };
+    expect(isBoundBidConfiguration(legacy)).toBe(false);
+    expect(buildBoundToolHref('/admin/positions', legacy)).toBeNull();
   });
 });

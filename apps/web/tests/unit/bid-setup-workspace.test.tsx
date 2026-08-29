@@ -12,7 +12,12 @@ const DRAFT_CONFIGURATION = {
   positionTemplateVersion: '2027.1',
   configurationRevision: 4,
   ruleBookRevision: 9,
-  settings: { v: 1 as const, expectedDurationDays: 2, turnTimerSeconds: 180 },
+  settings: {
+    v: 2 as const,
+    expectedDurationDays: 2,
+    turnTimerSeconds: 180,
+    credentialEvaluationOn: '2027-01-15',
+  },
   lifecycle: 'DRAFT' as const,
 };
 
@@ -32,6 +37,8 @@ describe('BidSetupWorkspace', () => {
     expect(html).toContain('2027.2');
     expect(html).toContain('Configuration revision');
     expect(html).toContain('>4<');
+    expect(html).toContain('Credential evaluation date');
+    expect(html).toContain('2027-01-15');
     expect(html).toContain('Rule Books');
     expect(html).toContain('Bid Access PIN');
   });

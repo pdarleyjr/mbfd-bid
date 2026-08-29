@@ -18,7 +18,12 @@ const CONFIGURATION = {
   positionTemplateVersion: '2027.1',
   configurationRevision: 4,
   ruleBookRevision: 9,
-  settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+  settings: {
+    v: 2,
+    expectedDurationDays: 2,
+    turnTimerSeconds: 180,
+    credentialEvaluationOn: '2027-01-15',
+  },
   lifecycle: 'DRAFT',
 } as const;
 

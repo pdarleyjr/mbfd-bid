@@ -1,6 +1,7 @@
 import {
   type BidConfigurationSettings,
   BidConfigurationSettingsSchema,
+  type BidConfigurationSettingsV2,
   type BidParticipation,
   type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
@@ -32,7 +33,12 @@ import {
 } from './authoritative-staffing-baseline.js';
 import { derivePersonnelMemberAsOf } from './personnel-lifecycle.js';
 import { type DecodedPositionRule, decodeRuleBookRows } from './position-rule.js';
-import { activeCredentialNamesByMemberAsOf } from './qualification-lifecycle.js';
+import {
+  activeCredentialNamesByMemberAsOf,
+  normalizePersistedQualificationLifecycleEvent,
+  specialtyQualificationsByMemberAsOf,
+  type QualificationLifecycleEvent,
+} from './qualification-lifecycle.js';
 
 export interface RuleBookCoverageInput {
   ruleBookVersion: string;
@@ -445,7 +451,7 @@ export type BidSessionMode = 'mock' | 'live';
 export interface ConfiguredBidYearPolicy {
   bidYear: number;
   configurationRevision: number;
-  settings: BidConfigurationSettings;
+  settings: BidConfigurationSettingsV2;
   ruleBookVersion: string;
   ruleBookRevision: number;
   positionTemplateVersion: string;
@@ -456,6 +462,7 @@ export type ConfiguredBidYearPolicyError =
   | 'bid_year_not_found'
   | 'bid_configuration_unconfigured'
   | 'bid_configuration_settings_invalid'
+  | 'bid_configuration_credential_evaluation_date_required'
   | 'bid_configuration_rule_book_missing'
   | 'bid_configuration_year_mismatch'
   | 'bid_configuration_template_mismatch'
@@ -505,6 +512,13 @@ export async function loadConfiguredBidYearPolicy(
   }
   const settings = parseBidConfigurationSettings(year.configJson);
   if (settings === null) return { ok: false, code: 'bid_configuration_settings_invalid' };
+  // V1 settings are intentionally readable for recovery and configuration
+  // repair, but cannot create a new mock or live session. An evaluation date
+  // must be an explicit annual policy input rather than the wall-clock moment
+  // that happened to create a session.
+  if (settings.v !== 2) {
+    return { ok: false, code: 'bid_configuration_credential_evaluation_date_required' };
+  }
 
   const book = await db
     .select({
@@ -561,6 +575,7 @@ export type BidSessionPolicySnapshotPreparation =
         | 'non_biddable_position_staffing_binding_not_approved'
         | 'non_biddable_staffing_position_not_approved'
         | 'non_biddable_assignment_ambiguous'
+        | 'qualification_lifecycle_data_invalid'
         | ConfiguredBidYearPolicyError;
       positionIds?: readonly string[];
     };
@@ -631,10 +646,11 @@ export async function prepareBidSessionPolicySnapshot(
   const { coverage } = policy;
   const templateVersion = policy.positionTemplateVersion;
   const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
-  // V3 has no independent qualification-evaluation-date field. Its immutable
-  // `capturedAtMs` is therefore the sole evaluation date for credential
-  // evidence; later expiration/revocation cannot rewrite a saved snapshot.
-  const asOfDate = snapshotDate(capturedAtMs);
+  // Staffing/personnel are evaluated at session capture. Credential evidence
+  // is separately evaluated at the annual policy date so a later session
+  // creation timestamp cannot silently redefine qualification eligibility.
+  const capturedOn = snapshotDate(capturedAtMs);
+  const credentialEvaluationOn = policy.settings.credentialEvaluationOn;
 
   const [
     bindings,
@@ -727,6 +743,7 @@ export async function prepareBidSessionPolicySnapshot(
         credentialId: memberQualificationEvents.credentialId,
         credentialName: credentials.name,
         specialtyCode: memberQualificationEvents.specialtyCode,
+        specialtyTerminalStatus: memberQualificationEvents.specialtyTerminalStatus,
         kind: memberQualificationEvents.kind,
         effectiveOn: memberQualificationEvents.effectiveOn,
         expiresOn: memberQualificationEvents.expiresOn,
@@ -807,8 +824,8 @@ export async function prepareBidSessionPolicySnapshot(
     return (
       staffing === undefined ||
       staffing.reviewStatus !== 'approved' ||
-      (staffing.activeFrom !== null && staffing.activeFrom > asOfDate) ||
-      (staffing.activeTo !== null && staffing.activeTo < asOfDate)
+      (staffing.activeFrom !== null && staffing.activeFrom > capturedOn) ||
+      (staffing.activeTo !== null && staffing.activeTo < capturedOn)
     );
   });
   if (notApproved.length > 0) {
@@ -833,7 +850,7 @@ export async function prepareBidSessionPolicySnapshot(
         assignment.status === 'active' ||
         ((assignment.status === 'ended' || assignment.status === 'superseded') &&
           assignment.effectiveTo !== null)) &&
-      effectiveOn(asOfDate, assignment.effectiveFrom, assignment.effectiveTo),
+      effectiveOn(capturedOn, assignment.effectiveFrom, assignment.effectiveTo),
   );
   const assignmentsByPosition = new Map<string, typeof applicableAssignments>();
   const assignmentsByMember = new Map<number, typeof applicableAssignments>();
@@ -905,25 +922,19 @@ export async function prepareBidSessionPolicySnapshot(
           beforeState: event.beforeState,
           createdAt: event.createdAt.getTime(),
         })),
-        asOfDate,
+        capturedOn,
       ),
     ]),
   );
-  const credentialNamesByMember = activeCredentialNamesByMemberAsOf({
-    asOf: asOfDate,
-    legacyCredentials: credentialRows.map((credential) => ({
-      memberId: credential.memberId,
-      credentialId: credential.credentialId,
-      credentialName: credential.name,
-      startDate: credential.startDate,
-      expirationDate: credential.expirationDate,
-    })),
-    events: qualificationEventRows.map((event) => ({
+  const qualificationEvents: QualificationLifecycleEvent[] = [];
+  for (const event of qualificationEventRows) {
+    const normalized = normalizePersistedQualificationLifecycleEvent({
       id: event.id,
       memberId: event.memberId,
       credentialId: event.credentialId,
       credentialName: event.credentialName,
       specialtyCode: event.specialtyCode,
+      specialtyTerminalStatus: event.specialtyTerminalStatus,
       kind: event.kind,
       effectiveOn: event.effectiveOn,
       expiresOn: event.expiresOn,
@@ -935,7 +946,26 @@ export async function prepareBidSessionPolicySnapshot(
       beforeState: event.beforeState,
       afterState: event.afterState,
       createdAt: event.createdAt.getTime(),
+    });
+    if (normalized === null) {
+      return { ok: false, code: 'qualification_lifecycle_data_invalid' };
+    }
+    qualificationEvents.push(normalized);
+  }
+  const credentialNamesByMember = activeCredentialNamesByMemberAsOf({
+    asOf: credentialEvaluationOn,
+    legacyCredentials: credentialRows.map((credential) => ({
+      memberId: credential.memberId,
+      credentialId: credential.credentialId,
+      credentialName: credential.name,
+      startDate: credential.startDate,
+      expirationDate: credential.expirationDate,
     })),
+    events: qualificationEvents,
+  });
+  const specialtyQualificationsByMember = specialtyQualificationsByMemberAsOf({
+    asOf: credentialEvaluationOn,
+    events: qualificationEvents,
   });
 
   const frozenMembers: FrozenBidEligibilityMember[] = memberRows
@@ -946,6 +976,14 @@ export async function prepareBidSessionPolicySnapshot(
         rank: personnelState?.rank ?? member.rank,
         isProbationary: member.isProbationary,
         credentialNames: credentialNamesByMember.get(member.id) ?? [],
+        specialtyQualifications: (specialtyQualificationsByMember.get(member.id) ?? []).map(
+          (specialty) => ({
+            specialtyCode: specialty.specialtyCode,
+            status: specialty.status,
+            effectiveOn: specialty.effectiveOn,
+            expiresOn: specialty.expiresOn,
+          }),
+        ),
       };
       if (personnelState?.employmentStatus !== 'active') {
         return {
@@ -1046,6 +1084,7 @@ export async function prepareBidSessionPolicySnapshot(
     positionTemplateVersion: templateVersion,
     configurationRevision: policy.configurationRevision,
     settings: policy.settings,
+    credentialEvaluationOn: policy.settings.credentialEvaluationOn,
     capturedAtMs,
     members: frozenMembers,
     ruleBookMaterial,

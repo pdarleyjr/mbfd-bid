@@ -273,4 +273,239 @@ describe('admin qualification lifecycle', () => {
       ).results,
     ).toEqual(beforeLegacyToggle.results);
   });
+
+  it('records specialty expiration, revocation, and removal as terminal append-only evidence with idempotency and an effective-dated projection', async () => {
+    const inactiveTerminal = await postEvent(h, 'specialty-revoke-inactive-001', {
+      kind: 'SPECIALTY_REVOKED',
+      member_id: 1,
+      specialty_code: 'TECHNICAL_RESCUE',
+      effective_on: '2026-08-01',
+      evidence_source: 'synthetic-specialty-board',
+      reason: 'Synthetic terminal state requires active specialty evidence.',
+    });
+    expect(inactiveTerminal.status).toBe(422);
+    await expect(inactiveTerminal.json()).resolves.toEqual({
+      error: 'specialty_not_active_at_effective_on',
+    });
+
+    const invalidExpiry = await postEvent(h, 'specialty-expire-invalid-001', {
+      kind: 'SPECIALTY_EXPIRED',
+      member_id: 1,
+      specialty_code: 'TECHNICAL_RESCUE',
+      effective_on: '2026-08-01',
+      expires_on: '2026-08-02',
+      evidence_source: 'synthetic-specialty-board',
+      reason: 'Synthetic specialty expiry must match its effective date.',
+    });
+    expect(invalidExpiry.status).toBe(422);
+    await expect(invalidExpiry.json()).resolves.toEqual({
+      error: 'expiration_must_match_effective_on',
+    });
+
+    const qualified = {
+      kind: 'SPECIALTY_QUALIFIED',
+      member_id: 1,
+      specialty_code: 'TECHNICAL_RESCUE',
+      effective_on: '2026-08-01',
+      evidence_source: 'synthetic-specialty-board',
+      evidence_reference: 'SYNTH-TR-001',
+      reason: 'Synthetic technical rescue qualification reviewed.',
+    };
+    expect((await postEvent(h, 'specialty-gain-001', qualified)).status).toBe(201);
+
+    const revoked = {
+      kind: 'SPECIALTY_REVOKED',
+      member_id: 1,
+      specialty_code: 'TECHNICAL_RESCUE',
+      effective_on: '2026-08-20',
+      evidence_source: 'synthetic-specialty-board',
+      evidence_reference: 'SYNTH-TR-REV-001',
+      reason: 'Synthetic technical rescue revocation reviewed.',
+    };
+    const revokedCreated = await postEvent(h, 'specialty-revoke-001', revoked);
+    expect(revokedCreated.status).toBe(201);
+    expect(await revokedCreated.json()).toMatchObject({
+      replayed: false,
+      event: { kind: 'SPECIALTY_REVOKED', specialtyCode: 'TECHNICAL_RESCUE' },
+    });
+    const revokedReplay = await postEvent(h, 'specialty-revoke-001', revoked);
+    expect(revokedReplay.status).toBe(200);
+    expect(await revokedReplay.json()).toMatchObject({
+      replayed: true,
+      event: { kind: 'SPECIALTY_REVOKED' },
+    });
+
+    const afterRevocation = await request(
+      h,
+      '/api/admin/qualification-lifecycle/members/1?as_of=2026-08-28',
+    );
+    expect(afterRevocation.status).toBe(200);
+    const revokedHistory = (await afterRevocation.json()) as {
+      specialties: unknown[];
+      events: unknown[];
+    };
+    expect(revokedHistory.specialties).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ specialtyCode: 'TECHNICAL_RESCUE', status: 'revoked' }),
+      ]),
+    );
+    expect(revokedHistory.events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'SPECIALTY_REVOKED' })]),
+    );
+    expect(
+      (
+        await h.db.run(
+          "SELECT kind, specialty_terminal_status FROM member_qualification_events WHERE idempotency_key = 'specialty-revoke-001'",
+        )
+      ).results,
+    ).toEqual([{ kind: 'SPECIALTY_QUALIFIED', specialty_terminal_status: 'REVOKED' }]);
+
+    expect(
+      (
+        await postEvent(h, 'specialty-regain-001', {
+          ...qualified,
+          effective_on: '2026-09-01',
+          reason: 'Synthetic technical rescue requalification reviewed.',
+        })
+      ).status,
+    ).toBe(201);
+    const removed = await postEvent(h, 'specialty-remove-001', {
+      kind: 'SPECIALTY_REMOVED',
+      member_id: 1,
+      specialty_code: 'TECHNICAL_RESCUE',
+      effective_on: '2026-09-10',
+      evidence_source: 'synthetic-specialty-board',
+      evidence_reference: 'SYNTH-TR-REMOVE-001',
+      reason: 'Synthetic specialty roster removal reviewed.',
+    });
+    expect(removed.status).toBe(201);
+    const afterRemoval = await request(
+      h,
+      '/api/admin/qualification-lifecycle/members/1?as_of=2026-09-10',
+    );
+    expect(afterRemoval.status).toBe(200);
+    expect(await afterRemoval.json()).toMatchObject({
+      specialties: [
+        expect.objectContaining({ specialtyCode: 'TECHNICAL_RESCUE', status: 'removed' }),
+      ],
+    });
+
+    expect(
+      (
+        await postEvent(h, 'specialty-requalify-expiry-001', {
+          ...qualified,
+          effective_on: '2026-10-01',
+          reason: 'Synthetic technical rescue requalification before expiry reviewed.',
+        })
+      ).status,
+    ).toBe(201);
+    const expired = await postEvent(h, 'specialty-expire-001', {
+      kind: 'SPECIALTY_EXPIRED',
+      member_id: 1,
+      specialty_code: 'TECHNICAL_RESCUE',
+      effective_on: '2026-10-15',
+      expires_on: '2026-10-15',
+      evidence_source: 'synthetic-specialty-board',
+      evidence_reference: 'SYNTH-TR-EXP-001',
+      reason: 'Synthetic technical rescue expiration reviewed.',
+    });
+    expect(expired.status).toBe(201);
+    expect(await expired.json()).toMatchObject({
+      event: { kind: 'SPECIALTY_EXPIRED', specialtyCode: 'TECHNICAL_RESCUE' },
+    });
+    const afterExpiry = await request(
+      h,
+      '/api/admin/qualification-lifecycle/members/1?as_of=2026-10-15',
+    );
+    expect(afterExpiry.status).toBe(200);
+    expect(await afterExpiry.json()).toMatchObject({
+      specialties: [
+        expect.objectContaining({ specialtyCode: 'TECHNICAL_RESCUE', status: 'expired' }),
+      ],
+    });
+
+    const invalidTarget = await postEvent(h, 'specialty-terminal-invalid-target-001', {
+      kind: 'SPECIALTY_EXPIRED',
+      member_id: 1,
+      credential_id: 10,
+      specialty_code: 'TECHNICAL_RESCUE',
+      effective_on: '2026-09-15',
+      expires_on: '2026-09-15',
+      evidence_source: 'synthetic-specialty-board',
+      reason: 'Specialty terminal events never accept credential identifiers.',
+    });
+    expect(invalidTarget.status).toBe(400);
+
+    const specialtyAudit = await h.db.run(
+      "SELECT target_kind, target_id FROM audit_log WHERE action = 'qualification_lifecycle' AND target_kind = 'specialty' ORDER BY created_at, id",
+    );
+    expect(specialtyAudit.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ target_kind: 'specialty', target_id: '1:TECHNICAL_RESCUE' }),
+      ]),
+    );
+  });
+
+  it('fails closed when a constraint-bypassed specialty terminal discriminator is corrupt', async () => {
+    h.sqlite.pragma('ignore_check_constraints = ON');
+    try {
+      h.sqlite
+        .prepare(
+          `INSERT INTO member_qualification_events
+             (id, member_id, credential_id, specialty_code, specialty_terminal_status, kind,
+              effective_on, expires_on, evidence_source, evidence_reference, reason,
+              actor_subject, idempotency_key, before_state, after_state, created_at)
+           VALUES (?, ?, NULL, ?, ?, 'SPECIALTY_QUALIFIED', ?, NULL, ?, NULL, ?, ?, ?, '{}', '{}', ?)`,
+        )
+        .run(
+          'corrupt-specialty-terminal-001',
+          1,
+          'TECHNICAL_RESCUE',
+          'BROKEN',
+          '2026-08-01',
+          'synthetic-corruption-fixture',
+          'Synthetic corruption fixture only.',
+          '0',
+          'corrupt-specialty-terminal-key-001',
+          NOW,
+        );
+    } finally {
+      h.sqlite.pragma('ignore_check_constraints = OFF');
+    }
+
+    const history = await request(
+      h,
+      '/api/admin/qualification-lifecycle/members/1?as_of=2026-08-28',
+    );
+    expect(history.status).toBe(409);
+    await expect(history.json()).resolves.toEqual({
+      error: 'qualification_lifecycle_data_invalid',
+    });
+
+    const corruptReceiptReplay = await postEvent(h, 'corrupt-specialty-terminal-key-001', {
+      kind: 'SPECIALTY_QUALIFIED',
+      member_id: 1,
+      specialty_code: 'TECHNICAL_RESCUE',
+      effective_on: '2026-08-01',
+      evidence_source: 'synthetic-corruption-fixture',
+      reason: 'Synthetic corruption fixture only.',
+    });
+    expect(corruptReceiptReplay.status).toBe(409);
+    await expect(corruptReceiptReplay.json()).resolves.toEqual({
+      error: 'qualification_lifecycle_data_invalid',
+    });
+
+    const newEvent = await postEvent(h, 'corrupt-specialty-terminal-new-key-001', {
+      kind: 'SPECIALTY_QUALIFIED',
+      member_id: 1,
+      specialty_code: 'SYNTHETIC_TEST_SPECIALTY',
+      effective_on: '2026-08-28',
+      evidence_source: 'synthetic-state-registry',
+      reason: 'Do not project around corrupt lifecycle evidence.',
+    });
+    expect(newEvent.status).toBe(409);
+    await expect(newEvent.json()).resolves.toEqual({
+      error: 'qualification_lifecycle_data_invalid',
+    });
+  });
 });

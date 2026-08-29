@@ -35,9 +35,13 @@ function policy(): SpecialtyAdjudicationPolicy {
         source: 'EXPLICIT_TEST_PRIORITY',
         reference: 'synthetic-marine-priority-v1',
       },
+      scoring: {
+        source: 'EXPLICIT_TEST_PRIORITY',
+        direction: 'LOWER_SCORE_WINS',
+      },
       tie_break_chain: ['rsc_seniority', 'rank_seniority', 'member_id'],
       normal_bid_interruption: 'SUSPEND_EXACT_NORMAL_TURN',
-      candidate_outcomes: ['award', 'declined', 'unavailable'],
+      candidate_outcomes: ['award', 'declined', 'unreachable'],
       original_bidder_resume: 'RESUME_EXACT_ORIGINAL_TURN',
     },
     candidateReleasePolicy: {

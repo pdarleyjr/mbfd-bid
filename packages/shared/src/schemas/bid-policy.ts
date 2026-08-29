@@ -7,6 +7,15 @@ import { z } from 'zod';
 export const BidParticipationSchema = z.enum(['BIDDABLE', 'ADMIN_ASSIGNED_NON_BIDDABLE']);
 export type BidParticipation = z.infer<typeof BidParticipationSchema>;
 
+/** Canonical calendar-date encoding used by frozen annual-policy facts. */
+const FrozenPolicyCalendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'must be an ISO calendar date');
+
 export const FrozenBidPoolMemberSchema = z
   .object({
     memberId: z.number().int().positive(),
@@ -27,6 +36,47 @@ export const FrozenBidPoolMemberSchema = z
 export type FrozenBidPoolMember = z.infer<typeof FrozenBidPoolMemberSchema>;
 
 /**
+ * Source-safe specialty evidence frozen for a V3 session. It deliberately
+ * retains only the deterministic policy facts: no source-system reference,
+ * actor, reason, or raw evidence payload is copied into a Bid snapshot.
+ */
+export const FrozenSpecialtyQualificationSchema = z
+  .object({
+    specialtyCode: z.string().trim().min(1).max(128),
+    status: z.enum(['active', 'expired', 'revoked', 'removed']),
+    effectiveOn: FrozenPolicyCalendarDateSchema,
+    expiresOn: FrozenPolicyCalendarDateSchema.nullable(),
+  })
+  .strict()
+  .superRefine((qualification, ctx) => {
+    if (qualification.expiresOn !== null && qualification.expiresOn < qualification.effectiveOn) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresOn'],
+        message: 'specialty expiration cannot precede the effective date',
+      });
+    }
+    if (qualification.status === 'expired' && qualification.expiresOn === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresOn'],
+        message: 'an expired specialty qualification requires its expiration date',
+      });
+    }
+    if (
+      (qualification.status === 'revoked' || qualification.status === 'removed') &&
+      qualification.expiresOn !== null
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresOn'],
+        message: 'revoked or removed specialty qualifications cannot carry an expiration date',
+      });
+    }
+  });
+export type FrozenSpecialtyQualification = z.infer<typeof FrozenSpecialtyQualificationSchema>;
+
+/**
  * The deterministic eligibility inputs for a session member. These are kept
  * separate from employee identity so a session snapshot can reproduce policy
  * decisions without persisting names or source-system identifiers.
@@ -35,6 +85,12 @@ export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend
   rank: z.enum(['CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF']),
   isProbationary: z.boolean(),
   credentialNames: z.array(z.string().trim().min(1)),
+  /**
+   * Optional only for pre-bridge V3 recovery snapshots. Fresh snapshots
+   * always materialize the collection, including an empty collection; a
+   * consumer must not treat an absent collection as evidence of eligibility.
+   */
+  specialtyQualifications: z.array(FrozenSpecialtyQualificationSchema).optional(),
 }).strict();
 export type FrozenBidEligibilityMember = z.infer<typeof FrozenBidEligibilityMemberSchema>;
 
@@ -93,13 +149,42 @@ export type FrozenRuleBookMaterial = z.infer<typeof FrozenRuleBookMaterialSchema
  * eventual live sessions. Raw `bid_years.config_json` is never trusted until
  * it parses through this schema.
  */
-export const BidConfigurationSettingsSchema = z
+/** Immutable calendar date selected by an operator for credential evidence evaluation. */
+export const CredentialEvaluationDateSchema = FrozenPolicyCalendarDateSchema;
+
+/**
+ * Legacy settings remain readable for historical recovery and operator review,
+ * but cannot configure a new session because they omit the explicit evidence
+ * evaluation date introduced in V2.
+ */
+export const BidConfigurationSettingsV1Schema = z
   .object({
     v: z.literal(1),
     expectedDurationDays: z.number().int().min(1).max(7),
     turnTimerSeconds: z.number().int().min(30).max(600),
   })
   .strict();
+export type BidConfigurationSettingsV1 = z.infer<typeof BidConfigurationSettingsV1Schema>;
+
+/**
+ * Every newly designated annual configuration explicitly fixes the calendar
+ * date used to evaluate credential lifecycle evidence. This avoids using a
+ * later mock/session creation timestamp as an implicit policy decision.
+ */
+export const BidConfigurationSettingsV2Schema = z
+  .object({
+    v: z.literal(2),
+    expectedDurationDays: z.number().int().min(1).max(7),
+    turnTimerSeconds: z.number().int().min(30).max(600),
+    credentialEvaluationOn: CredentialEvaluationDateSchema,
+  })
+  .strict();
+export type BidConfigurationSettingsV2 = z.infer<typeof BidConfigurationSettingsV2Schema>;
+
+export const BidConfigurationSettingsSchema = z.discriminatedUnion('v', [
+  BidConfigurationSettingsV1Schema,
+  BidConfigurationSettingsV2Schema,
+]);
 export type BidConfigurationSettings = z.infer<typeof BidConfigurationSettingsSchema>;
 
 /**
@@ -143,6 +228,12 @@ const BidSessionPolicySnapshotV3Schema = z
     positionTemplateVersion: z.string().min(1),
     configurationRevision: z.number().int().nonnegative(),
     settings: BidConfigurationSettingsSchema,
+    /**
+     * Present only for V2 settings. Existing V3 recovery snapshots with V1
+     * settings remain readable; fresh snapshots must retain the same value as
+     * their immutable V2 configuration.
+     */
+    credentialEvaluationOn: CredentialEvaluationDateSchema.optional(),
     capturedAtMs: z.number().int().nonnegative(),
     members: z.array(FrozenBidEligibilityMemberSchema),
     ruleBookMaterial: FrozenRuleBookMaterialSchema,
@@ -194,6 +285,28 @@ export const BidSessionPolicySnapshotSchema = z
 
     if (snapshot.v !== 3) return;
 
+    if (snapshot.settings.v === 2) {
+      if (snapshot.credentialEvaluationOn === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['credentialEvaluationOn'],
+          message: 'V2 configuration settings require a frozen credential evaluation date',
+        });
+      } else if (snapshot.credentialEvaluationOn !== snapshot.settings.credentialEvaluationOn) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['credentialEvaluationOn'],
+          message: 'credential evaluation date must match the frozen configuration settings',
+        });
+      }
+    } else if (snapshot.credentialEvaluationOn !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialEvaluationOn'],
+        message: 'legacy V1 configuration settings cannot claim a credential evaluation date',
+      });
+    }
+
     const credentialKeys = new Set<string>();
     for (const [memberIndex, member] of snapshot.members.entries()) {
       for (const [credentialIndex, credentialName] of member.credentialNames.entries()) {
@@ -207,6 +320,62 @@ export const BidSessionPolicySnapshotSchema = z
           });
         }
         credentialKeys.add(key);
+      }
+
+      if (member.specialtyQualifications === undefined) continue;
+      const specialtyCodes = new Set<string>();
+      let priorSpecialtyCode: string | null = null;
+      for (const [specialtyIndex, specialty] of member.specialtyQualifications.entries()) {
+        const normalizedCode = specialty.specialtyCode.trim().toLocaleLowerCase();
+        if (specialtyCodes.has(normalizedCode)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'specialtyCode'],
+            message: 'specialtyQualifications must be unique per session member',
+          });
+        }
+        specialtyCodes.add(normalizedCode);
+        if (priorSpecialtyCode !== null && priorSpecialtyCode.localeCompare(specialty.specialtyCode) >= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'specialtyCode'],
+            message: 'specialtyQualifications must be sorted by specialty code',
+          });
+        }
+        priorSpecialtyCode = specialty.specialtyCode;
+
+        const credentialEvaluationOn =
+          snapshot.settings.v === 2 ? snapshot.credentialEvaluationOn : undefined;
+        if (credentialEvaluationOn === undefined) continue;
+        if (specialty.effectiveOn > credentialEvaluationOn) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'effectiveOn'],
+            message: 'frozen specialty evidence cannot begin after the evaluation date',
+          });
+        }
+        if (
+          specialty.status === 'active' &&
+          specialty.expiresOn !== null &&
+          specialty.expiresOn < credentialEvaluationOn
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'expiresOn'],
+            message: 'an active specialty qualification cannot be expired at the evaluation date',
+          });
+        }
+        if (
+          specialty.status === 'expired' &&
+          specialty.expiresOn !== null &&
+          specialty.expiresOn > credentialEvaluationOn
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'expiresOn'],
+            message: 'an expired specialty qualification must be expired at the evaluation date',
+          });
+        }
       }
     }
 

@@ -8,7 +8,12 @@
  * policy or roster read from changing an in-progress specialty decision.
  */
 
-import { type SpecialtyTestPolicy, SpecialtyTestPolicySchema } from './specialty-test-policy.js';
+import {
+  type SpecialtyTestOutcome,
+  type SpecialtyTestPolicy,
+  SpecialtyTestPolicySchema,
+  isSpecialtyTestOutcomeAllowed,
+} from './specialty-test-policy.js';
 
 export type SpecialtyPolicySource = 'official' | 'synthetic';
 
@@ -321,6 +326,13 @@ export function createSpecialtyAdjudicationState(): SpecialtyAdjudicationState {
   };
 }
 
+/** Safe public guard for callers that must inspect persisted DO state before writing. */
+export function isValidSpecialtyAdjudicationState(
+  value: unknown,
+): value is SpecialtyAdjudicationState {
+  return isPersistedState(value);
+}
+
 /**
  * Evaluates a normal bidder's specialty request against a frozen candidate
  * policy. It suspends only when a generally and specially eligible candidate
@@ -418,6 +430,9 @@ export function resolveSpecialtyCandidate(
   if (active.phase === 'awaiting_original_bidder')
     return rejected(state, 'CANDIDATES_ALREADY_RESOLVED');
   if (active.phase === 'awaiting_resume') return rejected(state, 'CANDIDATES_ALREADY_RESOLVED');
+  if (!isOutcomeAllowedForActivePolicy(active, input.outcome)) {
+    return rejected(state, 'INVALID_OUTCOME');
+  }
 
   const expectedCandidate = active.candidateQueue[active.candidateCursor];
   if (expectedCandidate === undefined) return rejected(state, 'INVALID_STATE');
@@ -527,6 +542,9 @@ export function resolveOriginalSpecialtyRequest(
   if (active.requestId !== input.requestId) return rejected(state, 'REQUEST_ID_MISMATCH');
   if (active.phase !== 'awaiting_original_bidder')
     return rejected(state, 'ORIGINAL_RESOLUTION_NOT_READY');
+  if (!isOutcomeAllowedForActivePolicy(active, input.outcome)) {
+    return rejected(state, 'INVALID_OUTCOME');
+  }
 
   const outcome = cloneOutcome(input.outcome);
   const resolution: SpecialtySeatResolution =
@@ -675,12 +693,14 @@ function validatePolicy(
     }
   | { readonly ok: false; readonly code: SpecialtyAdjudicationRejectCode } {
   if (!isPolicyEnvelope(policy)) return { ok: false, code: 'INVALID_POLICY' };
+  // No official specialty semantics are approved. Keep the engine's only
+  // operational path explicitly synthetic until a policy owner supplies one.
+  if (policy.source === 'official') {
+    return { ok: false, code: 'UNRESOLVED_OFFICIAL_POLICY' };
+  }
   const parsedTestPolicy =
     policy.source === 'synthetic' ? SpecialtyTestPolicySchema.safeParse(policy.testPolicy) : null;
   if (policy.source === 'synthetic' && !parsedTestPolicy?.success) {
-    return { ok: false, code: 'INVALID_POLICY' };
-  }
-  if (policy.source === 'official' && policy.testPolicy !== undefined) {
     return { ok: false, code: 'INVALID_POLICY' };
   }
   if (policy.candidateReleasePolicy.status === 'unresolved') {
@@ -820,10 +840,20 @@ function cloneTestPolicy(policy: SpecialtyTestPolicy): SpecialtyTestPolicy {
       id: policy.specialty_pool.id,
       label: policy.specialty_pool.label,
     },
-    qualification_requirements: [...policy.qualification_requirements],
+    qualification_requirements: Array.isArray(policy.qualification_requirements)
+      ? [...policy.qualification_requirements]
+      : {
+          v: policy.qualification_requirements.v,
+          credential_names: [...policy.qualification_requirements.credential_names],
+          specialty_codes: [...policy.qualification_requirements.specialty_codes],
+        },
     ranking: {
       source: policy.ranking.source,
       reference: policy.ranking.reference,
+    },
+    scoring: {
+      source: policy.scoring.source,
+      direction: policy.scoring.direction,
     },
     tie_break_chain: [...policy.tie_break_chain],
     normal_bid_interruption: policy.normal_bid_interruption,
@@ -966,6 +996,15 @@ function isOutcome(value: unknown): value is SpecialtyCandidateOutcome {
   );
 }
 
+function isOutcomeAllowedForActivePolicy(
+  active: ActiveSpecialtyAdjudication,
+  outcome: SpecialtyCandidateOutcome,
+): boolean {
+  if (active.policySource !== 'synthetic' || active.testPolicy === null) return false;
+  const policyOutcome: SpecialtyTestOutcome = outcome.kind === 'award' ? 'award' : outcome.reason;
+  return isSpecialtyTestOutcomeAllowed(active.testPolicy, policyOutcome);
+}
+
 function isNormalTurn(value: unknown): value is SpecialtyNormalTurn {
   if (!isRecord(value)) return false;
   return (
@@ -1024,8 +1063,8 @@ function isActiveAdjudication(value: unknown): value is ActiveSpecialtyAdjudicat
   ) {
     return false;
   }
+  if (value.policySource !== 'synthetic') return false;
   if (value.policySource === 'synthetic' && !syntheticTestPolicy?.success) return false;
-  if (value.policySource === 'official' && value.testPolicy !== null) return false;
   if (!rankedCandidates.every((candidate) => isPolicyCandidate(candidate))) return false;
   if (!candidateQueue.every((candidate) => isPolicyCandidate(candidate))) return false;
   if (!candidateOutcomes.every((outcome) => isCandidateOutcomeRecord(outcome))) return false;

@@ -21,14 +21,17 @@ type QualificationEventKind =
   | 'CERTIFICATION_GAINED'
   | 'CERTIFICATION_EXPIRED'
   | 'CERTIFICATION_REVOKED'
-  | 'SPECIALTY_QUALIFIED';
-type QualificationStatus = 'active' | 'expired' | 'revoked';
+  | 'SPECIALTY_QUALIFIED'
+  | 'SPECIALTY_EXPIRED'
+  | 'SPECIALTY_REVOKED'
+  | 'SPECIALTY_REMOVED';
+type QualificationStatus = 'active' | 'expired' | 'revoked' | 'removed';
 type CertificationOrigin = 'lifecycle_evidence' | 'legacy_projection';
 
 interface CertificationQualification {
   credentialId: number;
   credentialName: string | null;
-  status: QualificationStatus;
+  status: Exclude<QualificationStatus, 'removed'>;
   effectiveOn: string | null;
   expiresOn: string | null;
   evidenceSource: string | null;
@@ -39,7 +42,7 @@ interface CertificationQualification {
 
 interface SpecialtyQualification {
   specialtyCode: string;
-  status: Exclude<QualificationStatus, 'revoked'>;
+  status: QualificationStatus;
   effectiveOn: string;
   expiresOn: string | null;
   evidenceSource: string;
@@ -91,6 +94,9 @@ const EVENT_KIND_LABELS: Record<QualificationEventKind, string> = {
   CERTIFICATION_EXPIRED: 'Certification expired',
   CERTIFICATION_REVOKED: 'Certification revoked',
   SPECIALTY_QUALIFIED: 'Specialty qualified',
+  SPECIALTY_EXPIRED: 'Specialty expired',
+  SPECIALTY_REVOKED: 'Specialty revoked',
+  SPECIALTY_REMOVED: 'Specialty removed',
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -118,6 +124,12 @@ function asNullablePositiveInteger(value: unknown): number | null | undefined {
 }
 
 function isQualificationStatus(value: unknown): value is QualificationStatus {
+  return value === 'active' || value === 'expired' || value === 'revoked' || value === 'removed';
+}
+
+function isCertificationQualificationStatus(
+  value: unknown,
+): value is Exclude<QualificationStatus, 'removed'> {
   return value === 'active' || value === 'expired' || value === 'revoked';
 }
 
@@ -126,12 +138,15 @@ function isQualificationEventKind(value: unknown): value is QualificationEventKi
     value === 'CERTIFICATION_GAINED' ||
     value === 'CERTIFICATION_EXPIRED' ||
     value === 'CERTIFICATION_REVOKED' ||
-    value === 'SPECIALTY_QUALIFIED'
+    value === 'SPECIALTY_QUALIFIED' ||
+    value === 'SPECIALTY_EXPIRED' ||
+    value === 'SPECIALTY_REVOKED' ||
+    value === 'SPECIALTY_REMOVED'
   );
 }
 
 function isCertificationEventKind(kind: QualificationEventKind): boolean {
-  return kind !== 'SPECIALTY_QUALIFIED';
+  return !kind.startsWith('SPECIALTY_');
 }
 
 function isCertificationOrigin(value: unknown): value is CertificationOrigin {
@@ -162,7 +177,7 @@ function parseCertificationQualification(value: unknown): CertificationQualifica
   if (
     credentialId === null ||
     credentialName === undefined ||
-    !isQualificationStatus(record.status) ||
+    !isCertificationQualificationStatus(record.status) ||
     effectiveOn === undefined ||
     expiresOn === undefined ||
     evidenceSource === undefined ||
@@ -199,7 +214,7 @@ function parseSpecialtyQualification(value: unknown): SpecialtyQualification | n
   const eventId = asNonEmptyString(record.eventId);
   if (
     specialtyCode === null ||
-    (record.status !== 'active' && record.status !== 'expired') ||
+    !isQualificationStatus(record.status) ||
     effectiveOn === null ||
     expiresOn === undefined ||
     evidenceSource === null ||
@@ -260,7 +275,7 @@ function parseQualificationEvent(value: unknown): QualificationLifecycleEvent | 
   }
   if (
     (isCertificationEventKind(record.kind) && (credentialId === null || specialtyCode !== null)) ||
-    (record.kind === 'SPECIALTY_QUALIFIED' && (credentialId !== null || specialtyCode === null))
+    (!isCertificationEventKind(record.kind) && (credentialId !== null || specialtyCode === null))
   ) {
     return null;
   }
@@ -477,8 +492,16 @@ export function QualificationLifecycleWorkspace({
   }, [loadHistory, selectedMemberId]);
 
   useEffect(() => {
-    if (kind === 'CERTIFICATION_EXPIRED') setExpiresOn(effectiveOn);
-    if (kind === 'CERTIFICATION_REVOKED') setExpiresOn('');
+    if (kind === 'CERTIFICATION_EXPIRED' || kind === 'SPECIALTY_EXPIRED') {
+      setExpiresOn(effectiveOn);
+    }
+    if (
+      kind === 'CERTIFICATION_REVOKED' ||
+      kind === 'SPECIALTY_REVOKED' ||
+      kind === 'SPECIALTY_REMOVED'
+    ) {
+      setExpiresOn('');
+    }
   }, [effectiveOn, kind]);
 
   const formIssues = useMemo(() => {
@@ -499,7 +522,10 @@ export function QualificationLifecycleWorkspace({
     if (!isIsoCalendarDate(effectiveOn)) issues.push('Enter a valid effective date.');
     if (
       kind !== 'CERTIFICATION_REVOKED' &&
+      kind !== 'SPECIALTY_REVOKED' &&
+      kind !== 'SPECIALTY_REMOVED' &&
       kind !== 'CERTIFICATION_EXPIRED' &&
+      kind !== 'SPECIALTY_EXPIRED' &&
       expiresOn !== '' &&
       !isIsoCalendarDate(expiresOn)
     ) {
@@ -507,7 +533,10 @@ export function QualificationLifecycleWorkspace({
     }
     if (
       kind !== 'CERTIFICATION_REVOKED' &&
+      kind !== 'SPECIALTY_REVOKED' &&
+      kind !== 'SPECIALTY_REMOVED' &&
       kind !== 'CERTIFICATION_EXPIRED' &&
+      kind !== 'SPECIALTY_EXPIRED' &&
       expiresOn !== '' &&
       expiresOn < effectiveOn
     ) {
@@ -562,9 +591,14 @@ export function QualificationLifecycleWorkspace({
     } else {
       payload.specialty_code = specialtyCode.trim();
     }
-    if (kind === 'CERTIFICATION_EXPIRED') {
+    if (kind === 'CERTIFICATION_EXPIRED' || kind === 'SPECIALTY_EXPIRED') {
       payload.expires_on = effectiveOn;
-    } else if (kind !== 'CERTIFICATION_REVOKED' && expiresOn !== '') {
+    } else if (
+      kind !== 'CERTIFICATION_REVOKED' &&
+      kind !== 'SPECIALTY_REVOKED' &&
+      kind !== 'SPECIALTY_REMOVED' &&
+      expiresOn !== ''
+    ) {
       payload.expires_on = expiresOn;
     }
     if (evidenceReference.trim() !== '') {
@@ -622,13 +656,20 @@ export function QualificationLifecycleWorkspace({
     formIssues.length > 0 ||
     members.length === 0 ||
     (certificationEvent && credentials.length === 0);
-  const expirationDisabled = kind === 'CERTIFICATION_EXPIRED' || kind === 'CERTIFICATION_REVOKED';
+  const expirationDisabled =
+    kind === 'CERTIFICATION_EXPIRED' ||
+    kind === 'SPECIALTY_EXPIRED' ||
+    kind === 'CERTIFICATION_REVOKED' ||
+    kind === 'SPECIALTY_REVOKED' ||
+    kind === 'SPECIALTY_REMOVED';
   const expirationLabel =
-    kind === 'CERTIFICATION_EXPIRED'
+    kind === 'CERTIFICATION_EXPIRED' || kind === 'SPECIALTY_EXPIRED'
       ? 'Expiration date (same as effective date)'
-      : kind === 'CERTIFICATION_REVOKED'
+      : kind === 'CERTIFICATION_REVOKED' || kind === 'SPECIALTY_REVOKED'
         ? 'Expiration date (not used for revocation)'
-        : 'Expiration date (optional)';
+        : kind === 'SPECIALTY_REMOVED'
+          ? 'Expiration date (not used for removal)'
+          : 'Expiration date (optional)';
 
   return (
     <div className="space-y-6">
@@ -762,13 +803,22 @@ export function QualificationLifecycleWorkspace({
               data-testid="qualification-expires-on"
               type="date"
               disabled={expirationDisabled}
-              value={kind === 'CERTIFICATION_EXPIRED' ? effectiveOn : expiresOn}
+              value={
+                kind === 'CERTIFICATION_EXPIRED' || kind === 'SPECIALTY_EXPIRED'
+                  ? effectiveOn
+                  : expiresOn
+              }
               onChange={(event) => setExpiresOn(event.target.value)}
               className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white disabled:cursor-not-allowed disabled:opacity-60"
             />
-            {kind === 'CERTIFICATION_REVOKED' && (
+            {(kind === 'CERTIFICATION_REVOKED' || kind === 'SPECIALTY_REVOKED') && (
               <span className="mt-1 block text-xs text-slate-400">
-                Revocation closes certification validity; no expiration is sent.
+                Revocation closes qualification validity; no expiration is sent.
+              </span>
+            )}
+            {kind === 'SPECIALTY_REMOVED' && (
+              <span className="mt-1 block text-xs text-slate-400">
+                Removal closes specialty qualification validity; no expiration is sent.
               </span>
             )}
           </label>

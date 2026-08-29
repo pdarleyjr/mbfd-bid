@@ -6,6 +6,7 @@ import {
   type SpecialtyAdjudicationState,
   beginSpecialtyAdjudication,
   createSpecialtyAdjudicationState,
+  isValidSpecialtyAdjudicationState,
   resolveOriginalSpecialtyRequest,
   resolveSpecialtyCandidate,
   resumeSpecialtyAdjudication,
@@ -40,9 +41,19 @@ function syntheticPolicy(
         source: 'EXPLICIT_TEST_PRIORITY',
         reference: 'synthetic-marine-priority-v1',
       },
+      scoring: {
+        source: 'EXPLICIT_TEST_PRIORITY',
+        direction: 'LOWER_SCORE_WINS',
+      },
       tie_break_chain: ['rsc_seniority', 'rank_seniority', 'member_id'],
       normal_bid_interruption: 'SUSPEND_EXACT_NORMAL_TURN',
-      candidate_outcomes: ['award', 'declined', 'unavailable'],
+      candidate_outcomes: [
+        'award',
+        'declined',
+        'unreachable',
+        'withdrawn',
+        'ineligible_on_recheck',
+      ],
       original_bidder_resume: 'RESUME_EXACT_ORIGINAL_TURN',
     },
     candidateReleasePolicy: {
@@ -454,6 +465,28 @@ describe('specialty adjudication state machine', () => {
       kind: 'rejected',
       code: 'UNRESOLVED_OFFICIAL_POLICY',
     });
+
+    const configuredOfficialPolicy = beginSpecialtyAdjudication(
+      base,
+      request({
+        commandId: 'request-5',
+        policy: (() => {
+          const { testPolicy: _discarded, ...officialPolicy } = syntheticPolicy();
+          return {
+            ...officialPolicy,
+            source: 'official',
+            candidateReleasePolicy: {
+              status: 'configured',
+              onRelease: 'continue_to_next_higher_priority',
+            },
+          };
+        })(),
+      }),
+    );
+    expect(configuredOfficialPolicy).toMatchObject({
+      kind: 'rejected',
+      code: 'UNRESOLVED_OFFICIAL_POLICY',
+    });
   });
 
   it('does not interrupt when no eligible higher-priority specialty candidate exists and rejects the repeated request', () => {
@@ -488,6 +521,68 @@ describe('specialty adjudication state machine', () => {
       expectedRevision: result.state.revision,
     });
     expect(duplicateRequest).toMatchObject({ kind: 'rejected', code: 'DUPLICATE_REQUEST' });
+  });
+
+  it('enforces the configured synthetic outcome allowlist for both candidate and original-bidder resolutions', () => {
+    const policy = syntheticPolicy({
+      testPolicy: {
+        ...syntheticPolicy().testPolicy!,
+        candidate_outcomes: ['award', 'declined'],
+      },
+    });
+    const started = expectSuspended(
+      beginSpecialtyAdjudication(createSpecialtyAdjudicationState(), request({ policy })),
+    );
+
+    const disallowedCandidateRelease = resolveSpecialtyCandidate(started.state, {
+      commandId: 'candidate-unreachable',
+      expectedRevision: started.state.revision,
+      requestId: 'specialty-request-1',
+      memberId: 11,
+      outcome: { kind: 'release', reason: 'unreachable' },
+    });
+    expect(disallowedCandidateRelease).toMatchObject({ kind: 'rejected', code: 'INVALID_OUTCOME' });
+    expect(disallowedCandidateRelease.state).toEqual(started.state);
+
+    let state = started.state;
+    for (const [memberId, commandId] of [
+      [11, 'candidate-11-declined'],
+      [12, 'candidate-12-declined'],
+      [13, 'candidate-13-declined'],
+    ] as const) {
+      const resolved = resolveSpecialtyCandidate(state, {
+        commandId,
+        expectedRevision: state.revision,
+        requestId: 'specialty-request-1',
+        memberId,
+        outcome: { kind: 'release', reason: 'declined' },
+      });
+      expect(resolved.kind).toBe('candidate_resolved');
+      if (resolved.kind !== 'candidate_resolved') return;
+      state = resolved.state;
+    }
+
+    const disallowedOriginalRelease = resolveOriginalSpecialtyRequest(state, {
+      commandId: 'original-withdrawn',
+      expectedRevision: state.revision,
+      requestId: 'specialty-request-1',
+      outcome: { kind: 'release', reason: 'withdrawn' },
+    });
+    expect(disallowedOriginalRelease).toMatchObject({ kind: 'rejected', code: 'INVALID_OUTCOME' });
+
+    const allowedOriginalAward = resolveOriginalSpecialtyRequest(state, {
+      commandId: 'original-award',
+      expectedRevision: state.revision,
+      requestId: 'specialty-request-1',
+      outcome: { kind: 'award', awardReference: 'synthetic-award-original-17' },
+    });
+    expect(allowedOriginalAward.kind).toBe('original_resolved');
+  });
+
+  it('exports the persisted-state validator for normal-writer guards without mutating state', () => {
+    const valid = createSpecialtyAdjudicationState();
+    expect(isValidSpecialtyAdjudicationState(valid)).toBe(true);
+    expect(isValidSpecialtyAdjudicationState({ ...valid, version: 99 })).toBe(false);
   });
 
   it('rejects a corrupt persisted state rather than attempting to resume or mutate it', () => {

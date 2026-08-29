@@ -1,3 +1,4 @@
+import { evaluateEligibility } from '@mbfd/eligibility';
 import type { JwtPayload } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -5,8 +6,18 @@ import { z } from 'zod';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions } from '../../db/schema.js';
-import { type FrozenSessionBidPolicy, loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
-import { SpecialtyTestPolicySchema } from '../../lib/specialty-test-policy.js';
+import {
+  type FrozenSessionBidPolicy,
+  eligibilityMemberFromFrozen,
+  loadFrozenSessionBidPolicy,
+} from '../../lib/bid-policy.js';
+import {
+  type SpecialtyTestEligibility,
+  type SpecialtyTestFrozenCandidateFacts,
+  SpecialtyTestPolicySchema,
+  evaluateSpecialtyTestPolicy,
+  isVersionedSpecialtyTestQualificationRequirements,
+} from '../../lib/specialty-test-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -14,15 +25,13 @@ import { requireAdmin } from './middleware.js';
 type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
 const OpaqueIdSchema = z.string().trim().min(1).max(160);
-const ClientEligibilitySchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('eligible') }).strict(),
-  z
-    .object({
-      status: z.literal('ineligible'),
-      reason_codes: z.array(OpaqueIdSchema).min(1).max(30),
-    })
-    .strict(),
-]);
+const ClientSyntheticCandidateSchema = z
+  .object({
+    member_id: z.number().int().positive(),
+    /** Lower numeric score is higher priority under the synthetic test policy. */
+    explicit_priority: z.number().int().nonnegative(),
+  })
+  .strict();
 const ClientPolicySchema = z
   .object({
     source: z.enum(['synthetic', 'official']),
@@ -39,25 +48,19 @@ const ClientPolicySchema = z
         .object({ status: z.literal('unresolved'), reason: z.string().trim().min(1).max(500) })
         .strict(),
     ]),
-    candidates: z
-      .array(
-        z
-          .object({
-            member_id: z.number().int().positive(),
-            priority_rank: z.number().int().nonnegative(),
-            general_eligibility: ClientEligibilitySchema,
-            specialty_eligibility: ClientEligibilitySchema,
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(250),
+    candidates: z.array(ClientSyntheticCandidateSchema).min(1).max(250),
   })
   .strict();
 const BeginBodySchema = z
   .object({
     command_id: OpaqueIdSchema,
     expected_revision: z.number().int().nonnegative(),
+    /**
+     * Direct mock rehearsal controls own a separate D1 sequence. Require the
+     * UI to name the exact normal-turn revision it inspected rather than
+     * inferring freshness from the independent specialty-state revision.
+     */
+    expected_normal_control_revision: z.number().int().nonnegative(),
     request_id: OpaqueIdSchema,
     position_id: OpaqueIdSchema,
     policy: ClientPolicySchema,
@@ -181,14 +184,6 @@ function auditContext(claims: JwtPayload, reason: string) {
   };
 }
 
-function toEngineEligibility(
-  eligibility: z.infer<typeof ClientEligibilitySchema>,
-): { status: 'eligible' } | { status: 'ineligible'; reasonCodes: string[] } {
-  return eligibility.status === 'eligible'
-    ? { status: 'eligible' }
-    : { status: 'ineligible', reasonCodes: eligibility.reason_codes };
-}
-
 function toEngineOutcome(outcome: z.infer<typeof ClientOutcomeSchema>) {
   return outcome.kind === 'award'
     ? { kind: 'award' as const, awardReference: outcome.award_reference }
@@ -211,10 +206,35 @@ function syntheticPolicyMatchesFrozenSession(
       .filter((member) => member.pool !== 'EXCLUDED')
       .map((member) => member.memberId),
   );
-  if (policy.candidates.some((candidate) => !bidPoolMemberIds.has(candidate.member_id))) {
-    return 'synthetic_candidate_not_in_frozen_bid_pool';
+  const candidateIds = new Set(policy.candidates.map((candidate) => candidate.member_id));
+  if (
+    candidateIds.size !== policy.candidates.length ||
+    candidateIds.size !== bidPoolMemberIds.size ||
+    [...candidateIds].some((memberId) => !bidPoolMemberIds.has(memberId))
+  ) {
+    return 'synthetic_candidate_set_must_match_frozen_bid_pool';
   }
   return null;
+}
+
+function syntheticGeneralEligibility(
+  frozen: FrozenPolicy,
+  positionId: string,
+  memberId: number,
+): SpecialtyTestEligibility | null {
+  const member = frozen.snapshot.members.find((entry) => entry.memberId === memberId);
+  const rule = frozen.coverage.rules.find((entry) => entry.positionId === positionId);
+  if (member === undefined || rule === undefined) return null;
+  const result = evaluateEligibility(eligibilityMemberFromFrozen(member), rule);
+  if (result.eligible) return { status: 'eligible' };
+  const reasonCodes = [
+    ...new Set(
+      result.reasons
+        .filter((reason) => !reason.satisfied)
+        .map((reason) => `SYNTHETIC_GENERAL_${reason.code}`),
+    ),
+  ];
+  return reasonCodes.length === 0 ? null : { status: 'ineligible', reasonCodes };
 }
 
 async function forwardToSpecialtyDO(
@@ -272,6 +292,55 @@ router.post('/:id/specialty-adjudication/requests', requireStepUpAuth(), async (
   if (!guard.frozen.coverage.rules.some((rule) => rule.positionId === parsed.data.position_id)) {
     return c.json({ error: 'position_not_biddable' }, 422);
   }
+  const qualificationRequirements = parsed.data.policy.test_policy.qualification_requirements;
+  const requiresSpecialtyLifecycleFacts =
+    isVersionedSpecialtyTestQualificationRequirements(qualificationRequirements) &&
+    qualificationRequirements.specialty_codes.length > 0;
+  if (
+    requiresSpecialtyLifecycleFacts &&
+    (guard.frozen.snapshot.settings.v !== 2 ||
+      guard.frozen.snapshot.credentialEvaluationOn === undefined)
+  ) {
+    return c.json({ error: 'synthetic_specialty_qualification_snapshot_unavailable' }, 422);
+  }
+
+  const frozenCandidates: SpecialtyTestFrozenCandidateFacts[] = [];
+  for (const candidate of parsed.data.policy.candidates) {
+    const member = guard.frozen.snapshot.members.find(
+      (entry) => entry.memberId === candidate.member_id,
+    );
+    const generalEligibility = syntheticGeneralEligibility(
+      guard.frozen,
+      parsed.data.position_id,
+      candidate.member_id,
+    );
+    if (member === undefined || generalEligibility === null) {
+      return c.json({ error: 'synthetic_policy_evaluation_failed' }, 422);
+    }
+    if (requiresSpecialtyLifecycleFacts && member.specialtyQualifications === undefined) {
+      return c.json({ error: 'synthetic_specialty_qualification_snapshot_unavailable' }, 422);
+    }
+    frozenCandidates.push({
+      memberId: candidate.member_id,
+      explicitPriority: candidate.explicit_priority,
+      rscSeniority: member.rscSeniority,
+      rankSeniority: member.rankSeniority ?? Number.MAX_SAFE_INTEGER,
+      credentialNames: member.credentialNames,
+      specialtyQualifications: member.specialtyQualifications ?? [],
+      generalEligibility,
+    });
+  }
+  const evaluatedPolicy = evaluateSpecialtyTestPolicy({
+    source: 'synthetic',
+    policy: parsed.data.policy.test_policy,
+    frozenCandidates,
+  });
+  if (evaluatedPolicy.kind === 'rejected') {
+    return c.json(
+      { error: 'synthetic_policy_evaluation_failed', policy_error: evaluatedPolicy.code },
+      422,
+    );
+  }
 
   const forwarded = await forwardToSpecialtyDO(
     c.env,
@@ -281,6 +350,7 @@ router.post('/:id/specialty-adjudication/requests', requireStepUpAuth(), async (
       command: {
         commandId: parsed.data.command_id,
         expectedRevision: parsed.data.expected_revision,
+        expectedNormalControlRevision: parsed.data.expected_normal_control_revision,
         requestId: parsed.data.request_id,
         positionId: parsed.data.position_id,
         policy: {
@@ -291,12 +361,7 @@ router.post('/:id/specialty-adjudication/requests', requireStepUpAuth(), async (
             status: 'configured',
             onRelease: releasePolicy.on_release,
           },
-          candidates: parsed.data.policy.candidates.map((candidate) => ({
-            memberId: candidate.member_id,
-            priorityRank: candidate.priority_rank,
-            generalEligibility: toEngineEligibility(candidate.general_eligibility),
-            specialtyEligibility: toEngineEligibility(candidate.specialty_eligibility),
-          })),
+          candidates: evaluatedPolicy.candidates,
         },
       },
       audit: auditContext(c.get('claims'), parsed.data.reason),

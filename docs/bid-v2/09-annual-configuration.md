@@ -3,9 +3,10 @@
 ## Purpose
 
 One `bid_years` record is the designated source for one annual Bid. It selects
-the rule book and position template, stores only supported duration/timer
-settings, and advances an optimistic `configuration_revision` whenever that
-designation changes. It is not a second staging-only policy store.
+the rule book and position template, stores supported duration/timer settings
+and an explicit credential-evaluation date in current V2 settings, and advances
+an optimistic `configuration_revision` whenever that designation changes. It is
+not a second staging-only policy store.
 
 This is source-local design and test evidence. It has not applied migration
 `0025_bid_configuration_snapshot_revision.sql`, changed a remote rule book, or
@@ -32,7 +33,9 @@ Fresh V3 snapshots record one self-contained deterministic input:
 - exact raw rule rows, rule participation, and non-PII position-template display fields;
 - position-template version;
 - configuration revision and supported settings;
-- frozen member pool, seniority, rank, probationary state, credential names, and exclusion provenance;
+- frozen member pool, seniority, rank, probationary state, credential names,
+  source-safe specialty lifecycle status facts, and exclusion provenance;
+- the V2 configured credential-evaluation date when V2 settings are used;
 - capture timestamp. The Bid order is deterministically derived from this frozen pool and persisted when the session starts.
 
 A settings-only or rule-book change to the same draft is intentionally
@@ -49,10 +52,21 @@ material, so all engine actions fail closed with
 `session_policy_snapshot_material_missing`. The system never creates a missing
 snapshot later from a mutable draft.
 
-The only currently approved annual settings are duration and turn timer. No
-annual A-Day or AI-assist setting is inferred or invented. A-Day phase state, if
-created through its separately guarded lifecycle, is session state rather than a
-replacement for approved annual policy.
+Current V2 settings require `credentialEvaluationOn` in addition to duration
+and turn timer. Credential and specialty evidence are evaluated as of that
+explicit configuration date, while staffing/personnel remain captured at session
+creation. Existing V1 settings remain readable for recovery/inspection, but
+cannot create a new mock or live session because they cannot prove the required
+credential-evaluation date; the server returns
+`bid_configuration_credential_evaluation_date_required`. Fresh V3 snapshots
+retain only specialty code, status, effective date, and expiration date—never
+the source reference, actor, or reason. A pre-bridge V3 snapshot without those
+facts remains readable, but a new specialty test requiring a specialty code
+fails closed rather than treating absence as qualification.
+
+No annual A-Day or AI-assist setting is inferred or invented. A-Day phase state,
+if created through its separately guarded lifecycle, is session state rather
+than a replacement for approved annual policy.
 
 ## Publication safety
 
@@ -100,6 +114,13 @@ The Bid Setup page displays the selected lifecycle/revisions/settings and can
 only call the designated configuration endpoint. New-session UI defaults to a
 mock rehearsal; live mode is explicit and independently server-gated. Mock
 boards hide generic live controls and use only the rehearsal freeze command.
+
+The generic specialty workflow is a labelled, typed `TEST POLICY — NOT APPROVED
+MBFD POLICY` exercised only against a mock session. Its separate
+credential-name and specialty-code requirements are evaluated from the frozen
+snapshot, not asserted by the operator. It is an engine/mechanics test and does
+not establish an MBFD specialty ranking, pool, scoring, tie-break, or award
+policy.
 
 No current UI or source change creates the required MBFD Hub `bid.manage`
 permission bridge, imports/reconciles real TeleStaff data, starts a live Bid,
