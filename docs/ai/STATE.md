@@ -1,14 +1,16 @@
 # Current state
 
 - Branch: `feat/mbfd-bid-v2`
-- Local base/head before checkpoint: `d0e895dbc8ef4c5fd23ee10f7880584c87e5b8a0`
+- Starting checkpoint: `272f112b90a866bc628d50288bd64d72555ad730`
 - Preserved remote PR head: `774bc5248a801d51b4ebca385d66338fcb947c5a`
 - Managed local D1 proofs: clean 0001-0037, staging-shaped 0023-0037, and stepwise 0024-0037 passed with 37 migration-ledger rows, `quick_check=ok`, and empty foreign-key checks.
-- Current full-suite proof: eligibility 84 passed/3 skipped; shared 156; A-Day 62; worker 974 passed/1 skipped; Wrangler launchers 25; web 206.
-- Native Linux proof: Node 22.22.1, pnpm 9.12.0; frozen install, lint, package build, typecheck, Next build, OpenNext build, and local Workerd root HTTP 200 passed.
-- Known blocker/limitation: forced Durable Object eviction is not proven in the current `@cloudflare/vitest-pool-workers` 0.12.21 stack. Same-object authenticated WebSocket reconnect is proven.
+- Current full-suite proof: 260 files, 1,507 passed, 4 intentional skips, zero failures.
+- Reliability tooling: `@cloudflare/vitest-plugin` 1.0.0, Vitest 4.1.0, Wrangler 4.125.0, and Workers types 5.20260820.1.
+- Genuine named Durable Object eviction is proven: in-memory sentinel reset, durable specialty state/receipt reconstruction, exact-once resume, and duplicate-resume rejection.
+- Standard-WebSocket recovery is proven with a fresh ticket/new socket after eviction. The synchronous listener observes rejected async handlers, removes the client, and closes the affected socket with 1011.
+- Native Linux proof used disposable GMKtec portable Node 22.22.1 / pnpm 9.12.0 with 752-file SHA parity; frozen install, lint, package build, typecheck, Next/OpenNext build, loopback Workerd preview, and HTTP 200 passed. No host services or system packages changed.
 - Portal publication remains disabled: `PORTAL_WRITEBACK_ENABLED=false`; portal bid writer absent; portal consumers zero.
 
-NEXT_TICKET = Cloudflare Vitest modernization + true DO eviction/WebSocket recovery proof
+NEXT_TICKET = staging D1 migration-risk architecture review
 
-Next exact action: perform the authorized read-only Terra High P0/P1 checkpoint review.
+Next exact action: design an approved per-migration staging verification and rollback procedure; do not deploy or migrate staging yet.

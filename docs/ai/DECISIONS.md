@@ -9,3 +9,6 @@
 - Migration 0037 decomposes the fail-closed staffing-baseline trigger.
 - An ambiguous pending receipt resolves to `recovery_required`.
 - AI is advisory only; the deterministic engine remains authoritative.
+- Workers Vitest runtime testing uses `@cloudflare/vitest-plugin` with Vitest 4.1; genuine Durable Object eviction is a release gate.
+- BidSessionDO remains on the standard WebSocket API in this checkpoint; hibernation behavior is not claimed.
+- Standard-WebSocket async message handlers must explicitly observe rejection, remove the affected client, and close that socket with 1011.

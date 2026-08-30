@@ -1,0 +1,28 @@
+name = "mbfd-bid-do-eviction-test"
+main = "src/index.ts"
+# Plugin 1.0.0's bundled Workerd currently supports through 2026-08-27.
+# This isolated test harness must match that executable; deployed configs stay
+# untouched.
+compatibility_date = "2026-08-27"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENV = "staging"
+PORTAL_BASE_URL = "https://staging.bid.mbfdhub.com"
+PORTAL_WRITEBACK_ENABLED = "false"
+PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid"
+JWT_SIGNING_KEY = "test-key-with-at-least-32-characters-long"
+PORTAL_BID_READER = "test-reader"
+
+[[durable_objects.bindings]]
+name = "BID_SESSION"
+class_name = "BidSessionDO"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mbfd-bid-do-eviction-test"
+database_id = "00000000-0000-0000-0000-000000000001"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BidSessionDO"]

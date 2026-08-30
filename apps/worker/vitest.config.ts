@@ -10,6 +10,10 @@ const wranglerLauncherTests = [
   'tests/integration/bid-session-routes.test.ts',
 ];
 
+// These tests exercise Workerd-only modules and Durable Object eviction via
+// the dedicated @cloudflare/vitest-plugin configuration.
+const durableObjectRuntimeTests = ['tests/runtime/**/*.test.ts'];
+
 // Keep `vitest` watch mode compatible with its historical full-suite behavior.
 // The deterministic `vitest run` command delegates these process-launching
 // files to the serial launcher configuration below.
@@ -18,7 +22,7 @@ const isNonWatchRun = process.argv.includes('run') || process.argv.includes('--r
 export default defineConfig({
   test: {
     exclude: isNonWatchRun
-      ? [...configDefaults.exclude, ...wranglerLauncherTests]
-      : configDefaults.exclude,
+      ? [...configDefaults.exclude, ...wranglerLauncherTests, ...durableObjectRuntimeTests]
+      : [...configDefaults.exclude, ...durableObjectRuntimeTests],
   },
 });

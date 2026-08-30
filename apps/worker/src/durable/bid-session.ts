@@ -1525,8 +1525,17 @@ export class BidSessionDO implements DurableObject {
     server.accept();
     const clientId = ulid();
 
-    server.addEventListener('message', async (ev) => {
-      await this.onMessage(clientId, server, ev, identity);
+    server.addEventListener('message', (ev) => {
+      void this.onMessage(clientId, server, ev, identity).catch((error) => {
+        // The standard WebSocket API ignores a Promise returned from an event
+        // listener. Make the asynchronous failure boundary explicit so a
+        // rejected command cannot become an unobserved/floating rejection.
+        console.error('[BidSessionDO] WebSocket message failed', error);
+        this.clients.delete(clientId);
+        try {
+          server.close(1011, 'Bid session message processing failed');
+        } catch {}
+      });
     });
     server.addEventListener('close', () => {
       this.clients.delete(clientId);

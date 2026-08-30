@@ -2,11 +2,11 @@
 
 ## Objective
 
-Checkpoint the completed local control-plane hardening candidate.
+Checkpoint the Cloudflare Vitest / Durable Object reliability candidate.
 
 ## Scope
 
-Migrations 0036/0037, receipt recovery, specialty mutual exclusion, WebSocket reconnect, and their regression coverage.
+Workers Vitest v1 migration, genuine Durable Object eviction, and standard-WebSocket recovery coverage.
 
 ## Non-goals and boundaries
 
@@ -22,4 +22,4 @@ Frozen install, lint, builds, typecheck, full suite, D1 backup preflight, migrat
 
 ## Next completion boundary
 
-Read-only Terra High P0/P1 checkpoint review, then one local commit only if no blocking finding exists.
+Reliability checkpoint complete; the next task is a separate staging D1 migration-risk review.
