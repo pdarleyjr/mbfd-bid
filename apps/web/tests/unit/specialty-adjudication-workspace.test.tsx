@@ -8,6 +8,37 @@ import { SpecialtyAdjudicationWorkspace } from '../../app/admin/specialty-adjudi
 
 const roots: Root[] = [];
 
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = [];
+
+  readyState = 0;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onopen: (() => void) | null = null;
+  readonly sent: string[] = [];
+
+  constructor(
+    readonly url: string,
+    readonly protocols: string | string[],
+  ) {
+    FakeWebSocket.instances.push(this);
+  }
+
+  close() {
+    this.readyState = 3;
+  }
+
+  open() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+
+  send(data: string) {
+    this.sent.push(data);
+  }
+}
+
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
   value: true,
   configurable: true,
@@ -18,16 +49,17 @@ afterEach(() => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  FakeWebSocket.instances = [];
   vi.unstubAllGlobals();
 });
 
-function renderWorkspace(): HTMLElement {
+function renderWorkspace(props: { wsBase?: string } = {}): HTMLElement {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   roots.push(root);
   act(() => {
-    root.render(<SpecialtyAdjudicationWorkspace />);
+    root.render(<SpecialtyAdjudicationWorkspace {...props} />);
   });
   return container;
 }
@@ -59,6 +91,15 @@ async function submit(form: HTMLFormElement) {
   });
 }
 
+async function settle() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 function initialState() {
   return {
     version: 1,
@@ -67,6 +108,15 @@ function initialState() {
     consumedCommandIds: [],
     processedRequestIds: [],
     resumedRequestIds: [],
+  };
+}
+
+function normalTurn(mockControlRevision = 7) {
+  return {
+    bidder_id: 17,
+    ordinal: 1,
+    queue_cursor: 0,
+    mock_control_revision: mockControlRevision,
   };
 }
 
@@ -148,6 +198,46 @@ function accepted(state: unknown, operation: string, reason: string) {
   };
 }
 
+function specialtySignal(sessionId: string, revision: number) {
+  return {
+    v: 1,
+    type: 'synthetic_specialty_state_changed',
+    mode: 'synthetic_test_only',
+    does_not_commit_bid: true,
+    bidSessionId: sessionId,
+    revision,
+    controlState: {
+      rehearsalRevision: 7,
+      normalTurn: {
+        turnId: `mock-normal:${sessionId}:7:1:0:17`,
+        bidderId: 17,
+        ordinal: 1,
+        queueCursor: 0,
+        mockControlRevision: 7,
+      },
+      normalBidderSuspended: true,
+      specialty: {
+        active: true,
+        requestId: 'specialty-request-1',
+        positionId: 'A101',
+        phase: 'awaiting_original_bidder',
+        originalTurn: {
+          turnId: `mock-normal:${sessionId}:7:1:0:17`,
+          bidderId: 17,
+          ordinal: 1,
+          queueCursor: 0,
+          mockControlRevision: 7,
+        },
+        candidateQueue: [{ memberId: 11, priorityRank: 1 }],
+        candidateCursor: 1,
+        resolvedCandidateCount: 1,
+        resolution: null,
+        allowedNextAction: 'resolve_original',
+      },
+    },
+  };
+}
+
 describe('SpecialtyAdjudicationWorkspace', () => {
   it('labels the screen as a synthetic rehearsal and never as an official specialty policy', () => {
     const html = renderToString(<SpecialtyAdjudicationWorkspace />);
@@ -213,6 +303,7 @@ describe('SpecialtyAdjudicationWorkspace', () => {
               does_not_commit_bid: true,
               database_audit_log: 'not_written',
               state: initialState(),
+              normal_turn: normalTurn(),
               audit_receipts: [],
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
@@ -336,9 +427,74 @@ describe('SpecialtyAdjudicationWorkspace', () => {
       ],
     });
     expect(body.reason).toBe('Run the controlled fixture.');
+    expect(body.expected_normal_control_revision).toBe(7);
     expect(headers.get('Idempotency-Key')).toBe(body.command_id);
     expect(container.textContent).toContain('Synthetic command receipt');
     expect(container.textContent).toContain('synthetic_specialty_test');
+  });
+
+  it('invalidates stale specialty UI from the live signal and rehydrates through the guarded read', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    let statusReads = 0;
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input) => {
+        const url = String(input);
+        if (url === '/api/auth/ws-ticket') {
+          return new Response(JSON.stringify({ ticket: 'opaque-specialty-ticket' }), {
+            status: 200,
+          });
+        }
+        if (url.endsWith('/specialty-adjudication')) {
+          statusReads += 1;
+          return new Response(
+            JSON.stringify({
+              mode: 'synthetic_test_only',
+              does_not_commit_bid: true,
+              database_audit_log: 'not_written',
+              state:
+                statusReads === 1 ? initialState() : activeState(3, 'awaiting_original_bidder'),
+              normal_turn: normalTurn(),
+              audit_receipts: [],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const container = renderWorkspace({ wsBase: 'https://api.staging.bid.mbfdhub.com' });
+    const sessionId = container.querySelector<HTMLInputElement>('input[name="session_id"]');
+    const inspectForm = container.querySelector<HTMLFormElement>(
+      '[data-testid="specialty-inspect-form"]',
+    );
+    if (!sessionId || !inspectForm) throw new Error('Inspection controls did not render.');
+    await setValue(sessionId, 'mock-session-live-1');
+    await submit(inspectForm);
+    await settle();
+
+    const socket = FakeWebSocket.instances[0];
+    if (!socket) throw new Error('The configured specialty Worker socket was not created.');
+    await act(async () => {
+      socket.open();
+    });
+    expect(socket.sent).toEqual([JSON.stringify({ type: 'hello', lastSeq: 0 })]);
+
+    await act(async () => {
+      socket.onmessage?.({
+        data: JSON.stringify(specialtySignal('mock-session-live-1', 3)),
+      } as MessageEvent);
+    });
+    await settle();
+
+    expect(statusReads).toBe(2);
+    expect(
+      container.querySelector('[data-testid="specialty-live-control-state"]')?.textContent,
+    ).toContain('transport open');
+    expect(container.textContent).toContain('Live synthetic specialty state rehydrated');
+    expect(container.textContent).toContain('Revision 3');
+    expect(container.querySelector('[data-testid="specialty-original-form"]')).not.toBeNull();
   });
 
   it('offers candidate, original, and resume actions only as the Worker state allows them', async () => {
@@ -353,6 +509,7 @@ describe('SpecialtyAdjudicationWorkspace', () => {
               does_not_commit_bid: true,
               database_audit_log: 'not_written',
               state: activeState(1, 'resolving_higher_priority_candidates'),
+              normal_turn: normalTurn(),
               audit_receipts: [],
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },

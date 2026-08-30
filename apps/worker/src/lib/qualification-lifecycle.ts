@@ -354,10 +354,7 @@ function isSpecialtyTerminalStatus(value: unknown): value is SpecialtyTerminalSt
 
 function isValidSpecialtyCode(value: unknown): value is string {
   return (
-    typeof value === 'string' &&
-    value.length >= 1 &&
-    value.length <= 128 &&
-    value === value.trim()
+    typeof value === 'string' && value.length >= 1 && value.length <= 128 && value === value.trim()
   );
 }
 

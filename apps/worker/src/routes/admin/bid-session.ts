@@ -375,6 +375,17 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
     ).bind(expectedOrder[0]?.memberId ?? null, now.getTime(), now.getTime(), id),
   );
   const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+    // The canonical command service can win the lease between the optimistic
+    // preflight above and this callback. Never allow a legacy D1 transition to
+    // follow a canonical state transition once that service owns the session.
+    if (await hasCanonicalCommandState(c.env, id)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
+    const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
+    if (current === undefined) return c.json({ error: 'not_found' }, 404);
+    if (current.currentPhase !== 'config') {
+      return c.json({ error: 'invalid_state', current_phase: current.currentPhase }, 409);
+    }
     const results = await c.env.DB.batch(statements);
     if (results[results.length - 1]?.meta.changes !== 1) {
       return c.json({ error: 'session_state_changed' }, 409);
@@ -433,6 +444,9 @@ router.post(
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
     const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+      if (await hasCanonicalCommandState(c.env, id)) {
+        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+      }
       const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
       if (current === undefined) return c.json({ error: 'not_found' }, 404);
       if (current.currentPhase === 'paused' || current.currentPhase === 'complete') {
@@ -491,6 +505,9 @@ router.post(
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
     const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+      if (await hasCanonicalCommandState(c.env, id)) {
+        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+      }
       const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
       if (current === undefined) return c.json({ error: 'not_found' }, 404);
       if (current.currentPhase !== 'paused') {
@@ -537,28 +554,48 @@ router.post('/:id/day-end', requireStepUpAuth(), zValidator('json', DayEndSchema
   if (s.currentPhase === 'complete') {
     return c.json({ error: 'invalid_state', current_phase: 'complete' }, 409);
   }
-  const resumeAt = new Date(body.scheduled_resume_at);
-  const now = new Date();
-  await db
-    .update(bidSessions)
-    .set({ currentPhase: 'paused', pausedAt: now, scheduledResumeAt: resumeAt })
-    .where(eq(bidSessions.id, id));
-  await writeAuditLog(db, {
-    bidSessionId: id,
-    actorType: 'admin',
-    actorId: actorIdFromClaims(c.get('claims')),
-    action: 'pause',
-    targetKind: 'bid_session',
-    targetId: id,
-    reason: body.reason,
-    beforeState: { current_phase: s.currentPhase },
-    afterState: { current_phase: 'paused', scheduled_resume_at: body.scheduled_resume_at },
+  const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+    if (await hasCanonicalCommandState(c.env, id)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
+    const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
+    if (current === undefined) return c.json({ error: 'not_found' }, 404);
+    if (current.currentPhase === 'complete') {
+      return c.json({ error: 'invalid_state', current_phase: 'complete' }, 409);
+    }
+    const resumeAt = new Date(body.scheduled_resume_at);
+    const now = new Date();
+    const updated = await db
+      .update(bidSessions)
+      .set({
+        currentPhase: 'paused',
+        pausedAt: now,
+        scheduledResumeAt: resumeAt,
+        mockControlRevision: sql`${bidSessions.mockControlRevision} + 1`,
+      })
+      .where(and(eq(bidSessions.id, id), ne(bidSessions.currentPhase, 'complete')))
+      .returning({ id: bidSessions.id })
+      .get();
+    if (updated === undefined) return c.json({ error: 'session_state_changed' }, 409);
+    await writeAuditLog(db, {
+      bidSessionId: id,
+      actorType: 'admin',
+      actorId: actorIdFromClaims(c.get('claims')),
+      action: 'pause',
+      targetKind: 'bid_session',
+      targetId: id,
+      reason: body.reason,
+      beforeState: { current_phase: current.currentPhase },
+      afterState: { current_phase: 'paused', scheduled_resume_at: body.scheduled_resume_at },
+    });
+    return c.json({
+      id,
+      current_phase: 'paused',
+      scheduled_resume_at: body.scheduled_resume_at,
+    });
   });
-  return c.json({
-    id,
-    current_phase: 'paused',
-    scheduled_resume_at: body.scheduled_resume_at,
-  });
+  if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+  return mutation.value;
 });
 
 // POST /api/admin/bid-session/:id/day-start
@@ -577,26 +614,43 @@ router.post(
     if (s.currentPhase !== 'paused') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
-    await db
-      .update(bidSessions)
-      .set({
-        currentPhase: 'position_bid',
-        pausedAt: null,
-        scheduledResumeAt: null,
-        dayCount: s.dayCount + 1,
-      })
-      .where(eq(bidSessions.id, id));
-    await writeAuditLog(db, {
-      bidSessionId: id,
-      actorType: 'admin',
-      actorId: actorIdFromClaims(c.get('claims')),
-      action: 'resume',
-      targetKind: 'bid_session',
-      targetId: id,
-      beforeState: { current_phase: 'paused', day_count: s.dayCount },
-      afterState: { current_phase: 'position_bid', day_count: s.dayCount + 1 },
+    const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+      if (await hasCanonicalCommandState(c.env, id)) {
+        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+      }
+      const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
+      if (current === undefined) return c.json({ error: 'not_found' }, 404);
+      if (current.currentPhase !== 'paused') {
+        return c.json({ error: 'invalid_state', current_phase: current.currentPhase }, 409);
+      }
+      const nextDayCount = current.dayCount + 1;
+      const updated = await db
+        .update(bidSessions)
+        .set({
+          currentPhase: 'position_bid',
+          pausedAt: null,
+          scheduledResumeAt: null,
+          dayCount: nextDayCount,
+          mockControlRevision: sql`${bidSessions.mockControlRevision} + 1`,
+        })
+        .where(and(eq(bidSessions.id, id), eq(bidSessions.currentPhase, 'paused')))
+        .returning({ id: bidSessions.id })
+        .get();
+      if (updated === undefined) return c.json({ error: 'session_state_changed' }, 409);
+      await writeAuditLog(db, {
+        bidSessionId: id,
+        actorType: 'admin',
+        actorId: actorIdFromClaims(c.get('claims')),
+        action: 'resume',
+        targetKind: 'bid_session',
+        targetId: id,
+        beforeState: { current_phase: 'paused', day_count: current.dayCount },
+        afterState: { current_phase: 'position_bid', day_count: nextDayCount },
+      });
+      return c.json({ id, current_phase: 'position_bid', day_count: nextDayCount });
     });
-    return c.json({ id, current_phase: 'position_bid', day_count: s.dayCount + 1 });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
   },
 );
 

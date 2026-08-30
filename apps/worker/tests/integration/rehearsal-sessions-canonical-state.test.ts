@@ -79,6 +79,7 @@ describe('GET /api/admin/rehearsal/sessions canonical state projection', () => {
           currentPhase: 'paused',
           currentBidderId: null,
           isMock: true,
+          mockControlRevision: 0,
           lastPickedAtIso: null,
         },
       ],

@@ -1,10 +1,72 @@
+import { sha256 } from '@noble/hashes/sha256';
+import { bytesToHex } from '@noble/hashes/utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { canonicalize } from '../../src/audit/canonical-json.js';
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'a'.repeat(64);
+
+function autoCommandFingerprint(
+  sessionId: string,
+  body: { count: number; strategy: 'first_eligible' },
+  expectedMockControlRevision = 0,
+): string {
+  return bytesToHex(
+    sha256(
+      new TextEncoder().encode(
+        canonicalize({
+          fingerprint_version: 1,
+          operation: 'auto_bid',
+          session_id: sessionId,
+          actor_subject: '0',
+          expected_mock_control_revision: expectedMockControlRevision,
+          payload: body,
+        }),
+      ),
+    ),
+  );
+}
+
+async function insertPendingAutoReceipt(
+  h: TestD1,
+  input: {
+    sessionId: string;
+    idempotencyKey: string;
+    requestFingerprint: string;
+    expectedMockControlRevision?: number;
+  },
+): Promise<void> {
+  await h.db.run(
+    `INSERT INTO mock_rehearsal_command_receipts (
+       bid_session_id, idempotency_key, operation, actor_subject, request_fingerprint,
+       expected_mock_control_revision, state, created_at
+     ) VALUES (?, ?, 'auto_bid', '0', ?, ?, 'pending', ?);`,
+    [
+      input.sessionId,
+      input.idempotencyKey,
+      input.requestFingerprint,
+      input.expectedMockControlRevision ?? 0,
+      Date.now(),
+    ],
+  );
+}
+
+async function insertLegacyMockBidAudit(
+  h: TestD1,
+  input: { sessionId: string; bidId: string; auditId: string },
+): Promise<void> {
+  await h.db.run(
+    `INSERT INTO audit_log (
+       id, bid_session_id, seq, actor_type, actor_id, action, target_kind,
+       target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at
+     ) VALUES (?, ?, 1, 'admin', NULL, 'admin_bid_for_member', 'bid', ?, NULL, NULL,
+       'legacy interruption boundary', NULL, NULL, ?);`,
+    [input.auditId, input.sessionId, input.bidId, Math.floor(Date.now() / 1000)],
+  );
+}
 
 async function adminJwt(): Promise<string> {
   return signJwt(
@@ -207,12 +269,280 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-not-mock',
         },
-        body: JSON.stringify({ count: 1, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 1,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
     expect(res.status).toBe(403);
+  });
+
+  it('requires a command idempotency key before it can mutate a mock', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          count: 1,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'missing_idempotency_key' });
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
+        .results[0],
+    ).toMatchObject({ n: 0 });
+  });
+
+  it('replays an accepted auto-bid exactly and rejects altered or stale commands', async () => {
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(new Map([[sessionId, { currentBidderId: 201 }]])),
+    };
+    const token = await adminJwt();
+    const request = (count: number, expectedRevision: number) =>
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-exact-replay',
+        },
+        body: JSON.stringify({
+          count,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: expectedRevision,
+        }),
+      });
+
+    const first = await app.fetch(request(1, 0), env);
+    const firstText = await first.text();
+    expect(first.status).toBe(200);
+
+    const replay = await app.fetch(request(1, 0), env);
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get('x-mbfd-idempotent-replay')).toBe('true');
+    expect(await replay.text()).toBe(firstText);
+
+    const altered = await app.fetch(request(2, 0), env);
+    expect(altered.status).toBe(409);
+    expect(await altered.json()).toEqual({ error: 'rehearsal_idempotency_key_reused' });
+
+    const stale = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-stale-revision',
+        },
+        body: JSON.stringify({
+          count: 1,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
+      }),
+      env,
+    );
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({
+      error: 'stale_mock_control_revision',
+      expected_mock_control_revision: 0,
+      current_mock_control_revision: 1,
+    });
+
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
+        .results[0],
+    ).toMatchObject({ n: 1 });
+    expect(
+      (await h.db.run("SELECT count(*) AS n FROM audit_log WHERE action = 'admin_bid_for_member'"))
+        .results[0],
+    ).toMatchObject({ n: 1 });
+  });
+
+  it('rolls back the receipt and all domain writes when the batch fails after reservation', async () => {
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(new Map([[sessionId, { currentBidderId: 201 }]])),
+    };
+    const token = await adminJwt();
+    const request = () =>
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-fault-injection',
+        },
+        body: JSON.stringify({
+          count: 1,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
+      });
+
+    // Statement zero reserves the receipt; injecting a failure at statement
+    // one proves the native batch rolls that reservation back with the Bid,
+    // audit, and revision writes that follow it.
+    h.failNextBatchAt(1);
+    const interrupted = await app.fetch(request(), env);
+    expect(interrupted.status).toBe(503);
+    expect(await interrupted.json()).toEqual({ error: 'rehearsal_command_retry_safe' });
+    expect(
+      (await h.db.run('SELECT mock_control_revision FROM bid_sessions WHERE id = ?', [sessionId]))
+        .results[0],
+    ).toMatchObject({ mock_control_revision: 0 });
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM mock_rehearsal_command_receipts')).results[0],
+    ).toMatchObject({ n: 0 });
+    expect((await h.db.run('SELECT count(*) AS n FROM bids')).results[0]).toMatchObject({ n: 0 });
+    expect((await h.db.run('SELECT count(*) AS n FROM audit_log')).results[0]).toMatchObject({
+      n: 0,
+    });
+
+    const retry = await app.fetch(request(), env);
+    expect(retry.status).toBe(200);
+    expect((await h.db.run('SELECT count(*) AS n FROM bids')).results[0]).toMatchObject({ n: 1 });
+  });
+
+  it('reconciles a post-domain legacy pending auto receipt without a duplicate pick', async () => {
+    const body = { count: 1, strategy: 'first_eligible' as const };
+    const key = 'auto-pending-post-domain';
+    const fingerprint = autoCommandFingerprint(sessionId, body);
+    await insertPendingAutoReceipt(h, {
+      sessionId,
+      idempotencyKey: key,
+      requestFingerprint: fingerprint,
+    });
+    await h.db.run('UPDATE bid_sessions SET mock_control_revision = 1 WHERE id = ?', [sessionId]);
+    await h.db.run(
+      `INSERT INTO bids (
+         id, bid_session_id, ordinal, member_id, position_id, picked_at, forced,
+         admin_actor_id, reason, idempotency_key, portal_sync_status, portal_sync_attempts
+       ) VALUES ('legacy-auto-post-domain-bid', ?, 1, 201, 'A101', ?, 0, NULL,
+         'legacy interruption boundary', ?, 'pending', 0);`,
+      [sessionId, Math.floor(Date.now() / 1000), `rehearsal-auto:${fingerprint}:0`],
+    );
+    await insertLegacyMockBidAudit(h, {
+      sessionId,
+      bidId: 'legacy-auto-post-domain-bid',
+      auditId: 'legacy-auto-post-domain-audit',
+    });
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(new Map([[sessionId, { currentBidderId: 201 }]])),
+    };
+    const token = await adminJwt();
+    const request = () =>
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': key,
+        },
+        body: JSON.stringify({ ...body, expected_mock_control_revision: 0 }),
+      });
+
+    const recovered = await app.fetch(request(), env);
+    expect(recovered.status).toBe(200);
+    const recoveredText = await recovered.text();
+    expect(JSON.parse(recoveredText)).toEqual({
+      picksMade: 1,
+      stoppedReason: 'recovered_after_interruption',
+      detail:
+        'The prior mock command committed before its response was durable; the recorded Bid rows are authoritative.',
+      mock_control_revision: 1,
+    });
+    expect((await h.db.run('SELECT count(*) AS n FROM bids')).results[0]).toMatchObject({ n: 1 });
+    expect(
+      (
+        await h.db.run(
+          `SELECT state, resulting_mock_control_revision
+             FROM mock_rehearsal_command_receipts
+            WHERE bid_session_id = ? AND idempotency_key = ?`,
+          [sessionId, key],
+        )
+      ).results[0],
+    ).toEqual({ state: 'completed', resulting_mock_control_revision: 1 });
+
+    const replay = await app.fetch(request(), env);
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get('x-mbfd-idempotent-replay')).toBe('true');
+    expect(await replay.text()).toBe(recoveredText);
+    expect((await h.db.run('SELECT count(*) AS n FROM bids')).results[0]).toMatchObject({ n: 1 });
+  });
+
+  it('terminalizes an auto receipt with a partial Bid/revision outcome instead of guessing', async () => {
+    const body = { count: 1, strategy: 'first_eligible' as const };
+    const key = 'auto-pending-missing-audit';
+    const fingerprint = autoCommandFingerprint(sessionId, body);
+    await insertPendingAutoReceipt(h, {
+      sessionId,
+      idempotencyKey: key,
+      requestFingerprint: fingerprint,
+    });
+    await h.db.run('UPDATE bid_sessions SET mock_control_revision = 1 WHERE id = ?', [sessionId]);
+    await h.db.run(
+      `INSERT INTO bids (
+         id, bid_session_id, ordinal, member_id, position_id, picked_at, forced,
+         admin_actor_id, reason, idempotency_key, portal_sync_status, portal_sync_attempts
+       ) VALUES ('legacy-auto-without-audit', ?, 1, 201, 'A101', ?, 0, NULL,
+         'legacy interruption boundary', ?, 'pending', 0);`,
+      [sessionId, Math.floor(Date.now() / 1000), `rehearsal-auto:${fingerprint}:0`],
+    );
+    const env: WorkerEnv = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(new Map([[sessionId, { currentBidderId: 201 }]])),
+    };
+    const token = await adminJwt();
+    const request = () =>
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/auto-bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': key,
+        },
+        body: JSON.stringify({ ...body, expected_mock_control_revision: 0 }),
+      });
+
+    const terminal = await app.fetch(request(), env);
+    expect(terminal.status).toBe(409);
+    expect(await terminal.json()).toMatchObject({ error: 'rehearsal_command_recovery_required' });
+    expect(
+      (
+        await h.db.run(
+          `SELECT outcome
+             FROM mock_rehearsal_command_recovery_outcomes
+            WHERE bid_session_id = ? AND idempotency_key = ?`,
+          [sessionId, key],
+        )
+      ).results[0],
+    ).toEqual({
+      outcome: 'recovery_required',
+    });
+    expect((await h.db.run('SELECT count(*) AS n FROM bids')).results[0]).toMatchObject({ n: 1 });
+    expect((await h.db.run('SELECT count(*) AS n FROM audit_log')).results[0]).toMatchObject({
+      n: 0,
+    });
   });
 
   it('makes 3 picks with strategy=first_eligible and stops at count_reached', async () => {
@@ -228,8 +558,13 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-three-picks',
         },
-        body: JSON.stringify({ count: 3, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 3,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       env,
     );
@@ -275,8 +610,13 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-canonical',
         },
-        body: JSON.stringify({ count: 1, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 1,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       env,
     );
@@ -314,8 +654,13 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-stale-order',
         },
-        body: JSON.stringify({ count: 1, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 1,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
@@ -371,8 +716,13 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-large-bootstrap',
         },
-        body: JSON.stringify({ count: 1, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 1,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       env,
     );
@@ -413,8 +763,13 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-bootstrap',
         },
-        body: JSON.stringify({ count: 3, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 3,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       env,
     );
@@ -459,8 +814,13 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-foreign-key',
         },
-        body: JSON.stringify({ count: 2, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 2,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       env,
     );
@@ -485,8 +845,13 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-invalid-body',
         },
-        body: JSON.stringify({ count: 0, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 0,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );

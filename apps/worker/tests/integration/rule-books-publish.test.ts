@@ -39,7 +39,7 @@ async function designateSyntheticDraftForPublication(h: TestD1): Promise<void> {
        (year, status, position_template_version, rule_book_version, config_json, configuration_revision)
      VALUES
        (2026, 'configuring', '2026.1', '2026.2',
-        '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}', 0)
+        '{"v":2,"expectedDurationDays":2,"turnTimerSeconds":180,"credentialEvaluationOn":"2026-01-01"}', 0)
      ON CONFLICT(year) DO UPDATE SET
        status = excluded.status,
        position_template_version = excluded.position_template_version,

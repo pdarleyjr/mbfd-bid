@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  type SpecialtyCommandReceipt,
+  bidSessionSpecialtyReceiptPrefix,
+  bidSessionSpecialtyStorageKey,
+} from '../../src/durable/bid-session-specialty.js';
+import {
   type BidSessionState,
   bidSessionStateStorageKey,
 } from '../../src/durable/bid-session-state.js';
@@ -10,6 +15,7 @@ import {
 } from '../../src/durable/bid-session.js';
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import type { SpecialtyAdjudicationState } from '../../src/lib/specialty-adjudication.js';
 import { SPECIALTY_TEST_POLICY_LABEL } from '../../src/lib/specialty-test-policy.js';
 import specialtyAdjudication from '../../src/routes/admin/specialty-adjudication.js';
 import type { WorkerEnv } from '../../src/types/env.js';
@@ -58,6 +64,29 @@ function makeState(storage: MemoryDurableStorage): DurableObjectState {
     blockConcurrencyWhile: async <T>(closure: () => Promise<T>) => closure(),
     waitUntil: () => undefined,
   } as unknown as DurableObjectState;
+}
+
+class CapturingSocket {
+  readonly messages: Array<Record<string, unknown>> = [];
+
+  readonly socket = {
+    send: (value: string) => {
+      this.messages.push(JSON.parse(value) as Record<string, unknown>);
+    },
+  } as unknown as WebSocket;
+}
+
+type BidSessionMessageHandler = {
+  onMessage(
+    clientId: string,
+    socket: WebSocket,
+    event: MessageEvent,
+    identity: { memberId: number; role: 'member' | 'admin' },
+  ): Promise<void>;
+};
+
+function messageHandler(subject: BidSessionDO): BidSessionMessageHandler {
+  return subject as unknown as BidSessionMessageHandler;
 }
 
 function normalBidState(): BidSessionState {
@@ -184,6 +213,7 @@ async function directNormalBidRequest(
       headers: {
         Authorization: `Bearer ${await freshAdmin()}`,
         'Content-Type': 'application/json',
+        'Idempotency-Key': 'specialty-normal-direct-writer',
       },
       body: JSON.stringify(body),
     }),
@@ -211,8 +241,10 @@ async function seed(h: TestD1): Promise<void> {
          '{"max":0,"items":[]}',
          '["points","rsc_seniority","rank_seniority"]');
      INSERT INTO bid_sessions
-       (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock)
-       VALUES ('${SESSION_ID}', 2026, ${CAPTURED_AT}, 'position_bid', 180, 2, 0, 1);`,
+        (id, bid_year, started_at, current_phase, current_bidder_id, turn_timer_seconds, expected_duration_days, day_count, is_mock)
+        VALUES ('${SESSION_ID}', 2026, ${CAPTURED_AT}, 'position_bid', 17, 180, 2, 0, 1);
+     INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool)
+        VALUES ('${SESSION_ID}', 42, 17, 'FF');`,
   );
 
   const members = [11, 12, 13, 17].map((memberId, index) => ({
@@ -307,6 +339,7 @@ describe('mock normal-bid specialty rehearsal', () => {
     const beginBody = {
       command_id: 'specialty-begin-direct-writer-1',
       expected_revision: 0,
+      expected_normal_control_revision: 0,
       request_id: 'specialty-direct-writer-request-1',
       position_id: 'A101',
       policy: syntheticPolicy(),
@@ -323,18 +356,23 @@ describe('mock normal-bid specialty rehearsal', () => {
       },
     );
     expect(begin.status).toBe(200);
-    await h.db.run('UPDATE bid_sessions SET current_bidder_id = ? WHERE id = ?', [17, SESSION_ID]);
-
     const attempts = [
       {
         name: 'auto-bid',
         path: `/api/admin/rehearsal/${SESSION_ID}/auto-bid`,
-        body: { count: 1, strategy: 'first_eligible' },
+        body: { count: 1, strategy: 'first_eligible', expected_mock_control_revision: 0 },
+        expectedError: 'specialty_adjudication_active',
       },
       {
         name: 'manual-pick',
         path: `/api/admin/rehearsal/${SESSION_ID}/manual-pick`,
-        body: { member_id: 17, position_id: 'A101', reason: 'Synthetic manual normal Bid pick.' },
+        body: {
+          member_id: 17,
+          position_id: 'A101',
+          reason: 'Synthetic manual normal Bid pick.',
+          expected_mock_control_revision: 0,
+        },
+        expectedError: 'specialty_adjudication_active',
       },
       {
         name: 'force-pick',
@@ -345,6 +383,7 @@ describe('mock normal-bid specialty rehearsal', () => {
           reason_code: 'force.cert_mandate',
           reason: 'Synthetic forced normal Bid pick.',
         },
+        expectedError: 'mock_rehearsal_control_required',
       },
       {
         name: 'bid-for-member',
@@ -355,13 +394,81 @@ describe('mock normal-bid specialty rehearsal', () => {
           reason_code: 'bid_for_member.unreachable_phone',
           reason: 'Synthetic proxy normal Bid pick.',
         },
+        expectedError: 'mock_rehearsal_control_required',
+      },
+      {
+        // A mock session must never route a legacy skip writer around the
+        // rehearsal control plane. This boundary is reached before the
+        // specialty lease and remains fail-closed while adjudication is live.
+        name: 'skip',
+        path: `/api/admin/bid-session/${SESSION_ID}/skip`,
+        body: {
+          member_id: 17,
+          reason_code: 'skip.unreachable',
+          reason: 'Synthetic direct normal Bid skip must use the rehearsal control plane.',
+        },
+        expectedError: 'mock_rehearsal_control_required',
+      },
+      {
+        // Position locks are config-only legacy controls and, for a mock,
+        // likewise cannot bypass the rehearsal control-plane boundary.
+        name: 'lock-position',
+        path: `/api/admin/bid-session/${SESSION_ID}/lock-position`,
+        body: {
+          member_id: 17,
+          position_id: 'A101',
+          reason_code: 'lock_position.probationary_placement',
+          reason: 'Synthetic direct normal Bid lock must use the rehearsal control plane.',
+        },
+        expectedError: 'mock_rehearsal_control_required',
+      },
+      {
+        name: 'pause',
+        path: `/api/admin/bid-session/${SESSION_ID}/pause`,
+        body: {
+          reason_code: 'session.pause_emergency',
+          reason: 'Synthetic direct normal Bid pause must not interrupt specialty adjudication.',
+        },
+        expectedError: 'specialty_adjudication_active',
+      },
+      {
+        name: 'day-end',
+        path: `/api/admin/bid-session/${SESSION_ID}/day-end`,
+        body: {
+          scheduled_resume_at: '2026-08-29T13:00:00.000Z',
+          reason: 'Synthetic direct normal Bid day end must not interrupt specialty adjudication.',
+        },
+        expectedError: 'specialty_adjudication_active',
+      },
+      {
+        // Specialty begin is permitted only from an active normal turn. The
+        // direct resume route is therefore intentionally unreachable while
+        // the interruption is active and fails before acquiring a writer
+        // lease; it still must not mutate any normal state.
+        name: 'resume',
+        path: `/api/admin/bid-session/${SESSION_ID}/resume`,
+        body: {},
+        expectedError: 'invalid_state',
+        expectedResponse: { error: 'invalid_state', current_phase: 'position_bid' },
+      },
+      {
+        // See resume: day-start has the same paused-session precondition and
+        // cannot become a concurrent normal writer during an active specialty
+        // interruption.
+        name: 'day-start',
+        path: `/api/admin/bid-session/${SESSION_ID}/day-start`,
+        body: {},
+        expectedError: 'invalid_state',
+        expectedResponse: { error: 'invalid_state', current_phase: 'position_bid' },
       },
     ];
 
     for (const attempt of attempts) {
       const response = await directNormalBidRequest(h, instance, attempt.path, attempt.body);
       expect(response.status, attempt.name).toBe(409);
-      await expect(response.json()).resolves.toEqual({ error: 'specialty_adjudication_active' });
+      await expect(response.json()).resolves.toEqual(
+        attempt.expectedResponse ?? { error: attempt.expectedError },
+      );
     }
 
     expect(
@@ -370,11 +477,32 @@ describe('mock normal-bid specialty rehearsal', () => {
     ).toEqual([{ count: 0 }]);
     expect(
       (
-        await h.db.run('SELECT current_bidder_id, current_phase FROM bid_sessions WHERE id = ?', [
+        await h.db.run(
+          `SELECT current_bidder_id, current_phase, paused_at, scheduled_resume_at, day_count,
+                  mock_control_revision, config_json
+             FROM bid_sessions
+            WHERE id = ?`,
+          [SESSION_ID],
+        )
+      ).results,
+    ).toEqual([
+      {
+        current_bidder_id: 17,
+        current_phase: 'position_bid',
+        paused_at: null,
+        scheduled_resume_at: null,
+        day_count: 0,
+        mock_control_revision: 0,
+        config_json: null,
+      },
+    ]);
+    expect(
+      (
+        await h.db.run('SELECT COUNT(*) AS count FROM audit_log WHERE bid_session_id = ?', [
           SESSION_ID,
         ])
       ).results,
-    ).toEqual([{ current_bidder_id: 17, current_phase: 'position_bid' }]);
+    ).toEqual([{ count: 0 }]);
     expect(await storage.get<BidSessionState>(bidSessionStateStorageKey(SESSION_ID))).toEqual(
       normalBidState(),
     );
@@ -408,6 +536,7 @@ describe('mock normal-bid specialty rehearsal', () => {
         body: JSON.stringify({
           command_id: 'specialty-begin-held-lease-1',
           expected_revision: 0,
+          expected_normal_control_revision: 0,
           request_id: 'specialty-held-lease-request-1',
           position_id: 'A101',
           policy: syntheticPolicy(),
@@ -440,6 +569,7 @@ describe('mock normal-bid specialty rehearsal', () => {
         body: JSON.stringify({
           command_id: 'specialty-begin-released-lease-1',
           expected_revision: 0,
+          expected_normal_control_revision: 0,
           request_id: 'specialty-released-lease-request-1',
           position_id: 'A101',
           policy: syntheticPolicy(),
@@ -493,6 +623,7 @@ describe('mock normal-bid specialty rehearsal', () => {
         body: JSON.stringify({
           command_id: 'specialty-begin-unknown-lease-1',
           expected_revision: 0,
+          expected_normal_control_revision: 0,
           request_id: 'specialty-unknown-lease-request-1',
           position_id: 'A101',
           policy: syntheticPolicy(),
@@ -517,9 +648,10 @@ describe('mock normal-bid specialty rehearsal', () => {
       instance,
       `/api/admin/rehearsal/${SESSION_ID}/manual-pick`,
       {
-        member_id: 17,
+        member_id: 11,
         position_id: 'A101',
         reason: 'Representative direct normal D1 writer must release its permit.',
+        expected_mock_control_revision: 0,
       },
     );
     expect(manualPick.status).toBe(201);
@@ -534,6 +666,7 @@ describe('mock normal-bid specialty rehearsal', () => {
         body: JSON.stringify({
           command_id: 'specialty-begin-after-direct-writer-1',
           expected_revision: 0,
+          expected_normal_control_revision: 1,
           request_id: 'specialty-after-direct-writer-request-1',
           position_id: 'A101',
           policy: syntheticPolicy(),
@@ -544,29 +677,17 @@ describe('mock normal-bid specialty rehearsal', () => {
     expect(begin.status).toBe(200);
   });
 
-  it('suspends an actual mock normal turn, survives reconnect, resolves configured priority, and resumes the exact bidder without canonical staffing or portal publication', async () => {
+  it('reconstructs the persisted specialty interruption with a fresh admin socket, then resumes the exact mock normal bidder without canonical staffing or portal publication', async () => {
     const storage = new MemoryDurableStorage();
     await storage.put(bidSessionStateStorageKey(SESSION_ID), normalBidState());
     let subject = new BidSessionDO(makeState(storage), h.env);
     const instance = () => subject;
-    const messages: Array<Record<string, unknown>> = [];
-    const socket = {
-      send(value: string) {
-        messages.push(JSON.parse(value) as Record<string, unknown>);
-      },
-    } as unknown as WebSocket;
-    const onMessage = subject as unknown as {
-      onMessage(
-        clientId: string,
-        socket: WebSocket,
-        event: MessageEvent,
-        identity: { memberId: number; role: 'member' | 'admin' },
-      ): Promise<void>;
-    };
+    const normalBidderSocket = new CapturingSocket();
+    const onMessage = messageHandler(subject);
 
     await onMessage.onMessage(
       'normal-bidder-17',
-      socket,
+      normalBidderSocket.socket,
       { data: JSON.stringify({ type: 'hello' }) } as MessageEvent,
       { memberId: 17, role: 'member' },
     );
@@ -574,6 +695,7 @@ describe('mock normal-bid specialty rehearsal', () => {
     const beginBody = {
       command_id: 'specialty-begin-normal-1',
       expected_revision: 0,
+      expected_normal_control_revision: 0,
       request_id: 'specialty-normal-request-1',
       position_id: 'A101',
       policy: syntheticPolicy(),
@@ -602,7 +724,7 @@ describe('mock normal-bid specialty rehearsal', () => {
               bidderId: 17,
               ordinal: 42,
               queueCursor: 0,
-              turnId: `normal:${SESSION_ID}:8:42:0:17`,
+              turnId: `mock-normal:${SESSION_ID}:0:42:0:17`,
             },
           },
         },
@@ -624,7 +746,7 @@ describe('mock normal-bid specialty rehearsal', () => {
 
     await onMessage.onMessage(
       'normal-bidder-17',
-      socket,
+      normalBidderSocket.socket,
       {
         data: JSON.stringify({
           type: 'submit_pick',
@@ -635,7 +757,7 @@ describe('mock normal-bid specialty rehearsal', () => {
       } as MessageEvent,
       { memberId: 17, role: 'member' },
     );
-    expect(messages.at(-1)).toMatchObject({
+    expect(normalBidderSocket.messages.at(-1)).toMatchObject({
       type: 'pick_rejected',
       payload: { code: 'SESSION_PAUSED' },
       seq: 8,
@@ -644,17 +766,113 @@ describe('mock normal-bid specialty rehearsal', () => {
       normalBidState(),
     );
 
-    // A new DO instance models a browser/DO reconnect halfway through the interruption.
+    const persistedState = await storage.get<SpecialtyAdjudicationState>(
+      bidSessionSpecialtyStorageKey(SESSION_ID),
+    );
+    expect(persistedState).toMatchObject({
+      revision: 1,
+      active: {
+        requestId: 'specialty-normal-request-1',
+        positionId: 'A101',
+        phase: 'resolving_higher_priority_candidates',
+        candidateCursor: 0,
+        resolution: null,
+        originalTurn: {
+          bidderId: 17,
+          ordinal: 42,
+          queueCursor: 0,
+          turnId: `mock-normal:${SESSION_ID}:0:42:0:17`,
+        },
+      },
+      consumedCommandIds: ['specialty-begin-normal-1'],
+      processedRequestIds: ['specialty-normal-request-1'],
+      resumedRequestIds: [],
+    });
+    expect(persistedState?.active?.rankedCandidates.map((candidate) => candidate.memberId)).toEqual(
+      [11, 12, 13, 17],
+    );
+    expect(persistedState?.active?.candidateQueue.map((candidate) => candidate.memberId)).toEqual([
+      11, 12, 13,
+    ]);
+
+    const persistedReceipts = await storage.list<SpecialtyCommandReceipt>({
+      prefix: bidSessionSpecialtyReceiptPrefix(SESSION_ID),
+    });
+    expect([...persistedReceipts.values()]).toHaveLength(1);
+    expect([...persistedReceipts.values()][0]).toMatchObject({
+      version: 2,
+      commandId: 'specialty-begin-normal-1',
+      operation: 'begin',
+      beforeState: { revision: 0, active: null },
+      afterState: {
+        revision: 1,
+        active: {
+          originalTurn: {
+            bidderId: 17,
+            ordinal: 42,
+            queueCursor: 0,
+            turnId: `mock-normal:${SESSION_ID}:0:42:0:17`,
+          },
+        },
+      },
+    });
+
+    // A new DO instance plus a new admin socket models eviction/reconstruction
+    // and a clean WebSocket connection. The socket receives a normal snapshot
+    // and the isolated synthetic marker; the guarded status read supplies the
+    // full persisted specialty control state.
     subject = new BidSessionDO(makeState(storage), h.env);
+    const reconstructedAdminSocket = new CapturingSocket();
+    const reconstructedOnMessage = messageHandler(subject);
+    await reconstructedOnMessage.onMessage(
+      'reconstructed-admin',
+      reconstructedAdminSocket.socket,
+      { data: JSON.stringify({ type: 'hello' }) } as MessageEvent,
+      { memberId: 0, role: 'admin' },
+    );
+    expect(reconstructedAdminSocket.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'state_snapshot',
+          seq: 8,
+          payload: expect.objectContaining({
+            bidSessionId: SESSION_ID,
+            seq: 8,
+            currentPhase: 'position_bid',
+            currentBidderId: 17,
+            bidOrder: [{ ordinal: 42, memberId: 17, pool: 'FF' }],
+          }),
+        }),
+        expect.objectContaining({
+          v: 1,
+          type: 'synthetic_specialty_state_changed',
+          mode: 'synthetic_test_only',
+          does_not_commit_bid: true,
+          bidSessionId: SESSION_ID,
+          revision: 1,
+        }),
+      ]),
+    );
+
     const rehydrated = await routeRequest(h, instance, `/${SESSION_ID}/specialty-adjudication`);
     expect(rehydrated.status).toBe(200);
-    await expect(rehydrated.json()).resolves.toMatchObject({
+    const rehydratedStatus = (await rehydrated.json()) as {
+      state: SpecialtyAdjudicationState;
+      audit_receipts: SpecialtyCommandReceipt[];
+    };
+    expect(rehydratedStatus).toMatchObject({
       state: {
         revision: 1,
         active: {
-          originalTurn: { bidderId: 17, turnId: `normal:${SESSION_ID}:8:42:0:17` },
+          originalTurn: { bidderId: 17, turnId: `mock-normal:${SESSION_ID}:0:42:0:17` },
           candidateCursor: 0,
         },
+      },
+      normal_turn: {
+        bidder_id: 17,
+        ordinal: 42,
+        queue_cursor: 0,
+        mock_control_revision: 0,
       },
       audit_receipts: [
         expect.objectContaining({
@@ -663,6 +881,13 @@ describe('mock normal-bid specialty rehearsal', () => {
         }),
       ],
     });
+    expect(
+      rehydratedStatus.state.active?.rankedCandidates.map((candidate) => candidate.memberId),
+    ).toEqual([11, 12, 13, 17]);
+    expect(
+      rehydratedStatus.state.active?.candidateQueue.map((candidate) => candidate.memberId),
+    ).toEqual([11, 12, 13]);
+    expect(rehydratedStatus.audit_receipts).toHaveLength(1);
 
     const stale = await routeRequest(
       h,
@@ -762,35 +987,42 @@ describe('mock normal-bid specialty rehearsal', () => {
           bidderId: 17,
           ordinal: 42,
           queueCursor: 0,
-          turnId: `normal:${SESSION_ID}:8:42:0:17`,
+          turnId: `mock-normal:${SESSION_ID}:0:42:0:17`,
         },
         state: { revision: 5, active: null },
       },
     });
 
-    const resumedMessages: Array<Record<string, unknown>> = [];
-    const resumedSocket = {
-      send(value: string) {
-        resumedMessages.push(JSON.parse(value) as Record<string, unknown>);
-      },
-    } as unknown as WebSocket;
-    const resumedOnMessage = subject as unknown as {
-      onMessage(
-        clientId: string,
-        socket: WebSocket,
-        event: MessageEvent,
-        identity: { memberId: number; role: 'member' | 'admin' },
-      ): Promise<void>;
-    };
+    const resumedState = await storage.get<SpecialtyAdjudicationState>(
+      bidSessionSpecialtyStorageKey(SESSION_ID),
+    );
+    expect(resumedState).toMatchObject({
+      revision: 5,
+      active: null,
+      resumedRequestIds: ['specialty-normal-request-1'],
+    });
+    const completedReceipts = await storage.list<SpecialtyCommandReceipt>({
+      prefix: bidSessionSpecialtyReceiptPrefix(SESSION_ID),
+    });
+    expect([...completedReceipts.values()].map((receipt) => receipt.commandId)).toEqual([
+      'specialty-begin-normal-1',
+      'specialty-candidate-b-1',
+      'specialty-candidate-c-1',
+      'specialty-candidate-d-1',
+      'specialty-resume-normal-1',
+    ]);
+
+    const resumedBidderSocket = new CapturingSocket();
+    const resumedOnMessage = messageHandler(subject);
     await resumedOnMessage.onMessage(
       'normal-bidder-17-reconnected',
-      resumedSocket,
+      resumedBidderSocket.socket,
       { data: JSON.stringify({ type: 'hello' }) } as MessageEvent,
       { memberId: 17, role: 'member' },
     );
     await resumedOnMessage.onMessage(
       'normal-bidder-17-reconnected',
-      resumedSocket,
+      resumedBidderSocket.socket,
       {
         data: JSON.stringify({
           type: 'submit_pick',
@@ -801,7 +1033,7 @@ describe('mock normal-bid specialty rehearsal', () => {
       } as MessageEvent,
       { memberId: 17, role: 'member' },
     );
-    expect(resumedMessages.at(-1)).toMatchObject({
+    expect(resumedBidderSocket.messages.at(-1)).toMatchObject({
       type: 'pick_made',
       seq: 9,
       payload: { memberId: 17, positionId: 'A101' },

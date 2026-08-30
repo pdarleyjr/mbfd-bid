@@ -5,7 +5,9 @@
 // so this test exercises just the row + form components in isolation.
 
 import { renderToString } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import { MockSessionsTable } from '../../app/admin/rehearsal/_components/MockSessionsTable';
 import { NewFindingForm } from '../../app/admin/rehearsal/_components/NewFindingForm';
@@ -20,6 +22,7 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
             bidYear: 2026,
             currentPhase: 'position_bid',
             currentBidderId: 101,
+            mockControlRevision: 0,
             isMock: true,
             lastPickedAtIso: '2026-09-22T14:30:00Z',
           },
@@ -28,6 +31,7 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
             bidYear: 2026,
             currentPhase: 'a_day_bid',
             currentBidderId: 202,
+            mockControlRevision: 3,
             isMock: true,
             lastPickedAtIso: null,
           },

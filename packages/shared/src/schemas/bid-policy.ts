@@ -330,15 +330,30 @@ export const BidSessionPolicySnapshotSchema = z
         if (specialtyCodes.has(normalizedCode)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'specialtyCode'],
+            path: [
+              'members',
+              memberIndex,
+              'specialtyQualifications',
+              specialtyIndex,
+              'specialtyCode',
+            ],
             message: 'specialtyQualifications must be unique per session member',
           });
         }
         specialtyCodes.add(normalizedCode);
-        if (priorSpecialtyCode !== null && priorSpecialtyCode.localeCompare(specialty.specialtyCode) >= 0) {
+        if (
+          priorSpecialtyCode !== null &&
+          priorSpecialtyCode.localeCompare(specialty.specialtyCode) >= 0
+        ) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'specialtyCode'],
+            path: [
+              'members',
+              memberIndex,
+              'specialtyQualifications',
+              specialtyIndex,
+              'specialtyCode',
+            ],
             message: 'specialtyQualifications must be sorted by specialty code',
           });
         }
@@ -350,7 +365,13 @@ export const BidSessionPolicySnapshotSchema = z
         if (specialty.effectiveOn > credentialEvaluationOn) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'effectiveOn'],
+            path: [
+              'members',
+              memberIndex,
+              'specialtyQualifications',
+              specialtyIndex,
+              'effectiveOn',
+            ],
             message: 'frozen specialty evidence cannot begin after the evaluation date',
           });
         }

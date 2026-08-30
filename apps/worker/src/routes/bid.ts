@@ -250,6 +250,7 @@ bid.get('/board', async (c) => {
   let sessionStartedAt: number | null = null;
   let d1Phase: string | null = null;
   let d1CurrentBidderId: number | null = null;
+  let mockControlRevision: number | null = null;
   let canonicalState: BidSessionState | null = null;
   try {
     const db = getDb(c.env.DB);
@@ -259,6 +260,7 @@ bid.get('/board', async (c) => {
         startedAt: bidSessionsTable.startedAt,
         currentPhase: bidSessionsTable.currentPhase,
         currentBidderId: bidSessionsTable.currentBidderId,
+        mockControlRevision: bidSessionsTable.mockControlRevision,
       })
       .from(bidSessionsTable)
       .where(eq(bidSessionsTable.id, bidSessionId))
@@ -269,6 +271,7 @@ bid.get('/board', async (c) => {
     }
     d1Phase = session?.currentPhase ?? null;
     d1CurrentBidderId = session?.currentBidderId ?? null;
+    mockControlRevision = session?.mockControlRevision ?? null;
   } catch {
     // Best-effort legacy enrichment remains available when D1 is unavailable.
   }
@@ -452,6 +455,7 @@ bid.get('/board', async (c) => {
   return c.json({
     ...body,
     isMock,
+    mockControlRevision,
     bidSessionId,
     sessionStartedAt,
     bidOrder,

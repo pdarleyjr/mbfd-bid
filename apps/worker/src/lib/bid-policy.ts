@@ -34,10 +34,10 @@ import {
 import { derivePersonnelMemberAsOf } from './personnel-lifecycle.js';
 import { type DecodedPositionRule, decodeRuleBookRows } from './position-rule.js';
 import {
+  type QualificationLifecycleEvent,
   activeCredentialNamesByMemberAsOf,
   normalizePersistedQualificationLifecycleEvent,
   specialtyQualificationsByMemberAsOf,
-  type QualificationLifecycleEvent,
 } from './qualification-lifecycle.js';
 
 export interface RuleBookCoverageInput {

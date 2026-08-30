@@ -120,6 +120,108 @@ export const StateSnapshotEventSchema = z.object({
 });
 export type StateSnapshotEvent = z.infer<typeof StateSnapshotEventSchema>;
 
+/**
+ * An admin-only, PII-free normal-turn locator used by the isolated synthetic
+ * specialty rehearsal. It is deliberately separate from the normal Bid event
+ * sequence, whose state is canonical and must not be imitated by a mock.
+ */
+export const SyntheticSpecialtyNormalTurnSchema = z
+  .object({
+    turnId: z.string().min(1).max(320),
+    bidderId: z.number().int().positive(),
+    ordinal: z.number().int().positive(),
+    queueCursor: z.number().int().nonnegative(),
+    mockControlRevision: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+export type SyntheticSpecialtyNormalTurn = z.infer<typeof SyntheticSpecialtyNormalTurnSchema>;
+
+const SyntheticSpecialtyCandidateSchema = z
+  .object({
+    memberId: z.number().int().positive(),
+    priorityRank: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const SyntheticSpecialtyResolutionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('awarded'),
+      awardedToMemberId: z.number().int().positive(),
+      awardReference: z.string().min(1).max(500),
+      awardedBy: z.enum(['higher_priority_candidate', 'original_bidder']),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('released'),
+      releasedByMemberId: z.number().int().positive(),
+      reason: z.enum(['declined', 'unreachable', 'withdrawn', 'ineligible_on_recheck']),
+    })
+    .strict(),
+]);
+
+/**
+ * A self-contained, sanitized summary that lets an admin client discard its
+ * stale React state and refetch the guarded synthetic state. It is neither an
+ * operational Bid command nor a source of policy semantics.
+ */
+export const SyntheticSpecialtyControlStateSchema = z
+  .object({
+    rehearsalRevision: z.number().int().nonnegative().nullable(),
+    normalTurn: SyntheticSpecialtyNormalTurnSchema.nullable(),
+    normalBidderSuspended: z.boolean(),
+    specialty: z
+      .object({
+        active: z.boolean(),
+        requestId: z.string().min(1).max(160).nullable(),
+        positionId: z.string().min(1).max(160).nullable(),
+        phase: z
+          .enum([
+            'resolving_higher_priority_candidates',
+            'awaiting_original_bidder',
+            'awaiting_resume',
+          ])
+          .nullable(),
+        originalTurn: SyntheticSpecialtyNormalTurnSchema.nullable(),
+        candidateQueue: z.array(SyntheticSpecialtyCandidateSchema),
+        candidateCursor: z.number().int().nonnegative(),
+        resolvedCandidateCount: z.number().int().nonnegative(),
+        resolution: SyntheticSpecialtyResolutionSchema.nullable(),
+        allowedNextAction: z.enum([
+          'begin',
+          'resolve_candidate',
+          'resolve_original',
+          'resume',
+          'none',
+        ]),
+      })
+      .strict(),
+  })
+  .strict();
+export type SyntheticSpecialtyControlState = z.infer<typeof SyntheticSpecialtyControlStateSchema>;
+
+/**
+ * An admin-only state signal for the isolated synthetic specialty rehearsal.
+ * It is intentionally not a BidEventEnvelope: specialty state has its own
+ * durable revision and must never consume or imitate the normal Bid event
+ * sequence. The control state gives a reconnecting client enough information
+ * to invalidate local UI state before it rehydrates the complete state through
+ * the separately guarded admin endpoint.
+ */
+export const SyntheticSpecialtyStateSignalSchema = z
+  .object({
+    v: z.literal(1),
+    type: z.literal('synthetic_specialty_state_changed'),
+    mode: z.literal('synthetic_test_only'),
+    does_not_commit_bid: z.literal(true),
+    bidSessionId: z.string().min(1).max(160),
+    revision: z.number().int().nonnegative(),
+    controlState: SyntheticSpecialtyControlStateSchema,
+  })
+  .strict();
+export type SyntheticSpecialtyStateSignal = z.infer<typeof SyntheticSpecialtyStateSignalSchema>;
+
 export const ResyncEventSchema = z.object({
   reason: z.enum(['version_skew', 'do_restart', 'seq_gap']),
   lastSeq: z.number().int().nonnegative(),

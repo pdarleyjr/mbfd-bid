@@ -8,23 +8,31 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, '../../../migrations');
 
 /** Wraps better-sqlite3 to look like a D1Database for Drizzle's D1 driver. */
-function makeD1Adapter(sqlite: Database.Database): D1Database {
-  return {
+interface TestD1Adapter {
+  readonly database: D1Database;
+  failNextBatchAt(statementIndex: number): void;
+}
+
+function makeD1Adapter(sqlite: Database.Database): TestD1Adapter {
+  const synchronousRuns = new WeakMap<object, () => D1Result>();
+  let nextBatchFailureAt: number | null = null;
+  const database = {
     prepare: (query: string) => {
       const stmt = sqlite.prepare(query);
       let boundArgs: unknown[] = [];
+      const runSynchronously = (): D1Result => {
+        const info = stmt.run(...boundArgs);
+        return {
+          success: true,
+          meta: { changes: info.changes, last_row_id: info.lastInsertRowid },
+        } as D1Result;
+      };
       const bound = {
         bind: (...args: unknown[]) => {
           boundArgs = args;
           return bound;
         },
-        run: async () => {
-          const info = stmt.run(...boundArgs);
-          return {
-            success: true,
-            meta: { changes: info.changes, last_row_id: info.lastInsertRowid },
-          };
-        },
+        run: async () => runSynchronously(),
         all: async () => {
           const results = stmt.all(...boundArgs) as Record<string, unknown>[];
           return { results, success: true, meta: {} };
@@ -38,17 +46,30 @@ function makeD1Adapter(sqlite: Database.Database): D1Database {
           return stmtRaw.raw().all(...boundArgs) as T[];
         },
       };
+      synchronousRuns.set(bound, runSynchronously);
       return bound;
     },
     batch: async (stmts: D1PreparedStatement[]) => {
-      // better-sqlite3 transactions can't return a Promise, so we run the
-      // statements sequentially in async land. Atomicity is best-effort
-      // for tests — production uses D1's native batch.
-      const results: unknown[] = [];
-      for (const s of stmts) {
-        results.push(await s.run());
-      }
-      return results as unknown as D1Result[];
+      // D1 executes a batch as one transaction. Keep the local harness just
+      // as strict: a later statement failure must roll back a receipt
+      // reservation and every domain write that preceded it. `run()` begins
+      // its better-sqlite3 work synchronously before returning its promise,
+      // Directly run the adapter's synchronous runners inside the transaction.
+      // Calling the public async `run()` here would turn a SQLite exception
+      // into a rejected promise after the transaction had already committed.
+      const results: D1Result[] = [];
+      const failureAt = nextBatchFailureAt;
+      nextBatchFailureAt = null;
+      sqlite.transaction(() => {
+        for (const [index, statement] of stmts.entries()) {
+          if (index === failureAt)
+            throw new Error(`injected D1 batch failure at statement ${index}`);
+          const run = synchronousRuns.get(statement as unknown as object);
+          if (run === undefined) throw new Error('test D1 batch received an unknown statement');
+          results.push(run());
+        }
+      })();
+      return results;
     },
     exec: async (q: string) => {
       sqlite.exec(q);
@@ -56,6 +77,15 @@ function makeD1Adapter(sqlite: Database.Database): D1Database {
     },
     dump: async () => new ArrayBuffer(0),
   } as unknown as D1Database;
+  return {
+    database,
+    failNextBatchAt(statementIndex) {
+      if (!Number.isSafeInteger(statementIndex) || statementIndex < 0) {
+        throw new Error('test D1 batch failure index must be a nonnegative integer');
+      }
+      nextBatchFailureAt = statementIndex;
+    },
+  };
 }
 
 /**
@@ -132,6 +162,8 @@ export interface TestD1 {
     run(sql: string, params?: readonly unknown[]): Promise<{ results: Record<string, unknown>[] }>;
   };
   sqlite: Database.Database;
+  /** Fails exactly one upcoming D1 batch before the indexed statement runs. */
+  failNextBatchAt(statementIndex: number): void;
 }
 
 export async function setupTestD1(): Promise<TestD1> {
@@ -148,12 +180,13 @@ export async function setupTestD1(): Promise<TestD1> {
   // status like 'live'), so wipe the seed rows here for test isolation.
   sqlite.exec('DELETE FROM bid_years;');
 
+  const d1 = makeD1Adapter(sqlite);
   const env: WorkerEnv = {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'b'.repeat(64),
     PORTAL_BID_READER: 'tok',
-    DB: makeD1Adapter(sqlite),
+    DB: d1.database,
     KV: {} as never,
     BID_SESSION: inactiveSpecialtyBidSessionNamespace(),
     // Plan 08 — audit + exports + portal bindings/secrets (test placeholders).
@@ -169,6 +202,7 @@ export async function setupTestD1(): Promise<TestD1> {
   return {
     env,
     sqlite,
+    failNextBatchAt: d1.failNextBatchAt,
     db: {
       async run(sql: string, params?: readonly unknown[]) {
         if (/^\s*select/i.test(sql)) {

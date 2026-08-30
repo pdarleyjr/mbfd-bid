@@ -1,6 +1,8 @@
 'use client';
 
-import { type FormEvent, useMemo, useState } from 'react';
+import type { SyntheticSpecialtyStateSignal } from '@mbfd/shared';
+import { type FormEvent, useCallback, useMemo, useRef, useState } from 'react';
+import { useBidWebSocket } from '../../bid/_hooks/useBidWebSocket';
 
 type RecordValue = Record<string, unknown>;
 type SpecialtyPhase =
@@ -185,9 +187,7 @@ function parseNormalTurn(value: unknown): SpecialtyNormalTurn | null | undefined
   const ordinal = asPositiveInteger(turn.ordinal);
   const queueCursor = asNonNegativeInteger(turn.queue_cursor);
   const mockControlRevision =
-    turn.mock_control_revision === null
-      ? null
-      : asNonNegativeInteger(turn.mock_control_revision);
+    turn.mock_control_revision === null ? null : asNonNegativeInteger(turn.mock_control_revision);
   if (bidderId === null || ordinal === null || queueCursor === null) return undefined;
   if (mockControlRevision === null && turn.mock_control_revision !== null) return undefined;
   return { bidderId, ordinal, queueCursor, mockControlRevision };
@@ -217,7 +217,8 @@ function parseStatus(value: unknown): SpecialtyStatus | null {
   }
   const state = parseState(response.state);
   const normalTurn = parseNormalTurn(response.normal_turn);
-  if (state === null || normalTurn === undefined || !Array.isArray(response.audit_receipts)) return null;
+  if (state === null || normalTurn === undefined || !Array.isArray(response.audit_receipts))
+    return null;
   const receipts = response.audit_receipts.map((receipt) => parseReceipt(receipt)).filter(Boolean);
   return {
     state,
@@ -407,7 +408,7 @@ function receiptTitle(receipt: SpecialtyReceipt): string {
  * and sends no live-Bid or portal command; every action is revisioned and
  * independently guarded by the Worker.
  */
-export function SpecialtyAdjudicationWorkspace() {
+export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | undefined }) {
   const [sessionId, setSessionId] = useState('');
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<SpecialtyStatus | null>(null);
@@ -450,8 +451,14 @@ export function SpecialtyAdjudicationWorkspace() {
   const [busy, setBusy] = useState<CommandOperation | 'inspect' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [socketControlState, setSocketControlState] = useState<
+    SyntheticSpecialtyStateSignal['controlState'] | null
+  >(null);
+  const sessionIdRef = useRef('');
+  const lastRehydratedSignalRef = useRef<string | null>(null);
 
   const trimmedSessionId = sessionId.trim();
+  sessionIdRef.current = trimmedSessionId;
   const state = status?.state ?? null;
   const active = state?.active ?? null;
   const stateLoaded = state !== null && loadedSessionId === trimmedSessionId;
@@ -464,6 +471,61 @@ export function SpecialtyAdjudicationWorkspace() {
     [candidateRowsText],
   );
 
+  const rehydrateFromSyntheticSpecialtySignal = useCallback(
+    (signal: SyntheticSpecialtyStateSignal) => {
+      // The frame itself carries only a sanitized invalidation summary. The
+      // guarded admin GET below remains the source for commandable state,
+      // receipts, and all UI rendering after disconnect/reconnect.
+      if (signal.bidSessionId !== sessionIdRef.current) return;
+      setSocketControlState(signal.controlState);
+      const signalKey = `${signal.bidSessionId}:${signal.revision}`;
+      if (lastRehydratedSignalRef.current === signalKey) return;
+      lastRehydratedSignalRef.current = signalKey;
+      void (async () => {
+        try {
+          const response = await fetch(
+            `/api/admin/bid-session/${encodeURIComponent(signal.bidSessionId)}/specialty-adjudication`,
+            { credentials: 'include', cache: 'no-store' },
+          );
+          const body: unknown = await response.json().catch(() => null);
+          if (signal.bidSessionId !== sessionIdRef.current) return;
+          if (!response.ok) {
+            setError(workerError(body, `Live specialty rehydration failed (${response.status}).`));
+            return;
+          }
+          const nextStatus = parseStatus(body);
+          if (nextStatus === null) {
+            setError('Live specialty rehydration returned an incomplete synthetic state.');
+            return;
+          }
+          setStatus(nextStatus);
+          setReceipts(nextStatus.receipts);
+          setLoadedSessionId(signal.bidSessionId);
+          setNotice(
+            'Live synthetic specialty state rehydrated through the guarded Worker read. It remains separate from canonical Bid state.',
+          );
+        } catch (caught) {
+          if (signal.bidSessionId !== sessionIdRef.current) return;
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : 'Live specialty rehydration could not be reached.',
+          );
+        }
+      })();
+    },
+    [],
+  );
+  const { status: specialtySocketStatus } = useBidWebSocket(null, {
+    bidSessionId: trimmedSessionId,
+    wsBase,
+    // This isolated surface must not silently fall back to the Pages origin:
+    // its websocket endpoint belongs to the Worker and is enabled only when
+    // the server supplied that explicit Worker base.
+    enabled: stateLoaded && typeof wsBase === 'string' && wsBase.length > 0,
+    onSyntheticSpecialtyState: rehydrateFromSyntheticSpecialtySignal,
+  });
+
   function clearLoadedState() {
     setLoadedSessionId(null);
     setStatus(null);
@@ -472,6 +534,8 @@ export function SpecialtyAdjudicationWorkspace() {
     setNotice(null);
     setCommandIds({});
     setBeginRequestId(null);
+    setSocketControlState(null);
+    lastRehydratedSignalRef.current = null;
   }
 
   function resetBeginKey() {
@@ -878,6 +942,19 @@ export function SpecialtyAdjudicationWorkspace() {
           className="rounded border border-sky-800 bg-sky-950/30 px-4 py-3 text-sm text-sky-100"
         >
           {notice}
+        </p>
+      )}
+      {stateLoaded && socketControlState !== null && (
+        <p
+          data-testid="specialty-live-control-state"
+          aria-live="polite"
+          className="rounded border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-200"
+        >
+          Live synthetic control signal: transport {specialtySocketStatus}; specialty revision{' '}
+          {state?.revision ?? socketControlState.rehearsalRevision ?? 'unknown'}; normal bidder{' '}
+          {socketControlState.normalBidderSuspended ? 'suspended' : 'not suspended'}; next action{' '}
+          {socketControlState.specialty.allowedNextAction.replaceAll('_', ' ')}. The complete state
+          is rehydrated through the guarded Worker read, not retained only in this page.
         </p>
       )}
 

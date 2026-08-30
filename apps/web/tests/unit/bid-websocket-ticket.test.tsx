@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { SyntheticSpecialtyStateSignal } from '@mbfd/shared';
 import { act, useMemo } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -44,7 +45,11 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
   configurable: true,
 });
 
-function Harness() {
+function Harness({
+  onSyntheticSpecialtyState,
+}: {
+  onSyntheticSpecialtyState?: (signal: SyntheticSpecialtyStateSignal) => void;
+}) {
   const store = useMemo(
     () => createBidStore({ bidSessionId: 'session-1', initialSeq: 9, meMemberId: 7 }),
     [],
@@ -52,9 +57,48 @@ function Harness() {
   const { status } = useBidWebSocket(store, {
     bidSessionId: 'session-1',
     wsBase: 'https://api.staging.bid.mbfdhub.com',
+    onSyntheticSpecialtyState,
   });
   return <output data-testid="status">{status}</output>;
 }
+
+const completeSyntheticSpecialtyStateSignal = {
+  v: 1,
+  type: 'synthetic_specialty_state_changed',
+  mode: 'synthetic_test_only',
+  does_not_commit_bid: true,
+  bidSessionId: 'session-1',
+  revision: 4,
+  controlState: {
+    rehearsalRevision: 9,
+    normalTurn: {
+      turnId: 'mock-normal:session-1:9:1:0:17',
+      bidderId: 17,
+      ordinal: 1,
+      queueCursor: 0,
+      mockControlRevision: 9,
+    },
+    normalBidderSuspended: true,
+    specialty: {
+      active: true,
+      requestId: 'synthetic-request-1',
+      positionId: 'A101',
+      phase: 'resolving_higher_priority_candidates',
+      originalTurn: {
+        turnId: 'mock-normal:session-1:9:1:0:17',
+        bidderId: 17,
+        ordinal: 1,
+        queueCursor: 0,
+        mockControlRevision: 9,
+      },
+      candidateQueue: [{ memberId: 11, priorityRank: 1 }],
+      candidateCursor: 0,
+      resolvedCandidateCount: 0,
+      resolution: null,
+      allowedNextAction: 'resolve_candidate',
+    },
+  },
+} satisfies SyntheticSpecialtyStateSignal;
 
 async function settle() {
   await act(async () => {
@@ -111,5 +155,29 @@ describe('useBidWebSocket ticket protocol', () => {
       socket?.open();
     });
     expect(socket?.sent).toEqual([JSON.stringify({ type: 'hello', lastSeq: 9 })]);
+  });
+
+  it('delivers a complete synthetic specialty state signal to the caller without treating it as a normal Bid event', async () => {
+    const onSyntheticSpecialtyState = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    act(() => {
+      root.render(<Harness onSyntheticSpecialtyState={onSyntheticSpecialtyState} />);
+    });
+    await settle();
+
+    const socket = FakeWebSocket.instances[0];
+    expect(socket).toBeDefined();
+
+    await act(async () => {
+      socket?.onmessage?.({
+        data: JSON.stringify(completeSyntheticSpecialtyStateSignal),
+      } as MessageEvent);
+    });
+
+    expect(onSyntheticSpecialtyState).toHaveBeenCalledTimes(1);
+    expect(onSyntheticSpecialtyState).toHaveBeenCalledWith(completeSyntheticSpecialtyStateSignal);
   });
 });

@@ -23,6 +23,7 @@ interface SessionRowRaw {
   bidYear: number;
   currentPhase: string;
   currentBidderId: number | null;
+  mockControlRevision: number | null;
   isMock: boolean;
   lastPickedAtIso: string | null;
 }
@@ -59,6 +60,7 @@ export default async function RehearsalDashboardPage(): Promise<ReactElement> {
     bidYear: s.bidYear,
     currentPhase: s.currentPhase,
     currentBidderId: s.currentBidderId,
+    mockControlRevision: s.mockControlRevision,
     isMock: s.isMock,
     lastPickedAtIso: s.lastPickedAtIso,
   }));

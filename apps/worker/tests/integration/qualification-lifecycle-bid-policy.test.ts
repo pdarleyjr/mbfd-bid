@@ -5,12 +5,104 @@ import {
   loadFrozenSessionBidPolicy,
   prepareBidSessionPolicySnapshot,
 } from '../../src/lib/bid-policy.js';
+import { signJwt } from '../../src/lib/jwt.js';
+import { SPECIALTY_TEST_POLICY_LABEL } from '../../src/lib/specialty-test-policy.js';
+import specialtyAdjudication from '../../src/routes/admin/specialty-adjudication.js';
+import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const CAPTURED_BEFORE_EXPIRY = Date.UTC(2026, 8, 1, 12, 0, 0);
 const CAPTURED_AFTER_EXPIRY = Date.UTC(2026, 9, 2, 12, 0, 0);
 const CAPTURED_AFTER_LEGACY_EXPIRY = Date.UTC(2027, 0, 2, 12, 0, 0);
 const SESSION_ID = '01HZZ0000000000000QUALPOL';
+const ROUTE_SESSION_ID = '01HZZ0000000000000QUALRT';
+const JWT_KEY = 's'.repeat(64);
+
+type SpecialtyDurableCall = { path: string; method: string; body: unknown };
+
+function stubSpecialtyBidSessionNamespace(calls: SpecialtyDurableCall[]): WorkerEnv['BID_SESSION'] {
+  const stub = {
+    fetch: async (input: Request | string, init?: RequestInit) => {
+      const request = typeof input === 'string' ? new Request(input, init) : input;
+      const body = request.method === 'GET' ? null : await request.json();
+      calls.push({ path: new URL(request.url).pathname, method: request.method, body });
+      return new Response(
+        JSON.stringify({
+          mode: 'synthetic_test_only',
+          kind: 'accepted',
+          idempotent_replay: false,
+          result: { kind: 'suspended', state: { revision: 1 }, events: [] },
+          audit_receipt: {
+            origin: 'synthetic_specialty_test',
+            actor_type: 'admin',
+            actor_id: 0,
+          },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      );
+    },
+  };
+  return {
+    idFromName: (name: string) => ({ toString: () => name }) as unknown as DurableObjectId,
+    get: () => stub as unknown as DurableObjectStub,
+    idFromString: () => ({ toString: () => 'synthetic-specialty-do' }) as DurableObjectId,
+    newUniqueId: () => ({ toString: () => 'synthetic-specialty-do' }) as DurableObjectId,
+  } as unknown as WorkerEnv['BID_SESSION'];
+}
+
+function syntheticSpecialtyRoutePolicy() {
+  return {
+    source: 'synthetic',
+    policy_reference: 'synthetic-lifecycle-freeze-route-v1',
+    test_policy: {
+      policy_label: SPECIALTY_TEST_POLICY_LABEL,
+      policy_version: 'synthetic-lifecycle-freeze-route-v1',
+      specialty_pool: {
+        id: 'SYNTHETIC_MARINE_POOL',
+        label: 'Synthetic marine specialty rehearsal pool',
+      },
+      qualification_requirements: {
+        v: 1,
+        credential_names: ['Synthetic EMT'],
+        specialty_codes: ['SYNTHETIC_MARINE'],
+      },
+      ranking: {
+        source: 'EXPLICIT_TEST_PRIORITY',
+        reference: 'synthetic-lifecycle-freeze-priority-v1',
+      },
+      scoring: { source: 'EXPLICIT_TEST_PRIORITY', direction: 'LOWER_SCORE_WINS' },
+      tie_break_chain: ['rsc_seniority', 'rank_seniority', 'member_id'],
+      normal_bid_interruption: 'SUSPEND_EXACT_NORMAL_TURN',
+      candidate_outcomes: ['award', 'declined'],
+      original_bidder_resume: 'RESUME_EXACT_ORIGINAL_TURN',
+    },
+    candidate_release_policy: {
+      status: 'configured',
+      on_release: 'continue_to_next_higher_priority',
+    },
+    candidates: [
+      { member_id: 1, explicit_priority: 1 },
+      { member_id: 2, explicit_priority: 2 },
+      { member_id: 4, explicit_priority: 3 },
+    ],
+  };
+}
+
+async function freshAdminAuthorization(): Promise<string> {
+  const token = await signJwt(
+    {
+      sub: 0,
+      emp: 'synthetic-admin',
+      role: 'admin',
+      rank: 'CHIEF',
+      first_name: 'Synthetic',
+      last_name: 'Admin',
+      fresh_auth_at: Math.floor(Date.now() / 1000),
+    },
+    JWT_KEY,
+  );
+  return `Bearer ${token}`;
+}
 
 async function seedPolicy(h: TestD1): Promise<void> {
   await h.db.run(
@@ -239,6 +331,139 @@ describe('qualification evidence in frozen Bid policy', () => {
             expect.objectContaining({ specialtyCode: 'SYNTHETIC_RESCUE', status: 'expired' }),
           ],
         }),
+      ]),
+    );
+  });
+
+  it('forwards lifecycle-derived specialty eligibility from a generated frozen V3 snapshot after a later ledger mutation', async () => {
+    const db = getDb(h.env.DB);
+    const generated = await prepareBidSessionPolicySnapshot(
+      db,
+      2026,
+      CAPTURED_BEFORE_EXPIRY,
+      'live',
+    );
+    expect(generated).toMatchObject({ ok: true });
+    if (!generated.ok || generated.snapshot.v !== 3) return;
+
+    expect(generated.snapshot.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: 1,
+          credentialNames: ['Synthetic EMT'],
+          specialtyQualifications: expect.arrayContaining([
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_MARINE', status: 'active' }),
+          ]),
+        }),
+      ]),
+    );
+
+    await h.db.run(
+      `INSERT INTO bid_sessions
+         (id, bid_year, started_at, current_phase, current_bidder_id, turn_timer_seconds,
+          expected_duration_days, day_count, is_mock)
+       VALUES (?, 2026, ?, 'position_bid', 1, 180, 2, 0, 1);`,
+      [ROUTE_SESSION_ID, CAPTURED_BEFORE_EXPIRY],
+    );
+    await h.db.run(
+      `INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool)
+       VALUES (?, 1, 1, 'FF'), (?, 2, 2, 'FF'), (?, 3, 4, 'FF');`,
+      [ROUTE_SESSION_ID, ROUTE_SESSION_ID, ROUTE_SESSION_ID],
+    );
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots
+         (bid_session_id, rule_book_version, position_template_version, rule_book_revision,
+          snapshot_json, captured_at)
+       VALUES (?, 'qualification.v1', 'qualification.v1', 0, ?, ?);`,
+      [ROUTE_SESSION_ID, JSON.stringify(generated.snapshot), CAPTURED_BEFORE_EXPIRY],
+    );
+
+    // This is an immutable, later-appended lifecycle fact that would make a
+    // new snapshot treat the marine qualification as revoked. It must not
+    // rewrite the already persisted session snapshot used by the route.
+    await h.db.run(
+      `INSERT INTO member_qualification_events
+         (id, member_id, credential_id, specialty_code, specialty_terminal_status, kind,
+          effective_on, expires_on, evidence_source, evidence_reference, reason, actor_subject,
+          idempotency_key, before_state, after_state, created_at)
+       VALUES ('specialty-revoke-after-route-freeze', 1, NULL, 'SYNTHETIC_MARINE', 'REVOKED',
+         'SPECIALTY_QUALIFIED', '2026-08-15', NULL, 'synthetic-specialty-registry',
+         'SYNTH-MARINE-REVOKE-AFTER-FREEZE', 'Synthetic later-appended revocation.', '0',
+         'specialty-revoke-after-route-freeze', '{}', '{}', ?);`,
+      [CAPTURED_BEFORE_EXPIRY + 1],
+    );
+
+    const newlyGenerated = await prepareBidSessionPolicySnapshot(
+      db,
+      2026,
+      CAPTURED_BEFORE_EXPIRY + 1,
+      'live',
+    );
+    expect(newlyGenerated).toMatchObject({ ok: true });
+    if (!newlyGenerated.ok || newlyGenerated.snapshot.v !== 3) return;
+    expect(newlyGenerated.snapshot.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: 1,
+          specialtyQualifications: expect.arrayContaining([
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_MARINE', status: 'revoked' }),
+          ]),
+        }),
+      ]),
+    );
+
+    const frozenAfterMutation = await loadFrozenSessionBidPolicy(db, ROUTE_SESSION_ID);
+    expect(frozenAfterMutation).toMatchObject({ ok: true });
+    if (!frozenAfterMutation.ok || frozenAfterMutation.snapshot.v !== 3) return;
+    expect(frozenAfterMutation.snapshot.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: 1,
+          specialtyQualifications: expect.arrayContaining([
+            expect.objectContaining({ specialtyCode: 'SYNTHETIC_MARINE', status: 'active' }),
+          ]),
+        }),
+      ]),
+    );
+
+    const calls: SpecialtyDurableCall[] = [];
+    const response = await specialtyAdjudication.fetch(
+      new Request(`http://x/${ROUTE_SESSION_ID}/specialty-adjudication/requests`, {
+        method: 'POST',
+        headers: {
+          Authorization: await freshAdminAuthorization(),
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'specialty-lifecycle-freeze-route-command-1',
+        },
+        body: JSON.stringify({
+          command_id: 'specialty-lifecycle-freeze-route-command-1',
+          expected_revision: 0,
+          expected_normal_control_revision: 0,
+          request_id: 'specialty-lifecycle-freeze-route-request-1',
+          position_id: 'A101',
+          policy: syntheticSpecialtyRoutePolicy(),
+          reason: 'Verify that the synthetic route uses frozen lifecycle facts.',
+        }),
+      }),
+      {
+        ...h.env,
+        JWT_SIGNING_KEY: JWT_KEY,
+        BID_SESSION: stubSpecialtyBidSessionNamespace(calls),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    const forwarded = calls.at(0)?.body as {
+      command?: { policy?: { candidates?: unknown[] } };
+    };
+    expect(forwarded.command?.policy?.candidates).toEqual(
+      expect.arrayContaining([
+        {
+          memberId: 1,
+          priorityRank: 0,
+          generalEligibility: { status: 'eligible' },
+          specialtyEligibility: { status: 'eligible' },
+        },
       ]),
     );
   });

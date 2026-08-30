@@ -123,7 +123,7 @@ describe('POST /api/admin/bid-session', () => {
       `UPDATE bid_years
           SET rule_book_version = '2026.1',
               position_template_version = '2026.1',
-              config_json = '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}',
+              config_json = '{"v":2,"expectedDurationDays":2,"turnTimerSeconds":180,"credentialEvaluationOn":"2026-01-15"}',
               configuration_revision = 1
         WHERE year = 2026;`,
     );

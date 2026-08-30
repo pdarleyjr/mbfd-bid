@@ -11,6 +11,7 @@ import {
 import { BidSessionDO } from '../../src/durable/bid-session.js';
 import { SPECIALTY_TEST_POLICY_LABEL } from '../../src/lib/specialty-test-policy.js';
 import type { WorkerEnv } from '../../src/types/env.js';
+import { setupTestD1 } from '../integration/helpers/test-d1.js';
 
 const SESSION_ID = '01HZZ0000000000000SPECIALTYDO';
 
@@ -65,6 +66,19 @@ function fakeState(storage: MemoryDurableStorage): DurableObjectState {
     blockConcurrencyWhile: async <T>(closure: () => Promise<T>) => closure(),
     waitUntil: () => undefined,
   } as unknown as DurableObjectState;
+}
+
+async function normalSessionEnv(): Promise<WorkerEnv> {
+  const harness = await setupTestD1();
+  await harness.db.run("INSERT INTO bid_years (year, status) VALUES (2099, 'configuring')");
+  await harness.db.run(
+    `INSERT INTO bid_sessions
+       (id, bid_year, started_at, current_phase, current_bidder_id, turn_timer_seconds,
+        expected_duration_days, day_count, is_mock, mock_control_revision)
+     VALUES (?, 2099, 1, 'position_bid', 17, 180, 2, 0, 0, 0)`,
+    [SESSION_ID],
+  );
+  return harness.env;
 }
 
 function syntheticPolicy() {
@@ -139,6 +153,7 @@ describe('BidSessionDO synthetic specialty transport', () => {
       command: {
         commandId: 'specialty-canonical-fingerprint-1',
         expectedRevision: 0,
+        expectedNormalControlRevision: 0,
         requestId: 'specialty-canonical-request-1',
         positionId: 'A101',
         policy: syntheticPolicy(),
@@ -153,11 +168,13 @@ describe('BidSessionDO synthetic specialty transport', () => {
   it('atomically persists a revisioned synthetic interruption receipt and returns the exact normal turn after reconnect', async () => {
     const storage = new MemoryDurableStorage();
     await storage.put(bidSessionStateStorageKey(SESSION_ID), initialNormalState());
-    const subject = new BidSessionDO(fakeState(storage), {} as WorkerEnv);
+    const env = await normalSessionEnv();
+    const subject = new BidSessionDO(fakeState(storage), env);
     const beginPayload = {
       command: {
         commandId: 'specialty-begin-1',
         expectedRevision: 0,
+        expectedNormalControlRevision: 0,
         requestId: 'specialty-request-1',
         positionId: 'A101',
         policy: syntheticPolicy(),
@@ -218,7 +235,7 @@ describe('BidSessionDO synthetic specialty transport', () => {
 
     // A fresh DO instance represents reconnect/eviction. It sees the durable
     // interruption state and receipt rather than re-evaluating the policy.
-    const reconnected = new BidSessionDO(fakeState(storage), {} as WorkerEnv);
+    const reconnected = new BidSessionDO(fakeState(storage), env);
     const status = await reconnected.fetch(new Request('https://do/admin/specialty-adjudication'));
     expect(status.status).toBe(200);
     await expect(json(status)).resolves.toMatchObject({
@@ -308,11 +325,12 @@ describe('BidSessionDO synthetic specialty transport', () => {
   it('replays only an identical specialty operation, command payload, and audit record', async () => {
     const storage = new MemoryDurableStorage();
     await storage.put(bidSessionStateStorageKey(SESSION_ID), initialNormalState());
-    const subject = new BidSessionDO(fakeState(storage), {} as WorkerEnv);
+    const subject = new BidSessionDO(fakeState(storage), await normalSessionEnv());
     const beginPayload = {
       command: {
         commandId: 'specialty-fingerprint-payload-1',
         expectedRevision: 0,
+        expectedNormalControlRevision: 0,
         requestId: 'specialty-fingerprint-request-1',
         positionId: 'A101',
         policy: syntheticPolicy(),
@@ -375,12 +393,13 @@ describe('BidSessionDO synthetic specialty transport', () => {
   it('rejects cross-operation specialty command ID reuse without mutating state', async () => {
     const storage = new MemoryDurableStorage();
     await storage.put(bidSessionStateStorageKey(SESSION_ID), initialNormalState());
-    const subject = new BidSessionDO(fakeState(storage), {} as WorkerEnv);
+    const subject = new BidSessionDO(fakeState(storage), await normalSessionEnv());
     const commandId = 'specialty-fingerprint-cross-operation-1';
     const beginPayload = {
       command: {
         commandId,
         expectedRevision: 0,
+        expectedNormalControlRevision: 0,
         requestId: 'specialty-fingerprint-cross-operation-request-1',
         positionId: 'A101',
         policy: syntheticPolicy(),
@@ -437,7 +456,7 @@ describe('BidSessionDO synthetic specialty transport', () => {
       commandId,
       operation: 'begin',
     });
-    const subject = new BidSessionDO(fakeState(storage), {} as WorkerEnv);
+    const subject = new BidSessionDO(fakeState(storage), await normalSessionEnv());
     const rejected = await subject.fetch(
       new Request('https://do/admin/specialty-adjudication/begin', {
         method: 'POST',
@@ -446,6 +465,7 @@ describe('BidSessionDO synthetic specialty transport', () => {
           command: {
             commandId,
             expectedRevision: 0,
+            expectedNormalControlRevision: 0,
             requestId: 'specialty-historical-request-1',
             positionId: 'A101',
             policy: syntheticPolicy(),

@@ -495,9 +495,11 @@ describe('annual bid configuration selection', () => {
 
     const firstPick = await adminRequest(h, `/api/admin/rehearsal/${firstId}/manual-pick`, {
       method: 'POST',
+      headers: { 'Idempotency-Key': '11111111-1111-4111-8111-111111111111' },
       body: JSON.stringify({
         member_id: 701,
         position_id: 'A101',
+        expected_mock_control_revision: 1,
         reason: 'Synthetic revision-one mock pick.',
       }),
     });
@@ -570,9 +572,11 @@ describe('annual bid configuration selection', () => {
     // than merely a provenance label.
     const secondPick = await adminRequest(h, `/api/admin/rehearsal/${secondId}/manual-pick`, {
       method: 'POST',
+      headers: { 'Idempotency-Key': '22222222-2222-4222-8222-222222222222' },
       body: JSON.stringify({
         member_id: 701,
         position_id: 'A101',
+        expected_mock_control_revision: 1,
         reason: 'Synthetic revision-two mock pick.',
       }),
     });

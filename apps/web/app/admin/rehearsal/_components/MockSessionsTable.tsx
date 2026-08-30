@@ -16,6 +16,8 @@ export interface MockSessionRow {
   bidYear: number;
   currentPhase: string;
   currentBidderId: number | null;
+  /** D1-backed mock-only command revision; never a canonical DO sequence. */
+  mockControlRevision: number | null;
   isMock: boolean;
   lastPickedAtIso: string | null;
 }
@@ -81,7 +83,12 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
                     Open mock board
                   </Link>
                   <ResetMockButton sessionId={s.id} />
-                  <AutoBidButton sessionId={s.id} strategy="first_eligible" count={10} />
+                  <AutoBidButton
+                    sessionId={s.id}
+                    strategy="first_eligible"
+                    count={10}
+                    mockControlRevision={s.mockControlRevision}
+                  />
                   <VerifyAuditButton sessionId={s.id} />
                 </div>
               </td>

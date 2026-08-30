@@ -107,6 +107,22 @@ router.post(
     const now = new Date();
 
     const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      const current = await db
+        .select()
+        .from(bidSessions)
+        .where(eq(bidSessions.id, sessionId))
+        .get();
+      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
+      if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+      if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+      }
+      if (!isBidCommandPhase(current.currentPhase)) {
+        return c.json(
+          { error: 'bid_session_not_active', current_phase: current.currentPhase },
+          409,
+        );
+      }
       // A different request can have acquired and released the permit after
       // the fast-path read above. Recheck while holding this permit so a
       // duplicate request is a replay rather than a D1 unique-key failure.
@@ -202,6 +218,12 @@ router.post('/:id/skip', requireStepUpAuth(), zValidator('json', SkipSchema), as
 
   const claims = c.get('claims');
   const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+    const current = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
     await writeAuditLog(db, {
       bidSessionId: sessionId,
       actorType: 'admin',
@@ -284,6 +306,22 @@ router.post(
     const bidId = ulid();
 
     const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      const current = await db
+        .select()
+        .from(bidSessions)
+        .where(eq(bidSessions.id, sessionId))
+        .get();
+      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
+      if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+      if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+      }
+      if (!isBidCommandPhase(current.currentPhase)) {
+        return c.json(
+          { error: 'bid_session_not_active', current_phase: current.currentPhase },
+          409,
+        );
+      }
       // Recheck after the permit is acquired. A concurrent same-key request
       // may have committed between the optimistic fast-path lookup and this
       // serialized D1 write.
@@ -381,9 +419,25 @@ router.post(
     }
 
     const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      const current = await db
+        .select()
+        .from(bidSessions)
+        .where(eq(bidSessions.id, sessionId))
+        .get();
+      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
+      if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+      if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+      }
+      if (current.currentPhase !== 'config') {
+        return c.json(
+          { error: 'locks_only_in_config_phase', current_phase: current.currentPhase },
+          409,
+        );
+      }
       const cfg: { position_locks?: { position_id: string; member_id: number }[] } =
-        session.configJson !== null && session.configJson !== ''
-          ? JSON.parse(session.configJson)
+        current.configJson !== null && current.configJson !== ''
+          ? JSON.parse(current.configJson)
           : {};
       cfg.position_locks = Array.isArray(cfg.position_locks) ? cfg.position_locks : [];
       const conflict = cfg.position_locks.find((l) => l.position_id === body.position_id);

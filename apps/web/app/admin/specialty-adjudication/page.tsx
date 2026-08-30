@@ -1,4 +1,5 @@
 import { requireAdmin } from '@/lib/require-admin';
+import { getWorkerBase } from '@/lib/worker-base';
 
 import { SpecialtyAdjudicationWorkspace } from './SpecialtyAdjudicationWorkspace';
 
@@ -10,5 +11,5 @@ export const dynamic = 'force-dynamic';
  */
 export default async function SpecialtyAdjudicationPage() {
   await requireAdmin();
-  return <SpecialtyAdjudicationWorkspace />;
+  return <SpecialtyAdjudicationWorkspace wsBase={getWorkerBase()} />;
 }

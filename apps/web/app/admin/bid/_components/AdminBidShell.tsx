@@ -31,8 +31,10 @@ interface Props {
   /** Immutable material returned by /api/board for this exact session. */
   positions?: readonly PositionMeta[] | undefined;
   wsBase: string;
-  /** Drives which manual-pick endpoint the UI calls (mock → no step-up). */
+  /** Drives which manual-pick endpoint the UI calls; mock commands still require fresh admin auth. */
   isMock: boolean;
+  /** D1 mock-control revision passed to the mock-only manual command. */
+  mockControlRevision: number | null;
 }
 
 /**
@@ -41,7 +43,11 @@ interface Props {
  */
 export function AdminBidShell(props: Props) {
   return (
-    <ManualPickProvider bidSessionId={props.bidSessionId} isMock={props.isMock}>
+    <ManualPickProvider
+      bidSessionId={props.bidSessionId}
+      isMock={props.isMock}
+      mockControlRevision={props.mockControlRevision}
+    >
       <div className="flex h-full min-h-[calc(100vh-57px)] flex-col">
         <LiveCommandBar
           bidSessionId={props.bidSessionId}

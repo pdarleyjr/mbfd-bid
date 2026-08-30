@@ -32,6 +32,13 @@ function stubBidSessionNamespace(calls: DoFetchCall[]): WorkerEnv['BID_SESSION']
   const stub = {
     fetch: async (input: Request | string, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.url;
+      const pathname = new URL(url).pathname;
+      if (pathname === '/admin/normal-mutation-lease/acquire') {
+        return new Response(JSON.stringify({ ok: true, lease_id: 'test-lease' }), { status: 200 });
+      }
+      if (pathname === '/admin/normal-mutation-lease/release') {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
       const bodyText =
         typeof input === 'string'
           ? typeof init?.body === 'string'
@@ -39,7 +46,7 @@ function stubBidSessionNamespace(calls: DoFetchCall[]): WorkerEnv['BID_SESSION']
             : ''
           : await input.clone().text();
       calls.push({
-        pathname: new URL(url).pathname,
+        pathname,
         method: typeof input === 'string' ? (init?.method ?? 'GET') : input.method,
         body: bodyText === '' ? null : JSON.parse(bodyText),
       });

@@ -1,5 +1,10 @@
 'use client';
-import { type BidEventEnvelope, BidEventEnvelopeSchema } from '@mbfd/shared';
+import {
+  type BidEventEnvelope,
+  BidEventEnvelopeSchema,
+  type SyntheticSpecialtyStateSignal,
+  SyntheticSpecialtyStateSignalSchema,
+} from '@mbfd/shared';
 import { useEffect, useRef, useState } from 'react';
 import type { StoreApi } from 'zustand';
 import type { BidStoreState } from './useBidStore';
@@ -47,8 +52,13 @@ async function requestWebSocketTicket(bidSessionId: string): Promise<string> {
 }
 
 export function useBidWebSocket(
-  store: StoreApi<BidStoreState>,
-  opts: { bidSessionId: string; wsBase?: string | undefined },
+  store: StoreApi<BidStoreState> | null,
+  opts: {
+    bidSessionId: string;
+    wsBase?: string | undefined;
+    enabled?: boolean | undefined;
+    onSyntheticSpecialtyState?: ((signal: SyntheticSpecialtyStateSignal) => void) | undefined;
+  },
 ): { status: BidWebSocketStatus; send: (data: object) => boolean } {
   const [status, setStatus] = useState<BidWebSocketStatus>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
@@ -57,6 +67,21 @@ export function useBidWebSocket(
   useEffect(() => {
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // The specialty workspace can use the same authenticated transport without
+    // a normal Bid store. Tests and server-like renderers may not provide a
+    // browser WebSocket implementation, which is a closed transport state—not
+    // a reason to issue a ticket request or begin reconnect retries.
+    if (
+      opts.enabled === false ||
+      opts.bidSessionId.trim().length === 0 ||
+      typeof WebSocket === 'undefined'
+    ) {
+      setStatus('closed');
+      return () => {
+        cancelled = true;
+      };
+    }
 
     function scheduleReconnect() {
       if (cancelled) return;
@@ -89,17 +114,23 @@ export function useBidWebSocket(
         ws.send(
           JSON.stringify({
             type: 'hello',
-            lastSeq: store.getState().lastSeq,
+            lastSeq: store?.getState().lastSeq ?? 0,
           }),
         );
       };
       ws.onmessage = (ev) => {
         try {
           const raw = JSON.parse(String(ev.data));
-          const parsed = BidEventEnvelopeSchema.safeParse(raw);
-          if (!parsed.success) return;
-          const envelope = parsed.data as BidEventEnvelope;
-          store.getState().applyEvent(envelope);
+          const bidEnvelope = BidEventEnvelopeSchema.safeParse(raw);
+          if (bidEnvelope.success) {
+            const envelope = bidEnvelope.data as BidEventEnvelope;
+            store?.getState().applyEvent(envelope);
+            return;
+          }
+          const specialtySignal = SyntheticSpecialtyStateSignalSchema.safeParse(raw);
+          if (specialtySignal.success && specialtySignal.data.bidSessionId === opts.bidSessionId) {
+            opts.onSyntheticSpecialtyState?.(specialtySignal.data);
+          }
         } catch {
           // ignore malformed frames
         }
@@ -117,7 +148,7 @@ export function useBidWebSocket(
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [opts.bidSessionId, opts.wsBase, store]);
+  }, [opts.bidSessionId, opts.enabled, opts.onSyntheticSpecialtyState, opts.wsBase, store]);
 
   return {
     status,

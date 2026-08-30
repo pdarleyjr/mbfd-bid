@@ -240,7 +240,7 @@ describe('POST /api/admin/bid-session/:id/force-pick', () => {
     );
 
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: 'canonical_mutation_requires_command' });
+    expect(await res.json()).toMatchObject({ error: 'mock_rehearsal_control_required' });
     expect(
       (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
         .results,

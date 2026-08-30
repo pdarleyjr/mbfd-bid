@@ -121,6 +121,23 @@ describe('qualification lifecycle ledger replacement guard (migration 0034)', ()
     expect(migration).not.toMatch(/DROP\s+TABLE|CREATE\s+TABLE\s+member_qualification_events/i);
   });
 
+  it('does not block ordinary member updates while protecting only qualification evidence', () => {
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    applyMigrationsThrough(sqlite, '0034_qualification_ledger_replace_guard.sql');
+    seedMember(sqlite);
+
+    expect(() =>
+      sqlite.prepare("UPDATE members SET last_name = 'Updated', updated_at = 2 WHERE id = 1").run(),
+    ).not.toThrow();
+    expect(sqlite.prepare('SELECT last_name, updated_at FROM members WHERE id = 1').get()).toEqual({
+      last_name: 'Updated',
+      updated_at: 2,
+    });
+
+    sqlite.close();
+  });
+
   it('rejects REPLACE collisions before deletion with recursive triggers disabled across the full chain', () => {
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');

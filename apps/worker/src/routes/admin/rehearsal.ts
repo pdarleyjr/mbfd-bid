@@ -12,26 +12,28 @@
 
 import { zValidator } from '@hono/zod-validator';
 import { evaluateEligibility } from '@mbfd/eligibility';
+import { type JwtPayload, MockFreezeCommandSchema, MockFreezeRequestSchema } from '@mbfd/shared';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
-import { type JwtPayload, MockFreezeCommandSchema, MockFreezeRequestSchema } from '@mbfd/shared';
-import { and, asc, desc, eq, notExists, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, notExists, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
+import { type JsonValue, canonicalize } from '../../audit/canonical-json.js';
 import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import type { DB } from '../../db/index.js';
 import {
   aDayPicks,
+  auditLog,
   bidOrder,
   bidSessions,
   bids,
   canonicalBidSessionState,
   mockRehearsalCommandReceipts,
+  mockRehearsalCommandRecoveryOutcomes,
   rehearsalFindings,
 } from '../../db/schema.js';
-import { canonicalize, type JsonValue } from '../../audit/canonical-json.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import {
@@ -208,17 +210,53 @@ router.post(
       reason: body.reason,
     });
 
-    const doId = c.env.BID_SESSION.idFromName(sessionId);
-    const stub = c.env.BID_SESSION.get(doId);
-    const response = await stub.fetch('https://do/admin/commands/mock-freeze', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(command),
+    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      // The request that created canonical state can win the lease after the
+      // optimistic preflight above. Re-read the D1 boundary while holding the
+      // same permit used by legacy normal-path writers.
+      const current = await db
+        .select()
+        .from(bidSessions)
+        .where(eq(bidSessions.id, sessionId))
+        .get();
+      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
+      if (!current.isMock) return c.json({ error: 'not_a_mock_session' }, 403);
+
+      if (!(await hasCanonicalSessionState(db, sessionId))) {
+        const [legacyBid, legacyADayPick] = await Promise.all([
+          db
+            .select({ count: sql<number>`count(*)` })
+            .from(bids)
+            .where(eq(bids.bidSessionId, sessionId))
+            .get(),
+          db
+            .select({ count: sql<number>`count(*)` })
+            .from(aDayPicks)
+            .where(eq(aDayPicks.bidSessionId, sessionId))
+            .get(),
+        ]);
+        if ((legacyADayPick?.count ?? 0) > 0) {
+          return c.json({ error: 'canonical_seed_requires_a_day_import' }, 409);
+        }
+        if ((legacyBid?.count ?? 0) > 0) {
+          return c.json({ error: 'canonical_seed_requires_pristine_mock' }, 409);
+        }
+      }
+
+      const doId = c.env.BID_SESSION.idFromName(sessionId);
+      const stub = c.env.BID_SESSION.get(doId);
+      const response = await stub.fetch('https://do/admin/commands/mock-freeze', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(command),
+      });
+      return new Response(await response.text(), {
+        status: response.status,
+        headers: { 'content-type': response.headers.get('content-type') ?? 'application/json' },
+      });
     });
-    return new Response(await response.text(), {
-      status: response.status,
-      headers: { 'content-type': response.headers.get('content-type') ?? 'application/json' },
-    });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
   },
 );
 
@@ -255,9 +293,20 @@ type MockRehearsalOperation = 'auto_bid' | 'manual_pick';
 
 type MockRehearsalReceiptDecision =
   | { readonly kind: 'new' }
+  | { readonly kind: 'pending' }
   | { readonly kind: 'replay'; readonly response: Response }
-  | { readonly kind: 'conflict' }
-  | { readonly kind: 'outcome_unknown' };
+  | { readonly kind: 'conflict' };
+
+type MockRehearsalReceiptWriteMode = 'new' | 'recover_pending';
+
+type MockRehearsalReceiptIdentity = {
+  readonly sessionId: string;
+  readonly idempotencyKey: string;
+  readonly operation: MockRehearsalOperation;
+  readonly actorSubject: string;
+  readonly requestFingerprint: string;
+  readonly expectedMockControlRevision: number;
+};
 
 function rehearsalCommandFingerprint(
   operation: MockRehearsalOperation,
@@ -318,42 +367,110 @@ async function inspectMockRehearsalReceipt(
   ) {
     return { kind: 'conflict' };
   }
+  const recovery = await db
+    .select()
+    .from(mockRehearsalCommandRecoveryOutcomes)
+    .where(
+      and(
+        eq(mockRehearsalCommandRecoveryOutcomes.bidSessionId, input.sessionId),
+        eq(mockRehearsalCommandRecoveryOutcomes.idempotencyKey, input.idempotencyKey),
+      ),
+    )
+    .get();
+  if (recovery !== undefined) {
+    return {
+      kind: 'replay',
+      response: replayResponse(recovery.responseJson, recovery.responseStatus),
+    };
+  }
   if (
     receipt.state !== 'completed' ||
     receipt.responseStatus === null ||
     receipt.responseJson === null
   ) {
-    return { kind: 'outcome_unknown' };
+    return { kind: 'pending' };
   }
   try {
     JSON.parse(receipt.responseJson);
   } catch {
-    return { kind: 'outcome_unknown' };
+    return { kind: 'conflict' };
   }
   return { kind: 'replay', response: replayResponse(receipt.responseJson, receipt.responseStatus) };
 }
 
-async function reserveMockRehearsalReceipt(
-  db: DB,
-  input: {
-    sessionId: string;
-    idempotencyKey: string;
-    operation: MockRehearsalOperation;
-    actorSubject: string;
-    requestFingerprint: string;
-    expectedMockControlRevision: number;
+function mockRehearsalReceiptReservationStatement(
+  rawDb: D1Database,
+  mode: MockRehearsalReceiptWriteMode,
+  input: MockRehearsalReceiptIdentity,
+  nowMs: number,
+): D1PreparedStatement | null {
+  if (mode === 'recover_pending') return null;
+  return rawDb
+    .prepare(
+      `INSERT INTO mock_rehearsal_command_receipts
+         (bid_session_id, idempotency_key, operation, actor_subject,
+          request_fingerprint, expected_mock_control_revision, state, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    )
+    .bind(
+      input.sessionId,
+      input.idempotencyKey,
+      input.operation,
+      input.actorSubject,
+      input.requestFingerprint,
+      input.expectedMockControlRevision,
+      nowMs,
+    );
+}
+
+/**
+ * Complete a receipt only after the same D1 batch has advanced the session's
+ * mock-control revision. The deliberately invalid ELSE value turns a missed
+ * guarded session update into a SQLite CHECK failure, rolling the entire
+ * batch back instead of exposing a durable pending receipt.
+ */
+function mockRehearsalReceiptCompletionStatement(
+  rawDb: D1Database,
+  input: Pick<
+    MockRehearsalReceiptIdentity,
+    'sessionId' | 'idempotencyKey' | 'expectedMockControlRevision'
+  > & {
+    readonly responseStatus: number;
+    readonly responseBody: unknown;
+    readonly completedAtMs: number;
   },
-): Promise<void> {
-  await db.insert(mockRehearsalCommandReceipts).values({
-    bidSessionId: input.sessionId,
-    idempotencyKey: input.idempotencyKey,
-    operation: input.operation,
-    actorSubject: input.actorSubject,
-    requestFingerprint: input.requestFingerprint,
-    expectedMockControlRevision: input.expectedMockControlRevision,
-    state: 'pending',
-    createdAt: new Date(),
-  });
+): D1PreparedStatement {
+  return rawDb
+    .prepare(
+      `UPDATE mock_rehearsal_command_receipts
+          SET state = CASE
+                WHEN EXISTS (
+                  SELECT 1
+                    FROM bid_sessions
+                   WHERE id = ?
+                     AND is_mock = 1
+                     AND mock_control_revision = ?
+                ) THEN 'completed'
+                ELSE 'integrity_failure'
+              END,
+              response_status = ?,
+              response_json = ?,
+              resulting_mock_control_revision = ?,
+              completed_at = ?
+        WHERE bid_session_id = ?
+          AND idempotency_key = ?
+          AND state = 'pending'`,
+    )
+    .bind(
+      input.sessionId,
+      input.expectedMockControlRevision + 1,
+      input.responseStatus,
+      JSON.stringify(input.responseBody),
+      input.expectedMockControlRevision + 1,
+      input.completedAtMs,
+      input.sessionId,
+      input.idempotencyKey,
+    );
 }
 
 async function completeMockRehearsalReceipt(
@@ -364,15 +481,31 @@ async function completeMockRehearsalReceipt(
     responseStatus: number;
     responseBody: unknown;
     expectedMockControlRevision: number;
+    outcome?: 'applied' | 'not_applied' | 'recovery_required';
   },
 ): Promise<void> {
+  const outcome = input.outcome ?? 'applied';
+  if (outcome !== 'applied') {
+    await db.insert(mockRehearsalCommandRecoveryOutcomes).values({
+      bidSessionId: input.sessionId,
+      idempotencyKey: input.idempotencyKey,
+      outcome,
+      responseStatus: input.responseStatus,
+      responseJson: JSON.stringify(input.responseBody),
+      recoveryReason: 'incomplete_historical_receipt_evidence',
+      recoveredBy: 'system_recovery',
+      recoveredAt: new Date(),
+    });
+    return;
+  }
   const completed = await db
     .update(mockRehearsalCommandReceipts)
     .set({
       state: 'completed',
       responseStatus: input.responseStatus,
       responseJson: JSON.stringify(input.responseBody),
-      resultingMockControlRevision: input.expectedMockControlRevision + 1,
+      resultingMockControlRevision:
+        outcome === 'applied' ? input.expectedMockControlRevision + 1 : null,
       completedAt: new Date(),
     })
     .where(
@@ -389,18 +522,323 @@ async function completeMockRehearsalReceipt(
   }
 }
 
-function mockRehearsalReceiptFailure(c: {
-  json: (body: Record<string, unknown>, status: 409) => Response;
-}, decision: Exclude<MockRehearsalReceiptDecision, { readonly kind: 'new' | 'replay' }>) {
+function mockRehearsalReceiptFailure(
+  c: {
+    json: (body: Record<string, unknown>, status: 409) => Response;
+  },
+  decision: Extract<MockRehearsalReceiptDecision, { readonly kind: 'conflict' }>,
+) {
   return c.json(
-    {
-      error:
-        decision.kind === 'conflict'
-          ? 'rehearsal_idempotency_key_reused'
-          : 'rehearsal_command_outcome_unknown',
-    },
+    { error: decision.kind === 'conflict' ? 'rehearsal_idempotency_key_reused' : 'unknown' },
     409,
   );
+}
+
+type MockRehearsalBidMutation = {
+  readonly id: string;
+  readonly ordinal: number;
+  readonly memberId: number;
+  readonly positionId: string;
+  readonly forced: boolean;
+  readonly adminActorId: number | null;
+  readonly reason: string;
+  readonly idempotencyKey: string;
+};
+
+type MockRehearsalAuditMutation = {
+  readonly id: string;
+  readonly actorId: number | null;
+  readonly action: 'session_start' | 'admin_bid_for_member' | 'forced_pick';
+  readonly targetKind: string;
+  readonly targetId: string;
+  readonly beforeState: unknown | null;
+  readonly afterState: unknown | null;
+  readonly reason: string | null;
+};
+
+function mockRehearsalBidStatement(
+  rawDb: D1Database,
+  sessionId: string,
+  mutation: MockRehearsalBidMutation,
+  pickedAtSeconds: number,
+): D1PreparedStatement {
+  return rawDb
+    .prepare(
+      `INSERT INTO bids
+         (id, bid_session_id, ordinal, member_id, position_id, a_day, picked_at,
+          forced, admin_actor_id, reason, idempotency_key, portal_sync_status,
+          portal_sync_attempts)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 'pending', 0)`,
+    )
+    .bind(
+      mutation.id,
+      sessionId,
+      mutation.ordinal,
+      mutation.memberId,
+      mutation.positionId,
+      pickedAtSeconds,
+      mutation.forced ? 1 : 0,
+      mutation.adminActorId,
+      mutation.reason,
+      mutation.idempotencyKey,
+    );
+}
+
+function mockRehearsalAuditStatement(
+  rawDb: D1Database,
+  sessionId: string,
+  mutation: MockRehearsalAuditMutation,
+  createdAtSeconds: number,
+): D1PreparedStatement {
+  return rawDb
+    .prepare(
+      `INSERT INTO audit_log
+         (id, bid_session_id, seq, actor_type, actor_id, action, target_kind,
+          target_id, before_state, after_state, reason, ai_advisory_id,
+          client_meta, created_at)
+       SELECT ?, ?, COALESCE(MAX(seq), 0) + 1, 'admin', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?
+         FROM audit_log
+        WHERE bid_session_id = ?`,
+    )
+    .bind(
+      mutation.id,
+      sessionId,
+      mutation.actorId,
+      mutation.action,
+      mutation.targetKind,
+      mutation.targetId,
+      mutation.beforeState === null ? null : JSON.stringify(mutation.beforeState),
+      mutation.afterState === null ? null : JSON.stringify(mutation.afterState),
+      mutation.reason,
+      createdAtSeconds,
+      sessionId,
+    );
+}
+
+function mockRehearsalSessionAdvanceStatement(
+  rawDb: D1Database,
+  input: {
+    readonly sessionId: string;
+    readonly expectedMockControlRevision: number;
+    readonly currentPhase: 'config' | 'position_bid' | 'a_day_bid' | 'paused' | 'complete';
+    readonly currentBidderId: number | null;
+  },
+): D1PreparedStatement {
+  return rawDb
+    .prepare(
+      `UPDATE bid_sessions
+          SET current_phase = ?,
+              current_bidder_id = ?,
+              mock_control_revision = mock_control_revision + 1
+        WHERE id = ?
+          AND is_mock = 1
+          AND mock_control_revision = ?
+          AND NOT EXISTS (
+            SELECT 1
+              FROM canonical_bid_session_state
+             WHERE bid_session_id = ?
+          )`,
+    )
+    .bind(
+      input.currentPhase,
+      input.currentBidderId,
+      input.sessionId,
+      input.expectedMockControlRevision,
+      input.sessionId,
+    );
+}
+
+function mockRehearsalOrderStatements(
+  rawDb: D1Database,
+  sessionId: string,
+  order: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+): D1PreparedStatement[] {
+  const statements: D1PreparedStatement[] = [];
+  const chunkSize = 20;
+  for (let offset = 0; offset < order.length; offset += chunkSize) {
+    const chunk = order.slice(offset, offset + chunkSize);
+    if (chunk.length === 0) continue;
+    const values = chunk.map(() => '(?, ?, ?, ?)').join(', ');
+    const bindings: unknown[] = [];
+    for (const entry of chunk) {
+      bindings.push(sessionId, entry.ordinal, entry.memberId, entry.pool);
+    }
+    statements.push(
+      rawDb
+        .prepare(
+          `INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool) VALUES ${values}`,
+        )
+        .bind(...bindings),
+    );
+  }
+  return statements;
+}
+
+type PendingMockRehearsalRecovery =
+  | { readonly kind: 'retry' }
+  | {
+      readonly kind: 'response';
+      readonly status: 200 | 201 | 409;
+      readonly body: Record<string, unknown>;
+    };
+
+async function hasCompleteMockBidAudit(
+  db: DB,
+  input: {
+    readonly sessionId: string;
+    readonly bidIds: readonly string[];
+    readonly allowedActions: readonly string[];
+  },
+): Promise<boolean> {
+  if (input.bidIds.length === 0) return false;
+  const auditRows = await db
+    .select({ targetId: auditLog.targetId, action: auditLog.action })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.bidSessionId, input.sessionId),
+        inArray(auditLog.targetId, [...input.bidIds]),
+      ),
+    )
+    .all();
+  const expectedBidIds = new Set(input.bidIds);
+  const auditedBidIds = new Set(
+    auditRows.flatMap((row) =>
+      row.targetId !== null &&
+      expectedBidIds.has(row.targetId) &&
+      input.allowedActions.includes(row.action)
+        ? [row.targetId]
+        : [],
+    ),
+  );
+  return auditedBidIds.size === expectedBidIds.size;
+}
+
+/**
+ * Receipts written by the current code path are never externally observable
+ * as pending: their reservation, all D1 domain writes, and their completion
+ * live in one D1 batch. This recovery exists for an interrupted legacy row
+ * (or a deliberately injected failure): it either safely reuses an untouched
+ * pending receipt, verifies the complete Bid/revision/audit result from
+ * deterministic keys, or terminalizes an inconsistent historical row as
+ * recovery_required without guessing that it did not apply.
+ */
+async function recoverPendingMockAutoReceipt(
+  db: DB,
+  input: Pick<
+    MockRehearsalReceiptIdentity,
+    'sessionId' | 'idempotencyKey' | 'expectedMockControlRevision' | 'requestFingerprint'
+  >,
+): Promise<PendingMockRehearsalRecovery> {
+  const session = await db
+    .select({ mockControlRevision: bidSessions.mockControlRevision })
+    .from(bidSessions)
+    .where(eq(bidSessions.id, input.sessionId))
+    .get();
+  if (session?.mockControlRevision === input.expectedMockControlRevision) return { kind: 'retry' };
+
+  const matchingBids = await db
+    .select({ id: bids.id })
+    .from(bids)
+    .where(
+      and(
+        eq(bids.bidSessionId, input.sessionId),
+        like(bids.idempotencyKey, `rehearsal-auto:${input.requestFingerprint}:%`),
+      ),
+    )
+    .all();
+  const recoveredRevision = session?.mockControlRevision ?? null;
+  const committed =
+    recoveredRevision === input.expectedMockControlRevision + 1 &&
+    (await hasCompleteMockBidAudit(db, {
+      sessionId: input.sessionId,
+      bidIds: matchingBids.map((bid) => bid.id),
+      allowedActions: ['admin_bid_for_member'],
+    }));
+  const body: Record<string, unknown> = committed
+    ? {
+        picksMade: matchingBids.length,
+        stoppedReason: 'recovered_after_interruption',
+        detail:
+          'The prior mock command committed before its response was durable; the recorded Bid rows are authoritative.',
+        mock_control_revision: recoveredRevision,
+      }
+    : {
+        error: 'rehearsal_command_recovery_required',
+        detail:
+          'The prior mock command lacks a complete, safely reconstructable Bid/revision/audit outcome. No new Bid mutation was applied.',
+        expected_mock_control_revision: input.expectedMockControlRevision,
+        current_mock_control_revision: recoveredRevision,
+      };
+  const status: 200 | 409 = committed ? 200 : 409;
+  await completeMockRehearsalReceipt(db, {
+    sessionId: input.sessionId,
+    idempotencyKey: input.idempotencyKey,
+    responseStatus: status,
+    responseBody: body,
+    expectedMockControlRevision: input.expectedMockControlRevision,
+    outcome: status === 409 ? 'recovery_required' : 'applied',
+  });
+  return { kind: 'response', status, body };
+}
+
+async function recoverPendingMockManualReceipt(
+  db: DB,
+  input: Pick<
+    MockRehearsalReceiptIdentity,
+    'sessionId' | 'idempotencyKey' | 'expectedMockControlRevision' | 'requestFingerprint'
+  >,
+): Promise<PendingMockRehearsalRecovery> {
+  const session = await db
+    .select({ mockControlRevision: bidSessions.mockControlRevision })
+    .from(bidSessions)
+    .where(eq(bidSessions.id, input.sessionId))
+    .get();
+  if (session?.mockControlRevision === input.expectedMockControlRevision) return { kind: 'retry' };
+
+  const bid = await db
+    .select({ id: bids.id, forced: bids.forced })
+    .from(bids)
+    .where(
+      and(
+        eq(bids.bidSessionId, input.sessionId),
+        eq(bids.idempotencyKey, `rehearsal-manual:${input.requestFingerprint}`),
+      ),
+    )
+    .get();
+  const recoveredRevision = session?.mockControlRevision ?? null;
+  const committed =
+    recoveredRevision === input.expectedMockControlRevision + 1 &&
+    bid !== undefined &&
+    (await hasCompleteMockBidAudit(db, {
+      sessionId: input.sessionId,
+      bidIds: [bid.id],
+      allowedActions: ['admin_bid_for_member', 'forced_pick'],
+    }));
+  const body: Record<string, unknown> =
+    committed && bid !== undefined
+      ? {
+          bid_id: bid.id,
+          forced: bid.forced,
+          mock_control_revision: recoveredRevision,
+        }
+      : {
+          error: 'rehearsal_command_recovery_required',
+          detail:
+            'The prior mock command lacks a complete, safely reconstructable Bid/revision/audit outcome. No new Bid mutation was applied.',
+          expected_mock_control_revision: input.expectedMockControlRevision,
+          current_mock_control_revision: recoveredRevision,
+        };
+  const status: 201 | 409 = committed ? 201 : 409;
+  await completeMockRehearsalReceipt(db, {
+    sessionId: input.sessionId,
+    idempotencyKey: input.idempotencyKey,
+    responseStatus: status,
+    responseBody: body,
+    expectedMockControlRevision: input.expectedMockControlRevision,
+    outcome: status === 409 ? 'recovery_required' : 'applied',
+  });
+  return { kind: 'response', status, body };
 }
 
 /**
@@ -443,58 +881,35 @@ router.post(
   requireStepUpAuth(),
   zValidator('json', AutoBidBodySchema),
   async (c) => {
-  const sessionId = c.req.param('sessionId');
-  const body = c.req.valid('json');
-  const db = getDb(c.env.DB);
-  const idempotencyKey = RehearsalIdempotencyKeySchema.safeParse(c.req.header('Idempotency-Key'));
-  if (!idempotencyKey.success) return c.json({ error: 'missing_idempotency_key' }, 400);
-  const claims = c.get('claims');
-  const actorSubject = String(claims.sub);
-  const requestFingerprint = rehearsalCommandFingerprint(
-    'auto_bid',
-    sessionId,
-    actorSubject,
-    body.expected_mock_control_revision,
-    { count: body.count, strategy: body.strategy },
-  );
-  try {
-    const priorReceipt = await inspectMockRehearsalReceipt(db, {
+    const sessionId = c.req.param('sessionId');
+    const body = c.req.valid('json');
+    const db = getDb(c.env.DB);
+    const idempotencyKey = RehearsalIdempotencyKeySchema.safeParse(c.req.header('Idempotency-Key'));
+    if (!idempotencyKey.success) return c.json({ error: 'missing_idempotency_key' }, 400);
+    const claims = c.get('claims');
+    const actorSubject = String(claims.sub);
+    const requestFingerprint = rehearsalCommandFingerprint(
+      'auto_bid',
       sessionId,
-      idempotencyKey: idempotencyKey.data,
-      operation: 'auto_bid',
-      requestFingerprint,
-    });
-    if (priorReceipt.kind === 'replay') return priorReceipt.response;
-    if (priorReceipt.kind !== 'new') return mockRehearsalReceiptFailure(c, priorReceipt);
-
-    let session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-    if (!session.isMock) {
-      return c.json({ error: 'not_a_mock_session' }, 403);
-    }
-    if (await hasCanonicalSessionState(db, sessionId)) {
-      return c.json(
-        {
-          error: 'canonical_mutation_requires_command',
-          detail:
-            'This mock session is controlled by canonical commands; create a new mock session instead.',
-        },
-        409,
-      );
-    }
-    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
-      const insideReceipt = await inspectMockRehearsalReceipt(db, {
+      actorSubject,
+      body.expected_mock_control_revision,
+      { count: body.count, strategy: body.strategy },
+    );
+    try {
+      const priorReceipt = await inspectMockRehearsalReceipt(db, {
         sessionId,
         idempotencyKey: idempotencyKey.data,
         operation: 'auto_bid',
         requestFingerprint,
       });
-      if (insideReceipt.kind === 'replay') return insideReceipt.response;
-      if (insideReceipt.kind !== 'new') return mockRehearsalReceiptFailure(c, insideReceipt);
+      if (priorReceipt.kind === 'replay') return priorReceipt.response;
+      if (priorReceipt.kind === 'conflict') return mockRehearsalReceiptFailure(c, priorReceipt);
 
-      session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+      let session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
       if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-      if (!session.isMock) return c.json({ error: 'not_a_mock_session' }, 403);
+      if (!session.isMock) {
+        return c.json({ error: 'not_a_mock_session' }, 403);
+      }
       if (await hasCanonicalSessionState(db, sessionId)) {
         return c.json(
           {
@@ -505,353 +920,286 @@ router.post(
           409,
         );
       }
-      if (session.mockControlRevision !== body.expected_mock_control_revision) {
-        return c.json(
-          {
-            error: 'stale_mock_control_revision',
-            expected_mock_control_revision: body.expected_mock_control_revision,
-            current_mock_control_revision: session.mockControlRevision,
-          },
-          409,
-        );
-      }
-      if (session.currentPhase === 'complete') {
-        return c.json({ picksMade: 0, stoppedReason: 'complete' });
-      }
-
-      const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
-      if (!frozenPolicy.ok) {
-        return c.json(
-          {
-            error: 'session_policy_snapshot_unavailable',
-            policy_error: frozenPolicy.code,
-            position_ids: 'positionIds' in frozenPolicy ? (frozenPolicy.positionIds ?? []) : [],
-          },
-          409,
-        );
-      }
-      const { rules } = frozenPolicy.coverage;
-      const rulesByPosition = new Map(rules.map((r) => [r.positionId, r]));
-
-      let orderRows = await db
-        .select()
-        .from(bidOrder)
-        .where(eq(bidOrder.bidSessionId, sessionId))
-        .orderBy(asc(bidOrder.ordinal))
-        .all();
-      const expectedOrder = computeBidOrder(bidOrderInputFromSnapshot(frozenPolicy.snapshot));
-      if (expectedOrder.length === 0) {
-        return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
-      }
-      // A legacy mock may predate the frozen policy boundary. Never reuse an
-      // order that could contain an administratively assigned Division Chief or
-      // a mutable-roster member. A fresh mock starts empty and is bootstrapped
-      // below; an old inconsistent mock is safely blocked for operator review.
-      if (orderRows.length > 0 && !orderMatchesFrozenSnapshot(orderRows, expectedOrder)) {
-        return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
-      }
-
-      await reserveMockRehearsalReceipt(db, {
-        sessionId,
-        idempotencyKey: idempotencyKey.data,
-        operation: 'auto_bid',
-        actorSubject,
-        requestFingerprint,
-        expectedMockControlRevision: body.expected_mock_control_revision,
-      });
-      const advancedRevision = await db
-        .update(bidSessions)
-        .set({ mockControlRevision: sql`${bidSessions.mockControlRevision} + 1` })
-        .where(
-          and(
-            eq(bidSessions.id, sessionId),
-            eq(bidSessions.isMock, true),
-            eq(bidSessions.mockControlRevision, body.expected_mock_control_revision),
-          ),
-        )
-        .returning({ mockControlRevision: bidSessions.mockControlRevision })
-        .get();
-      // A writer outside the session-scoped lease changed the row after the
-      // receipt was reserved. Its outcome cannot be reconstructed safely, so
-      // preserve the pending receipt and fail closed instead of double-picking.
-      if (advancedRevision === undefined) {
-        return c.json({ error: 'rehearsal_command_outcome_unknown' }, 409);
-      }
-      const finish = async (responseBody: unknown, responseStatus: number) => {
-        await completeMockRehearsalReceipt(db, {
+      const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+        const insideReceipt = await inspectMockRehearsalReceipt(db, {
           sessionId,
           idempotencyKey: idempotencyKey.data,
-          responseStatus,
-          responseBody,
-          expectedMockControlRevision: body.expected_mock_control_revision,
+          operation: 'auto_bid',
+          requestFingerprint,
         });
-        return c.json(responseBody, responseStatus as 200 | 207 | 500);
-      };
+        if (insideReceipt.kind === 'replay') return insideReceipt.response;
+        if (insideReceipt.kind === 'conflict') return mockRehearsalReceiptFailure(c, insideReceipt);
 
-      // Bootstrap: mock sessions created via /admin/sessions/new sit in `config`
-      // phase with an empty bid_order until someone manually calls the start
-      // endpoint. Rehearsal flow should be one-click — if bid_order is empty
-      // here, compute it from the captured session snapshot (the same frozen
-      // seniority + pool rules session-start uses), insert it, and advance the
-      // session to position_bid
-      // with currentBidderId set to ordinal 1. The auto-bid loop then proceeds
-      // naturally.
-      let bootstrapped = false;
-      if (orderRows.length === 0) {
-        try {
-          // D1 caps bound parameters at ~100 per statement. 226 members × 4 cols =
-          // 904 placeholders blows the limit in one INSERT. Chunk to 20 rows
-          // (80 placeholders) per statement to stay safely under.
-          const BID_ORDER_INSERT_CHUNK = 20;
-          const rowsToInsert = expectedOrder.map((e) => ({
-            bidSessionId: sessionId,
-            ordinal: e.ordinal,
-            memberId: e.memberId,
-            pool: e.pool,
-          }));
-          for (let i = 0; i < rowsToInsert.length; i += BID_ORDER_INSERT_CHUNK) {
-            const chunk = rowsToInsert.slice(i, i + BID_ORDER_INSERT_CHUNK);
-            await db.insert(bidOrder).values(chunk);
-          }
-          const first = expectedOrder[0];
-          const firstMemberId = first ? first.memberId : null;
-          await db
-            .update(bidSessions)
-            .set({
-              currentPhase: 'position_bid',
-              currentBidderId: firstMemberId,
-              startedAt: session.startedAt ?? new Date(),
-            })
-            .where(eq(bidSessions.id, sessionId));
-          orderRows = await db
-            .select()
-            .from(bidOrder)
-            .where(eq(bidOrder.bidSessionId, sessionId))
-            .orderBy(asc(bidOrder.ordinal))
-            .all();
-          bootstrapped = true;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error('[rehearsal.auto-bid] bootstrap failed', { sessionId, msg });
-          return finish(
-            { picksMade: 0, stoppedReason: 'error', detail: `bootstrap_failed: ${msg}` },
-            500,
+        session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+        if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+        if (!session.isMock) return c.json({ error: 'not_a_mock_session' }, 403);
+        if (await hasCanonicalSessionState(db, sessionId)) {
+          return c.json(
+            {
+              error: 'canonical_mutation_requires_command',
+              detail:
+                'This mock session is controlled by canonical commands; create a new mock session instead.',
+            },
+            409,
           );
         }
-      }
-      if (orderRows.length === 0) {
-        return finish({ picksMade: 0, stoppedReason: 'error', detail: 'no_bid_order' }, 200);
-      }
-
-      // Self-heal: a prior failed bootstrap may have left bid_order rows but
-      // never updated current_phase / current_bidder_id. If the session is still
-      // in config OR currentBidderId is null, advance it now using the existing
-      // ordering — better than telling the chief the session is "complete" with
-      // zero picks made.
-      if (
-        session.currentPhase === 'config' ||
-        (session.currentBidderId === null && orderRows.length > 0)
-      ) {
-        const firstRow = orderRows[0];
-        if (firstRow !== undefined) {
-          await db
-            .update(bidSessions)
-            .set({
-              currentPhase: 'position_bid',
-              currentBidderId: firstRow.memberId,
-              startedAt: session.startedAt ?? new Date(),
-            })
-            .where(eq(bidSessions.id, sessionId));
-          session.currentPhase = 'position_bid';
-          session.currentBidderId = firstRow.memberId;
-          bootstrapped = true;
+        if (session.mockControlRevision !== body.expected_mock_control_revision) {
+          if (insideReceipt.kind === 'pending') {
+            const recovery = await recoverPendingMockAutoReceipt(db, {
+              sessionId,
+              idempotencyKey: idempotencyKey.data,
+              expectedMockControlRevision: body.expected_mock_control_revision,
+              requestFingerprint,
+            });
+            if (recovery.kind === 'response') return c.json(recovery.body, recovery.status);
+          }
+          return c.json(
+            {
+              error: 'stale_mock_control_revision',
+              expected_mock_control_revision: body.expected_mock_control_revision,
+              current_mock_control_revision: session.mockControlRevision,
+            },
+            409,
+          );
         }
-      }
-      const memberIdToNextMember = new Map<number, number | null>();
-      for (let i = 0; i < orderRows.length; i++) {
-        const cur = orderRows[i];
-        const nxt = orderRows[i + 1];
-        if (cur !== undefined) {
-          memberIdToNextMember.set(cur.memberId, nxt?.memberId ?? null);
-        }
-      }
-
-      // `bids.admin_actor_id` is FK → members.id with ON DELETE RESTRICT. SQLite
-      // enforces the FK on any non-NULL value, so passing 0 (the synthetic
-      // "Bid Admin" identity that lives outside the members table) blows the
-      // INSERT with a FOREIGN KEY constraint failure mid-loop. NULL bypasses
-      // the FK check, which is the intended semantics for "no member row
-      // behind this admin action" — same shape the DO uses for its admin
-      // actions.
-      const adminActorId: number | null = claims.sub > 0 ? claims.sub : null;
-
-      let picksMade = 0;
-      let consecutiveNoEligible = 0;
-      let stoppedReason: 'count_reached' | 'complete' | 'no_eligible' | 'error' = 'count_reached';
-      let detail: string | undefined;
-      // If we just bootstrapped, the DO snapshot doesn't have the new ordering
-      // yet, so don't ask it — take the first ordinal from the freshly-inserted
-      // bid_order rows. Otherwise prefer the DO (it's authoritative once the
-      // session is live).
-      const firstOrderRow = orderRows[0];
-      const firstFromOrder = firstOrderRow !== undefined ? firstOrderRow.memberId : null;
-      let currentBidder = bootstrapped ? firstFromOrder : session.currentBidderId ?? null;
-      if (bootstrapped) {
-        await writeAuditLog(db, {
-          bidSessionId: sessionId,
-          actorType: 'admin',
-          actorId: adminActorId,
-          action: 'session_start',
-          targetKind: 'bid_session',
-          targetId: sessionId,
-          reason: 'rehearsal auto-bid bootstrap',
-          beforeState: { current_phase: 'config' },
-          afterState: { current_phase: 'position_bid', bid_order_rows: orderRows.length },
-        });
-      }
-
-      for (let i = 0; i < body.count; i++) {
-        if (currentBidder === null) {
-          stoppedReason = 'complete';
-          break;
+        if (session.currentPhase === 'complete') {
+          return c.json({ picksMade: 0, stoppedReason: 'complete' });
         }
 
-        const frozenMember = frozenEligibilityMemberForSession(
-          frozenPolicy.snapshot,
-          currentBidder,
-        );
-        if (frozenMember === null) {
-          stoppedReason = 'error';
-          detail = `session policy material missing for member ${currentBidder}`;
-          break;
+        const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
+        if (!frozenPolicy.ok) {
+          return c.json(
+            {
+              error: 'session_policy_snapshot_unavailable',
+              policy_error: frozenPolicy.code,
+              position_ids: 'positionIds' in frozenPolicy ? (frozenPolicy.positionIds ?? []) : [],
+            },
+            409,
+          );
         }
-        const member = eligibilityMemberFromFrozen(frozenMember);
+        const { rules } = frozenPolicy.coverage;
+        const orderRows = await db
+          .select()
+          .from(bidOrder)
+          .where(eq(bidOrder.bidSessionId, sessionId))
+          .orderBy(asc(bidOrder.ordinal))
+          .all();
+        const expectedOrder = computeBidOrder(bidOrderInputFromSnapshot(frozenPolicy.snapshot));
+        if (expectedOrder.length === 0) {
+          return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_members_to_bid' }, 200);
+        }
+        // A legacy mock may predate the frozen policy boundary. Never reuse an
+        // order that could contain an administratively assigned Division Chief or
+        // a mutable-roster member. A fresh mock starts empty and is bootstrapped
+        // below; an old inconsistent mock is safely blocked for operator review.
+        if (orderRows.length > 0 && !orderMatchesFrozenSnapshot(orderRows, expectedOrder)) {
+          return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
+        }
 
-        const taken = await db
-          .select({ positionId: bids.positionId })
+        const receiptMode: MockRehearsalReceiptWriteMode =
+          insideReceipt.kind === 'pending' ? 'recover_pending' : 'new';
+        // Compute the entire mock command from immutable/frozen reads before
+        // writing anything. The resulting receipt, bid order, bids, audit
+        // rows, revision advance, and receipt completion commit as one native
+        // D1 batch below; there is no externally visible partial command.
+        const orderForPlan = orderRows.length === 0 ? expectedOrder : orderRows;
+        if (orderForPlan.length === 0) {
+          return c.json({ picksMade: 0, stoppedReason: 'error', detail: 'no_bid_order' }, 200);
+        }
+        const bootstrapped =
+          orderRows.length === 0 ||
+          session.currentPhase === 'config' ||
+          session.currentBidderId === null;
+        const memberIdToNextMember = new Map<number, number | null>();
+        for (let index = 0; index < orderForPlan.length; index++) {
+          const current = orderForPlan[index];
+          if (current !== undefined) {
+            memberIdToNextMember.set(current.memberId, orderForPlan[index + 1]?.memberId ?? null);
+          }
+        }
+        const existingBids = await db
+          .select({ positionId: bids.positionId, ordinal: bids.ordinal })
           .from(bids)
           .where(eq(bids.bidSessionId, sessionId))
           .all();
-        const takenSet = new Set(taken.map((t) => t.positionId));
-
-        // Deterministic rehearsal behavior: walk eligible rules in declaration order.
-        const candidatePositions = rules.map((r) => r.positionId).filter((p) => !takenSet.has(p));
-
-        let chosenPositionId: string | null = null;
-        for (const positionId of candidatePositions) {
-          const rule = rulesByPosition.get(positionId);
-          if (rule === undefined) continue;
-          const r = evaluateEligibility(member, rule);
-          if (r.eligible) {
-            chosenPositionId = positionId;
-            break;
-          }
+        const takenPositionIds = new Set(existingBids.map((entry) => entry.positionId));
+        const maxOrdinal = existingBids.reduce((max, entry) => Math.max(max, entry.ordinal), 0);
+        const adminActorId: number | null = claims.sub > 0 ? claims.sub : null;
+        let currentBidder = bootstrapped
+          ? (orderForPlan[0]?.memberId ?? null)
+          : session.currentBidderId;
+        let finalPhase: 'config' | 'position_bid' | 'a_day_bid' | 'paused' | 'complete' =
+          bootstrapped ? 'position_bid' : session.currentPhase;
+        let consecutiveNoEligible = 0;
+        let stoppedReason: 'count_reached' | 'complete' | 'no_eligible' | 'error' = 'count_reached';
+        let detail: string | undefined;
+        const plannedBids: MockRehearsalBidMutation[] = [];
+        const plannedAudits: MockRehearsalAuditMutation[] = [];
+        if (bootstrapped) {
+          plannedAudits.push({
+            id: ulid(),
+            actorId: adminActorId,
+            action: 'session_start',
+            targetKind: 'bid_session',
+            targetId: sessionId,
+            beforeState: { current_phase: session.currentPhase },
+            afterState: { current_phase: 'position_bid', bid_order_rows: orderForPlan.length },
+            reason: 'rehearsal auto-bid bootstrap',
+          });
         }
-
-        if (chosenPositionId === null) {
-          consecutiveNoEligible++;
-          if (consecutiveNoEligible >= 5) {
-            stoppedReason = 'no_eligible';
-            detail = `5 consecutive members with no eligible position starting at member ${currentBidder}`;
+        for (let index = 0; index < body.count; index++) {
+          if (currentBidder === null) {
+            stoppedReason = 'complete';
+            finalPhase = 'complete';
             break;
           }
-          // Advance to the next member and try again
+          const frozenMember = frozenEligibilityMemberForSession(
+            frozenPolicy.snapshot,
+            currentBidder,
+          );
+          if (frozenMember === null) {
+            stoppedReason = 'error';
+            detail = `session policy material missing for member ${currentBidder}`;
+            break;
+          }
+          const member = eligibilityMemberFromFrozen(frozenMember);
+          let chosenPositionId: string | null = null;
+          for (const rule of rules) {
+            if (takenPositionIds.has(rule.positionId)) continue;
+            if (evaluateEligibility(member, rule).eligible) {
+              chosenPositionId = rule.positionId;
+              break;
+            }
+          }
+          if (chosenPositionId === null) {
+            consecutiveNoEligible++;
+            if (consecutiveNoEligible >= 5) {
+              stoppedReason = 'no_eligible';
+              detail = `5 consecutive members with no eligible position starting at member ${currentBidder}`;
+              break;
+            }
+            currentBidder = memberIdToNextMember.get(currentBidder) ?? null;
+            continue;
+          }
+          consecutiveNoEligible = 0;
+          const bidId = ulid();
+          const reason = `rehearsal auto-bid (${body.strategy})`;
+          plannedBids.push({
+            id: bidId,
+            ordinal: maxOrdinal + plannedBids.length + 1,
+            memberId: currentBidder,
+            positionId: chosenPositionId,
+            forced: false,
+            adminActorId,
+            reason,
+            idempotencyKey: `rehearsal-auto:${requestFingerprint}:${index}`,
+          });
+          plannedAudits.push({
+            id: ulid(),
+            actorId: adminActorId,
+            action: 'admin_bid_for_member',
+            targetKind: 'bid',
+            targetId: bidId,
+            beforeState: null,
+            afterState: {
+              member_id: currentBidder,
+              position_id: chosenPositionId,
+              strategy: body.strategy,
+              rehearsal: true,
+            },
+            reason,
+          });
+          takenPositionIds.add(chosenPositionId);
           currentBidder = memberIdToNextMember.get(currentBidder) ?? null;
-          continue;
+          if (currentBidder === null) {
+            stoppedReason = 'complete';
+            finalPhase = 'complete';
+            break;
+          }
         }
-        consecutiveNoEligible = 0;
-
-        // Insert the bid row (proxy bid by admin). ordinal is best-effort — the
-        // DO is the source of truth for the live ordering, but rehearsal mode
-        // wires straight to D1 so the dashboard shows progress.
-        const bidId = ulid();
-        const maxOrdRow = await db
-          .select({ m: sql<number | null>`max(${bids.ordinal})` })
-          .from(bids)
-          .where(eq(bids.bidSessionId, sessionId))
-          .get();
-        const ordinal = (maxOrdRow?.m ?? 0) + 1;
-        const idemKey = `rehearsal-auto:${requestFingerprint}:${i}`;
-
-        await db.insert(bids).values({
-          id: bidId,
-          bidSessionId: sessionId,
-          ordinal,
-          memberId: currentBidder,
-          positionId: chosenPositionId,
-          pickedAt: new Date(),
-          forced: false,
-          adminActorId,
-          reason: `rehearsal auto-bid (${body.strategy})`,
-          idempotencyKey: idemKey,
-          portalSyncStatus: 'pending',
-          portalSyncAttempts: 0,
-        });
-
-        await writeAuditLog(db, {
-          bidSessionId: sessionId,
-          actorType: 'admin',
-          actorId: adminActorId,
-          action: 'admin_bid_for_member',
-          targetKind: 'bid',
-          targetId: bidId,
-          reason: `rehearsal auto-bid (${body.strategy})`,
-          afterState: {
-            member_id: currentBidder,
-            position_id: chosenPositionId,
-            strategy: body.strategy,
-            rehearsal: true,
-          },
-        });
-
-        picksMade++;
-
-        // Advance to the next bidder for the next iteration.
-        currentBidder = memberIdToNextMember.get(currentBidder) ?? null;
-        await db
-          .update(bidSessions)
-          .set({ currentBidderId: currentBidder })
-          .where(eq(bidSessions.id, sessionId));
-
-        if (currentBidder === null) {
-          // Roster exhausted — mark complete and stop.
-          await db
-            .update(bidSessions)
-            .set({ currentPhase: 'complete' })
-            .where(eq(bidSessions.id, sessionId));
-          stoppedReason = 'complete';
-          break;
+        const responseBody: Record<string, unknown> = {
+          picksMade: plannedBids.length,
+          stoppedReason,
+          mock_control_revision: body.expected_mock_control_revision + 1,
+          ...(detail === undefined ? {} : { detail }),
+          ...(bootstrapped ? { bootstrapped: true } : {}),
+        };
+        const responseStatus: 200 | 207 =
+          stoppedReason === 'no_eligible' && plannedBids.length > 0 ? 207 : 200;
+        const identity: MockRehearsalReceiptIdentity = {
+          sessionId,
+          idempotencyKey: idempotencyKey.data,
+          operation: 'auto_bid',
+          actorSubject,
+          requestFingerprint,
+          expectedMockControlRevision: body.expected_mock_control_revision,
+        };
+        const nowMs = Date.now();
+        const statements: D1PreparedStatement[] = [];
+        const reservation = mockRehearsalReceiptReservationStatement(
+          c.env.DB,
+          receiptMode,
+          identity,
+          nowMs,
+        );
+        if (reservation !== null) statements.push(reservation);
+        if (orderRows.length === 0) {
+          statements.push(...mockRehearsalOrderStatements(c.env.DB, sessionId, expectedOrder));
         }
-
-        // Rate limit between picks. Tests pass through (sleep is short).
-        await new Promise<void>((resolve) => setTimeout(resolve, 100));
-      }
-
-      const responseBody: {
-        picksMade: number;
-        stoppedReason: string;
-        detail?: string;
-        bootstrapped?: boolean;
-        mock_control_revision?: number;
-      } = {
-        picksMade,
-        stoppedReason,
-      };
-      if (detail !== undefined) responseBody.detail = detail;
-      if (bootstrapped) responseBody.bootstrapped = true;
-      responseBody.mock_control_revision = advancedRevision.mockControlRevision;
-      const status = stoppedReason === 'no_eligible' && picksMade > 0 ? 207 : 200;
-      return finish(responseBody, status);
-    });
-    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
-    return mutation.value;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const stack = err instanceof Error ? err.stack : undefined;
-    console.error('[rehearsal.auto-bid] uncaught', { sessionId, msg, stack });
-    return c.json({ picksMade: 0, stoppedReason: 'error', detail: `uncaught: ${msg}` }, 500);
-  }
-});
+        const nowSeconds = Math.floor(nowMs / 1000);
+        statements.push(
+          ...plannedBids.map((mutation) =>
+            mockRehearsalBidStatement(c.env.DB, sessionId, mutation, nowSeconds),
+          ),
+          ...plannedAudits.map((mutation) =>
+            mockRehearsalAuditStatement(c.env.DB, sessionId, mutation, nowSeconds),
+          ),
+          mockRehearsalSessionAdvanceStatement(c.env.DB, {
+            sessionId,
+            expectedMockControlRevision: body.expected_mock_control_revision,
+            currentPhase: finalPhase,
+            currentBidderId: currentBidder,
+          }),
+          mockRehearsalReceiptCompletionStatement(c.env.DB, {
+            ...identity,
+            responseStatus,
+            responseBody,
+            completedAtMs: nowMs,
+          }),
+        );
+        try {
+          await c.env.DB.batch(statements);
+        } catch {
+          const afterFailure = await inspectMockRehearsalReceipt(db, {
+            sessionId,
+            idempotencyKey: idempotencyKey.data,
+            operation: 'auto_bid',
+            requestFingerprint,
+          });
+          if (afterFailure.kind === 'replay') return afterFailure.response;
+          return c.json({ error: 'rehearsal_command_retry_safe' }, 503);
+        }
+        const completed = await inspectMockRehearsalReceipt(db, {
+          sessionId,
+          idempotencyKey: idempotencyKey.data,
+          operation: 'auto_bid',
+          requestFingerprint,
+        });
+        if (completed.kind !== 'replay') {
+          return c.json({ error: 'rehearsal_command_retry_safe' }, 503);
+        }
+        return c.json(responseBody, responseStatus);
+      });
+      if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+      return mutation.value;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      console.error('[rehearsal.auto-bid] uncaught', { sessionId, msg, stack });
+      return c.json({ picksMade: 0, stoppedReason: 'error', detail: `uncaught: ${msg}` }, 500);
+    }
+  },
+);
 
 // ── Admin manual pick (mock-only, no step-up) ──────────────────────────────
 
@@ -887,110 +1235,36 @@ router.post(
   requireStepUpAuth(),
   zValidator('json', ManualPickBodySchema),
   async (c) => {
-  const sessionId = c.req.param('sessionId');
-  const body = c.req.valid('json');
-  const db = getDb(c.env.DB);
+    const sessionId = c.req.param('sessionId');
+    const body = c.req.valid('json');
+    const db = getDb(c.env.DB);
 
-  const idempotencyKey = RehearsalIdempotencyKeySchema.safeParse(c.req.header('Idempotency-Key'));
-  if (!idempotencyKey.success) return c.json({ error: 'missing_idempotency_key' }, 400);
-  const claims = c.get('claims');
-  const actorSubject = String(claims.sub);
-  const requestFingerprint = rehearsalCommandFingerprint(
-    'manual_pick',
-    sessionId,
-    actorSubject,
-    body.expected_mock_control_revision,
-    {
-      member_id: body.member_id,
-      position_id: body.position_id,
-      force: body.force === true,
-      reason: body.reason ?? null,
-    },
-  );
-  const priorReceipt = await inspectMockRehearsalReceipt(db, {
-    sessionId,
-    idempotencyKey: idempotencyKey.data,
-    operation: 'manual_pick',
-    requestFingerprint,
-  });
-  if (priorReceipt.kind === 'replay') return priorReceipt.response;
-  if (priorReceipt.kind !== 'new') return mockRehearsalReceiptFailure(c, priorReceipt);
-
-  let session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-  if (!session.isMock) {
-    return c.json(
+    const idempotencyKey = RehearsalIdempotencyKeySchema.safeParse(c.req.header('Idempotency-Key'));
+    if (!idempotencyKey.success) return c.json({ error: 'missing_idempotency_key' }, 400);
+    const claims = c.get('claims');
+    const actorSubject = String(claims.sub);
+    const requestFingerprint = rehearsalCommandFingerprint(
+      'manual_pick',
+      sessionId,
+      actorSubject,
+      body.expected_mock_control_revision,
       {
-        error: 'not_mock_session',
-        detail:
-          'manual-pick is mock-only — use /api/admin/bid-session/:id/bid-for-member for live sessions',
+        member_id: body.member_id,
+        position_id: body.position_id,
+        force: body.force === true,
+        reason: body.reason ?? null,
       },
-      403,
     );
-  }
-  if (await hasCanonicalSessionState(db, sessionId)) {
-    return c.json(
-      {
-        error: 'canonical_mutation_requires_command',
-        detail:
-          'This mock session is controlled by canonical commands; create a new mock session instead.',
-      },
-      409,
-    );
-  }
-  const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
-  if (!frozenPolicy.ok) {
-    return c.json(
-      {
-        error: 'session_policy_snapshot_unavailable',
-        policy_error: frozenPolicy.code,
-        position_ids: 'positionIds' in frozenPolicy ? (frozenPolicy.positionIds ?? []) : [],
-      },
-      409,
-    );
-  }
-  const activeRules = frozenPolicy.coverage;
-
-  const frozenMember = frozenEligibilityMemberForSession(frozenPolicy.snapshot, body.member_id);
-  if (frozenMember === null) {
-    return c.json({ error: 'session_policy_snapshot_material_missing' }, 409);
-  }
-  if (frozenMember.pool === 'EXCLUDED') {
-    return c.json(
-      {
-        error: 'member_not_in_bid_pool',
-        exclusion_reason: frozenMember.exclusionReason,
-      },
-      422,
-    );
-  }
-
-  // Force may bypass an individual eligibility criterion during a rehearsal;
-  // it can never turn a non-biddable staffing position into an opportunity.
-  const rule = activeRules.rules.find((entry) => entry.positionId === body.position_id);
-  if (rule === undefined) {
-    return c.json({ error: 'position_not_biddable' }, 422);
-  }
-
-  // Eligibility gate — admin can override with force=true.
-  if (body.force !== true) {
-    const evalResult = evaluateEligibility(eligibilityMemberFromFrozen(frozenMember), rule);
-    if (!evalResult.eligible) {
-      return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);
-    }
-  }
-
-  const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
-    const insideReceipt = await inspectMockRehearsalReceipt(db, {
+    const priorReceipt = await inspectMockRehearsalReceipt(db, {
       sessionId,
       idempotencyKey: idempotencyKey.data,
       operation: 'manual_pick',
       requestFingerprint,
     });
-    if (insideReceipt.kind === 'replay') return insideReceipt.response;
-    if (insideReceipt.kind !== 'new') return mockRehearsalReceiptFailure(c, insideReceipt);
+    if (priorReceipt.kind === 'replay') return priorReceipt.response;
+    if (priorReceipt.kind === 'conflict') return mockRehearsalReceiptFailure(c, priorReceipt);
 
-    session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    let session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
     if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
     if (!session.isMock) {
       return c.json(
@@ -1012,140 +1286,244 @@ router.post(
         409,
       );
     }
-    if (session.mockControlRevision !== body.expected_mock_control_revision) {
+    const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
+    if (!frozenPolicy.ok) {
       return c.json(
         {
-          error: 'stale_mock_control_revision',
-          expected_mock_control_revision: body.expected_mock_control_revision,
-          current_mock_control_revision: session.mockControlRevision,
+          error: 'session_policy_snapshot_unavailable',
+          policy_error: frozenPolicy.code,
+          position_ids: 'positionIds' in frozenPolicy ? (frozenPolicy.positionIds ?? []) : [],
         },
         409,
       );
     }
+    const activeRules = frozenPolicy.coverage;
 
-    // Refuse if the position is already filled.
-    const existingForPosition = await db
-      .select({ id: bids.id })
-      .from(bids)
-      .where(and(eq(bids.bidSessionId, sessionId), eq(bids.positionId, body.position_id)))
-      .get();
-    if (existingForPosition !== undefined) {
-      return c.json({ error: 'position_already_filled', bid_id: existingForPosition.id }, 409);
+    const frozenMember = frozenEligibilityMemberForSession(frozenPolicy.snapshot, body.member_id);
+    if (frozenMember === null) {
+      return c.json({ error: 'session_policy_snapshot_material_missing' }, 409);
+    }
+    if (frozenMember.pool === 'EXCLUDED') {
+      return c.json(
+        {
+          error: 'member_not_in_bid_pool',
+          exclusion_reason: frozenMember.exclusionReason,
+        },
+        422,
+      );
     }
 
-    await reserveMockRehearsalReceipt(db, {
-      sessionId,
-      idempotencyKey: idempotencyKey.data,
-      operation: 'manual_pick',
-      actorSubject,
-      requestFingerprint,
-      expectedMockControlRevision: body.expected_mock_control_revision,
-    });
-    const advancedRevision = await db
-      .update(bidSessions)
-      .set({ mockControlRevision: sql`${bidSessions.mockControlRevision} + 1` })
-      .where(
-        and(
-          eq(bidSessions.id, sessionId),
-          eq(bidSessions.isMock, true),
-          eq(bidSessions.mockControlRevision, body.expected_mock_control_revision),
-        ),
-      )
-      .returning({ mockControlRevision: bidSessions.mockControlRevision })
-      .get();
-    if (advancedRevision === undefined) {
-      return c.json({ error: 'rehearsal_command_outcome_unknown' }, 409);
+    // Force may bypass an individual eligibility criterion during a rehearsal;
+    // it can never turn a non-biddable staffing position into an opportunity.
+    const rule = activeRules.rules.find((entry) => entry.positionId === body.position_id);
+    if (rule === undefined) {
+      return c.json({ error: 'position_not_biddable' }, 422);
     }
-    const finish = async (responseBody: unknown, responseStatus: number) => {
-      await completeMockRehearsalReceipt(db, {
-        sessionId,
-        idempotencyKey: idempotencyKey.data,
-        responseStatus,
-        responseBody,
-        expectedMockControlRevision: body.expected_mock_control_revision,
-      });
-      return c.json(responseBody, responseStatus as 201);
-    };
 
-    const adminActorId: number | null = claims.sub > 0 ? claims.sub : null;
-    const bidId = ulid();
-    const maxOrdRow = await db
-      .select({ m: sql<number | null>`max(${bids.ordinal})` })
-      .from(bids)
-      .where(eq(bids.bidSessionId, sessionId))
-      .get();
-    const ordinal = (maxOrdRow?.m ?? 0) + 1;
-    const idemKey = `rehearsal-manual:${requestFingerprint}`;
-    const reason = body.reason ?? 'rehearsal manual pick';
-
-    await db.insert(bids).values({
-      id: bidId,
-      bidSessionId: sessionId,
-      ordinal,
-      memberId: body.member_id,
-      positionId: body.position_id,
-      pickedAt: new Date(),
-      forced: body.force === true,
-      adminActorId,
-      reason,
-      idempotencyKey: idemKey,
-      portalSyncStatus: 'pending',
-      portalSyncAttempts: 0,
-    });
-
-    await writeAuditLog(db, {
-      bidSessionId: sessionId,
-      actorType: 'admin',
-      actorId: adminActorId,
-      action: body.force === true ? 'forced_pick' : 'admin_bid_for_member',
-      targetKind: 'bid',
-      targetId: bidId,
-      reason,
-      afterState: {
-        member_id: body.member_id,
-        position_id: body.position_id,
-        force: body.force === true,
-        rehearsal: true,
-      },
-    });
-
-    // Advance currentBidderId if this picked the current bidder. Best-effort —
-    // mirrors what auto-bid does so the UI moves forward.
-    if (session.currentBidderId === body.member_id) {
-      const orderRow = await db
-        .select({ ordinal: bidOrder.ordinal })
-        .from(bidOrder)
-        .where(and(eq(bidOrder.bidSessionId, sessionId), eq(bidOrder.memberId, body.member_id)))
-        .get();
-      if (orderRow !== undefined) {
-        const nextRow = await db
-          .select({ memberId: bidOrder.memberId })
-          .from(bidOrder)
-          .where(eq(bidOrder.bidSessionId, sessionId))
-          .orderBy(asc(bidOrder.ordinal))
-          .all();
-        const idx = nextRow.findIndex((r) => r.memberId === body.member_id);
-        const next =
-          idx >= 0 && idx + 1 < nextRow.length ? (nextRow[idx + 1]?.memberId ?? null) : null;
-        await db
-          .update(bidSessions)
-          .set({ currentBidderId: next })
-          .where(eq(bidSessions.id, sessionId));
+    // Eligibility gate — admin can override with force=true.
+    if (body.force !== true) {
+      const evalResult = evaluateEligibility(eligibilityMemberFromFrozen(frozenMember), rule);
+      if (!evalResult.eligible) {
+        return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);
       }
     }
 
-    return finish(
-      {
+    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      const insideReceipt = await inspectMockRehearsalReceipt(db, {
+        sessionId,
+        idempotencyKey: idempotencyKey.data,
+        operation: 'manual_pick',
+        requestFingerprint,
+      });
+      if (insideReceipt.kind === 'replay') return insideReceipt.response;
+      if (insideReceipt.kind === 'conflict') return mockRehearsalReceiptFailure(c, insideReceipt);
+
+      session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+      if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+      if (!session.isMock) {
+        return c.json(
+          {
+            error: 'not_mock_session',
+            detail:
+              'manual-pick is mock-only — use /api/admin/bid-session/:id/bid-for-member for live sessions',
+          },
+          403,
+        );
+      }
+      if (await hasCanonicalSessionState(db, sessionId)) {
+        return c.json(
+          {
+            error: 'canonical_mutation_requires_command',
+            detail:
+              'This mock session is controlled by canonical commands; create a new mock session instead.',
+          },
+          409,
+        );
+      }
+      if (session.mockControlRevision !== body.expected_mock_control_revision) {
+        if (insideReceipt.kind === 'pending') {
+          const recovery = await recoverPendingMockManualReceipt(db, {
+            sessionId,
+            idempotencyKey: idempotencyKey.data,
+            expectedMockControlRevision: body.expected_mock_control_revision,
+            requestFingerprint,
+          });
+          if (recovery.kind === 'response') return c.json(recovery.body, recovery.status);
+        }
+        return c.json(
+          {
+            error: 'stale_mock_control_revision',
+            expected_mock_control_revision: body.expected_mock_control_revision,
+            current_mock_control_revision: session.mockControlRevision,
+          },
+          409,
+        );
+      }
+
+      // Refuse if the position is already filled.
+      const existingForPosition = await db
+        .select({ id: bids.id })
+        .from(bids)
+        .where(and(eq(bids.bidSessionId, sessionId), eq(bids.positionId, body.position_id)))
+        .get();
+      if (existingForPosition !== undefined) {
+        return c.json({ error: 'position_already_filled', bid_id: existingForPosition.id }, 409);
+      }
+
+      const adminActorId: number | null = claims.sub > 0 ? claims.sub : null;
+      const bidId = ulid();
+      const maxOrdRow = await db
+        .select({ m: sql<number | null>`max(${bids.ordinal})` })
+        .from(bids)
+        .where(eq(bids.bidSessionId, sessionId))
+        .get();
+      const ordinal = (maxOrdRow?.m ?? 0) + 1;
+      const idemKey = `rehearsal-manual:${requestFingerprint}`;
+      const reason = body.reason ?? 'rehearsal manual pick';
+
+      // Advance currentBidderId if this picked the current bidder. Best-effort —
+      // mirrors what auto-bid does so the UI moves forward. This is calculated
+      // before the batch and committed with the Bid/audit/receipt instead of
+      // being a post-receipt write.
+      let nextBidderId = session.currentBidderId;
+      if (session.currentBidderId === body.member_id) {
+        const orderRow = await db
+          .select({ ordinal: bidOrder.ordinal })
+          .from(bidOrder)
+          .where(and(eq(bidOrder.bidSessionId, sessionId), eq(bidOrder.memberId, body.member_id)))
+          .get();
+        if (orderRow !== undefined) {
+          const nextRow = await db
+            .select({ memberId: bidOrder.memberId })
+            .from(bidOrder)
+            .where(eq(bidOrder.bidSessionId, sessionId))
+            .orderBy(asc(bidOrder.ordinal))
+            .all();
+          const idx = nextRow.findIndex((r) => r.memberId === body.member_id);
+          const next =
+            idx >= 0 && idx + 1 < nextRow.length ? (nextRow[idx + 1]?.memberId ?? null) : null;
+          nextBidderId = next;
+        }
+      }
+      const responseBody = {
         bid_id: bidId,
         forced: body.force === true,
-        mock_control_revision: advancedRevision.mockControlRevision,
-      },
-      201,
-    );
-  });
-  if (!mutation.ok) return c.json({ error: mutation.error }, 409);
-  return mutation.value;
-});
+        mock_control_revision: body.expected_mock_control_revision + 1,
+      };
+      const identity: MockRehearsalReceiptIdentity = {
+        sessionId,
+        idempotencyKey: idempotencyKey.data,
+        operation: 'manual_pick',
+        actorSubject,
+        requestFingerprint,
+        expectedMockControlRevision: body.expected_mock_control_revision,
+      };
+      const nowMs = Date.now();
+      const receiptMode: MockRehearsalReceiptWriteMode =
+        insideReceipt.kind === 'pending' ? 'recover_pending' : 'new';
+      const statements: D1PreparedStatement[] = [];
+      const reservation = mockRehearsalReceiptReservationStatement(
+        c.env.DB,
+        receiptMode,
+        identity,
+        nowMs,
+      );
+      if (reservation !== null) statements.push(reservation);
+      statements.push(
+        mockRehearsalBidStatement(
+          c.env.DB,
+          sessionId,
+          {
+            id: bidId,
+            ordinal,
+            memberId: body.member_id,
+            positionId: body.position_id,
+            forced: body.force === true,
+            adminActorId,
+            reason,
+            idempotencyKey: idemKey,
+          },
+          Math.floor(nowMs / 1000),
+        ),
+        mockRehearsalAuditStatement(
+          c.env.DB,
+          sessionId,
+          {
+            id: ulid(),
+            actorId: adminActorId,
+            action: body.force === true ? 'forced_pick' : 'admin_bid_for_member',
+            targetKind: 'bid',
+            targetId: bidId,
+            beforeState: null,
+            afterState: {
+              member_id: body.member_id,
+              position_id: body.position_id,
+              force: body.force === true,
+              rehearsal: true,
+            },
+            reason,
+          },
+          Math.floor(nowMs / 1000),
+        ),
+        mockRehearsalSessionAdvanceStatement(c.env.DB, {
+          sessionId,
+          expectedMockControlRevision: body.expected_mock_control_revision,
+          currentPhase: session.currentPhase,
+          currentBidderId: nextBidderId,
+        }),
+        mockRehearsalReceiptCompletionStatement(c.env.DB, {
+          ...identity,
+          responseStatus: 201,
+          responseBody,
+          completedAtMs: nowMs,
+        }),
+      );
+      try {
+        await c.env.DB.batch(statements);
+      } catch {
+        const afterFailure = await inspectMockRehearsalReceipt(db, {
+          sessionId,
+          idempotencyKey: idempotencyKey.data,
+          operation: 'manual_pick',
+          requestFingerprint,
+        });
+        if (afterFailure.kind === 'replay') return afterFailure.response;
+        return c.json({ error: 'rehearsal_command_retry_safe' }, 503);
+      }
+      const completed = await inspectMockRehearsalReceipt(db, {
+        sessionId,
+        idempotencyKey: idempotencyKey.data,
+        operation: 'manual_pick',
+        requestFingerprint,
+      });
+      if (completed.kind !== 'replay')
+        return c.json({ error: 'rehearsal_command_retry_safe' }, 503);
+      return c.json(responseBody, 201);
+    });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
+  },
+);
 
 // ── Task R6 — Rehearsal findings (in-app bug tracker) ───────────────────────
 
@@ -1265,8 +1643,9 @@ router.get('/findings-recent', async (c) => {
  * GET /api/admin/rehearsal/sessions
  *
  * Returns the list of mock sessions for the rehearsal dashboard, with
- * minimal columns: id, bid_year, current_phase, current_bidder_id and the
- * timestamp of the most recent bid. Admin-only.
+ * minimal columns, including the mock-only control revision that the
+ * idempotent auto-bid control must echo, and the timestamp of the most recent
+ * bid. Admin-only.
  */
 router.get('/sessions', async (c) => {
   const db = getDb(c.env.DB);
@@ -1276,6 +1655,7 @@ router.get('/sessions', async (c) => {
       bidYear: bidSessions.bidYear,
       currentPhase: bidSessions.currentPhase,
       currentBidderId: bidSessions.currentBidderId,
+      mockControlRevision: bidSessions.mockControlRevision,
       isMock: bidSessions.isMock,
     })
     .from(bidSessions)
@@ -1321,6 +1701,7 @@ router.get('/sessions', async (c) => {
       bidYear: s.bidYear,
       currentPhase: s.currentPhase,
       currentBidderId: s.currentBidderId,
+      mockControlRevision: s.mockControlRevision,
       isMock: s.isMock,
       lastPickedAtIso: lastPicks.get(s.id) ?? null,
     })),

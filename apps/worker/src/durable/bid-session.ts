@@ -9,6 +9,7 @@ import {
   MockFreezeCommandSchema,
   type PickRejectedEvent,
   type StateSnapshotEvent,
+  type SyntheticSpecialtyStateSignal,
 } from '@mbfd/shared';
 import { asc, eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
@@ -304,7 +305,7 @@ type SpecialtyTransportResult =
       code: string;
       message: string;
       result: SpecialtyEngineTransitionResult | null;
-  };
+    };
 
 interface CurrentSpecialtyNormalTurn {
   readonly turn: SpecialtyNormalTurn;
@@ -676,141 +677,153 @@ export class BidSessionDO implements DurableObject {
     const bidSessionId = this.namedSessionId();
     const commandId = payload.command.commandId;
     const commandFingerprint = specialtyCommandReceiptFingerprint(operation, payload);
-    return this.state.blockConcurrencyWhile(async () => {
-      const receiptKey = bidSessionSpecialtyReceiptStorageKey(bidSessionId, commandId);
-      const priorReceipt = this.specialtyReplayResult(
-        await this.state.storage.get<unknown>(receiptKey),
-        commandId,
-        operation,
-        commandFingerprint,
-      );
-      if (priorReceipt !== null) return priorReceipt;
-
-      return this.state.storage.transaction(async (transaction) => {
-        const replay = this.specialtyReplayResult(
-          await transaction.get<unknown>(receiptKey),
+    const outcome = await this.state.blockConcurrencyWhile(
+      async (): Promise<SpecialtyTransportResult> => {
+        const receiptKey = bidSessionSpecialtyReceiptStorageKey(bidSessionId, commandId);
+        const priorReceipt = this.specialtyReplayResult(
+          await this.state.storage.get<unknown>(receiptKey),
           commandId,
           operation,
           commandFingerprint,
         );
-        if (replay !== null) return replay;
+        if (priorReceipt !== null) return priorReceipt;
 
-        const adapter = new BidSessionSpecialtyAdapter(transaction, bidSessionId);
-        const beforeState = await adapter.load();
-        let result: SpecialtyEngineTransitionResult;
-        switch (operation) {
-          case 'begin': {
-            // The direct normal D1 routes acquire this permit from this same
-            // DO before writing. Checking it inside the synthetic command's
-            // serialized storage transaction closes the status-read -> D1
-            // TOCTOU: a specialty begin cannot suspend a turn while that
-            // normal mutation remains unresolved.
-            const normalMutationLease = await this.normalMutationLeaseStatus(transaction);
-            if (normalMutationLease.kind !== 'none') {
-              return this.normalMutationLeaseRejection(normalMutationLease);
-            }
-            const currentNormalTurn = await this.currentSpecialtyNormalTurn();
-            if (currentNormalTurn === null) {
-              return {
-                kind: 'rejected',
-                code: 'NORMAL_TURN_UNAVAILABLE',
-                message: 'The current normal position-Bid turn cannot be captured.',
-                result: null,
-              };
-            }
-            const beginPayload = payload as SpecialtyBeginPayload;
-            if (
-              currentNormalTurn.mockControlRevision !== null &&
-              beginPayload.command.expectedNormalControlRevision !==
-                currentNormalTurn.mockControlRevision
-            ) {
-              return {
-                kind: 'rejected',
-                code: 'STALE_MOCK_CONTROL_REVISION',
-                message:
-                  'The mock normal Bid turn changed before the specialty interruption command was accepted.',
-                result: null,
-              };
-            }
-            const { expectedNormalControlRevision: _expectedNormalControlRevision, ...beginCommand } =
-              beginPayload.command;
-            const command: SpecialtyAdjudicationRequest = {
-              ...beginCommand,
-              normalTurn: currentNormalTurn.turn,
-            };
-            result = await adapter.begin(command);
-            break;
-          }
-          case 'resolve_candidate': {
-            const candidatePayload = payload as SpecialtyCandidatePayload;
-            const command: ResolveSpecialtyCandidateInput = candidatePayload.command;
-            result = await adapter.resolveCandidate(command);
-            break;
-          }
-          case 'resolve_original': {
-            const originalPayload = payload as SpecialtyOriginalPayload;
-            const command: ResolveOriginalSpecialtyRequestInput = originalPayload.command;
-            result = await adapter.resolveOriginal(command);
-            break;
-          }
-          case 'resume': {
-            const active = beforeState.active;
-            if (active !== null) {
+        return this.state.storage.transaction(async (transaction) => {
+          const replay = this.specialtyReplayResult(
+            await transaction.get<unknown>(receiptKey),
+            commandId,
+            operation,
+            commandFingerprint,
+          );
+          if (replay !== null) return replay;
+
+          const adapter = new BidSessionSpecialtyAdapter(transaction, bidSessionId);
+          const beforeState = await adapter.load();
+          let result: SpecialtyEngineTransitionResult;
+          switch (operation) {
+            case 'begin': {
+              // The direct normal D1 routes acquire this permit from this same
+              // DO before writing. Checking it inside the synthetic command's
+              // serialized storage transaction closes the status-read -> D1
+              // TOCTOU: a specialty begin cannot suspend a turn while that
+              // normal mutation remains unresolved.
+              const normalMutationLease = await this.normalMutationLeaseStatus(transaction);
+              if (normalMutationLease.kind !== 'none') {
+                return this.normalMutationLeaseRejection(normalMutationLease);
+              }
               const currentNormalTurn = await this.currentSpecialtyNormalTurn();
-              if (
-                currentNormalTurn === null ||
-                !this.sameSpecialtyNormalTurn(active.originalTurn, currentNormalTurn.turn)
-              ) {
+              if (currentNormalTurn === null) {
                 return {
                   kind: 'rejected',
-                  code: 'NORMAL_TURN_CHANGED',
-                  message:
-                    'The captured normal turn changed while specialty adjudication was active.',
+                  code: 'NORMAL_TURN_UNAVAILABLE',
+                  message: 'The current normal position-Bid turn cannot be captured.',
                   result: null,
                 };
               }
+              const beginPayload = payload as SpecialtyBeginPayload;
+              if (
+                currentNormalTurn.mockControlRevision !== null &&
+                beginPayload.command.expectedNormalControlRevision !==
+                  currentNormalTurn.mockControlRevision
+              ) {
+                return {
+                  kind: 'rejected',
+                  code: 'STALE_MOCK_CONTROL_REVISION',
+                  message:
+                    'The mock normal Bid turn changed before the specialty interruption command was accepted.',
+                  result: null,
+                };
+              }
+              const {
+                expectedNormalControlRevision: _expectedNormalControlRevision,
+                ...beginCommand
+              } = beginPayload.command;
+              const command: SpecialtyAdjudicationRequest = {
+                ...beginCommand,
+                normalTurn: currentNormalTurn.turn,
+              };
+              result = await adapter.begin(command);
+              break;
             }
-            const resumePayload = payload as SpecialtyResumePayload;
-            const command: ResumeSpecialtyAdjudicationInput = resumePayload.command;
-            result = await adapter.resume(command);
-            break;
+            case 'resolve_candidate': {
+              const candidatePayload = payload as SpecialtyCandidatePayload;
+              const command: ResolveSpecialtyCandidateInput = candidatePayload.command;
+              result = await adapter.resolveCandidate(command);
+              break;
+            }
+            case 'resolve_original': {
+              const originalPayload = payload as SpecialtyOriginalPayload;
+              const command: ResolveOriginalSpecialtyRequestInput = originalPayload.command;
+              result = await adapter.resolveOriginal(command);
+              break;
+            }
+            case 'resume': {
+              const active = beforeState.active;
+              if (active !== null) {
+                const currentNormalTurn = await this.currentSpecialtyNormalTurn();
+                if (
+                  currentNormalTurn === null ||
+                  !this.sameSpecialtyNormalTurn(active.originalTurn, currentNormalTurn.turn)
+                ) {
+                  return {
+                    kind: 'rejected',
+                    code: 'NORMAL_TURN_CHANGED',
+                    message:
+                      'The captured normal turn changed while specialty adjudication was active.',
+                    result: null,
+                  };
+                }
+              }
+              const resumePayload = payload as SpecialtyResumePayload;
+              const command: ResumeSpecialtyAdjudicationInput = resumePayload.command;
+              result = await adapter.resume(command);
+              break;
+            }
           }
-        }
 
-        if (result.kind === 'rejected') {
-          return {
-            kind: 'rejected',
-            code: result.code,
-            message: result.message,
+          if (result.kind === 'rejected') {
+            return {
+              kind: 'rejected',
+              code: result.code,
+              message: result.message,
+              result,
+            };
+          }
+
+          const receipt: SpecialtyCommandReceipt = {
+            version: 2,
+            commandId,
+            operation,
+            commandFingerprint,
+            acceptedAtMs: Date.now(),
+            actorType: 'admin',
+            actorId: payload.audit.actorId,
+            reason: payload.audit.reason,
+            effectiveDate: payload.audit.effectiveDate,
+            origin: payload.audit.origin,
+            beforeState,
+            afterState: result.state,
+            events: result.events,
             result,
           };
-        }
-
-        const receipt: SpecialtyCommandReceipt = {
-          version: 2,
-          commandId,
-          operation,
-          commandFingerprint,
-          acceptedAtMs: Date.now(),
-          actorType: 'admin',
-          actorId: payload.audit.actorId,
-          reason: payload.audit.reason,
-          effectiveDate: payload.audit.effectiveDate,
-          origin: payload.audit.origin,
-          beforeState,
-          afterState: result.state,
-          events: result.events,
-          result,
-        };
-        await transaction.put(receiptKey, receipt);
-        return {
-          kind: 'accepted',
-          idempotentReplay: false,
-          result,
-          receipt,
-        };
-      });
-    });
+          await transaction.put(receiptKey, receipt);
+          return {
+            kind: 'accepted',
+            idempotentReplay: false,
+            result,
+            receipt,
+          };
+        });
+      },
+    );
+    // Emit only after the storage transaction committed. The marker is
+    // deliberately separate from normal Bid envelopes and tells admin-only
+    // clients to rehydrate the isolated synthetic state through its guarded
+    // read endpoint.
+    if (outcome.kind === 'accepted' && !outcome.idempotentReplay) {
+      await this.broadcastSyntheticSpecialtyState();
+    }
+    return outcome;
   }
 
   private specialtyResponse(result: SpecialtyTransportResult): Response {
@@ -954,6 +967,101 @@ export class BidSessionDO implements DurableObject {
         c.socket.send(json);
       } catch {}
     }
+  }
+
+  private async syntheticSpecialtyStateSignal(): Promise<SyntheticSpecialtyStateSignal> {
+    const adapter = new BidSessionSpecialtyAdapter(this.storage, this.namedSessionId());
+    const [specialtyState, currentNormalTurn] = await Promise.all([
+      adapter.load(),
+      this.currentSpecialtyNormalTurn(),
+    ]);
+    const normalTurn =
+      currentNormalTurn === null
+        ? null
+        : {
+            ...currentNormalTurn.turn,
+            mockControlRevision: currentNormalTurn.mockControlRevision,
+          };
+    const active = specialtyState.active;
+    const originalTurn =
+      active === null
+        ? null
+        : {
+            ...active.originalTurn,
+            // A current mock turn can only be attached when it still matches
+            // the persisted resume target. Otherwise the guarded GET is the
+            // authority and the signal intentionally does not guess.
+            mockControlRevision:
+              currentNormalTurn !== null &&
+              this.sameSpecialtyNormalTurn(active.originalTurn, currentNormalTurn.turn)
+                ? currentNormalTurn.mockControlRevision
+                : null,
+          };
+    const allowedNextAction =
+      active === null
+        ? normalTurn?.mockControlRevision !== null
+          ? 'begin'
+          : 'none'
+        : active.phase === 'resolving_higher_priority_candidates'
+          ? 'resolve_candidate'
+          : active.phase === 'awaiting_original_bidder'
+            ? 'resolve_original'
+            : 'resume';
+    return {
+      v: 1,
+      type: 'synthetic_specialty_state_changed',
+      mode: 'synthetic_test_only',
+      does_not_commit_bid: true,
+      bidSessionId: this.namedSessionId(),
+      revision: specialtyState.revision,
+      controlState: {
+        rehearsalRevision: currentNormalTurn?.mockControlRevision ?? null,
+        normalTurn,
+        normalBidderSuspended: active !== null,
+        specialty:
+          active === null
+            ? {
+                active: false,
+                requestId: null,
+                positionId: null,
+                phase: null,
+                originalTurn: null,
+                candidateQueue: [],
+                candidateCursor: 0,
+                resolvedCandidateCount: 0,
+                resolution: null,
+                allowedNextAction,
+              }
+            : {
+                active: true,
+                requestId: active.requestId,
+                positionId: active.positionId,
+                phase: active.phase,
+                originalTurn,
+                candidateQueue: active.candidateQueue.map((candidate) => ({
+                  memberId: candidate.memberId,
+                  priorityRank: candidate.priorityRank,
+                })),
+                candidateCursor: active.candidateCursor,
+                resolvedCandidateCount: active.candidateOutcomes.length,
+                resolution: active.resolution,
+                allowedNextAction,
+              },
+      },
+    };
+  }
+
+  private async sendSyntheticSpecialtyState(socket: WebSocket): Promise<void> {
+    try {
+      socket.send(JSON.stringify(await this.syntheticSpecialtyStateSignal()));
+    } catch {}
+  }
+
+  private async broadcastSyntheticSpecialtyState(): Promise<void> {
+    const adminSockets = [...this.clients.values()]
+      .filter((client) => client.role === 'admin')
+      .map((client) => client.socket);
+    await Promise.all(adminSockets.map((socket) => this.sendSyntheticSpecialtyState(socket)));
   }
 
   /**
@@ -1494,6 +1602,9 @@ export class BidSessionDO implements DurableObject {
         bidOrder: [...state.bidOrder],
       };
       this.send(socket, this.envelope('state_snapshot', snap, state.lastSeq));
+      if (identity.role === 'admin') {
+        await this.sendSyntheticSpecialtyState(socket);
+      }
       return;
     }
 

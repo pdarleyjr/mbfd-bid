@@ -22,6 +22,8 @@ interface BoardSnapshot {
   bidOrder: Array<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
   bidOrderPreview?: boolean;
   isMock?: boolean;
+  /** D1 mock-only command revision; intentionally not the bid event sequence. */
+  mockControlRevision: number | null;
   sessionStartedAt: number | null;
   turnStartedAtMs?: number;
   turnTimerSeconds?: number;
@@ -122,6 +124,7 @@ export default async function AdminBidPage({
         positions={board.positions}
         wsBase={getWorkerBase()}
         isMock={board.isMock === true}
+        mockControlRevision={board.mockControlRevision}
       />
     </div>
   );

@@ -129,7 +129,7 @@ async function seedPolicyFixture(
     `UPDATE bid_years
         SET rule_book_version = '2026.2',
             position_template_version = '2026.1',
-            config_json = '{"v":1,"expectedDurationDays":2,"turnTimerSeconds":180}',
+            config_json = '{"v":2,"expectedDurationDays":2,"turnTimerSeconds":180,"credentialEvaluationOn":"2026-08-27"}',
             configuration_revision = 1
       WHERE year = 2026;`,
   );
@@ -223,8 +223,13 @@ describe('Division Chief administrative-assignment Bid policy', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'division-chief-assigned-auto-bid',
         },
-        body: JSON.stringify({ count: 1, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 1,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
@@ -237,8 +242,13 @@ describe('Division Chief administrative-assignment Bid policy', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'division-chief-assigned-manual-pick',
         },
-        body: JSON.stringify({ member_id: 105, position_id: 'A101' }),
+        body: JSON.stringify({
+          member_id: 105,
+          position_id: 'A101',
+          expected_mock_control_revision: 1,
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
@@ -250,8 +260,14 @@ describe('Division Chief administrative-assignment Bid policy', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'division-chief-assigned-force-rejection',
         },
-        body: JSON.stringify({ member_id: 104, position_id: 'A211', force: true }),
+        body: JSON.stringify({
+          member_id: 104,
+          position_id: 'A211',
+          force: true,
+          expected_mock_control_revision: 2,
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
@@ -297,8 +313,13 @@ describe('Division Chief administrative-assignment Bid policy', () => {
         headers: {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': 'division-chief-vacant-auto-bid',
         },
-        body: JSON.stringify({ count: 2, strategy: 'first_eligible' }),
+        body: JSON.stringify({
+          count: 2,
+          strategy: 'first_eligible',
+          expected_mock_control_revision: 0,
+        }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );

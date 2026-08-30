@@ -168,10 +168,17 @@ async function seedSession(h: TestD1, isMock: boolean): Promise<void> {
   );
   await h.db.run(
     `INSERT INTO bid_sessions
-       (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock)
-     VALUES (?, 2026, ?, 'position_bid', 180, 2, 0, ?);`,
-    [SESSION_ID, CAPTURED_AT, isMock ? 1 : 0],
+       (id, bid_year, started_at, current_phase, current_bidder_id, turn_timer_seconds, expected_duration_days, day_count, is_mock)
+     VALUES (?, 2026, ?, 'position_bid', ?, 180, 2, 0, ?);`,
+    [SESSION_ID, CAPTURED_AT, isMock ? 17 : null, isMock ? 1 : 0],
   );
+  if (isMock) {
+    await h.db.run(
+      `INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool)
+       VALUES (?, 1, 11, 'FF'), (?, 2, 17, 'FF');`,
+      [SESSION_ID, SESSION_ID],
+    );
+  }
 }
 
 async function seedFrozenV3Snapshot(h: TestD1, snapshot = frozenV3Snapshot()): Promise<void> {
@@ -307,6 +314,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
       body: JSON.stringify({
         command_id: 'specialty-unlabeled-policy-1',
         expected_revision: 0,
+        expected_normal_control_revision: 0,
         request_id: 'specialty-unlabeled-request-1',
         position_id: 'A101',
         policy,
@@ -330,6 +338,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
       body: JSON.stringify({
         command_id: 'specialty-request-command-1',
         expected_revision: 0,
+        expected_normal_control_revision: 0,
         request_id: 'specialty-request-1',
         position_id: 'A101',
         policy: syntheticPolicy(),
@@ -354,6 +363,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
           command: expect.objectContaining({
             commandId: 'specialty-request-command-1',
             expectedRevision: 0,
+            expectedNormalControlRevision: 0,
             requestId: 'specialty-request-1',
             positionId: 'A101',
             policy: expect.objectContaining({ source: 'synthetic' }),
@@ -396,6 +406,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
       body: JSON.stringify({
         command_id: 'specialty-missing-facts-command-1',
         expected_revision: 0,
+        expected_normal_control_revision: 0,
         request_id: 'specialty-missing-facts-request-1',
         position_id: 'A101',
         policy: syntheticPolicy(),
@@ -423,6 +434,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
         body: JSON.stringify({
           command_id: 'specialty-revoked-command-1',
           expected_revision: 0,
+          expected_normal_control_revision: 0,
           request_id: 'specialty-revoked-request-1',
           position_id: 'A101',
           policy: syntheticPolicy(),
@@ -470,6 +482,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
         body: JSON.stringify({
           command_id: 'specialty-untrusted-eligibility-1',
           expected_revision: 0,
+          expected_normal_control_revision: 0,
           request_id: 'specialty-untrusted-request-1',
           position_id: 'A101',
           policy: {
@@ -500,6 +513,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
         body: JSON.stringify({
           command_id: 'specialty-incomplete-ranking-1',
           expected_revision: 0,
+          expected_normal_control_revision: 0,
           request_id: 'specialty-incomplete-request-1',
           position_id: 'A101',
           policy: { ...policy, candidates: [{ member_id: 17, explicit_priority: 1 }] },
@@ -525,6 +539,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
       body: JSON.stringify({
         command_id: 'specialty-official-command-1',
         expected_revision: 0,
+        expected_normal_control_revision: 0,
         request_id: 'specialty-request-1',
         position_id: 'A101',
         policy: { ...syntheticPolicy(), source: 'official' },

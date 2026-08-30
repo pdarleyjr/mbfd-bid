@@ -286,7 +286,9 @@ export const bidSessions = sqliteTable('bid_sessions', {
 
 /**
  * Durable idempotency receipts for the legacy mock rehearsal controls. A row
- * starts pending, then becomes an immutable completed response exactly once.
+ * starts pending, then becomes an immutable completed applied response exactly once.
+ * Historical no-guess recoveries are immutable sidecar rows so 0035's receipt
+ * table never needs an ALTER/rebuild migration.
  */
 export const mockRehearsalCommandReceipts = sqliteTable(
   'mock_rehearsal_command_receipts',
@@ -311,6 +313,27 @@ export const mockRehearsalCommandReceipts = sqliteTable(
     sessionCreatedIdx: index('idx_mock_rehearsal_command_receipts_session_created').on(
       t.bidSessionId,
       t.createdAt,
+    ),
+  }),
+);
+
+export const mockRehearsalCommandRecoveryOutcomes = sqliteTable(
+  'mock_rehearsal_command_recovery_outcomes',
+  {
+    bidSessionId: text('bid_session_id').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    outcome: text('outcome', { enum: ['not_applied', 'recovery_required'] }).notNull(),
+    responseStatus: integer('response_status').notNull(),
+    responseJson: text('response_json').notNull(),
+    recoveryReason: text('recovery_reason').notNull(),
+    recoveredBy: text('recovered_by').notNull(),
+    recoveredAt: integer('recovered_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.bidSessionId, t.idempotencyKey] }),
+    recoveredIdx: index('idx_mock_rehearsal_command_recovery_outcomes_recovered_at').on(
+      t.bidSessionId,
+      t.recoveredAt,
     ),
   }),
 );

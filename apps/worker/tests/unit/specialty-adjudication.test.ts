@@ -524,9 +524,11 @@ describe('specialty adjudication state machine', () => {
   });
 
   it('enforces the configured synthetic outcome allowlist for both candidate and original-bidder resolutions', () => {
+    const basePolicy = syntheticPolicy().testPolicy;
+    if (basePolicy === undefined) throw new Error('Synthetic specialty policy fixture is missing.');
     const policy = syntheticPolicy({
       testPolicy: {
-        ...syntheticPolicy().testPolicy!,
+        ...basePolicy,
         candidate_outcomes: ['award', 'declined'],
       },
     });
