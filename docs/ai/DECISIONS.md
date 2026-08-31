@@ -9,6 +9,8 @@
 - Exact source deployment may use a disposable detached Linux checkout when an old Linux worktree is stale; that condition is not a human blocker. The 2026-08-31 Web deployment used this method. A subsequent API redeploy was limited to correcting a concrete authentication failure and used the same exact candidate.
 - Staging access PIN and local-admin values are rotated only as ephemeral acceptance material. Store bcrypt secret input without a trailing line terminator; a byte-preserving Wrangler bulk-secret payload was required for valid bcrypt verification.
 - Do not bypass the absence of a designated annual configuration or authoritative staffing baseline with direct D1 writes merely to manufacture a fresh mock acceptance flow.
+- A current-looking Excel XML TeleStaff export is not a supported raw TeleStaff Assignments HTML source. Do not convert, reinterpret, or use it as a baseline; obtain the original current official HTML export and retain only its approved provenance/hash records through the operator workflow.
+- A staging-only annual configuration may be created only after the official baseline is accepted and the configuration policy is fully determined. The checked-in 2026 documents leave Fire Investigator inclusion and Station 6 Marine FF/Post St.6 dashboard classification for explicit operator confirmation; no default may be silently chosen.
 
 ## Preserved reliability decisions
 
