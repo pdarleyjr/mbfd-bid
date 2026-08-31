@@ -4,6 +4,10 @@
 
 Remove the configuration and automation prerequisites that block a later, separately authorized staging D1 migration and candidate deployment.
 
+## 2026-08-31 update
+
+The controlled staging sequence completed mock disposition, backup upload, and migrations through `0037`. Remaining work is exact-candidate Linux/OpenNext Web deployment plus authenticated technical acceptance and backup retrieval/hash verification; production remains explicitly out of scope.
+
 ## Boundaries
 
 Do not apply migrations `0024`–`0037`, alter migration SQL or the D1 ledger, deploy the reviewed application candidate, touch production, enable portal writeback, create `PORTAL_BID_WRITER`, or change MBFD Hub, Media Control, GMKtec, Docker, tunnel, DNS, or shared infrastructure.

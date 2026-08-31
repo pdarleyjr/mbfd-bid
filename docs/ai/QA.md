@@ -1,5 +1,13 @@
 # Staging remediation QA
 
+## 2026-08-31 controlled convergence evidence
+
+- PASS — focused mock-close TDD regression (14 tests), Worker lint/typecheck, Worker suite (978 passed, 1 skipped), and Wrangler launcher tests (25 passed).
+- PASS — R2 backup bucket creation; nonempty D1 export and upload. NOT YET VERIFIED — private retrieval/hash comparison.
+- PASS — controlled one-at-a-time D1 migration sequence `0024` through `0037`; every post-step ledger/integrity/protected-count gate passed. Final remote guard reports `STAGING_D1_MIGRATION_GUARD_PASS`.
+- PASS — API deployment health at version `a5f22d5f-8789-47f9-9de8-8bf301a729a2`; staging-only secret-name inventory is aligned for API/Web as required.
+- NOT YET VERIFIED — exact-candidate Linux/OpenNext Web build/deployment and full authenticated browser/TeleStaff/print/WebSocket acceptance. The locally available Ubuntu environment was a different stale checkout and was not used.
+
 - Read-only D1 baseline: ledger ends at `0023_bid_position_participation.sql`; pending is exactly `0024`–`0037`; `PRAGMA quick_check` returned `ok`; `PRAGMA foreign_key_check` returned no rows; reported D1 writes: zero.
 - Deployment-guard red test: before the workflow change, the static test failed because `deploy-staging.yml` invoked `wrangler d1 migrations apply`.
 - Deployment-guard green test: `node scripts/test-deploy-staging-migration-guard.mjs` passes after the change.
