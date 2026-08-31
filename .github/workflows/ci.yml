@@ -74,6 +74,8 @@ jobs:
       - name: Verify D1 backup preflight
         shell: pwsh
         run: ./scripts/test-d1-backup-preflight.ps1
+      - name: Verify ordinary staging deployment migration guard
+        run: node scripts/test-deploy-staging-migration-guard.mjs
       - run: pnpm test
 
   e2e:

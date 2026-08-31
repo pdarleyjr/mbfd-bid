@@ -1,6 +1,16 @@
-# Reliability checkpoint review
+# Staging remediation QA
 
-- Independent read-only review: P0=0, P1=0. P2: the intentional Worker test-tool migration refreshes transitive lockfile entries; direct dependency changes remain scoped to the required Cloudflare test stack.
-- Deterministic evidence: frozen install, lint, package build, typecheck, workspace suite (260 files / 1,507 passed / 4 intentional skips), production build, production audit, D1 backup preflight, and dedicated runtime eviction matrix passed.
-- Clean Linux/OpenNext evidence: disposable GMKtec portable Node 22.22.1 and pnpm 9.12.0, 752-file SHA parity, frozen install, lint, package build, typecheck, Next/OpenNext build, loopback preview, and HTTP 200. The validation root and its processes were removed.
-- Remaining release blocker: staging D1 migration progression requires a separate high-risk strategy and per-migration verification review. No staging mutation is authorized by this checkpoint.
+- Read-only D1 baseline: ledger ends at `0023_bid_position_participation.sql`; pending is exactly `0024`–`0037`; `PRAGMA quick_check` returned `ok`; `PRAGMA foreign_key_check` returned no rows; reported D1 writes: zero.
+- Deployment-guard red test: before the workflow change, the static test failed because `deploy-staging.yml` invoked `wrangler d1 migrations apply`.
+- Deployment-guard green test: `node scripts/test-deploy-staging-migration-guard.mjs` passes after the change.
+- Live negative test: `node scripts/assert-staging-d1-migration-guard.mjs` correctly blocks ordinary deployment while the remote ledger ends at `0023` and canonical source ends at `0037`.
+- Local deterministic validation passed: frozen install; Biome lint; workspace typecheck; eligibility `84` passed / `3` intentional skips; shared `156` passed; A-Day `62` passed; Web `206` passed; Worker deterministic `974` passed / `1` skip; Worker launchers `25` passed; D1 backup preflight; production dependency audit; and diff/credential-pattern scans.
+- Windows Next/OpenNext compilation completed through the Next compile phase, but OpenNext explicitly warns that Windows is not a fully compatible runtime. The final Linux/OpenNext runtime gate was not rerun for this configuration-only change.
+- Remaining remote acceptance is blocked, not passed: paired JWT/print-secret rotation, TeleStaff configuration preview, fresh authentication, private R2 backup create/upload/retrieval, and controlled version rollback verification require a confirmed quiet staging window.
+
+## Preserved reliability checkpoint review
+
+- Independent read-only review found P0=0 and P1=0. Its P2 was the intentional Worker test-tool migration refreshing transitive lockfile entries; direct dependency changes were scoped to the required Cloudflare test stack.
+- It recorded deterministic frozen install, lint, package build, typecheck, workspace suite, production build, production audit, D1 backup preflight, and dedicated runtime eviction matrix evidence.
+- Its clean Linux/OpenNext evidence used a disposable GMKtec portable Node 22.22.1 and pnpm 9.12.0 root with 752-file SHA parity, frozen install, lint, package build, typecheck, Next/OpenNext build, loopback preview, and HTTP 200. The validation root and processes were removed.
+- Its remaining blocker was staging D1 migration progression, requiring a separate high-risk per-migration strategy and verification review.

@@ -82,12 +82,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build internal packages
         run: pnpm -r --filter "./packages/*" build
-      - name: Apply D1 migrations (staging, remote)
-        working-directory: apps/worker
-        run: pnpm exec wrangler d1 migrations apply mbfd-bid-staging --remote --env staging
-      # Reference-data seeding is deliberately excluded from deployment.
-      # The seed replaces records and must be a separately reviewed,
-      # export-backed staging operation.
+      - name: Require controlled D1 migration gate
+        # Ordinary deployment never applies D1 migrations. The Release Captain
+        # completes the separately authorized, per-migration procedure first;
+        # this read-only ledger check fails closed until that procedure is done.
+        run: node scripts/assert-staging-d1-migration-guard.mjs
       - name: Deploy worker
         working-directory: apps/worker
         run: pnpm exec wrangler deploy --env staging

@@ -33,18 +33,18 @@ describe('staging release configuration', () => {
     expect(config).not.toContain('R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging"');
   });
 
-  it('runs non-deploy validation before a staging migration or deployment', () => {
+  it('runs non-deploy validation before the controlled D1 guard and deployment', () => {
     const workflow = readFileSync(
       resolve(repositoryRoot, '.github', 'workflows', 'deploy-staging.yml'),
       'utf8',
     );
     const validationStart = workflow.indexOf('  validate-artifacts:');
     const workerDeployStart = workflow.indexOf('  deploy-worker:');
-    const migrationStart = workflow.indexOf('Apply D1 migrations (staging, remote)');
+    const guardStart = workflow.indexOf('Require controlled D1 migration gate');
 
     expect(validationStart).toBeGreaterThanOrEqual(0);
     expect(workerDeployStart).toBeGreaterThan(validationStart);
-    expect(migrationStart).toBeGreaterThan(workerDeployStart);
+    expect(guardStart).toBeGreaterThan(workerDeployStart);
 
     const validation = workflow.slice(validationStart, workerDeployStart);
     expect(validation).toContain('pnpm lint');
@@ -53,6 +53,8 @@ describe('staging release configuration', () => {
     expect(validation).not.toContain('wrangler deploy --env staging --dry-run');
     expect(validation).toContain('pnpm exec wrangler dev --env staging --local');
     expect(validation).toContain('pnpm build:opennext:staging');
+    expect(workflow).toContain('node scripts/assert-staging-d1-migration-guard.mjs');
+    expect(workflow).not.toMatch(/wrangler\s+d1\s+migrations\s+apply/);
     expect(workflow).not.toContain('db:seed:remote');
   });
 

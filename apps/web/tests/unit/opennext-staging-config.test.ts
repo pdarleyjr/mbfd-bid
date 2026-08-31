@@ -132,9 +132,8 @@ describe('staging OpenNext configuration', () => {
     expect(deployStaging).not.toContain('Cloudflare Pages');
     expect(deployStaging).not.toContain('next-on-pages');
     expect(deployStaging).not.toContain('--commit-dirty');
-    expect(deployStaging).toContain(
-      'pnpm exec wrangler d1 migrations apply mbfd-bid-staging --remote --env staging',
-    );
+    expect(deployStaging).toContain('node scripts/assert-staging-d1-migration-guard.mjs');
+    expect(deployStaging).not.toMatch(/wrangler\s+d1\s+migrations\s+apply/);
     expect(deployStaging).not.toContain('pnpm db:seed:remote');
     expect(workerPackageJson.scripts['db:seed:remote']).toBe('tsx seed/2026.ts --remote');
   });
