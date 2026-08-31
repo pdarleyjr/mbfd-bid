@@ -489,7 +489,7 @@ describe('admin TeleStaff operator workflow', () => {
       `INSERT INTO members
          (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
           employment_status, is_probationary, created_at, updated_at)
-       VALUES (1, 'SYNTH-000001', 'Synthetic', 'Operator', 'FF', 'FF', 1, 'active', 0, ${NOW}, ${NOW})`,
+       VALUES (1, 'SYNTH-000001', 'Synthetic', 'Operator', 'FF', 'FF', 1, 'unknown', 0, ${NOW}, ${NOW})`,
     );
     const stage = await request(h, '/imports', { method: 'POST', body: importForm() });
     expect(stage.status).toBe(201);
