@@ -34,6 +34,56 @@ describe('verifyCredentials', () => {
     expect(result?.member_id).toBe(555);
   });
 
+  it('normalizes a portal rank label to the canonical Bid rank code', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          member_id: 555,
+          employee_id: '20731',
+          first_name: 'Test',
+          last_name: 'Member',
+          rank: 'Lieutenant',
+          role: 'member',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const result = await verifyCredentials({
+      portalBaseUrl: 'https://portal.test',
+      token: 'tok',
+      employee_id: '20731',
+      password: 'pw',
+    });
+
+    expect(result?.rank).toBe('LT');
+  });
+
+  it('fails closed when the portal returns an unknown rank value', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          member_id: 555,
+          employee_id: '20731',
+          first_name: 'Test',
+          last_name: 'Member',
+          rank: 'Unknown Rank',
+          role: 'member',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    await expect(
+      verifyCredentials({
+        portalBaseUrl: 'https://portal.test',
+        token: 'tok',
+        employee_id: '20731',
+        password: 'pw',
+      }),
+    ).rejects.toThrow(/Invalid enum value/);
+  });
+
   it('returns null on 401', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       new Response(null, { status: 401 }),
