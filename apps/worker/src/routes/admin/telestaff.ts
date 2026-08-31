@@ -579,19 +579,20 @@ function terminalApplyRows(rows: readonly ApplyDbRow[]): ApplyDbRow[] | null {
  * source identity/mapping fields are immutable evidence but do not all advance
  * the reconciliation review token.
  */
-function teleStaffApplyGuard(input: {
+export function teleStaffApplyGuards(input: {
   importRecord: ImportDbRow;
   rows: readonly ApplyDbRow[];
   materializedRows: readonly ApplyDbRow[];
   endAssignments: readonly EndAssignmentDbRow[];
   canonicalEffectiveOn: string | undefined;
   expectedRevision: number;
-}): SqlGuard {
-  const clauses: string[] = [];
-  const bindings: unknown[] = [];
+}): SqlGuard[] {
+  const guards: SqlGuard[] = [];
   const add = (clause: string, ...values: unknown[]) => {
-    clauses.push(`(${clause})`);
-    bindings.push(...values);
+    // D1 enforces a per-statement SQL limit. Each predicate is independently
+    // evaluated in the same atomic batch, with every canonical write gated on
+    // the eventual committed import state below.
+    guards.push({ sql: `(${clause})`, bindings: values });
   };
   const { importRecord, rows, materializedRows, endAssignments, canonicalEffectiveOn } = input;
 
@@ -776,7 +777,7 @@ function teleStaffApplyGuard(input: {
       assignment.effective_to,
     );
   }
-  return { sql: clauses.join(' AND '), bindings };
+  return guards;
 }
 
 function lifecycleEvidenceFor(
@@ -845,6 +846,7 @@ function lifecycleStatement(
   canonicalEffectiveOn: string,
   actorId: number,
   nowMs: number,
+  importId: string,
 ): D1PreparedStatement {
   return db
     .prepare(
@@ -853,7 +855,11 @@ function lifecycleStatement(
           employment_status_before, employment_status_after, rank_before, rank_after,
           separation_type, reason, origin, actor_subject, idempotency_key,
           before_state, after_state, supersedes_event_id, created_at)
-       VALUES (?, ?, ?, ?, 'ADMIN_REASSIGNMENT', ?, ?, ?, ?, ?, NULL, ?, 'TELESTAFF', ?, ?, ?, ?, NULL, ?)`,
+       SELECT ?, ?, ?, ?, 'ADMIN_REASSIGNMENT', ?, ?, ?, ?, ?, NULL, ?, 'TELESTAFF', ?, ?, ?, ?, NULL, ?
+        WHERE EXISTS (
+          SELECT 1 FROM assignment_imports apply_import
+           WHERE apply_import.id = ? AND apply_import.status = 'committed'
+        )`,
     )
     .bind(
       evidence.eventId,
@@ -874,6 +880,7 @@ function lifecycleStatement(
       JSON.stringify(evidence.beforeState),
       JSON.stringify(evidence.afterState),
       nowMs,
+      importId,
     );
 }
 
@@ -920,7 +927,12 @@ function teleStaffApplyAuditStatement(
           target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at)
        SELECT ?, NULL, COALESCE(MAX(seq), 0) + 1, 'admin', ?, 'telestaff_apply',
               'assignment_import', ?, ?, ?, ?, NULL, ?, ?
-         FROM audit_log WHERE bid_session_id IS NULL`,
+         FROM audit_log
+        WHERE bid_session_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM assignment_imports apply_import
+             WHERE apply_import.id = ? AND apply_import.status = 'committed'
+          )`,
     )
     .bind(
       ulid(),
@@ -931,6 +943,7 @@ function teleStaffApplyAuditStatement(
       'TeleStaff official source apply after terminal reconciliation',
       JSON.stringify({ v: 1, origin: 'TELESTAFF', operation: 'apply' }),
       Math.floor(input.nowMs / 1_000),
+      input.importId,
     );
 }
 
@@ -2055,7 +2068,7 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
   }
   const evidence = lifecycleEvidence as TeleStaffLifecycleEvidence[];
   const nowMs = Date.now();
-  const guard = teleStaffApplyGuard({
+  const guards = teleStaffApplyGuards({
     importRecord,
     rows,
     materializedRows,
@@ -2063,19 +2076,28 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
     canonicalEffectiveOn,
     expectedRevision: parsed.data.expected_reconciliation_revision,
   });
+  const firstGuard = guards.shift();
+  if (firstGuard === undefined) return c.json({ error: 'apply_rejected' }, 409);
   const statements: D1PreparedStatement[] = [
     c.env.DB.prepare(
       `UPDATE assignment_imports
-            SET status = CASE WHEN ${guard.sql} THEN 'approved' ELSE 'invalid_apply_guard' END,
-                approved_at = ?, approved_by_member_id = ?
-          WHERE id = ? AND status = 'reviewed' AND source_kind = 'official'
-            AND reconciliation_revision = ?`,
+          SET status = CASE WHEN ${firstGuard.sql} THEN 'approved' ELSE 'invalid_apply_guard' END,
+              approved_at = ?, approved_by_member_id = ?
+        WHERE id = ? AND status = 'reviewed' AND source_kind = 'official'
+          AND reconciliation_revision = ?`,
     ).bind(
-      ...guard.bindings,
+      ...firstGuard.bindings,
       nowMs,
       actorId,
       importId,
       parsed.data.expected_reconciliation_revision,
+    ),
+    ...guards.map((guard) =>
+      c.env.DB.prepare(
+        `UPDATE assignment_imports
+              SET status = 'invalid_apply_guard'
+            WHERE id = ? AND status = 'approved' AND NOT ${guard.sql}`,
+      ).bind(importId, ...guard.bindings),
     ),
     c.env.DB.prepare(
       `UPDATE assignment_imports
@@ -2094,7 +2116,11 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
       c.env.DB.prepare(
         `UPDATE member_assignments SET status = ?, effective_to = ?, updated_at = ?
            WHERE id = ? AND member_id = ? AND staffing_position_id = ? AND status = ?
-             AND effective_from = ? AND effective_to IS ?`,
+             AND effective_from = ? AND effective_to IS ?
+             AND EXISTS (
+               SELECT 1 FROM assignment_imports apply_import
+                WHERE apply_import.id = ? AND apply_import.status = 'committed'
+             )`,
       ).bind(
         nextStatus,
         effectiveTo,
@@ -2105,6 +2131,7 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
         assignment.status,
         assignment.effective_from,
         assignment.effective_to,
+        importId,
       ),
     );
   }
@@ -2127,13 +2154,18 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
                ON source_mapping.id = source_row.staffing_position_source_mapping_id
              JOIN assignment_imports import_record ON import_record.id = source_row.import_id
             WHERE source_row.id = ? AND source_row.import_id = ?
-              AND source_row.row_fingerprint = ?`,
+              AND source_row.row_fingerprint = ?
+              AND import_record.status = 'committed'`,
       ).bind(observationId, nowMs, nowMs, row.id, importId, row.row_fingerprint),
       c.env.DB.prepare(
         `INSERT INTO member_assignments
              (id, member_id, staffing_position_id, origin_type, origin_ref, source_observation_id,
               status, effective_from, effective_to, created_at, updated_at)
-           VALUES (?, ?, ?, 'TELESTAFF_IMPORT', ?, ?, 'active', ?, NULL, ?, ?)`,
+           SELECT ?, ?, ?, 'TELESTAFF_IMPORT', ?, ?, 'active', ?, NULL, ?, ?
+            WHERE EXISTS (
+              SELECT 1 FROM assignment_imports apply_import
+               WHERE apply_import.id = ? AND apply_import.status = 'committed'
+            )`,
       ).bind(
         lifecycle.assignmentId,
         row.resolved_member_id,
@@ -2143,8 +2175,17 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
         canonicalEffectiveOn,
         nowMs,
         nowMs,
+        importId,
       ),
-      lifecycleStatement(c.env.DB, row, lifecycle, canonicalEffectiveOn ?? '', actorId, nowMs),
+      lifecycleStatement(
+        c.env.DB,
+        row,
+        lifecycle,
+        canonicalEffectiveOn ?? '',
+        actorId,
+        nowMs,
+        importId,
+      ),
     );
   }
   statements.push(

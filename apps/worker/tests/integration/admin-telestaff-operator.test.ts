@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import { teleStaffApplyGuards } from '../../src/routes/admin/telestaff.js';
 import { seedAuthoritativeBaseline } from './helpers/authoritative-staffing-baseline.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
@@ -153,6 +154,42 @@ describe('admin TeleStaff operator workflow', () => {
 
   afterEach(async () => {
     await teardownTestD1(h);
+  });
+
+  it('keeps every transactional apply guard below D1 statement limits for 211 rows', () => {
+    const rows = Array.from({ length: 211 }, (_, index) => ({
+      id: `source-row-${index}`,
+      row_fingerprint: `fingerprint-${index}`,
+      source_a_r_day: 'G1',
+      normalized_source_topology: `topology-${index}`,
+      source_topology_completeness: 'complete',
+      reconciliation_classification: 'NEW_ASSIGNMENT',
+      review_status: 'approved',
+      resolution_action: 'APPLY_OBSERVATION',
+      resolved_member_id: index + 1,
+      staffing_position_source_mapping_id: `mapping-${index}`,
+      staffing_position_id: `position-${index}`,
+      member_employment_status: 'unknown',
+      member_rank: 'FF',
+      mapping_is_approved_for_snapshot: 1,
+    }));
+    const guards = teleStaffApplyGuards({
+      importRecord: {
+        id: 'import-211',
+        source_system: 'telestaff',
+        source_snapshot_as_of: '2026-08-24',
+        source_observed_at: null,
+        source_observation_time_basis: 'date_only',
+      },
+      rows,
+      materializedRows: rows,
+      endAssignments: [],
+      canonicalEffectiveOn: '2026-08-24',
+      expectedRevision: 786,
+    } as never);
+
+    expect(guards.length).toBeGreaterThan(211);
+    expect(Math.max(...guards.map((guard) => guard.sql.length))).toBeLessThan(100_000);
   });
 
   it('parses a preview only in memory and returns no raw personnel evidence', async () => {
