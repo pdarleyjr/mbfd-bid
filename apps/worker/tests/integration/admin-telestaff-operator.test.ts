@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
@@ -754,6 +754,7 @@ describe('admin TeleStaff operator workflow', () => {
       }
       return originalBatch(statements);
     };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const apply = await request(
       h,
       `/imports/${staged.import.id}/apply`,
@@ -767,6 +768,8 @@ describe('admin TeleStaff operator workflow', () => {
       },
       { db: concurrentDb },
     );
+    expect(errorSpy).toHaveBeenCalledWith('telestaff apply failed', expect.anything());
+    errorSpy.mockRestore();
     expect(apply.status).toBe(409);
     await expect(apply.json()).resolves.toEqual({ error: 'apply_rejected' });
     expect(

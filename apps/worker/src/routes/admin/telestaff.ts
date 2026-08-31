@@ -2161,7 +2161,10 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
   );
   try {
     await c.env.DB.batch(statements);
-  } catch {
+  } catch (error) {
+    // Preserve the public fail-closed response while retaining the D1 rejection
+    // in the staging Worker log for release-captain diagnosis.
+    console.error('telestaff apply failed', error);
     return c.json({ error: 'apply_rejected' }, 409);
   }
   const committed = await loadImportSummary(c.env.DB, importId);
