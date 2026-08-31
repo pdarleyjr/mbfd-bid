@@ -243,4 +243,100 @@ describe('TeleStaffOperatorWorkspace', () => {
     ).toContain('213');
     expect(container.textContent).toContain('Unresolved observations');
   });
+
+  it('uses the authenticated CSRF path to designate a committed import as the 2026 staging baseline', async () => {
+    const importSummary = {
+      id: 'import-baseline-2026',
+      status: 'committed',
+      sourceKind: 'official',
+      sourceSnapshotAsOf: '2026-08-24',
+      sourceObservedAt: null,
+      sourceObservationTimeBasis: 'date_only',
+      reconciliationRevision: 786,
+      normalizedDataRowCount: 262,
+      uniqueEmployeeCount: 211,
+      reconciliation: {
+        sourceRows: 262,
+        pendingSourceRows: 0,
+        hardBlockerSourceRows: 0,
+        incompleteTopologySourceRows: 0,
+        missingObservationFindings: 0,
+        pendingMissingObservationFindings: 0,
+      },
+    };
+    const detail = {
+      import: importSummary,
+      rows: [],
+      missingObservationFindings: [],
+      pagination: { totalRows: 262 },
+    };
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input) => {
+        const url = String(input);
+        if (url === '/api/admin/telestaff/imports?limit=25') {
+          return new Response(JSON.stringify({ imports: [importSummary] }), { status: 200 });
+        }
+        if (url === '/api/admin/telestaff/imports/import-baseline-2026') {
+          return new Response(JSON.stringify(detail), { status: 200 });
+        }
+        if (url === '/api/auth/csrf') {
+          return new Response(
+            JSON.stringify({ token: 'csrf_123e4567-e89b-12d3-a456-426614174000' }),
+            {
+              status: 200,
+            },
+          );
+        }
+        if (url.endsWith('/baseline-acceptance')) {
+          return new Response(
+            JSON.stringify({
+              acceptanceId: 'baseline-acceptance-2026-import-baseline-2026',
+              importId: importSummary.id,
+              idempotent: false,
+              baseline: { status: 'PASS' },
+            }),
+            { status: 201 },
+          );
+        }
+        return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal(
+      'confirm',
+      vi.fn(() => true),
+    );
+
+    const container = renderWorkspace();
+    await settle();
+    const importButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Snapshot 2026-08-24'),
+    );
+    if (!importButton) throw new Error('Retained import control did not render.');
+    await click(importButton);
+
+    const baselineButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="telestaff-baseline-acceptance"]',
+    );
+    expect(baselineButton?.textContent).toContain('Designate 2026 staging baseline');
+    expect(baselineButton?.disabled).toBe(false);
+    if (!baselineButton) throw new Error('Baseline acceptance control did not render.');
+    await click(baselineButton);
+
+    const baselineCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).endsWith('/baseline-acceptance'),
+    );
+    expect(baselineCall?.[1]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ get: expect.any(Function) }),
+      }),
+    );
+    const headers = baselineCall?.[1]?.headers as Headers;
+    expect(headers.get('X-MBFD-CSRF')).toBe('csrf_123e4567-e89b-12d3-a456-426614174000');
+    expect(headers.get('Idempotency-Key')).toBe('baseline-acceptance-2026-import-baseline-2026');
+    expect(
+      container.querySelector('[data-testid="telestaff-baseline-result"]')?.textContent,
+    ).toContain('PASS');
+  });
 });

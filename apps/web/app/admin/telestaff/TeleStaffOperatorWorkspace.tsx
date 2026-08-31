@@ -100,6 +100,13 @@ interface SafeExceptionResolutionResult {
   rejectedUnknownPerson: number;
 }
 
+interface BaselineAcceptanceResult {
+  acceptanceId: string;
+  importId: string;
+  idempotent: boolean;
+  baseline: { status: string };
+}
+
 function errorCode(body: unknown, fallback: string): string {
   if (body !== null && typeof body === 'object' && 'error' in body) {
     const value = (body as ApiError).error;
@@ -222,6 +229,9 @@ export function TeleStaffOperatorWorkspace() {
   const [certification, setCertification] = useState<CertificationResult | null>(null);
   const [safeExceptionResolution, setSafeExceptionResolution] =
     useState<SafeExceptionResolutionResult | null>(null);
+  const [baselineAcceptance, setBaselineAcceptance] = useState<BaselineAcceptanceResult | null>(
+    null,
+  );
 
   async function loadImport(importId: string): Promise<ImportDetail | null> {
     const response = await fetch(`/api/admin/telestaff/imports/${encodeURIComponent(importId)}`, {
@@ -516,6 +526,71 @@ export function TeleStaffOperatorWorkspace() {
       );
     } catch {
       setError('safe_exception_resolution_unavailable');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function designateStagingBaseline() {
+    if (detail === null || detail.import.status !== 'committed') {
+      setError('committed_import_required_for_baseline');
+      return;
+    }
+    if (
+      !window.confirm(
+        'Designate this committed official import as the 2026 staging staffing baseline?\n\n' +
+          'This is an authenticated staging lifecycle action. It does not write directly to D1 and does not affect production.',
+      )
+    )
+      return;
+
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setBaselineAcceptance(null);
+    try {
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      const response = await csrfFetch(
+        `/api/admin/telestaff/imports/${encodeURIComponent(detail.import.id)}/baseline-acceptance`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `baseline-acceptance-2026-${detail.import.id}`,
+          },
+          body: JSON.stringify({
+            bid_year: 2026,
+            reason:
+              'Operator-designated 2026 staging staffing baseline after reviewed TeleStaff apply.',
+          }),
+        },
+      );
+      const body = await parseResponse(response);
+      const result =
+        body !== null &&
+        typeof body === 'object' &&
+        typeof (body as { acceptanceId?: unknown }).acceptanceId === 'string' &&
+        typeof (body as { importId?: unknown }).importId === 'string' &&
+        typeof (body as { idempotent?: unknown }).idempotent === 'boolean' &&
+        (body as { baseline?: unknown }).baseline !== null &&
+        typeof (body as { baseline?: unknown }).baseline === 'object' &&
+        typeof (body as { baseline: { status?: unknown } }).baseline.status === 'string'
+          ? (body as BaselineAcceptanceResult)
+          : null;
+      if (!response.ok || result === null) {
+        setError(errorCode(body, 'baseline_acceptance_unavailable'));
+        return;
+      }
+      setBaselineAcceptance(result);
+      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      setNotice(
+        result.idempotent
+          ? 'The existing 2026 staging baseline acceptance was confirmed.'
+          : 'The 2026 staging staffing baseline was accepted with the server-calculated completeness result below.',
+      );
+    } catch {
+      setError('baseline_acceptance_unavailable');
     } finally {
       setBusy(false);
     }
@@ -987,6 +1062,44 @@ export function TeleStaffOperatorWorkspace() {
           >
             Apply to canonical staffing
           </button>
+        </div>
+      </section>
+
+      <section
+        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        aria-labelledby="telestaff-baseline-heading"
+      >
+        <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+          Staging lifecycle
+        </p>
+        <h2 id="telestaff-baseline-heading" className="mt-1 font-heading text-xl text-white">
+          2026 staffing baseline
+        </h2>
+        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+          A baseline can be accepted only from the selected committed official import. The server
+          rechecks authoritative-source completeness and records an idempotent acceptance receipt.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            data-testid="telestaff-baseline-acceptance"
+            onClick={() => void designateStagingBaseline()}
+            disabled={detail?.import.status !== 'committed' || busy}
+            className="min-h-11 rounded bg-amber-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Designate 2026 staging baseline
+          </button>
+          {baselineAcceptance !== null && (
+            <div
+              data-testid="telestaff-baseline-result"
+              className="rounded border border-emerald-700 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-100"
+            >
+              Completeness: {baselineAcceptance.baseline.status} ·{' '}
+              {baselineAcceptance.idempotent
+                ? 'existing acceptance confirmed'
+                : 'acceptance recorded'}
+            </div>
+          )}
         </div>
       </section>
 
