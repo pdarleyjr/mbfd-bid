@@ -4,6 +4,7 @@ import { ulid } from 'ulid';
 import { z } from 'zod';
 
 import { getDb } from '../../db/index.js';
+import { acceptAuthoritativeStaffingBaseline } from '../../lib/authoritative-staffing-baseline-acceptance.js';
 import { evaluateTeleStaffImportCompleteness } from '../../lib/authoritative-staffing-baseline.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
 import { parseTeleStaffAssignmentsHtml } from '../../lib/telestaff-assignment-html.js';
@@ -270,6 +271,13 @@ const ReviewRequestSchema = z
       'reject_source_row',
       'retain_incomplete_source_row',
     ]),
+  })
+  .strict();
+
+const BaselineAcceptanceRequestSchema = z
+  .object({
+    bid_year: z.number().int().min(2000).max(9999),
+    reason: z.string().trim().min(4).max(500),
   })
   .strict();
 
@@ -1722,6 +1730,39 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
       canonicalEffectiveOn: canonicalEffectiveOn ?? null,
     },
   });
+});
+
+/**
+ * Designates one complete, official import as the bid year's authoritative
+ * staffing baseline.  This is deliberately a Hub-admin-only lifecycle action:
+ * local staging admins and direct D1 callers cannot manufacture acceptance.
+ */
+router.post('/imports/:importId/baseline-acceptance', requireStepUpAuth(), async (c) => {
+  const importId = c.req.param('importId');
+  if (!isOpaqueId(importId)) return c.json({ error: 'invalid_import_id' }, 400);
+  const raw = await c.req.json().catch(() => null);
+  const parsed = BaselineAcceptanceRequestSchema.safeParse(raw);
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
+  const acceptanceId = c.req.header('Idempotency-Key');
+  if (acceptanceId === undefined || !isOpaqueId(acceptanceId)) {
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  }
+  const actorId = actorMemberId(c.get('claims'));
+  if (actorId === null) return c.json({ error: 'operator_identity_required' }, 403);
+
+  const accepted = await acceptAuthoritativeStaffingBaseline(c.env.DB, getDb(c.env.DB), {
+    acceptanceId,
+    bidYear: parsed.data.bid_year,
+    importId,
+    actorMemberId: actorId,
+    reason: parsed.data.reason,
+    acceptedAtMs: Date.now(),
+  });
+  if (!accepted.ok) {
+    const status = accepted.code === 'INVALID_ACCEPTANCE_REQUEST' ? 400 : 409;
+    return c.json({ error: accepted.code.toLowerCase(), baseline: accepted.baseline }, status);
+  }
+  return c.json(accepted, 201);
 });
 
 export default router;

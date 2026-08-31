@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import { seedAuthoritativeBaseline } from './helpers/authoritative-staffing-baseline.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 't'.repeat(64);
@@ -148,6 +149,57 @@ describe('admin TeleStaff operator workflow', () => {
     expect(
       (await h.db.run('SELECT COUNT(*) AS import_count FROM assignment_imports')).results,
     ).toEqual([{ import_count: 0 }]);
+  });
+
+  it('lets a stepped-up Hub administrator designate one complete official import as the annual baseline', async () => {
+    await seedAuthoritativeBaseline(h, {
+      bidYear: 2027,
+      importId: 'remote-acceptance-import',
+      rows: [{ sourceRowNumber: 1, normalizedTopology: 'synthetic/one' }],
+      accept: false,
+    });
+    await h.db.run(
+      `INSERT INTO members
+         (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+          is_probationary, created_at, updated_at)
+       VALUES (1, 'operator', 'Synthetic', 'Operator', 'CHIEF', 'OFC', 1, 0, ${NOW}, ${NOW})`,
+    );
+
+    const response = await request(h, '/imports/remote-acceptance-import/baseline-acceptance', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'remote-acceptance-import-2027',
+      },
+      body: JSON.stringify({
+        bid_year: 2027,
+        reason: 'Complete official source reviewed for the staging annual baseline.',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      importId: 'remote-acceptance-import',
+      idempotent: false,
+      baseline: { status: 'PASS' },
+    });
+
+    const replay = await request(h, '/imports/remote-acceptance-import/baseline-acceptance', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'remote-acceptance-import-2027',
+      },
+      body: JSON.stringify({
+        bid_year: 2027,
+        reason: 'Complete official source reviewed for the staging annual baseline.',
+      }),
+    });
+    expect(replay.status).toBe(201);
+    await expect(replay.json()).resolves.toMatchObject({
+      importId: 'remote-acceptance-import',
+      idempotent: true,
+    });
   });
 
   it('fails closed without a declared source kind and retains an explicit declaration with time provenance', async () => {

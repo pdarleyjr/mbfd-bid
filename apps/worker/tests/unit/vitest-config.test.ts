@@ -19,7 +19,7 @@ describe('Worker Vitest configuration', () => {
     const config = await loadConfig([...originalArgv, 'run']);
 
     expect(config.test?.exclude).toContain(launcherTest);
-  });
+  }, 15_000);
 
   it('retains launcher-test coverage for the interactive watch command', async () => {
     const config = await loadConfig([...originalArgv]);

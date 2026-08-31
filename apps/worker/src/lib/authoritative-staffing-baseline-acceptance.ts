@@ -67,18 +67,18 @@ function matchesExistingAcceptance(
   return (
     existing.id === options.acceptanceId &&
     existing.importId === options.importId &&
-    existing.acceptedAt.getTime() === options.acceptedAtMs &&
     existing.acceptedByMemberId === options.actorMemberId &&
     existing.acceptanceReason === options.reason.trim()
   );
 }
 
 /**
- * Local-only acceptance control. There is deliberately no HTTP endpoint for
- * this operation: an authorized workflow must provide the operator identity
- * and reason, both of which are immutably recorded by the ledger. The D1
- * trigger independently repeats the material completeness invariants so a
- * direct caller cannot accept an empty, partial, or synthetic manifest.
+ * Acceptance control used by the stepped-up Hub-admin lifecycle route.  A
+ * retry may arrive at a different wall-clock time, so the immutable receipt
+ * identity and decision payload—not a fresh request timestamp—define
+ * idempotency. The D1 trigger independently repeats the material-completeness
+ * invariants so a direct caller cannot accept an empty, partial, or synthetic
+ * manifest.
  */
 export async function acceptAuthoritativeStaffingBaseline(
   d1: D1Database,
