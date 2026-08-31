@@ -288,6 +288,13 @@ const StaffingCertificationRequestSchema = z
   })
   .strict();
 
+const SafeExceptionResolutionRequestSchema = z
+  .object({
+    expected_reconciliation_revision: z.number().int().nonnegative(),
+    reason: z.string().trim().min(12).max(500),
+  })
+  .strict();
+
 const ApplyRequestSchema = z
   .object({
     expected_reconciliation_revision: z.number().int().nonnegative(),
@@ -1458,6 +1465,142 @@ router.patch('/imports/:importId/rows/:rowId/review', requireStepUpAuth(), async
   return c.json({
     import: mapImport(importRecord),
     row: { reviewStatus: mutation.reviewStatus, resolutionAction: mutation.resolutionAction },
+  });
+});
+
+/**
+ * Terminally resolves only evidence that cannot safely materialize a staffing
+ * position: repeated complete topology, incomplete topology, and unknown
+ * personnel. It never creates or changes canonical staffing.
+ */
+router.post('/imports/:importId/resolve-safe-exceptions', requireStepUpAuth(), async (c) => {
+  const importId = c.req.param('importId');
+  if (!isOpaqueId(importId)) return c.json({ error: 'invalid_import_id' }, 400);
+  const parsed = SafeExceptionResolutionRequestSchema.safeParse(
+    await c.req.json().catch(() => null),
+  );
+  if (!parsed.success) return c.json({ error: 'invalid_resolution_request' }, 400);
+  const actorId = actorMemberId(c.get('claims'));
+  if (actorId === null) return c.json({ error: 'operator_identity_required' }, 403);
+
+  const importRecord = await loadImportSummary(c.env.DB, importId);
+  if (
+    importRecord === undefined ||
+    importRecord.source_kind !== 'official' ||
+    importRecord.status !== 'reviewed'
+  )
+    return c.json({ error: 'import_not_reviewable' }, 409);
+  if (importRecord.reconciliation_revision !== parsed.data.expected_reconciliation_revision)
+    return c.json({ error: 'reconciliation_revision_conflict' }, 409);
+
+  const result = await c.env.DB.prepare(
+    `SELECT id, reconciliation_classification, normalized_source_topology
+       FROM assignment_import_rows
+      WHERE import_id = ? AND review_status = 'pending'
+        AND reconciliation_classification IN ('NEW_POSITION', 'INCOMPLETE_TOPOLOGY', 'UNKNOWN_EMPLOYEE')
+      ORDER BY id ASC`,
+  )
+    .bind(importId)
+    .all();
+  const rows = result.results as unknown as Array<{
+    id: string;
+    reconciliation_classification: 'NEW_POSITION' | 'INCOMPLETE_TOPOLOGY' | 'UNKNOWN_EMPLOYEE';
+    normalized_source_topology: string | null;
+  }>;
+  const repeated = new Map<string, number>();
+  for (const row of rows) {
+    if (
+      row.reconciliation_classification === 'NEW_POSITION' &&
+      row.normalized_source_topology !== null
+    )
+      repeated.set(
+        row.normalized_source_topology,
+        (repeated.get(row.normalized_source_topology) ?? 0) + 1,
+      );
+  }
+  if (
+    rows.some(
+      (row) =>
+        row.reconciliation_classification === 'NEW_POSITION' &&
+        (row.normalized_source_topology === null ||
+          (repeated.get(row.normalized_source_topology) ?? 0) < 2),
+    )
+  )
+    return c.json({ error: 'non_repeated_new_position_requires_individual_review' }, 409);
+
+  const now = Date.now();
+  const counts = {
+    deferredRepeatedTopology: 0,
+    retainedIncompleteTopology: 0,
+    rejectedUnknownPerson: 0,
+  };
+  const statements: D1PreparedStatement[] = [];
+  for (const row of rows) {
+    const mutation =
+      row.reconciliation_classification === 'NEW_POSITION'
+        ? {
+            reviewStatus: 'approved',
+            action: 'DEFER_NEW_POSITION',
+            reason: 'DEFER_REPEATED_SOURCE_TOPOLOGY',
+          }
+        : row.reconciliation_classification === 'INCOMPLETE_TOPOLOGY'
+          ? {
+              reviewStatus: 'approved',
+              action: 'RETAIN_UNMATERIALIZED_SOURCE_ROW',
+              reason: 'RETAIN_INCOMPLETE_SOURCE_ROW',
+            }
+          : {
+              reviewStatus: 'rejected',
+              action: 'REJECT_SOURCE_ROW',
+              reason: 'REJECT_UNKNOWN_PERSON',
+            };
+    if (row.reconciliation_classification === 'NEW_POSITION') counts.deferredRepeatedTopology += 1;
+    else if (row.reconciliation_classification === 'INCOMPLETE_TOPOLOGY')
+      counts.retainedIncompleteTopology += 1;
+    else counts.rejectedUnknownPerson += 1;
+    statements.push(
+      c.env.DB.prepare(
+        `UPDATE assignment_import_rows
+            SET review_status = ?, resolution_action = ?, reviewed_at = ?, reviewed_by_member_id = ?,
+                resolution_reason = ?
+          WHERE id = ? AND import_id = ? AND review_status = 'pending'`,
+      ).bind(
+        mutation.reviewStatus,
+        mutation.action,
+        now,
+        actorId,
+        mutation.reason,
+        row.id,
+        importId,
+      ),
+    );
+  }
+  if (statements.length === 0)
+    return c.json({ import: mapImport(importRecord), counts, idempotent: true });
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO audit_log
+       (id, bid_session_id, seq, actor_type, actor_id, action, target_kind, target_id,
+        before_state, after_state, reason, client_meta, created_at)
+       SELECT ?, NULL, COALESCE(MAX(seq), 0) + 1, 'admin', ?, 'telestaff_safe_exception_resolve',
+              'assignment_import', ?, ?, ?, ?, ?, ? FROM audit_log WHERE bid_session_id IS NULL`,
+    ).bind(
+      ulid(),
+      actorId,
+      importId,
+      JSON.stringify({ v: 1, pendingRows: rows.length }),
+      JSON.stringify({ v: 1, ...counts }),
+      parsed.data.reason,
+      JSON.stringify({ v: 1, operation: 'telestaff_safe_exception_resolve' }),
+      Math.floor(now / 1000),
+    ),
+  );
+  await c.env.DB.batch(statements);
+  const updated = await loadImportSummary(c.env.DB, importId);
+  return c.json({
+    import: updated === undefined ? null : mapImport(updated),
+    counts,
+    idempotent: false,
   });
 });
 

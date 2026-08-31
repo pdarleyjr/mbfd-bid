@@ -625,6 +625,36 @@ describe('admin TeleStaff operator workflow', () => {
         )
       ).results,
     ).toEqual([{ count: 2 }]);
+
+    const detail = (await (await request(h, `/imports/${staged.import.id}`)).json()) as {
+      import: { reconciliationRevision: number };
+    };
+    const resolution = await request(h, `/imports/${staged.import.id}/resolve-safe-exceptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_reconciliation_revision: detail.import.reconciliationRevision,
+        reason: 'Repeated source topology is retained as an unmapped staging exception.',
+      }),
+    });
+    expect(resolution.status).toBe(200);
+    await expect(resolution.json()).resolves.toMatchObject({
+      counts: {
+        deferredRepeatedTopology: 2,
+        retainedIncompleteTopology: 0,
+        rejectedUnknownPerson: 0,
+      },
+      idempotent: false,
+    });
+    expect(
+      (
+        await h.db.run(
+          `SELECT COUNT(*) AS count FROM assignment_import_rows
+            WHERE import_id = ? AND resolution_action = 'DEFER_NEW_POSITION'`,
+          [staged.import.id],
+        )
+      ).results,
+    ).toEqual([{ count: 2 }]);
   });
 
   it('accepts a trigger-inclusive native D1 review change count', async () => {

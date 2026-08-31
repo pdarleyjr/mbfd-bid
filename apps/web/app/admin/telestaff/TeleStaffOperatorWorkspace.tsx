@@ -94,6 +94,12 @@ interface CertificationResult {
   idempotent: boolean;
 }
 
+interface SafeExceptionResolutionResult {
+  deferredRepeatedTopology: number;
+  retainedIncompleteTopology: number;
+  rejectedUnknownPerson: number;
+}
+
 function errorCode(body: unknown, fallback: string): string {
   if (body !== null && typeof body === 'object' && 'error' in body) {
     const value = (body as ApiError).error;
@@ -214,6 +220,8 @@ export function TeleStaffOperatorWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [certification, setCertification] = useState<CertificationResult | null>(null);
+  const [safeExceptionResolution, setSafeExceptionResolution] =
+    useState<SafeExceptionResolutionResult | null>(null);
 
   async function loadImport(importId: string): Promise<ImportDetail | null> {
     const response = await fetch(`/api/admin/telestaff/imports/${encodeURIComponent(importId)}`, {
@@ -456,6 +464,58 @@ export function TeleStaffOperatorWorkspace() {
       );
     } catch {
       setError('staffing_certification_unavailable');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resolveSafeExceptions() {
+    if (detail === null) return;
+    if (
+      !window.confirm(
+        'Resolve only safe staging exceptions? Repeated topology will be deferred without a seat, incomplete evidence retained without canonical staffing, and unknown-person observations rejected. No direct D1 writes or production mutation.',
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setSafeExceptionResolution(null);
+    try {
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      const response = await csrfFetch(
+        `/api/admin/telestaff/imports/${encodeURIComponent(detail.import.id)}/resolve-safe-exceptions`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expected_reconciliation_revision: detail.import.reconciliationRevision,
+            reason: 'Operator-approved terminal resolution of non-materializable staging evidence.',
+          }),
+        },
+      );
+      const body = await parseResponse(response);
+      const counts =
+        body !== null &&
+        typeof body === 'object' &&
+        'counts' in body &&
+        (body as { counts?: unknown }).counts !== null &&
+        typeof (body as { counts?: unknown }).counts === 'object'
+          ? ((body as { counts: SafeExceptionResolutionResult })
+              .counts as SafeExceptionResolutionResult)
+          : null;
+      if (!response.ok || counts === null) {
+        setError(errorCode(body, 'safe_exception_resolution_unavailable'));
+        return;
+      }
+      setSafeExceptionResolution(counts);
+      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      setNotice(
+        'Safe terminal review resolutions were recorded; canonical staffing was not changed.',
+      );
+    } catch {
+      setError('safe_exception_resolution_unavailable');
     } finally {
       setBusy(false);
     }
@@ -813,6 +873,31 @@ export function TeleStaffOperatorWorkspace() {
                     value={certification.idempotent ? 'Confirmed' : 'Created'}
                   />
                 </dl>
+              )}
+            </section>
+
+            <section className="mt-4 rounded-lg border border-amber-700 bg-amber-950/30 p-4">
+              <h3 className="font-semibold text-white">Safe exception resolution</h3>
+              <p className="mt-2 text-sm text-slate-300">
+                Resolves only non-materializable evidence: defer repeated topology without a seat,
+                retain incomplete observations, and reject unknown-person observations. It cannot
+                create canonical staffing.
+              </p>
+              <button
+                type="button"
+                onClick={() => void resolveSafeExceptions()}
+                disabled={busy || detail.import.reconciliation.pendingSourceRows === 0}
+                className="mt-3 min-h-11 rounded border border-amber-500 px-4 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Resolve safe staging exceptions
+              </button>
+              {safeExceptionResolution !== null && (
+                <p className="mt-3 text-sm text-amber-100">
+                  Deferred topology: {safeExceptionResolution.deferredRepeatedTopology} · Retained
+                  incomplete evidence: {safeExceptionResolution.retainedIncompleteTopology} ·
+                  Rejected unknown-person observations:{' '}
+                  {safeExceptionResolution.rejectedUnknownPerson}
+                </p>
               )}
             </section>
 
