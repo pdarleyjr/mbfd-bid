@@ -109,6 +109,38 @@ describe('POST /api/auth/login', () => {
     expect(body.jwt.split('.').length).toBe(3);
   });
 
+  it('preserves an authoritative portal admin entitlement in the Bid session', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          member_id: 555,
+          employee_id: '20731',
+          first_name: 'Peter',
+          last_name: 'Darley',
+          rank: 'LT',
+          role: 'admin',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const app = new Hono<{ Bindings: WorkerEnv }>();
+    app.route('/api/auth', auth);
+
+    const res = await app.request(
+      '/api/auth/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_id: '20731', password: 'pw-secret' }),
+      },
+      mkEnv(),
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ role: 'admin' });
+  });
+
   it('returns 401 on portal 401', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       new Response(null, { status: 401 }),
