@@ -296,7 +296,7 @@ describe('seed 2026 — idempotency', () => {
     expect(auditCount).toBe(1);
   });
 
-  it('Station 6 positions exist with marine positionNames', () => {
+  it('models the documented six-role Marine program without the obsolete Post St.6 seat', () => {
     const sqlite = new Database(':memory:');
     applyMigrations(sqlite);
     buildAndExecuteSeed(sqlite, 'test-audit-id-st6');
@@ -307,16 +307,34 @@ describe('seed 2026 — idempotency', () => {
       )
       .all() as { id: string; position_name: string }[];
 
-    expect(st6.length).toBe(9);
+    const marineFloats = sqlite
+      .prepare(
+        "SELECT id, position_name, is_floating FROM positions WHERE template_version = '2026.1' AND station = 'Marine Float Pool' ORDER BY id",
+      )
+      .all() as { id: string; position_name: string; is_floating: number }[];
+
+    expect(st6.length).toBe(12);
     const ids = st6.map((r) => r.id);
     expect(ids).toContain('A611');
     expect(ids).toContain('B612');
-    expect(ids).toContain('C613');
+    expect(ids).toContain('C614');
 
     const names = new Set(st6.map((r) => r.position_name));
-    expect(names.has('Firefighter FBO')).toBe(true);
-    expect(names.has('Marine Firefighter')).toBe(true);
-    expect(names.has('Post St.6')).toBe(true);
+    expect(names).toEqual(
+      new Set([
+        'Fireboat Officer',
+        'Fireboat Operator (Pilot)',
+        'Fireboat Engineer',
+        'Fireboat Deckhand',
+      ]),
+    );
+    expect(st6.some((r) => r.position_name === 'Post St.6')).toBe(false);
+
+    expect(marineFloats).toHaveLength(6);
+    expect(marineFloats.every((r) => r.is_floating === 1)).toBe(true);
+    expect(new Set(marineFloats.map((r) => r.position_name))).toEqual(
+      new Set(['Marine Float Firefighter #1', 'Marine Float Firefighter #2']),
+    );
   });
 
   it('No Station 5 positions exist', () => {

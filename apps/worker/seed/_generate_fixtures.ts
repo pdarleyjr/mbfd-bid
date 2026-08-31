@@ -30,29 +30,41 @@ const MARINE_UNIT = 'Fire Boat';
 
 function makeMarineRow(
   shift: 'A' | 'B' | 'C',
-  slot: '1' | '2' | '3',
+  slot: '1' | '2' | '3' | '4' | '5' | '6',
   positionName: string,
   rankRequired: 'FF' | 'LT' | 'CPT' | 'DC',
+  options: { station?: string; unit?: string; isFloating?: boolean } = {},
 ) {
   const id = `${shift}61${slot}`;
   return {
     id,
     shift,
-    station: MARINE_STATION,
+    station: options.station ?? MARINE_STATION,
     division: 'Combat',
-    unit: MARINE_UNIT,
+    unit: options.unit ?? MARINE_UNIT,
     rankRequired,
     positionName,
-    isFloating: false,
+    isFloating: options.isFloating ?? false,
     isVacantByDesign: false,
     isExcludedFromCount: false,
   };
 }
 
 const STATION6_ROWS = (['A', 'B', 'C'] as const).flatMap((shift) => [
-  makeMarineRow(shift, '1', 'Firefighter FBO', 'FF'),
-  makeMarineRow(shift, '2', 'Marine Firefighter', 'FF'),
-  makeMarineRow(shift, '3', 'Post St.6', 'FF'),
+  makeMarineRow(shift, '1', 'Fireboat Officer', 'CPT'),
+  makeMarineRow(shift, '2', 'Fireboat Operator (Pilot)', 'FF'),
+  makeMarineRow(shift, '3', 'Fireboat Engineer', 'FF'),
+  makeMarineRow(shift, '4', 'Fireboat Deckhand', 'FF'),
+  makeMarineRow(shift, '5', 'Marine Float Firefighter #1', 'FF', {
+    station: 'Marine Float Pool',
+    unit: 'Marine Float Pool',
+    isFloating: true,
+  }),
+  makeMarineRow(shift, '6', 'Marine Float Firefighter #2', 'FF', {
+    station: 'Marine Float Pool',
+    unit: 'Marine Float Pool',
+    isFloating: true,
+  }),
 ]);
 
 // ---------------------------------------------------------------------------

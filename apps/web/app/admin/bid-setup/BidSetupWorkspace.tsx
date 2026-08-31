@@ -98,6 +98,7 @@ export function BidSetupWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [reconcilingStationSix, setReconcilingStationSix] = useState(false);
 
   const editable =
     configuration !== null &&
@@ -149,6 +150,35 @@ export function BidSetupWorkspace({
     }
   }
 
+  async function reconcileStationSix() {
+    setError(null);
+    setSuccess(null);
+    setReconcilingStationSix(true);
+    try {
+      const response = await fetch('/api/admin/positions/reconcile-station-six', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          reason_code: 'rule_override.policy_direction',
+          reason:
+            'Reconcile the 2026 Station 6 template to the reviewed policy and 2026-08-24 staffing source.',
+        }),
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(describeError(body, `Station 6 reconciliation failed (${response.status}).`));
+        return;
+      }
+      setSuccess('Station 6 and Marine Float Pool were reconciled. Refreshing the draft state…');
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Station 6 reconciliation failed.');
+    } finally {
+      setReconcilingStationSix(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section
@@ -169,6 +199,28 @@ export function BidSetupWorkspace({
             Year {year}
           </span>
         </div>
+
+        {configuration?.lifecycle === 'UNCONFIGURED' &&
+          draftRuleBooks.some((ruleBook) => ruleBook.version === '2026.2') && (
+            <div className="mt-4 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
+              <p className="font-semibold">2026 staffing-source reconciliation required</p>
+              <p className="mt-1">
+                The reviewed policy requires four Fire Boat roles and two Marine Float Pool roles
+                per A/B/C shift. This creates a new 2026.2 template and retargets only the 2026.2
+                draft; it does not publish a rule book or start a bid.
+              </p>
+              <button
+                type="button"
+                onClick={reconcileStationSix}
+                disabled={reconcilingStationSix}
+                className="mt-3 min-h-11 rounded bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {reconcilingStationSix
+                  ? 'Reconciling Station 6…'
+                  : 'Reconcile 2026 Marine staffing'}
+              </button>
+            </div>
+          )}
 
         {configuration === null ? (
           <div className="mt-4 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
