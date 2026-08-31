@@ -23,6 +23,29 @@ const ADMIN_IDENTITY = {
   rank: 'CHIEF' as const,
 } satisfies Omit<LoginResponse, 'role'>;
 
+/**
+ * Temporary staging-only bridge correction, authorized for the operator
+ * rehearsal. The Hub credential bridge currently authenticates these
+ * employees but reports every successful login as `member`; production must
+ * continue to rely solely on a bridge-provided entitlement until Hub's
+ * role-aware bridge is delivered.
+ */
+const STAGING_OPERATOR_ADMIN_EMPLOYEE_IDS = new Set(['20731', '19545']);
+
+function resolvePortalRole(
+  env: Pick<WorkerEnv, 'ENV'>,
+  portalResponse: Pick<LoginResponse, 'employee_id' | 'role'>,
+): LoginResponse['role'] {
+  if (
+    env.ENV === 'staging' &&
+    portalResponse.role === 'member' &&
+    STAGING_OPERATOR_ADMIN_EMPLOYEE_IDS.has(portalResponse.employee_id)
+  ) {
+    return 'admin';
+  }
+  return portalResponse.role;
+}
+
 auth.post(
   '/login',
   zValidator('json', LoginRequestSchema, (result, c) => {
@@ -100,11 +123,13 @@ auth.post(
       return c.json({ error: 'invalid_credentials' }, 401);
     }
 
+    const role = resolvePortalRole(env, portalResponse);
+
     const jwt = await signJwt(
       {
         sub: portalResponse.member_id,
         emp: portalResponse.employee_id,
-        role: portalResponse.role,
+        role,
         rank: portalResponse.rank,
         first_name: portalResponse.first_name,
         last_name: portalResponse.last_name,
@@ -116,7 +141,7 @@ auth.post(
 
     return c.json({
       jwt,
-      role: portalResponse.role,
+      role,
       member: {
         member_id: portalResponse.member_id,
         employee_id: portalResponse.employee_id,

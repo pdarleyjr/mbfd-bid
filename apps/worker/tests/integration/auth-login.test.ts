@@ -81,7 +81,7 @@ describe('POST /api/auth/login', () => {
       new Response(
         JSON.stringify({
           member_id: 555,
-          employee_id: '20731',
+          employee_id: '20732',
           first_name: 'Peter',
           last_name: 'Darley',
           rank: 'LT',
@@ -99,7 +99,7 @@ describe('POST /api/auth/login', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employee_id: '20731', password: 'pw-secret' }),
+        body: JSON.stringify({ employee_id: '20732', password: 'pw-secret' }),
       },
       mkEnv(),
     );
@@ -139,6 +139,67 @@ describe('POST /api/auth/login', () => {
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({ role: 'admin' });
+  });
+
+  it.each(['20731', '19545'])(
+    'grants the explicitly authorized staging admin override for employee %s',
+    async (employeeId) => {
+      (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            member_id: employeeId === '20731' ? 555 : 556,
+            employee_id: employeeId,
+            first_name: employeeId === '20731' ? 'Peter' : 'Victor',
+            last_name: employeeId === '20731' ? 'Darley' : 'White',
+            rank: employeeId === '20731' ? 'LT' : 'DC',
+            role: 'member',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+      const res = await mountedAuth().request(
+        '/api/auth/login',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employee_id: employeeId, password: 'pw-secret' }),
+        },
+        mkEnv(),
+      );
+
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toMatchObject({ role: 'admin' });
+    },
+  );
+
+  it('does not elevate the temporary staging admin identities in production', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          member_id: 555,
+          employee_id: '20731',
+          first_name: 'Peter',
+          last_name: 'Darley',
+          rank: 'LT',
+          role: 'member',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const res = await mountedAuth().request(
+      '/api/auth/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_id: '20731', password: 'pw-secret' }),
+      },
+      { ...mkEnv(), ENV: 'production' },
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ role: 'member' });
   });
 
   it('returns 401 on portal 401', async () => {
