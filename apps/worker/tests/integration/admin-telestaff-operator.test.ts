@@ -436,6 +436,56 @@ describe('admin TeleStaff operator workflow', () => {
     });
   });
 
+  it('certifies a unique complete official source topology without deriving a slot from identity', async () => {
+    await h.db.run(
+      `INSERT INTO members
+         (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+          employment_status, is_probationary, created_at, updated_at)
+       VALUES (1, 'SYNTH-000001', 'Synthetic', 'Operator', 'FF', 'FF', 1, 'active', 0, ${NOW}, ${NOW})`,
+    );
+    const stage = await request(h, '/imports', { method: 'POST', body: importForm() });
+    expect(stage.status).toBe(201);
+    const staged = (await stage.json()) as {
+      import: { id: string; reconciliationRevision: number };
+    };
+
+    const certified = await request(
+      h,
+      `/imports/${staged.import.id}/certify-deterministic-staffing`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_reconciliation_revision: staged.import.reconciliationRevision,
+          reason: 'Official unique topology certification for staging rehearsal.',
+        }),
+      },
+    );
+    expect(certified.status).toBe(201);
+    await expect(certified.json()).resolves.toMatchObject({
+      certifiedRows: 1,
+      repeatedRowCount: 0,
+    });
+    expect(
+      (
+        await h.db.run(
+          `SELECT position_record.review_status, mapping.source_locator, row_record.reconciliation_classification,
+                row_record.review_status, row_record.resolution_action
+           FROM staffing_positions position_record
+           JOIN staffing_position_source_mappings mapping ON mapping.staffing_position_id = position_record.id
+           JOIN assignment_import_rows row_record ON row_record.staffing_position_source_mapping_id = mapping.id`,
+        )
+      ).results,
+    ).toEqual([
+      expect.objectContaining({
+        review_status: 'approved',
+        source_locator: TOPOLOGY,
+        reconciliation_classification: 'NEW_ASSIGNMENT',
+        resolution_action: 'APPLY_OBSERVATION',
+      }),
+    ]);
+  });
+
   it('accepts a trigger-inclusive native D1 review change count', async () => {
     await seedOperatorAndMappedSlot(h);
     const stage = await request(h, '/imports', { method: 'POST', body: importForm() });

@@ -281,6 +281,13 @@ const BaselineAcceptanceRequestSchema = z
   })
   .strict();
 
+const StaffingCertificationRequestSchema = z
+  .object({
+    expected_reconciliation_revision: z.number().int().nonnegative(),
+    reason: z.string().trim().min(12).max(500),
+  })
+  .strict();
+
 const ApplyRequestSchema = z
   .object({
     expected_reconciliation_revision: z.number().int().nonnegative(),
@@ -1455,6 +1462,246 @@ router.patch('/imports/:importId/rows/:rowId/review', requireStepUpAuth(), async
 });
 
 /** Applies terminal official evidence only, guarded by fresh canonical-state checks. */
+/**
+ * Certifies only complete, uniquely occurring official TeleStaff topology.
+ * Repeated source topology deliberately remains in review: source rows contain
+ * no seat discriminator, so choosing a seat from an incumbent or row order
+ * would manufacture canonical identity.
+ */
+router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAuth(), async (c) => {
+  const importId = c.req.param('importId');
+  if (!isOpaqueId(importId)) return c.json({ error: 'invalid_import_id' }, 400);
+  const raw = await c.req.json().catch(() => null);
+  const parsed = StaffingCertificationRequestSchema.safeParse(raw);
+  if (!parsed.success) return c.json({ error: 'invalid_certification_request' }, 400);
+  const actorId = actorMemberId(c.get('claims'));
+  if (actorId === null) return c.json({ error: 'real_hub_admin_required' }, 403);
+
+  const importRecord = await c.env.DB.prepare(
+    `SELECT id, source_system, source_version, source_hash, source_kind, status,
+            source_snapshot_as_of, reconciliation_revision
+       FROM assignment_imports WHERE id = ?`,
+  )
+    .bind(importId)
+    .all();
+  const manifest = importRecord.results[0] as unknown as
+    | {
+        id: string;
+        source_system: string;
+        source_version: string;
+        source_hash: string;
+        source_kind: string;
+        status: string;
+        source_snapshot_as_of: string | null;
+        reconciliation_revision: number;
+      }
+    | undefined;
+  if (
+    manifest === undefined ||
+    manifest.source_system !== 'telestaff' ||
+    manifest.source_kind !== 'official' ||
+    manifest.source_snapshot_as_of === null ||
+    !isCalendarDate(manifest.source_snapshot_as_of) ||
+    (manifest.status !== 'staged' && manifest.status !== 'reviewed')
+  )
+    return c.json({ error: 'import_not_certifiable' }, 409);
+  if (manifest.reconciliation_revision !== parsed.data.expected_reconciliation_revision) {
+    return c.json({ error: 'reconciliation_revision_conflict' }, 409);
+  }
+
+  const rowResult = await c.env.DB.prepare(
+    `SELECT row_record.id, row_record.normalized_source_topology, row_record.row_fingerprint,
+            row_record.resolved_member_id, member_record.rank AS member_rank,
+            member_record.employment_status
+       FROM assignment_import_rows row_record
+       JOIN members member_record ON member_record.id = row_record.resolved_member_id
+      WHERE row_record.import_id = ?
+        AND row_record.source_topology_completeness = 'complete'
+        AND row_record.reconciliation_classification = 'NEW_POSITION'
+        AND row_record.review_status = 'pending'
+      ORDER BY row_record.id ASC`,
+  )
+    .bind(importId)
+    .all();
+  const candidates = rowResult.results as unknown as Array<{
+    id: string;
+    normalized_source_topology: string;
+    row_fingerprint: string;
+    resolved_member_id: number;
+    member_rank: string;
+    employment_status: string;
+  }>;
+  const grouped = new Map<string, typeof candidates>();
+  for (const row of candidates)
+    grouped.set(row.normalized_source_topology, [
+      ...(grouped.get(row.normalized_source_topology) ?? []),
+      row,
+    ]);
+  const eligible = [...grouped.values()]
+    .filter((rows) => rows.length === 1)
+    .map((rows) => rows[0])
+    .filter((row): row is NonNullable<typeof row> => row !== undefined);
+  const repeatedRowCount = candidates.length - eligible.length;
+  if (eligible.length === 0)
+    return c.json({ error: 'no_deterministic_new_position_rows', repeatedRowCount }, 409);
+
+  const now = Date.now();
+  const statements: D1PreparedStatement[] = [];
+  const certified: Array<{
+    rowId: string;
+    positionId: string;
+    mappingId: string;
+    topology: string;
+  }> = [];
+  for (const row of eligible) {
+    if (
+      row.employment_status !== 'active' ||
+      !['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'].includes(row.member_rank)
+    ) {
+      return c.json({ error: 'member_not_certifiable' }, 409);
+    }
+    let topology: {
+      v: number;
+      shift: string;
+      division: string;
+      station: string;
+      unit: string;
+      position: string;
+    };
+    try {
+      topology = JSON.parse(row.normalized_source_topology) as typeof topology;
+    } catch {
+      return c.json({ error: 'invalid_source_topology' }, 409);
+    }
+    if (
+      topology.v !== 1 ||
+      ![
+        topology.shift,
+        topology.division,
+        topology.station,
+        topology.unit,
+        topology.position,
+      ].every((value) => typeof value === 'string' && value.trim() !== '')
+    )
+      return c.json({ error: 'invalid_source_topology' }, 409);
+    const digest = [
+      ...new Uint8Array(
+        await crypto.subtle.digest(
+          'SHA-256',
+          new TextEncoder().encode(row.normalized_source_topology),
+        ),
+      ),
+    ]
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+    const existing = await c.env.DB.prepare(
+      `SELECT 1 FROM staffing_position_source_mappings WHERE source_system = 'telestaff' AND source_locator = ? LIMIT 1`,
+    )
+      .bind(row.normalized_source_topology)
+      .all();
+    if (existing.results.length > 0) return c.json({ error: 'canonical_mapping_collision' }, 409);
+    const positionId = ulid();
+    const mappingId = ulid();
+    certified.push({
+      rowId: row.id,
+      positionId,
+      mappingId,
+      topology: row.normalized_source_topology,
+    });
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO staffing_positions
+           (id, stable_slot_key, division, shift, station, unit, position_name, applicable_rank,
+            active_from, review_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)`,
+      ).bind(
+        positionId,
+        `TELSTAFF/v1/${digest}`,
+        topology.division,
+        topology.shift,
+        topology.station,
+        topology.unit,
+        topology.position,
+        row.member_rank,
+        manifest.source_snapshot_as_of,
+        now,
+        now,
+      ),
+      c.env.DB.prepare(
+        `INSERT INTO staffing_position_source_mappings
+           (id, staffing_position_id, source_system, source_locator, source_discriminator,
+            source_signature, source_version, source_hash, effective_from, created_at)
+         VALUES (?, ?, 'telestaff', ?, 'primary', ?, ?, ?, ?, ?)`,
+      ).bind(
+        mappingId,
+        positionId,
+        row.normalized_source_topology,
+        row.row_fingerprint,
+        manifest.source_version,
+        manifest.source_hash,
+        manifest.source_snapshot_as_of,
+        now,
+      ),
+      c.env.DB.prepare(
+        `UPDATE assignment_import_rows
+            SET staffing_position_source_mapping_id = ?, disposition = 'new_combination',
+                reconciliation_classification = 'NEW_ASSIGNMENT', review_status = 'approved',
+                resolution_action = 'APPLY_OBSERVATION', reviewed_at = ?, reviewed_by_member_id = ?,
+                resolution_reason = ?
+          WHERE id = ? AND import_id = ? AND reconciliation_classification = 'NEW_POSITION'
+            AND review_status = 'pending'`,
+      ).bind(mappingId, now, actorId, parsed.data.reason, row.id, importId),
+    );
+  }
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO audit_log
+       (id, bid_session_id, seq, actor_type, actor_id, action, target_kind, target_id,
+        before_state, after_state, reason, client_meta, created_at)
+     SELECT ?, NULL, COALESCE(MAX(seq), 0) + 1, 'admin', ?, 'telestaff_staffing_certify',
+            'assignment_import', ?, ?, ?, ?, ?, ? FROM audit_log WHERE bid_session_id IS NULL`,
+    ).bind(
+      ulid(),
+      actorId,
+      importId,
+      JSON.stringify({
+        v: 1,
+        importId,
+        reconciliationRevision: manifest.reconciliation_revision,
+        sourceSnapshotAsOf: manifest.source_snapshot_as_of,
+      }),
+      JSON.stringify({
+        v: 1,
+        certifiedRows: certified.length,
+        repeatedRowCount,
+        sourceMappings: certified.map((entry) => ({
+          positionId: entry.positionId,
+          mappingId: entry.mappingId,
+          topology: entry.topology,
+        })),
+      }),
+      parsed.data.reason,
+      JSON.stringify({ v: 1, operation: 'telestaff_staffing_certify' }),
+      Math.floor(now / 1000),
+    ),
+  );
+  try {
+    await c.env.DB.batch(statements);
+  } catch (error) {
+    console.error('telestaff staffing certification failed', error);
+    return c.json({ error: 'staffing_certification_not_applied' }, 409);
+  }
+  const updated = await loadImportSummary(c.env.DB, importId);
+  return c.json(
+    {
+      import: updated === undefined ? null : mapImport(updated),
+      certifiedRows: certified.length,
+      repeatedRowCount,
+    },
+    201,
+  );
+});
+
 router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
   const importId = c.req.param('importId');
   if (!isOpaqueId(importId)) return c.json({ error: 'invalid_import_id' }, 400);
