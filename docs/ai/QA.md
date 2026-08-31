@@ -3,10 +3,12 @@
 ## 2026-08-31 controlled convergence evidence
 
 - PASS — focused mock-close TDD regression (14 tests), Worker lint/typecheck, Worker suite (978 passed, 1 skipped), and Wrangler launcher tests (25 passed).
-- PASS — R2 backup bucket creation; nonempty D1 export and upload. NOT YET VERIFIED — private retrieval/hash comparison.
+- PASS — R2 backup create/upload/retrieve/hash equality: 1,078,788-byte staging export uploaded under an 8a6a042-scoped key and retrieved byte-for-byte (SHA-256 equality).
 - PASS — controlled one-at-a-time D1 migration sequence `0024` through `0037`; every post-step ledger/integrity/protected-count gate passed. Final remote guard reports `STAGING_D1_MIGRATION_GUARD_PASS`.
-- PASS — API deployment health at version `a5f22d5f-8789-47f9-9de8-8bf301a729a2`; staging-only secret-name inventory is aligned for API/Web as required.
-- NOT YET VERIFIED — exact-candidate Linux/OpenNext Web build/deployment and full authenticated browser/TeleStaff/print/WebSocket acceptance. The locally available Ubuntu environment was a different stale checkout and was not used.
+- PASS — exact detached Linux checkout `8a6a042` (Node 22.22.1 / pnpm 9.12.0): frozen install, lint, package builds, full workspace typecheck, 206 Web tests, and production dependency audit (no known vulnerabilities).
+- PASS — OpenNext staging build and loopback preview root HTTP 200; artifact contained 1,565 files / 57 MiB. Exact web deployed as `b595f374-7624-4df1-b441-c015b5ea686f`.
+- PASS — fresh staging PIN and admin authentication: invalid login and PIN failed closed, valid API auth and PIN succeeded, and a clean browser reached `/admin` with no console errors. API candidate redeployed as `a56cfaa4-deab-4bac-b42f-9021920f05c5` following the observed auth failure.
+- BLOCKED (real configuration gate, not a source/deploy failure) — fresh mock lifecycle, staffing, print, and WebSocket end-to-end flow require a designated annual configuration and authoritative staffing baseline. The UI explicitly reports both absent; direct D1 seeding was not authorized.
 
 - Read-only D1 baseline: ledger ends at `0023_bid_position_participation.sql`; pending is exactly `0024`–`0037`; `PRAGMA quick_check` returned `ok`; `PRAGMA foreign_key_check` returned no rows; reported D1 writes: zero.
 - Deployment-guard red test: before the workflow change, the static test failed because `deploy-staging.yml` invoked `wrangler d1 migrations apply`.

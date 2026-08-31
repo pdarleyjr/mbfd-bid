@@ -6,7 +6,7 @@ Remove the configuration and automation prerequisites that block a later, separa
 
 ## 2026-08-31 update
 
-The controlled staging sequence completed mock disposition, backup upload, and migrations through `0037`. Remaining work is exact-candidate Linux/OpenNext Web deployment plus authenticated technical acceptance and backup retrieval/hash verification; production remains explicitly out of scope.
+The controlled staging sequence completed mock disposition, backup retrieval/hash verification, migrations through `0037`, exact-candidate Linux/OpenNext deployment, and fresh PIN/API/browser authentication. Production remains explicitly out of scope. The remaining staging acceptance gate is a real configuration dependency: no designated annual configuration or authoritative staffing baseline exists, so a fresh mock must not be created by direct D1 mutation.
 
 ## Boundaries
 

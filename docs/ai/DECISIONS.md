@@ -6,6 +6,9 @@
 - Cloudflare secret handling must use versioned secret preparation (`wrangler versions secret bulk` or equivalent) followed by deliberate version deployment. Ordinary `wrangler secret put` is excluded because it immediately deploys a new Worker version.
 - API and Web JWT/print secrets must be generated once per staging rotation and installed as paired values; secret names, never values, are the only configuration evidence retained in repository documentation.
 - A nonterminal mock `position_bid` session is an operational maintenance-window blocker. Do not infer idle status from age alone or invalidate staging sessions until an operator clears the window.
+- Exact source deployment may use a disposable detached Linux checkout when an old Linux worktree is stale; that condition is not a human blocker. The 2026-08-31 Web deployment used this method. A subsequent API redeploy was limited to correcting a concrete authentication failure and used the same exact candidate.
+- Staging access PIN and local-admin values are rotated only as ephemeral acceptance material. Store bcrypt secret input without a trailing line terminator; a byte-preserving Wrangler bulk-secret payload was required for valid bcrypt verification.
+- Do not bypass the absence of a designated annual configuration or authoritative staffing baseline with direct D1 writes merely to manufacture a fresh mock acceptance flow.
 
 ## Preserved reliability decisions
 
