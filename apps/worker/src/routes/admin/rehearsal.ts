@@ -15,7 +15,7 @@ import { evaluateEligibility } from '@mbfd/eligibility';
 import { type JwtPayload, MockFreezeCommandSchema, MockFreezeRequestSchema } from '@mbfd/shared';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
-import { and, asc, desc, eq, inArray, like, notExists, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, ne, notExists, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
@@ -280,6 +280,85 @@ router.post('/:sessionId/reset-mock', async (c) => {
   }
   return c.json({ error: 'canonical_reset_requires_new_epoch' }, 409);
 });
+
+const CloseMockBodySchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+
+/**
+ * POST /api/admin/rehearsal/:sessionId/close-mock
+ *
+ * Terminates a stale, legacy mock rehearsal without deleting its bids, order,
+ * or audit history. Canonical command state is deliberately out of scope: a
+ * canonical mock needs its own sequenced close command rather than a legacy
+ * table write. This supports the staging maintenance gate without allowing a
+ * reset to erase rehearsal evidence.
+ */
+router.post(
+  '/:sessionId/close-mock',
+  requireStepUpAuth(),
+  zValidator('json', CloseMockBodySchema),
+  async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const body = c.req.valid('json');
+    const db = getDb(c.env.DB);
+    const before = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    if (before === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (!before.isMock) return c.json({ error: 'not_a_mock_session' }, 403);
+    if (await hasCanonicalSessionState(db, sessionId)) {
+      return c.json({ error: 'canonical_mock_close_requires_command' }, 409);
+    }
+    if (before.currentPhase === 'complete') {
+      return c.json({ id: sessionId, state: 'complete', idempotent: true });
+    }
+
+    const completedAt = new Date();
+    const updated = await db
+      .update(bidSessions)
+      .set({
+        currentPhase: 'complete',
+        currentBidderId: null,
+        currentTurnStartedAt: null,
+        pausedAt: null,
+        scheduledResumeAt: null,
+        completedAt,
+      })
+      .where(
+        and(
+          eq(bidSessions.id, sessionId),
+          eq(bidSessions.isMock, true),
+          ne(bidSessions.currentPhase, 'complete'),
+        ),
+      )
+      .returning();
+    const after = updated[0];
+    if (after === undefined) {
+      const current = await db
+        .select()
+        .from(bidSessions)
+        .where(eq(bidSessions.id, sessionId))
+        .get();
+      if (current?.isMock && current.currentPhase === 'complete') {
+        return c.json({ id: sessionId, state: 'complete', idempotent: true });
+      }
+      return c.json({ error: 'mock_session_close_conflict' }, 409);
+    }
+
+    const claims = c.get('claims');
+    await writeAuditLog(db, {
+      bidSessionId: sessionId,
+      actorType: 'admin',
+      actorId: claims.sub > 0 ? claims.sub : null,
+      action: 'mock_session_closed',
+      targetKind: 'bid_session',
+      targetId: sessionId,
+      reason: body.reason,
+      beforeState: before,
+      afterState: after,
+    });
+    return c.json({ id: sessionId, state: 'complete', idempotent: false });
+  },
+);
 
 const AutoBidBodySchema = z.object({
   count: z.number().int().positive().max(200),

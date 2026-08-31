@@ -17,6 +17,7 @@ export type AuditAction =
   | 'admin_bid_for_member'
   | 'session_start'
   | 'mark_mock'
+  | 'mock_session_closed'
   | 'session_complete'
   | 'members_import'
   | 'credentials_import'
