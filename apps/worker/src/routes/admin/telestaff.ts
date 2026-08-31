@@ -1542,8 +1542,55 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
     .map((rows) => rows[0])
     .filter((row): row is NonNullable<typeof row> => row !== undefined);
   const repeatedRowCount = candidates.length - eligible.length;
-  if (eligible.length === 0)
-    return c.json({ error: 'no_deterministic_new_position_rows', repeatedRowCount }, 409);
+  if (eligible.length === 0) {
+    const priorCertification = await c.env.DB.prepare(
+      `SELECT after_state
+         FROM audit_log
+        WHERE bid_session_id IS NULL
+          AND action = 'telestaff_staffing_certify'
+          AND target_kind = 'assignment_import'
+          AND target_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+    )
+      .bind(importId)
+      .all();
+    const afterState = priorCertification.results[0]?.after_state;
+    let existingIdempotentMatches = 0;
+    if (typeof afterState === 'string') {
+      try {
+        const parsedAfterState = JSON.parse(afterState) as { certifiedRows?: unknown };
+        if (
+          typeof parsedAfterState.certifiedRows === 'number' &&
+          Number.isInteger(parsedAfterState.certifiedRows) &&
+          parsedAfterState.certifiedRows > 0
+        ) {
+          existingIdempotentMatches = parsedAfterState.certifiedRows;
+        }
+      } catch {
+        // A malformed historic audit record is not evidence of safe replay.
+      }
+    }
+    if (existingIdempotentMatches === 0)
+      return c.json({ error: 'no_deterministic_new_position_rows', repeatedRowCount }, 409);
+
+    const updated = await loadImportSummary(c.env.DB, importId);
+    return c.json({
+      import: updated === undefined ? null : mapImport(updated),
+      certifiedRows: 0,
+      repeatedRowCount,
+      certification: {
+        requestedCertifications: existingIdempotentMatches,
+        createdCanonicalStaffingPositions: 0,
+        createdSourceMappings: 0,
+        existingIdempotentMatches,
+        unresolvedObservations: repeatedRowCount,
+        skippedCollisions: 0,
+        failures: [],
+        idempotent: true,
+      },
+    });
+  }
 
   const now = Date.now();
   const statements: D1PreparedStatement[] = [];
@@ -1697,6 +1744,16 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
       import: updated === undefined ? null : mapImport(updated),
       certifiedRows: certified.length,
       repeatedRowCount,
+      certification: {
+        requestedCertifications: certified.length,
+        createdCanonicalStaffingPositions: certified.length,
+        createdSourceMappings: certified.length,
+        existingIdempotentMatches: 0,
+        unresolvedObservations: repeatedRowCount,
+        skippedCollisions: 0,
+        failures: [],
+        idempotent: false,
+      },
     },
     201,
   );

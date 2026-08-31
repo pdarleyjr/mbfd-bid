@@ -33,6 +33,22 @@ function sourceHtml(employeeId = 'SYNTH-000001'): string {
     </table></body></html>`;
 }
 
+function repeatedTopologyHtml(): string {
+  return `<!doctype html>
+    <html><body><table>
+      <thead><tr>
+        <th>Name</th><th>Emp ID</th><th>Shift</th><th>Division</th>
+        <th>Station</th><th>Unit</th><th>Position</th><th>A/R Day</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Safe Synthetic One</td><td>SYNTH-000001</td><td>A Shift</td>
+          <td>Suppression/Rescue</td><td>1</td><td>Engine 1</td><td>Firefighter</td><td>G1</td></tr>
+        <tr><td>Safe Synthetic Two</td><td>SYNTH-000002</td><td>A Shift</td>
+          <td>Suppression/Rescue</td><td>1</td><td>Engine 1</td><td>Firefighter</td><td>G2</td></tr>
+      </tbody>
+    </table></body></html>`;
+}
+
 async function jwt(options: { fresh?: boolean; role?: 'admin' | 'member' } = {}): Promise<string> {
   const role = options.role ?? 'admin';
   return signJwt(
@@ -71,6 +87,17 @@ function importForm(
   if (options.sourceObservationTimeBasis !== undefined) {
     form.set('source_observation_time_basis', options.sourceObservationTimeBasis);
   }
+  return form;
+}
+
+function repeatedTopologyForm(): FormData {
+  const form = new FormData();
+  form.set(
+    'file',
+    new File([repeatedTopologyHtml()], 'telestaff-repeated-topology.html', { type: 'text/html' }),
+  );
+  form.set('source_snapshot_as_of', SOURCE_SNAPSHOT);
+  form.set('source_kind', 'official');
   return form;
 }
 
@@ -298,6 +325,27 @@ describe('admin TeleStaff operator workflow', () => {
     expect(member.status).toBe(403);
   });
 
+  it('denies a normal member from invoking deterministic staffing certification', async () => {
+    const response = await request(
+      h,
+      '/imports/01M1C1Q6RBEN5N2MCE9YMPHDEE/certify-deterministic-staffing',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await jwt({ role: 'member' })}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          expected_reconciliation_revision: 0,
+          reason: 'A normal member must not certify canonical staffing.',
+        }),
+      },
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: 'forbidden' });
+  });
+
   it('stages, reconciles, reviews, and applies only a resolved official observation', async () => {
     await seedOperatorAndMappedSlot(h);
 
@@ -465,6 +513,16 @@ describe('admin TeleStaff operator workflow', () => {
     await expect(certified.json()).resolves.toMatchObject({
       certifiedRows: 1,
       repeatedRowCount: 0,
+      certification: {
+        requestedCertifications: 1,
+        createdCanonicalStaffingPositions: 1,
+        createdSourceMappings: 1,
+        existingIdempotentMatches: 0,
+        unresolvedObservations: 0,
+        skippedCollisions: 0,
+        failures: [],
+        idempotent: false,
+      },
     });
     expect(
       (
@@ -484,6 +542,89 @@ describe('admin TeleStaff operator workflow', () => {
         resolution_action: 'APPLY_OBSERVATION',
       }),
     ]);
+
+    const detail = (await (await request(h, `/imports/${staged.import.id}`)).json()) as {
+      import: { reconciliationRevision: number };
+    };
+    const replay = await request(h, `/imports/${staged.import.id}/certify-deterministic-staffing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_reconciliation_revision: detail.import.reconciliationRevision,
+        reason: 'Repeat certification must preserve the existing deterministic staffing.',
+      }),
+    });
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      certifiedRows: 0,
+      repeatedRowCount: 0,
+      certification: {
+        requestedCertifications: 1,
+        createdCanonicalStaffingPositions: 0,
+        createdSourceMappings: 0,
+        existingIdempotentMatches: 1,
+        idempotent: true,
+      },
+    });
+    expect((await h.db.run('SELECT COUNT(*) AS count FROM staffing_positions')).results).toEqual([
+      { count: 1 },
+    ]);
+    expect(
+      (await h.db.run('SELECT COUNT(*) AS count FROM staffing_position_source_mappings')).results,
+    ).toEqual([{ count: 1 }]);
+  });
+
+  it('leaves repeated complete topology unresolved and creates no fabricated canonical seat', async () => {
+    await h.db.run(
+      `INSERT INTO members
+         (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+          employment_status, is_probationary, created_at, updated_at)
+       VALUES
+         (1, 'SYNTH-000001', 'Synthetic', 'One', 'FF', 'FF', 1, 'active', 0, ${NOW}, ${NOW}),
+         (2, 'SYNTH-000002', 'Synthetic', 'Two', 'FF', 'FF', 2, 'active', 0, ${NOW}, ${NOW})`,
+    );
+    const stagedResponse = await request(h, '/imports', {
+      method: 'POST',
+      body: repeatedTopologyForm(),
+    });
+    expect(stagedResponse.status).toBe(201);
+    const staged = (await stagedResponse.json()) as {
+      import: { id: string; reconciliationRevision: number };
+    };
+
+    const response = await request(
+      h,
+      `/imports/${staged.import.id}/certify-deterministic-staffing`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_reconciliation_revision: staged.import.reconciliationRevision,
+          reason: 'Repeated source topology lacks a safe canonical seat discriminator.',
+        }),
+      },
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'no_deterministic_new_position_rows',
+      repeatedRowCount: 2,
+    });
+    expect((await h.db.run('SELECT COUNT(*) AS count FROM staffing_positions')).results).toEqual([
+      { count: 0 },
+    ]);
+    expect(
+      (
+        await h.db.run(
+          `SELECT COUNT(*) AS count
+             FROM assignment_import_rows
+            WHERE import_id = ?
+              AND reconciliation_classification = 'NEW_POSITION'
+              AND review_status = 'pending'
+              AND staffing_position_source_mapping_id IS NULL`,
+          [staged.import.id],
+        )
+      ).results,
+    ).toEqual([{ count: 2 }]);
   });
 
   it('accepts a trigger-inclusive native D1 review change count', async () => {

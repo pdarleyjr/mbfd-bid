@@ -137,4 +137,110 @@ describe('TeleStaffOperatorWorkspace', () => {
     );
     expect(exportLink?.hasAttribute('download')).toBe(true);
   });
+
+  it('uses the same-origin CSRF path to certify and renders the structured result', async () => {
+    const importSummary = {
+      id: 'import-certify-1',
+      status: 'reviewed',
+      sourceKind: 'official',
+      sourceSnapshotAsOf: '2026-08-24',
+      sourceObservedAt: null,
+      sourceObservationTimeBasis: 'date_only',
+      reconciliationRevision: 12,
+      normalizedDataRowCount: 219,
+      uniqueEmployeeCount: 213,
+      reconciliation: {
+        sourceRows: 219,
+        pendingSourceRows: 219,
+        hardBlockerSourceRows: 0,
+        incompleteTopologySourceRows: 0,
+        missingObservationFindings: 0,
+        pendingMissingObservationFindings: 0,
+      },
+    };
+    const detail = {
+      import: importSummary,
+      rows: [],
+      missingObservationFindings: [],
+      pagination: { totalRows: 219 },
+    };
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input) => {
+        const url = String(input);
+        if (url === '/api/admin/telestaff/imports?limit=25') {
+          return new Response(JSON.stringify({ imports: [importSummary] }), { status: 200 });
+        }
+        if (url === '/api/admin/telestaff/imports/import-certify-1') {
+          return new Response(JSON.stringify(detail), { status: 200 });
+        }
+        if (url === '/api/auth/csrf') {
+          return new Response(
+            JSON.stringify({ token: 'csrf_123e4567-e89b-12d3-a456-426614174000' }),
+            {
+              status: 200,
+            },
+          );
+        }
+        if (url.endsWith('/certify-deterministic-staffing')) {
+          return new Response(
+            JSON.stringify({
+              certification: {
+                requestedCertifications: 213,
+                createdCanonicalStaffingPositions: 213,
+                createdSourceMappings: 213,
+                existingIdempotentMatches: 0,
+                unresolvedObservations: 6,
+                skippedCollisions: 0,
+                failures: [],
+                idempotent: false,
+              },
+            }),
+            { status: 201 },
+          );
+        }
+        return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal(
+      'confirm',
+      vi.fn(() => true),
+    );
+
+    const container = renderWorkspace();
+    await settle();
+    const importButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Snapshot 2026-08-24'),
+    );
+    if (!importButton) throw new Error('Retained import control did not render.');
+    await click(importButton);
+
+    const certifyButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="telestaff-certify-deterministic"]',
+    );
+    expect(certifyButton?.textContent).toContain('Certify deterministic staffing positions');
+    expect(container.textContent).toContain('213 unique complete source tuples');
+
+    if (!certifyButton) throw new Error('Certification control did not render.');
+    await click(certifyButton);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/telestaff/imports/import-certify-1/certify-deterministic-staffing',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ get: expect.any(Function) }),
+      }),
+    );
+    expect(
+      (
+        fetchMock.mock.calls.find(([input]) =>
+          String(input).endsWith('/certify-deterministic-staffing'),
+        )?.[1]?.headers as Headers
+      ).get('X-MBFD-CSRF'),
+    ).toBe('csrf_123e4567-e89b-12d3-a456-426614174000');
+    expect(
+      container.querySelector('[data-testid="telestaff-certification-result"]')?.textContent,
+    ).toContain('213');
+    expect(container.textContent).toContain('Unresolved observations');
+  });
 });

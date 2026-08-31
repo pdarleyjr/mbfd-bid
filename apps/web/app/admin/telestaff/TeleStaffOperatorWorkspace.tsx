@@ -1,5 +1,6 @@
 'use client';
 
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 
 type ReviewDecision =
@@ -80,6 +81,17 @@ interface ImportDetail {
 
 interface ApiError {
   error?: unknown;
+}
+
+interface CertificationResult {
+  requestedCertifications: number;
+  createdCanonicalStaffingPositions: number;
+  createdSourceMappings: number;
+  existingIdempotentMatches: number;
+  unresolvedObservations: number;
+  skippedCollisions: number;
+  failures: string[];
+  idempotent: boolean;
 }
 
 function errorCode(body: unknown, fallback: string): string {
@@ -201,6 +213,7 @@ export function TeleStaffOperatorWorkspace() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [certification, setCertification] = useState<CertificationResult | null>(null);
 
   async function loadImport(importId: string): Promise<ImportDetail | null> {
     const response = await fetch(`/api/admin/telestaff/imports/${encodeURIComponent(importId)}`, {
@@ -390,6 +403,59 @@ export function TeleStaffOperatorWorkspace() {
       setNotice('Canonical staffing was updated only for reviewed, deterministic observations.');
     } catch {
       setError('canonical_apply_unavailable');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function certifyDeterministicStaffing() {
+    if (detail === null) return;
+    const confirmed = window.confirm(
+      'Apply 213 deterministic staffing certifications?\n\n' +
+        'Six repeated Marine Float observations will remain unresolved because the source has no safe seat discriminator. This uses the staging portal only: no direct D1 writes and no production mutation.',
+    );
+    if (!confirmed) return;
+
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setCertification(null);
+    try {
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      const response = await csrfFetch(
+        `/api/admin/telestaff/imports/${encodeURIComponent(detail.import.id)}/certify-deterministic-staffing`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expected_reconciliation_revision: detail.import.reconciliationRevision,
+            reason: 'Operator-approved deterministic TeleStaff staffing certification for staging.',
+          }),
+        },
+      );
+      const body = await parseResponse(response);
+      const result =
+        body !== null &&
+        typeof body === 'object' &&
+        'certification' in body &&
+        (body as { certification?: unknown }).certification !== null &&
+        typeof (body as { certification?: unknown }).certification === 'object'
+          ? ((body as { certification: CertificationResult }).certification as CertificationResult)
+          : null;
+      if (!response.ok || result === null) {
+        setError(errorCode(body, 'staffing_certification_unavailable'));
+        return;
+      }
+      setCertification(result);
+      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      setNotice(
+        result.idempotent
+          ? 'No duplicate canonical staffing was created; the prior deterministic certification was confirmed.'
+          : 'Deterministic staffing certification was recorded with the server-calculated result below.',
+      );
+    } catch {
+      setError('staffing_certification_unavailable');
     } finally {
       setBusy(false);
     }
@@ -683,6 +749,73 @@ export function TeleStaffOperatorWorkspace() {
               omits raw HTML, source locators, mappings, names, employee IDs, and HMAC values.
             </p>
 
+            <section
+              className="mt-4 rounded-lg border border-sky-700 bg-sky-950/30 p-4"
+              aria-labelledby="telestaff-certification-heading"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+                Staging certification
+              </p>
+              <h3 id="telestaff-certification-heading" className="mt-1 font-semibold text-white">
+                Deterministic staffing positions
+              </h3>
+              <p className="mt-2 text-sm text-slate-300">
+                The approved staging operation certifies 213 unique complete source tuples. Six
+                repeated Marine Float observations remain unresolved because the source has no safe
+                seat discriminator. It uses the authenticated staging API—never a direct D1 write or
+                a production mutation.
+              </p>
+              <button
+                data-testid="telestaff-certify-deterministic"
+                type="button"
+                onClick={() => void certifyDeterministicStaffing()}
+                disabled={
+                  busy || (detail.import.status !== 'staged' && detail.import.status !== 'reviewed')
+                }
+                className="mt-3 min-h-11 rounded bg-sky-600 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Certify deterministic staffing positions
+              </button>
+
+              {certification !== null && (
+                <dl
+                  data-testid="telestaff-certification-result"
+                  className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4"
+                >
+                  <PreviewMetric
+                    label="Requested certifications"
+                    value={certification.requestedCertifications}
+                  />
+                  <PreviewMetric
+                    label="Created staffing positions"
+                    value={certification.createdCanonicalStaffingPositions}
+                  />
+                  <PreviewMetric
+                    label="Created source mappings"
+                    value={certification.createdSourceMappings}
+                  />
+                  <PreviewMetric
+                    label="Existing/idempotent matches"
+                    value={certification.existingIdempotentMatches}
+                  />
+                  <PreviewMetric
+                    label="Unresolved observations"
+                    value={certification.unresolvedObservations}
+                    tone="amber"
+                  />
+                  <PreviewMetric
+                    label="Skipped collisions"
+                    value={certification.skippedCollisions}
+                  />
+                  <PreviewMetric label="Failures" value={certification.failures.length} />
+                  <PreviewMetric
+                    label="Replay result"
+                    value={certification.idempotent ? 'Confirmed' : 'Created'}
+                  />
+                </dl>
+              )}
+            </section>
+
             <div className="mt-4 space-y-3">
               {detail.rows.map((row) => (
                 <article
@@ -826,7 +959,7 @@ function PreviewMetric({
   tone = 'slate',
 }: {
   label: string;
-  value: number;
+  value: number | string;
   tone?: 'slate' | 'amber' | 'red';
 }) {
   const valueClass =
