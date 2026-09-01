@@ -232,6 +232,7 @@ export function TeleStaffOperatorWorkspace() {
   const [baselineAcceptance, setBaselineAcceptance] = useState<BaselineAcceptanceResult | null>(
     null,
   );
+  const [baselineConfirmationRequired, setBaselineConfirmationRequired] = useState(false);
 
   async function loadImport(importId: string): Promise<ImportDetail | null> {
     const response = await fetch(`/api/admin/telestaff/imports/${encodeURIComponent(importId)}`, {
@@ -536,13 +537,13 @@ export function TeleStaffOperatorWorkspace() {
       setError('committed_import_required_for_baseline');
       return;
     }
-    if (
-      !window.confirm(
-        'Designate this committed official import as the 2026 staging staffing baseline?\n\n' +
-          'This is an authenticated staging lifecycle action. It does not write directly to D1 and does not affect production.',
-      )
-    )
+    if (!baselineConfirmationRequired) {
+      setBaselineConfirmationRequired(true);
+      setNotice(
+        'Review the committed official import, then confirm the 2026 staging baseline acceptance below.',
+      );
       return;
+    }
 
     setBusy(true);
     setError(null);
@@ -583,6 +584,7 @@ export function TeleStaffOperatorWorkspace() {
         return;
       }
       setBaselineAcceptance(result);
+      setBaselineConfirmationRequired(false);
       await Promise.all([loadImport(detail.import.id), loadImports()]);
       setNotice(
         result.idempotent
@@ -1075,11 +1077,17 @@ export function TeleStaffOperatorWorkspace() {
         <h2 id="telestaff-baseline-heading" className="mt-1 font-heading text-xl text-white">
           2026 staffing baseline
         </h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
-          A baseline can be accepted only from the selected committed official import. The server
-          rechecks authoritative-source completeness and records an idempotent acceptance receipt.
-        </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+              A baseline can be accepted only from the selected committed official import. The server
+              rechecks authoritative-source completeness and records an idempotent acceptance receipt.
+            </p>
+            {baselineConfirmationRequired ? (
+              <p className="mt-3 rounded border border-amber-500 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
+                Confirming records this committed official import as the 2026 staging baseline. It does
+                not write directly to D1 or affect production.
+              </p>
+            ) : null}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
             data-testid="telestaff-baseline-acceptance"
@@ -1087,7 +1095,9 @@ export function TeleStaffOperatorWorkspace() {
             disabled={detail?.import.status !== 'committed' || busy}
             className="min-h-11 rounded bg-amber-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Designate 2026 staging baseline
+            {baselineConfirmationRequired
+              ? 'Confirm 2026 staging baseline'
+              : 'Designate 2026 staging baseline'}
           </button>
           {baselineAcceptance !== null && (
             <div

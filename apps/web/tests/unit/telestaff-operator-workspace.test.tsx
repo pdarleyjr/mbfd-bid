@@ -202,11 +202,7 @@ describe('TeleStaffOperatorWorkspace', () => {
       },
     );
     vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true),
-    );
-
+    vi.stubGlobal('confirm', vi.fn(() => true));
     const container = renderWorkspace();
     await settle();
     const importButton = [...container.querySelectorAll('button')].find((button) =>
@@ -321,6 +317,9 @@ describe('TeleStaffOperatorWorkspace', () => {
     expect(baselineButton?.textContent).toContain('Designate 2026 staging baseline');
     expect(baselineButton?.disabled).toBe(false);
     if (!baselineButton) throw new Error('Baseline acceptance control did not render.');
+    await click(baselineButton);
+    expect(baselineButton.textContent).toContain('Confirm 2026 staging baseline');
+    expect(fetchMock.mock.calls.find(([input]) => String(input).endsWith('/baseline-acceptance'))).toBeUndefined();
     await click(baselineButton);
 
     const baselineCall = fetchMock.mock.calls.find(([input]) =>
