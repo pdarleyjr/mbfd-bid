@@ -174,6 +174,12 @@ export async function setupTestD1(): Promise<TestD1> {
   // forced-pick tests.
   sqlite.pragma('foreign_keys = OFF');
   applyMigrations(sqlite);
+  // A migration may temporarily enable FK enforcement while rebuilding a
+  // table. Preserve this harness's documented D1 simulation afterwards: the
+  // synthetic admin actor is deliberately not a members row, so tests that
+  // exercise actor-nullability rather than relational enforcement must not
+  // inherit a connection-global PRAGMA side effect from a migration.
+  sqlite.pragma('foreign_keys = OFF');
   // Migration 0017 idempotently seeds bid_years for 2026/2027/2028 so a
   // fresh production deploy can create a mock session without a manual
   // INSERT. Tests manage their own bid_years rows (often with a non-default

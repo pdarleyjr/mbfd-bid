@@ -165,6 +165,20 @@ export const NextValidPreferenceEvaluationSchema = z
   .strict();
 export type NextValidPreferenceEvaluation = z.infer<typeof NextValidPreferenceEvaluationSchema>;
 
+/** Contact recovery evaluates only the opportunities still open at this exact
+ * canonical sequence; it never rewinds a stage or reopens an award. */
+export const ContactReestablishedEvaluationSchema = z
+  .object({
+    v: z.literal(1),
+    bidSessionId: z.string().min(1),
+    memberId: z.number().int().positive(),
+    reestablishedAtSeq: z.number().int().nonnegative(),
+    availablePositionIds: z.array(z.string().min(1)),
+    requiresOperatorCommit: z.literal(true),
+  })
+  .strict();
+export type ContactReestablishedEvaluation = z.infer<typeof ContactReestablishedEvaluationSchema>;
+
 export const ADayCapacityContractSchema = z
   .object({
     v: z.literal(1),
