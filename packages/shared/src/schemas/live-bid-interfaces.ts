@@ -128,6 +128,8 @@ export type QualificationBulkReview = z.infer<typeof QualificationBulkReviewSche
 export const FrozenPreferenceSheetSchema = z
   .object({
     v: z.literal(1),
+    annualBidYear: z.number().int().min(2000).max(3000),
+    bidSessionId: z.string().min(1).nullable(),
     memberId: z.number().int().positive(),
     policyReference: Ref,
     orderedPositionIds: z
@@ -141,10 +143,27 @@ export const FrozenPreferenceSheetSchema = z
           });
       }),
     orderedADayPreferences: z.array(z.string().min(1)),
+    acceptableADayPreferences: z.array(z.string().min(1)),
+    provenanceReference: Ref,
+    submittedAtMs: z.number().int().nonnegative(),
     capturedAtMs: z.number().int().nonnegative(),
   })
   .strict();
 export type FrozenPreferenceSheet = z.infer<typeof FrozenPreferenceSheetSchema>;
+
+/** Deterministic suggestion seam: the operator still commits a real award. */
+export const NextValidPreferenceEvaluationSchema = z
+  .object({
+    v: z.literal(1),
+    bidSessionId: z.string().min(1),
+    memberId: z.number().int().positive(),
+    evaluatedAtSeq: z.number().int().nonnegative(),
+    availablePositionIds: z.array(z.string().min(1)),
+    suggestedPositionId: z.string().min(1).nullable(),
+    requiresOperatorCommit: z.literal(true),
+  })
+  .strict();
+export type NextValidPreferenceEvaluation = z.infer<typeof NextValidPreferenceEvaluationSchema>;
 
 export const ADayCapacityContractSchema = z
   .object({
