@@ -1,20 +1,9 @@
 import { type Page, expect, test } from '@playwright/test';
 
-async function interceptHubAuthorization(page: Page): Promise<void> {
-  await page.route('https://staging.mbfdhub.com/auth/bid/authorize**', (route) =>
-    route.fulfill({ status: 200, body: 'Canonical MBFD Hub authentication' }),
-  );
-}
-
-async function expectCanonicalHubAuthorization(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/auth\/bid\/authorize\?/);
-  const authorize = new URL(page.url());
-  expect(authorize.searchParams.get('client_id')).toBe('bid');
-  expect(authorize.searchParams.get('redirect_uri')).toBe(
-    'https://staging.bid.mbfdhub.com/api/auth/callback',
-  );
-  expect(authorize.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
-  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+async function expectCanonicalHubLogin(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/);
+  await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Employee ID')).toBeVisible();
 }
 
 test.describe('PIN gate', () => {
@@ -43,15 +32,14 @@ test.describe('PIN gate', () => {
       );
       return;
     }
-    await interceptHubAuthorization(page);
     await page.goto('/');
     await page.getByLabel('Access PIN').fill(pin);
     await page.getByRole('button', { name: /continue/i }).click();
-    await expectCanonicalHubAuthorization(page);
+    await expectCanonicalHubLogin(page);
   });
 
   test('a /lobby request without PIN cookie redirects to /', async ({ page }) => {
-    await page.goto('/lobby');
+    await page.goto('/lobby', { waitUntil: 'commit' });
     await expect(page).toHaveURL(/\/$/);
   });
 });
@@ -59,15 +47,14 @@ test.describe('PIN gate', () => {
 test.describe('Lobby protection', () => {
   test('/lobby without PIN cookie redirects to /', async ({ page }) => {
     await page.context().clearCookies();
-    await page.goto('/lobby');
+    await page.goto('/lobby', { waitUntil: 'commit' });
     await expect(page).toHaveURL(/\/$/);
   });
 
-  test('/lobby with PIN cookie but no JWT federates to Hub without a password form', async ({
+  test('/lobby with PIN cookie but no JWT reaches the canonical Hub login', async ({
     context,
     page,
   }) => {
-    await interceptHubAuthorization(page);
     await context.clearCookies();
     await context.addCookies([
       {
@@ -78,8 +65,8 @@ test.describe('Lobby protection', () => {
         sameSite: 'Strict',
       },
     ]);
-    await page.goto('/lobby');
-    await expectCanonicalHubAuthorization(page);
+    await page.goto('/lobby', { waitUntil: 'commit' });
+    await expectCanonicalHubLogin(page);
   });
 });
 

@@ -62,7 +62,9 @@ async function setAuthCookies(page: Page, jwt: string) {
 test.describe('Admin gate — no JWT', () => {
   test.skip(!!process.env.CI && !process.env.E2E_FULL, 'Skip in CI without E2E_FULL');
 
-  test('navigating to /admin without JWT begins canonical Hub authorization', async ({ page }) => {
+  test('navigating to /admin without JWT reaches the canonical staging Hub login', async ({
+    page,
+  }) => {
     await page.context().clearCookies();
     await page.context().addCookies([
       {
@@ -73,14 +75,10 @@ test.describe('Admin gate — no JWT', () => {
         sameSite: 'Strict',
       },
     ]);
-    await page.goto('/admin');
-    await expect(page).toHaveURL(/^https:\/\/www\.mbfdhub\.com\/auth\/bid\/authorize\?/);
-    const authorization = new URL(page.url());
-    expect(authorization.searchParams.get('client_id')).toBe('bid');
-    expect(authorization.searchParams.get('redirect_uri')).toBe(
-      'https://staging.bid.mbfdhub.com/api/auth/callback',
-    );
-    expect(authorization.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    await page.goto('/admin', { waitUntil: 'commit' });
+    await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/);
+    await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Employee ID')).toBeVisible();
   });
 });
 

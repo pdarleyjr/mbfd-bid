@@ -34,7 +34,11 @@ export function NewSessionForm({ defaultMock = true }: { defaultMock?: boolean }
       setReadinessPreview(
         response.ok && body.dry_run === true
           ? body
-          : { dry_run: true, would_allow_start: false, error: body.error ?? `HTTP ${response.status}` },
+          : {
+              dry_run: true,
+              would_allow_start: false,
+              error: body.error ?? `HTTP ${response.status}`,
+            },
       );
     } finally {
       setPreviewingReadiness(false);
@@ -103,7 +107,8 @@ export function NewSessionForm({ defaultMock = true }: { defaultMock?: boolean }
         </button>
         {readinessPreview !== null ? (
           <output className="mt-3 block text-sm text-slate-200">
-            Live readiness dry run: {readinessPreview.would_allow_start ? 'would allow start' : 'blocked'}
+            Live readiness dry run:{' '}
+            {readinessPreview.would_allow_start ? 'would allow start' : 'blocked'}
             {readinessPreview.error ? ` (${readinessPreview.error})` : ''}.
           </output>
         ) : null}

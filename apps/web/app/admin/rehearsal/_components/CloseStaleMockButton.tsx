@@ -31,20 +31,28 @@ export function CloseStaleMockButton({ sessionId }: Props): ReactElement {
           setBusy(true);
           setMessage(null);
           try {
-            const response = await fetch(`/api/admin/rehearsal/${encodeURIComponent(sessionId)}/close-mock`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({
-                reason: 'Staging remediation: close stale legacy mock before controlled rehearsal.',
-              }),
-            });
+            const response = await fetch(
+              `/api/admin/rehearsal/${encodeURIComponent(sessionId)}/close-mock`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                  reason:
+                    'Staging remediation: close stale legacy mock before controlled rehearsal.',
+                }),
+              },
+            );
             const body = (await response.json().catch(() => ({}))) as CloseResponse;
             if (!response.ok || body.state !== 'complete') {
               setMessage(`Close rejected: ${body.error ?? `HTTP ${response.status}`}.`);
               return;
             }
-            setMessage(body.idempotent ? 'Mock was already closed.' : 'Stale mock closed; audit history retained.');
+            setMessage(
+              body.idempotent
+                ? 'Mock was already closed.'
+                : 'Stale mock closed; audit history retained.',
+            );
             router.refresh();
           } catch (error) {
             setMessage(`Close request failed: ${(error as Error).message}`);

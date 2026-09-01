@@ -1077,17 +1077,17 @@ export function TeleStaffOperatorWorkspace() {
         <h2 id="telestaff-baseline-heading" className="mt-1 font-heading text-xl text-white">
           2026 staffing baseline
         </h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-300">
-              A baseline can be accepted only from the selected committed official import. The server
-              rechecks authoritative-source completeness and records an idempotent acceptance receipt.
-            </p>
-            {baselineConfirmationRequired ? (
-              <p className="mt-3 rounded border border-amber-500 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
-                Confirming records this committed official import as the 2026 staging baseline. It does
-                not write directly to D1 or affect production.
-              </p>
-            ) : null}
-            <div className="mt-4 flex flex-wrap items-center gap-3">
+        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+          A baseline can be accepted only from the selected committed official import. The server
+          rechecks authoritative-source completeness and records an idempotent acceptance receipt.
+        </p>
+        {baselineConfirmationRequired ? (
+          <p className="mt-3 rounded border border-amber-500 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
+            Confirming records this committed official import as the 2026 staging baseline. It does
+            not write directly to D1 or affect production.
+          </p>
+        ) : null}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
             data-testid="telestaff-baseline-acceptance"

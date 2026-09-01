@@ -49,16 +49,18 @@ async function click(button: HTMLButtonElement): Promise<void> {
 
 describe('mock rehearsal command UI', () => {
   it('closes a stale legacy mock through the audited application endpoint', async () => {
-    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () =>
-      new Response(JSON.stringify({ state: 'complete', idempotent: false }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async () =>
+        new Response(JSON.stringify({ state: 'complete', idempotent: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
     );
     vi.stubGlobal('fetch', fetchMock);
     const container = render(<CloseStaleMockButton sessionId="legacy-mock-1" />);
     const button = container.querySelector('button');
-    if (!(button instanceof HTMLButtonElement)) throw new Error('Close stale mock button did not render.');
+    if (!(button instanceof HTMLButtonElement))
+      throw new Error('Close stale mock button did not render.');
 
     await click(button);
 
