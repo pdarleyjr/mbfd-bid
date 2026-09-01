@@ -16,30 +16,34 @@ const policy: FrozenLiveBidPolicy = {
       kind: 'D_SHIFT',
     },
   ],
-  dispositions: ['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'].map((disposition) => ({
-    disposition,
-    advances: disposition !== 'HOLD',
-    returns: false,
-    returnStageId: null,
-    retainsLaterSelectionRights: false,
-    terminal: disposition === 'DECLINED',
-    requiresReason: true,
-    requiresEvidence: disposition === 'UNREACHABLE',
-    contactPolicyReference: null,
-  })),
-  actionPermissions: [
-    'record_selection',
-    'amend_selection',
-    'skip_defer',
-    'mark_unreachable',
-    'force',
-    'resolve_tie',
-    'alter_order',
-    'pause_resume',
-    'approve_transition',
-    'approve_final_results',
-    'publish',
-  ].map((action) => ({ action, actorMemberIds: [99] })),
+  dispositions: (['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'] as const).map(
+    (disposition) => ({
+      disposition,
+      advances: disposition !== 'HOLD',
+      returns: false,
+      returnStageId: null,
+      retainsLaterSelectionRights: false,
+      terminal: disposition === 'DECLINED',
+      requiresReason: true,
+      requiresEvidence: disposition === 'UNREACHABLE',
+      contactPolicyReference: null,
+    }),
+  ),
+  actionPermissions: (
+    [
+      'record_selection',
+      'amend_selection',
+      'skip_defer',
+      'mark_unreachable',
+      'force',
+      'resolve_tie',
+      'alter_order',
+      'pause_resume',
+      'approve_transition',
+      'approve_final_results',
+      'publish',
+    ] as const
+  ).map((action) => ({ action, actorMemberIds: [99] })),
   specialtyCatalogReference: null,
   aDayPolicyReference: null,
   transitionPolicyReference: null,
@@ -88,37 +92,35 @@ describe('live canonical reducer', () => {
       100,
       'b1',
     );
-    expect(first.ok && first.state.currentBidderId).toBe(2);
-    const second =
-      first.ok &&
-      reduceLiveBidCommand(
-        first.state,
-        policy,
-        command('live.record_selection', {
-          commandId: '00000000-0000-4000-8000-000000000002',
-          expectedSeq: 1,
-          memberId: 2,
-          positionId: 'p2',
-        }),
-        101,
-        'b2',
-      );
-    expect(second?.ok && second.state.live?.lastSelectionBidId).toBe('b2');
-    const amended =
-      second?.ok &&
-      reduceLiveBidCommand(
-        second.state,
-        policy,
-        command('live.amend_selection', {
-          commandId: '00000000-0000-4000-8000-000000000003',
-          expectedSeq: 2,
-          positionId: 'p1',
-          replacementMemberId: 2,
-        }),
-        102,
-        'b3',
-      );
-    expect(amended && !amended.ok && amended.code).toBe('SELECTION_SEALED');
+    if (!first.ok) throw new Error(first.code);
+    expect(first.state.currentBidderId).toBe(2);
+    const second = reduceLiveBidCommand(
+      first.state,
+      policy,
+      command('live.record_selection', {
+        commandId: '00000000-0000-4000-8000-000000000002',
+        expectedSeq: 1,
+        memberId: 2,
+        positionId: 'p2',
+      }),
+      101,
+      'b2',
+    );
+    if (!second.ok) throw new Error(second.code);
+    expect(second.state.live?.lastSelectionBidId).toBe('b2');
+    const amended = reduceLiveBidCommand(
+      second.state,
+      policy,
+      command('live.amend_selection', {
+        commandId: '00000000-0000-4000-8000-000000000003',
+        expectedSeq: 2,
+        positionId: 'p1',
+        replacementMemberId: 2,
+      }),
+      102,
+      'b3',
+    );
+    expect(amended).toMatchObject({ ok: false, code: 'SELECTION_SEALED' });
   });
   it('fails closed when a required disposition evidence pointer is absent', () => {
     const result = reduceLiveBidCommand(

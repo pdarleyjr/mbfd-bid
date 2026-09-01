@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ADayCapacityContractSchema,
   AnnualCredentialEvaluationSchema,
   BidOpportunityImpactSchema,
   QualificationBulkReviewSchema,
@@ -45,4 +46,21 @@ describe('live bid downstream interfaces', () => {
     ).toBe('FORBIDDEN'));
   it('fails temporary assignment eligibility closed', () =>
     expect(temporaryAssignmentBidEligibility(null, 'DETAIL')).toBe('UNRESOLVED'));
+  it('represents category quotas and D-shift weekday/division capacity', () =>
+    expect(
+      ADayCapacityContractSchema.parse({
+        v: 1,
+        minimum: 1,
+        maximum: 5,
+        categoryQuotas: {
+          CAPTAIN_DC: { min: 0, max: 2 },
+          LIEUTENANT: { min: 0, max: 2 },
+          MARINE_ASSIGNED: { min: 0, max: 2 },
+          MARINE_FLOAT: { min: 0, max: 2 },
+          DE: { min: 0, max: 2 },
+          SWAT: { min: 0, max: 2 },
+        },
+        dShiftWeekdayCapacity: [{ divisionId: 'D1', weekday: 'MON', min: 1, max: 2 }],
+      }).dShiftWeekdayCapacity,
+    ).toHaveLength(1));
 });

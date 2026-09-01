@@ -6,6 +6,7 @@ import { auditLog } from '../db/schema.js';
 export type AuditAction =
   | 'pick'
   | 'forced_pick'
+  | 'amend_selection'
   | 'pause'
   | 'resume'
   | 'skip'

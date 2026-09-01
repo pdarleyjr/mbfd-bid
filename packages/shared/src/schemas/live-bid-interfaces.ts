@@ -79,7 +79,14 @@ export const TemporaryAssignmentPolicySchema = z
     assignments: z.array(
       z
         .object({
-          kind: z.enum(['LIGHT_DUTY', 'TEMP_DUTY', 'DETAIL', 'EXECUTIVE', 'TEMP_A_DAY']),
+          kind: z.enum([
+            'LIGHT_DUTY',
+            'TEMP_DUTY',
+            'DETAIL',
+            'EXECUTIVE',
+            'TEMP_A_DAY',
+            'SPECIAL_ASSIGNMENT',
+          ]),
           mode: z.enum(['OVERLAY', 'REPLACEMENT']),
           vacancyEffect: z.enum(['VACANT', 'NOT_VACANT', 'UNKNOWN']),
           bidEligibility: z.enum(['ELIGIBLE', 'INELIGIBLE', 'UNRESOLVED']),
@@ -116,3 +123,70 @@ export const QualificationBulkReviewSchema = z
   })
   .strict();
 export type QualificationBulkReview = z.infer<typeof QualificationBulkReviewSchema>;
+
+/** Ordered preferences are frozen input only; this contract does not award. */
+export const FrozenPreferenceSheetSchema = z
+  .object({
+    v: z.literal(1),
+    memberId: z.number().int().positive(),
+    policyReference: Ref,
+    orderedPositionIds: z
+      .array(z.string().min(1))
+      .min(1)
+      .superRefine((value, ctx) => {
+        if (new Set(value).size !== value.length)
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'position preferences must be ordered and unique',
+          });
+      }),
+    orderedADayPreferences: z.array(z.string().min(1)),
+    capturedAtMs: z.number().int().nonnegative(),
+  })
+  .strict();
+export type FrozenPreferenceSheet = z.infer<typeof FrozenPreferenceSheetSchema>;
+
+export const ADayCapacityContractSchema = z
+  .object({
+    v: z.literal(1),
+    minimum: z.number().int().nonnegative(),
+    maximum: z.number().int().nonnegative(),
+    categoryQuotas: z.record(
+      z.enum(['CAPTAIN_DC', 'LIEUTENANT', 'MARINE_ASSIGNED', 'MARINE_FLOAT', 'DE', 'SWAT']),
+      z
+        .object({ min: z.number().int().nonnegative(), max: z.number().int().nonnegative() })
+        .strict(),
+    ),
+    dShiftWeekdayCapacity: z.array(
+      z
+        .object({
+          divisionId: z.string().min(1),
+          weekday: z.enum(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']),
+          min: z.number().int().nonnegative(),
+          max: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.minimum > value.maximum)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'minimum cannot exceed maximum' });
+  });
+export type ADayCapacityContract = z.infer<typeof ADayCapacityContractSchema>;
+
+export const SpecialtyPlacementContractSchema = z
+  .object({
+    dedicatedPositionIds: z.array(z.string().min(1)),
+    membershipDistributionConstraints: z.array(
+      z
+        .object({
+          specialtyCode: z.string().min(1),
+          minimum: z.number().int().nonnegative(),
+          maximum: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type SpecialtyPlacementContract = z.infer<typeof SpecialtyPlacementContractSchema>;

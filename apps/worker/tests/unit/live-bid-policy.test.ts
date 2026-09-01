@@ -56,4 +56,31 @@ describe('frozen live stages', () => {
     expect(isPositionAllowedForCurrentStage(policy, 'FF', 'RESERVED-01')).toBe(false);
     expect(isPositionAllowedForCurrentStage(policy, 'FF', 'A101')).toBe(true);
   });
+
+  it('rejects a supposedly unique seniority tie rather than using member-id order', () => {
+    const tied = {
+      ...snapshot,
+      members: [
+        { memberId: 1, pool: 'FF', rscSeniority: 10, rankSeniority: null },
+        { memberId: 2, pool: 'FF', rscSeniority: 10, rankSeniority: null },
+      ],
+    } as unknown as BidSessionPolicySnapshot;
+    const oneStage = {
+      ...policy,
+      stages: [
+        {
+          id: 'D_CAPTAIN',
+          label: 'D Captain',
+          order: 0,
+          memberIds: [1, 2],
+          opportunityPositionIds: ['A101'],
+          kind: 'CAPTAIN',
+        },
+      ],
+    } as unknown as FrozenLiveBidPolicy;
+    expect(computeFrozenStageOrder(tied, oneStage)).toEqual({
+      ok: false,
+      code: 'stage_seniority_tie',
+    });
+  });
 });

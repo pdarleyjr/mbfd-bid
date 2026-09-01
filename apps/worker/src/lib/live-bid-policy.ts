@@ -14,7 +14,8 @@ export type FrozenStageOrderResult =
         | 'live_policy_missing'
         | 'stage_member_not_in_snapshot'
         | 'stage_member_excluded'
-        | 'stage_coverage_incomplete';
+        | 'stage_coverage_incomplete'
+        | 'stage_seniority_tie';
     };
 
 /**
@@ -41,12 +42,21 @@ export function computeFrozenStageOrder(
       included.add(memberId);
       stageMembers.push(member);
     }
+    // A frozen live order must never invent a tiebreak from a member id. A
+    // duplicate supposedly-unique seniority fact is source/policy integrity
+    // failure and requires explicit command-staff correction.
+    const seniorityKeys = new Set<string>();
+    for (const member of stageMembers) {
+      const key = `${member.rscSeniority}:${member.rankSeniority ?? 'none'}`;
+      if (seniorityKeys.has(key)) return { ok: false, code: 'stage_seniority_tie' };
+      seniorityKeys.add(key);
+    }
     stageMembers.sort((left, right) => {
       if (left.rscSeniority !== right.rscSeniority) return left.rscSeniority - right.rscSeniority;
       const leftRank = left.rankSeniority ?? Number.MAX_SAFE_INTEGER;
       const rightRank = right.rankSeniority ?? Number.MAX_SAFE_INTEGER;
       if (leftRank !== rightRank) return leftRank - rightRank;
-      return left.memberId - right.memberId;
+      return 0;
     });
     for (const member of stageMembers) {
       entries.push({ ordinal: entries.length + 1, memberId: member.memberId, stageId: stage.id });
