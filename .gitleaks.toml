@@ -1,0 +1,22 @@
+title = "MBFD Bid secret-scan policy"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deterministic non-secret test fixture values and Worker test binding only. Runtime source is not allowlisted."
+paths = [
+  '''(?:^|[\\\\/])apps/web/tests/unit/telestaff-operator-workspace\.test\.tsx$''',
+  '''(?:^|[\\\\/])apps/worker/tests/integration/a-day-admin-force\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/integration/a-day-rest\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/integration/admin-bid-award-transition\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/integration/admin-bid\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/integration/admin-personnel-lifecycle\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/integration/bid-session-recovery\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/integration/bid-session-routes\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/integration/operator-vertical-slice-smoke\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/lib/personnel-lifecycle\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/tests/portal-writeback/payload-builder\.test\.ts$''',
+  '''(?:^|[\\\\/])apps/worker/wrangler\.do-eviction\.toml$''',
+  '''(?:^|[\\\\/])packages/shared/tests/schemas/portal-payload\.test\.ts$''',
+]
