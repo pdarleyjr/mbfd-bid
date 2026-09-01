@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 import { getDb } from '../../db/index.js';
 import { bidYears, ruleBooks } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { loadRuleBookCoverage, parseBidConfigurationSettings } from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -212,7 +212,7 @@ router.put(
     // The candidate revision is captured in the write predicate. A concurrent
     // draft edit or a concurrent configuration selection leaves this request
     // with zero changes rather than silently selecting an unreviewed state.
-    const updated = await c.env.DB.prepare(
+    const mutationStatement = c.env.DB.prepare(
       `UPDATE bid_years
           SET rule_book_version = ?,
               position_template_version = ?,
@@ -235,19 +235,38 @@ router.put(
               AND candidate_book.status = 'draft'
               AND candidate_book.revision = ?
           )`,
-    )
-      .bind(
-        candidateBook.version,
-        coverage.templateVersion,
-        JSON.stringify(settings),
-        parsedYear.data,
-        body.expected_configuration_revision,
-        candidateBook.version,
-        parsedYear.data,
-        candidateBook.revision,
-      )
-      .run();
-    if (updated.meta.changes !== 1) {
+    ).bind(
+      candidateBook.version,
+      coverage.templateVersion,
+      JSON.stringify(settings),
+      parsedYear.data,
+      body.expected_configuration_revision,
+      candidateBook.version,
+      parsedYear.data,
+      candidateBook.revision,
+    );
+    const anticipated = {
+      ...year,
+      ruleBookVersion: candidateBook.version,
+      positionTemplateVersion: coverage.templateVersion,
+      configJson: JSON.stringify(settings),
+      configurationRevision: year.configurationRevision + 1,
+    };
+    const results = await c.env.DB.batch([
+      mutationStatement,
+      auditInsertStatement(c.env.DB, {
+        bidSessionId: null,
+        actorType: 'admin',
+        actorId: actorIdFromClaims(c.get('claims')),
+        action: 'bid_configuration_set',
+        targetKind: 'bid_year',
+        targetId: String(parsedYear.data),
+        reason: body.reason,
+        beforeState: configurationResponse(year, currentBook),
+        afterState: configurationResponse(anticipated, candidateBook),
+      }),
+    ]);
+    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
       const current = await db
         .select()
         .from(bidYears)
@@ -265,20 +284,7 @@ router.put(
       return c.json({ error: 'bid_configuration_changed' }, 409);
     }
 
-    const after = await db.select().from(bidYears).where(eq(bidYears.year, parsedYear.data)).get();
-    if (after === undefined) return c.json({ error: 'bid_configuration_changed' }, 409);
-    await writeAuditLog(db, {
-      bidSessionId: null,
-      actorType: 'admin',
-      actorId: actorIdFromClaims(c.get('claims')),
-      action: 'bid_configuration_set',
-      targetKind: 'bid_year',
-      targetId: String(parsedYear.data),
-      reason: body.reason,
-      beforeState: configurationResponse(year, currentBook),
-      afterState: configurationResponse(after, candidateBook),
-    });
-    return c.json({ configuration: configurationResponse(after, candidateBook) });
+    return c.json({ configuration: configurationResponse(anticipated, candidateBook) });
   },
 );
 

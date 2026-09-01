@@ -46,6 +46,52 @@ export type AuditEntry = {
 };
 
 /**
+ * Builds the audit insert used by a material D1 mutation batch.
+ *
+ * D1 executes a batch as one transaction. Callers must append this statement
+ * to the same batch as the authoritative mutation, never issue a material
+ * write and then attempt to audit it separately. The sequence is calculated
+ * inside the transaction, so a rejected audit insert rejects the domain write
+ * as well.
+ */
+export function auditInsertStatement(
+  d1: D1Database,
+  entry: AuditEntry,
+  createdAt: Date = new Date(),
+): D1PreparedStatement {
+  const id = ulid();
+  const sessionPredicate =
+    entry.bidSessionId === null ? 'bid_session_id IS NULL' : 'bid_session_id = ?';
+  const parameters: unknown[] = [
+    id,
+    entry.bidSessionId,
+    entry.actorType,
+    entry.actorId ?? null,
+    entry.action,
+    entry.targetKind ?? null,
+    entry.targetId ?? null,
+    entry.beforeState != null ? JSON.stringify(entry.beforeState) : null,
+    entry.afterState != null ? JSON.stringify(entry.afterState) : null,
+    entry.reason ?? null,
+    entry.aiAdvisoryId ?? null,
+    entry.clientMeta != null ? JSON.stringify(entry.clientMeta) : null,
+    Math.floor(createdAt.getTime() / 1_000),
+  ];
+  if (entry.bidSessionId !== null) parameters.push(entry.bidSessionId);
+
+  return d1
+    .prepare(
+      `INSERT INTO audit_log
+         (id, bid_session_id, seq, actor_type, actor_id, action, target_kind,
+          target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at)
+       SELECT ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         FROM audit_log
+        WHERE ${sessionPredicate}`,
+    )
+    .bind(...parameters);
+}
+
+/**
  * Writes a flat audit_log row with a monotonic `seq` scoped to bid_session_id
  * (NULL session is its own scope). Returns the new row's id and seq.
  *
@@ -55,21 +101,17 @@ export async function writeAuditLog(
   db: DB,
   entry: AuditEntry,
 ): Promise<{ id: string; seq: number }> {
-  const id = ulid();
-
   const whereSession =
     entry.bidSessionId === null
       ? isNull(auditLog.bidSessionId)
       : eq(auditLog.bidSessionId, entry.bidSessionId);
-
-  const maxRow = await db
+  const before = await db
     .select({ max: sql<number | null>`max(${auditLog.seq})` })
     .from(auditLog)
     .where(whereSession)
     .get();
-
-  const nextSeq = (maxRow?.max ?? 0) + 1;
-
+  const nextSeq = (before?.max ?? 0) + 1;
+  const id = ulid();
   await db.insert(auditLog).values({
     id,
     bidSessionId: entry.bidSessionId,
@@ -86,7 +128,6 @@ export async function writeAuditLog(
     clientMeta: entry.clientMeta != null ? JSON.stringify(entry.clientMeta) : null,
     createdAt: new Date(),
   });
-
   return { id, seq: nextSeq };
 }
 

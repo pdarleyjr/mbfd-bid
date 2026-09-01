@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { aDayPicks, bidSessions } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { eligibilityMemberFromFrozen, loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -126,32 +126,42 @@ router.post('/:id/force-a-day', requireStepUpAuth(), async (c) => {
     forced: boolean;
     adminActorId: number | null;
   };
-  await db.insert(aDayPicks).values({
-    id: ulid(),
-    bidSessionId: sessionId,
-    memberId: pick.memberId,
-    shift: pick.shift,
-    aDay: pick.aDay,
-    pickedAtMs: pick.pickedAtMs,
-    forced: pick.forced,
-    adminActorId: pick.adminActorId,
-    reason: parsed.data.reason,
-    idempotencyKey: idemKey,
-  });
-  await writeAuditLog(db, {
-    bidSessionId: sessionId,
-    actorType: 'admin',
-    actorId: adminActorId,
-    action: 'forced_a_day_pick',
-    targetKind: 'a_day',
-    targetId: parsed.data.a_day,
-    reason: parsed.data.reason,
-    afterState: {
-      member_id: pick.memberId,
-      a_day: pick.aDay,
-      forced: true,
-    },
-  });
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO a_day_picks
+           (id, bid_session_id, member_id, shift, a_day, picked_at, forced,
+            admin_actor_id, reason, idempotency_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      ulid(),
+      sessionId,
+      pick.memberId,
+      pick.shift,
+      pick.aDay,
+      pick.pickedAtMs,
+      pick.forced ? 1 : 0,
+      pick.adminActorId,
+      parsed.data.reason,
+      idemKey,
+    ),
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: sessionId,
+      actorType: 'admin',
+      actorId: adminActorId,
+      action: 'forced_a_day_pick',
+      targetKind: 'a_day',
+      targetId: parsed.data.a_day,
+      reason: parsed.data.reason,
+      afterState: {
+        member_id: pick.memberId,
+        a_day: pick.aDay,
+        forced: true,
+      },
+    }),
+  ]);
+  if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+    return c.json({ error: 'forced_a_day_pick_not_applied' }, 409);
+  }
   return c.json(json, 200);
 });
 

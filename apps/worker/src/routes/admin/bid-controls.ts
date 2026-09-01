@@ -13,7 +13,7 @@ import { ulid } from 'ulid';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions, bids } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import {
   eligibilityMemberFromFrozen,
   frozenEligibilityMemberForSession,
@@ -143,35 +143,45 @@ router.post(
         .where(eq(bids.bidSessionId, sessionId))
         .get();
       const ordinal = (maxOrdRow?.m ?? 0) + 1;
-      await db.insert(bids).values({
-        id: bidId,
-        bidSessionId: sessionId,
-        ordinal,
-        memberId: body.member_id,
-        positionId: body.position_id,
-        pickedAt: now,
-        forced: true,
-        adminActorId,
-        reason: body.reason,
-        idempotencyKey: idemKey,
-        portalSyncStatus: 'pending',
-        portalSyncAttempts: 0,
-      });
-
-      await writeAuditLog(db, {
-        bidSessionId: sessionId,
-        actorType: 'admin',
-        actorId: adminActorId,
-        action: 'forced_pick',
-        targetKind: 'bid',
-        targetId: bidId,
-        reason: body.reason,
-        afterState: {
-          member_id: body.member_id,
-          position_id: body.position_id,
-          reason_code: body.reason_code,
-        },
-      });
+      const results = await c.env.DB.batch([
+        c.env.DB.prepare(
+          `INSERT INTO bids
+               (id, bid_session_id, ordinal, member_id, position_id, picked_at, forced,
+                admin_actor_id, reason, idempotency_key, portal_sync_status, portal_sync_attempts)
+             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 'pending', 0)`,
+        ).bind(
+          bidId,
+          sessionId,
+          ordinal,
+          body.member_id,
+          body.position_id,
+          now.getTime(),
+          adminActorId,
+          body.reason,
+          idemKey,
+        ),
+        auditInsertStatement(
+          c.env.DB,
+          {
+            bidSessionId: sessionId,
+            actorType: 'admin',
+            actorId: adminActorId,
+            action: 'forced_pick',
+            targetKind: 'bid',
+            targetId: bidId,
+            reason: body.reason,
+            afterState: {
+              member_id: body.member_id,
+              position_id: body.position_id,
+              reason_code: body.reason_code,
+            },
+          },
+          now,
+        ),
+      ]);
+      if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+        return c.json({ error: 'forced_pick_not_applied' }, 409);
+      }
 
       return c.json({ bid_id: bidId, forced: true }, 201);
     });
@@ -334,37 +344,47 @@ router.post(
         return c.json({ bid_id: existingAfterLease.id, forced: false, idempotent_replay: true });
       }
 
-      await db.insert(bids).values({
-        id: bidId,
-        bidSessionId: sessionId,
-        ordinal: 0, // DO assigns the real ordinal at Plan 04 time; we use 0 as placeholder
-        memberId: body.member_id,
-        positionId: body.position_id,
-        aDay: body.a_day ?? null,
-        pickedAt: new Date(),
-        forced: false,
-        adminActorId,
-        reason: body.reason,
-        idempotencyKey: idemKey,
-        portalSyncStatus: 'pending',
-        portalSyncAttempts: 0,
-      });
-
-      await writeAuditLog(db, {
-        bidSessionId: sessionId,
-        actorType: 'admin',
-        actorId: adminActorId,
-        action: 'admin_bid_for_member',
-        targetKind: 'bid',
-        targetId: bidId,
-        reason: body.reason,
-        afterState: {
-          member_id: body.member_id,
-          position_id: body.position_id,
-          a_day: body.a_day ?? null,
-          reason_code: body.reason_code,
-        },
-      });
+      const now = new Date();
+      const results = await c.env.DB.batch([
+        c.env.DB.prepare(
+          `INSERT INTO bids
+               (id, bid_session_id, ordinal, member_id, position_id, a_day, picked_at, forced,
+                admin_actor_id, reason, idempotency_key, portal_sync_status, portal_sync_attempts)
+             VALUES (?, ?, 0, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', 0)`,
+        ).bind(
+          bidId,
+          sessionId,
+          body.member_id,
+          body.position_id,
+          body.a_day ?? null,
+          now.getTime(),
+          adminActorId,
+          body.reason,
+          idemKey,
+        ),
+        auditInsertStatement(
+          c.env.DB,
+          {
+            bidSessionId: sessionId,
+            actorType: 'admin',
+            actorId: adminActorId,
+            action: 'admin_bid_for_member',
+            targetKind: 'bid',
+            targetId: bidId,
+            reason: body.reason,
+            afterState: {
+              member_id: body.member_id,
+              position_id: body.position_id,
+              a_day: body.a_day ?? null,
+              reason_code: body.reason_code,
+            },
+          },
+          now,
+        ),
+      ]);
+      if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+        return c.json({ error: 'admin_bid_not_applied' }, 409);
+      }
 
       return c.json({ bid_id: bidId, forced: false }, 201);
     });
@@ -446,22 +466,25 @@ router.post(
       }
       cfg.position_locks.push({ position_id: body.position_id, member_id: body.member_id });
 
-      await db
-        .update(bidSessions)
-        .set({ configJson: JSON.stringify(cfg) })
-        .where(eq(bidSessions.id, sessionId));
-
       const claims = c.get('claims');
-      await writeAuditLog(db, {
-        bidSessionId: sessionId,
-        actorType: 'admin',
-        actorId: claims.sub > 0 ? claims.sub : 0,
-        action: 'lock_position',
-        targetKind: 'position',
-        targetId: body.position_id,
-        reason: body.reason,
-        afterState: { member_id: body.member_id, reason_code: body.reason_code },
-      });
+      const results = await c.env.DB.batch([
+        c.env.DB.prepare(
+          'UPDATE bid_sessions SET config_json = ? WHERE id = ? AND current_phase = ?',
+        ).bind(JSON.stringify(cfg), sessionId, 'config'),
+        auditInsertStatement(c.env.DB, {
+          bidSessionId: sessionId,
+          actorType: 'admin',
+          actorId: claims.sub > 0 ? claims.sub : 0,
+          action: 'lock_position',
+          targetKind: 'position',
+          targetId: body.position_id,
+          reason: body.reason,
+          afterState: { member_id: body.member_id, reason_code: body.reason_code },
+        }),
+      ]);
+      if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+        return c.json({ error: 'position_lock_not_applied' }, 409);
+      }
 
       return c.json({
         position_id: body.position_id,

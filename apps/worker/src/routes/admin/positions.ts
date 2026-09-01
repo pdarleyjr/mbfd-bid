@@ -13,7 +13,7 @@ import {
   ruleBooks,
   staffingPositions,
 } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -187,23 +187,32 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
     .where(eq(positions.templateVersion, srcVersion))
     .all();
 
-  await db.insert(positionTemplates).values({ version: destVersion, effectiveYear: destYear });
-
-  if (srcPositions.length > 0) {
-    await db
-      .insert(positions)
-      .values(srcPositions.map((p) => ({ ...p, templateVersion: destVersion })));
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO position_templates (version, effective_year) VALUES (?, ?)').bind(
+      destVersion,
+      destYear,
+    ),
+    c.env.DB.prepare(
+      `INSERT INTO positions
+           (id, template_version, shift, station, division, unit, rank_required,
+            position_name, is_floating, is_vacant_by_design, is_excluded_from_count)
+         SELECT id, ?, shift, station, division, unit, rank_required,
+                position_name, is_floating, is_vacant_by_design, is_excluded_from_count
+           FROM positions WHERE template_version = ?`,
+    ).bind(destVersion, srcVersion),
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: c.get('claims').sub ?? null,
+      action: 'positions_clone',
+      targetKind: 'position_template',
+      targetId: destVersion,
+      afterState: { srcVersion, destVersion, copied: srcPositions.length },
+    }),
+  ]);
+  if (results[0]?.meta.changes !== 1 || results[2]?.meta.changes !== 1) {
+    return c.json({ error: 'positions_clone_not_applied' }, 409);
   }
-
-  await writeAuditLog(db, {
-    bidSessionId: null,
-    actorType: 'admin',
-    actorId: c.get('claims').sub ?? null,
-    action: 'positions_clone',
-    targetKind: 'position_template',
-    targetId: destVersion,
-    afterState: { srcVersion, destVersion, copied: srcPositions.length },
-  });
 
   return c.json({ destVersion, destYear, copied: srcPositions.length });
 });

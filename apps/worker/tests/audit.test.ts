@@ -6,7 +6,8 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { getDb } from '../src/db/index.js';
 import { auditLog } from '../src/db/schema.js';
-import { writeAuditLog } from '../src/lib/audit.js';
+import { auditInsertStatement, writeAuditLog } from '../src/lib/audit.js';
+import { setupTestD1, teardownTestD1 } from './integration/helpers/test-d1.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, '../migrations');
@@ -98,6 +99,37 @@ function seedBidSessions(sqlite: Database.Database, ...sessionIds: string[]): vo
 }
 
 describe('writeAuditLog', () => {
+  it('rolls back a material mutation when its batched audit insert faults', async () => {
+    const h = await setupTestD1();
+    try {
+      h.failNextBatchAt(1);
+      await expect(
+        h.env.DB.batch([
+          h.env.DB.prepare('INSERT INTO credentials (name, fy_points_default) VALUES (?, ?)').bind(
+            'Audit fault credential',
+            1,
+          ),
+          auditInsertStatement(h.env.DB, {
+            bidSessionId: null,
+            actorType: 'admin',
+            actorId: 1,
+            action: 'credentials_import',
+            targetKind: 'credential_import',
+            targetId: 'audit-fault-test',
+          }),
+        ]),
+      ).rejects.toThrow('injected D1 batch failure');
+
+      expect(
+        (await h.db.run('SELECT name FROM credentials WHERE name = ?', ['Audit fault credential']))
+          .results,
+      ).toHaveLength(0);
+      expect((await h.db.run('SELECT id FROM audit_log')).results).toHaveLength(0);
+    } finally {
+      await teardownTestD1(h);
+    }
+  });
+
   it('inserts a row with monotonic seq scoped to bid_session_id', async () => {
     const { sqlite, d1 } = makeTestDb();
     seedBidSessions(sqlite, 'session-abc', 'session-xyz');
