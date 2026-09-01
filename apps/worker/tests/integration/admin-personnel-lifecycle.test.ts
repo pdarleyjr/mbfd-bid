@@ -88,6 +88,30 @@ describe('personnel lifecycle administration', () => {
     );
   });
 
+  it('keeps a Special Assignment as a non-mutating daily-vacancy overlay', async () => {
+    const response = await request(h, '/api/admin/personnel/temporary-overlays/preview', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await adminJwt()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'SPECIAL_ASSIGNMENT',
+        member_id: 1,
+        underlying_assignment_id: 'assignment-current',
+        underlying_position_id: 'slot-ff',
+        temporary_position_id: 'staff-a',
+        effective_on: '2026-09-15',
+        planned_end_on: null,
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      underlyingBidAssignmentPreserved: true,
+      aDayPreserved: true,
+      memberRemainsBidEligible: true,
+      dailyVacancy: { bidVacancy: false },
+      temporaryDestinationStaffingCount: 'POLICY_PENDING',
+    });
+  });
+
   it('requires a fresh administrator step-up before a lifecycle mutation', async () => {
     const response = await request(h, '/api/admin/personnel/changes', {
       method: 'POST',

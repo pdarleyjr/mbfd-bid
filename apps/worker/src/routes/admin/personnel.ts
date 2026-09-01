@@ -18,6 +18,7 @@ import {
   isIsoCalendarDate,
   planPersonnelLifecycleChange,
 } from '../../lib/personnel-lifecycle.js';
+import { previewTemporaryOverlay } from '../../lib/temporary-assignment-overlay.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -711,6 +712,46 @@ router.get('/changes', async (c) => {
           requestedMemberId,
         );
   return c.json({ changes: events.map(mapEvent), count: events.length });
+});
+
+const TemporaryOverlayPreviewSchema = z
+  .object({
+    kind: z.enum([
+      'SPECIAL_ASSIGNMENT',
+      'LIGHT_DUTY',
+      'TEMPORARY_DUTY',
+      'DETAIL',
+      'EXECUTIVE_ASSIGNMENT',
+      'TEMPORARY_A_DAY_CHANGE',
+    ]),
+    member_id: z.number().int().positive(),
+    underlying_assignment_id: z.string().trim().min(1).max(128),
+    underlying_position_id: z.string().trim().min(1).max(128),
+    temporary_position_id: z.string().trim().min(1).max(128),
+    effective_on: z.string(),
+    planned_end_on: z.string().nullable(),
+  })
+  .strict();
+
+router.post('/temporary-overlays/preview', async (c) => {
+  const parsed = TemporaryOverlayPreviewSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const body = parsed.data;
+  if (
+    !isIsoCalendarDate(body.effective_on) ||
+    (body.planned_end_on !== null && !isIsoCalendarDate(body.planned_end_on))
+  )
+    return c.json({ error: 'invalid_effective_date' }, 422);
+  const preview = previewTemporaryOverlay({
+    kind: body.kind,
+    memberId: body.member_id,
+    underlyingAssignmentId: body.underlying_assignment_id,
+    underlyingPositionId: body.underlying_position_id,
+    temporaryPositionId: body.temporary_position_id,
+    effectiveOn: body.effective_on,
+    plannedEndOn: body.planned_end_on,
+  });
+  return preview.ok ? c.json({ preview: true, ...preview }) : c.json(preview, 422);
 });
 
 /** Side-effect-free preview for the supported permanent lifecycle operations. */
