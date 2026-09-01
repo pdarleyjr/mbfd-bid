@@ -316,21 +316,37 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
     if (!existingShapeRecognized) {
       return c.json({ error: 'target_template_binding_shape_unrecognized' }, 409);
     }
-    await c.env.DB.batch([
-      ...administrativeBindings.bindings.map((binding) =>
-        c.env.DB.prepare(
-          `INSERT OR IGNORE INTO position_staffing_bindings (
-               position_id, template_version, staffing_position_id, authoritative_source_ref, review_status, created_at
-             ) VALUES (?, ?, ?, ?, 'approved', ?)`,
-        ).bind(
-          binding.positionId,
-          STATION_SIX_TARGET,
-          binding.staffingPositionId,
-          binding.authoritativeSourceRef,
-          now,
+    if (existingBindings.length === 0) {
+      await c.env.DB.batch([
+        ...administrativeBindings.bindings.map((binding) =>
+          c.env.DB.prepare(
+            `INSERT OR IGNORE INTO position_staffing_bindings (
+                 position_id, template_version, staffing_position_id, authoritative_source_ref, review_status, created_at
+               ) VALUES (?, ?, ?, ?, 'approved', ?)`,
+          ).bind(
+            binding.positionId,
+            STATION_SIX_TARGET,
+            binding.staffingPositionId,
+            binding.authoritativeSourceRef,
+            now,
+          ),
         ),
-      ),
-    ]);
+        auditInsertStatement(c.env.DB, {
+          bidSessionId: null,
+          actorType: 'admin',
+          actorId: c.get('claims').sub ?? null,
+          action: 'override_rule',
+          targetKind: 'position_staffing_binding',
+          targetId: STATION_SIX_TARGET,
+          afterState: {
+            target_template: STATION_SIX_TARGET,
+            binding_count: administrativeBindings.bindings.length,
+            resumed: true,
+          },
+          reason: parsed.data.reason,
+        }),
+      ]);
+    }
     return c.json({
       template_version: STATION_SIX_TARGET,
       rule_book_version: STATION_SIX_RULE_BOOK,
