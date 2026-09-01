@@ -197,6 +197,38 @@ describe('GET /api/admin/members/roster', () => {
     expect(m3?.manual_override_ordinal).toBe(1);
   });
 
+  it('rolls back a manual bid-order override when its audit receipt fails', async () => {
+    // One override statement precedes the required audit statement.
+    h.failNextBatchAt(1);
+    const response = await app.fetch(
+      new Request('http://x/api/admin/members/bid-order', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: 'S1',
+          overrides: [{ member_id: 3, override_ordinal: 1 }],
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(500);
+    expect(
+      (await h.db.run("SELECT COUNT(*) AS n FROM manual_bid_order_override WHERE bid_session_id = 'S1'"))
+        .results,
+    ).toEqual([{ n: 0 }]);
+    expect(
+      (
+        await h.db.run(
+          "SELECT COUNT(*) AS n FROM audit_log WHERE target_kind = 'manual_bid_order_override' AND target_id = 'S1'",
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
+  });
+
   it('retires direct credential toggles without mutating credentials or audit evidence', async () => {
     const before = await memberWriteState(h);
     const first = await app.fetch(

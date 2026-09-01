@@ -10,7 +10,7 @@ import {
   memberCredentials,
   members,
 } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import { chunkedInArraySelect } from '../../lib/d1-batch.js';
 import {
@@ -423,46 +423,29 @@ router.patch('/bid-order', requireStepUpAuth(), async (c) => {
   }
 
   const now = new Date();
-  for (const o of overrides) {
-    const exists = await db
-      .select()
-      .from(manualBidOrderOverride)
-      .where(
-        and(
-          eq(manualBidOrderOverride.bidSessionId, session_id),
-          eq(manualBidOrderOverride.memberId, o.member_id),
-        ),
-      )
-      .get();
-    if (exists === undefined) {
-      await db.insert(manualBidOrderOverride).values({
-        bidSessionId: session_id,
-        memberId: o.member_id,
-        overrideOrdinal: o.override_ordinal,
-        createdAt: now,
-      });
-    } else {
-      await db
-        .update(manualBidOrderOverride)
-        .set({ overrideOrdinal: o.override_ordinal })
-        .where(
-          and(
-            eq(manualBidOrderOverride.bidSessionId, session_id),
-            eq(manualBidOrderOverride.memberId, o.member_id),
-          ),
-        );
-    }
-  }
-
-  await writeAuditLog(db, {
-    bidSessionId: session_id,
-    actorType: 'admin',
-    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
-    action: 'override_rule',
-    targetKind: 'manual_bid_order_override',
-    targetId: session_id,
-    afterState: { overrides },
-  });
+  const actorId = c.get('claims').sub > 0 ? c.get('claims').sub : 0;
+  await c.env.DB.batch([
+    ...overrides.map((override) =>
+      c.env.DB
+        .prepare(
+          `INSERT INTO manual_bid_order_override
+             (bid_session_id, member_id, override_ordinal, created_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(bid_session_id, member_id) DO UPDATE SET
+             override_ordinal = excluded.override_ordinal`,
+        )
+        .bind(session_id, override.member_id, override.override_ordinal, now.getTime()),
+    ),
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: session_id,
+      actorType: 'admin',
+      actorId,
+      action: 'override_rule',
+      targetKind: 'manual_bid_order_override',
+      targetId: session_id,
+      afterState: { overrides },
+    }),
+  ]);
 
   return c.json({ updated: overrides.length });
 });
