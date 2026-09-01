@@ -2,7 +2,6 @@ import { BrandHeader } from '@/components/BrandHeader';
 import { cfEnv } from '@/lib/cf-env';
 import { JWT_COOKIE_NAME } from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
-import { requirePin } from '@/lib/require-pin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -11,7 +10,6 @@ interface LoginPageProps {
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  await requirePin();
   const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
   const signingKey = cfEnv('JWT_SIGNING_KEY');
   if (jwt && signingKey) {
