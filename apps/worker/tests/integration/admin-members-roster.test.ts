@@ -217,8 +217,11 @@ describe('GET /api/admin/members/roster', () => {
 
     expect(response.status).toBe(500);
     expect(
-      (await h.db.run("SELECT COUNT(*) AS n FROM manual_bid_order_override WHERE bid_session_id = 'S1'"))
-        .results,
+      (
+        await h.db.run(
+          "SELECT COUNT(*) AS n FROM manual_bid_order_override WHERE bid_session_id = 'S1'",
+        )
+      ).results,
     ).toEqual([{ n: 0 }]);
     expect(
       (
