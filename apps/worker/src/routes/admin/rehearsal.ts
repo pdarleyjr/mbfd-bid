@@ -1649,14 +1649,36 @@ router.post('/findings', zValidator('json', PostFindingBodySchema), async (c) =>
   const id = ulid();
   const createdAt = new Date();
 
-  await db.insert(rehearsalFindings).values({
-    id,
-    bidSessionId: body.bidSessionId,
-    createdAt,
-    authorId,
-    note: body.note,
-    screenshotR2Key: body.screenshotR2Key ?? null,
-  });
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO rehearsal_findings
+           (id, bid_session_id, created_at, author_id, note, screenshot_r2_key)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      id,
+      body.bidSessionId,
+      createdAt.getTime(),
+      authorId,
+      body.note,
+      body.screenshotR2Key ?? null,
+    ),
+    auditInsertStatement(
+      c.env.DB,
+      {
+        bidSessionId: body.bidSessionId,
+        actorType: 'admin',
+        actorId: authorId,
+        action: 'rehearsal_finding',
+        targetKind: 'rehearsal_finding',
+        targetId: id,
+        afterState: {
+          screenshot_r2_key: body.screenshotR2Key ?? null,
+        },
+        reason: body.note,
+      },
+      createdAt,
+    ),
+  ]);
 
   return c.json(
     {
