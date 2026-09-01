@@ -201,7 +201,7 @@ describe('WebSocket identity handoff', () => {
     ).toBeNull();
   });
 
-  it('uses the route-verified member identity for a live WebSocket pick', async () => {
+  it('does not permit a member WebSocket identity to mutate a real Bid without a canonical command', async () => {
     const bidSession = new BidSessionDO(makeStateMock(sessionId, storage), h.env);
     const socket = { send() {} } as unknown as WebSocket;
     const onMessage = bidSession as unknown as {
@@ -234,11 +234,11 @@ describe('WebSocket identity handoff', () => {
     );
 
     const persisted = await storage.get<BidSessionState>(`bs:${sessionId}:state`);
-    expect(persisted?.fills.A101).toMatchObject({ memberId: 42, ordinal: 1 });
-    expect(persisted?.currentPhase).toBe('complete');
+    expect(persisted?.fills.A101).toBeUndefined();
+    expect(persisted?.currentPhase).toBe('position_bid');
   });
 
-  it('forwards only verified, session-scoped ticket claims from the public WebSocket route to the DO', async () => {
+  it('rejects a member live WebSocket ticket before forwarding a mutable session connection', async () => {
     const doFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response('upstream'));
     const idFromName = vi.fn(() => ({}) as DurableObjectId);
     const bidSession = {
@@ -261,18 +261,9 @@ describe('WebSocket identity handoff', () => {
       BID_SESSION: bidSession,
     });
 
-    expect(accepted.status).toBe(200);
-    expect(idFromName).toHaveBeenCalledWith(sessionId);
-    expect(doFetch).toHaveBeenCalledTimes(1);
-    const [, init] = doFetch.mock.calls[0] ?? [];
-    expect(init).toMatchObject({
-      method: 'GET',
-      headers: {
-        Upgrade: 'websocket',
-        'X-MBFD-Member-Id': '42',
-        'X-MBFD-Role': 'member',
-      },
-    });
+    expect(accepted.status).toBe(403);
+    expect(idFromName).not.toHaveBeenCalled();
+    expect(doFetch).not.toHaveBeenCalled();
 
     const crossEnvironment = await router.request(
       sessionPath,
@@ -288,7 +279,7 @@ describe('WebSocket identity handoff', () => {
       BID_SESSION: bidSession,
     });
     expect(invalid.status).toBe(401);
-    expect(doFetch).toHaveBeenCalledTimes(1);
+    expect(doFetch).not.toHaveBeenCalled();
 
     const queryCredential = await signJwt(
       {
@@ -308,7 +299,7 @@ describe('WebSocket identity handoff', () => {
       { ...h.env, BID_SESSION: bidSession },
     );
     expect(retiredQuery.status).toBe(401);
-    expect(doFetch).toHaveBeenCalledTimes(1);
+    expect(doFetch).not.toHaveBeenCalled();
 
     const wrongSessionTicket = await websocketTicket(
       '01HZZ0000000000000DIFFERENT',
@@ -327,6 +318,6 @@ describe('WebSocket identity handoff', () => {
       { ...h.env, BID_SESSION: bidSession },
     );
     expect(wrongSession.status).toBe(401);
-    expect(doFetch).toHaveBeenCalledTimes(1);
+    expect(doFetch).not.toHaveBeenCalled();
   });
 });

@@ -188,14 +188,14 @@ describe('admin bid controls frozen-policy guard', () => {
     });
 
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: 'session_policy_snapshot_missing' });
+    expect(await res.json()).toMatchObject({ error: 'live_action_policy_missing' });
     expect(
       (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [SESSION_ID]))
         .results,
     ).toEqual([{ n: 0 }]);
   });
 
-  it('rejects excluded Division Chief members and administrative positions across direct admin controls', async () => {
+  it('fails closed at live-action authorization before legacy direct controls can inspect policy data', async () => {
     await seedPolicyFixture(h, true);
 
     const excludedForce = await post(h, `/api/admin/bid-session/${SESSION_ID}/force-pick`, {
@@ -204,8 +204,8 @@ describe('admin bid controls frozen-policy guard', () => {
       reason_code: 'force.cert_mandate',
       reason: 'Attempt to force an excluded administrative assignment.',
     });
-    expect(excludedForce.status).toBe(422);
-    expect(await excludedForce.json()).toMatchObject({ error: 'member_excluded_from_bid_pool' });
+    expect(excludedForce.status).toBe(409);
+    expect(await excludedForce.json()).toMatchObject({ error: 'live_action_policy_missing' });
 
     const administrativeForce = await post(h, `/api/admin/bid-session/${SESSION_ID}/force-pick`, {
       member_id: 42,
@@ -213,8 +213,8 @@ describe('admin bid controls frozen-policy guard', () => {
       reason_code: 'force.cert_mandate',
       reason: 'Attempt to force a non-biddable administrative position.',
     });
-    expect(administrativeForce.status).toBe(422);
-    expect(await administrativeForce.json()).toMatchObject({ error: 'position_not_biddable' });
+    expect(administrativeForce.status).toBe(409);
+    expect(await administrativeForce.json()).toMatchObject({ error: 'live_action_policy_missing' });
 
     const proxy = await post(h, `/api/admin/bid-session/${SESSION_ID}/bid-for-member`, {
       member_id: 42,
@@ -222,8 +222,8 @@ describe('admin bid controls frozen-policy guard', () => {
       reason_code: 'bid_for_member.unreachable_phone',
       reason: 'Attempt to proxy bid an administrative position.',
     });
-    expect(proxy.status).toBe(422);
-    expect(await proxy.json()).toMatchObject({ error: 'position_not_biddable' });
+    expect(proxy.status).toBe(409);
+    expect(await proxy.json()).toMatchObject({ error: 'live_action_policy_missing' });
 
     const lock = await post(h, `/api/admin/bid-session/${SESSION_ID}/lock-position`, {
       member_id: 211,
@@ -239,8 +239,8 @@ describe('admin bid controls frozen-policy guard', () => {
       reason_code: 'skip.unreachable',
       reason: 'Attempt to skip an excluded Division Chief member.',
     });
-    expect(skip.status).toBe(422);
-    expect(await skip.json()).toMatchObject({ error: 'member_excluded_from_bid_pool' });
+    expect(skip.status).toBe(409);
+    expect(await skip.json()).toMatchObject({ error: 'live_action_policy_missing' });
 
     expect(
       (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [SESSION_ID]))
@@ -256,7 +256,7 @@ describe('admin bid controls frozen-policy guard', () => {
     ).toEqual([{ n: 0 }]);
   });
 
-  it('does not replay a legacy idempotency record for a now non-biddable position', async () => {
+  it('does not replay a legacy idempotency record when live-action policy is absent', async () => {
     await seedPolicyFixture(h, true);
     await h.db.run(
       `INSERT INTO bids
@@ -277,8 +277,8 @@ describe('admin bid controls frozen-policy guard', () => {
       'legacy-policy-key',
     );
 
-    expect(res.status).toBe(422);
-    expect(await res.json()).toMatchObject({ error: 'position_not_biddable' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'live_action_policy_missing' });
     expect(
       (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [SESSION_ID]))
         .results,

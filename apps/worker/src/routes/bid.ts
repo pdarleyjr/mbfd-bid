@@ -596,16 +596,6 @@ bid.post('/bid/a-day-pick', async (c) => {
     return c.json({ error: 'invalid_payload', issues: parsed.error.issues }, 400);
   }
   const memberId = Number(claims.sub);
-  // A-Day self-service is rehearsal-only. A live A-Day change must use a
-  // separately authorized operator command once the annual A-Day policy has
-  // been approved; a member JWT can never mutate it through this fallback.
-  const session = await getDb(c.env.DB)
-    .select({ isMock: bidSessionsTable.isMock })
-    .from(bidSessionsTable)
-    .where(eq(bidSessionsTable.id, parsed.data.bidSessionId))
-    .get();
-  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-  if (!session.isMock) return c.json({ error: 'live_member_a_day_mutation_forbidden' }, 403);
   const snapshot = await fetchSessionSnapshot(c, parsed.data.bidSessionId);
   if (!snapshot) return c.json({ error: 'session_not_found' }, 404);
   if (snapshot.currentPhase !== 'a_day_bid' || !snapshot.aDay) {
@@ -620,6 +610,16 @@ bid.post('/bid/a-day-pick', async (c) => {
       403,
     );
   }
+  // A-Day self-service is rehearsal-only. A live A-Day change must use a
+  // separately authorized operator command once the annual A-Day policy has
+  // been approved; a member JWT can never mutate it through this fallback.
+  const session = await getDb(c.env.DB)
+    .select({ isMock: bidSessionsTable.isMock })
+    .from(bidSessionsTable)
+    .where(eq(bidSessionsTable.id, parsed.data.bidSessionId))
+    .get();
+  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+  if (!session.isMock) return c.json({ error: 'live_member_a_day_mutation_forbidden' }, 403);
   if (snapshot.currentBidderId !== memberId) {
     return c.json(
       {

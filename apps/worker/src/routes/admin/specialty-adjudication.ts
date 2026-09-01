@@ -298,7 +298,7 @@ router.post('/:id/specialty-adjudication/requests', requireStepUpAuth(), async (
     qualificationRequirements.specialty_codes.length > 0;
   if (
     requiresSpecialtyLifecycleFacts &&
-    (guard.frozen.snapshot.settings.v !== 2 ||
+    (guard.frozen.snapshot.settings.v < 2 ||
       guard.frozen.snapshot.credentialEvaluationOn === undefined)
   ) {
     return c.json({ error: 'synthetic_specialty_qualification_snapshot_unavailable' }, 422);

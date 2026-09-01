@@ -747,7 +747,9 @@ describe('annual bid configuration selection', () => {
       body: JSON.stringify({ bid_year: 2027, is_mock: false }),
     });
     expect(live.status).toBe(409);
-    expect(await live.json()).toMatchObject({ policy_error: 'bid_configuration_frozen_required' });
+    expect(await live.json()).toMatchObject({
+      policy_error: 'bid_configuration_live_policy_required',
+    });
   });
 
   it('rejects publication when the designated configuration changes at the freeze boundary', async () => {
@@ -798,7 +800,7 @@ describe('annual bid configuration selection', () => {
     ).toEqual([{ status: 'draft' }]);
   });
 
-  it('uses the same designated configuration for a live session only after it is frozen', async () => {
+  it('keeps a live session closed when a frozen designation lacks the explicit V3 live policy', async () => {
     expect((await designateDraft(h)).status).toBe(200);
 
     const prematureLive = await adminRequest(h, '/api/admin/bid-session', {
@@ -807,7 +809,7 @@ describe('annual bid configuration selection', () => {
     });
     expect(prematureLive.status).toBe(409);
     expect(await prematureLive.json()).toMatchObject({
-      policy_error: 'bid_configuration_frozen_required',
+      policy_error: 'bid_configuration_live_policy_required',
     });
 
     await seedCommittedTeleStaffBaseline(h);
@@ -820,11 +822,9 @@ describe('annual bid configuration selection', () => {
       method: 'POST',
       body: JSON.stringify({ bid_year: 2027, is_mock: false }),
     });
-    expect(live.status).toBe(201);
+    expect(live.status).toBe(409);
     expect(await live.json()).toMatchObject({
-      is_mock: false,
-      rule_book_version: '2027.2',
-      rule_book_revision: 0,
+      policy_error: 'bid_configuration_live_policy_required',
     });
   });
 });

@@ -20,7 +20,78 @@ async function freshAdmin(): Promise<string> {
   );
 }
 
+async function freshPolicyAdmin(): Promise<string> {
+  return signJwt(
+    {
+      sub: POLICY_MEMBER_ID,
+      emp: '60061',
+      role: 'admin',
+      rank: 'CHIEF',
+      first_name: 'Frozen',
+      last_name: 'Operator',
+      fresh_auth_at: Math.floor(Date.now() / 1000),
+    },
+    KEY,
+  );
+}
+
 const POLICY_MEMBER_ID = 61;
+const LIVE_ACTIONS = [
+  'record_selection',
+  'amend_selection',
+  'skip_defer',
+  'mark_unreachable',
+  'force',
+  'resolve_tie',
+  'alter_order',
+  'pause_resume',
+  'approve_transition',
+  'approve_final_results',
+  'publish',
+];
+const LIVE_DISPOSITIONS = ['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'];
+
+function liveSettings(grants: string[]) {
+  return {
+    v: 3,
+    expectedDurationDays: 2,
+    turnTimerSeconds: 180,
+    credentialEvaluationOn: '2026-01-15',
+    livePolicy: {
+      v: 1,
+      policyRevision: 'lifecycle-test',
+      stages: [
+        {
+          id: 'D_CAPTAIN',
+          label: 'D Captain',
+          order: 0,
+          memberIds: [POLICY_MEMBER_ID],
+          opportunityPositionIds: ['A101'],
+          kind: 'CAPTAIN',
+        },
+      ],
+      dispositions: LIVE_DISPOSITIONS.map((disposition) => ({
+        disposition,
+        advances: true,
+        returns: false,
+        returnStageId: null,
+        retainsLaterSelectionRights: false,
+        terminal: false,
+        requiresReason: true,
+        requiresEvidence: false,
+        contactPolicyReference: null,
+      })),
+      actionPermissions: LIVE_ACTIONS.map((action) => ({
+        action,
+        actorMemberIds: grants.includes(action) ? [POLICY_MEMBER_ID] : [99],
+      })),
+      specialtyCatalogReference: null,
+      aDayPolicyReference: null,
+      transitionPolicyReference: null,
+      publicationPolicyReference: null,
+    },
+  };
+}
 
 async function seedActiveSinglePositionPolicy(h: TestD1, now: number): Promise<void> {
   await h.db.run(
@@ -64,6 +135,7 @@ async function seedFrozenPolicySnapshot(
       sourceHash: string;
       acceptedAtMs: number;
     };
+    liveActionGrants?: string[];
   } = {},
 ): Promise<void> {
   await h.db.run(
@@ -79,12 +151,15 @@ async function seedFrozenPolicySnapshot(
         ruleBookRevision: options.ruleBookRevision ?? 0,
         positionTemplateVersion: '2026.1',
         configurationRevision: options.configurationRevision ?? 0,
-        settings: {
-          v: 2,
-          expectedDurationDays: 2,
-          turnTimerSeconds: 180,
-          credentialEvaluationOn: '2026-01-15',
-        },
+        settings:
+          options.liveActionGrants === undefined
+            ? {
+                v: 2,
+                expectedDurationDays: 2,
+                turnTimerSeconds: 180,
+                credentialEvaluationOn: '2026-01-15',
+              }
+            : liveSettings(options.liveActionGrants),
         credentialEvaluationOn: '2026-01-15',
         capturedAtMs: capturedAt,
         members: [
@@ -207,7 +282,7 @@ describe('POST /api/admin/bid-session', () => {
     await teardownTestD1(h);
   });
 
-  it('creates a session in `config` phase', async () => {
+  it('keeps a real session closed until its annual configuration has an explicit V3 live policy', async () => {
     const res = await app.fetch(
       new Request('http://x/api/admin/bid-session', {
         method: 'POST',
@@ -224,10 +299,11 @@ describe('POST /api/admin/bid-session', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as { id: string; current_phase: string };
-    expect(body.current_phase).toBe('config');
-    expect(body.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/); // ULID shape
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      policy_error: 'bid_configuration_live_policy_required',
+    });
+    expect((await h.db.run('SELECT count(*) AS n FROM bid_sessions')).results).toEqual([{ n: 0 }]);
   });
 
   it('rejects an omitted session mode instead of defaulting to a real Bid', async () => {
@@ -327,19 +403,7 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     );
 
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({
-      error: 'readiness_blocked',
-      readiness: {
-        canStartLiveBid: false,
-        overallStatus: 'BLOCKING',
-        blockingCheckIds: expect.arrayContaining([
-          'accepted_staffing_baseline',
-          'annual_configuration',
-          'audit_infrastructure',
-          'writeback_safety',
-        ]),
-      },
-    });
+    expect(await res.json()).toMatchObject({ error: 'live_action_policy_missing' });
     const after = await h.db.run('SELECT current_phase FROM bid_sessions WHERE id = ?', [
       sessionId,
     ]);
@@ -373,6 +437,9 @@ describe('POST /api/admin/bid-session/:id/start', () => {
 
   it('permits a fully evidenced live session to start without enabling writeback', async () => {
     await seedAcceptedOfficialBaselineForLiveReadiness(h);
+    await h.db.run('UPDATE bid_years SET config_json = ? WHERE year = 2026', [
+      JSON.stringify(liveSettings(['approve_transition'])),
+    ]);
     await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
       sessionId,
     ]);
@@ -389,6 +456,7 @@ describe('POST /api/admin/bid-session/:id/start', () => {
         sourceHash: 'a'.repeat(64),
         acceptedAtMs: 1,
       },
+      liveActionGrants: ['approve_transition'],
     });
     expect(
       (
@@ -418,7 +486,7 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${await freshAdmin()}` },
+        headers: { Authorization: `Bearer ${await freshPolicyAdmin()}` },
       }),
       env,
     );
@@ -434,6 +502,16 @@ describe('POST /api/admin/bid-session/:id/start', () => {
   it('performs a passing real-mode dry run without creating a real session', async () => {
     await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
     await seedAcceptedOfficialBaselineForLiveReadiness(h);
+    await h.db.run('UPDATE bid_years SET config_json = ? WHERE year = 2026', [
+      JSON.stringify(liveSettings([])),
+    ]);
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    await seedFrozenPolicySnapshot(h, sessionId, Date.now(), {
+      configurationRevision: 1,
+      liveActionGrants: [],
+    });
     const before = await h.db.run('SELECT count(*) AS n FROM bid_sessions');
     const env = {
       ...h.env,
@@ -525,11 +603,15 @@ describe('POST /api/admin/bid-session/:id/pause', () => {
   beforeEach(async () => {
     h = await setupTestD1();
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await seedActiveSinglePositionPolicy(h, Date.now());
     sessionId = '01HZZ0000000000000000SESS02';
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1);",
       [sessionId, Date.now()],
     );
+    await seedFrozenPolicySnapshot(h, sessionId, Date.now(), {
+      liveActionGrants: ['pause_resume'],
+    });
   });
   afterEach(async () => {
     await teardownTestD1(h);
@@ -540,7 +622,7 @@ describe('POST /api/admin/bid-session/:id/pause', () => {
       new Request(`http://x/api/admin/bid-session/${sessionId}/pause`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${await freshAdmin()}`,
+          Authorization: `Bearer ${await freshPolicyAdmin()}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -564,7 +646,7 @@ describe('POST /api/admin/bid-session/:id/pause', () => {
       new Request(`http://x/api/admin/bid-session/${sessionId}/pause`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${await freshAdmin()}`,
+          Authorization: `Bearer ${await freshPolicyAdmin()}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ reason_code: 'session.pause_emergency' }),
@@ -581,11 +663,15 @@ describe('POST /api/admin/bid-session/:id/resume', () => {
   beforeEach(async () => {
     h = await setupTestD1();
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await seedActiveSinglePositionPolicy(h, Date.now());
     sessionId = '01HZZ0000000000000000SESS03';
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, paused_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2026, ?, ?, 'paused', 180, 2, 1);",
       [sessionId, Date.now() - 60000, Date.now()],
     );
+    await seedFrozenPolicySnapshot(h, sessionId, Date.now(), {
+      liveActionGrants: ['pause_resume'],
+    });
   });
   afterEach(async () => {
     await teardownTestD1(h);
@@ -596,7 +682,7 @@ describe('POST /api/admin/bid-session/:id/resume', () => {
       new Request(`http://x/api/admin/bid-session/${sessionId}/resume`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${await freshAdmin()}`,
+          Authorization: `Bearer ${await freshPolicyAdmin()}`,
           'Content-Type': 'application/json',
         },
         body: '{}',

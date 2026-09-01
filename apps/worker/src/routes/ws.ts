@@ -85,18 +85,20 @@ ws.get('/session/:id', async (c) => {
   // operator-originated normal selection commands. We do this at the route
   // boundary as well as in the DO so a member cannot obtain a mutating socket
   // merely by bypassing UI affordances.
-  try {
-    const session = await getDb(c.env.DB)
-      .select({ isMock: bidSessions.isMock })
-      .from(bidSessions)
-      .where(eq(bidSessions.id, id))
-      .get();
-    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-    if (!session.isMock && identity.role === 'member') {
-      return c.json({ error: 'live_member_mutation_forbidden' }, 403);
+  if (identity.role === 'member') {
+    try {
+      const session = await getDb(c.env.DB)
+        .select({ isMock: bidSessions.isMock })
+        .from(bidSessions)
+        .where(eq(bidSessions.id, id))
+        .get();
+      if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+      if (!session.isMock) {
+        return c.json({ error: 'live_member_mutation_forbidden' }, 403);
+      }
+    } catch {
+      return c.json({ error: 'session_authorization_unavailable' }, 503);
     }
-  } catch {
-    return c.json({ error: 'session_authorization_unavailable' }, 503);
   }
   const doId = c.env.BID_SESSION.idFromName(id);
   const stub = c.env.BID_SESSION.get(doId);

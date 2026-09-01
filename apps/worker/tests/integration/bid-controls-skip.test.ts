@@ -113,7 +113,7 @@ describe('POST /api/admin/bid-session/:id/skip', () => {
     await teardownTestD1(h);
   });
 
-  it('records a skip audit entry and does NOT create a bids row', async () => {
+  it('rejects the legacy real-session endpoint without creating state or audit records', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/skip`, {
         method: 'POST',
@@ -129,19 +129,20 @@ describe('POST /api/admin/bid-session/:id/skip', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'live_action_policy_missing' });
     const audit = await h.db.run(
       "SELECT count(*) AS n FROM audit_log WHERE action = 'skip' AND bid_session_id = ?",
       [sessionId],
     );
-    expect(audit.results[0]?.n).toBe(1);
+    expect(audit.results[0]?.n).toBe(0);
     const bidsCount = await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [
       sessionId,
     ]);
     expect(bidsCount.results[0]?.n).toBe(0);
   });
 
-  it('rejects a force reason_code (400)', async () => {
+  it('requires the canonical disposition command before legacy payload validation', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/skip`, {
         method: 'POST',
@@ -157,10 +158,10 @@ describe('POST /api/admin/bid-session/:id/skip', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
   });
 
-  it('rejects a member outside the captured V3 Bid pool', async () => {
+  it('does not inspect or mutate a legacy real-session payload', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/skip`, {
         method: 'POST',
@@ -176,7 +177,7 @@ describe('POST /api/admin/bid-session/:id/skip', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(422);
-    expect(await res.json()).toMatchObject({ error: 'member_not_in_bid_pool' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'live_action_policy_missing' });
   });
 });

@@ -1,381 +1,181 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
-import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
-const KEY = 'f'.repeat(64);
-async function adminJwt(): Promise<string> {
+const key = 'f'.repeat(64);
+const sessionId = '01HZZ0000000000000000SESS30';
+const actions = [
+  'record_selection',
+  'amend_selection',
+  'skip_defer',
+  'mark_unreachable',
+  'force',
+  'resolve_tie',
+  'alter_order',
+  'pause_resume',
+  'approve_transition',
+  'approve_final_results',
+  'publish',
+];
+const dispositions = ['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'];
+
+async function jwt() {
   return signJwt(
     {
-      sub: 0,
-      emp: 'admin',
+      sub: 42,
+      emp: '42',
       role: 'admin',
       rank: 'CHIEF',
-      first_name: 'B',
-      last_name: 'A',
+      first_name: 'Operator',
+      last_name: 'Test',
       fresh_auth_at: Math.floor(Date.now() / 1000),
     },
-    KEY,
+    key,
   );
 }
 
-async function insertV3PolicySnapshot(
-  h: TestD1,
-  sessionId: string,
-  capturedAt: number,
-  options?: { requiredRank?: 'FF' | 'LT'; includeInvalidRule?: boolean },
-) {
-  const requiredRank = options?.requiredRank ?? 'FF';
-  await h.db.run(
-    `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
-     VALUES (?, '2026.1', '2026.1', 0, ?, ?);`,
-    [
-      sessionId,
-      JSON.stringify({
-        v: 3,
-        ruleBookVersion: '2026.1',
-        ruleBookRevision: 0,
-        positionTemplateVersion: '2026.1',
-        configurationRevision: 0,
-        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
-        capturedAtMs: capturedAt,
-        members: [
+function snapshot(grant: boolean) {
+  return {
+    v: 3,
+    ruleBookVersion: '2026.1',
+    ruleBookRevision: 0,
+    positionTemplateVersion: '2026.1',
+    configurationRevision: 0,
+    credentialEvaluationOn: '2026-01-15',
+    capturedAtMs: 1,
+    settings: {
+      v: 3,
+      expectedDurationDays: 2,
+      turnTimerSeconds: 180,
+      credentialEvaluationOn: '2026-01-15',
+      livePolicy: {
+        v: 1,
+        policyRevision: 'test',
+        stages: [
           {
-            memberId: 60,
-            pool: 'FF',
-            rscSeniority: 80,
-            rankSeniority: null,
-            exclusionReason: null,
-            authoritativeAssignmentId: null,
-            rank: 'FF',
-            isProbationary: false,
-            credentialNames: [],
+            id: 'D_CAPTAIN',
+            label: 'D Captain',
+            order: 0,
+            memberIds: [42],
+            opportunityPositionIds: ['A101'],
+            kind: 'CAPTAIN',
           },
         ],
-        ruleBookMaterial: {
-          v: 1,
-          rules: [
-            {
-              ruleBookVersion: '2026.1',
-              positionId: 'A101',
-              templateVersion: '2026.1',
-              requiredCriteriaJson: JSON.stringify({
-                rank: [requiredRank],
-                credentials: [],
-                custom: [],
-              }),
-              pointsPreferenceJson: '{"max":0,"items":[]}',
-              tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
-            },
-            ...(options?.includeInvalidRule
-              ? [
-                  {
-                    ruleBookVersion: '2026.1',
-                    positionId: 'B101',
-                    templateVersion: '2026.1',
-                    requiredCriteriaJson:
-                      '{"rank":["FF"],"credentials":[],"custom":["pre_bid_pool"]}',
-                    pointsPreferenceJson: '{"max":0,"items":[]}',
-                    tieBreakChainJson: '["points","rsc_seniority","rank_seniority"]',
-                  },
-                ]
-              : []),
-          ],
-          positions: [
-            {
-              id: 'A101',
-              templateVersion: '2026.1',
-              bidParticipation: 'BIDDABLE',
-              isExcludedFromCount: false,
-              shift: 'A',
-              station: '1',
-              unit: 'Engine 1',
-              rankRequired: 'FF',
-              positionName: 'Engine 1 FF',
-            },
-            ...(options?.includeInvalidRule
-              ? [
-                  {
-                    id: 'B101',
-                    templateVersion: '2026.1',
-                    bidParticipation: 'BIDDABLE',
-                    isExcludedFromCount: false,
-                    shift: 'B',
-                    station: '1',
-                    unit: 'Engine 1',
-                    rankRequired: 'FF',
-                    positionName: 'Invalid synthetic policy row',
-                  },
-                ]
-              : []),
-          ],
-        },
-      }),
-      capturedAt,
+        dispositions: dispositions.map((disposition) => ({
+          disposition,
+          advances: true,
+          returns: false,
+          returnStageId: null,
+          retainsLaterSelectionRights: false,
+          terminal: false,
+          requiresReason: true,
+          requiresEvidence: false,
+          contactPolicyReference: null,
+        })),
+        actionPermissions: actions.map((action) => ({
+          action,
+          actorMemberIds: grant && action === 'record_selection' ? [42] : [99],
+        })),
+        specialtyCatalogReference: null,
+        aDayPolicyReference: null,
+        transitionPolicyReference: null,
+        publicationPolicyReference: null,
+      },
+    },
+    members: [
+      {
+        memberId: 42,
+        pool: 'FF',
+        rscSeniority: 1,
+        rankSeniority: null,
+        exclusionReason: null,
+        authoritativeAssignmentId: null,
+        rank: 'FF',
+        isProbationary: false,
+        credentialNames: [],
+      },
     ],
-  );
+    ruleBookMaterial: {
+      v: 1,
+      rules: [
+        {
+          ruleBookVersion: '2026.1',
+          positionId: 'A101',
+          templateVersion: '2026.1',
+          requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+          pointsPreferenceJson: '{"max":0,"items":[]}',
+          tieBreakChainJson: '["rsc_seniority"]',
+        },
+      ],
+      positions: [
+        {
+          id: 'A101',
+          templateVersion: '2026.1',
+          bidParticipation: 'BIDDABLE',
+          isExcludedFromCount: false,
+          shift: 'A',
+          station: '1',
+          unit: 'Engine 1',
+          rankRequired: 'FF',
+          positionName: 'Engine 1 FF',
+        },
+      ],
+    },
+  };
 }
 
-async function seedEligibleFireFighter(h: TestD1, sessionId: string) {
-  const now = Date.now();
-  await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
-  await h.db.run(
-    "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1);",
-    [sessionId, now],
-  );
-  await h.db.run(
-    "INSERT INTO members (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at) VALUES (60, '60060', 'Proxy', 'Bid', 'FF', 'FF', 80, 0, ?, ?);",
-    [now, now],
-  );
-  await h.db.run(
-    "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
-  );
-  await h.db.run(
-    "INSERT INTO positions (id, template_version, shift, station, division, unit, rank_required, position_name) VALUES ('A101', '2026.1', 'A', '1', 'Combat', 'Engine 1', 'FF', 'Engine 1 FF');",
-  );
-  await h.db.run(
-    "INSERT INTO rule_books (version, effective_year, status) VALUES ('2026.1', 2026, 'active');",
-  );
-  await h.db.run(
-    `INSERT INTO position_rules
-     (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain)
-     VALUES ('2026.1', 'A101', '2026.1',
-       '{"rank":["FF"],"credentials":[],"custom":[]}',
-       '{"max":0,"items":[]}',
-       '["points","rsc_seniority","rank_seniority"]');`,
-  );
-  await insertV3PolicySnapshot(h, sessionId, now);
-}
-
-describe('POST /api/admin/bid-session/:id/bid-for-member', () => {
+describe('real bid-for-member legacy boundary', () => {
   let h: TestD1;
-  const sessionId = '01HZZ0000000000000000SESS30';
   beforeEach(async () => {
     h = await setupTestD1();
-    await seedEligibleFireFighter(h, sessionId);
+    await h.db.run(
+      "INSERT INTO bid_years (year,status) VALUES (2026,'live'); INSERT INTO position_templates (version,effective_year) VALUES ('2026.1',2026); INSERT INTO positions (id,template_version,shift,station,division,unit,rank_required,position_name) VALUES ('A101','2026.1','A','1','Combat','Engine 1','FF','Engine 1 FF'); INSERT INTO rule_books (version,effective_year,status) VALUES ('2026.1',2026,'active'); INSERT INTO position_rules (rule_book_version,position_id,template_version,required_criteria,points_preference,tie_break_chain) VALUES ('2026.1','A101','2026.1','{\"rank\":[\"FF\"],\"credentials\":[],\"custom\":[]}', '{\"max\":0,\"items\":[]}', '[\"rsc_seniority\"]'); INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,created_at,updated_at) VALUES (42,'42','Operator','Test','FF','FF',1,0,1,1),(60,'60','Proxy','Member','FF','FF',2,0,1,1); INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,turn_timer_seconds,expected_duration_days,day_count) VALUES ('01HZZ0000000000000000SESS30',2026,1,'position_bid',180,2,1);",
+    );
   });
-  afterEach(async () => {
-    await teardownTestD1(h);
-  });
-
-  it('records a bid with forced=false and no invented actor when the admin is not a member', async () => {
-    h.sqlite.pragma('foreign_keys = ON');
-    const res = await app.fetch(
+  afterEach(async () => teardownTestD1(h));
+  async function request(grant: boolean) {
+    await h.db.run(
+      'INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES (?,?,?,0,?,1)',
+      [sessionId, '2026.1', '2026.1', JSON.stringify(snapshot(grant))],
+    );
+    return app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await adminJwt()}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${await jwt()}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           member_id: 60,
           position_id: 'A101',
           reason_code: 'bid_for_member.unreachable_phone',
-          reason: 'Member radioed his pick.',
+          reason: 'test reason',
         }),
       }),
-      { ...h.env, JWT_SIGNING_KEY: KEY },
+      { ...h.env, JWT_SIGNING_KEY: key },
     );
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as { bid_id: string; forced: false };
-    expect(body.forced).toBe(false);
-    const rows = await h.db.run(
-      'SELECT forced, admin_actor_id, position_id FROM bids WHERE id = ?',
-      [body.bid_id],
-    );
-    const r = rows.results[0] as
-      | { forced: number; admin_actor_id: number | null; position_id: string }
-      | undefined;
-    expect(r?.forced).toBe(0);
-    expect(r?.admin_actor_id).toBeNull();
-  });
-
-  it('replays a bid committed after the pre-lease idempotency lookup', async () => {
-    const key = 'proxy-idem-race-after-lease-1';
-    const bidId = '01HZZ0000000000000PROXYREPLAY';
-    let injected = false;
-    const bidSessionNamespace: WorkerEnv['BID_SESSION'] = {
-      idFromName: (name: string) => ({ toString: () => name }) as unknown as DurableObjectId,
-      get: () =>
-        ({
-          fetch: async (input: Request | string) => {
-            const url = typeof input === 'string' ? input : input.url;
-            const pathname = new URL(url).pathname;
-            if (pathname === '/admin/normal-mutation-lease/acquire') {
-              // The route's pre-lease lookup has found no row. Model another
-              // writer committing the same key before this request is granted
-              // its serialized mutation permit.
-              if (!injected) {
-                injected = true;
-                await h.db.run(
-                  `INSERT INTO bids
-                    (id, bid_session_id, ordinal, member_id, position_id, picked_at, forced,
-                     idempotency_key, portal_sync_status, portal_sync_attempts)
-                   VALUES (?, ?, 0, 60, 'A101', ?, 0, ?, 'pending', 0);`,
-                  [bidId, sessionId, Date.now(), key],
-                );
-              }
-              return new Response(
-                JSON.stringify({ ok: true, lease_id: 'bid-for-member-race-test-lease' }),
-                { status: 200 },
-              );
-            }
-            if (pathname === '/admin/normal-mutation-lease/release') {
-              return new Response(JSON.stringify({ ok: true }), { status: 200 });
-            }
-            return new Response('not found', { status: 404 });
-          },
-        }) as unknown as DurableObjectStub,
-    } as unknown as WorkerEnv['BID_SESSION'];
-
-    const res = await app.fetch(
-      new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await adminJwt()}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': key,
-        },
-        body: JSON.stringify({
-          member_id: 60,
-          position_id: 'A101',
-          reason_code: 'bid_for_member.unreachable_phone',
-          reason: 'Replay after the normal mutation permit is held.',
-        }),
-      }),
-      { ...h.env, JWT_SIGNING_KEY: KEY, BID_SESSION: bidSessionNamespace },
-    );
-
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      bid_id: bidId,
-      forced: false,
-      idempotent_replay: true,
+  }
+  it('B rejects a missing record-selection grant before mutation', async () => {
+    const res = await request(false);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({
+      error: 'live_action_forbidden',
+      action: 'record_selection',
     });
     expect(
-      (await h.db.run('SELECT count(*) AS n FROM bids WHERE idempotency_key = ?', [key])).results,
-    ).toEqual([{ n: 1 }]);
-  });
-
-  it('does not let an unstarted live session create a proxy bid', async () => {
-    await h.db.run("UPDATE bid_sessions SET current_phase = 'config' WHERE id = ?", [sessionId]);
-
-    const res = await app.fetch(
-      new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await adminJwt()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          member_id: 60,
-          position_id: 'A101',
-          reason_code: 'bid_for_member.unreachable_phone',
-          reason: 'A config-phase session cannot receive a proxy bid.',
-        }),
-      }),
-      { ...h.env, JWT_SIGNING_KEY: KEY },
-    );
-
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: 'bid_session_not_active', current_phase: 'config' });
-    expect(
-      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [sessionId]))
+      (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id=?', [sessionId]))
         .results,
     ).toEqual([{ n: 0 }]);
-    expect(
-      (
-        await h.db.run(
-          "SELECT count(*) AS n FROM audit_log WHERE action = 'admin_bid_for_member' AND bid_session_id = ?",
-          [sessionId],
-        )
-      ).results,
-    ).toEqual([{ n: 0 }]);
   });
-
-  it('returns 422 when the captured V3 rule is LT-only', async () => {
-    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
-      sessionId,
-    ]);
-    await insertV3PolicySnapshot(h, sessionId, Date.now(), { requiredRank: 'LT' });
-    const res = await app.fetch(
-      new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await adminJwt()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          member_id: 60,
-          position_id: 'A101',
-          reason_code: 'bid_for_member.unreachable_phone',
-          reason: 'should be rejected',
-        }),
-      }),
-      { ...h.env, JWT_SIGNING_KEY: KEY },
-    );
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as { error: string; reasons: { code: string }[] };
-    expect(body.error).toBe('ineligible');
-    expect(body.reasons.some((r) => r.code === 'RANK_REQUIRED')).toBe(true);
-  });
-
-  it('blocks a bid when its captured V3 rule material is invalid', async () => {
-    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
-      sessionId,
-    ]);
-    await insertV3PolicySnapshot(h, sessionId, Date.now(), { includeInvalidRule: true });
-
-    const res = await app.fetch(
-      new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await adminJwt()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          member_id: 60,
-          position_id: 'A101',
-          reason_code: 'bid_for_member.unreachable_phone',
-          reason: 'Policy book must be valid before any proxy bid.',
-        }),
-      }),
-      { ...h.env, JWT_SIGNING_KEY: KEY },
-    );
-
+  it('A rejects an authorized legacy proxy route with no authoritative side effects', async () => {
+    const res = await request(true);
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({
-      error: 'session_rule_book_invalid',
+      error: 'canonical_live_command_required',
+      command: 'live.record_selection',
     });
-    const rows = await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id = ?', [
-      sessionId,
-    ]);
-    expect(rows.results[0]?.n).toBe(0);
-  });
-
-  it('audit entry uses action=admin_bid_for_member', async () => {
-    await app.fetch(
-      new Request(`http://x/api/admin/bid-session/${sessionId}/bid-for-member`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await adminJwt()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          member_id: 60,
-          position_id: 'A101',
-          reason_code: 'bid_for_member.unreachable_phone',
-          reason: 'Proxy bid.',
-        }),
-      }),
-      { ...h.env, JWT_SIGNING_KEY: KEY },
-    );
-    const rows = await h.db.run(
-      "SELECT count(*) AS n FROM audit_log WHERE action = 'admin_bid_for_member' AND bid_session_id = ?",
-      [sessionId],
-    );
-    expect(rows.results[0]?.n).toBe(1);
+    for (const table of ['bids', 'audit_log', 'bid_command_events', 'bid_audit_outbox'])
+      expect(
+        (await h.db.run(`SELECT count(*) AS n FROM ${table} WHERE bid_session_id=?`, [sessionId]))
+          .results,
+      ).toEqual([{ n: 0 }]);
   });
 });

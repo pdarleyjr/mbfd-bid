@@ -17,6 +17,59 @@ const CAPTURED_AFTER_LEGACY_EXPIRY = Date.UTC(2027, 0, 2, 12, 0, 0);
 const SESSION_ID = '01HZZ0000000000000QUALPOL';
 const ROUTE_SESSION_ID = '01HZZ0000000000000QUALRT';
 const JWT_KEY = 's'.repeat(64);
+const LIVE_ACTIONS = [
+  'record_selection',
+  'amend_selection',
+  'skip_defer',
+  'mark_unreachable',
+  'force',
+  'resolve_tie',
+  'alter_order',
+  'pause_resume',
+  'approve_transition',
+  'approve_final_results',
+  'publish',
+];
+const LIVE_DISPOSITIONS = ['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'];
+
+function liveConfiguration() {
+  return {
+    v: 3,
+    expectedDurationDays: 2,
+    turnTimerSeconds: 180,
+    credentialEvaluationOn: '2026-09-01',
+    livePolicy: {
+      v: 1,
+      policyRevision: 'qualification-lifecycle-test',
+      stages: [
+        {
+          id: 'D_CAPTAIN',
+          label: 'D Captain',
+          order: 0,
+          memberIds: [1, 2, 3, 4],
+          opportunityPositionIds: ['A101'],
+          kind: 'CAPTAIN',
+        },
+      ],
+      dispositions: LIVE_DISPOSITIONS.map((disposition) => ({
+        disposition,
+        advances: true,
+        returns: false,
+        returnStageId: null,
+        retainsLaterSelectionRights: false,
+        terminal: false,
+        requiresReason: true,
+        requiresEvidence: false,
+        contactPolicyReference: null,
+      })),
+      actionPermissions: LIVE_ACTIONS.map((action) => ({ action, actorMemberIds: [1] })),
+      specialtyCatalogReference: null,
+      aDayPolicyReference: null,
+      transitionPolicyReference: null,
+      publicationPolicyReference: null,
+    },
+  };
+}
 
 type SpecialtyDurableCall = { path: string; method: string; body: unknown };
 
@@ -181,6 +234,9 @@ async function seedPolicy(h: TestD1): Promise<void> {
         '{"employmentStatus":"active","employmentStatusEffectiveOn":"2020-01-01","separationType":null,"rank":"FF"}',
         '{"employmentStatus":"retired","separationType":"RETIREMENT","rank":"FF"}', 2);`,
   );
+  await h.db.run('UPDATE bid_years SET config_json = ? WHERE year = 2026', [
+    JSON.stringify(liveConfiguration()),
+  ]);
 }
 
 /**
@@ -283,7 +339,7 @@ describe('qualification evidence in frozen Bid policy', () => {
     );
     expect(beforeExpiry.snapshot).toMatchObject({
       credentialEvaluationOn: '2026-09-01',
-      settings: { v: 2, credentialEvaluationOn: '2026-09-01' },
+      settings: { v: 3, credentialEvaluationOn: '2026-09-01' },
     });
     expect(beforeExpiry.snapshot.members).toEqual(
       expect.arrayContaining([
