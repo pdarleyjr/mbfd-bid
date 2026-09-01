@@ -33,7 +33,7 @@ function hubSuccess(overrides: Record<string, unknown> = {}) {
       issuer: 'https://www.mbfdhub.com',
       audience: 'bid',
       member_id: 555,
-      employee_id: '20731',
+      employee_id: '55555',
       first_name: 'Peter',
       last_name: 'Darley',
       rank: 'Lieutenant',
@@ -72,7 +72,7 @@ describe('POST /api/auth/exchange', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       role: 'member',
-      member: { member_id: 555, employee_id: '20731' },
+      member: { member_id: 555, employee_id: '55555' },
     });
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
@@ -154,9 +154,9 @@ describe('POST /api/auth/exchange', () => {
     await expect(response.json()).resolves.toEqual({ error: 'portal_unavailable' });
   });
 
-  it('does not apply the legacy staging administrator override to canonical federation', async () => {
+  it('applies the staging administrator override to canonical federation', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      hubSuccess({ role: 'member' }),
+      hubSuccess({ role: 'member', employee_id: '20731' }),
     );
 
     const response = await app().request(
@@ -173,6 +173,6 @@ describe('POST /api/auth/exchange', () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ role: 'member' });
+    await expect(response.json()).resolves.toMatchObject({ role: 'admin' });
   });
 });

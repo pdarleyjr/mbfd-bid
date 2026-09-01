@@ -82,12 +82,14 @@ auth.post(
 
     if (!portalResponse) return c.json({ error: 'invalid_authorization_code' }, 401);
 
+    const role = resolvePortalRole(c.env, portalResponse);
+
     const nowSec = Math.floor(Date.now() / 1000);
     const jwt = await signJwt(
       {
         sub: portalResponse.member_id,
         emp: portalResponse.employee_id,
-        role: portalResponse.role,
+        role,
         rank: portalResponse.rank,
         first_name: portalResponse.first_name,
         last_name: portalResponse.last_name,
@@ -99,7 +101,7 @@ auth.post(
 
     return c.json({
       jwt,
-      role: portalResponse.role,
+      role,
       member: {
         member_id: portalResponse.member_id,
         employee_id: portalResponse.employee_id,
