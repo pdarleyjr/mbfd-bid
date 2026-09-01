@@ -16,23 +16,28 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, '../migrations');
 
 /** Wraps better-sqlite3 to look like a D1Database for Drizzle's D1 driver. */
-function makeD1Adapter(sqlite: Database.Database): D1Database {
+type TestD1Database = D1Database & { failNextBatchAt(statementIndex: number): void };
+
+function makeD1Adapter(sqlite: Database.Database): TestD1Database {
+  const synchronousRuns = new WeakMap<object, () => D1Result>();
+  let nextBatchFailureAt: number | null = null;
   return {
     prepare: (query: string) => {
       const stmt = sqlite.prepare(query);
       let boundArgs: unknown[] = [];
+      const runSynchronously = (): D1Result => {
+        const info = stmt.run(...boundArgs);
+        return {
+          success: true,
+          meta: { changes: info.changes, last_row_id: info.lastInsertRowid },
+        } as D1Result;
+      };
       const bound = {
         bind: (...args: unknown[]) => {
           boundArgs = args;
           return bound;
         },
-        run: async () => {
-          const info = stmt.run(...boundArgs);
-          return {
-            success: true,
-            meta: { changes: info.changes, last_row_id: info.lastInsertRowid },
-          };
-        },
+        run: async () => runSynchronously(),
         all: async () => {
           const results = stmt.all(...boundArgs) as Record<string, unknown>[];
           return { results, success: true, meta: {} };
@@ -46,17 +51,33 @@ function makeD1Adapter(sqlite: Database.Database): D1Database {
           return stmtRaw.raw().all(...boundArgs) as T[];
         },
       };
+      synchronousRuns.set(bound, runSynchronously);
       return bound;
     },
     batch: async (stmts: D1PreparedStatement[]) => {
-      return stmts.map(() => ({ success: true, results: [], meta: {} })) as unknown as D1Result[];
+      const results: D1Result[] = [];
+      const failureAt = nextBatchFailureAt;
+      nextBatchFailureAt = null;
+      sqlite.transaction(() => {
+        for (const [index, statement] of stmts.entries()) {
+          if (index === failureAt)
+            throw new Error(`injected D1 batch failure at statement ${index}`);
+          const run = synchronousRuns.get(statement as unknown as object);
+          if (run === undefined) throw new Error('test D1 batch received an unknown statement');
+          results.push(run());
+        }
+      })();
+      return results;
     },
     exec: async (q: string) => {
       sqlite.exec(q);
       return { count: 0, duration: 0 } as D1ExecResult;
     },
     dump: async () => new ArrayBuffer(0),
-  } as unknown as D1Database;
+    failNextBatchAt(statementIndex: number) {
+      nextBatchFailureAt = statementIndex;
+    },
+  } as unknown as TestD1Database;
 }
 
 /** Apply migration SQL files in order (strips drizzle-kit statement-break markers). */
@@ -86,7 +107,7 @@ function applyMigrations(sqlite: Database.Database): void {
   }
 }
 
-function mkEnv(sqlite: Database.Database): WorkerEnv {
+function mkEnv(sqlite: Database.Database): WorkerEnv & { DB: TestD1Database } {
   return {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.example',
@@ -210,6 +231,36 @@ describe('admin credentials routes', () => {
 
     const auditCount = sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get() as { n: number };
     expect(auditCount.n).toBe(1);
+  });
+
+  it('rolls back every credential row when the import audit receipt fails', async () => {
+    const { app, sqlite } = makeApp();
+    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+    const xlsxBytes = buildNormalizedXlsx([
+      { name: 'Driver Engineer Qualified', fy_points_default: 4 },
+      { name: 'Hazmat Tech', fy_points_default: 6 },
+    ]);
+    const form = new FormData();
+    form.append(
+      'file',
+      new Blob([xlsxBytes], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      'creds.xlsx',
+    );
+    const env = mkEnv(sqlite);
+    // Two upserts precede the mandatory third audit statement.
+    env.DB.failNextBatchAt(2);
+
+    const response = await app.request(
+      '/admin/credentials/import',
+      { method: 'POST', body: form, headers: { Authorization: `Bearer ${jwt}` } },
+      env,
+    );
+
+    expect(response.status).toBe(500);
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM credentials').get()).toEqual({ n: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 0 });
   });
 
   it('POST /admin/credentials/import is idempotent — re-running updates instead of inserting', async () => {

@@ -3,7 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { getDb } from '../../db/index.js';
 import { credentials } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { parseCredentialsXlsx, parseLegacyWideMatrix } from '../../lib/xlsx-cred-parser.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -35,35 +35,41 @@ router.post('/import', requireStepUpAuth(), async (c) => {
   }
 
   const db = getDb(c.env.DB);
+  const existingNames = new Set(
+    (await db.select({ name: credentials.name }).from(credentials).all()).map(
+      (credential) => credential.name,
+    ),
+  );
   let inserted = 0;
   let updated = 0;
 
   for (const row of result.ok) {
-    const existing = await db
-      .select({ id: credentials.id })
-      .from(credentials)
-      .where(eq(credentials.name, row.name))
-      .get();
-
-    if (existing !== undefined) {
-      await db
-        .update(credentials)
-        .set({ fyPointsDefault: row.fyPointsDefault })
-        .where(eq(credentials.name, row.name));
+    if (existingNames.has(row.name)) {
       updated += 1;
     } else {
-      await db.insert(credentials).values({ name: row.name, fyPointsDefault: row.fyPointsDefault });
       inserted += 1;
+      existingNames.add(row.name);
     }
   }
 
-  await writeAuditLog(db, {
-    bidSessionId: null,
-    actorType: 'admin',
-    actorId: c.get('claims').sub ?? null,
-    action: 'credentials_import',
-    afterState: { inserted, updated, errorCount: result.errors.length },
-  });
+  // This is intentionally one D1 transaction: a credentials import is not
+  // visible unless its authoritative receipt is visible too.
+  await c.env.DB.batch([
+    ...result.ok.map((row) =>
+      c.env.DB.prepare(
+        `INSERT INTO credentials (name, fy_points_default)
+           VALUES (?, ?)
+           ON CONFLICT(name) DO UPDATE SET fy_points_default = excluded.fy_points_default`,
+      ).bind(row.name, row.fyPointsDefault),
+    ),
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: c.get('claims').sub ?? null,
+      action: 'credentials_import',
+      afterState: { inserted, updated, errorCount: result.errors.length },
+    }),
+  ]);
   return c.json({ inserted, updated, errors: result.errors });
 });
 
