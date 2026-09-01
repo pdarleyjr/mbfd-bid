@@ -29,7 +29,9 @@ export type AuditAction =
   | 'qualification_lifecycle'
   | 'dissent'
   | 'a_day_pick'
-  | 'forced_a_day_pick';
+  | 'forced_a_day_pick'
+  | 'portal_writeback_retry'
+  | 'portal_writeback_clear';
 
 export type AuditEntry = {
   bidSessionId: string | null;

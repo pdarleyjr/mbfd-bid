@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { getDb } from '../../db/index.js';
 import { bidSessions, bids, portalWritebackQueue } from '../../db/schema.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { chunkedInArrayMutate, chunkedInArraySelect } from '../../lib/d1-batch.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import { isPortalPublicationEnabled } from '../../portal-writeback/publication-policy.js';
@@ -37,6 +38,25 @@ router.post('/portal-retry/:bid_id', requireStepUpAuth(), async (c) => {
   if (bid.portalSyncStatus !== 'failed') {
     return c.json({ error: 'portal_retry_requires_failed_bid' }, 409);
   }
+  // This auditable command receipt is persisted before the state transition.
+  // Portal retry changes two tables, so the pre-state receipt prevents an
+  // unaudited retry even if a later D1 write or queue reconciliation fails.
+  await c.env.DB.batch([
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: bid.bidSessionId,
+      actorType: 'admin',
+      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : null,
+      action: 'portal_writeback_retry',
+      targetKind: 'portal_writeback_bid',
+      targetId: bidId,
+      beforeState: {
+        portal_sync_status: bid.portalSyncStatus,
+        portal_sync_attempts: bid.portalSyncAttempts,
+      },
+      afterState: { portal_sync_status: 'pending', portal_sync_attempts: 0 },
+      reason: 'Authorized portal writeback retry requested.',
+    }),
+  ]);
   await db
     .update(bids)
     .set({ portalSyncStatus: 'pending', portalSyncAttempts: 0, portalLastError: null })
@@ -95,6 +115,23 @@ router.post('/portal-clear-year', requireStepUpAuth(), async (c) => {
     db.select({ id: bids.id }).from(bids).where(inArray(bids.bidSessionId, chunk)).all(),
   );
   const affectedIds = affected.map((a) => a.id);
+
+  // Clear-year potentially spans multiple D1 batches because D1 caps bound
+  // parameters. Persist the authoritative command receipt before the first
+  // mutation, so no successful portal-control mutation can lose its audit.
+  await c.env.DB.batch([
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : null,
+      action: 'portal_writeback_clear',
+      targetKind: 'portal_writeback_year',
+      targetId: String(body.year),
+      beforeState: { affected_bid_count: affectedIds.length },
+      afterState: { portal_sync_status: 'superseded', queue_rows_removed: true },
+      reason: `Authorized portal writeback clear for year ${body.year}.`,
+    }),
+  ]);
 
   await chunkedInArrayMutate(sessionIds, (chunk) =>
     db
