@@ -108,6 +108,22 @@ describe('POST /api/admin/rehearsal/:sessionId/close-mock', () => {
     });
   });
 
+  it('leaves a stale mock open when the close audit receipt fails', async () => {
+    h.failNextBatchAt(0);
+    const response = await closeMock(h);
+
+    expect(response.status).toBe(500);
+    await expect(
+      h.db.run('SELECT current_phase FROM bid_sessions WHERE id = ?', [mockSessionId]),
+    ).resolves.toEqual({ results: [{ current_phase: 'position_bid' }] });
+    await expect(
+      h.db.run(
+        "SELECT COUNT(*) AS n FROM audit_log WHERE bid_session_id = ? AND action = 'mock_session_closed'",
+        [mockSessionId],
+      ),
+    ).resolves.toEqual({ results: [{ n: 0 }] });
+  });
+
   it('is idempotent once the mock is closed', async () => {
     await closeMock(h);
 

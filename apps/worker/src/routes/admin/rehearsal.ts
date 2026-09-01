@@ -34,7 +34,7 @@ import {
   mockRehearsalCommandRecoveryOutcomes,
   rehearsalFindings,
 } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
@@ -113,6 +113,23 @@ router.post('/:sessionId/mark-mock', requireStepUpAuth(), async (c) => {
     return c.json({ error: 'mock_reclassification_not_allowed', detail: 'session_has_picks' }, 409);
   }
 
+  const claims = c.get('claims');
+  // This route has a legacy table mutation plus validation reads, so retain
+  // the approved fail-closed audit-before-state model: if the durable receipt
+  // cannot be written, the session is never reclassified as a mock.
+  await c.env.DB.batch([
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: sessionId,
+      actorType: 'admin',
+      actorId: claims.sub > 0 ? claims.sub : null,
+      action: 'mark_mock',
+      targetKind: 'bid_session',
+      targetId: sessionId,
+      reason: 'Session designated mock before start.',
+      beforeState: s,
+      afterState: { is_mock: true, current_phase: 'config' },
+    }),
+  ]);
   const updated = await db
     .update(bidSessions)
     .set({ isMock: true })
@@ -138,18 +155,6 @@ router.post('/:sessionId/mark-mock', requireStepUpAuth(), async (c) => {
     return c.json({ error: 'mock_reclassification_not_allowed' }, 409);
   }
 
-  const claims = c.get('claims');
-  await writeAuditLog(db, {
-    bidSessionId: sessionId,
-    actorType: 'admin',
-    actorId: claims.sub > 0 ? claims.sub : null,
-    action: 'mark_mock',
-    targetKind: 'bid_session',
-    targetId: sessionId,
-    reason: 'Session designated mock before start.',
-    beforeState: s,
-    afterState: after,
-  });
   return c.json({ id: sessionId, is_mock: true, idempotent: false });
 });
 
@@ -313,6 +318,30 @@ router.post(
     }
 
     const completedAt = new Date();
+    const claims = c.get('claims');
+    // Closing a stale mock must not make the state transition if its durable
+    // audit receipt cannot be accepted. The receipt intentionally records
+    // the requested terminal projection before the guarded legacy update.
+    await c.env.DB.batch([
+      auditInsertStatement(c.env.DB, {
+        bidSessionId: sessionId,
+        actorType: 'admin',
+        actorId: claims.sub > 0 ? claims.sub : null,
+        action: 'mock_session_closed',
+        targetKind: 'bid_session',
+        targetId: sessionId,
+        reason: body.reason,
+        beforeState: before,
+        afterState: {
+          current_phase: 'complete',
+          current_bidder_id: null,
+          current_turn_started_at: null,
+          paused_at: null,
+          scheduled_resume_at: null,
+          completed_at: completedAt,
+        },
+      }),
+    ]);
     const updated = await db
       .update(bidSessions)
       .set({
@@ -344,18 +373,6 @@ router.post(
       return c.json({ error: 'mock_session_close_conflict' }, 409);
     }
 
-    const claims = c.get('claims');
-    await writeAuditLog(db, {
-      bidSessionId: sessionId,
-      actorType: 'admin',
-      actorId: claims.sub > 0 ? claims.sub : null,
-      action: 'mock_session_closed',
-      targetKind: 'bid_session',
-      targetId: sessionId,
-      reason: body.reason,
-      beforeState: before,
-      afterState: after,
-    });
     return c.json({ id: sessionId, state: 'complete', idempotent: false });
   },
 );

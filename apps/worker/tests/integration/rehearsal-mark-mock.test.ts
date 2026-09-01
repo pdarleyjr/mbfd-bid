@@ -121,6 +121,25 @@ describe('POST /api/admin/rehearsal/:sessionId/mark-mock (Task R3)', () => {
     expect((rows.results[0] as { is_mock: number }).is_mock).toBe(1);
   });
 
+  it('leaves the session unmodified when the mock-designation audit receipt fails', async () => {
+    h.failNextBatchAt(0);
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/rehearsal/${sessionId}/mark-mock`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(500);
+    expect(
+      (await h.db.run('SELECT is_mock FROM bid_sessions WHERE id = ?', [sessionId])).results,
+    ).toEqual([{ is_mock: 0 }]);
+    expect(
+      (await h.db.run("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'mark_mock'")).results,
+    ).toEqual([{ n: 0 }]);
+  });
+
   it('is idempotent — repeat call still returns 200 and leaves is_mock=1', async () => {
     const make = async () =>
       app.fetch(
