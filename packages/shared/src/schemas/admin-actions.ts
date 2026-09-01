@@ -54,6 +54,21 @@ export const BidForMemberSchema = z.object({
 });
 export type BidForMember = z.infer<typeof BidForMemberSchema>;
 
+/**
+ * Replaces only the latest, still-unsealed award. This is intentionally not a
+ * generic undo: the original award remains immutable audit history and is
+ * linked to the replacement by the server.
+ */
+export const AmendSelectionSchema = z
+  .object({
+    bid_id: z.string().trim().min(1).max(80),
+    position_id: positionId,
+    expected_session_revision: z.number().int().nonnegative(),
+    reason,
+  })
+  .strict();
+export type AmendSelection = z.infer<typeof AmendSelectionSchema>;
+
 /** Lock-position — pre-bid auto-placement. */
 export const LockPositionSchema = z.object({
   member_id: memberId,

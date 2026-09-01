@@ -1627,6 +1627,32 @@ export class BidSessionDO implements DurableObject {
       const idemKey = `idem:${this.state.id.toString()}:${msg.idempotencyKey}`;
       const state = await this.getState();
 
+      // A websocket pick is a member/rehearsal interaction. It is never a
+      // live operational command, even if an admin obtains a socket. Real
+      // selections must cross the action-authorized REST command boundary so
+      // the actor, reason, expected revision, and durable audit can be
+      // enforced consistently. Mock behavior remains available for rehearsal.
+      const session = await getDb(this.env.DB)
+        .select({ isMock: bidSessions.isMock })
+        .from(bidSessions)
+        .where(eq(bidSessions.id, this.namedSessionId()))
+        .get();
+      if (session === undefined || !session.isMock) {
+        this.send(
+          client.socket,
+          this.envelope(
+            'pick_rejected',
+            {
+              idempotencyKey: msg.idempotencyKey,
+              code: 'PROTOCOL_ERROR',
+              message: 'Live selections require an authorized operator command.',
+            } satisfies PickRejectedEvent,
+            state.lastSeq,
+          ),
+        );
+        return;
+      }
+
       // A synthetic specialty rehearsal captures this exact normal turn in a
       // separate durable state record. Do not allow the websocket path to
       // advance it until the adjudication has explicitly resumed it. There is

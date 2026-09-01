@@ -214,7 +214,7 @@ export const ruleBookPositionParticipation = sqliteTable(
     positionId: text('position_id').notNull(),
     templateVersion: text('template_version').notNull(),
     bidParticipation: text('bid_participation', {
-      enum: ['BIDDABLE', 'ADMIN_ASSIGNED_NON_BIDDABLE'],
+      enum: ['BIDDABLE', 'ADMIN_ASSIGNED_NON_BIDDABLE', 'RESERVED_NON_BIDDABLE'],
     }).notNull(),
     authoritativeSourceRef: text('authoritative_source_ref').notNull(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -349,6 +349,8 @@ export const bidOrder = sqliteTable(
       .notNull()
       .references(() => members.id, { onDelete: 'restrict' }),
     pool: text('pool', { enum: ['OFC', 'FF'] }).notNull(),
+    /** Null only for historical two-pool sessions predating frozen live stages. */
+    stageId: text('stage_id'),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.bidSessionId, t.ordinal] }),
@@ -417,6 +419,24 @@ export const portalWritebackQueue = sqliteTable(
   }),
 );
 
+/** Immutable link from an original award to its one permitted replacement. */
+export const bidAwardAmendments = sqliteTable('bid_award_amendments', {
+  id: text('id').primaryKey().notNull(),
+  bidSessionId: text('bid_session_id')
+    .notNull()
+    .references(() => bidSessions.id, { onDelete: 'restrict' }),
+  originalBidId: text('original_bid_id')
+    .notNull()
+    .references(() => bids.id, { onDelete: 'restrict' }),
+  replacementBidId: text('replacement_bid_id')
+    .notNull()
+    .references(() => bids.id, { onDelete: 'restrict' }),
+  actorMemberId: integer('actor_member_id').references(() => members.id, { onDelete: 'restrict' }),
+  expectedSessionRevision: integer('expected_session_revision').notNull(),
+  reason: text('reason').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
 export const auditLog = sqliteTable(
   'audit_log',
   {
@@ -440,6 +460,7 @@ export const auditLog = sqliteTable(
         'unlock_position',
         'grant_extension',
         'admin_bid_for_member',
+        'amend_selection',
         'session_start',
         'mark_mock',
         'mock_session_closed',

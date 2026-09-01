@@ -27,11 +27,12 @@ import {
   prepareBidSessionPolicySnapshot,
   summarizeBidSessionPolicySnapshot,
 } from '../../lib/bid-policy.js';
+import { computeFrozenStageOrder } from '../../lib/live-bid-policy.js';
 import { evaluateLiveBidReadiness } from '../../lib/live-bid-readiness.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
-import { requireAdmin } from './middleware.js';
+import { requireAdmin, requireLiveBidAction } from './middleware.js';
 
 type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
@@ -71,8 +72,18 @@ function actorIdFromClaims(claims: JwtPayload): number | null {
 }
 
 function orderMatchesFrozenSnapshot(
-  persisted: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
-  expected: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+  persisted: readonly {
+    ordinal: number;
+    memberId: number;
+    pool: 'OFC' | 'FF';
+    stageId: string | null;
+  }[],
+  expected: readonly {
+    ordinal: number;
+    memberId: number;
+    pool: 'OFC' | 'FF';
+    stageId: string | null;
+  }[],
 ): boolean {
   return (
     persisted.length === expected.length &&
@@ -82,7 +93,8 @@ function orderMatchesFrozenSnapshot(
         candidate !== undefined &&
         entry.ordinal === candidate.ordinal &&
         entry.memberId === candidate.memberId &&
-        entry.pool === candidate.pool
+        entry.pool === candidate.pool &&
+        entry.stageId === candidate.stageId
       );
     })
   );
@@ -365,126 +377,168 @@ router.get('/:id/policy-snapshot', async (c) => {
 });
 
 // POST /api/admin/bid-session/:id/start
-router.post('/:id/start', requireStepUpAuth(), async (c) => {
-  const id = c.req.param('id');
-  const db = getDb(c.env.DB);
-  const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
-  if (s === undefined) return c.json({ error: 'not_found' }, 404);
-  if (await hasCanonicalCommandState(c.env, id)) {
-    return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-  }
-  if (s.currentPhase !== 'config') {
-    return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
-  }
-  const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);
-  if (!frozenPolicy.ok) {
-    return c.json(
-      {
-        error: 'session_policy_snapshot_unavailable',
-        policy_error: frozenPolicy.code,
-      },
-      409,
-    );
-  }
-  const expectedOrder = computeBidOrder(bidOrderInputFromSnapshot(frozenPolicy.snapshot));
-  if (expectedOrder.length === 0) {
-    return c.json({ error: 'session_policy_bid_order_empty' }, 409);
-  }
-  const existingOrder = await db
-    .select({ ordinal: bidOrder.ordinal, memberId: bidOrder.memberId, pool: bidOrder.pool })
-    .from(bidOrder)
-    .where(eq(bidOrder.bidSessionId, id))
-    .orderBy(asc(bidOrder.ordinal))
-    .all();
-  if (existingOrder.length > 0 && !orderMatchesFrozenSnapshot(existingOrder, expectedOrder)) {
-    return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
-  }
-  if (!s.isMock) {
-    const readiness = await evaluateLiveBidReadiness({
-      db,
-      env: c.env,
-      bidSessionId: id,
-      bidYear: s.bidYear,
-      frozenPolicy,
-      // requireAdmin + requireStepUpAuth have already verified this request.
-      operatorAuthorized: true,
-    });
-    if (!readiness.canStartLiveBid) {
-      return c.json({ error: 'readiness_blocked', readiness }, 409);
+router.post(
+  '/:id/start',
+  requireStepUpAuth(),
+  requireLiveBidAction('approve_transition'),
+  async (c) => {
+    const id = c.req.param('id');
+    const db = getDb(c.env.DB);
+    const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
+    if (s === undefined) return c.json({ error: 'not_found' }, 404);
+    if (await hasCanonicalCommandState(c.env, id)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
-  }
-  const now = new Date();
-  const statements: D1PreparedStatement[] = [];
-  if (existingOrder.length === 0) {
-    // D1 has a conservative bound-parameter cap. Keep each insert safely
-    // below it while retaining the whole session-start transition in one D1
-    // batch. A session is not visible as position_bid until its frozen order
-    // has been written.
-    const orderInsertChunkSize = 20;
-    for (let index = 0; index < expectedOrder.length; index += orderInsertChunkSize) {
-      const chunk = expectedOrder.slice(index, index + orderInsertChunkSize);
-      const values = chunk.map(() => '(?, ?, ?, ?)').join(', ');
-      statements.push(
-        c.env.DB.prepare(
-          `INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool) VALUES ${values}`,
-        ).bind(...chunk.flatMap((entry) => [id, entry.ordinal, entry.memberId, entry.pool])),
+    if (s.currentPhase !== 'config') {
+      return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
+    }
+    const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);
+    if (!frozenPolicy.ok) {
+      return c.json(
+        {
+          error: 'session_policy_snapshot_unavailable',
+          policy_error: frozenPolicy.code,
+        },
+        409,
       );
     }
-  }
-  statements.push(
-    c.env.DB.prepare(
-      `UPDATE bid_sessions
+    if (!s.isMock && (frozenPolicy.snapshot.v !== 3 || frozenPolicy.snapshot.settings.v !== 3)) {
+      return c.json({ error: 'live_stage_policy_required' }, 409);
+    }
+    const stagedOrder =
+      !s.isMock && frozenPolicy.snapshot.v === 3 && frozenPolicy.snapshot.settings.v === 3
+        ? computeFrozenStageOrder(frozenPolicy.snapshot, frozenPolicy.snapshot.settings.livePolicy)
+        : null;
+    if (stagedOrder !== null && !stagedOrder.ok) {
+      return c.json({ error: 'live_stage_order_unavailable', policy_error: stagedOrder.code }, 409);
+    }
+    const expectedOrder =
+      stagedOrder?.ok === true
+        ? stagedOrder.entries.map((entry) => {
+            const member = frozenPolicy.snapshot.members.find(
+              (candidate) => candidate.memberId === entry.memberId,
+            );
+            if (member === undefined || member.pool === 'EXCLUDED') {
+              throw new Error('validated stage order contains a non-biddable member');
+            }
+            return { ...entry, pool: member.pool };
+          })
+        : computeBidOrder(bidOrderInputFromSnapshot(frozenPolicy.snapshot)).map((entry) => ({
+            ...entry,
+            stageId: null,
+          }));
+    if (expectedOrder.length === 0) {
+      return c.json({ error: 'session_policy_bid_order_empty' }, 409);
+    }
+    const existingOrder = await db
+      .select({
+        ordinal: bidOrder.ordinal,
+        memberId: bidOrder.memberId,
+        pool: bidOrder.pool,
+        stageId: bidOrder.stageId,
+      })
+      .from(bidOrder)
+      .where(eq(bidOrder.bidSessionId, id))
+      .orderBy(asc(bidOrder.ordinal))
+      .all();
+    if (existingOrder.length > 0 && !orderMatchesFrozenSnapshot(existingOrder, expectedOrder)) {
+      return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
+    }
+    if (!s.isMock) {
+      const readiness = await evaluateLiveBidReadiness({
+        db,
+        env: c.env,
+        bidSessionId: id,
+        bidYear: s.bidYear,
+        frozenPolicy,
+        // requireAdmin + requireStepUpAuth have already verified this request.
+        operatorAuthorized: true,
+      });
+      if (!readiness.canStartLiveBid) {
+        return c.json({ error: 'readiness_blocked', readiness }, 409);
+      }
+    }
+    const now = new Date();
+    const statements: D1PreparedStatement[] = [];
+    if (existingOrder.length === 0) {
+      // D1 has a conservative bound-parameter cap. Keep each insert safely
+      // below it while retaining the whole session-start transition in one D1
+      // batch. A session is not visible as position_bid until its frozen order
+      // has been written.
+      const orderInsertChunkSize = 20;
+      for (let index = 0; index < expectedOrder.length; index += orderInsertChunkSize) {
+        const chunk = expectedOrder.slice(index, index + orderInsertChunkSize);
+        const values = chunk.map(() => '(?, ?, ?, ?, ?)').join(', ');
+        statements.push(
+          c.env.DB.prepare(
+            `INSERT INTO bid_order (bid_session_id, ordinal, member_id, pool, stage_id) VALUES ${values}`,
+          ).bind(
+            ...chunk.flatMap((entry) => [
+              id,
+              entry.ordinal,
+              entry.memberId,
+              entry.pool,
+              entry.stageId,
+            ]),
+          ),
+        );
+      }
+    }
+    statements.push(
+      c.env.DB.prepare(
+        `UPDATE bid_sessions
             SET current_phase = 'position_bid',
                 current_bidder_id = ?,
                 current_turn_started_at = ?,
                 started_at = ?,
                 mock_control_revision = mock_control_revision + 1
           WHERE id = ? AND current_phase = 'config'`,
-    ).bind(expectedOrder[0]?.memberId ?? null, now.getTime(), now.getTime(), id),
-    auditInsertStatement(
-      c.env.DB,
-      {
-        bidSessionId: id,
-        actorType: 'admin',
-        actorId: actorIdFromClaims(c.get('claims')),
-        action: 'session_start',
-        targetKind: 'bid_session',
-        targetId: id,
-        beforeState: { current_phase: 'config', bid_order_count: existingOrder.length },
-        afterState: {
-          current_phase: 'position_bid',
-          bid_order_count: expectedOrder.length,
-          rule_book_version: frozenPolicy.snapshot.ruleBookVersion,
-          position_template_version: frozenPolicy.snapshot.positionTemplateVersion,
+      ).bind(expectedOrder[0]?.memberId ?? null, now.getTime(), now.getTime(), id),
+      auditInsertStatement(
+        c.env.DB,
+        {
+          bidSessionId: id,
+          actorType: 'admin',
+          actorId: actorIdFromClaims(c.get('claims')),
+          action: 'session_start',
+          targetKind: 'bid_session',
+          targetId: id,
+          beforeState: { current_phase: 'config', bid_order_count: existingOrder.length },
+          afterState: {
+            current_phase: 'position_bid',
+            bid_order_count: expectedOrder.length,
+            rule_book_version: frozenPolicy.snapshot.ruleBookVersion,
+            position_template_version: frozenPolicy.snapshot.positionTemplateVersion,
+          },
         },
-      },
-      now,
-    ),
-  );
-  const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-    // The canonical command service can win the lease between the optimistic
-    // preflight above and this callback. Never allow a legacy D1 transition to
-    // follow a canonical state transition once that service owns the session.
-    if (await hasCanonicalCommandState(c.env, id)) {
-      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-    }
-    const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
-    if (current === undefined) return c.json({ error: 'not_found' }, 404);
-    if (current.currentPhase !== 'config') {
-      return c.json({ error: 'invalid_state', current_phase: current.currentPhase }, 409);
-    }
-    const results = await c.env.DB.batch(statements);
-    if (
-      results[results.length - 2]?.meta.changes !== 1 ||
-      results[results.length - 1]?.meta.changes !== 1
-    ) {
-      return c.json({ error: 'session_state_changed' }, 409);
-    }
-    return c.json({ id, current_phase: 'position_bid', bid_order_count: expectedOrder.length });
-  });
-  if (!mutation.ok) return c.json({ error: mutation.error }, 409);
-  return mutation.value;
-});
+        now,
+      ),
+    );
+    const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
+      // The canonical command service can win the lease between the optimistic
+      // preflight above and this callback. Never allow a legacy D1 transition to
+      // follow a canonical state transition once that service owns the session.
+      if (await hasCanonicalCommandState(c.env, id)) {
+        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+      }
+      const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
+      if (current === undefined) return c.json({ error: 'not_found' }, 404);
+      if (current.currentPhase !== 'config') {
+        return c.json({ error: 'invalid_state', current_phase: current.currentPhase }, 409);
+      }
+      const results = await c.env.DB.batch(statements);
+      if (
+        results[results.length - 2]?.meta.changes !== 1 ||
+        results[results.length - 1]?.meta.changes !== 1
+      ) {
+        return c.json({ error: 'session_state_changed' }, 409);
+      }
+      return c.json({ id, current_phase: 'position_bid', bid_order_count: expectedOrder.length });
+    });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
+  },
+);
 
 // GET /api/admin/bid-session/:id/readiness
 // The output is intentionally data-only. It is not an override mechanism.
@@ -520,6 +574,7 @@ router.get('/:id/readiness', async (c) => {
 router.post(
   '/:id/pause',
   requireStepUpAuth(),
+  requireLiveBidAction('pause_resume'),
   zValidator('json', PauseSessionSchema),
   async (c) => {
     const id = c.req.param('id');
@@ -579,6 +634,7 @@ router.post(
 router.post(
   '/:id/resume',
   requireStepUpAuth(),
+  requireLiveBidAction('pause_resume'),
   zValidator('json', ResumeSessionSchema),
   async (c) => {
     const id = c.req.param('id');

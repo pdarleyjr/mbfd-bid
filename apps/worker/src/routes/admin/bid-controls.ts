@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { evaluateEligibility } from '@mbfd/eligibility';
 import {
+  AmendSelectionSchema,
   BidForMemberSchema,
   ForcePickSchema,
   type JwtPayload,
@@ -12,7 +13,7 @@ import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
-import { bidSessions, bids } from '../../db/schema.js';
+import { bidAwardAmendments, bidSessions, bids } from '../../db/schema.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import {
   eligibilityMemberFromFrozen,
@@ -24,7 +25,7 @@ import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
-import { requireAdmin } from './middleware.js';
+import { requireAdmin, requireLiveBidAction } from './middleware.js';
 
 type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
@@ -43,6 +44,7 @@ router.use('*', requireAdmin);
 router.post(
   '/:id/force-pick',
   requireStepUpAuth(),
+  requireLiveBidAction('force'),
   zValidator('json', ForcePickSchema),
   async (c) => {
     const sessionId = c.req.param('id');
@@ -191,70 +193,81 @@ router.post(
 );
 
 // POST /api/admin/bid-session/:id/skip
-router.post('/:id/skip', requireStepUpAuth(), zValidator('json', SkipSchema), async (c) => {
-  const sessionId = c.req.param('id');
-  const body = c.req.valid('json');
+router.post(
+  '/:id/skip',
+  requireStepUpAuth(),
+  requireLiveBidAction('skip_defer'),
+  zValidator('json', SkipSchema),
+  async (c) => {
+    const sessionId = c.req.param('id');
+    const body = c.req.valid('json');
 
-  if (!isReasonValidForAction('skip', body.reason_code)) {
-    return c.json(
-      { error: 'invalid_reason_for_action', action: 'skip', reason_code: body.reason_code },
-      400,
-    );
-  }
+    if (!isReasonValidForAction('skip', body.reason_code)) {
+      return c.json(
+        { error: 'invalid_reason_for_action', action: 'skip', reason_code: body.reason_code },
+        400,
+      );
+    }
 
-  const db = getDb(c.env.DB);
-  const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-  if (session.isMock) {
-    return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-  }
-  if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
-    return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-  }
-
-  const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
-  if (!frozenPolicy.ok) {
-    return c.json({ error: frozenPolicy.code }, frozenPolicyFailureStatus(frozenPolicy.code));
-  }
-  const frozenMember = frozenPolicy.snapshot.members.find(
-    (entry) => entry.memberId === body.member_id,
-  );
-  if (frozenMember === undefined) {
-    return c.json({ error: 'member_not_in_bid_pool' }, 422);
-  }
-  if (frozenMember.pool === 'EXCLUDED') {
-    return c.json({ error: 'member_excluded_from_bid_pool' }, 422);
-  }
-
-  const claims = c.get('claims');
-  const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
-    const current = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-    if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
-    if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+    const db = getDb(c.env.DB);
+    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (session.isMock) {
+      return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+    }
     if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
-    await writeAuditLog(db, {
-      bidSessionId: sessionId,
-      actorType: 'admin',
-      actorId: claims.sub > 0 ? claims.sub : 0,
-      action: 'skip',
-      targetKind: 'member',
-      targetId: String(body.member_id),
-      reason: body.reason,
-      afterState: { skipped_member_id: body.member_id, reason_code: body.reason_code },
-    });
 
-    return c.json({ skipped_member_id: body.member_id, reason_code: body.reason_code });
-  });
-  if (!mutation.ok) return c.json({ error: mutation.error }, 409);
-  return mutation.value;
-});
+    const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
+    if (!frozenPolicy.ok) {
+      return c.json({ error: frozenPolicy.code }, frozenPolicyFailureStatus(frozenPolicy.code));
+    }
+    const frozenMember = frozenPolicy.snapshot.members.find(
+      (entry) => entry.memberId === body.member_id,
+    );
+    if (frozenMember === undefined) {
+      return c.json({ error: 'member_not_in_bid_pool' }, 422);
+    }
+    if (frozenMember.pool === 'EXCLUDED') {
+      return c.json({ error: 'member_excluded_from_bid_pool' }, 422);
+    }
+
+    const claims = c.get('claims');
+    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      const current = await db
+        .select()
+        .from(bidSessions)
+        .where(eq(bidSessions.id, sessionId))
+        .get();
+      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
+      if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+      if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+      }
+      await writeAuditLog(db, {
+        bidSessionId: sessionId,
+        actorType: 'admin',
+        actorId: claims.sub > 0 ? claims.sub : 0,
+        action: 'skip',
+        targetKind: 'member',
+        targetId: String(body.member_id),
+        reason: body.reason,
+        afterState: { skipped_member_id: body.member_id, reason_code: body.reason_code },
+      });
+
+      return c.json({ skipped_member_id: body.member_id, reason_code: body.reason_code });
+    });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
+  },
+);
 
 // POST /api/admin/bid-session/:id/bid-for-member
 router.post(
   '/:id/bid-for-member',
   requireStepUpAuth(),
+  requireLiveBidAction('record_selection'),
   zValidator('json', BidForMemberSchema),
   async (c) => {
     const sessionId = c.req.param('id');
@@ -387,6 +400,163 @@ router.post(
       }
 
       return c.json({ bid_id: bidId, forced: false }, 201);
+    });
+    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
+    return mutation.value;
+  },
+);
+
+// POST /api/admin/bid-session/:id/amend-selection
+// The immediately latest award may be replaced while its turn is still the
+// most recent committed selection. The old row is retained and linked; this is
+// deliberately not a destructive undo endpoint.
+router.post(
+  '/:id/amend-selection',
+  requireStepUpAuth(),
+  requireLiveBidAction('amend_selection'),
+  zValidator('json', AmendSelectionSchema),
+  async (c) => {
+    const sessionId = c.req.param('id');
+    const body = c.req.valid('json');
+    const db = getDb(c.env.DB);
+    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (session.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
+    }
+    if (!isBidCommandPhase(session.currentPhase)) {
+      return c.json({ error: 'bid_session_not_active', current_phase: session.currentPhase }, 409);
+    }
+    const original = await db.select().from(bids).where(eq(bids.id, body.bid_id)).get();
+    if (original === undefined || original.bidSessionId !== sessionId) {
+      return c.json({ error: 'award_not_found' }, 404);
+    }
+    const target = await resolveFrozenSessionBidTarget(db, {
+      bidSessionId: sessionId,
+      memberId: original.memberId,
+      positionId: body.position_id,
+    });
+    if (!target.ok) return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
+
+    const replacementBidId = ulid();
+    const idempotencyKey =
+      c.req.header('Idempotency-Key')?.trim() || `amend:${body.bid_id}:${body.position_id}`;
+    const actorMemberId = c.get('claims').sub > 0 ? c.get('claims').sub : null;
+    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
+      const current = await db
+        .select()
+        .from(bidSessions)
+        .where(eq(bidSessions.id, sessionId))
+        .get();
+      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
+      if (current.mockControlRevision !== body.expected_session_revision) {
+        return c.json(
+          { error: 'stale_session_revision', current_revision: current.mockControlRevision },
+          409,
+        );
+      }
+      const existing = await db
+        .select()
+        .from(bids)
+        .where(eq(bids.idempotencyKey, idempotencyKey))
+        .get();
+      if (existing !== undefined) return c.json({ bid_id: existing.id, idempotent_replay: true });
+      const replaced = await db
+        .select({ id: bidAwardAmendments.id })
+        .from(bidAwardAmendments)
+        .where(eq(bidAwardAmendments.originalBidId, original.id))
+        .get();
+      if (replaced !== undefined) return c.json({ error: 'award_already_superseded' }, 409);
+      const laterCommitted = await c.env.DB.prepare(
+        'SELECT id FROM bids WHERE bid_session_id = ? AND picked_at > ? LIMIT 1',
+      )
+        .bind(sessionId, original.pickedAt.getTime())
+        .first<{ id: string }>();
+      if (laterCommitted !== null) return c.json({ error: 'award_sealed_by_next_selection' }, 409);
+      const positionTaken = await c.env.DB.prepare(
+        `SELECT b.id FROM bids b
+         WHERE b.bid_session_id = ? AND b.position_id = ?
+           AND b.id <> ?
+           AND NOT EXISTS (SELECT 1 FROM bid_award_amendments a WHERE a.original_bid_id = b.id)
+         LIMIT 1`,
+      )
+        .bind(sessionId, body.position_id, original.id)
+        .first<{ id: string }>();
+      if (positionTaken !== null) return c.json({ error: 'position_filled' }, 409);
+      const now = new Date();
+      const amendmentId = ulid();
+      const results = await c.env.DB.batch([
+        c.env.DB.prepare(
+          `UPDATE bid_sessions SET mock_control_revision = mock_control_revision + 1
+           WHERE id = ? AND mock_control_revision = ?`,
+        ).bind(sessionId, body.expected_session_revision),
+        c.env.DB.prepare(`UPDATE bids SET portal_sync_status = 'superseded' WHERE id = ?`).bind(
+          original.id,
+        ),
+        c.env.DB.prepare(
+          `INSERT INTO bids
+             (id, bid_session_id, ordinal, member_id, position_id, a_day, picked_at, forced,
+              admin_actor_id, reason, idempotency_key, portal_sync_status, portal_sync_attempts)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', 0)`,
+        ).bind(
+          replacementBidId,
+          sessionId,
+          original.ordinal,
+          original.memberId,
+          body.position_id,
+          original.aDay,
+          now.getTime(),
+          actorMemberId,
+          body.reason,
+          idempotencyKey,
+        ),
+        c.env.DB.prepare(
+          `INSERT INTO bid_award_amendments
+             (id, bid_session_id, original_bid_id, replacement_bid_id, actor_member_id,
+              expected_session_revision, reason, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          amendmentId,
+          sessionId,
+          original.id,
+          replacementBidId,
+          actorMemberId,
+          body.expected_session_revision,
+          body.reason,
+          now.getTime(),
+        ),
+        auditInsertStatement(
+          c.env.DB,
+          {
+            bidSessionId: sessionId,
+            actorType: 'admin',
+            actorId: actorMemberId,
+            action: 'amend_selection',
+            targetKind: 'bid',
+            targetId: replacementBidId,
+            reason: body.reason,
+            beforeState: { bid_id: original.id, position_id: original.positionId },
+            afterState: {
+              bid_id: replacementBidId,
+              supersedes_bid_id: original.id,
+              position_id: body.position_id,
+            },
+          },
+          now,
+        ),
+      ]);
+      if (results.some((result) => result.meta.changes !== 1)) {
+        return c.json({ error: 'amendment_not_applied' }, 409);
+      }
+      return c.json(
+        {
+          bid_id: replacementBidId,
+          supersedes_bid_id: original.id,
+          revision: body.expected_session_revision + 1,
+        },
+        201,
+      );
     });
     if (!mutation.ok) return c.json({ error: mutation.error }, 409);
     return mutation.value;

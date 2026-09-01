@@ -1,6 +1,65 @@
 import { describe, expect, it } from 'vitest';
 
-import { BidConfigurationSettingsSchema, BidSessionPolicySnapshotSchema } from '../../src/index.js';
+import {
+  BidConfigurationSettingsSchema,
+  BidSessionPolicySnapshotSchema,
+  FrozenLiveBidPolicySchema,
+  isLiveBidActionAuthorized,
+} from '../../src/index.js';
+
+const liveActions = [
+  'record_selection',
+  'amend_selection',
+  'skip_defer',
+  'mark_unreachable',
+  'force',
+  'resolve_tie',
+  'alter_order',
+  'pause_resume',
+  'approve_transition',
+  'approve_final_results',
+  'publish',
+] as const;
+const dispositions = ['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'] as const;
+
+const completeLivePolicy = {
+  v: 1,
+  policyRevision: '2026.pending-approval',
+  stages: [
+    {
+      id: 'D-CPT',
+      label: 'D Captains',
+      order: 1,
+      memberIds: [11],
+      opportunityPositionIds: ['D101'],
+      kind: 'D_SHIFT',
+    },
+    {
+      id: 'D-LT',
+      label: 'D Lieutenants',
+      order: 2,
+      memberIds: [12],
+      opportunityPositionIds: ['D102'],
+      kind: 'D_SHIFT',
+    },
+  ],
+  dispositions: dispositions.map((disposition) => ({
+    disposition,
+    advances: disposition !== 'HOLD',
+    returns: disposition === 'DEFER',
+    returnStageId: disposition === 'DEFER' ? 'D-LT' : null,
+    retainsLaterSelectionRights: disposition === 'DEFER',
+    terminal: disposition === 'DECLINED',
+    requiresReason: true,
+    requiresEvidence: disposition === 'UNREACHABLE',
+    contactPolicyReference: disposition === 'UNREACHABLE' ? 'contact-2026' : null,
+  })),
+  actionPermissions: liveActions.map((action) => ({ action, actorMemberIds: [101] })),
+  specialtyCatalogReference: null,
+  aDayPolicyReference: null,
+  transitionPolicyReference: null,
+  publicationPolicyReference: null,
+};
 
 const legacySnapshot = {
   v: 1,
@@ -60,6 +119,32 @@ const completeV3Snapshot = {
 };
 
 describe('Bid configuration and session policy contracts', () => {
+  it('requires an explicit, complete policy before a live action is authorized', () => {
+    const policy = FrozenLiveBidPolicySchema.parse(completeLivePolicy);
+    expect(isLiveBidActionAuthorized(policy, 'record_selection', 101)).toBe(true);
+    expect(isLiveBidActionAuthorized(policy, 'record_selection', 999)).toBe(false);
+    expect(isLiveBidActionAuthorized(undefined, 'record_selection', 101)).toBe(false);
+    expect(isLiveBidActionAuthorized(policy, 'publish', null)).toBe(false);
+  });
+
+  it('rejects partial policy grants and ambiguous stage membership', () => {
+    expect(
+      FrozenLiveBidPolicySchema.safeParse({
+        ...completeLivePolicy,
+        actionPermissions: completeLivePolicy.actionPermissions.slice(1),
+      }).success,
+    ).toBe(false);
+    expect(
+      FrozenLiveBidPolicySchema.safeParse({
+        ...completeLivePolicy,
+        stages: [
+          ...completeLivePolicy.stages,
+          { ...completeLivePolicy.stages[1], id: 'FF', memberIds: [11], order: 3 },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it('continues to read immutable V1 recovery snapshots', () => {
     expect(BidSessionPolicySnapshotSchema.parse(legacySnapshot)).toMatchObject({ v: 1 });
   });

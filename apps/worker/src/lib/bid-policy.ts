@@ -2,6 +2,7 @@ import {
   type BidConfigurationSettings,
   BidConfigurationSettingsSchema,
   type BidConfigurationSettingsV2,
+  type BidConfigurationSettingsV3,
   type BidParticipation,
   type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
@@ -73,6 +74,7 @@ export interface RuleBookCoverage {
   invalidPositionIds: readonly string[];
   duplicatePositionIds: readonly string[];
   administrativelyAssignedPositionIds: readonly string[];
+  reservedPositionIds: readonly string[];
   legacyExcludedPositionIds: readonly string[];
   expectedBiddablePositionIds: readonly string[];
   validRulePositionIds: readonly string[];
@@ -244,6 +246,11 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
       .filter((position) => position.bidParticipation === 'ADMIN_ASSIGNED_NON_BIDDABLE')
       .map((position) => position.id),
   );
+  const reservedPositionIds = uniqueSorted(
+    templatePositions
+      .filter((position) => position.bidParticipation === 'RESERVED_NON_BIDDABLE')
+      .map((position) => position.id),
+  );
   const legacyExcludedPositionIds = uniqueSorted(
     templatePositions
       .filter((position) => position.isExcludedFromCount === true)
@@ -262,6 +269,7 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
       const position = byPositionId.get(positionId);
       return (
         position?.bidParticipation === 'ADMIN_ASSIGNED_NON_BIDDABLE' ||
+        position?.bidParticipation === 'RESERVED_NON_BIDDABLE' ||
         position?.isExcludedFromCount === true
       );
     }),
@@ -299,6 +307,7 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
     invalidPositionIds: decoded.invalidPositionIds,
     duplicatePositionIds: decoded.duplicatePositionIds,
     administrativelyAssignedPositionIds,
+    reservedPositionIds,
     legacyExcludedPositionIds,
     expectedBiddablePositionIds,
     validRulePositionIds,
@@ -452,7 +461,7 @@ export type BidSessionMode = 'mock' | 'live';
 export interface ConfiguredBidYearPolicy {
   bidYear: number;
   configurationRevision: number;
-  settings: BidConfigurationSettingsV2;
+  settings: BidConfigurationSettingsV2 | BidConfigurationSettingsV3;
   ruleBookVersion: string;
   ruleBookRevision: number;
   positionTemplateVersion: string;
@@ -464,6 +473,7 @@ export type ConfiguredBidYearPolicyError =
   | 'bid_configuration_unconfigured'
   | 'bid_configuration_settings_invalid'
   | 'bid_configuration_credential_evaluation_date_required'
+  | 'bid_configuration_live_policy_required'
   | 'bid_configuration_rule_book_missing'
   | 'bid_configuration_year_mismatch'
   | 'bid_configuration_template_mismatch'
@@ -517,8 +527,11 @@ export async function loadConfiguredBidYearPolicy(
   // repair, but cannot create a new mock or live session. An evaluation date
   // must be an explicit annual policy input rather than the wall-clock moment
   // that happened to create a session.
-  if (settings.v !== 2) {
+  if (settings.v === 1) {
     return { ok: false, code: 'bid_configuration_credential_evaluation_date_required' };
+  }
+  if (mode === 'live' && settings.v !== 3) {
+    return { ok: false, code: 'bid_configuration_live_policy_required' };
   }
 
   const book = await db

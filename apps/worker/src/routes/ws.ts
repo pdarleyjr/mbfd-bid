@@ -1,4 +1,7 @@
+import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { getDb } from '../db/index.js';
+import { bidSessions } from '../db/schema.js';
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { isExpectedPublicWebOrigin } from '../lib/public-web-origin.js';
@@ -76,6 +79,24 @@ ws.get('/session/:id', async (c) => {
   }
   if (identity === null) {
     return c.json({ error: 'missing_auth' }, 401);
+  }
+  // In real operations, a member connection remains read-only even when it is
+  // the currently displayed bidder. The DO receives only authenticated,
+  // operator-originated normal selection commands. We do this at the route
+  // boundary as well as in the DO so a member cannot obtain a mutating socket
+  // merely by bypassing UI affordances.
+  try {
+    const session = await getDb(c.env.DB)
+      .select({ isMock: bidSessions.isMock })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, id))
+      .get();
+    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+    if (!session.isMock && identity.role === 'member') {
+      return c.json({ error: 'live_member_mutation_forbidden' }, 403);
+    }
+  } catch {
+    return c.json({ error: 'session_authorization_unavailable' }, 503);
   }
   const doId = c.env.BID_SESSION.idFromName(id);
   const stub = c.env.BID_SESSION.get(doId);

@@ -4,8 +4,178 @@ import { z } from 'zod';
  * Controls whether a canonical staffing slot participates in ordinary Bid
  * selection. A staffing record may remain active while being outside Bid.
  */
-export const BidParticipationSchema = z.enum(['BIDDABLE', 'ADMIN_ASSIGNED_NON_BIDDABLE']);
+export const BidParticipationSchema = z.enum([
+  'BIDDABLE',
+  'ADMIN_ASSIGNED_NON_BIDDABLE',
+  'RESERVED_NON_BIDDABLE',
+]);
 export type BidParticipation = z.infer<typeof BidParticipationSchema>;
+
+/**
+ * Live Bid access is intentionally action-scoped.  Hub administration grants
+ * access to the Bid administration surface; it never implies operational
+ * authority.  A frozen annual policy must name every live actor explicitly.
+ */
+export const LiveBidActionSchema = z.enum([
+  'record_selection',
+  'amend_selection',
+  'skip_defer',
+  'mark_unreachable',
+  'force',
+  'resolve_tie',
+  'alter_order',
+  'pause_resume',
+  'approve_transition',
+  'approve_final_results',
+  'publish',
+]);
+export type LiveBidAction = z.infer<typeof LiveBidActionSchema>;
+
+export const BidDispositionSchema = z.enum([
+  'HOLD',
+  'PASS',
+  'DEFER',
+  'SKIP',
+  'DECLINED',
+  'UNREACHABLE',
+]);
+export type BidDisposition = z.infer<typeof BidDispositionSchema>;
+
+const FrozenLiveStageSchema = z
+  .object({
+    id: z.string().trim().min(1).max(80),
+    label: z.string().trim().min(1).max(160),
+    order: z.number().int().nonnegative(),
+    /** Explicit member ids avoid implicit rank/title/employee-id authority. */
+    memberIds: z.array(z.number().int().positive()).min(1),
+    /** Explicit opportunity filtering; a reserved vacancy is never inferred. */
+    opportunityPositionIds: z.array(z.string().trim().min(1)).min(1),
+    /** Substages are represented by separate, explicitly ordered stage rows. */
+    kind: z.enum(['D_SHIFT', 'CAPTAIN', 'LIEUTENANT', 'FIREFIGHTER', 'MIXED']),
+  })
+  .strict();
+export type FrozenLiveStage = z.infer<typeof FrozenLiveStageSchema>;
+
+const FrozenDispositionRuleSchema = z
+  .object({
+    disposition: BidDispositionSchema,
+    advances: z.boolean(),
+    returns: z.boolean(),
+    returnStageId: z.string().trim().min(1).max(80).nullable(),
+    retainsLaterSelectionRights: z.boolean(),
+    terminal: z.boolean(),
+    requiresReason: z.boolean(),
+    requiresEvidence: z.boolean(),
+    contactPolicyReference: z.string().trim().min(1).max(200).nullable(),
+  })
+  .strict()
+  .superRefine((rule, context) => {
+    if (rule.returns !== (rule.returnStageId !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['returnStageId'],
+        message: 'a return requires an explicit return stage, and no-return cannot name one',
+      });
+    }
+  });
+export type FrozenDispositionRule = z.infer<typeof FrozenDispositionRuleSchema>;
+
+const LiveActionPermissionSchema = z
+  .object({
+    action: LiveBidActionSchema,
+    actorMemberIds: z.array(z.number().int().positive()).min(1),
+  })
+  .strict();
+
+/**
+ * Annual live policy captured into a session. No policy field has an implicit
+ * default: missing grants, stages, or disposition rows must block live work.
+ */
+export const FrozenLiveBidPolicySchema = z
+  .object({
+    v: z.literal(1),
+    policyRevision: z.string().trim().min(1).max(200),
+    stages: z.array(FrozenLiveStageSchema).min(1),
+    dispositions: z.array(FrozenDispositionRuleSchema).length(6),
+    actionPermissions: z.array(LiveActionPermissionSchema).length(11),
+    specialtyCatalogReference: z.string().trim().min(1).max(200).nullable(),
+    aDayPolicyReference: z.string().trim().min(1).max(200).nullable(),
+    transitionPolicyReference: z.string().trim().min(1).max(200).nullable(),
+    publicationPolicyReference: z.string().trim().min(1).max(200).nullable(),
+  })
+  .strict()
+  .superRefine((policy, context) => {
+    const stageIds = new Set<string>();
+    const stageOrders = new Set<number>();
+    const memberIds = new Set<number>();
+    for (const [index, stage] of policy.stages.entries()) {
+      if (stageIds.has(stage.id) || stageOrders.has(stage.order)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['stages', index],
+          message: 'stages require unique ids and order',
+        });
+      }
+      stageIds.add(stage.id);
+      stageOrders.add(stage.order);
+      for (const memberId of stage.memberIds) {
+        if (memberIds.has(memberId)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['stages', index, 'memberIds'],
+            message: 'a member may occur in only one frozen stage',
+          });
+        }
+        memberIds.add(memberId);
+      }
+    }
+    const dispositions = new Set(policy.dispositions.map((rule) => rule.disposition));
+    if (dispositions.size !== 6) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dispositions'],
+        message: 'every disposition requires one deterministic rule',
+      });
+    }
+    const actions = new Set(policy.actionPermissions.map((grant) => grant.action));
+    if (actions.size !== 11) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['actionPermissions'],
+        message: 'every live action requires one explicit grant row',
+      });
+    }
+    for (const rule of policy.dispositions) {
+      if (rule.returnStageId !== null && !stageIds.has(rule.returnStageId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dispositions'],
+          message: 'return stage must be a frozen stage id',
+        });
+      }
+    }
+  });
+export type FrozenLiveBidPolicy = z.infer<typeof FrozenLiveBidPolicySchema>;
+
+/** No actor can inherit live authority from a Hub-admin role or rank. */
+export function isLiveBidActionAuthorized(
+  policy: FrozenLiveBidPolicy | null | undefined,
+  action: LiveBidAction,
+  actorMemberId: number | null | undefined,
+): boolean {
+  if (
+    policy === null ||
+    policy === undefined ||
+    actorMemberId === null ||
+    actorMemberId === undefined
+  ) {
+    return false;
+  }
+  return policy.actionPermissions.some(
+    (permission) =>
+      permission.action === action && permission.actorMemberIds.includes(actorMemberId),
+  );
+}
 
 /** Canonical calendar-date encoding used by frozen annual-policy facts. */
 const FrozenPolicyCalendarDateSchema = z
@@ -187,9 +357,25 @@ export const BidConfigurationSettingsV2Schema = z
   .strict();
 export type BidConfigurationSettingsV2 = z.infer<typeof BidConfigurationSettingsV2Schema>;
 
+/**
+ * A live-capable annual configuration. Mock sessions remain compatible with
+ * V2, but a real session must carry this fully explicit policy material.
+ */
+export const BidConfigurationSettingsV3Schema = z
+  .object({
+    v: z.literal(3),
+    expectedDurationDays: z.number().int().min(1).max(7),
+    turnTimerSeconds: z.number().int().min(30).max(600),
+    credentialEvaluationOn: CredentialEvaluationDateSchema,
+    livePolicy: FrozenLiveBidPolicySchema,
+  })
+  .strict();
+export type BidConfigurationSettingsV3 = z.infer<typeof BidConfigurationSettingsV3Schema>;
+
 export const BidConfigurationSettingsSchema = z.discriminatedUnion('v', [
   BidConfigurationSettingsV1Schema,
   BidConfigurationSettingsV2Schema,
+  BidConfigurationSettingsV3Schema,
 ]);
 export type BidConfigurationSettings = z.infer<typeof BidConfigurationSettingsSchema>;
 
@@ -326,7 +512,7 @@ export const BidSessionPolicySnapshotSchema = z
 
     if (snapshot.v !== 3) return;
 
-    if (snapshot.settings.v === 2) {
+    if (snapshot.settings.v === 2 || snapshot.settings.v === 3) {
       if (snapshot.credentialEvaluationOn === undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
