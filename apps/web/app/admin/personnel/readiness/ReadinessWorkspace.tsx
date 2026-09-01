@@ -22,6 +22,13 @@ export function ReadinessWorkspace({
 }: { items: ReadinessItem[]; annualDetermination: string }) {
   const [query, setQuery] = useState('');
   const [classification, setClassification] = useState('ALL');
+  const [rank, setRank] = useState('ALL');
+  const [credential, setCredential] = useState('ALL');
+  const [specialty, setSpecialty] = useState('ALL');
+  const [provenance, setProvenance] = useState('ALL');
+  const filterValues = (
+    field: keyof Pick<ReadinessItem, 'rank' | 'credential' | 'specialty' | 'sourceProvenance'>,
+  ) => [...new Set(items.map((item) => item[field] ?? '—'))].sort();
   const visible = useMemo(
     () =>
       items.filter((item) => {
@@ -29,10 +36,14 @@ export function ReadinessWorkspace({
           `${item.memberName} ${item.rank} ${item.credential ?? ''} ${item.specialty ?? ''} ${item.sourceProvenance}`.toLowerCase();
         return (
           haystack.includes(query.toLowerCase()) &&
-          (classification === 'ALL' || item.classification === classification)
+          (classification === 'ALL' || item.classification === classification) &&
+          (rank === 'ALL' || item.rank === rank) &&
+          (credential === 'ALL' || (item.credential ?? '—') === credential) &&
+          (specialty === 'ALL' || (item.specialty ?? '—') === specialty) &&
+          (provenance === 'ALL' || item.sourceProvenance === provenance)
         );
       }),
-    [items, query, classification],
+    [items, query, classification, rank, credential, specialty, provenance],
   );
   return (
     <section className="space-y-4" aria-label="Certification readiness">
@@ -65,6 +76,27 @@ export function ReadinessWorkspace({
             ),
           )}
         </select>
+        {(
+          [
+            ['Rank', rank, setRank, 'rank'],
+            ['Credential', credential, setCredential, 'credential'],
+            ['Specialty', specialty, setSpecialty, 'specialty'],
+            ['Provenance', provenance, setProvenance, 'sourceProvenance'],
+          ] as const
+        ).map(([label, value, setValue, field]) => (
+          <select
+            key={label}
+            aria-label={`${label} filter`}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            className="min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          >
+            <option value="ALL">All {label.toLowerCase()}s</option>
+            {filterValues(field).map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        ))}
       </div>
       <p className="text-sm text-slate-300">
         {visible.length} evidence item(s). Current/future projections only; affected Bid
