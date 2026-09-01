@@ -200,7 +200,10 @@ export function BidSetupWorkspace({
           </span>
         </div>
 
-        {configuration?.lifecycle === 'UNCONFIGURED' &&
+        {(configuration?.lifecycle === 'UNCONFIGURED' ||
+          (configuration?.lifecycle === 'DRAFT' &&
+            configuration.ruleBookVersion === '2026.2' &&
+            configuration.positionTemplateVersion === '2026.2')) &&
           draftRuleBooks.some((ruleBook) => ruleBook.version === '2026.2') && (
             <div className="mt-4 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
               <p className="font-semibold">2026 staffing-source reconciliation required</p>
