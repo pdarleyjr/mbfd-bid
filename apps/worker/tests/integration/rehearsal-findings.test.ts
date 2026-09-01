@@ -133,6 +133,42 @@ describe('Rehearsal findings CRUD (Task R6)', () => {
     expect(list.findings[0]?.id).toBe(created.id);
   });
 
+  it('rolls back a finding when its required audit receipt fails', async () => {
+    // The finding insert is followed by its authoritative audit record.
+    h.failNextBatchAt(1);
+    const response = await app.fetch(
+      new Request('http://x/api/admin/rehearsal/findings', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          bidSessionId: sessionId,
+          note: 'Inject an audit-receipt failure for this rehearsal finding.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(500);
+    expect(
+      (
+        await h.db.run('SELECT COUNT(*) AS n FROM rehearsal_findings WHERE bid_session_id = ?', [
+          sessionId,
+        ])
+      ).results,
+    ).toEqual([{ n: 0 }]);
+    expect(
+      (
+        await h.db.run(
+          "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'rehearsal_finding' AND bid_session_id = ?",
+          [sessionId],
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
+  });
+
   it('GET returns 400 when session_id is missing', async () => {
     const res = await app.fetch(
       new Request('http://x/api/admin/rehearsal/findings', {

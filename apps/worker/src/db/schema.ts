@@ -457,6 +457,7 @@ export const auditLog = sqliteTable(
         'forced_a_day_pick',
         'portal_writeback_retry',
         'portal_writeback_clear',
+        'rehearsal_finding',
       ],
     }).notNull(),
     targetKind: text('target_kind'),

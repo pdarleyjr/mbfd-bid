@@ -44,6 +44,7 @@ when written after a material mutation.
 | Station Six reconciliation, including existing-template binding recovery | Admin D1 | Same-batch state and audit receipt |
 | Credential import and manual bid-order overrides | Admin D1 | Same-batch state and audit receipt |
 | Mock designation and close | Legacy Admin D1 | Fail-closed audit-before-state receipt |
+| Rehearsal finding creation | Admin D1 | Same-batch finding and audit receipt |
 | Portal retry and clear-year | Admin D1 / writeback queue | Fail-closed audit-before-state receipt; runtime publication remains production-only and explicitly opt-in |
 | TeleStaff import/review/exception/certify/apply/baseline acceptance | Admin D1 | Existing D1 batch with authoritative source/lifecycle evidence and audit receipt |
 | Personnel and qualification lifecycle; bid-award transition | Admin D1 | Existing event ledger plus same-batch audit/receipt evidence |
