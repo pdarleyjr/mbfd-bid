@@ -1,4 +1,21 @@
-import { expect, test } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
+
+async function interceptHubAuthorization(page: Page): Promise<void> {
+  await page.route('https://www.mbfdhub.com/auth/bid/authorize**', (route) =>
+    route.fulfill({ status: 200, body: 'Canonical MBFD Hub authentication' }),
+  );
+}
+
+async function expectCanonicalHubAuthorization(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/^https:\/\/www\.mbfdhub\.com\/auth\/bid\/authorize\?/);
+  const authorize = new URL(page.url());
+  expect(authorize.searchParams.get('client_id')).toBe('bid');
+  expect(authorize.searchParams.get('redirect_uri')).toBe(
+    'https://staging.bid.mbfdhub.com/api/auth/callback',
+  );
+  expect(authorize.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+}
 
 test.describe('PIN gate', () => {
   test('rejects an incorrect PIN', async ({ page }) => {
@@ -16,7 +33,7 @@ test.describe('PIN gate', () => {
     await expect(page.locator('#pin-error')).toHaveText(/incorrect/i);
   });
 
-  test('accepts an explicitly provided E2E test PIN and forwards to /login', async ({ page }) => {
+  test('accepts an explicitly provided E2E test PIN and federates to Hub', async ({ page }) => {
     const apiBase = process.env.E2E_TEST_API_BASE;
     const pin = process.env.E2E_TEST_PIN;
     if (!apiBase || !pin) {
@@ -26,12 +43,11 @@ test.describe('PIN gate', () => {
       );
       return;
     }
+    await interceptHubAuthorization(page);
     await page.goto('/');
     await page.getByLabel('Access PIN').fill(pin);
     await page.getByRole('button', { name: /continue/i }).click();
-    // /login doesn't exist yet (Task 9) — but middleware should still try to render or redirect.
-    // For Task 7 acceptance, we just confirm we navigated away from '/'.
-    await expect(page).not.toHaveURL(/^http:\/\/localhost:3000\/$/);
+    await expectCanonicalHubAuthorization(page);
   });
 
   test('a /lobby request without PIN cookie redirects to /', async ({ page }) => {
@@ -47,7 +63,11 @@ test.describe('Lobby protection', () => {
     await expect(page).toHaveURL(/\/$/);
   });
 
-  test('/lobby with PIN cookie but no JWT redirects to /login', async ({ context, page }) => {
+  test('/lobby with PIN cookie but no JWT federates to Hub without a password form', async ({
+    context,
+    page,
+  }) => {
+    await interceptHubAuthorization(page);
     await context.clearCookies();
     await context.addCookies([
       {
@@ -59,7 +79,7 @@ test.describe('Lobby protection', () => {
       },
     ]);
     await page.goto('/lobby');
-    await expect(page).toHaveURL(/\/login$/);
+    await expectCanonicalHubAuthorization(page);
   });
 });
 
