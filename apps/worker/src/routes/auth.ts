@@ -5,11 +5,17 @@ import { z } from 'zod';
 import { constantTimeEqual, getBidPin, isValidPin } from '../lib/bid-pin';
 import { LOCAL_ADMIN_USERNAME, validateEnv, verifyLocalAdminPassword } from '../lib/env';
 import { signJwt } from '../lib/jwt';
-import { verifyCredentials } from '../lib/portal-client';
+import { exchangeAuthorizationCode, verifyCredentials } from '../lib/portal-client';
+import { publicWebOrigin } from '../lib/public-web-origin';
 import { rateLimitByEmployeeId, rateLimitByIp } from '../middleware/rate-limit';
 import type { WorkerEnv } from '../types/env';
 
 const auth = new Hono<{ Bindings: WorkerEnv }>();
+
+const AuthorizationCodeExchangeSchema = z.object({
+  code: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  redirect_uri: z.string().url(),
+});
 
 // Synthetic identity for the shared admin account. `sub: 0` is reserved
 // because real `members.id` starts at 1 (autoincrement). The audit log
@@ -47,6 +53,65 @@ function resolvePortalRole(
 }
 
 auth.post(
+  '/exchange',
+  zValidator('json', AuthorizationCodeExchangeSchema, (result, c) => {
+    if (!result.success) return c.json({ error: 'invalid_body' }, 400);
+    return undefined;
+  }),
+  async (c) => {
+    const input = c.req.valid('json');
+    const expectedOrigin = publicWebOrigin(c.env);
+    const expectedCallback = expectedOrigin ? `${expectedOrigin}/api/auth/callback` : null;
+    if (input.redirect_uri !== expectedCallback) {
+      return c.json({ error: 'invalid_redirect_uri' }, 400);
+    }
+
+    const env = validateEnv(c.env);
+    let portalResponse: LoginResponse | null;
+    try {
+      portalResponse = await exchangeAuthorizationCode({
+        portalBaseUrl: env.PORTAL_BASE_URL,
+        token: env.PORTAL_BID_READER,
+        code: input.code,
+        redirect_uri: input.redirect_uri,
+      });
+    } catch (err) {
+      console.error('[auth.exchange] portal error', err);
+      return c.json({ error: 'portal_unavailable' }, 503);
+    }
+
+    if (!portalResponse) return c.json({ error: 'invalid_authorization_code' }, 401);
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const jwt = await signJwt(
+      {
+        sub: portalResponse.member_id,
+        emp: portalResponse.employee_id,
+        role: portalResponse.role,
+        rank: portalResponse.rank,
+        first_name: portalResponse.first_name,
+        last_name: portalResponse.last_name,
+        fresh_auth_at: nowSec,
+      },
+      env.JWT_SIGNING_KEY,
+      '8h',
+    );
+
+    return c.json({
+      jwt,
+      role: portalResponse.role,
+      member: {
+        member_id: portalResponse.member_id,
+        employee_id: portalResponse.employee_id,
+        first_name: portalResponse.first_name,
+        last_name: portalResponse.last_name,
+        rank: portalResponse.rank,
+      },
+    });
+  },
+);
+
+auth.post(
   '/login',
   zValidator('json', LoginRequestSchema, (result, c) => {
     if (!result.success) {
@@ -55,6 +120,7 @@ auth.post(
     return undefined;
   }),
   async (c) => {
+    c.header('Deprecation', 'true');
     const { employee_id, password } = c.req.valid('json');
     const env = validateEnv(c.env);
     const nowSec = Math.floor(Date.now() / 1000);

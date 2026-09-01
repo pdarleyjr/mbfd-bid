@@ -1,6 +1,7 @@
 export const PIN_COOKIE_NAME = 'mbfd_pin';
 export const JWT_COOKIE_NAME = 'mbfd_bid_jwt';
 export const CSRF_COOKIE_NAME = 'mbfd_bid_csrf';
+export const FEDERATION_STATE_COOKIE_NAME = 'mbfd_bid_auth_state';
 
 export const PIN_COOKIE_OPTS = {
   httpOnly: true,
@@ -16,6 +17,14 @@ export const JWT_COOKIE_OPTS = {
   sameSite: 'strict' as const,
   path: '/',
   maxAge: 60 * 60 * 8, // 8 hours
+};
+
+export const FEDERATION_STATE_COOKIE_OPTS = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'lax' as const,
+  path: '/api/auth/callback',
+  maxAge: 5 * 60,
 };
 
 /**
