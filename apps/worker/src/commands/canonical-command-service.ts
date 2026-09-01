@@ -1,6 +1,9 @@
 import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types';
 import {
   BID_EVENT_VERSION,
+  type FrozenLiveBidPolicy,
+  type LiveBidCommand,
+  type LiveBidCommandResult,
   type MockFreezeCommand,
   type MockFreezeCommandResult,
 } from '@mbfd/shared';
@@ -11,6 +14,7 @@ import { ulid } from 'ulid';
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import { handleFreeze } from '../durable/bid-session-handlers.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
+import { reduceLiveBidCommand } from './live-bid-reducer.js';
 
 interface CanonicalStateRow {
   current_seq: number;
@@ -649,4 +653,277 @@ export async function commitMockFreezeCommand(
   }
 
   return { result, canonicalState };
+}
+
+export interface CommitLiveBidCommandInput {
+  db: D1Database;
+  command: LiveBidCommand;
+  state: BidSessionState;
+  policy: FrozenLiveBidPolicy;
+  nowMs?: () => number;
+  newId?: () => string;
+}
+
+/** Real-session command bundle.  D1 is the sole authority; the DO only
+ * serializes and then projects this returned state for sockets/restarts. */
+export async function commitLiveBidCommand(
+  input: CommitLiveBidCommandInput,
+): Promise<{ result: LiveBidCommandResult; canonicalState: BidSessionState | null }> {
+  const now = (input.nowMs ?? Date.now)();
+  const newId = input.newId ?? ulid;
+  const requestSha256 = sha256Hex(canonicalJson(input.command));
+  const prior = await first<CommandReceiptRow>(
+    input.db,
+    'SELECT request_sha256, outcome, result_json FROM bid_command_receipts WHERE command_id = ?',
+    [input.command.commandId],
+  );
+  if (prior) {
+    if (prior.request_sha256 !== requestSha256)
+      return {
+        result: {
+          kind: 'rejected',
+          commandId: input.command.commandId,
+          code: 'COMMAND_ID_REUSED',
+          currentSeq: input.state.lastSeq,
+        },
+        canonicalState: null,
+      };
+    const result = parseStoredResult(prior.result_json) as LiveBidCommandResult;
+    return {
+      result,
+      canonicalState:
+        prior.outcome === 'accepted'
+          ? await loadCanonicalBidSessionState(input.db, input.command.bidSessionId)
+          : null,
+    };
+  }
+  const existing = await loadCanonicalStateRow(input.db, input.command.bidSessionId);
+  const current =
+    existing?.state ?? normalizeStateForSession(input.state, input.command.bidSessionId);
+  if (input.command.expectedSeq !== current.lastSeq) {
+    const result: LiveBidCommandResult = {
+      kind: 'rejected',
+      commandId: input.command.commandId,
+      code: 'STALE_SEQUENCE',
+      currentSeq: current.lastSeq,
+    };
+    await insertRejectedReceipt(
+      input.db,
+      input.command as unknown as MockFreezeCommand,
+      requestSha256,
+      result as unknown as MockFreezeCommandResult,
+      now,
+    );
+    return { result, canonicalState: null };
+  }
+  const reduction = reduceLiveBidCommand(current, input.policy, input.command, now, newId());
+  if (!reduction.ok) {
+    const result: LiveBidCommandResult = {
+      kind: 'rejected',
+      commandId: input.command.commandId,
+      code: reduction.code,
+      currentSeq: current.lastSeq,
+    };
+    await insertRejectedReceipt(
+      input.db,
+      input.command as unknown as MockFreezeCommand,
+      requestSha256,
+      result as unknown as MockFreezeCommandResult,
+      now,
+    );
+    return { result, canonicalState: null };
+  }
+  const eventId = newId();
+  const auditId = newId();
+  const outboxId = newId();
+  const envelope = {
+    v: BID_EVENT_VERSION,
+    seq: reduction.state.lastSeq,
+    ts: now,
+    type: reduction.eventType,
+    payload: reduction.payload,
+  } as const;
+  const result: LiveBidCommandResult = {
+    kind: 'accepted',
+    commandId: input.command.commandId,
+    seq: reduction.state.lastSeq,
+    envelope,
+  };
+  const eventJson = canonicalJson(reduction.payload);
+  const archivePayload = canonicalJson({
+    v: 1,
+    command: {
+      id: input.command.commandId,
+      type: input.command.type,
+      requestSha256,
+      expectedSeq: input.command.expectedSeq,
+    },
+    event: {
+      id: eventId,
+      seq: reduction.state.lastSeq,
+      type: reduction.eventType,
+      payload: reduction.payload,
+      actorId: input.command.actor.id,
+      createdAt: now,
+    },
+    audit: {
+      id: auditId,
+      action: input.command.type,
+      actorId: input.command.actor.id,
+      reason: input.command.reason,
+      createdAt: now,
+    },
+  });
+  const statements: D1PreparedStatement[] = [];
+  if (!existing)
+    statements.push(
+      input.db
+        .prepare(
+          'INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) VALUES (?,?,?,NULL,?,?)',
+        )
+        .bind(input.command.bidSessionId, current.lastSeq, canonicalJson(current), now, now),
+    );
+  if (
+    input.command.type === 'live.record_selection' ||
+    input.command.type === 'live.force_selection'
+  ) {
+    const fill = reduction.state.fills[input.command.positionId];
+    if (fill === undefined) throw new Error('Accepted selection reduction is missing its fill');
+    statements.push(
+      input.db
+        .prepare(
+          "INSERT INTO bids (id,bid_session_id,ordinal,member_id,position_id,a_day,picked_at,forced,admin_actor_id,reason,idempotency_key,portal_sync_status,portal_sync_attempts) VALUES (?,?,?,?,?,?,?, ?,?,?,?,'pending',0)",
+        )
+        .bind(
+          fill.bidId,
+          input.command.bidSessionId,
+          fill.ordinal,
+          fill.memberId,
+          input.command.positionId,
+          null,
+          now,
+          input.command.type === 'live.force_selection' ? 1 : 0,
+          input.command.actor.id,
+          input.command.reason,
+          input.command.commandId,
+        ),
+    );
+  }
+  if (input.command.type === 'live.amend_selection' && reduction.supersedesBidId !== null) {
+    const fill = reduction.state.fills[input.command.positionId];
+    if (fill === undefined)
+      throw new Error('Accepted amendment reduction is missing its replacement');
+    statements.push(
+      input.db
+        .prepare(
+          "INSERT INTO bids (id,bid_session_id,ordinal,member_id,position_id,a_day,picked_at,forced,admin_actor_id,reason,idempotency_key,portal_sync_status,portal_sync_attempts) VALUES (?,?,?,?,?,?,?,0,?,?,?,'pending',0)",
+        )
+        .bind(
+          fill.bidId,
+          input.command.bidSessionId,
+          fill.ordinal,
+          fill.memberId,
+          input.command.positionId,
+          null,
+          now,
+          input.command.actor.id,
+          input.command.reason,
+          input.command.commandId,
+        ),
+      input.db
+        .prepare(
+          'INSERT INTO bid_award_amendments (id,bid_session_id,original_bid_id,replacement_bid_id,actor_member_id,expected_session_revision,reason,created_at) VALUES (?,?,?,?,?,?,?,?)',
+        )
+        .bind(
+          newId(),
+          input.command.bidSessionId,
+          reduction.supersedesBidId,
+          fill.bidId,
+          input.command.actor.id,
+          input.command.expectedSeq,
+          input.command.reason,
+          now,
+        ),
+      input.db
+        .prepare("UPDATE bids SET portal_sync_status='superseded' WHERE id=?")
+        .bind(reduction.supersedesBidId),
+    );
+  }
+  statements.push(
+    input.db
+      .prepare(
+        'UPDATE canonical_bid_session_state SET current_seq=?,state_json=?,last_command_id=?,updated_at=? WHERE bid_session_id=? AND current_seq=?',
+      )
+      .bind(
+        reduction.state.lastSeq,
+        canonicalJson(reduction.state),
+        input.command.commandId,
+        now,
+        input.command.bidSessionId,
+        current.lastSeq,
+      ),
+    input.db
+      .prepare(
+        "INSERT INTO bid_command_receipts (command_id,bid_session_id,command_type,request_sha256,actor_id,expected_seq,result_seq,outcome,result_json,created_at) VALUES (?,?,?,?,?,?,?,'accepted',?,?)",
+      )
+      .bind(
+        input.command.commandId,
+        input.command.bidSessionId,
+        input.command.type,
+        requestSha256,
+        input.command.actor.id,
+        input.command.expectedSeq,
+        reduction.state.lastSeq,
+        canonicalJson(result),
+        now,
+      ),
+    input.db
+      .prepare(
+        "INSERT INTO audit_log (id,bid_session_id,seq,actor_type,actor_id,action,target_kind,target_id,before_state,after_state,reason,ai_advisory_id,client_meta,created_at) SELECT ?,?,COALESCE(MAX(seq),0)+1,'admin',?,?,'session',?,NULL,?,?,NULL,NULL,? FROM audit_log WHERE bid_session_id=?",
+      )
+      .bind(
+        auditId,
+        input.command.bidSessionId,
+        input.command.actor.id,
+        input.command.type,
+        input.command.bidSessionId,
+        canonicalJson({ seq: reduction.state.lastSeq, payload: reduction.payload }),
+        input.command.reason,
+        Math.floor(now / 1000),
+        input.command.bidSessionId,
+      ),
+    input.db
+      .prepare(
+        'INSERT INTO bid_command_events (id,bid_session_id,command_id,audit_log_id,seq,event_type,event_json,actor_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+      )
+      .bind(
+        eventId,
+        input.command.bidSessionId,
+        input.command.commandId,
+        auditId,
+        reduction.state.lastSeq,
+        reduction.eventType,
+        eventJson,
+        input.command.actor.id,
+        now,
+      ),
+    input.db
+      .prepare(
+        "INSERT INTO bid_audit_outbox (id,bid_session_id,command_id,event_id,archive_key,payload_json,payload_sha256,status,attempts,next_attempt_at,lease_owner,lease_expires_at,archived_at,last_error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,'pending',0,?,NULL,NULL,NULL,NULL,?,?)",
+      )
+      .bind(
+        outboxId,
+        input.command.bidSessionId,
+        input.command.commandId,
+        eventId,
+        `canonical-audit/${input.command.bidSessionId}/${String(reduction.state.lastSeq).padStart(12, '0')}-${eventId}.json`,
+        archivePayload,
+        sha256Hex(archivePayload),
+        now,
+        now,
+        now,
+      ),
+  );
+  await input.db.batch(statements);
+  return { result, canonicalState: reduction.state };
 }

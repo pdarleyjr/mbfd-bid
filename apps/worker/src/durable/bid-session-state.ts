@@ -38,6 +38,22 @@ export interface Fill {
   bidId: string;
 }
 
+/** Durable, reconstructible live-only projection.  Policy itself remains in
+ * the immutable snapshot; this stores only progress and supersession facts. */
+export interface LiveBidProgress {
+  currentStageId: string | null;
+  completedStageIds: readonly string[];
+  pausedPhase: CurrentPhase | null;
+  lastSelectionBidId: string | null;
+  dispositions: readonly {
+    memberId: number;
+    disposition: string;
+    stageId: string | null;
+    reason: string;
+    evidenceReference: string | null;
+  }[];
+}
+
 export interface BidSessionState {
   bidSessionId: string;
   currentPhase: CurrentPhase;
@@ -46,7 +62,12 @@ export interface BidSessionState {
   turnTimerSeconds: number;
   lastSeq: number;
   fills: Record<string, Fill>;
-  bidOrder: ReadonlyArray<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }>;
+  bidOrder: ReadonlyArray<{
+    ordinal: number;
+    memberId: number;
+    pool: 'OFC' | 'FF';
+    stageId?: string | null;
+  }>;
   queueCursor: number;
   frozenAt: number | null;
   /**
@@ -54,6 +75,7 @@ export interface BidSessionState {
    * Map types are persisted as arrays (PersistedADayState) for JSON round-trip.
    */
   aDay: PersistedADayState | null;
+  live?: LiveBidProgress | null;
 }
 
 export function emptyBidSessionState(bidSessionId: string): BidSessionState {
@@ -69,6 +91,7 @@ export function emptyBidSessionState(bidSessionId: string): BidSessionState {
     queueCursor: 0,
     frozenAt: null,
     aDay: null,
+    live: null,
   };
 }
 
@@ -83,7 +106,7 @@ export async function loadBidSessionState(
   const persisted = await storage.get<BidSessionState>(bidSessionStateStorageKey(bidSessionId));
   if (!persisted) return emptyBidSessionState(bidSessionId);
   // Forward-compatibility: legacy snapshots predating Plan 07 lack `aDay`.
-  return { ...persisted, aDay: persisted.aDay ?? null };
+  return { ...persisted, aDay: persisted.aDay ?? null, live: persisted.live ?? null };
 }
 
 export async function persistBidSessionState(

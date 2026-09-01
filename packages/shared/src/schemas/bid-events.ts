@@ -242,6 +242,7 @@ export const EVENT_TYPES = [
   'a_day_pick_made',
   'forced_a_day_pick_made',
   'a_day_reject',
+  'live_command_applied',
 ] as const;
 export const EventTypeSchema = z.enum(EVENT_TYPES);
 export type EventType = z.infer<typeof EventTypeSchema>;

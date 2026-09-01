@@ -5,8 +5,10 @@ import {
   BidForMemberSchema,
   ForcePickSchema,
   type JwtPayload,
+  LiveBidCommandSchema,
   LockPositionSchema,
   SkipSchema,
+  isLiveBidActionAuthorized,
 } from '@mbfd/shared';
 import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -39,6 +41,56 @@ function isBidCommandPhase(phase: string): boolean {
 
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
+
+// The adapter deliberately assigns actor/session identity.  It is the one
+// public entry point for real mutations; older force/skip routes remain
+// compatibility paths and cannot create canonical live state.
+router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
+  const sessionId = c.req.param('id');
+  const raw = await c.req.json().catch(() => null);
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+    return c.json({ error: 'invalid_live_bid_command' }, 400);
+  const claims = c.get('claims');
+  const command = LiveBidCommandSchema.safeParse({
+    ...raw,
+    bidSessionId: sessionId,
+    actor: { id: claims.sub, role: 'admin' },
+  });
+  if (!command.success) return c.json({ error: 'invalid_live_bid_command' }, 400);
+  const db = getDb(c.env.DB);
+  const frozen = await loadFrozenSessionBidPolicy(db, sessionId);
+  if (!frozen.ok || frozen.snapshot.settings.v !== 3)
+    return c.json({ error: 'live_action_policy_missing' }, 409);
+  const action =
+    command.data.type === 'live.record_selection'
+      ? 'record_selection'
+      : command.data.type === 'live.amend_selection'
+        ? 'amend_selection'
+        : command.data.type === 'live.force_selection'
+          ? 'force'
+          : command.data.type === 'live.disposition'
+            ? command.data.disposition === 'UNREACHABLE'
+              ? 'mark_unreachable'
+              : 'skip_defer'
+            : command.data.type === 'live.transition_stage'
+              ? 'approve_transition'
+              : 'pause_resume';
+  if (
+    !isLiveBidActionAuthorized(
+      frozen.snapshot.settings.livePolicy,
+      action,
+      claims.sub > 0 ? claims.sub : null,
+    )
+  )
+    return c.json({ error: 'live_action_forbidden', action }, 403);
+  const stub = c.env.BID_SESSION.get(c.env.BID_SESSION.idFromName(sessionId));
+  const response = await stub.fetch('https://bid.internal/admin/commands/live', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(command.data),
+  });
+  return c.json(await response.json(), response.status as 200 | 400 | 409);
+});
 
 // POST /api/admin/bid-session/:id/force-pick
 router.post(
@@ -417,6 +469,11 @@ router.post(
   zValidator('json', AmendSelectionSchema),
   async (c) => {
     const sessionId = c.req.param('id');
+    if (sessionId !== '')
+      return c.json(
+        { error: 'canonical_live_command_required', command: 'live.amend_selection' },
+        409,
+      );
     const body = c.req.valid('json');
     const db = getDb(c.env.DB);
     const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();

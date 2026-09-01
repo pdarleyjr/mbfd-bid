@@ -65,3 +65,52 @@ export type MockFreezeCommandResult =
       code: MockFreezeCommandRejectCode;
       currentSeq: number;
     };
+
+/**
+ * The only mutating envelope for a real session.  The browser supplies a
+ * command id and sequence expectation; the authenticated Worker adapter owns
+ * the actor and never accepts it from the browser.  `evidenceReference` is an
+ * opaque provenance pointer, not copied evidence or a source-system payload.
+ */
+const LiveCommandBase = z.object({
+  v: z.literal(1),
+  commandId: CommandIdSchema,
+  bidSessionId: z.string().min(1),
+  expectedSeq: ExpectedSeqSchema,
+  actor: z.object({ id: z.number().int().positive(), role: z.literal('admin') }).strict(),
+  reason: ReasonSchema,
+  evidenceReference: z.string().trim().min(1).max(200).nullable(),
+});
+
+export const LiveBidCommandSchema = z.discriminatedUnion('type', [
+  LiveCommandBase.extend({
+    type: z.literal('live.record_selection'),
+    memberId: z.number().int().positive(),
+    positionId: z.string().min(1),
+  }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.amend_selection'),
+    positionId: z.string().min(1),
+    replacementMemberId: z.number().int().positive(),
+  }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.disposition'),
+    disposition: z.enum(['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE']),
+  }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.force_selection'),
+    memberId: z.number().int().positive(),
+    positionId: z.string().min(1),
+  }).strict(),
+  LiveCommandBase.extend({ type: z.literal('live.pause') }).strict(),
+  LiveCommandBase.extend({ type: z.literal('live.resume') }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.transition_stage'),
+    stageId: z.string().min(1),
+  }).strict(),
+]);
+export type LiveBidCommand = z.infer<typeof LiveBidCommandSchema>;
+
+export type LiveBidCommandResult =
+  | { kind: 'accepted'; commandId: string; seq: number; envelope: BidEventEnvelope }
+  | { kind: 'rejected'; commandId: string; code: string; currentSeq: number };

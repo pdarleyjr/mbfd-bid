@@ -4,6 +4,8 @@ import {
   BID_EVENT_VERSION,
   type BidEventEnvelope,
   ClientMessageSchema,
+  type LiveBidCommand,
+  LiveBidCommandSchema,
   type MockFreezeCommand,
   type MockFreezeCommandResult,
   MockFreezeCommandSchema,
@@ -18,6 +20,7 @@ import { drainBidAuditOutbox } from '../audit/archive-outbox.js';
 import { makeChainDb } from '../audit/chain-db-d1.js';
 import { ChainEmitter } from '../audit/chain-emitter.js';
 import {
+  commitLiveBidCommand,
   commitMockFreezeCommand,
   loadCanonicalBidSessionState,
 } from '../commands/canonical-command-service.js';
@@ -1452,6 +1455,20 @@ export class BidSessionDO implements DurableObject {
         headers: { 'content-type': 'application/json' },
       });
     }
+    if (url.pathname === '/admin/commands/live') {
+      const raw = await req.json().catch(() => null);
+      const parsed = LiveBidCommandSchema.safeParse(raw);
+      if (!parsed.success)
+        return new Response(JSON.stringify({ error: 'invalid_live_bid_command' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      const result = await this.adminLiveBidCommand(parsed.data);
+      return new Response(JSON.stringify(result), {
+        status: result.kind === 'accepted' ? 200 : 409,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     if (url.pathname.endsWith('/submit-a-day-pick')) {
       const body = (await req.json()) as SubmitADayPickInput;
       const result = await this.submitADayPick(body);
@@ -1961,6 +1978,44 @@ export class BidSessionDO implements DurableObject {
       if (commit.result.kind === 'accepted') {
         this.broadcast(commit.result.envelope);
         this.scheduleCanonicalAuditArchive();
+      }
+      return commit.result;
+    });
+  }
+
+  async adminLiveBidCommand(command: LiveBidCommand) {
+    return this.state.blockConcurrencyWhile(async () => {
+      const localState = await this.getState();
+      if (command.bidSessionId !== this.namedSessionId())
+        return {
+          kind: 'rejected' as const,
+          commandId: command.commandId,
+          code: 'SESSION_ID_MISMATCH',
+          currentSeq: localState.lastSeq,
+        };
+      const db = getDb(this.env.DB);
+      const frozen = await loadFrozenSessionBidPolicy(db, command.bidSessionId);
+      if (!frozen.ok || frozen.snapshot.settings.v !== 3)
+        return {
+          kind: 'rejected' as const,
+          commandId: command.commandId,
+          code: 'LIVE_POLICY_MISSING',
+          currentSeq: localState.lastSeq,
+        };
+      const commit = await commitLiveBidCommand({
+        db: this.env.DB,
+        command,
+        state: localState,
+        policy: frozen.snapshot.settings.livePolicy,
+      });
+      if (commit.canonicalState) {
+        const projection = this.projectCanonicalState(commit.canonicalState);
+        await persistBidSessionState(this.storage, projection);
+        this.memoryState = projection;
+        if (commit.result.kind === 'accepted') {
+          this.broadcast(commit.result.envelope);
+          this.scheduleCanonicalAuditArchive();
+        }
       }
       return commit.result;
     });
