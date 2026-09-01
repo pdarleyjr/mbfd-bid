@@ -17,7 +17,7 @@ import {
   ruleBookPositionParticipation,
   ruleBooks,
 } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import {
   loadRuleBookCoverage,
   loadRuleBookPolicyDiff,
@@ -313,6 +313,14 @@ router.put(
       )
       .get();
     const now = Date.now();
+    const after = {
+      ruleBookVersion: version,
+      positionId,
+      templateVersion: body.template_version,
+      bidParticipation: body.bid_participation,
+      authoritativeSourceRef: body.authoritative_source_ref,
+      createdAt: new Date(now),
+    };
     const results = await c.env.DB.batch([
       c.env.DB.prepare(
         `INSERT INTO rule_book_position_participation (
@@ -344,8 +352,27 @@ router.put(
               SET revision = revision + 1
             WHERE version = ? AND status = 'draft' AND revision = ?`,
       ).bind(version, book.revision),
+      auditInsertStatement(
+        c.env.DB,
+        {
+          bidSessionId: null,
+          actorType: 'admin',
+          actorId: c.get('claims').sub > 0 ? c.get('claims').sub : null,
+          action: 'override_rule',
+          targetKind: 'rule_book_position_participation',
+          targetId: `${version}:${positionId}`,
+          reason: body.reason,
+          beforeState: before,
+          afterState: after,
+        },
+        new Date(now),
+      ),
     ]);
-    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+    if (
+      results[0]?.meta.changes !== 1 ||
+      results[1]?.meta.changes !== 1 ||
+      results[2]?.meta.changes !== 1
+    ) {
       const current = await db.select().from(ruleBooks).where(eq(ruleBooks.version, version)).get();
       if (current?.status !== 'draft') {
         return c.json({ error: 'rule_book_immutable', status: current?.status ?? 'missing' }, 409);
@@ -353,7 +380,7 @@ router.put(
       return c.json({ error: 'rule_book_changed' }, 409);
     }
 
-    const after = await db
+    const persisted = await db
       .select()
       .from(ruleBookPositionParticipation)
       .where(
@@ -363,18 +390,7 @@ router.put(
         ),
       )
       .get();
-    await writeAuditLog(db, {
-      bidSessionId: null,
-      actorType: 'admin',
-      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : null,
-      action: 'override_rule',
-      targetKind: 'rule_book_position_participation',
-      targetId: `${version}:${positionId}`,
-      reason: body.reason,
-      beforeState: before,
-      afterState: after,
-    });
-    return c.json({ participation: after, rule_book_revision: book.revision + 1 });
+    return c.json({ participation: persisted, rule_book_revision: book.revision + 1 });
   },
 );
 
@@ -632,22 +648,28 @@ router.post(
         staffingPreflight.baselineImportId,
       ),
     );
+    statements.push(
+      auditInsertStatement(
+        c.env.DB,
+        {
+          bidSessionId: null,
+          actorType: 'admin',
+          actorId,
+          action: 'rule_book_clone', // existing enum value; covers publish
+          targetKind: 'rule_book',
+          targetId: version,
+          reason,
+          afterState: { effective_year: target.effectiveYear, status: 'active' },
+        },
+        now,
+      ),
+    );
     const results = await c.env.DB.batch(statements);
-    const publishResult = results[results.length - 1];
-    if (publishResult?.meta.changes !== 1) {
+    const publishResult = results[results.length - 2];
+    const auditResult = results[results.length - 1];
+    if (publishResult?.meta.changes !== 1 || auditResult?.meta.changes !== 1) {
       return c.json({ error: 'rule_book_status_changed' }, 409);
     }
-
-    await writeAuditLog(db, {
-      bidSessionId: null,
-      actorType: 'admin',
-      actorId,
-      action: 'rule_book_clone', // existing enum value; covers publish
-      targetKind: 'rule_book',
-      targetId: version,
-      reason,
-      afterState: { effective_year: target.effectiveYear, status: 'active' },
-    });
 
     return c.json({
       version,

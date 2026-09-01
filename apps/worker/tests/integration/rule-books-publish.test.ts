@@ -409,6 +409,40 @@ describe('POST /api/admin/rule-books/:version/publish', () => {
     ]);
   });
 
+  it('rolls back the rule-book publication when its authoritative audit receipt fails', async () => {
+    // The publish batch is archive, promote, then audit. A failed audit must
+    // never leave an active policy change without its durable audit receipt.
+    h.failNextBatchAt(2);
+
+    const response = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/publish', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'Inject an audit-receipt failure.' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(500);
+    expect(
+      (
+        await h.db.run(
+          'SELECT version, status FROM rule_books WHERE effective_year = 2026 ORDER BY version',
+        )
+      ).results,
+    ).toEqual([
+      { version: '2026.1', status: 'active' },
+      { version: '2026.2', status: 'draft' },
+    ]);
+    expect(
+      (await h.db.run("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'rule_book_clone'"))
+        .results,
+    ).toEqual([{ n: 0 }]);
+  });
+
   it('keeps the draft unpublished if the exact accepted baseline is superseded after preflight', async () => {
     const d1 = h.env.DB;
     const originalBatch = d1.batch.bind(d1);
@@ -866,6 +900,65 @@ describe('POL-015 draft rule-book lifecycle', () => {
       { version: '2026.1', status: 'active' },
       { version: '2026.2', status: 'draft' },
     ]);
+  });
+
+  it('rolls back a participation override when its authoritative audit receipt fails', async () => {
+    const clone = await app.fetch(
+      new Request('http://x/api/admin/rule-books', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          effective_year: 2026,
+          clone_from: '2026.1',
+          reason: 'Create a synthetic draft for an audit-failure proof.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(clone.status).toBe(201);
+
+    // The override batch is participation, revision, then audit.
+    h.failNextBatchAt(2);
+    const response = await app.fetch(
+      new Request('http://x/api/admin/rule-books/2026.2/position-participation/A211', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${await adminJwt()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          template_version: '2026.1',
+          bid_participation: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+          authoritative_source_ref: 'POL-015-approved-direction',
+          reason_code: 'rule_override.policy_direction',
+          reason: 'Inject an override audit-receipt failure.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(500);
+    expect(
+      (
+        await h.db.run(
+          'SELECT position_id FROM rule_book_position_participation WHERE rule_book_version = ?',
+          ['2026.2'],
+        )
+      ).results,
+    ).toEqual([]);
+    expect(
+      (await h.db.run("SELECT revision FROM rule_books WHERE version = '2026.2'")).results,
+    ).toEqual([{ revision: 0 }]);
+    expect(
+      (
+        await h.db.run(
+          "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'override_rule' AND target_id = '2026.2:A211'",
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
   });
 
   it('rejects an active-book participation mutation without creating an override', async () => {
