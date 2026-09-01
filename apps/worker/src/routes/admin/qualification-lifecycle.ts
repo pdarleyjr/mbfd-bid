@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 
+import { classifyCertificationReadiness } from '../../lib/certification-readiness.js';
 import {
   type LegacyCredentialBaseline,
   type QualificationLifecycleEvent,
@@ -289,6 +290,70 @@ router.get('/members/:memberId{\\d+}', async (c) => {
     specialties: projection.specialties,
     events: loadedEvents.events.map(presentEvent),
   });
+});
+
+/** Command-staff read model. This is deliberately projection-only: it creates no D1 state. */
+router.get('/readiness', async (c) => {
+  const asOf = c.req.query('as_of') ?? new Date().toISOString().slice(0, 10);
+  if (!isQualificationCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
+  const rawDays = Number(c.req.query('expiring_soon_days') ?? '30');
+  const expiringSoonDays =
+    Number.isInteger(rawDays) && rawDays >= 1 && rawDays <= 365 ? rawDays : 30;
+  const rows = await all<{
+    member_id: number;
+    first_name: string;
+    last_name: string;
+    rank: string;
+    credential_name: string | null;
+    specialty_code: string | null;
+    specialty_terminal_status: string | null;
+    kind: string;
+    effective_on: string;
+    expires_on: string | null;
+    evidence_source: string | null;
+    evidence_reference: string | null;
+    created_at: number | null;
+  }>(
+    c.env.DB,
+    `
+    SELECT member_record.id AS member_id, member_record.first_name, member_record.last_name, member_record.rank,
+           credential.name AS credential_name, event.specialty_code, event.specialty_terminal_status, event.kind, event.effective_on, event.expires_on,
+           event.evidence_source, event.evidence_reference, event.created_at
+      FROM member_qualification_events event
+      JOIN members member_record ON member_record.id = event.member_id
+      LEFT JOIN credentials credential ON credential.id = event.credential_id
+     WHERE event.effective_on <= ?
+     ORDER BY member_record.last_name, member_record.first_name, event.effective_on DESC, event.created_at DESC`,
+    asOf,
+  );
+  return c.json(
+    classifyCertificationReadiness({
+      asOf,
+      expiringSoonDays,
+      annualEvaluationOn: null,
+      rows: rows.map((row) => ({
+        memberId: row.member_id,
+        memberName: `${row.last_name}, ${row.first_name}`,
+        rank: row.rank,
+        credential: row.credential_name,
+        specialty: row.specialty_code,
+        status:
+          row.specialty_terminal_status === 'EXPIRED' || row.kind === 'CERTIFICATION_EXPIRED'
+            ? 'expired'
+            : row.specialty_terminal_status === 'REVOKED' || row.kind === 'CERTIFICATION_REVOKED'
+              ? 'revoked'
+              : row.specialty_terminal_status === 'REMOVED'
+                ? 'removed'
+                : 'active',
+        effectiveOn: row.effective_on,
+        expiresOn: row.expires_on,
+        evidenceSource: row.evidence_source,
+        evidenceReference: row.evidence_reference,
+        changedAt:
+          row.created_at === null ? null : new Date(row.created_at).toISOString().slice(0, 10),
+      })),
+    }),
+  );
 });
 
 router.post('/events', requireStepUpAuth(), async (c) => {
