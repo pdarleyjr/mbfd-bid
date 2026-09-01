@@ -47,7 +47,9 @@ describe('canonical Bid authentication routes', () => {
 
     expect(response.status).toBe(307);
     const location = new URL(response.headers.get('Location') ?? '');
-    expect(location.origin + location.pathname).toBe('https://www.mbfdhub.com/auth/bid/authorize');
+    expect(location.origin + location.pathname).toBe(
+      'https://staging.mbfdhub.com/auth/bid/authorize',
+    );
     expect(location.searchParams.get('client_id')).toBe('bid');
     expect(location.searchParams.get('redirect_uri')).toBe(
       'https://staging.bid.mbfdhub.com/api/auth/callback',
@@ -74,6 +76,7 @@ describe('canonical Bid authentication routes', () => {
       'https://bid.mbfdhub.com/api/auth/callback',
     );
     expect(location.searchParams.get('redirect_uri')).not.toContain('staging');
+    expect(location.origin + location.pathname).toBe('https://www.mbfdhub.com/auth/bid/authorize');
   });
 
   it('validates state, exchanges only the opaque code, and installs the scoped Bid JWT', async () => {

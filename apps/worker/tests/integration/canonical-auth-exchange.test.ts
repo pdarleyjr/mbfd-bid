@@ -8,7 +8,8 @@ const ORIG_FETCH = globalThis.fetch;
 function env(environment: 'staging' | 'production' = 'staging'): WorkerEnv {
   return {
     ENV: environment,
-    PORTAL_BASE_URL: 'https://www.mbfdhub.com',
+    PORTAL_BASE_URL:
+      environment === 'staging' ? 'https://staging.mbfdhub.com' : 'https://www.mbfdhub.com',
     JWT_SIGNING_KEY: 'A'.repeat(64),
     PORTAL_BID_READER: 'reader-token',
     DB: {} as never,
@@ -30,7 +31,7 @@ function app() {
 function hubSuccess(overrides: Record<string, unknown> = {}) {
   return new Response(
     JSON.stringify({
-      issuer: 'https://www.mbfdhub.com',
+      issuer: 'https://staging.mbfdhub.com',
       audience: 'bid',
       member_id: 555,
       employee_id: '55555',
@@ -80,7 +81,7 @@ describe('POST /api/auth/exchange', () => {
       string,
       RequestInit,
     ];
-    expect(url).toBe('https://www.mbfdhub.com/api/v2/bid/auth/exchange');
+    expect(url).toBe('https://staging.mbfdhub.com/api/v2/bid/auth/exchange');
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer reader-token');
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body).toEqual({

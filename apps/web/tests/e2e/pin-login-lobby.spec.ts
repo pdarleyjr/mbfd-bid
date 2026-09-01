@@ -1,13 +1,13 @@
 import { type Page, expect, test } from '@playwright/test';
 
 async function interceptHubAuthorization(page: Page): Promise<void> {
-  await page.route('https://www.mbfdhub.com/auth/bid/authorize**', (route) =>
+  await page.route('https://staging.mbfdhub.com/auth/bid/authorize**', (route) =>
     route.fulfill({ status: 200, body: 'Canonical MBFD Hub authentication' }),
   );
 }
 
 async function expectCanonicalHubAuthorization(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/^https:\/\/www\.mbfdhub\.com\/auth\/bid\/authorize\?/);
+  await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/auth\/bid\/authorize\?/);
   const authorize = new URL(page.url());
   expect(authorize.searchParams.get('client_id')).toBe('bid');
   expect(authorize.searchParams.get('redirect_uri')).toBe(
