@@ -35,15 +35,32 @@ import { requireAdmin } from './middleware.js';
 
 type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
-const CreateSessionSchema = z.object({
-  bid_year: z.number().int().min(2024).max(2100),
-  // These legacy request fields are accepted only to return a typed mismatch.
-  // Session settings themselves always come from the designated annual config.
-  expected_duration_days: z.number().int().min(1).max(7).optional(),
-  turn_timer_seconds: z.number().int().min(30).max(600).optional(),
-  // A dangerous omission must never silently create a real annual Bid.
-  mode: z.enum(['mock', 'live']),
-});
+const CreateSessionSchema = z
+  .object({
+    bid_year: z.number().int().min(2024).max(2100),
+    // These legacy request fields are accepted only to return a typed mismatch.
+    // Session settings themselves always come from the designated annual config.
+    expected_duration_days: z.number().int().min(1).max(7).optional(),
+    turn_timer_seconds: z.number().int().min(30).max(600).optional(),
+    // New callers must use `mode`; the explicit legacy boolean is retained
+    // only so already-issued safe mock/live clients do not reinterpret a
+    // request during rollout. Omitting both is always rejected.
+    mode: z.enum(['mock', 'live']).optional(),
+    is_mock: z.boolean().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.mode === undefined && value.is_mock === undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'mode_required' });
+      return;
+    }
+    if (
+      value.mode !== undefined &&
+      value.is_mock !== undefined &&
+      (value.mode === 'mock') !== value.is_mock
+    ) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'mode_mismatch' });
+    }
+  });
 
 const LiveReadinessPreviewSchema = z.object({
   bid_year: z.number().int().min(2024).max(2100),
@@ -153,6 +170,7 @@ router.post(
 router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), async (c) => {
   const body = c.req.valid('json');
   const db = getDb(c.env.DB);
+  const requestedMode = body.mode ?? (body.is_mock === true ? 'mock' : 'live');
   const year = await db.select().from(bidYears).where(eq(bidYears.year, body.bid_year)).get();
   if (year === undefined) {
     return c.json({ error: 'bid_year_not_found', bid_year: body.bid_year }, 400);
@@ -163,7 +181,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     db,
     body.bid_year,
     now.getTime(),
-    body.mode,
+    requestedMode,
   );
   if (!policy.ok) {
     return c.json(
@@ -226,10 +244,10 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       now.getTime(),
       settings.turnTimerSeconds,
       settings.expectedDurationDays,
-      body.mode === 'mock' ? 1 : 0,
+      requestedMode === 'mock' ? 1 : 0,
       policy.snapshot.ruleBookVersion,
       policy.snapshot.ruleBookRevision,
-      body.mode === 'mock' ? 'draft' : 'active',
+      requestedMode === 'mock' ? 'draft' : 'active',
       body.bid_year,
       policy.snapshot.ruleBookVersion,
       policy.snapshot.positionTemplateVersion,
@@ -265,7 +283,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     afterState: {
       bid_year: body.bid_year,
       current_phase: 'config',
-      is_mock: body.mode === 'mock',
+      is_mock: requestedMode === 'mock',
       rule_book_version: policy.snapshot.ruleBookVersion,
       rule_book_revision: policy.snapshot.ruleBookRevision,
       position_template_version: policy.snapshot.positionTemplateVersion,
@@ -278,7 +296,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     {
       id,
       current_phase: 'config',
-      is_mock: body.mode === 'mock',
+      is_mock: requestedMode === 'mock',
       rule_book_version: policy.snapshot.ruleBookVersion,
       rule_book_revision: policy.snapshot.ruleBookRevision,
       position_template_version: policy.snapshot.positionTemplateVersion,

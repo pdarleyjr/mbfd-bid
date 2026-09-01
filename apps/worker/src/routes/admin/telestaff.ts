@@ -1693,11 +1693,29 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
       ...(grouped.get(row.normalized_source_topology) ?? []),
       row,
     ]);
-  const eligible = [...grouped.values()]
-    .filter((rows) => rows.length === 1)
-    .map((rows) => rows[0])
-    .filter((row): row is NonNullable<typeof row> => row !== undefined);
-  const repeatedRowCount = candidates.length - eligible.length;
+  // A source report may prove several occupied copies of one topology without
+  // naming seats. The resulting seat labels are strictly internal cardinality
+  // labels: they come from opaque row-fingerprint order, never imply a Bid
+  // policy distinction, and are allowed only when every row proves a distinct
+  // current occupant.
+  const repeatedRowCount = [...grouped.values()]
+    .filter((rows) => rows.length > 1)
+    .reduce((count, rows) => count + rows.length, 0);
+  const eligible = [...grouped.values()].flatMap((rows) => {
+    const ordered = [...rows].sort((left, right) =>
+      left.row_fingerprint.localeCompare(right.row_fingerprint),
+    );
+    const distinctOccupants = new Set(ordered.map((row) => row.resolved_member_id)).size;
+    if (ordered.length > 1 && distinctOccupants !== ordered.length) return [];
+    return ordered.map((row, index) => ({
+      row,
+      sourceDiscriminator:
+        ordered.length === 1
+          ? 'primary'
+          : `canonical-cardinality-${String(index + 1).padStart(3, '0')}`,
+    }));
+  });
+  const unresolvedObservationCount = candidates.length - eligible.length;
   if (eligible.length === 0) {
     const priorCertification = await c.env.DB.prepare(
       `SELECT after_state
@@ -1740,7 +1758,7 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
         createdCanonicalStaffingPositions: 0,
         createdSourceMappings: 0,
         existingIdempotentMatches,
-        unresolvedObservations: repeatedRowCount,
+        unresolvedObservations: unresolvedObservationCount,
         skippedCollisions: 0,
         failures: [],
         idempotent: true,
@@ -1755,8 +1773,10 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
     positionId: string;
     mappingId: string;
     topology: string;
+    sourceDiscriminator: string;
   }> = [];
-  for (const row of eligible) {
+  for (const eligibleRow of eligible) {
+    const { row, sourceDiscriminator } = eligibleRow;
     if (
       !['active', 'unknown'].includes(row.employment_status) ||
       !['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'].includes(row.member_rank)
@@ -1798,9 +1818,10 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
     const existing = await c.env.DB.prepare(
-      `SELECT 1 FROM staffing_position_source_mappings WHERE source_system = 'telestaff' AND source_locator = ? LIMIT 1`,
+      `SELECT 1 FROM staffing_position_source_mappings
+        WHERE source_system = 'telestaff' AND source_locator = ? AND source_discriminator = ? LIMIT 1`,
     )
-      .bind(row.normalized_source_topology)
+      .bind(row.normalized_source_topology, sourceDiscriminator)
       .all();
     if (existing.results.length > 0) return c.json({ error: 'canonical_mapping_collision' }, 409);
     const positionId = ulid();
@@ -1810,6 +1831,7 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
       positionId,
       mappingId,
       topology: row.normalized_source_topology,
+      sourceDiscriminator,
     });
     statements.push(
       c.env.DB.prepare(
@@ -1819,7 +1841,7 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)`,
       ).bind(
         positionId,
-        `TELSTAFF/v1/${digest}`,
+        `TELSTAFF/v1/${digest}/${sourceDiscriminator}`,
         topology.division,
         topology.shift,
         topology.station,
@@ -1834,11 +1856,12 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
         `INSERT INTO staffing_position_source_mappings
            (id, staffing_position_id, source_system, source_locator, source_discriminator,
             source_signature, source_version, source_hash, effective_from, created_at)
-         VALUES (?, ?, 'telestaff', ?, 'primary', ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, 'telestaff', ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         mappingId,
         positionId,
         row.normalized_source_topology,
+        sourceDiscriminator,
         row.row_fingerprint,
         manifest.source_version,
         manifest.source_hash,
@@ -1881,6 +1904,7 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
           positionId: entry.positionId,
           mappingId: entry.mappingId,
           topology: entry.topology,
+          sourceDiscriminator: entry.sourceDiscriminator,
         })),
       }),
       parsed.data.reason,
@@ -1905,7 +1929,7 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
         createdCanonicalStaffingPositions: certified.length,
         createdSourceMappings: certified.length,
         existingIdempotentMatches: 0,
-        unresolvedObservations: repeatedRowCount,
+        unresolvedObservations: unresolvedObservationCount,
         skippedCollisions: 0,
         failures: [],
         idempotent: false,

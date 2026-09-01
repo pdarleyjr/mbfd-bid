@@ -611,7 +611,7 @@ describe('admin TeleStaff operator workflow', () => {
     ).toEqual([{ count: 1 }]);
   });
 
-  it('leaves repeated complete topology unresolved and creates no fabricated canonical seat', async () => {
+  it('certifies repeated complete topology into internal cardinality seats without deriving a policy distinction', async () => {
     await h.db.run(
       `INSERT INTO members
          (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
@@ -637,17 +637,22 @@ describe('admin TeleStaff operator workflow', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expected_reconciliation_revision: staged.import.reconciliationRevision,
-          reason: 'Repeated source topology lacks a safe canonical seat discriminator.',
+          reason: 'Two distinct source occupants require two canonical internal cardinality seats.',
         }),
       },
     );
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
-      error: 'no_deterministic_new_position_rows',
+      certifiedRows: 2,
       repeatedRowCount: 2,
+      certification: {
+        createdCanonicalStaffingPositions: 2,
+        createdSourceMappings: 2,
+        unresolvedObservations: 0,
+      },
     });
     expect((await h.db.run('SELECT COUNT(*) AS count FROM staffing_positions')).results).toEqual([
-      { count: 0 },
+      { count: 2 },
     ]);
     expect(
       (
@@ -655,13 +660,25 @@ describe('admin TeleStaff operator workflow', () => {
           `SELECT COUNT(*) AS count
              FROM assignment_import_rows
             WHERE import_id = ?
-              AND reconciliation_classification = 'NEW_POSITION'
-              AND review_status = 'pending'
-              AND staffing_position_source_mapping_id IS NULL`,
+              AND reconciliation_classification = 'NEW_ASSIGNMENT'
+              AND review_status = 'approved'
+              AND staffing_position_source_mapping_id IS NOT NULL`,
           [staged.import.id],
         )
       ).results,
     ).toEqual([{ count: 2 }]);
+    expect(
+      (
+        await h.db.run(
+          `SELECT source_discriminator
+             FROM staffing_position_source_mappings
+            ORDER BY source_discriminator`,
+        )
+      ).results,
+    ).toEqual([
+      { source_discriminator: 'canonical-cardinality-001' },
+      { source_discriminator: 'canonical-cardinality-002' },
+    ]);
 
     const detail = (await (await request(h, `/imports/${staged.import.id}`)).json()) as {
       import: { reconciliationRevision: number };
@@ -671,17 +688,17 @@ describe('admin TeleStaff operator workflow', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         expected_reconciliation_revision: detail.import.reconciliationRevision,
-        reason: 'Repeated source topology is retained as an unmapped staging exception.',
+        reason: 'No exception is needed once repeated source occupancy has canonical cardinality seats.',
       }),
     });
     expect(resolution.status).toBe(200);
     await expect(resolution.json()).resolves.toMatchObject({
       counts: {
-        deferredRepeatedTopology: 2,
+        deferredRepeatedTopology: 0,
         retainedIncompleteTopology: 0,
         rejectedUnknownPerson: 0,
       },
-      idempotent: false,
+      idempotent: true,
     });
     expect(
       (
@@ -691,7 +708,7 @@ describe('admin TeleStaff operator workflow', () => {
           [staged.import.id],
         )
       ).results,
-    ).toEqual([{ count: 2 }]);
+    ).toEqual([{ count: 0 }]);
   });
 
   it('accepts a trigger-inclusive native D1 review change count', async () => {
