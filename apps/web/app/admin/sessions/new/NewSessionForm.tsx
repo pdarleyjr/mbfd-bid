@@ -3,12 +3,41 @@
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 
+interface LiveReadinessPreview {
+  dry_run?: boolean;
+  would_allow_start?: boolean;
+  error?: string;
+}
+
 export function NewSessionForm({ defaultMock = true }: { defaultMock?: boolean }) {
   const router = useRouter();
   const [bidYear, setBidYear] = useState(new Date().getFullYear());
   const [isMock, setIsMock] = useState(defaultMock);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [previewingReadiness, setPreviewingReadiness] = useState(false);
+  const [readinessPreview, setReadinessPreview] = useState<LiveReadinessPreview | null>(null);
+
+  async function previewLiveReadiness() {
+    setPreviewingReadiness(true);
+    setReadinessPreview(null);
+    try {
+      const response = await fetch('/api/admin/bid-session/readiness-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ bid_year: bidYear }),
+      });
+      const body = (await response.json().catch(() => ({}))) as LiveReadinessPreview;
+      setReadinessPreview(
+        response.ok && body.dry_run === true
+          ? body
+          : { dry_run: true, would_allow_start: false, error: body.error ?? `HTTP ${response.status}` },
+      );
+    } finally {
+      setPreviewingReadiness(false);
+    }
+  }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -57,6 +86,26 @@ export function NewSessionForm({ defaultMock = true }: { defaultMock?: boolean }
         Rehearsal/mock is selected by default. Clear it only when you deliberately need the
         separately guarded live-mode request; the server remains the authority for live readiness.
       </p>
+      <div className="rounded border border-slate-700 bg-slate-800/60 p-3">
+        <p className="text-sm text-slate-300">
+          This read-only dry run creates no session, order, audit event, or other runtime state.
+        </p>
+        <button
+          type="button"
+          data-testid="live-readiness-preview"
+          disabled={previewingReadiness}
+          onClick={() => void previewLiveReadiness()}
+          className="mt-3 rounded border border-sky-600 px-4 py-2 text-sm font-semibold text-sky-100 disabled:opacity-50"
+        >
+          {previewingReadiness ? 'Checking live readiness…' : 'Run live-readiness dry run'}
+        </button>
+        {readinessPreview !== null ? (
+          <output className="mt-3 block text-sm text-slate-200">
+            Live readiness dry run: {readinessPreview.would_allow_start ? 'would allow start' : 'blocked'}
+            {readinessPreview.error ? ` (${readinessPreview.error})` : ''}.
+          </output>
+        ) : null}
+      </div>
       <label className="flex items-center gap-2 text-sm text-slate-300">
         <input
           type="checkbox"
