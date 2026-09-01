@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
 import { positionRules, ruleBooks } from '../../db/schema.js';
-import { writeAuditLog } from '../../lib/audit.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { decodePositionRule } from '../../lib/position-rule.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
@@ -232,6 +232,13 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   // the version we read, and the parent revision advances in the same batch.
   // This closes the publish/PATCH validation race without opening a window in
   // which a valid draft can mutate after it has been reviewed for publication.
+  const afterState = {
+    ...existing,
+    requiredCriteriaJson: nextRequiredCriteriaJson,
+    pointsPreferenceJson: nextPointsPreferenceJson,
+    tieBreakChainJson: nextTieBreakChainJson,
+    notes: patch.notes ?? existing.notes,
+  };
   const results = await c.env.DB.batch([
     c.env.DB.prepare(
       `UPDATE position_rules
@@ -247,8 +254,23 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
             SET revision = revision + 1
           WHERE version = ? AND status = 'draft' AND revision = ?`,
     ).bind(existing.ruleBookVersion, book.revision),
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+      action: 'override_rule',
+      targetKind: 'position_rule',
+      targetId: String(id),
+      reason: patch.reason,
+      beforeState: existing,
+      afterState,
+    }),
   ]);
-  if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+  if (
+    results[0]?.meta.changes !== 1 ||
+    results[1]?.meta.changes !== 1 ||
+    results[2]?.meta.changes !== 1
+  ) {
     const currentBook = await db
       .select()
       .from(ruleBooks)
@@ -262,21 +284,7 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     }
     return c.json({ error: 'rule_book_changed' }, 409);
   }
-  const after = await db.select().from(positionRules).where(eq(positionRules.id, id)).get();
-
-  await writeAuditLog(db, {
-    bidSessionId: null,
-    actorType: 'admin',
-    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
-    action: 'override_rule',
-    targetKind: 'position_rule',
-    targetId: String(id),
-    reason: patch.reason,
-    beforeState: existing,
-    afterState: after,
-  });
-
-  return c.json({ rule: after });
+  return c.json({ rule: afterState });
 });
 
 // DELETE /api/admin/rules/:id
@@ -321,8 +329,27 @@ router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
           SET revision = revision + 1
         WHERE version = ? AND status = 'draft' AND revision = ?`,
     ).bind(existing.ruleBookVersion, book.revision),
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+      action: 'override_rule',
+      targetKind: 'position_rule',
+      targetId: String(id),
+      reason: body.reason,
+      beforeState: existing,
+      afterState: {
+        deleted: true,
+        rule_book_version: existing.ruleBookVersion,
+        position_id: existing.positionId,
+      },
+    }),
   ]);
-  if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+  if (
+    results[0]?.meta.changes !== 1 ||
+    results[1]?.meta.changes !== 1 ||
+    results[2]?.meta.changes !== 1
+  ) {
     const currentBook = await db
       .select()
       .from(ruleBooks)
@@ -336,22 +363,6 @@ router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     }
     return c.json({ error: 'rule_book_changed' }, 409);
   }
-
-  await writeAuditLog(db, {
-    bidSessionId: null,
-    actorType: 'admin',
-    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
-    action: 'override_rule',
-    targetKind: 'position_rule',
-    targetId: String(id),
-    reason: body.reason,
-    beforeState: existing,
-    afterState: {
-      deleted: true,
-      rule_book_version: existing.ruleBookVersion,
-      position_id: existing.positionId,
-    },
-  });
 
   return c.json({
     deleted: true,

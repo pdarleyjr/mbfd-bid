@@ -187,7 +187,7 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
     .where(eq(positions.templateVersion, srcVersion))
     .all();
 
-  const results = await c.env.DB.batch([
+  await c.env.DB.batch([
     c.env.DB.prepare('INSERT INTO position_templates (version, effective_year) VALUES (?, ?)').bind(
       destVersion,
       destYear,
@@ -210,10 +210,6 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
       afterState: { srcVersion, destVersion, copied: srcPositions.length },
     }),
   ]);
-  if (results[0]?.meta.changes !== 1 || results[2]?.meta.changes !== 1) {
-    return c.json({ error: 'positions_clone_not_applied' }, 409);
-  }
-
   return c.json({ destVersion, destYear, copied: srcPositions.length });
 });
 

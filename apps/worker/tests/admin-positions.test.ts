@@ -18,22 +18,24 @@ const MIGRATIONS_DIR = resolve(__dirname, '../migrations');
 
 /** Wraps better-sqlite3 to look like a D1Database for Drizzle's D1 driver. */
 function makeD1Adapter(sqlite: Database.Database): D1Database {
+  const synchronousRuns = new WeakMap<object, () => D1Result>();
   return {
     prepare: (query: string) => {
       const stmt = sqlite.prepare(query);
       let boundArgs: unknown[] = [];
+      const runSynchronously = (): D1Result => {
+        const info = stmt.run(...boundArgs);
+        return {
+          success: true,
+          meta: { changes: info.changes, last_row_id: info.lastInsertRowid },
+        } as D1Result;
+      };
       const bound = {
         bind: (...args: unknown[]) => {
           boundArgs = args;
           return bound;
         },
-        run: async () => {
-          const info = stmt.run(...boundArgs);
-          return {
-            success: true,
-            meta: { changes: info.changes, last_row_id: info.lastInsertRowid },
-          };
-        },
+        run: async () => runSynchronously(),
         all: async () => {
           const results = stmt.all(...boundArgs) as Record<string, unknown>[];
           return { results, success: true, meta: {} };
@@ -47,10 +49,19 @@ function makeD1Adapter(sqlite: Database.Database): D1Database {
           return stmtRaw.raw().all(...boundArgs) as T[];
         },
       };
+      synchronousRuns.set(bound, runSynchronously);
       return bound;
     },
     batch: async (stmts: D1PreparedStatement[]) => {
-      return stmts.map(() => ({ success: true, results: [], meta: {} })) as unknown as D1Result[];
+      const results: D1Result[] = [];
+      sqlite.transaction(() => {
+        for (const statement of stmts) {
+          const run = synchronousRuns.get(statement as unknown as object);
+          if (run === undefined) throw new Error('test D1 batch received an unknown statement');
+          results.push(run());
+        }
+      })();
+      return results;
     },
     exec: async (q: string) => {
       sqlite.exec(q);
