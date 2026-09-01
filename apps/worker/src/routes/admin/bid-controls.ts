@@ -100,6 +100,16 @@ router.post(
   zValidator('json', ForcePickSchema),
   async (c) => {
     const sessionId = c.req.param('id');
+    const forceSession = await getDb(c.env.DB)
+      .select({ isMock: bidSessions.isMock })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, sessionId))
+      .get();
+    if (forceSession !== undefined && !forceSession.isMock)
+      return c.json(
+        { error: 'canonical_live_command_required', command: 'live.force_selection' },
+        409,
+      );
     const body = c.req.valid('json');
 
     if (!isReasonValidForAction('forced_pick', body.reason_code)) {
@@ -252,6 +262,13 @@ router.post(
   zValidator('json', SkipSchema),
   async (c) => {
     const sessionId = c.req.param('id');
+    const skipSession = await getDb(c.env.DB)
+      .select({ isMock: bidSessions.isMock })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, sessionId))
+      .get();
+    if (skipSession !== undefined && !skipSession.isMock)
+      return c.json({ error: 'canonical_live_command_required', command: 'live.disposition' }, 409);
     const body = c.req.valid('json');
 
     if (!isReasonValidForAction('skip', body.reason_code)) {
@@ -323,6 +340,16 @@ router.post(
   zValidator('json', BidForMemberSchema),
   async (c) => {
     const sessionId = c.req.param('id');
+    const proxySession = await getDb(c.env.DB)
+      .select({ isMock: bidSessions.isMock })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, sessionId))
+      .get();
+    if (proxySession !== undefined && !proxySession.isMock)
+      return c.json(
+        { error: 'canonical_live_command_required', command: 'live.record_selection' },
+        409,
+      );
     const body = c.req.valid('json');
 
     if (!isReasonValidForAction('admin_bid_for_member', body.reason_code)) {
