@@ -577,6 +577,7 @@ export type BidSessionPolicySnapshotPreparation =
         | 'non_biddable_staffing_position_not_approved'
         | 'non_biddable_assignment_ambiguous'
         | 'qualification_lifecycle_data_invalid'
+        | 'authoritative_staffing_baseline_required'
         | ConfiguredBidYearPolicyError;
       positionIds?: readonly string[];
     };
@@ -664,7 +665,7 @@ export async function prepareBidSessionPolicySnapshot(
     snapshotRuleRows,
     snapshotPositions,
     snapshotParticipation,
-    mockBaseline,
+    acceptedBaseline,
   ] = await Promise.all([
     db
       .select({
@@ -802,7 +803,7 @@ export async function prepareBidSessionPolicySnapshot(
       .from(ruleBookPositionParticipation)
       .where(eq(ruleBookPositionParticipation.ruleBookVersion, policy.ruleBookVersion))
       .all(),
-    mode === 'mock' ? evaluateAuthoritativeStaffingBaseline(db, bidYear) : Promise.resolve(null),
+    evaluateAuthoritativeStaffingBaseline(db, bidYear),
   ]);
 
   const bindingByPosition = new Map(bindings.map((binding) => [binding.positionId, binding]));
@@ -905,8 +906,8 @@ export async function prepareBidSessionPolicySnapshot(
   // whose observation belongs to the one accepted annual baseline. Ambiguous
   // source placement stays excluded rather than silently choosing a row.
   const acceptedMockBaselineImportId =
-    mockBaseline?.status === 'PASS' && mockBaseline.importId !== null
-      ? mockBaseline.importId
+    acceptedBaseline.status === 'PASS' && acceptedBaseline.importId !== null
+      ? acceptedBaseline.importId
       : null;
   const mockAssignmentsByMember = new Map<number, typeof assignmentRows>();
   if (acceptedMockBaselineImportId !== null) {
@@ -1132,8 +1133,32 @@ export async function prepareBidSessionPolicySnapshot(
     configurationRevision: policy.configurationRevision,
     settings: policy.settings,
     credentialEvaluationOn: policy.settings.credentialEvaluationOn,
+    ...(mode === 'live' &&
+    acceptedBaseline.status === 'PASS' &&
+    acceptedBaseline.baselineAcceptanceId !== null &&
+    acceptedBaseline.importId !== null &&
+    acceptedBaseline.sourceHash !== null &&
+    acceptedBaseline.baselineAcceptedAtMs !== null
+      ? {
+          staffingBaseline: {
+            baselineAcceptanceId: acceptedBaseline.baselineAcceptanceId,
+            importId: acceptedBaseline.importId,
+            sourceHash: acceptedBaseline.sourceHash,
+            acceptedAtMs: acceptedBaseline.baselineAcceptedAtMs,
+          },
+        }
+      : {}),
     capturedAtMs,
     members: frozenMembers,
+    operatorIdentityProjection: memberRows
+      .map((member) => ({
+        memberId: member.id,
+        employeeId: member.employeeId,
+        firstName: member.firstName,
+        lastName: member.lastName,
+        rank: member.rank,
+      }))
+      .sort((left, right) => left.memberId - right.memberId),
     ruleBookMaterial,
   });
   if (snapshot.v !== 3) {

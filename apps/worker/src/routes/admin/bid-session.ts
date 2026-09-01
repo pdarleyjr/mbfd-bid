@@ -6,7 +6,6 @@ import {
   PauseSessionSchema,
   ResumeSessionSchema,
   TimerConfigSchema,
-  evaluateLiveReadiness,
 } from '@mbfd/shared';
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -28,6 +27,7 @@ import {
   prepareBidSessionPolicySnapshot,
   summarizeBidSessionPolicySnapshot,
 } from '../../lib/bid-policy.js';
+import { evaluateLiveBidReadiness } from '../../lib/live-bid-readiness.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -41,7 +41,12 @@ const CreateSessionSchema = z.object({
   // Session settings themselves always come from the designated annual config.
   expected_duration_days: z.number().int().min(1).max(7).optional(),
   turn_timer_seconds: z.number().int().min(30).max(600).optional(),
-  is_mock: z.boolean().optional().default(false),
+  // A dangerous omission must never silently create a real annual Bid.
+  mode: z.enum(['mock', 'live']),
+});
+
+const LiveReadinessPreviewSchema = z.object({
+  bid_year: z.number().int().min(2024).max(2100),
 });
 
 function actorIdFromClaims(claims: JwtPayload): number | null {
@@ -64,15 +69,6 @@ function orderMatchesFrozenSnapshot(
       );
     })
   );
-}
-
-/**
- * The command route must fail closed until the Worker can supply each of the
- * required, independently verified readiness facts. Do not infer readiness
- * from partial D1 data or an administrator's request to start.
- */
-function evaluateUnconfiguredLiveReadiness() {
-  return evaluateLiveReadiness({ checks: [] });
 }
 
 async function hasCanonicalCommandState(env: WorkerEnv, bidSessionId: string): Promise<boolean> {
@@ -115,6 +111,44 @@ router.get('/active', async (c) => {
   return c.json({ session: null });
 });
 
+// POST /api/admin/bid-session/readiness-preview
+// A read-only real-mode preflight. It materializes no session, order, audit
+// row, or other runtime state; it merely proves whether a fresh live session
+// could pass the same server-side start gate at this instant.
+router.post(
+  '/readiness-preview',
+  requireStepUpAuth(),
+  zValidator('json', LiveReadinessPreviewSchema),
+  async (c) => {
+    const body = c.req.valid('json');
+    const db = getDb(c.env.DB);
+    const prepared = await prepareBidSessionPolicySnapshot(db, body.bid_year, Date.now(), 'live');
+    if (!prepared.ok) {
+      return c.json({
+        dry_run: true,
+        would_allow_start: false,
+        error: 'session_policy_snapshot_unavailable',
+        policy_error: prepared.code,
+      });
+    }
+    const readiness = await evaluateLiveBidReadiness({
+      db,
+      env: c.env,
+      // This identifier is never persisted. Existing nonterminal real
+      // sessions still remain visible as conflicts to the preview query.
+      bidSessionId: `readiness-preview-${body.bid_year}`,
+      bidYear: body.bid_year,
+      frozenPolicy: { ok: true, snapshot: prepared.snapshot, coverage: prepared.coverage },
+      operatorAuthorized: true,
+    });
+    return c.json({
+      dry_run: true,
+      would_allow_start: readiness.canStartLiveBid,
+      readiness,
+    });
+  },
+);
+
 // POST /api/admin/bid-session
 router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), async (c) => {
   const body = c.req.valid('json');
@@ -129,7 +163,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     db,
     body.bid_year,
     now.getTime(),
-    body.is_mock ? 'mock' : 'live',
+    body.mode,
   );
   if (!policy.ok) {
     return c.json(
@@ -192,10 +226,10 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       now.getTime(),
       settings.turnTimerSeconds,
       settings.expectedDurationDays,
-      body.is_mock ? 1 : 0,
+      body.mode === 'mock' ? 1 : 0,
       policy.snapshot.ruleBookVersion,
       policy.snapshot.ruleBookRevision,
-      body.is_mock ? 'draft' : 'active',
+      body.mode === 'mock' ? 'draft' : 'active',
       body.bid_year,
       policy.snapshot.ruleBookVersion,
       policy.snapshot.positionTemplateVersion,
@@ -231,7 +265,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     afterState: {
       bid_year: body.bid_year,
       current_phase: 'config',
-      is_mock: body.is_mock,
+      is_mock: body.mode === 'mock',
       rule_book_version: policy.snapshot.ruleBookVersion,
       rule_book_revision: policy.snapshot.ruleBookRevision,
       position_template_version: policy.snapshot.positionTemplateVersion,
@@ -244,7 +278,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     {
       id,
       current_phase: 'config',
-      is_mock: body.is_mock,
+      is_mock: body.mode === 'mock',
       rule_book_version: policy.snapshot.ruleBookVersion,
       rule_book_revision: policy.snapshot.ruleBookRevision,
       position_template_version: policy.snapshot.positionTemplateVersion,
@@ -340,7 +374,15 @@ router.post('/:id/start', requireStepUpAuth(), async (c) => {
     return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
   }
   if (!s.isMock) {
-    const readiness = evaluateUnconfiguredLiveReadiness();
+    const readiness = await evaluateLiveBidReadiness({
+      db,
+      env: c.env,
+      bidSessionId: id,
+      bidYear: s.bidYear,
+      frozenPolicy,
+      // requireAdmin + requireStepUpAuth have already verified this request.
+      operatorAuthorized: true,
+    });
     if (!readiness.canStartLiveBid) {
       return c.json({ error: 'readiness_blocked', readiness }, 409);
     }
@@ -419,10 +461,25 @@ router.get('/:id/readiness', async (c) => {
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
   if (session === undefined) return c.json({ error: 'not_found' }, 404);
 
+  if (session.isMock) return c.json({ id, is_mock: true, readiness: null });
+  const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);
+  if (!frozenPolicy.ok) {
+    return c.json(
+      { error: 'session_policy_snapshot_unavailable', policy_error: frozenPolicy.code },
+      409,
+    );
+  }
   return c.json({
     id,
-    is_mock: session.isMock,
-    readiness: session.isMock ? null : evaluateUnconfiguredLiveReadiness(),
+    is_mock: false,
+    readiness: await evaluateLiveBidReadiness({
+      db,
+      env: c.env,
+      bidSessionId: id,
+      bidYear: session.bidYear,
+      frozenPolicy,
+      operatorAuthorized: true,
+    }),
   });
 });
 

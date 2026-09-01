@@ -31,6 +31,8 @@ export interface TeleStaffImportCompleteness {
   parserVersion: string | null;
   sourceKind: 'official' | 'synthetic_test' | 'legacy_unclassified' | null;
   sourceHashPresent: boolean;
+  /** Digest only; never raw source material. */
+  sourceHash: string | null;
   sourceManifestIntact: boolean;
   inputRowCount: number;
   normalizedDataRowCount: number | null;
@@ -57,6 +59,7 @@ export interface TeleStaffImportCompleteness {
 export interface AuthoritativeStaffingBaselineEvaluation extends TeleStaffImportCompleteness {
   bidYear: number;
   baselineAcceptanceId: string | null;
+  baselineAcceptedAtMs: number | null;
 }
 
 function defaultCompleteness(importId: string | null = null): TeleStaffImportCompleteness {
@@ -68,6 +71,7 @@ function defaultCompleteness(importId: string | null = null): TeleStaffImportCom
     parserVersion: null,
     sourceKind: null,
     sourceHashPresent: false,
+    sourceHash: null,
     sourceManifestIntact: false,
     inputRowCount: 0,
     normalizedDataRowCount: null,
@@ -503,6 +507,9 @@ export async function evaluateTeleStaffImportCompleteness(
     parserVersion: importRecord.parserVersion,
     sourceKind: importRecord.sourceKind,
     sourceHashPresent: /^[a-f0-9]{64}$/i.test(importRecord.sourceHash),
+    sourceHash: /^[a-f0-9]{64}$/i.test(importRecord.sourceHash)
+      ? importRecord.sourceHash.toLowerCase()
+      : null,
     sourceManifestIntact,
     inputRowCount: importRecord.inputRowCount,
     normalizedDataRowCount: importRecord.normalizedDataRowCount,
@@ -538,6 +545,7 @@ export async function evaluateAuthoritativeStaffingBaseline(
     .select({
       id: bidYearStaffingBaselines.id,
       importId: bidYearStaffingBaselines.assignmentImportId,
+      acceptedAt: bidYearStaffingBaselines.acceptedAt,
     })
     .from(bidYearStaffingBaselines)
     .where(
@@ -555,6 +563,7 @@ export async function evaluateAuthoritativeStaffingBaseline(
       ...absent,
       bidYear,
       baselineAcceptanceId: null,
+      baselineAcceptedAtMs: null,
       blockingCodes: [
         accepted.length === 0
           ? 'NO_ACCEPTED_TELESTAFF_BASELINE'
@@ -575,6 +584,7 @@ export async function evaluateAuthoritativeStaffingBaseline(
     status: blockingCodes.length === 0 ? 'PASS' : 'BLOCKED',
     bidYear,
     baselineAcceptanceId: acceptedBaseline.id,
+    baselineAcceptedAtMs: acceptedBaseline.acceptedAt.getTime(),
     blockingCodes,
   };
 }

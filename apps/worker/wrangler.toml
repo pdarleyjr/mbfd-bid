@@ -60,17 +60,17 @@ name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
 # Production publication remains disabled until a separate, accountable
 # configuration change explicitly sets a writer, endpoint, and literal true.
-vars = { ENV = "production", PORTAL_BASE_URL = "https://portal.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid" }
+vars = { ENV = "production", PORTAL_BASE_URL = "https://www.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid", R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-production-v2" }
 
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "mbfd-bid-production"
-database_id = "REPLACE_AFTER_PRODUCTION_d1_CREATE"
+database_id = "df132142-f00a-45a5-b981-68a94861473f"
 migrations_dir = "./migrations"
 
 [[env.production.kv_namespaces]]
 binding = "KV"
-id = "REPLACE_AFTER_PRODUCTION_kv_CREATE"
+id = "ba5cd8a0c10d4cae9bb968272f0879cf"
 
 [[env.production.durable_objects.bindings]]
 name = "BID_SESSION"
@@ -83,11 +83,11 @@ new_classes = ["BidSessionDO"]
 # Plan 08: R2 buckets
 [[env.production.r2_buckets]]
 binding = "R2_AUDIT"
-bucket_name = "mbfd-bid-audit-production"
+bucket_name = "mbfd-bid-audit-production-v2"
 
 [[env.production.r2_buckets]]
 binding = "R2_EXPORTS"
-bucket_name = "mbfd-bid-exports-production"
+bucket_name = "mbfd-bid-exports-production-v2"
 
 # Browser Rendering (replaces Browserless): used by exports/roster-pdf.ts to
 # render the print-stylesheet RSC page to PDF via @cloudflare/puppeteer.
@@ -95,17 +95,9 @@ bucket_name = "mbfd-bid-exports-production"
 [env.production.browser]
 binding = "BROWSER"
 
-# Plan 08: Queues
-[[env.production.queues.producers]]
-binding = "PORTAL_QUEUE"
-queue = "mbfd-portal-writebacks-production"
-
-[[env.production.queues.consumers]]
-queue = "mbfd-portal-writebacks-production"
-max_batch_size = 10
-max_batch_timeout = 5
-max_retries = 0
-dead_letter_queue = "mbfd-portal-writebacks-production-dlq"
+# No production Queue binding is declared. Writeback is disabled, its writer
+# credential is intentionally absent, and an external-writeback consumer count
+# must remain zero until an independently authorized future release.
 
 [triggers]
 # Plan 08: 04:15 UTC daily portal reconciliation.

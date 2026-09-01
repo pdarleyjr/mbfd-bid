@@ -79,6 +79,21 @@ async function jwt(): Promise<string> {
   );
 }
 
+async function memberJwt(): Promise<string> {
+  return signJwt(
+    {
+      sub: 77,
+      emp: '770077',
+      role: 'member',
+      rank: 'FF',
+      first_name: 'Member',
+      last_name: 'Viewer',
+      fresh_auth_at: Math.floor(Date.now() / 1000),
+    },
+    KEY,
+  );
+}
+
 describe('GET /api/board canonical mock state', () => {
   let h: TestD1;
 
@@ -144,6 +159,15 @@ describe('GET /api/board canonical mock state', () => {
               rank: 'FF',
               isProbationary: false,
               credentialNames: [],
+            },
+          ],
+          operatorIdentityProjection: [
+            {
+              memberId: 77,
+              employeeId: '770077',
+              firstName: 'Canonical',
+              lastName: 'Member',
+              rank: 'FF',
             },
           ],
           ruleBookMaterial: {
@@ -265,6 +289,40 @@ describe('GET /api/board canonical mock state', () => {
       bidSessionId: SESSION_ID,
       currentPhase: 'paused',
       lastSeq: 8,
+    });
+  });
+
+  it('returns the freeze-bound identity projection to an authorized operator, not the mutable directory', async () => {
+    await h.db.run("UPDATE members SET first_name = 'Changed', last_name = 'Today' WHERE id = 77;");
+
+    const res = await app.fetch(
+      new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await jwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY, BID_SESSION: stubBidSessionNamespace() },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      members: {
+        '77': { firstName: 'Canonical', lastName: 'Member', employeeId: '770077' },
+      },
+    });
+  });
+
+  it('does not expose the operator identity projection to a member', async () => {
+    const res = await app.fetch(
+      new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await memberJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY, BID_SESSION: stubBidSessionNamespace() },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      members: {
+        '77': { firstName: 'Member', lastName: '#77', employeeId: '#77' },
+      },
     });
   });
 

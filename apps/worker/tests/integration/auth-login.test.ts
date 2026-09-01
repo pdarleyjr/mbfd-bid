@@ -18,7 +18,7 @@ function mkEnv(): WorkerEnv {
     JWT_SIGNING_KEY: 'A'.repeat(64),
     PORTAL_BID_READER: 'reader-tok',
     DB: {} as never,
-    KV: {} as never,
+    KV: makeKv(),
     BID_SESSION: {} as never,
     AUDIT_SIGNING_PRIVKEY: '',
     AUDIT_SIGNING_PUBKEY: '',
@@ -329,6 +329,31 @@ describe('POST /api/auth/login', () => {
     expect(body.error).toBe('rate_limited');
     expect(body.scope).toBe('ip');
   });
+
+  it('fails closed when the privileged login rate-limit store is unavailable', async () => {
+    const app = mountedAuth();
+    const unavailableKv = {
+      get: async () => {
+        throw new Error('synthetic KV outage');
+      },
+      put: async () => {
+        throw new Error('synthetic KV outage');
+      },
+    } as unknown as WorkerEnv['KV'];
+
+    const res = await app.request(
+      '/api/auth/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': '198.51.100.88' },
+        body: JSON.stringify({ employee_id: '20731', password: 'pw-secret' }),
+      },
+      { ...mkEnv(), KV: unavailableKv },
+    );
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({ error: 'rate_limit_unavailable' });
+  });
 });
 
 describe('POST /api/auth/verify-pin', () => {
@@ -396,5 +421,22 @@ describe('POST /api/auth/verify-pin', () => {
     const blocked = await verifyPin(app, env, '4816', ip);
     expect(blocked.status).toBe(429);
     expect(Number(blocked.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('fails closed when the PIN rate-limit store is unavailable', async () => {
+    const app = mountedAuth();
+    const unavailableKv = {
+      get: async () => {
+        throw new Error('synthetic KV outage');
+      },
+      put: async () => {
+        throw new Error('synthetic KV outage');
+      },
+    } as unknown as WorkerEnv['KV'];
+
+    const res = await verifyPin(app, { ...mkEnv(), KV: unavailableKv }, INITIAL_CONFIGURED_PIN);
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({ error: 'rate_limit_unavailable' });
   });
 });

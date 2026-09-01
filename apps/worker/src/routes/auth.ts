@@ -59,24 +59,27 @@ auth.post(
     const env = validateEnv(c.env);
     const nowSec = Math.floor(Date.now() / 1000);
 
-    // Plan 09 Task 3 — rate limit by IP, then by employee_id. Fails open if KV
-    // is unavailable: the goal is to throttle abuse, not take login down.
-    if (c.env.KV && typeof c.env.KV.get === 'function') {
-      try {
-        const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
-        const ipCheck = await rateLimitByIp(c.env.KV, ip);
-        if (!ipCheck.allowed) {
-          c.header('Retry-After', String(ipCheck.retryAfterSec));
-          return c.json({ error: 'rate_limited', scope: 'ip' }, 429);
-        }
-        const empCheck = await rateLimitByEmployeeId(c.env.KV, employee_id);
-        if (!empCheck.allowed) {
-          c.header('Retry-After', String(empCheck.retryAfterSec));
-          return c.json({ error: 'rate_limited', scope: 'employee_id' }, 429);
-        }
-      } catch (err) {
-        console.error('[auth.login] rate-limit check failed (fail-open)', err);
+    // Authentication is security-sensitive: a KV failure must not erase all
+    // brute-force protection. Returning a generic 503 is deliberately short
+    // lived and does not reveal whether an employee ID is valid.
+    if (!c.env.KV || typeof c.env.KV.get !== 'function' || typeof c.env.KV.put !== 'function') {
+      return c.json({ error: 'rate_limit_unavailable' }, 503);
+    }
+    try {
+      const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+      const ipCheck = await rateLimitByIp(c.env.KV, ip);
+      if (!ipCheck.allowed) {
+        c.header('Retry-After', String(ipCheck.retryAfterSec));
+        return c.json({ error: 'rate_limited', scope: 'ip' }, 429);
       }
+      const empCheck = await rateLimitByEmployeeId(c.env.KV, employee_id);
+      if (!empCheck.allowed) {
+        c.header('Retry-After', String(empCheck.retryAfterSec));
+        return c.json({ error: 'rate_limited', scope: 'employee_id' }, 429);
+      }
+    } catch (err) {
+      console.error('[auth.login] rate-limit check unavailable', err);
+      return c.json({ error: 'rate_limit_unavailable' }, 503);
     }
 
     // Local admin login: employee_id="admin", password verified against the
@@ -161,19 +164,19 @@ const VerifyPinBody = z.object({ pin: z.string() });
  * Next.js edge proxy sets the cookie. Never returns the PIN itself.
  */
 auth.post('/verify-pin', async (c) => {
-  // Rate limit. Fail-open on KV error so a transient hiccup doesn't lock
-  // members out of the bid page.
-  if (c.env.KV && typeof c.env.KV.get === 'function') {
-    try {
-      const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
-      const check = await rateLimitByIp(c.env.KV, `pin:${ip}`);
-      if (!check.allowed) {
-        c.header('Retry-After', String(check.retryAfterSec));
-        return c.json({ error: 'rate_limited' }, 429);
-      }
-    } catch (err) {
-      console.error('[auth.verify-pin] rate-limit check failed (fail-open)', err);
+  if (!c.env.KV || typeof c.env.KV.get !== 'function' || typeof c.env.KV.put !== 'function') {
+    return c.json({ error: 'rate_limit_unavailable' }, 503);
+  }
+  try {
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const check = await rateLimitByIp(c.env.KV, `pin:${ip}`);
+    if (!check.allowed) {
+      c.header('Retry-After', String(check.retryAfterSec));
+      return c.json({ error: 'rate_limited' }, 429);
     }
+  } catch (err) {
+    console.error('[auth.verify-pin] rate-limit check unavailable', err);
+    return c.json({ error: 'rate_limit_unavailable' }, 503);
   }
 
   const json = await c.req.json().catch(() => null);

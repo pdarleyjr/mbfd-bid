@@ -25,8 +25,10 @@ const POLICY_MEMBER_ID = 61;
 async function seedActiveSinglePositionPolicy(h: TestD1, now: number): Promise<void> {
   await h.db.run(
     `INSERT INTO members
-       (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary, created_at, updated_at)
-     VALUES (${POLICY_MEMBER_ID}, '60061', 'Frozen', 'Member', 'FF', 'FF', 1, 0, ${now}, ${now});`,
+       (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary,
+        employment_status, employment_status_effective_on, created_at, updated_at)
+     VALUES (${POLICY_MEMBER_ID}, '60061', 'Frozen', 'Member', 'FF', 'FF', 1, 0,
+       'active', '2026-01-01', ${now}, ${now});`,
   );
   await h.db.run(
     "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
@@ -53,20 +55,37 @@ async function seedFrozenPolicySnapshot(
   h: TestD1,
   sessionId: string,
   capturedAt: number,
+  options: {
+    configurationRevision?: number;
+    ruleBookRevision?: number;
+    staffingBaseline?: {
+      baselineAcceptanceId: string;
+      importId: string;
+      sourceHash: string;
+      acceptedAtMs: number;
+    };
+  } = {},
 ): Promise<void> {
   await h.db.run(
     `INSERT INTO bid_session_policy_snapshots
-       (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
-     VALUES (?, '2026.1', '2026.1', 0, ?, ?);`,
+      (bid_session_id, rule_book_version, position_template_version, rule_book_revision, snapshot_json, captured_at)
+     VALUES (?, '2026.1', '2026.1', ?, ?, ?);`,
     [
       sessionId,
+      options.ruleBookRevision ?? 0,
       JSON.stringify({
         v: 3,
         ruleBookVersion: '2026.1',
-        ruleBookRevision: 0,
+        ruleBookRevision: options.ruleBookRevision ?? 0,
         positionTemplateVersion: '2026.1',
-        configurationRevision: 0,
-        settings: { v: 1, expectedDurationDays: 2, turnTimerSeconds: 180 },
+        configurationRevision: options.configurationRevision ?? 0,
+        settings: {
+          v: 2,
+          expectedDurationDays: 2,
+          turnTimerSeconds: 180,
+          credentialEvaluationOn: '2026-01-15',
+        },
+        credentialEvaluationOn: '2026-01-15',
         capturedAtMs: capturedAt,
         members: [
           {
@@ -107,9 +126,65 @@ async function seedFrozenPolicySnapshot(
             },
           ],
         },
+        ...(options.staffingBaseline ? { staffingBaseline: options.staffingBaseline } : {}),
       }),
       capturedAt,
     ],
+  );
+}
+
+async function seedAcceptedOfficialBaselineForLiveReadiness(h: TestD1): Promise<void> {
+  const sourceHash = 'a'.repeat(64);
+  await h.db.run(
+    `INSERT INTO staffing_positions
+       (id, stable_slot_key, shift, station, unit, position_name, applicable_rank,
+        active_from, review_status, created_at, updated_at)
+     VALUES ('live-readiness-slot', 'SYNTHETIC/A/1/FF', 'A', '1', 'Engine 1',
+       'Firefighter', 'FF', '2026-01-01', 'approved', 1, 1);
+     INSERT INTO staffing_position_source_mappings
+       (id, staffing_position_id, source_system, source_locator, source_signature,
+        source_version, source_hash, effective_from, created_at)
+     VALUES ('live-readiness-mapping', 'live-readiness-slot', 'telestaff',
+       '{"v":1,"shift":"A","division":"Suppression","station":"1","unit":"Engine 1","position":"Firefighter"}',
+       '${sourceHash}', 'synthetic-v1', '${sourceHash}', '2026-01-01', 1);
+     INSERT INTO assignment_imports
+       (id, source_system, source_version, source_hash, source_format, parser_version, source_kind,
+        status, input_row_count, normalized_data_row_count, unique_employee_count,
+        report_row_count, structural_row_count, source_snapshot_as_of, created_at)
+     VALUES ('live-readiness-import', 'telestaff', 'synthetic-v1', '${sourceHash}',
+       'TELSTAFF_ASSIGNMENTS_HTML_V1', 'telestaff-assignments-html@1',
+       'official', 'staged', 1, 1, 1, 1, 0, '2026-08-24', 1);
+     INSERT INTO assignment_import_rows
+       (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
+        resolved_member_id, staffing_position_source_mapping_id, normalized_source_topology,
+        disposition, reconciliation_classification, review_status, created_at)
+     VALUES ('live-readiness-row', 'live-readiness-import', 1, '${'b'.repeat(64)}',
+       '${'c'.repeat(64)}', ${POLICY_MEMBER_ID}, 'live-readiness-mapping',
+       '{"v":1,"shift":"A","division":"Suppression","station":"1","unit":"Engine 1","position":"Firefighter"}',
+       'unchanged', 'UNCHANGED', 'not_required', 1);
+     UPDATE assignment_imports SET status = 'reviewed' WHERE id = 'live-readiness-import';
+     UPDATE assignment_imports
+       SET status = 'approved', approved_at = 1, approved_by_member_id = 1
+       WHERE id = 'live-readiness-import';
+     UPDATE assignment_imports SET status = 'committed', committed_at = 1
+       WHERE id = 'live-readiness-import';
+     INSERT INTO assignment_observations
+       (id, assignment_import_id, assignment_import_row_id, member_id, staffing_position_id,
+        staffing_position_source_mapping_id, normalized_source_topology, observed_at, created_at)
+     VALUES ('live-readiness-observation', 'live-readiness-import', 'live-readiness-row', ${POLICY_MEMBER_ID},
+       'live-readiness-slot', 'live-readiness-mapping',
+       '{"v":1,"shift":"A","division":"Suppression","station":"1","unit":"Engine 1","position":"Firefighter"}',
+       1, 1);
+     INSERT INTO member_assignments
+       (id, member_id, staffing_position_id, origin_type, origin_ref, source_observation_id,
+        status, effective_from, created_at, updated_at)
+     VALUES ('live-readiness-assignment', ${POLICY_MEMBER_ID}, 'live-readiness-slot', 'TELESTAFF_IMPORT',
+       'live-readiness-import', 'live-readiness-observation', 'active', '2026-01-01', 1, 1);
+     INSERT INTO bid_year_staffing_baselines
+       (id, bid_year, assignment_import_id, status, accepted_at, accepted_by_member_id,
+        acceptance_reason, created_at)
+     VALUES ('live-readiness-baseline', 2026, 'live-readiness-import', 'accepted',
+       1, 1, 'Controlled live readiness fixture.', 1);`,
   );
 }
 
@@ -142,6 +217,7 @@ describe('POST /api/admin/bid-session', () => {
         },
         body: JSON.stringify({
           bid_year: 2026,
+          mode: 'live',
           expected_duration_days: 2,
           turn_timer_seconds: 180,
         }),
@@ -152,6 +228,22 @@ describe('POST /api/admin/bid-session', () => {
     const body = (await res.json()) as { id: string; current_phase: string };
     expect(body.current_phase).toBe('config');
     expect(body.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/); // ULID shape
+  });
+
+  it('rejects an omitted session mode instead of defaulting to a real Bid', async () => {
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await freshAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ bid_year: 2026 }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(res.status).toBe(400);
+    expect((await h.db.run('SELECT count(*) AS n FROM bid_sessions')).results).toEqual([{ n: 0 }]);
   });
 
   it('rejects creation when bid_year does not exist', async () => {
@@ -183,6 +275,14 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     sessionId = '01HZZ0000000000000000SESS01';
     const now = Date.now();
     await seedActiveSinglePositionPolicy(h, now);
+    await h.db.run(
+      `UPDATE bid_years
+          SET rule_book_version = '2026.1',
+              position_template_version = '2026.1',
+              config_json = '{"v":2,"expectedDurationDays":2,"turnTimerSeconds":180,"credentialEvaluationOn":"2026-01-15"}',
+              configuration_revision = 1
+        WHERE year = 2026;`,
+    );
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2026, ?, 'config', 180, 2, 0);",
       [sessionId, now],
@@ -217,7 +317,7 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     ).toEqual([{ member_id: POLICY_MEMBER_ID, pool: 'FF' }]);
   });
 
-  it('fails closed for a live session until readiness facts are implemented', async () => {
+  it('fails closed for a live session when required readiness facts are absent', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
         method: 'POST',
@@ -231,8 +331,13 @@ describe('POST /api/admin/bid-session/:id/start', () => {
       error: 'readiness_blocked',
       readiness: {
         canStartLiveBid: false,
-        overallStatus: 'NOT_CONFIGURED',
-        blockingCheckIds: expect.arrayContaining(['policy', 'mock_test', 'portal']),
+        overallStatus: 'BLOCKING',
+        blockingCheckIds: expect.arrayContaining([
+          'accepted_staffing_baseline',
+          'annual_configuration',
+          'audit_infrastructure',
+          'writeback_safety',
+        ]),
       },
     });
     const after = await h.db.run('SELECT current_phase FROM bid_sessions WHERE id = ?', [
@@ -241,7 +346,7 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     expect(after.results[0]?.current_phase).toBe('config');
   });
 
-  it('exposes the same fail-closed readiness report to an administrator', async () => {
+  it('exposes an operator-readable fail-closed readiness report to an administrator', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/readiness`, {
         headers: { Authorization: `Bearer ${await freshAdmin()}` },
@@ -255,10 +360,106 @@ describe('POST /api/admin/bid-session/:id/start', () => {
       is_mock: false,
       readiness: {
         canStartLiveBid: false,
-        overallStatus: 'NOT_CONFIGURED',
-        blockingCheckIds: expect.arrayContaining(['policy', 'mock_test', 'portal']),
+        overallStatus: 'BLOCKING',
+        blockingCheckIds: expect.arrayContaining([
+          'accepted_staffing_baseline',
+          'annual_configuration',
+          'audit_infrastructure',
+          'writeback_safety',
+        ]),
       },
     });
+  });
+
+  it('permits a fully evidenced live session to start without enabling writeback', async () => {
+    await seedAcceptedOfficialBaselineForLiveReadiness(h);
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [sessionId]);
+    const revisionRows = await h.db.run('SELECT revision FROM rule_books WHERE version = ?', ['2026.1']);
+    const ruleBookRevision = (revisionRows.results[0] as { revision: number }).revision;
+    await seedFrozenPolicySnapshot(h, sessionId, Date.now(), {
+      configurationRevision: 1,
+      ruleBookRevision,
+      staffingBaseline: {
+        baselineAcceptanceId: 'live-readiness-baseline',
+        importId: 'live-readiness-import',
+        sourceHash: 'a'.repeat(64),
+        acceptedAtMs: 1,
+      },
+    });
+    expect(
+      (await h.db.run(
+        'SELECT rule_book_version, position_template_version, config_json, configuration_revision FROM bid_years WHERE year = 2026',
+      )).results,
+    ).toMatchObject([
+      {
+        rule_book_version: '2026.1',
+        position_template_version: '2026.1',
+        configuration_revision: 1,
+      },
+    ]);
+    const env = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      PORTAL_WRITEBACK_ENABLED: 'false' as const,
+      PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback-disabled.invalid',
+      AUDIT_SIGNING_PRIVKEY: 'p'.repeat(32),
+      AUDIT_SIGNING_PUBKEY: 'q'.repeat(32),
+      KV: { get: async () => null, put: async () => undefined } as never,
+      R2_AUDIT: { put: async () => undefined } as never,
+      R2_EXPORTS: { put: async () => undefined } as never,
+    };
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await freshAdmin()}` },
+      }),
+      env,
+    );
+
+    const responseBody = await res.json();
+    expect(responseBody).toMatchObject({ current_phase: 'position_bid' });
+    expect(res.status).toBe(200);
+    expect((await h.db.run('SELECT is_mock FROM bid_sessions WHERE id = ?', [sessionId])).results).toEqual([
+      { is_mock: 0 },
+    ]);
+  });
+
+  it('performs a passing real-mode dry run without creating a real session', async () => {
+    await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
+    await seedAcceptedOfficialBaselineForLiveReadiness(h);
+    const before = await h.db.run('SELECT count(*) AS n FROM bid_sessions');
+    const env = {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      PORTAL_WRITEBACK_ENABLED: 'false' as const,
+      PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback-disabled.invalid',
+      AUDIT_SIGNING_PRIVKEY: 'p'.repeat(32),
+      AUDIT_SIGNING_PUBKEY: 'q'.repeat(32),
+      KV: { get: async () => null, put: async () => undefined } as never,
+      R2_AUDIT: { put: async () => undefined } as never,
+      R2_EXPORTS: { put: async () => undefined } as never,
+    };
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session/readiness-preview', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await freshAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ bid_year: 2026 }),
+      }),
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      dry_run: true,
+      would_allow_start: true,
+      readiness: { canStartLiveBid: true },
+    });
+    expect(await h.db.run('SELECT count(*) AS n FROM bid_sessions')).toEqual(before);
   });
 
   it('writes audit log session_start', async () => {

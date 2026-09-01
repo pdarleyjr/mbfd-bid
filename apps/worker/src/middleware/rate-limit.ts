@@ -10,12 +10,10 @@
 // so the caller can set a `Retry-After` header that's never wrong by more
 // than 1 second.
 //
-// Failures (KV read/write errors) fail-open: the goal of this middleware is
-// to throttle abuse, not to take the login path down if KV is degraded. The
-// caller (auth.ts) wraps the call in a `try`; if it throws, the request is
-// allowed and an error is logged. We surface failures by returning
-// `{ allowed: true }` on the read path; only an obviously corrupted JSON
-// value short-circuits.
+// KV failures are propagated to the caller. The authentication route turns
+// them into a generic 503 so an outage cannot silently remove brute-force
+// protection. This is intentionally distinct from malformed stored values,
+// which are treated as an empty window and immediately overwritten.
 //
 // Concurrency note: the read-modify-write is racy because KV does not offer
 // optimistic concurrency. In the worst case under high concurrency a small

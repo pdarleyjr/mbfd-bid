@@ -367,10 +367,9 @@ bid.get('/board', async (c) => {
     return c.json({ error: 'bid_state_not_frozen_policy' }, 409);
   }
 
-  // Live Bid Console enrichment derives its display map from the same immutable
-  // snapshot as the bidding mechanics. The snapshot deliberately does not
-  // retain directory PII, so historical views use a stable Member #id label
-  // and frozen rank rather than looking up today's roster.
+  // Live Bid Console enrichment derives its display map from immutable session
+  // material only. Authorized operators receive the freeze-bound identity
+  // projection; ordinary members never receive this directory-like material.
   let currentBidder: BidderContext | null = null;
   let onDeck: BidderContext[] = [];
   const members: Record<
@@ -404,6 +403,15 @@ bid.get('/board', async (c) => {
   const snapshotMembersById = new Map(
     frozenBoardPolicy.snapshot.members.map((member) => [member.memberId, member]),
   );
+  const operatorIdentityByMember =
+    claims.role === 'admin'
+      ? new Map(
+          (frozenBoardPolicy.snapshot.operatorIdentityProjection ?? []).map((identity) => [
+            identity.memberId,
+            identity,
+          ]),
+        )
+      : new Map();
   const bidOrderIndex = new Map(bidOrder.map((entry) => [entry.memberId, entry]));
   const lookupIds = new Set<number>();
   for (const entry of bidOrder) lookupIds.add(entry.memberId);
@@ -414,42 +422,45 @@ bid.get('/board', async (c) => {
   for (const memberId of lookupIds) {
     const member = snapshotMembersById.get(memberId);
     if (member === undefined) continue;
+    const identity = operatorIdentityByMember.get(memberId);
     members[String(memberId)] = {
       id: memberId,
-      firstName: 'Member',
-      lastName: `#${memberId}`,
-      rank: member.rank,
-      employeeId: `#${memberId}`,
+      firstName: identity?.firstName ?? 'Member',
+      lastName: identity?.lastName ?? `#${memberId}`,
+      rank: identity?.rank ?? member.rank,
+      employeeId: identity?.employeeId ?? `#${memberId}`,
       priorPositionId: null,
     };
   }
   if (currentBidderId !== null) {
     const member = snapshotMembersById.get(currentBidderId);
     const order = bidOrderIndex.get(currentBidderId);
+    const identity = operatorIdentityByMember.get(currentBidderId);
     if (member !== undefined && order !== undefined) {
       currentBidder = {
         memberId: member.memberId,
         ordinal: order.ordinal,
         pool: order.pool,
-        firstName: 'Member',
-        lastName: `#${member.memberId}`,
-        rank: member.rank,
-        employeeId: `#${member.memberId}`,
+        firstName: identity?.firstName ?? 'Member',
+        lastName: identity?.lastName ?? `#${member.memberId}`,
+        rank: identity?.rank ?? member.rank,
+        employeeId: identity?.employeeId ?? `#${member.memberId}`,
       };
     }
   }
   onDeck = onDeckEntries.flatMap((entry) => {
     const member = snapshotMembersById.get(entry.memberId);
+    const identity = operatorIdentityByMember.get(entry.memberId);
     if (member === undefined) return [];
     return [
       {
         memberId: member.memberId,
         ordinal: entry.ordinal,
         pool: entry.pool,
-        firstName: 'Member',
-        lastName: `#${member.memberId}`,
-        rank: member.rank,
-        employeeId: `#${member.memberId}`,
+        firstName: identity?.firstName ?? 'Member',
+        lastName: identity?.lastName ?? `#${member.memberId}`,
+        rank: identity?.rank ?? member.rank,
+        employeeId: identity?.employeeId ?? `#${member.memberId}`,
       },
     ];
   });

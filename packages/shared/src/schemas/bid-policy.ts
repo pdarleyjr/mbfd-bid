@@ -194,6 +194,36 @@ export const BidConfigurationSettingsSchema = z.discriminatedUnion('v', [
 export type BidConfigurationSettings = z.infer<typeof BidConfigurationSettingsSchema>;
 
 /**
+ * Immutable pointer to the exact accepted official staffing baseline used to
+ * build a real session. It contains source provenance but no personnel data.
+ */
+export const FrozenStaffingBaselineSchema = z
+  .object({
+    baselineAcceptanceId: z.string().min(1),
+    importId: z.string().min(1),
+    sourceHash: z.string().regex(/^[a-f0-9]{64}$/i),
+    acceptedAtMs: z.number().int().nonnegative(),
+  })
+  .strict();
+export type FrozenStaffingBaseline = z.infer<typeof FrozenStaffingBaselineSchema>;
+
+/**
+ * Minimal identity material that an authorized operator needs to run a frozen
+ * session. It is captured with the policy snapshot and must never be rebuilt
+ * from the mutable employee directory during replay.
+ */
+export const FrozenOperatorIdentitySchema = z
+  .object({
+    memberId: z.number().int().positive(),
+    employeeId: z.string().trim().min(1),
+    firstName: z.string().trim().min(1),
+    lastName: z.string().trim().min(1),
+    rank: z.enum(['CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF']),
+  })
+  .strict();
+export type FrozenOperatorIdentity = z.infer<typeof FrozenOperatorIdentitySchema>;
+
+/**
  * Immutable session input captured before ordinary Bid initialization. It is
  * deliberately limited to normalized identifiers and ordering data; no source
  * system material or person names are persisted in the snapshot.
@@ -240,8 +270,13 @@ const BidSessionPolicySnapshotV3Schema = z
      * their immutable V2 configuration.
      */
     credentialEvaluationOn: CredentialEvaluationDateSchema.optional(),
+    /** Required for every newly-created live session; optional solely so
+     * pre-remediation historical snapshots remain forensic-readable. */
+    staffingBaseline: FrozenStaffingBaselineSchema.optional(),
     capturedAtMs: z.number().int().nonnegative(),
     members: z.array(FrozenBidEligibilityMemberSchema),
+    /** Fresh snapshots materialize this; optional only for historical recovery. */
+    operatorIdentityProjection: z.array(FrozenOperatorIdentitySchema).optional(),
     ruleBookMaterial: FrozenRuleBookMaterialSchema,
   })
   .strict();
