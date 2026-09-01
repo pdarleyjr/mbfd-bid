@@ -1,5 +1,6 @@
 'use client';
 
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 
@@ -22,7 +23,8 @@ export function NewSessionForm({ defaultMock = true }: { defaultMock?: boolean }
     setPreviewingReadiness(true);
     setReadinessPreview(null);
     try {
-      const response = await fetch('/api/admin/bid-session/readiness-preview', {
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      const response = await csrfFetch('/api/admin/bid-session/readiness-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
