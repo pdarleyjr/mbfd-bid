@@ -12,6 +12,7 @@ import {
   useManualPick,
 } from '../../app/admin/bid/_components/ManualPickContext';
 import { AutoBidButton } from '../../app/admin/rehearsal/_components/AutoBidButton';
+import { CloseStaleMockButton } from '../../app/admin/rehearsal/_components/CloseStaleMockButton';
 
 const roots: Root[] = [];
 
@@ -47,6 +48,32 @@ async function click(button: HTMLButtonElement): Promise<void> {
 }
 
 describe('mock rehearsal command UI', () => {
+  it('closes a stale legacy mock through the audited application endpoint', async () => {
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () =>
+      new Response(JSON.stringify({ state: 'complete', idempotent: false }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const container = render(<CloseStaleMockButton sessionId="legacy-mock-1" />);
+    const button = container.querySelector('button');
+    if (!(button instanceof HTMLButtonElement)) throw new Error('Close stale mock button did not render.');
+
+    await click(button);
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/rehearsal/legacy-mock-1/close-mock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        reason: 'Staging remediation: close stale legacy mock before controlled rehearsal.',
+      }),
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('audit history retained');
+  });
+
   it('retries auto-bid with its original idempotency key and control revision after a transport failure', async () => {
     const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
       async (_input, _init) => {

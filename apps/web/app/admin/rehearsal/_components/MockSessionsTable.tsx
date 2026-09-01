@@ -8,6 +8,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactElement } from 'react';
 import { AutoBidButton } from './AutoBidButton';
+import { CloseStaleMockButton } from './CloseStaleMockButton';
 import { ResetMockButton } from './ResetMockButton';
 import { VerifyAuditButton } from './VerifyAuditButton';
 
@@ -83,6 +84,7 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
                     Open mock board
                   </Link>
                   <ResetMockButton sessionId={s.id} />
+                  {s.currentPhase !== 'complete' ? <CloseStaleMockButton sessionId={s.id} /> : null}
                   <AutoBidButton
                     sessionId={s.id}
                     strategy="first_eligible"
