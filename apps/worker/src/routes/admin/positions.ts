@@ -267,45 +267,37 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
     ).bind(...Array(9).fill(STATION_SIX_TARGET)),
   ];
   statements.push(
-    c.env.DB.prepare('DELETE FROM position_rules WHERE rule_book_version = ?').bind(
-      STATION_SIX_RULE_BOOK,
-    ),
-  );
-  statements.push(
     c.env.DB.prepare(
-      `INSERT INTO position_rules (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain, notes)
-       SELECT ?, position_id, ?, required_criteria, points_preference, tie_break_chain, notes
-         FROM position_rules
-        WHERE rule_book_version = ? AND position_id NOT GLOB '[ABC]61[123]'`,
-    ).bind(STATION_SIX_RULE_BOOK, STATION_SIX_TARGET, STATION_SIX_RULE_BOOK),
-    c.env.DB.prepare(
-      `INSERT INTO position_rules (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain, notes)
-       VALUES ${marineRuleRows.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}`,
-    ).bind(
-      ...marineRuleRows.flatMap(
-        ([positionId, requiredCriteria, pointsPreference, tieBreakChain, notes]) => [
-          STATION_SIX_RULE_BOOK,
-          positionId,
-          STATION_SIX_TARGET,
-          requiredCriteria,
-          pointsPreference,
-          tieBreakChain,
-          notes,
-        ],
-      ),
-    ),
-  );
-  statements.push(
-    c.env.DB.prepare(
-      'DELETE FROM rule_book_position_participation WHERE rule_book_version = ?',
+      "DELETE FROM position_rules WHERE rule_book_version = ? AND position_id GLOB '[ABC]61[123]'",
     ).bind(STATION_SIX_RULE_BOOK),
+    c.env.DB.prepare(
+      'UPDATE position_rules SET template_version = ? WHERE rule_book_version = ?',
+    ).bind(STATION_SIX_TARGET, STATION_SIX_RULE_BOOK),
   );
+  for (const marineRuleChunk of [marineRuleRows.slice(0, 9), marineRuleRows.slice(9)]) {
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO position_rules (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain, notes)
+         VALUES ${marineRuleChunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}`,
+      ).bind(
+        ...marineRuleChunk.flatMap(
+          ([positionId, requiredCriteria, pointsPreference, tieBreakChain, notes]) => [
+            STATION_SIX_RULE_BOOK,
+            positionId,
+            STATION_SIX_TARGET,
+            requiredCriteria,
+            pointsPreference,
+            tieBreakChain,
+            notes,
+          ],
+        ),
+      ),
+    );
+  }
   statements.push(
     c.env.DB.prepare(
-      `INSERT INTO rule_book_position_participation (rule_book_version, position_id, template_version, bid_participation, authoritative_source_ref, created_at)
-       SELECT ?, position_id, ?, bid_participation, authoritative_source_ref, created_at
-         FROM rule_book_position_participation WHERE rule_book_version = ?`,
-    ).bind(STATION_SIX_RULE_BOOK, STATION_SIX_TARGET, STATION_SIX_RULE_BOOK),
+      'UPDATE rule_book_position_participation SET template_version = ? WHERE rule_book_version = ?',
+    ).bind(STATION_SIX_TARGET, STATION_SIX_RULE_BOOK),
   );
   statements.push(
     c.env.DB.prepare(
