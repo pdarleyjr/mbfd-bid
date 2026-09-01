@@ -11,6 +11,7 @@ import {
   positionTemplates,
   positions,
   ruleBooks,
+  staffingPositions,
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
@@ -31,6 +32,11 @@ const ReconcileStationSixSchema = z
 const STATION_SIX_SOURCE = '2026.1';
 const STATION_SIX_TARGET = '2026.2';
 const STATION_SIX_RULE_BOOK = '2026.2';
+const ADMINISTRATIVE_DIVISION_CHIEF_BINDINGS = [
+  { positionId: 'A211', shift: 'A Shift', shiftCode: 'A' },
+  { positionId: 'B211', shift: 'B Shift', shiftCode: 'B' },
+  { positionId: 'C211', shift: 'C Shift', shiftCode: 'C' },
+] as const;
 const MARINE_COMMON = [
   'Merchant Mariner Credential (MMC)',
   'IADRS Swim Evaluation',
@@ -38,6 +44,54 @@ const MARINE_COMMON = [
   'Open Water Diver Certified',
   'Fire Boat Operator Qualifications',
 ];
+
+type AdministrativeStaffingSlot = {
+  id: string;
+  shift: string | null;
+  station: string | null;
+  unit: string | null;
+  positionName: string | null;
+  reviewStatus: string;
+};
+
+export function resolveStationSixAdministrativeBindings(
+  staffingSlots: AdministrativeStaffingSlot[],
+):
+  | {
+      ok: true;
+      bindings: Array<{
+        positionId: string;
+        staffingPositionId: string;
+        authoritativeSourceRef: string;
+      }>;
+    }
+  | { ok: false; code: 'administrative_division_chief_staffing_shape_unrecognized' } {
+  const bindings: Array<{
+    positionId: string;
+    staffingPositionId: string;
+    authoritativeSourceRef: string;
+  }> = [];
+  for (const expected of ADMINISTRATIVE_DIVISION_CHIEF_BINDINGS) {
+    const matches = staffingSlots.filter(
+      (slot) =>
+        slot.shift === expected.shift &&
+        slot.station === 'Division Chief' &&
+        slot.unit === 'Division Chief 300' &&
+        slot.positionName === 'Division Chief' &&
+        slot.reviewStatus === 'approved',
+    );
+    const match = matches[0];
+    if (matches.length !== 1 || match === undefined) {
+      return { ok: false, code: 'administrative_division_chief_staffing_shape_unrecognized' };
+    }
+    bindings.push({
+      positionId: expected.positionId,
+      staffingPositionId: match.id,
+      authoritativeSourceRef: `staffing:2026-08-24/division-chief/${expected.shiftCode}`,
+    });
+  }
+  return { ok: true, bindings };
+}
 
 function correctedMarineRule(positionId: string) {
   const suffix = positionId.slice(-1);
@@ -167,7 +221,7 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
   }
 
   const db = getDb(c.env.DB);
-  const [year, sourceTemplate, targetTemplate, draft, sourcePositions, sourceRules] =
+  const [year, sourceTemplate, targetTemplate, draft, sourcePositions, sourceRules, staffingRows] =
     await Promise.all([
       db.select().from(bidYears).where(eq(bidYears.year, 2026)).get(),
       db
@@ -187,6 +241,17 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
         .from(positionRules)
         .where(eq(positionRules.ruleBookVersion, STATION_SIX_RULE_BOOK))
         .all(),
+      db
+        .select({
+          id: staffingPositions.id,
+          shift: staffingPositions.shift,
+          station: staffingPositions.station,
+          unit: staffingPositions.unit,
+          positionName: staffingPositions.positionName,
+          reviewStatus: staffingPositions.reviewStatus,
+        })
+        .from(staffingPositions)
+        .all(),
     ]);
   if (
     year === undefined ||
@@ -199,18 +264,11 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
   if (draft === undefined || draft.status !== 'draft') {
     return c.json({ error: 'draft_rule_book_required' }, 409);
   }
-  if (sourcePositions.length !== 233 || sourceRules.length !== 229) {
-    return c.json(
-      {
-        error: 'unexpected_staging_source_shape',
-        positions: sourcePositions.length,
-        rules: sourceRules.length,
-      },
-      409,
-    );
-  }
+  const administrativeBindings = resolveStationSixAdministrativeBindings(staffingRows);
+  if (!administrativeBindings.ok) return c.json({ error: administrativeBindings.code }, 409);
+  const now = Math.floor(Date.now() / 1000);
   if (targetTemplate !== undefined) {
-    const [targetPositions, targetRules] = await Promise.all([
+    const [targetPositions, targetRules, existingBindings] = await Promise.all([
       db
         .select({ count: sql<number>`count(*)` })
         .from(positions)
@@ -221,18 +279,52 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
         .from(positionRules)
         .where(eq(positionRules.ruleBookVersion, STATION_SIX_RULE_BOOK))
         .get(),
+      db
+        .select({
+          positionId: positionStaffingBindings.positionId,
+          staffingPositionId: positionStaffingBindings.staffingPositionId,
+          authoritativeSourceRef: positionStaffingBindings.authoritativeSourceRef,
+          reviewStatus: positionStaffingBindings.reviewStatus,
+        })
+        .from(positionStaffingBindings)
+        .where(eq(positionStaffingBindings.templateVersion, STATION_SIX_TARGET))
+        .all(),
     ]);
     if (targetPositions?.count !== 242 || targetRules?.count !== 238) {
       return c.json({ error: 'target_template_shape_unrecognized' }, 409);
     }
+    const expectedByPosition = new Map(
+      administrativeBindings.bindings.map((binding) => [binding.positionId, binding]),
+    );
+    const existingShapeRecognized =
+      existingBindings.length === 0 ||
+      (existingBindings.length === administrativeBindings.bindings.length &&
+        existingBindings.every((binding) => {
+          const expected = expectedByPosition.get(binding.positionId);
+          return (
+            expected !== undefined &&
+            binding.staffingPositionId === expected.staffingPositionId &&
+            binding.authoritativeSourceRef === expected.authoritativeSourceRef &&
+            binding.reviewStatus === 'approved'
+          );
+        }));
+    if (!existingShapeRecognized) {
+      return c.json({ error: 'target_template_binding_shape_unrecognized' }, 409);
+    }
     await c.env.DB.batch([
-      c.env.DB.prepare(
-        `INSERT OR IGNORE INTO position_staffing_bindings (
-           position_id, template_version, staffing_position_id, authoritative_source_ref, review_status, created_at
-         )
-         SELECT position_id, ?, staffing_position_id, authoritative_source_ref, review_status, created_at
-           FROM position_staffing_bindings WHERE template_version = ?`,
-      ).bind(STATION_SIX_TARGET, STATION_SIX_SOURCE),
+      ...administrativeBindings.bindings.map((binding) =>
+        c.env.DB.prepare(
+          `INSERT OR IGNORE INTO position_staffing_bindings (
+               position_id, template_version, staffing_position_id, authoritative_source_ref, review_status, created_at
+             ) VALUES (?, ?, ?, ?, 'approved', ?)`,
+        ).bind(
+          binding.positionId,
+          STATION_SIX_TARGET,
+          binding.staffingPositionId,
+          binding.authoritativeSourceRef,
+          now,
+        ),
+      ),
     ]);
     return c.json({
       template_version: STATION_SIX_TARGET,
@@ -242,6 +334,17 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
       station_six_roles_per_shift: 6,
       resumed: true,
     });
+  }
+
+  if (sourcePositions.length !== 233 || sourceRules.length !== 229) {
+    return c.json(
+      {
+        error: 'unexpected_staging_source_shape',
+        positions: sourcePositions.length,
+        rules: sourceRules.length,
+      },
+      409,
+    );
   }
 
   const sourceById = new Map(sourcePositions.map((position) => [position.id, position]));
@@ -267,7 +370,6 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
     }),
   );
 
-  const now = Math.floor(Date.now() / 1000);
   const statements: D1PreparedStatement[] = [
     c.env.DB.prepare(
       'INSERT INTO position_templates (version, effective_year, notes) VALUES (?, ?, ?)',
@@ -301,13 +403,19 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
     ).bind(...Array(9).fill(STATION_SIX_TARGET)),
   ];
   statements.push(
-    c.env.DB.prepare(
-      `INSERT INTO position_staffing_bindings (
-         position_id, template_version, staffing_position_id, authoritative_source_ref, review_status, created_at
-       )
-       SELECT position_id, ?, staffing_position_id, authoritative_source_ref, review_status, created_at
-         FROM position_staffing_bindings WHERE template_version = ?`,
-    ).bind(STATION_SIX_TARGET, STATION_SIX_SOURCE),
+    ...administrativeBindings.bindings.map((binding) =>
+      c.env.DB.prepare(
+        `INSERT INTO position_staffing_bindings (
+             position_id, template_version, staffing_position_id, authoritative_source_ref, review_status, created_at
+           ) VALUES (?, ?, ?, ?, 'approved', ?)`,
+      ).bind(
+        binding.positionId,
+        STATION_SIX_TARGET,
+        binding.staffingPositionId,
+        binding.authoritativeSourceRef,
+        now,
+      ),
+    ),
     c.env.DB.prepare(
       "DELETE FROM position_rules WHERE rule_book_version = ? AND position_id GLOB '[ABC]61[123]'",
     ).bind(STATION_SIX_RULE_BOOK),

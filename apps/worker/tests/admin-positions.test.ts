@@ -6,7 +6,9 @@ import Database from 'better-sqlite3';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { signJwt } from '../src/lib/jwt.js';
-import positionsRouter from '../src/routes/admin/positions.js';
+import positionsRouter, {
+  resolveStationSixAdministrativeBindings,
+} from '../src/routes/admin/positions.js';
 import type { WorkerEnv } from '../src/types/env';
 
 const KEY = 'a'.repeat(64);
@@ -408,5 +410,80 @@ describe('admin positions routes', () => {
       mkEnv(sqlite),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe('Station 6 administrative staffing binding resolution', () => {
+  it('binds the three annual Division Chief positions to the exact A/B/C staffing slots', () => {
+    expect(
+      resolveStationSixAdministrativeBindings([
+        {
+          id: 'staff-a',
+          shift: 'A Shift',
+          station: 'Division Chief',
+          unit: 'Division Chief 300',
+          positionName: 'Division Chief',
+          reviewStatus: 'approved',
+        },
+        {
+          id: 'staff-b',
+          shift: 'B Shift',
+          station: 'Division Chief',
+          unit: 'Division Chief 300',
+          positionName: 'Division Chief',
+          reviewStatus: 'approved',
+        },
+        {
+          id: 'staff-c',
+          shift: 'C Shift',
+          station: 'Division Chief',
+          unit: 'Division Chief 300',
+          positionName: 'Division Chief',
+          reviewStatus: 'approved',
+        },
+      ]),
+    ).toEqual({
+      ok: true,
+      bindings: [
+        {
+          positionId: 'A211',
+          staffingPositionId: 'staff-a',
+          authoritativeSourceRef: 'staffing:2026-08-24/division-chief/A',
+        },
+        {
+          positionId: 'B211',
+          staffingPositionId: 'staff-b',
+          authoritativeSourceRef: 'staffing:2026-08-24/division-chief/B',
+        },
+        {
+          positionId: 'C211',
+          staffingPositionId: 'staff-c',
+          authoritativeSourceRef: 'staffing:2026-08-24/division-chief/C',
+        },
+      ],
+    });
+  });
+
+  it('fails closed when a shift does not have exactly one approved canonical staffing slot', () => {
+    expect(
+      resolveStationSixAdministrativeBindings([
+        {
+          id: 'staff-a-one',
+          shift: 'A Shift',
+          station: 'Division Chief',
+          unit: 'Division Chief 300',
+          positionName: 'Division Chief',
+          reviewStatus: 'approved',
+        },
+        {
+          id: 'staff-a-two',
+          shift: 'A Shift',
+          station: 'Division Chief',
+          unit: 'Division Chief 300',
+          positionName: 'Division Chief',
+          reviewStatus: 'approved',
+        },
+      ]),
+    ).toEqual({ ok: false, code: 'administrative_division_chief_staffing_shape_unrecognized' });
   });
 });
