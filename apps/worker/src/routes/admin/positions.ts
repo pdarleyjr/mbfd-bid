@@ -9,7 +9,6 @@ import {
   positionRules,
   positionTemplates,
   positions,
-  ruleBookPositionParticipation,
   ruleBooks,
 } from '../../db/schema.js';
 import { writeAuditLog } from '../../lib/audit.js';
@@ -38,73 +37,6 @@ const MARINE_COMMON = [
   'Open Water Diver Certified',
   'Fire Boat Operator Qualifications',
 ];
-
-function isMarineProgramPosition(positionId: string): boolean {
-  return /^[ABC]61[1-6]$/.test(positionId);
-}
-
-function correctedMarinePosition(
-  source: typeof positions.$inferSelect,
-): typeof positions.$inferInsert {
-  const suffix = source.id.slice(-1);
-  const definitions: Record<
-    string,
-    Pick<
-      typeof positions.$inferInsert,
-      'station' | 'unit' | 'rankRequired' | 'positionName' | 'isFloating'
-    >
-  > = {
-    '1': {
-      station: 'Station #6',
-      unit: 'Fire Boat',
-      rankRequired: 'CPT',
-      positionName: 'Fireboat Officer',
-      isFloating: false,
-    },
-    '2': {
-      station: 'Station #6',
-      unit: 'Fire Boat',
-      rankRequired: 'FF',
-      positionName: 'Fireboat Operator (Pilot)',
-      isFloating: false,
-    },
-    '3': {
-      station: 'Station #6',
-      unit: 'Fire Boat',
-      rankRequired: 'FF',
-      positionName: 'Fireboat Engineer',
-      isFloating: false,
-    },
-    '4': {
-      station: 'Station #6',
-      unit: 'Fire Boat',
-      rankRequired: 'FF',
-      positionName: 'Fireboat Deckhand',
-      isFloating: false,
-    },
-    '5': {
-      station: 'Marine Float Pool',
-      unit: 'Marine Float Pool',
-      rankRequired: 'FF',
-      positionName: 'Marine Float Firefighter #1',
-      isFloating: true,
-    },
-    '6': {
-      station: 'Marine Float Pool',
-      unit: 'Marine Float Pool',
-      rankRequired: 'FF',
-      positionName: 'Marine Float Firefighter #2',
-      isFloating: true,
-    },
-  };
-  const definition = definitions[suffix];
-  if (definition === undefined) throw new Error(`unsupported Station 6 slot: ${source.id}`);
-  return {
-    ...source,
-    templateVersion: STATION_SIX_TARGET,
-    ...definition,
-  };
-}
 
 function correctedMarineRule(positionId: string) {
   const suffix = positionId.slice(-1);
@@ -234,7 +166,7 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
   }
 
   const db = getDb(c.env.DB);
-  const [year, sourceTemplate, targetTemplate, draft, sourcePositions, sourceRules, participation] =
+  const [year, sourceTemplate, targetTemplate, draft, sourcePositions, sourceRules] =
     await Promise.all([
       db.select().from(bidYears).where(eq(bidYears.year, 2026)).get(),
       db
@@ -253,11 +185,6 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
         .select()
         .from(positionRules)
         .where(eq(positionRules.ruleBookVersion, STATION_SIX_RULE_BOOK))
-        .all(),
-      db
-        .select()
-        .from(ruleBookPositionParticipation)
-        .where(eq(ruleBookPositionParticipation.ruleBookVersion, STATION_SIX_RULE_BOOK))
         .all(),
     ]);
   if (
@@ -291,114 +218,95 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
   ) {
     return c.json({ error: 'station_six_source_incomplete' }, 409);
   }
-  const corrected = sourcePositions.flatMap((position) => {
-    if (!/^[ABC]61[1-3]$/.test(position.id)) {
-      return [{ ...position, templateVersion: STATION_SIX_TARGET }];
-    }
-    const base = correctedMarinePosition(position);
-    const shift = position.shift as 'A' | 'B' | 'C';
-    const extras = ['4', '5', '6'].map((slot) =>
-      correctedMarinePosition({ ...position, id: `${shift}61${slot}` }),
-    );
-    return [base, ...extras];
-  });
-  const sourceRulesByPositionId = new Map(sourceRules.map((rule) => [rule.positionId, rule]));
-  const targetRules = corrected
-    .filter((position) => !position.isExcludedFromCount)
-    .map((position) => {
-      if (isMarineProgramPosition(position.id)) {
-        return {
-          position,
-          requiredCriteria: correctedMarineRule(position.id).requiredCriteria,
-          pointsPreference: correctedMarineRule(position.id).pointsPreference,
-          tieBreakChain: correctedMarineRule(position.id).tieBreakChain,
-          notes: correctedMarineRule(position.id).notes,
-        };
-      }
-      const source = sourceRulesByPositionId.get(position.id);
-      if (source === undefined) throw new Error(`missing source rule for ${position.id}`);
-      return {
-        position,
-        requiredCriteria: source.requiredCriteriaJson,
-        pointsPreference: source.pointsPreferenceJson,
-        tieBreakChain: source.tieBreakChainJson,
-        notes: source.notes,
-      };
-    });
+  const correctedPositionCount = sourcePositions.length + 9;
+  const correctedRuleCount = sourceRules.length + 9;
+  const marineRuleRows = (['A', 'B', 'C'] as const).flatMap((shift) =>
+    ['1', '2', '3', '4', '5', '6'].map((slot) => {
+      const rule = correctedMarineRule(`${shift}61${slot}`);
+      return [
+        `${shift}61${slot}`,
+        rule.requiredCriteria,
+        rule.pointsPreference,
+        rule.tieBreakChain,
+        rule.notes,
+      ] as const;
+    }),
+  );
 
   const now = Math.floor(Date.now() / 1000);
   const statements: D1PreparedStatement[] = [
     c.env.DB.prepare(
       'INSERT INTO position_templates (version, effective_year, notes) VALUES (?, ?, ?)',
     ).bind(STATION_SIX_TARGET, 2026, '2026 policy v3 and 2026-08-24 staffing reconciliation'),
+    c.env.DB.prepare(
+      `INSERT INTO positions (id, template_version, shift, station, division, unit, rank_required, position_name, is_floating, is_vacant_by_design, is_excluded_from_count)
+       SELECT id, ?, shift,
+         station, division, unit,
+         CASE WHEN substr(id, -1) = '1' AND id GLOB '[ABC]611' THEN 'CPT' ELSE rank_required END,
+         CASE id
+           WHEN 'A611' THEN 'Fireboat Officer' WHEN 'B611' THEN 'Fireboat Officer' WHEN 'C611' THEN 'Fireboat Officer'
+           WHEN 'A612' THEN 'Fireboat Operator (Pilot)' WHEN 'B612' THEN 'Fireboat Operator (Pilot)' WHEN 'C612' THEN 'Fireboat Operator (Pilot)'
+           WHEN 'A613' THEN 'Fireboat Engineer' WHEN 'B613' THEN 'Fireboat Engineer' WHEN 'C613' THEN 'Fireboat Engineer'
+           ELSE position_name END,
+         is_floating,
+         is_vacant_by_design, is_excluded_from_count
+       FROM positions WHERE template_version = ?`,
+    ).bind(STATION_SIX_TARGET, STATION_SIX_SOURCE),
+    c.env.DB.prepare(
+      `INSERT INTO positions (id, template_version, shift, station, division, unit, rank_required, position_name, is_floating, is_vacant_by_design, is_excluded_from_count)
+       VALUES
+         ('A614', ?, 'A', 'Station #6', 'Combat', 'Fire Boat', 'FF', 'Fireboat Deckhand', 0, 0, 0),
+         ('A615', ?, 'A', 'Marine Float Pool', 'Combat', 'Marine Float Pool', 'FF', 'Marine Float Firefighter #1', 1, 0, 0),
+         ('A616', ?, 'A', 'Marine Float Pool', 'Combat', 'Marine Float Pool', 'FF', 'Marine Float Firefighter #2', 1, 0, 0),
+         ('B614', ?, 'B', 'Station #6', 'Combat', 'Fire Boat', 'FF', 'Fireboat Deckhand', 0, 0, 0),
+         ('B615', ?, 'B', 'Marine Float Pool', 'Combat', 'Marine Float Pool', 'FF', 'Marine Float Firefighter #1', 1, 0, 0),
+         ('B616', ?, 'B', 'Marine Float Pool', 'Combat', 'Marine Float Pool', 'FF', 'Marine Float Firefighter #2', 1, 0, 0),
+         ('C614', ?, 'C', 'Station #6', 'Combat', 'Fire Boat', 'FF', 'Fireboat Deckhand', 0, 0, 0),
+         ('C615', ?, 'C', 'Marine Float Pool', 'Combat', 'Marine Float Pool', 'FF', 'Marine Float Firefighter #1', 1, 0, 0),
+         ('C616', ?, 'C', 'Marine Float Pool', 'Combat', 'Marine Float Pool', 'FF', 'Marine Float Firefighter #2', 1, 0, 0)`,
+    ).bind(...Array(9).fill(STATION_SIX_TARGET)),
   ];
-  for (const position of corrected) {
-    statements.push(
-      c.env.DB.prepare(
-        `INSERT INTO positions (id, template_version, shift, station, division, unit, rank_required, position_name, is_floating, is_vacant_by_design, is_excluded_from_count)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        position.id,
-        STATION_SIX_TARGET,
-        position.shift,
-        position.station,
-        position.division,
-        position.unit,
-        position.rankRequired,
-        position.positionName,
-        position.isFloating ? 1 : 0,
-        position.isVacantByDesign ? 1 : 0,
-        position.isExcludedFromCount ? 1 : 0,
-      ),
-    );
-  }
   statements.push(
     c.env.DB.prepare('DELETE FROM position_rules WHERE rule_book_version = ?').bind(
       STATION_SIX_RULE_BOOK,
     ),
   );
-  for (const {
-    position,
-    requiredCriteria,
-    pointsPreference,
-    tieBreakChain,
-    notes,
-  } of targetRules) {
-    statements.push(
-      c.env.DB.prepare(
-        `INSERT INTO position_rules (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain, notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        STATION_SIX_RULE_BOOK,
-        position.id,
-        STATION_SIX_TARGET,
-        requiredCriteria,
-        pointsPreference,
-        tieBreakChain,
-        notes,
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO position_rules (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain, notes)
+       SELECT ?, position_id, ?, required_criteria, points_preference, tie_break_chain, notes
+         FROM position_rules
+        WHERE rule_book_version = ? AND position_id NOT GLOB '[ABC]61[123]'`,
+    ).bind(STATION_SIX_RULE_BOOK, STATION_SIX_TARGET, STATION_SIX_RULE_BOOK),
+    c.env.DB.prepare(
+      `INSERT INTO position_rules (rule_book_version, position_id, template_version, required_criteria, points_preference, tie_break_chain, notes)
+       VALUES ${marineRuleRows.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}`,
+    ).bind(
+      ...marineRuleRows.flatMap(
+        ([positionId, requiredCriteria, pointsPreference, tieBreakChain, notes]) => [
+          STATION_SIX_RULE_BOOK,
+          positionId,
+          STATION_SIX_TARGET,
+          requiredCriteria,
+          pointsPreference,
+          tieBreakChain,
+          notes,
+        ],
       ),
-    );
-  }
+    ),
+  );
   statements.push(
     c.env.DB.prepare(
       'DELETE FROM rule_book_position_participation WHERE rule_book_version = ?',
     ).bind(STATION_SIX_RULE_BOOK),
   );
-  for (const record of participation) {
-    statements.push(
-      c.env.DB.prepare(
-        `INSERT INTO rule_book_position_participation (rule_book_version, position_id, template_version, bid_participation, authoritative_source_ref, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        STATION_SIX_RULE_BOOK,
-        record.positionId,
-        STATION_SIX_TARGET,
-        record.bidParticipation,
-        record.authoritativeSourceRef,
-        record.createdAt,
-      ),
-    );
-  }
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO rule_book_position_participation (rule_book_version, position_id, template_version, bid_participation, authoritative_source_ref, created_at)
+       SELECT ?, position_id, ?, bid_participation, authoritative_source_ref, created_at
+         FROM rule_book_position_participation WHERE rule_book_version = ?`,
+    ).bind(STATION_SIX_RULE_BOOK, STATION_SIX_TARGET, STATION_SIX_RULE_BOOK),
+  );
   statements.push(
     c.env.DB.prepare(
       'UPDATE rule_books SET revision = revision + 1 WHERE version = ? AND status = ? AND revision = ?',
@@ -417,8 +325,8 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
       }),
       JSON.stringify({
         target_template: STATION_SIX_TARGET,
-        positions: corrected.length,
-        rules: targetRules.length,
+        positions: correctedPositionCount,
+        rules: correctedRuleCount,
         station_six_roles_per_shift: 6,
       }),
       parsed.data.reason,
@@ -430,8 +338,8 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
   return c.json({
     template_version: STATION_SIX_TARGET,
     rule_book_version: STATION_SIX_RULE_BOOK,
-    positions: corrected.length,
-    rules: targetRules.length,
+    positions: correctedPositionCount,
+    rules: correctedRuleCount,
     station_six_roles_per_shift: 6,
   });
 });
