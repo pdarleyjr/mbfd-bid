@@ -32,7 +32,11 @@ export type AuditAction =
   | 'forced_a_day_pick'
   | 'portal_writeback_retry'
   | 'portal_writeback_clear'
-  | 'rehearsal_finding';
+  | 'rehearsal_finding'
+  | 'export_generate'
+  | 'setting_change'
+  | 'portal_writeback_attempt'
+  | 'portal_writeback_outcome';
 
 export type AuditEntry = {
   bidSessionId: string | null;

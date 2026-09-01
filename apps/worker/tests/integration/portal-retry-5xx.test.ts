@@ -44,6 +44,7 @@ function makeWorld() {
 
   const deps = {
     portalClient: vi.fn(async () => nextResult),
+    recordAudit: vi.fn(async () => {}),
     markBidSynced: vi.fn(async (bidId: string, _syncedAt: Date, attempts: number) => {
       bidsStore.set(bidId, { status: 'synced', attempts, lastError: null });
     }),

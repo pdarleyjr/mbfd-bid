@@ -36,6 +36,7 @@ function fakeDeps(post: 'synced' | 'transient' | 'permanent') {
   });
   return {
     portalClient,
+    recordAudit: vi.fn(async () => {}),
     markBidSynced: vi.fn(async () => {}),
     markBidFailed: vi.fn(async () => {}),
     incrementAttempts: vi.fn(async () => {}),
@@ -82,5 +83,17 @@ describe('handleMessage (Plan 08 Task 22)', () => {
     const calls = d.updateQueueRow.mock.calls as unknown as Array<[{ status: string }]>;
     expect(calls[0]?.[0].status).toBe('in_flight');
     expect(calls[calls.length - 1]?.[0].status).toBe('done');
+  });
+
+  it('does not start portal publication when the pre-write audit receipt fails', async () => {
+    const d = fakeDeps('synced');
+    d.recordAudit.mockRejectedValueOnce(new Error('injected audit persistence failure'));
+
+    await expect(handleMessage(baseMsg, d, { nowMs: 0 })).rejects.toThrow(
+      'injected audit persistence failure',
+    );
+    expect(d.portalClient).not.toHaveBeenCalled();
+    expect(d.updateQueueRow).not.toHaveBeenCalled();
+    expect(d.markBidSynced).not.toHaveBeenCalled();
   });
 });

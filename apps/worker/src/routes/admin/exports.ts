@@ -32,6 +32,7 @@ import { exportAuditCsv } from '../../exports/audit-csv.js';
 import { mintPrintToken, verifyPrintToken } from '../../exports/print-token.js';
 import { generateRosterPdf } from '../../exports/roster-pdf.js';
 import { createSignedR2Url } from '../../exports/signed-url.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
@@ -288,6 +289,19 @@ router.post('/roster/:shift', requireStepUpAuth(), async (c) => {
   const parsed = z.object({ session_id: z.string().min(1) }).safeParse(raw);
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
   try {
+    const claims = c.get('claims');
+    await c.env.DB.batch([
+      auditInsertStatement(c.env.DB, {
+        bidSessionId: parsed.data.session_id,
+        actorType: 'admin',
+        actorId: claims.sub > 0 ? claims.sub : null,
+        action: 'export_generate',
+        targetKind: 'roster_pdf',
+        targetId: `${parsed.data.session_id}:${shift}`,
+        afterState: { export_type: 'roster_pdf', shift },
+        reason: 'Administrator requested roster PDF generation.',
+      }),
+    ]);
     const out = await generateRosterPdf({
       shift: shift as 'A' | 'B' | 'C' | 'D',
       sessionId: parsed.data.session_id,
@@ -319,6 +333,19 @@ router.post('/audit-csv', requireStepUpAuth(), async (c) => {
   const signer = signerOf(c.env);
   const signUrl = signer ?? (async (key: string) => `r2://${exportsBucketName(c.env)}/${key}`);
   try {
+    const claims = c.get('claims');
+    await c.env.DB.batch([
+      auditInsertStatement(c.env.DB, {
+        bidSessionId: parsed.data.session_id,
+        actorType: 'admin',
+        actorId: claims.sub > 0 ? claims.sub : null,
+        action: 'export_generate',
+        targetKind: 'audit_csv',
+        targetId: parsed.data.session_id,
+        afterState: { export_type: 'audit_csv' },
+        reason: 'Administrator requested immutable audit CSV export.',
+      }),
+    ]);
     const out = await exportAuditCsv({
       bidSessionId: parsed.data.session_id,
       year: new Date().getUTCFullYear(),

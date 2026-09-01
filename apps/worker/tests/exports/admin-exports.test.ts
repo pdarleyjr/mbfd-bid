@@ -1,11 +1,12 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { signJwt } from '../../src/lib/jwt.js';
 import adminExports from '../../src/routes/admin/exports.js';
 import type { WorkerEnv } from '../../src/types/env.js';
+import { type TestD1, setupTestD1, teardownTestD1 } from '../integration/helpers/test-d1.js';
 
 function inMemR2(): R2Bucket & { _objects: Map<string, Uint8Array> } {
   const objects = new Map<string, Uint8Array>();
@@ -169,5 +170,95 @@ describe('/api/admin/exports (Plan 08 Task 17)', () => {
       env,
     );
     expect(res.status).toBe(503);
+  });
+});
+
+describe('/api/admin/exports audit-before-R2 boundary', () => {
+  let h: TestD1;
+  let r2: ReturnType<typeof inMemR2>;
+  const sessionId = '01HZZ0000000000000000EXP001';
+
+  beforeEach(async () => {
+    h = await setupTestD1();
+    r2 = inMemR2();
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await h.db.run(
+      "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1, 1);",
+      [sessionId, Date.now()],
+    );
+  });
+
+  afterEach(async () => {
+    await teardownTestD1(h);
+  });
+
+  it('does not generate an audit CSV when its authoritative audit receipt fails', async () => {
+    h.failNextBatchAt(0);
+    const testEnv = {
+      ...h.env,
+      R2_EXPORTS: r2,
+      JWT_SIGNING_KEY: 'a'.repeat(64),
+    };
+    const jwt = await adminJwt(testEnv);
+
+    const response = await mkApp().request(
+      '/api/admin/exports/audit-csv',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      },
+      testEnv,
+    );
+
+    expect(response.status).toBe(500);
+    expect(r2._objects.size).toBe(0);
+    expect(
+      (
+        await h.db.run(
+          "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'export_generate' AND bid_session_id = ?",
+          [sessionId],
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
+  });
+
+  it('does not start roster rendering when its authoritative audit receipt fails', async () => {
+    let browserBindingCalls = 0;
+    h.failNextBatchAt(0);
+    const testEnv = {
+      ...h.env,
+      R2_EXPORTS: r2,
+      BROWSER: {
+        fetch: async () => {
+          browserBindingCalls += 1;
+          return new Response('unexpected renderer call', { status: 500 });
+        },
+      } as never,
+      JWT_SIGNING_KEY: 'a'.repeat(64),
+    };
+    const jwt = await adminJwt(testEnv);
+
+    const response = await mkApp().request(
+      '/api/admin/exports/roster/A',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      },
+      testEnv,
+    );
+
+    expect(response.status).toBe(502);
+    expect(browserBindingCalls).toBe(0);
+    expect(r2._objects.size).toBe(0);
+    expect(
+      (
+        await h.db.run(
+          "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'export_generate' AND bid_session_id = ?",
+          [sessionId],
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
   });
 });

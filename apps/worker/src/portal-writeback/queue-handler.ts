@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 
 import { getDb } from '../db/index.js';
 import { bidSessions, bids, members, portalWritebackQueue } from '../db/schema.js';
+import { type AuditAction, auditInsertStatement } from '../lib/audit.js';
 import type { WorkerEnv } from '../types/env.js';
 import { postBidAssignment } from './portal-client.js';
 import {
@@ -30,6 +31,21 @@ export function makeConsumerDeps(
         token: policy.writerToken ?? '',
         fetchImpl: fetch,
       });
+    },
+    async recordAudit(entry) {
+      const action: AuditAction = entry.action;
+      await env.DB.batch([
+        auditInsertStatement(env.DB, {
+          bidSessionId: entry.bidSessionId,
+          actorType: 'system',
+          actorId: null,
+          action,
+          targetKind: entry.targetKind,
+          targetId: entry.targetId,
+          afterState: entry.afterState,
+          reason: entry.reason,
+        }),
+      ]);
     },
     async markBidSynced(bidId, syncedAt, attempts) {
       await db

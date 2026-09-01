@@ -34,6 +34,7 @@ describe('portal writeback — 4xx permanent failure (Plan 08 Task 23)', () => {
     };
     const deps = {
       portalClient: vi.fn(async () => result),
+      recordAudit: vi.fn(async () => {}),
       markBidSynced: vi.fn(),
       markBidFailed: vi.fn(async (_id: string, _err: string, attempts: number) => {
         status.value = 'failed';

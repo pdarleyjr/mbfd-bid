@@ -209,6 +209,38 @@ describe('/api/portal/admin/bid-pin', () => {
     expect(getBody.isDefault).toBe(false);
   });
 
+  it('does not mutate the KV-backed member PIN when its audit receipt fails', async () => {
+    let putCalls = 0;
+    const kv = {
+      async get() {
+        return null;
+      },
+      async put() {
+        putCalls += 1;
+      },
+    } as unknown as KVNamespace;
+    h.failNextBatchAt(0);
+
+    const response = await app.fetch(
+      new Request('http://x/api/portal/admin/bid-pin', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${SHARED}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ pin: '4040', updatedBy: 'hub-admin@example' }),
+      }),
+      { ...h.env, PORTAL_BID_READER: SHARED, KV: kv },
+    );
+
+    expect(response.status).toBe(500);
+    expect(putCalls).toBe(0);
+    expect(
+      (
+        await h.db.run(
+          "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'setting_change' AND target_id = 'member_bid_pin'",
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
+  });
+
   it('PUT rejects PINs that fail validation', async () => {
     const kv = makeKv();
     const res = await app.fetch(
