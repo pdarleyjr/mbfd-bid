@@ -1,11 +1,15 @@
-import { evaluateLiveReadiness, type LiveReadinessCheck, type LiveReadinessReport } from '@mbfd/shared';
+import {
+  type LiveReadinessCheck,
+  type LiveReadinessReport,
+  evaluateLiveReadiness,
+} from '@mbfd/shared';
 import { and, eq, ne } from 'drizzle-orm';
 
 import type { DB } from '../db/index.js';
 import { bidSessions } from '../db/schema.js';
 import type { WorkerEnv } from '../types/env.js';
 import { evaluateAuthoritativeStaffingBaseline } from './authoritative-staffing-baseline.js';
-import { loadConfiguredBidYearPolicy, type FrozenSessionBidPolicy } from './bid-policy.js';
+import { type FrozenSessionBidPolicy, loadConfiguredBidYearPolicy } from './bid-policy.js';
 
 export interface LiveBidReadinessInput {
   db: DB;
@@ -139,7 +143,9 @@ export async function evaluateLiveBidReadiness(
       ),
       check(
         'frozen_policy_snapshot',
-        frozenPolicy.coverage.valid && snapshot.v === 3 && snapshot.credentialEvaluationOn !== undefined,
+        frozenPolicy.coverage.valid &&
+          snapshot.v === 3 &&
+          snapshot.credentialEvaluationOn !== undefined,
         'Session policy is materialized, versioned, and includes the explicit credential evaluation date.',
       ),
       check(

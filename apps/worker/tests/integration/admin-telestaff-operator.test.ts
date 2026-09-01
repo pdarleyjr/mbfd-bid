@@ -688,7 +688,8 @@ describe('admin TeleStaff operator workflow', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         expected_reconciliation_revision: detail.import.reconciliationRevision,
-        reason: 'No exception is needed once repeated source occupancy has canonical cardinality seats.',
+        reason:
+          'No exception is needed once repeated source occupancy has canonical cardinality seats.',
       }),
     });
     expect(resolution.status).toBe(200);

@@ -12,10 +12,10 @@ import { and, eq } from 'drizzle-orm';
 
 import type { DB } from '../db/index.js';
 import {
+  assignmentObservations,
   bidSessionPolicySnapshots,
   bidYears,
   credentials,
-  assignmentObservations,
   memberAssignments,
   memberCredentials,
   memberQualificationEvents,

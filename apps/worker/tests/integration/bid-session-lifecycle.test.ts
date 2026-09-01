@@ -373,8 +373,12 @@ describe('POST /api/admin/bid-session/:id/start', () => {
 
   it('permits a fully evidenced live session to start without enabling writeback', async () => {
     await seedAcceptedOfficialBaselineForLiveReadiness(h);
-    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [sessionId]);
-    const revisionRows = await h.db.run('SELECT revision FROM rule_books WHERE version = ?', ['2026.1']);
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    const revisionRows = await h.db.run('SELECT revision FROM rule_books WHERE version = ?', [
+      '2026.1',
+    ]);
     const ruleBookRevision = (revisionRows.results[0] as { revision: number }).revision;
     await seedFrozenPolicySnapshot(h, sessionId, Date.now(), {
       configurationRevision: 1,
@@ -387,9 +391,11 @@ describe('POST /api/admin/bid-session/:id/start', () => {
       },
     });
     expect(
-      (await h.db.run(
-        'SELECT rule_book_version, position_template_version, config_json, configuration_revision FROM bid_years WHERE year = 2026',
-      )).results,
+      (
+        await h.db.run(
+          'SELECT rule_book_version, position_template_version, config_json, configuration_revision FROM bid_years WHERE year = 2026',
+        )
+      ).results,
     ).toMatchObject([
       {
         rule_book_version: '2026.1',
@@ -420,9 +426,9 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     const responseBody = await res.json();
     expect(responseBody).toMatchObject({ current_phase: 'position_bid' });
     expect(res.status).toBe(200);
-    expect((await h.db.run('SELECT is_mock FROM bid_sessions WHERE id = ?', [sessionId])).results).toEqual([
-      { is_mock: 0 },
-    ]);
+    expect(
+      (await h.db.run('SELECT is_mock FROM bid_sessions WHERE id = ?', [sessionId])).results,
+    ).toEqual([{ is_mock: 0 }]);
   });
 
   it('performs a passing real-mode dry run without creating a real session', async () => {

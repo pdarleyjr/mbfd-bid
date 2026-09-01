@@ -12,7 +12,9 @@ function source(relativePath: string) {
 describe('session entry and publication safety copy', () => {
   it('makes rehearsal the session-creation default and routes an empty Live Bid state there', () => {
     expect(source('app/admin/sessions/new/NewSessionForm.tsx')).toContain('defaultMock = true');
-    expect(source('app/admin/sessions/new/NewSessionForm.tsx')).toContain("mode: isMock ? 'mock' : 'live'");
+    expect(source('app/admin/sessions/new/NewSessionForm.tsx')).toContain(
+      "mode: isMock ? 'mock' : 'live'",
+    );
     expect(source('app/admin/bid/page.tsx')).toContain('/admin/sessions/new?mock=1');
   });
 
