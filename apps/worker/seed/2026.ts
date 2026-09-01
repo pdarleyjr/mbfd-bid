@@ -15,7 +15,7 @@
  * Local execution:  same approach (wrangler --local flag).
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -229,15 +229,39 @@ export function buildSeedSqlFromFixtures(): string {
 // ---------------------------------------------------------------------------
 
 function executeLocal(sqlFile: string): void {
-  execSync(
-    `pnpm exec wrangler d1 execute mbfd-bid-staging --env staging --local --file "${sqlFile}"`,
+  execFileSync(
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    [
+      'exec',
+      'wrangler',
+      'd1',
+      'execute',
+      'mbfd-bid-staging',
+      '--env',
+      'staging',
+      '--local',
+      '--file',
+      sqlFile,
+    ],
     { stdio: 'inherit', cwd: resolve(__dirname, '..') },
   );
 }
 
 function executeRemote(sqlFile: string): void {
-  execSync(
-    `pnpm exec wrangler d1 execute mbfd-bid-staging --env staging --remote --file "${sqlFile}"`,
+  execFileSync(
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    [
+      'exec',
+      'wrangler',
+      'd1',
+      'execute',
+      'mbfd-bid-staging',
+      '--env',
+      'staging',
+      '--remote',
+      '--file',
+      sqlFile,
+    ],
     { stdio: 'inherit', cwd: resolve(__dirname, '..') },
   );
 }

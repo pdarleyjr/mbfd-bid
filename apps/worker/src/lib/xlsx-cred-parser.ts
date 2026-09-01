@@ -1,77 +1,85 @@
 import { type CredentialImportRow, CredentialImportRowSchema } from '@mbfd/shared';
-import * as XLSX from 'xlsx';
+import { readSheet } from 'read-excel-file/web-worker';
 
 export type XlsxParseResult<T> = {
   ok: T[];
   errors: { rowNumber: number; raw: unknown; message: string }[];
 };
 
+function parseError(message: string): XlsxParseResult<CredentialImportRow> {
+  return { ok: [], errors: [{ rowNumber: 0, raw: null, message }] };
+}
+
+function normalizedHeader(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
 /**
  * Parses a normalized credentials workbook (one row per credential).
- * Headers are lower-cased with whitespace replaced by underscores before
- * Zod validation.
+ *
+ * `read-excel-file/web-worker` is intentionally used instead of a Node-only
+ * reader so the same parser runs in the Workers runtime.
  */
-export function parseCredentialsXlsx(
-  buf: ArrayBuffer | Uint8Array,
-): XlsxParseResult<CredentialImportRow> {
-  const wb = XLSX.read(buf, { type: 'array' });
-  const firstName = wb.SheetNames[0];
-  if (!firstName) {
-    return { ok: [], errors: [{ rowNumber: 0, raw: null, message: 'empty workbook' }] };
+export async function parseCredentialsXlsx(
+  buf: ArrayBuffer,
+): Promise<XlsxParseResult<CredentialImportRow>> {
+  let rows: unknown[][];
+  try {
+    rows = await readSheet(buf);
+  } catch {
+    return parseError('invalid workbook');
   }
-  const sheet = wb.Sheets[firstName];
-  if (!sheet) {
-    return { ok: [], errors: [{ rowNumber: 0, raw: null, message: 'sheet not found' }] };
-  }
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+  const header = rows[0];
+  if (!Array.isArray(header) || header.length === 0) return parseError('empty workbook');
+
+  const headers = header.map(normalizedHeader);
   const ok: CredentialImportRow[] = [];
   const errors: XlsxParseResult<CredentialImportRow>['errors'] = [];
-  rows.forEach((rawRow, i) => {
-    const normalized = Object.fromEntries(
-      Object.entries(rawRow).map(([k, v]) => [k.trim().toLowerCase().replace(/\s+/g, '_'), v]),
+  for (let index = 1; index < rows.length; index += 1) {
+    const row = rows[index] ?? [];
+    if (row.every((value) => value === null || value === undefined || value === '')) continue;
+    const rawRow = Object.fromEntries(
+      headers.filter(Boolean).map((key, column) => [key, row[column] ?? '']),
     );
-    const result = CredentialImportRowSchema.safeParse(normalized);
+    const result = CredentialImportRowSchema.safeParse(rawRow);
     if (result.success) {
       ok.push(result.data);
     } else {
-      errors.push({ rowNumber: i + 2, raw: rawRow, message: result.error.message });
+      errors.push({ rowNumber: index + 1, raw: rawRow, message: result.error.message });
     }
-  });
+  }
   return { ok, errors };
 }
 
 export type WideMatrixOptions = { metadataColumns: number };
 
 /**
- * Extracts credential NAMES from the header row of a legacy wide-matrix
+ * Extracts credential names from the header row of a legacy wide-matrix
  * workbook (credentials as columns). Skips the first `metadataColumns`
  * header cells. Returns rows with `fyPointsDefault: 0` since the points
  * live elsewhere in this legacy shape.
  */
-export function parseLegacyWideMatrix(
-  buf: ArrayBuffer | Uint8Array,
+export async function parseLegacyWideMatrix(
+  buf: ArrayBuffer,
   opts: WideMatrixOptions,
-): XlsxParseResult<CredentialImportRow> {
-  const wb = XLSX.read(buf, { type: 'array' });
-  const firstName = wb.SheetNames[0];
-  if (!firstName) {
-    return { ok: [], errors: [{ rowNumber: 0, raw: null, message: 'empty workbook' }] };
+): Promise<XlsxParseResult<CredentialImportRow>> {
+  let rows: unknown[][];
+  try {
+    rows = await readSheet(buf);
+  } catch {
+    return parseError('invalid workbook');
   }
-  const sheet = wb.Sheets[firstName];
-  if (!sheet) {
-    return { ok: [], errors: [{ rowNumber: 0, raw: null, message: 'sheet not found' }] };
-  }
-  const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
   const header = rows[0];
-  if (!Array.isArray(header)) {
-    return { ok: [], errors: [{ rowNumber: 1, raw: null, message: 'missing header row' }] };
-  }
+  if (!Array.isArray(header)) return parseError('missing header row');
+
   const seen = new Set<string>();
   const ok: CredentialImportRow[] = [];
   const errors: XlsxParseResult<CredentialImportRow>['errors'] = [];
   for (let i = opts.metadataColumns; i < header.length; i += 1) {
-    const cell = header[i];
-    const name = typeof cell === 'string' ? cell.trim() : String(cell ?? '').trim();
+    const name = String(header[i] ?? '').trim();
     if (!name) continue;
     const key = name.toLowerCase();
     if (seen.has(key)) continue;

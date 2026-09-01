@@ -5,7 +5,7 @@ import type { JwtPayload } from '@mbfd/shared';
 import Database from 'better-sqlite3';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
-import * as XLSX from 'xlsx';
+import writeXlsxFile, { type SheetData } from 'write-excel-file/node';
 import { signJwt } from '../src/lib/jwt.js';
 import credentialsRouter from '../src/routes/admin/credentials.js';
 import type { WorkerEnv } from '../src/types/env';
@@ -146,19 +146,23 @@ const BASE_PAYLOAD = {
 };
 
 /** Build a normalized XLSX buffer with the given rows. */
-function buildNormalizedXlsx(rows: Record<string, unknown>[]): ArrayBuffer {
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+async function xlsxArrayBuffer(rows: SheetData): Promise<ArrayBuffer> {
+  const output = await writeXlsxFile(rows);
+  const bytes = await output.toBuffer();
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+async function buildNormalizedXlsx(rows: Record<string, unknown>[]): Promise<ArrayBuffer> {
+  const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  return xlsxArrayBuffer([
+    headers,
+    ...rows.map((row) => headers.map((header) => row[header] ?? '')),
+  ] as SheetData);
 }
 
 /** Build a legacy wide-matrix XLSX. First row is headers; subsequent rows are data. */
-function buildWideMatrixXlsx(headerRow: string[], dataRows: unknown[][]): ArrayBuffer {
-  const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+function buildWideMatrixXlsx(headerRow: string[], dataRows: unknown[][]): Promise<ArrayBuffer> {
+  return xlsxArrayBuffer([headerRow, ...dataRows] as SheetData);
 }
 
 describe('admin credentials routes', () => {
@@ -197,7 +201,7 @@ describe('admin credentials routes', () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
 
-    const xlsxBytes = buildNormalizedXlsx([
+    const xlsxBytes = await buildNormalizedXlsx([
       { name: 'Driver Engineer Qualified', fy_points_default: 4 },
       { name: 'Hazmat Tech', fy_points_default: 6 },
       { name: 'Acting Lt', fy_points_default: 0 },
@@ -236,7 +240,7 @@ describe('admin credentials routes', () => {
   it('rolls back every credential row when the import audit receipt fails', async () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
-    const xlsxBytes = buildNormalizedXlsx([
+    const xlsxBytes = await buildNormalizedXlsx([
       { name: 'Driver Engineer Qualified', fy_points_default: 4 },
       { name: 'Hazmat Tech', fy_points_default: 6 },
     ]);
@@ -267,7 +271,7 @@ describe('admin credentials routes', () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
 
-    const xlsxBytes = buildNormalizedXlsx([
+    const xlsxBytes = await buildNormalizedXlsx([
       { name: 'Driver Engineer Qualified', fy_points_default: 4 },
       { name: 'Hazmat Tech', fy_points_default: 6 },
       { name: 'Acting Lt', fy_points_default: 0 },
@@ -309,7 +313,7 @@ describe('admin credentials routes', () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
 
-    const xlsxBytes = buildWideMatrixXlsx(
+    const xlsxBytes = await buildWideMatrixXlsx(
       ['Employee Id', 'Last Name', 'First Name', 'Hazmat Tech', 'Swift Water Rescue', 'Acting Lt'],
       [
         ['14335', 'Sola', 'Jesus', 1, 0, 1],
@@ -357,7 +361,9 @@ describe('admin credentials routes', () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
 
-    const xlsxBytes = buildNormalizedXlsx([{ name: 'Hazmat Awareness', fy_points_default: 2 }]);
+    const xlsxBytes = await buildNormalizedXlsx([
+      { name: 'Hazmat Awareness', fy_points_default: 2 },
+    ]);
     const form = new FormData();
     form.append(
       'file',

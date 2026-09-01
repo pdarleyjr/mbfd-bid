@@ -4,7 +4,11 @@ import { Hono } from 'hono';
 import { getDb } from '../../db/index.js';
 import { credentials } from '../../db/schema.js';
 import { auditInsertStatement } from '../../lib/audit.js';
-import { parseCredentialsXlsx, parseLegacyWideMatrix } from '../../lib/xlsx-cred-parser.js';
+import {
+  type XlsxParseResult,
+  parseCredentialsXlsx,
+  parseLegacyWideMatrix,
+} from '../../lib/xlsx-cred-parser.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -25,13 +29,13 @@ router.post('/import', requireStepUpAuth(), async (c) => {
 
   const buf = await file.arrayBuffer();
 
-  let result: ReturnType<typeof parseCredentialsXlsx>;
+  let result: XlsxParseResult<{ name: string; fyPointsDefault: number }>;
   if (mode === 'legacy_wide_matrix') {
     const metadataColumnsParam = c.req.query('metadata_columns');
     const metadataColumns = Math.max(0, Number(metadataColumnsParam ?? 0));
-    result = parseLegacyWideMatrix(buf, { metadataColumns });
+    result = await parseLegacyWideMatrix(buf, { metadataColumns });
   } else {
-    result = parseCredentialsXlsx(buf);
+    result = await parseCredentialsXlsx(buf);
   }
 
   const db = getDb(c.env.DB);

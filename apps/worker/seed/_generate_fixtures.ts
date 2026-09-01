@@ -281,26 +281,28 @@ async function generatePositions(): Promise<void> {
 // This is a normalized list (not a wide-matrix), so we parse it directly.
 // ---------------------------------------------------------------------------
 
-import * as XLSX from 'xlsx';
+import { readSheet } from 'read-excel-file/node';
 
 async function generateCredentials(): Promise<void> {
   const xlsxPath =
     'D:/MBFD/Bid/2025 Bid Documents/eligible/2025 Bid position requirements and points.xlsx';
   const buf = await readFile(xlsxPath);
-  const wb = XLSX.read(buf, { type: 'buffer' });
-
-  const sheet = wb.Sheets.Credentials;
-  if (!sheet) {
+  let rows: unknown[][];
+  try {
+    rows = await readSheet(buf, 'Credentials');
+  } catch {
     throw new Error('No "Credentials" sheet found in XLSX');
   }
-
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+  const header = rows[0];
+  if (!Array.isArray(header)) throw new Error('Credentials sheet has no header row');
+  const headers = header.map((value) => String(value ?? '').trim());
   const enriched: CredentialImportRow[] = [];
 
-  for (const row of rows) {
-    const name = String(row['FY25 Certifications'] ?? '').trim();
+  for (const row of rows.slice(1)) {
+    const byHeader = Object.fromEntries(headers.map((name, index) => [name, row[index] ?? '']));
+    const name = String(byHeader['FY25 Certifications'] ?? '').trim();
     if (!name) continue;
-    const rawPts = row['FY25 Points'];
+    const rawPts = byHeader['FY25 Points'];
     const fyPointsDefault =
       typeof rawPts === 'number' ? rawPts : Number(String(rawPts ?? '0')) || 0;
     enriched.push({
