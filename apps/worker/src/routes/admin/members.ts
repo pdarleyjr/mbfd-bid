@@ -424,8 +424,8 @@ router.patch('/bid-order', requireStepUpAuth(), async (c) => {
 
   const now = new Date();
   const actorId = c.get('claims').sub > 0 ? c.get('claims').sub : 0;
-    await c.env.DB.batch([
-      ...overrides.map((override) =>
+  await c.env.DB.batch([
+    ...overrides.map((override) =>
       c.env.DB.prepare(
         `INSERT INTO manual_bid_order_override
              (bid_session_id, member_id, override_ordinal, created_at)
@@ -433,7 +433,7 @@ router.patch('/bid-order', requireStepUpAuth(), async (c) => {
            ON CONFLICT(bid_session_id, member_id) DO UPDATE SET
              override_ordinal = excluded.override_ordinal`,
       ).bind(session_id, override.member_id, override.override_ordinal, now.getTime()),
-      ),
+    ),
     auditInsertStatement(c.env.DB, {
       bidSessionId: session_id,
       actorType: 'admin',
