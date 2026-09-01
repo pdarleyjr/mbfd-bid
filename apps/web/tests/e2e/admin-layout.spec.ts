@@ -1,7 +1,7 @@
 /**
  * Task 16 E2E: Admin layout + role gate.
  *
- * - No JWT             → /login
+ * - No JWT             → canonical Hub authorization
  * - JWT role=member    → /lobby
  * - JWT role=admin     → renders /admin/page dashboard
  *
@@ -62,7 +62,7 @@ async function setAuthCookies(page: Page, jwt: string) {
 test.describe('Admin gate — no JWT', () => {
   test.skip(!!process.env.CI && !process.env.E2E_FULL, 'Skip in CI without E2E_FULL');
 
-  test('navigating to /admin without JWT redirects to /login', async ({ page }) => {
+  test('navigating to /admin without JWT begins canonical Hub authorization', async ({ page }) => {
     await page.context().clearCookies();
     await page.context().addCookies([
       {
@@ -74,7 +74,13 @@ test.describe('Admin gate — no JWT', () => {
       },
     ]);
     await page.goto('/admin');
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/^https:\/\/www\.mbfdhub\.com\/auth\/bid\/authorize\?/);
+    const authorization = new URL(page.url());
+    expect(authorization.searchParams.get('client_id')).toBe('bid');
+    expect(authorization.searchParams.get('redirect_uri')).toBe(
+      'https://staging.bid.mbfdhub.com/api/auth/callback',
+    );
+    expect(authorization.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 });
 
