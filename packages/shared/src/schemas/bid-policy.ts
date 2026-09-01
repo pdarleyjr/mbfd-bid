@@ -31,6 +31,12 @@ export const FrozenBidPoolMemberSchema = z
       ])
       .nullable(),
     authoritativeAssignmentId: z.string().min(1).nullable(),
+    /**
+     * Present only when a mock session admits an otherwise unconfirmed member
+     * from the one accepted annual staffing baseline. It is deliberately
+     * source-safe and must never be interpreted as a personnel correction.
+     */
+    mockParticipationEvidence: z.enum(['ACCEPTED_STAFFING_BASELINE']).optional(),
   })
   .strict();
 export type FrozenBidPoolMember = z.infer<typeof FrozenBidPoolMemberSchema>;

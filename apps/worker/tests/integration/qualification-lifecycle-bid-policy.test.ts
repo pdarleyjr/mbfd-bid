@@ -183,6 +183,77 @@ async function seedPolicy(h: TestD1): Promise<void> {
   );
 }
 
+/**
+ * A committed official import designated as the annual baseline. The fixture
+ * deliberately supplies no personnel correction for member 3: the mock path
+ * must freeze source-backed participation without turning a legacy/unknown
+ * employment record into an active personnel record.
+ */
+async function seedAcceptedMockParticipationBaseline(h: TestD1): Promise<void> {
+  await h.db.run(
+    `INSERT INTO staffing_positions
+       (id, stable_slot_key, shift, station, unit, position_name, applicable_rank,
+        active_from, review_status, created_at, updated_at)
+     VALUES ('qualification-biddable-slot', 'SYNTHETIC/A/1/FF', 'A', '1', 'Engine 1',
+       'Synthetic FF', 'FF', '2026-08-24', 'approved', 1, 1);
+     INSERT INTO staffing_position_source_mappings
+       (id, staffing_position_id, source_system, source_locator, source_signature,
+       source_version, source_hash, effective_from, created_at)
+     VALUES ('qualification-mock-mapping', 'qualification-biddable-slot', 'telestaff',
+       '{"v":1,"shift":"A","division":"Suppression","station":"1","unit":"Engine 1","position":"Synthetic FF"}',
+       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'synthetic-v1',
+       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '2026-08-24', 1);
+     INSERT INTO assignment_imports
+       (id, source_system, source_version, source_hash, source_format, parser_version, source_kind,
+        status, input_row_count, normalized_data_row_count, unique_employee_count,
+        report_row_count, structural_row_count, source_snapshot_as_of, created_at)
+     VALUES ('qualification-mock-import', 'telestaff', 'synthetic-v1',
+       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+       'TELSTAFF_ASSIGNMENTS_HTML_V1', 'telestaff-assignments-html@1',
+       'official', 'staged', 1, 1, 1, 1, 0, '2026-08-24', 1);
+     INSERT INTO assignment_import_rows
+       (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
+        resolved_member_id, staffing_position_source_mapping_id, normalized_source_topology,
+        disposition, reconciliation_classification, review_status, created_at)
+     VALUES ('qualification-mock-row', 'qualification-mock-import', 1,
+       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+       'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 3,
+       'qualification-mock-mapping',
+       '{"v":1,"shift":"A","division":"Suppression","station":"1","unit":"Engine 1","position":"Synthetic FF"}',
+       'unchanged', 'UNCHANGED', 'not_required', 1);`,
+  );
+  await h.db.run(
+    "UPDATE assignment_imports SET status = 'reviewed' WHERE id = 'qualification-mock-import';",
+  );
+  await h.db.run(
+    `UPDATE assignment_imports
+       SET status = 'approved', approved_at = 1, approved_by_member_id = 1
+       WHERE id = 'qualification-mock-import';`,
+  );
+  await h.db.run(
+    "UPDATE assignment_imports SET status = 'committed', committed_at = 1 WHERE id = 'qualification-mock-import';",
+  );
+  await h.db.run(
+    `INSERT INTO assignment_observations
+       (id, assignment_import_id, assignment_import_row_id, member_id, staffing_position_id,
+        staffing_position_source_mapping_id, normalized_source_topology, observed_at, created_at)
+     VALUES ('qualification-mock-observation', 'qualification-mock-import', 'qualification-mock-row', 3,
+       'qualification-biddable-slot', 'qualification-mock-mapping',
+       '{"v":1,"shift":"A","division":"Suppression","station":"1","unit":"Engine 1","position":"Synthetic FF"}',
+       1, 1);
+     INSERT INTO member_assignments
+       (id, member_id, staffing_position_id, origin_type, origin_ref, source_observation_id,
+        status, effective_from, created_at, updated_at)
+     VALUES ('qualification-mock-assignment', 3, 'qualification-biddable-slot', 'TELESTAFF_IMPORT',
+       'qualification-mock-import', 'qualification-mock-observation', 'active', '2026-08-24', 1, 1);
+     INSERT INTO bid_year_staffing_baselines
+       (id, bid_year, assignment_import_id, status, accepted_at, accepted_by_member_id,
+        acceptance_reason, created_at)
+     VALUES ('qualification-mock-baseline', 2026, 'qualification-mock-import', 'accepted',
+       1, 1, 'Synthetic accepted baseline for mock-only policy coverage.', 1);`,
+  );
+}
+
 describe('qualification evidence in frozen Bid policy', () => {
   let h: TestD1;
 
@@ -549,5 +620,38 @@ describe('qualification evidence in frozen Bid policy', () => {
       exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
       authoritativeAssignmentId: 'qualification-planned-admin-assignment',
     });
+  });
+
+  it('uses an accepted TeleStaff baseline for mock participation without changing live personnel eligibility', async () => {
+    await seedAcceptedMockParticipationBaseline(h);
+    const db = getDb(h.env.DB);
+
+    const live = await prepareBidSessionPolicySnapshot(db, 2026, CAPTURED_BEFORE_EXPIRY, 'live');
+    expect(live).toMatchObject({ ok: true });
+    if (!live.ok || live.snapshot.v !== 3) return;
+    expect(live.snapshot.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: 3,
+          pool: 'EXCLUDED',
+          exclusionReason: 'MEMBER_EMPLOYMENT_UNCONFIRMED',
+        }),
+      ]),
+    );
+
+    await h.db.run("UPDATE rule_books SET status = 'draft' WHERE version = 'qualification.v1';");
+    const mock = await prepareBidSessionPolicySnapshot(db, 2026, CAPTURED_BEFORE_EXPIRY, 'mock');
+    expect(mock).toMatchObject({ ok: true });
+    if (!mock.ok || mock.snapshot.v !== 3) return;
+    expect(mock.snapshot.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: 3,
+          pool: 'FF',
+          exclusionReason: null,
+          mockParticipationEvidence: 'ACCEPTED_STAFFING_BASELINE',
+        }),
+      ]),
+    );
   });
 });

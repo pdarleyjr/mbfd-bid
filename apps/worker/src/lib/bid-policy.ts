@@ -15,6 +15,7 @@ import {
   bidSessionPolicySnapshots,
   bidYears,
   credentials,
+  assignmentObservations,
   memberAssignments,
   memberCredentials,
   memberQualificationEvents,
@@ -663,6 +664,7 @@ export async function prepareBidSessionPolicySnapshot(
     snapshotRuleRows,
     snapshotPositions,
     snapshotParticipation,
+    mockBaseline,
   ] = await Promise.all([
     db
       .select({
@@ -688,11 +690,17 @@ export async function prepareBidSessionPolicySnapshot(
         id: memberAssignments.id,
         memberId: memberAssignments.memberId,
         staffingPositionId: memberAssignments.staffingPositionId,
+        originType: memberAssignments.originType,
+        acceptedImportId: assignmentObservations.assignmentImportId,
         status: memberAssignments.status,
         effectiveFrom: memberAssignments.effectiveFrom,
         effectiveTo: memberAssignments.effectiveTo,
       })
       .from(memberAssignments)
+      .leftJoin(
+        assignmentObservations,
+        eq(memberAssignments.sourceObservationId, assignmentObservations.id),
+      )
       .all(),
     db
       .select({
@@ -794,6 +802,7 @@ export async function prepareBidSessionPolicySnapshot(
       .from(ruleBookPositionParticipation)
       .where(eq(ruleBookPositionParticipation.ruleBookVersion, policy.ruleBookVersion))
       .all(),
+    mode === 'mock' ? evaluateAuthoritativeStaffingBaseline(db, bidYear) : Promise.resolve(null),
   ]);
 
   const bindingByPosition = new Map(bindings.map((binding) => [binding.positionId, binding]));
@@ -890,6 +899,37 @@ export async function prepareBidSessionPolicySnapshot(
   const assignmentByMember = new Map(
     applicableAssignments.map((assignment) => [assignment.memberId, assignment]),
   );
+  // A mock may rehearse with an accepted, complete TeleStaff baseline without
+  // mutating the personnel ledger. The evidence is intentionally narrower
+  // than a generic active assignment: it must be a current TELESTAFF_IMPORT
+  // whose observation belongs to the one accepted annual baseline. Ambiguous
+  // source placement stays excluded rather than silently choosing a row.
+  const acceptedMockBaselineImportId =
+    mockBaseline?.status === 'PASS' && mockBaseline.importId !== null
+      ? mockBaseline.importId
+      : null;
+  const mockAssignmentsByMember = new Map<number, typeof assignmentRows>();
+  if (acceptedMockBaselineImportId !== null) {
+    for (const assignment of assignmentRows) {
+      if (
+        assignment.originType !== 'TELESTAFF_IMPORT' ||
+        assignment.acceptedImportId !== acceptedMockBaselineImportId ||
+        assignment.status !== 'active' ||
+        !effectiveOn(capturedOn, assignment.effectiveFrom, assignment.effectiveTo)
+      ) {
+        continue;
+      }
+      mockAssignmentsByMember.set(assignment.memberId, [
+        ...(mockAssignmentsByMember.get(assignment.memberId) ?? []),
+        assignment,
+      ]);
+    }
+  }
+  const mockParticipantMemberIds = new Set(
+    [...mockAssignmentsByMember.entries()]
+      .filter(([, assignments]) => assignments.length === 1)
+      .map(([memberId]) => memberId),
+  );
   const personnelEventsByMember = new Map<number, typeof personnelEventRows>();
   for (const event of personnelEventRows) {
     if (event.memberId === null) continue;
@@ -972,6 +1012,10 @@ export async function prepareBidSessionPolicySnapshot(
     .map<FrozenBidEligibilityMember>((member) => {
       const personnelState = personnelStateByMember.get(member.id);
       const administrativeAssignment = assignmentByMember.get(member.id);
+      const hasAcceptedMockParticipationEvidence =
+        mode === 'mock' &&
+        personnelState?.employmentStatus === 'unknown' &&
+        mockParticipantMemberIds.has(member.id);
       const eligibility = {
         rank: personnelState?.rank ?? member.rank,
         isProbationary: member.isProbationary,
@@ -985,7 +1029,7 @@ export async function prepareBidSessionPolicySnapshot(
           }),
         ),
       };
-      if (personnelState?.employmentStatus !== 'active') {
+      if (personnelState?.employmentStatus !== 'active' && !hasAcceptedMockParticipationEvidence) {
         return {
           memberId: member.id,
           pool: 'EXCLUDED',
@@ -1036,6 +1080,9 @@ export async function prepareBidSessionPolicySnapshot(
         rankSeniority: member.rankSeniority,
         exclusionReason: null,
         authoritativeAssignmentId: null,
+        ...(hasAcceptedMockParticipationEvidence
+          ? { mockParticipationEvidence: 'ACCEPTED_STAFFING_BASELINE' as const }
+          : {}),
         ...eligibility,
       };
     })

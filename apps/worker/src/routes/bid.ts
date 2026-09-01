@@ -384,15 +384,17 @@ bid.get('/board', async (c) => {
       priorPositionId: string | null;
     }
   > = {};
-  // When a brand-new session is in `config` phase, the DO projection has no
-  // materialized order yet. Preview only the order derived from its frozen
-  // policy snapshot; do not substitute the mutable global roster.
+  // When the DO has no materialized order, render the order derived from the
+  // frozen policy snapshot rather than consulting the mutable global roster.
+  // Only a brand-new `config` session is a preview: a paused or completed
+  // session can legitimately restore that same frozen order after DO state
+  // compaction, and must not be labelled as "session not started".
   let bidOrder: ReadonlyArray<{ ordinal: number; memberId: number; pool: 'OFC' | 'FF' }> =
     bodyOrder;
   let bidOrderPreview = false;
   if (bidOrder.length === 0 && frozenOrder.length > 0) {
     bidOrder = frozenOrder;
-    bidOrderPreview = true;
+    bidOrderPreview = body.currentPhase === 'config';
   }
 
   const currentBidderId = typeof body.currentBidderId === 'number' ? body.currentBidderId : null;

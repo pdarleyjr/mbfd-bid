@@ -202,7 +202,7 @@ describe('GET /api/board canonical mock state', () => {
     await teardownTestD1(h);
   });
 
-  it('does not let stale legacy session fields override an authoritative canonical freeze', async () => {
+  it('does not label a canonical paused session as an unstarted preview when it restores its frozen order', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
         headers: { Authorization: `Bearer ${await jwt()}` },
@@ -218,7 +218,7 @@ describe('GET /api/board canonical mock state', () => {
       lastSeq: 8,
       frozenAt: 1,
       bidOrder: [{ ordinal: 1, memberId: 77, pool: 'FF' }],
-      bidOrderPreview: true,
+      bidOrderPreview: false,
     });
   });
 
