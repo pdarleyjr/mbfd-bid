@@ -29,6 +29,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../db/index.js';
 import { credentials as credentialsTable, memberCredentials, members } from '../db/schema.js';
+import { auditInsertStatement } from '../lib/audit.js';
 import {
   type BidPinReadResult,
   type BidPinSetting,
@@ -143,6 +144,21 @@ router.put('/admin/bid-pin', async (c) => {
       return c.json({ error: 'invalid_pin', detail: 'PIN must be 4–8 digits.' }, 400);
     }
     const updatedBy = parsed.data.updatedBy ?? 'mbfd-hub-admin';
+    // The bridge is authenticated server-to-server. Its KV mutation still
+    // requires a durable, redacted audit receipt before the authentication
+    // setting can change.
+    await c.env.DB.batch([
+      auditInsertStatement(c.env.DB, {
+        bidSessionId: null,
+        actorType: 'system',
+        actorId: null,
+        action: 'setting_change',
+        targetKind: 'authentication_setting',
+        targetId: 'member_bid_pin',
+        afterState: { configured: true, updated_by: updatedBy, pin: 'redacted' },
+        reason: 'Portal administrator rotated the member bid access PIN.',
+      }),
+    ]);
     const setting = await setBidPin(c.env.KV, parsed.data.pin, updatedBy);
     return c.json(presentConfiguredPinSetting(setting));
   } catch (err) {

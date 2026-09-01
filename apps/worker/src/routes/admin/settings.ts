@@ -14,6 +14,7 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { auditInsertStatement } from '../../lib/audit.js';
 import {
   type BidPinReadResult,
   type BidPinSetting,
@@ -57,6 +58,21 @@ settings.put('/bid-pin', async (c) => {
   }
   const claims = c.get('claims');
   const updatedBy = claims.emp ?? `member:${claims.sub}`;
+  // KV and D1 cannot share a transaction. Record the settings mutation before
+  // changing the authentication control, and never include the PIN itself in
+  // an audit payload.
+  await c.env.DB.batch([
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: claims.sub > 0 ? claims.sub : null,
+      action: 'setting_change',
+      targetKind: 'authentication_setting',
+      targetId: 'member_bid_pin',
+      afterState: { configured: true, updated_by: updatedBy, pin: 'redacted' },
+      reason: 'Administrator rotated the member bid access PIN.',
+    }),
+  ]);
   const setting = await setBidPin(c.env.KV, parsed.data.pin, updatedBy);
   return c.json(presentConfiguredSetting(setting));
 });

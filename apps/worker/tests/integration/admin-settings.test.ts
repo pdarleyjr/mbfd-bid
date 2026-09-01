@@ -83,4 +83,38 @@ describe('/api/admin/settings/bid-pin', () => {
     );
     await expect(get.json()).resolves.toMatchObject({ configured: true, pin: '4815' });
   });
+
+  it('does not mutate the KV-backed member PIN when its audit receipt fails', async () => {
+    let putCalls = 0;
+    h.env.KV = {
+      async get() {
+        return null;
+      },
+      async put() {
+        putCalls += 1;
+      },
+    } as unknown as KVNamespace;
+    h.failNextBatchAt(0);
+    const jwt = await adminJwt(h.env);
+
+    const response = await app().request(
+      '/api/admin/settings/bid-pin',
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${jwt}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ pin: '4815' }),
+      },
+      h.env,
+    );
+
+    expect(response.status).toBe(500);
+    expect(putCalls).toBe(0);
+    expect(
+      (
+        await h.db.run(
+          "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'setting_change' AND target_id = 'member_bid_pin'",
+        )
+      ).results,
+    ).toEqual([{ n: 0 }]);
+  });
 });
