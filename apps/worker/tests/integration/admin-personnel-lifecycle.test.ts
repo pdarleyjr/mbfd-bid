@@ -64,6 +64,30 @@ describe('personnel lifecycle administration', () => {
     await teardownTestD1(h);
   });
 
+  it('previews a permanent assignment change without writing D1 or changing an established session', async () => {
+    const before = await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events');
+    const response = await request(h, '/api/admin/personnel/changes/preview', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await adminJwt()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'TRANSFER',
+        member_id: 1,
+        staffing_position_id: 'slot-vacant',
+        effective_on: '2026-09-15',
+        reason: 'Synthetic preview remains non-mutating.',
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: true,
+      vacancyImpact: 'KNOWN_VACANT',
+      establishedBidSnapshotImpact: 'NONE',
+    });
+    expect(await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events')).toEqual(
+      before,
+    );
+  });
+
   it('requires a fresh administrator step-up before a lifecycle mutation', async () => {
     const response = await request(h, '/api/admin/personnel/changes', {
       method: 'POST',

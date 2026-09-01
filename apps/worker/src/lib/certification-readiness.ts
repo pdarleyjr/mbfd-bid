@@ -29,6 +29,9 @@ export function classifyCertificationReadiness(input: {
   const soon = new Date(`${input.asOf}T00:00:00.000Z`);
   soon.setUTCDate(soon.getUTCDate() + input.expiringSoonDays);
   const soonOn = soon.toISOString().slice(0, 10);
+  const recentlyChangedAfter = new Date(`${input.asOf}T00:00:00.000Z`);
+  recentlyChangedAfter.setUTCDate(recentlyChangedAfter.getUTCDate() - 30);
+  const recentlyChangedOn = recentlyChangedAfter.toISOString().slice(0, 10);
   return {
     asOf: input.asOf,
     annualDetermination:
@@ -47,7 +50,7 @@ export function classifyCertificationReadiness(input: {
       return {
         ...row,
         classification,
-        recentlyChanged: row.changedAt !== null && row.changedAt >= `${input.asOf.slice(0, 8)}01`,
+        recentlyChanged: row.changedAt !== null && row.changedAt >= recentlyChangedOn,
         sourceProvenance: row.evidenceSource ?? 'MISSING_PROVENANCE',
         affectedBidOpportunities: 'NOT_DETERMINED_BY_READINESS_PROJECTION' as const,
       };
