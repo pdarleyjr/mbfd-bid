@@ -7,6 +7,7 @@ import { getDb } from '../../db/index.js';
 import {
   bidYears,
   positionRules,
+  positionStaffingBindings,
   positionTemplates,
   positions,
   ruleBooks,
@@ -189,13 +190,12 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
     ]);
   if (
     year === undefined ||
-    year.positionTemplateVersion !== null ||
-    year.ruleBookVersion !== null
+    (targetTemplate === undefined &&
+      (year.positionTemplateVersion !== null || year.ruleBookVersion !== null))
   ) {
     return c.json({ error: 'bid_year_already_designated' }, 409);
   }
   if (sourceTemplate === undefined) return c.json({ error: 'source_template_not_found' }, 404);
-  if (targetTemplate !== undefined) return c.json({ error: 'target_template_already_exists' }, 409);
   if (draft === undefined || draft.status !== 'draft') {
     return c.json({ error: 'draft_rule_book_required' }, 409);
   }
@@ -208,6 +208,40 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
       },
       409,
     );
+  }
+  if (targetTemplate !== undefined) {
+    const [targetPositions, targetRules] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(positions)
+        .where(eq(positions.templateVersion, STATION_SIX_TARGET))
+        .get(),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(positionRules)
+        .where(eq(positionRules.ruleBookVersion, STATION_SIX_RULE_BOOK))
+        .get(),
+    ]);
+    if (targetPositions?.count !== 242 || targetRules?.count !== 238) {
+      return c.json({ error: 'target_template_shape_unrecognized' }, 409);
+    }
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT OR IGNORE INTO position_staffing_bindings (
+           position_id, template_version, staffing_position_id, authoritative_source_ref, review_status, created_at
+         )
+         SELECT position_id, ?, staffing_position_id, authoritative_source_ref, review_status, created_at
+           FROM position_staffing_bindings WHERE template_version = ?`,
+      ).bind(STATION_SIX_TARGET, STATION_SIX_SOURCE),
+    ]);
+    return c.json({
+      template_version: STATION_SIX_TARGET,
+      rule_book_version: STATION_SIX_RULE_BOOK,
+      positions: 242,
+      rules: 238,
+      station_six_roles_per_shift: 6,
+      resumed: true,
+    });
   }
 
   const sourceById = new Map(sourcePositions.map((position) => [position.id, position]));
@@ -267,6 +301,13 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
     ).bind(...Array(9).fill(STATION_SIX_TARGET)),
   ];
   statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO position_staffing_bindings (
+         position_id, template_version, staffing_position_id, authoritative_source_ref, review_status, created_at
+       )
+       SELECT position_id, ?, staffing_position_id, authoritative_source_ref, review_status, created_at
+         FROM position_staffing_bindings WHERE template_version = ?`,
+    ).bind(STATION_SIX_TARGET, STATION_SIX_SOURCE),
     c.env.DB.prepare(
       "DELETE FROM position_rules WHERE rule_book_version = ? AND position_id GLOB '[ABC]61[123]'",
     ).bind(STATION_SIX_RULE_BOOK),
