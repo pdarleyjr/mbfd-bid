@@ -1,5 +1,5 @@
 import { type JwtPayload, ReasonCodeSchema } from '@mbfd/shared';
-import { type SQL, and, eq } from 'drizzle-orm';
+import { type SQL, and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
