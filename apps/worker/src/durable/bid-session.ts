@@ -1085,48 +1085,32 @@ export class BidSessionDO implements DurableObject {
   }
 
   /**
-   * Writes a flat audit_log row and (best-effort) emits into the R2 chain.
-   *
-   * For `pick` and `forced_pick` events the chain emit is performed
-   * explicitly BEFORE state is persisted (§D10 strict variant) and the
-   * caller passes `opts.skipChainEmit = true` so this method doesn't
-   * double-emit. Non-pick events (skip, freeze, etc.) are emitted
-   * best-effort: their D1 row is the authoritative record and any missing
-   * chain entry is picked up by the reconciliation cron.
+   * Writes the authoritative D1 audit row and its R2-chain intent. Callers
+   * must await this before projecting a material state transition into DO
+   * storage: audit failures are command failures, never log-only warnings.
    */
   private async writeAudit(
     draft: AuditRowDraft,
     opts: { skipChainEmit?: boolean } = {},
   ): Promise<void> {
-    try {
-      await getDb(this.env.DB).insert(auditLog).values({
-        id: draft.id,
-        bidSessionId: draft.bidSessionId,
-        seq: draft.seq,
-        actorType: draft.actorType,
-        actorId: draft.actorId,
-        action: draft.action,
-        targetKind: draft.targetKind,
-        targetId: draft.targetId,
-        beforeState: draft.beforeState,
-        afterState: draft.afterState,
-        reason: draft.reason,
-        aiAdvisoryId: draft.aiAdvisoryId,
-        clientMeta: draft.clientMeta,
-        createdAt: draft.createdAt,
-      });
-    } catch (err) {
-      // Audit failures must not break the DO state machine. The durable state
-      // is the source of truth; failed audit writes are picked up by the
-      // Plan 08 reconciliation job.
-      console.error('[BidSessionDO] audit insert failed', err);
-    }
+    await getDb(this.env.DB).insert(auditLog).values({
+      id: draft.id,
+      bidSessionId: draft.bidSessionId,
+      seq: draft.seq,
+      actorType: draft.actorType,
+      actorId: draft.actorId,
+      action: draft.action,
+      targetKind: draft.targetKind,
+      targetId: draft.targetId,
+      beforeState: draft.beforeState,
+      afterState: draft.afterState,
+      reason: draft.reason,
+      aiAdvisoryId: draft.aiAdvisoryId,
+      clientMeta: draft.clientMeta,
+      createdAt: draft.createdAt,
+    });
     if (opts.skipChainEmit) return;
-    try {
-      await this.emitDraftToChain(draft);
-    } catch (err) {
-      console.error('[BidSessionDO] chain emit (best-effort) failed', err);
-    }
+    await this.emitDraftToChain(draft);
   }
 
   /**
@@ -1218,6 +1202,7 @@ export class BidSessionDO implements DurableObject {
     const emitter = this.getEmitter();
     if (!emitter) return; // emitter disabled (no AUDIT_SIGNING_PRIVKEY) — degrade gracefully
     await emitter.emit(this.draftToEvent(draft));
+    await emitter.drainSession(draft.bidSessionId);
     // W34 — arm the timeout flush. If the emit just triggered a threshold
     // flush (100 events), pendingSessions() is empty and we don't really
     // need an alarm — but we set it cheaply and the alarm() callback
@@ -1229,6 +1214,7 @@ export class BidSessionDO implements DurableObject {
     const emitter = this.getEmitter();
     if (!emitter) return;
     await emitter.emit(this.draftToEvent(draft));
+    await emitter.drainSession(draft.bidSessionId);
     await this.armAuditFlushAlarm();
   }
 
@@ -1778,12 +1764,12 @@ export class BidSessionDO implements DurableObject {
           this.send(client.socket, envelope);
           return;
         }
+        // Authoritative D1 audit must commit before the DO state projection.
+        await this.writeAudit(pickDraft, { skipChainEmit: true });
         await persistBidSessionState(this.storage, result.newState);
         this.memoryState = result.newState;
         envelope = this.envelope('pick_made', result.event.payload, result.newState.lastSeq);
         await this.storage.put(idemKey, { envelope } satisfies IdempotencyRecord);
-        // D1 mirror — fire-and-forget; chain is already durable in R2.
-        await this.writeAudit(pickDraft, { skipChainEmit: true });
         // Plan 08 Task 21 — enqueue portal write-back. Failures are
         // best-effort; reconciliation cron picks up unfinished rows.
         try {
@@ -1818,9 +1804,6 @@ export class BidSessionDO implements DurableObject {
       if (r.kind === 'rejected') {
         return { ok: false };
       }
-      await persistBidSessionState(this.storage, r.newState);
-      this.memoryState = r.newState;
-      const envelope = this.envelope('skip', r.event.payload, r.newState.lastSeq);
       await this.writeAudit(
         auditEntryForSkip({
           bidSessionId: r.event.payload.bidSessionId,
@@ -1831,6 +1814,9 @@ export class BidSessionDO implements DurableObject {
           nowMs: Date.now(),
         }),
       );
+      await persistBidSessionState(this.storage, r.newState);
+      this.memoryState = r.newState;
+      const envelope = this.envelope('skip', r.event.payload, r.newState.lastSeq);
       this.broadcast(envelope);
       return { ok: true, envelope };
     });
@@ -1870,10 +1856,10 @@ export class BidSessionDO implements DurableObject {
         console.error('[BidSessionDO] force-pick rejected — audit chain unavailable', err);
         return { ok: false };
       }
+      await this.writeAudit(forcedDraft, { skipChainEmit: true });
       await persistBidSessionState(this.storage, r.newState);
       this.memoryState = r.newState;
       const envelope = this.envelope('forced_pick', r.event.payload, r.newState.lastSeq);
-      await this.writeAudit(forcedDraft, { skipChainEmit: true });
       this.broadcast(envelope);
       return { ok: true, envelope };
     });
@@ -1886,9 +1872,6 @@ export class BidSessionDO implements DurableObject {
       if (r.kind === 'rejected') {
         return { ok: false };
       }
-      await persistBidSessionState(this.storage, r.newState);
-      this.memoryState = r.newState;
-      const envelope = this.envelope('freeze', r.event.payload, r.newState.lastSeq);
       await this.writeAudit(
         auditEntryForFreeze({
           bidSessionId: r.event.payload.bidSessionId,
@@ -1898,6 +1881,9 @@ export class BidSessionDO implements DurableObject {
           nowMs: Date.now(),
         }),
       );
+      await persistBidSessionState(this.storage, r.newState);
+      this.memoryState = r.newState;
+      const envelope = this.envelope('freeze', r.event.payload, r.newState.lastSeq);
       this.broadcast(envelope);
       return { ok: true, envelope };
     });
