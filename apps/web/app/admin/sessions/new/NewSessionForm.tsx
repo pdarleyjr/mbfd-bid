@@ -21,7 +21,9 @@ export function NewSessionForm({ defaultMock = true }: { defaultMock?: boolean }
         credentials: 'include',
         body: JSON.stringify({
           bid_year: bidYear,
-          is_mock: isMock,
+          // The Worker deliberately rejects omission: a UI default must not
+          // be able to turn into a real session through an API default.
+          mode: isMock ? 'mock' : 'live',
         }),
       });
       if (!res.ok) {
