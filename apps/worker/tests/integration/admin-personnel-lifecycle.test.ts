@@ -64,6 +64,78 @@ describe('personnel lifecycle administration', () => {
     await teardownTestD1(h);
   });
 
+  it('previews a permanent assignment change without writing D1 or changing an established session', async () => {
+    const before = await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events');
+    const response = await request(h, '/api/admin/personnel/changes/preview', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await adminJwt()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'TRANSFER',
+        member_id: 1,
+        staffing_position_id: 'slot-vacant',
+        effective_on: '2026-09-15',
+        reason: 'Synthetic preview remains non-mutating.',
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: true,
+      vacancyImpact: 'KNOWN_VACANT',
+      establishedBidSnapshotImpact: 'NONE',
+    });
+    expect(await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events')).toEqual(
+      before,
+    );
+  });
+
+  it('keeps a no-target lifecycle preview non-speculative about vacancy impact', async () => {
+    const before = await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events');
+    const response = await request(h, '/api/admin/personnel/changes/preview', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await adminJwt()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'RETIREMENT',
+        member_id: 1,
+        effective_on: '2026-09-15',
+        separation_type: 'Synthetic retirement preview.',
+        reason: 'Synthetic preview remains non-mutating.',
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: true,
+      vacancyImpact: 'NOT_DETERMINED_BY_PERSONNEL_PREVIEW',
+      establishedBidSnapshotImpact: 'NONE',
+    });
+    expect(await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events')).toEqual(
+      before,
+    );
+  });
+
+  it('keeps a Special Assignment as a non-mutating daily-vacancy overlay', async () => {
+    const response = await request(h, '/api/admin/personnel/temporary-overlays/preview', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await adminJwt()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'SPECIAL_ASSIGNMENT',
+        member_id: 1,
+        underlying_assignment_id: 'assignment-current',
+        underlying_position_id: 'slot-ff',
+        temporary_position_id: 'staff-a',
+        effective_on: '2026-09-15',
+        planned_end_on: null,
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      underlyingBidAssignmentPreserved: true,
+      aDayPreserved: true,
+      memberRemainsBidEligible: true,
+      dailyVacancy: { bidVacancy: false },
+      temporaryDestinationStaffingCount: 'POLICY_PENDING',
+    });
+  });
+
   it('requires a fresh administrator step-up before a lifecycle mutation', async () => {
     const response = await request(h, '/api/admin/personnel/changes', {
       method: 'POST',

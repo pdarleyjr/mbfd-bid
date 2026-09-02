@@ -18,6 +18,7 @@ import {
   isIsoCalendarDate,
   planPersonnelLifecycleChange,
 } from '../../lib/personnel-lifecycle.js';
+import { previewTemporaryOverlay } from '../../lib/temporary-assignment-overlay.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -711,6 +712,121 @@ router.get('/changes', async (c) => {
           requestedMemberId,
         );
   return c.json({ changes: events.map(mapEvent), count: events.length });
+});
+
+const TemporaryOverlayPreviewSchema = z
+  .object({
+    kind: z.enum([
+      'SPECIAL_ASSIGNMENT',
+      'LIGHT_DUTY',
+      'TEMPORARY_DUTY',
+      'DETAIL',
+      'EXECUTIVE_ASSIGNMENT',
+      'TEMPORARY_A_DAY_CHANGE',
+    ]),
+    member_id: z.number().int().positive(),
+    underlying_assignment_id: z.string().trim().min(1).max(128),
+    underlying_position_id: z.string().trim().min(1).max(128),
+    temporary_position_id: z.string().trim().min(1).max(128),
+    effective_on: z.string(),
+    planned_end_on: z.string().nullable(),
+  })
+  .strict();
+
+router.post('/temporary-overlays/preview', async (c) => {
+  const parsed = TemporaryOverlayPreviewSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const body = parsed.data;
+  if (
+    !isIsoCalendarDate(body.effective_on) ||
+    (body.planned_end_on !== null && !isIsoCalendarDate(body.planned_end_on))
+  )
+    return c.json({ error: 'invalid_effective_date' }, 422);
+  const preview = previewTemporaryOverlay({
+    kind: body.kind,
+    memberId: body.member_id,
+    underlyingAssignmentId: body.underlying_assignment_id,
+    underlyingPositionId: body.underlying_position_id,
+    temporaryPositionId: body.temporary_position_id,
+    effectiveOn: body.effective_on,
+    plannedEndOn: body.planned_end_on,
+  });
+  return preview.ok ? c.json({ preview: true, ...preview }) : c.json(preview, 422);
+});
+
+/** Side-effect-free preview for the supported permanent lifecycle operations. */
+router.post('/changes/preview', async (c) => {
+  const raw = await c.req.json().catch(() => null);
+  const parsed = PersonnelChangeSchema.safeParse(raw);
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const body = parsed.data;
+  if (!isIsoCalendarDate(body.effective_on) || body.member_id === undefined) {
+    return c.json({ error: 'preview_requires_supported_member_change' }, 422);
+  }
+  if (
+    body.kind === 'NEW_HIRE' ||
+    body.kind === 'POSITION_CREATE' ||
+    body.kind === 'POSITION_RETIRE'
+  ) {
+    return c.json({ error: 'preview_requires_supported_member_change' }, 422);
+  }
+  const member = await loadMember(c.env.DB, body.member_id);
+  if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
+  const assignments = await all<AssignmentDbRow>(
+    c.env.DB,
+    `SELECT id, member_id, staffing_position_id, status, effective_from, effective_to
+       FROM member_assignments WHERE member_id = ?`,
+    member.id,
+  );
+  const plan = planPersonnelLifecycleChange({
+    kind: body.kind,
+    effectiveOn: body.effective_on,
+    reason: body.reason,
+    actorSubject: String(c.get('claims').sub ?? 'preview'),
+    idempotencyKey: 'preview-only',
+    member: toMemberState(member),
+    activeAssignments: assignments.map(toAssignmentState),
+    ...(body.staffing_position_id === undefined
+      ? {}
+      : { staffingPositionId: body.staffing_position_id }),
+    ...(body.rank_after === undefined ? {} : { rankAfter: body.rank_after }),
+    ...(body.separation_type === undefined ? {} : { separationType: body.separation_type }),
+    ...(body.employment_status_after === undefined
+      ? {}
+      : { employmentStatusAfter: body.employment_status_after }),
+    ...(body.supersedes_event_id === undefined
+      ? {}
+      : { supersedesEventId: body.supersedes_event_id }),
+    nowOn: todayUtc(),
+    eventId: 'preview-only',
+  });
+  if (!plan.ok) return c.json({ error: plan.error }, 422);
+  const targetOccupant =
+    body.staffing_position_id === undefined
+      ? null
+      : await first<{ member_id: number }>(
+          c.env.DB,
+          `SELECT member_id FROM member_assignments WHERE staffing_position_id = ? AND status <> 'cancelled'
+       AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?) LIMIT 1`,
+          body.staffing_position_id,
+          body.effective_on,
+          body.effective_on,
+        );
+  return c.json({
+    preview: true,
+    current: { member: mapMember(member), assignments: assignments.map(mapAssignment) },
+    proposed: plan,
+    vacancyImpact:
+      targetOccupant === null
+        ? 'NOT_DETERMINED_BY_PERSONNEL_PREVIEW'
+        : targetOccupant === undefined
+          ? 'KNOWN_VACANT'
+          : targetOccupant.member_id === member.id
+            ? 'CURRENT_MEMBER_OCCUPIES_TARGET'
+            : 'KNOWN_OCCUPIED',
+    qualificationImpact: 'NOT_DETERMINED_BY_PERSONNEL_PREVIEW',
+    establishedBidSnapshotImpact: 'NONE',
+  });
 });
 
 async function ensureTargetPositionAvailable(
