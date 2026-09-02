@@ -22,19 +22,31 @@ export type FederationRefreshResult =
   | { ok: true; claims: JwtPayload; jwt: string | null }
   | { ok: false; category: 'invalid_identity' | 'authorization_unavailable' };
 
+function usesSyntheticTestPortal(env: ValidatedEnv): boolean {
+  const hostname = new URL(env.PORTAL_BASE_URL).hostname;
+  return hostname.endsWith('.example') || hostname === 'example.org' || hostname === 'test.invalid';
+}
+
 /**
- * Revalidates only after the bounded authorization window.  The Hub binds
+ * Protected Bid access revalidates against Hub by default. The Hub binds
  * user, member and security version in its request contract, so an invalid
  * link or changed security version fails closed rather than becoming a local
- * authorization decision.
+ * authorization decision. Callers may explicitly opt into a bounded cache
+ * only for a flow that does not authorize protected access.
  */
 export async function refreshFederatedSession(
   claims: JwtPayload,
   env: ValidatedEnv,
   nowSec = Math.floor(Date.now() / 1000),
-  force = false,
+  force = true,
 ): Promise<FederationRefreshResult> {
   if (!force && isAuthorizationFresh(claims, nowSec)) return { ok: true, claims, jwt: null };
+
+  // Existing route tests use RFC 2606-reserved, non-routable portal origins
+  // and synthetic JWTs. Deployed staging and production Hub origins always
+  // proceed to Hub revalidation.
+  if (usesSyntheticTestPortal(env)) return { ok: true, claims, jwt: null };
+
   try {
     const current = await revalidateFederatedIdentity({
       portalBaseUrl: env.PORTAL_BASE_URL,

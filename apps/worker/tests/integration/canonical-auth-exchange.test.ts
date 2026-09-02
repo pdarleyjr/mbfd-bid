@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { signJwt } from '../../src/lib/jwt.js';
 import auth from '../../src/routes/auth';
+import bid from '../../src/routes/bid';
 import type { WorkerEnv } from '../../src/types/env';
 
 const ORIG_FETCH = globalThis.fetch;
@@ -27,6 +28,10 @@ function env(environment: 'staging' | 'production' = 'staging'): WorkerEnv {
 
 function app() {
   return new Hono<{ Bindings: WorkerEnv }>().route('/api/auth', auth);
+}
+
+function bidApp() {
+  return new Hono<{ Bindings: WorkerEnv }>().route('/api', bid);
 }
 
 function hubSuccess(overrides: Record<string, unknown> = {}) {
@@ -258,5 +263,48 @@ describe('POST /api/auth/revalidate', () => {
     );
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ error: 'authorization_unavailable' });
+  });
+});
+
+describe('protected Bid routes', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = ORIG_FETCH;
+  });
+
+  it('denies a freshly issued session when Hub now rejects its identity', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const jwt = await signJwt(
+      {
+        sub: 901,
+        hub_user_id: 901,
+        member_id: 555,
+        emp: '55555',
+        role: 'member',
+        security_version: 3,
+        rank: 'FF',
+        first_name: 'Canonical',
+        last_name: 'Member',
+        fresh_auth_at: now,
+        authz_checked_at: now,
+      },
+      'A'.repeat(64),
+    );
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(null, { status: 401 }),
+    );
+
+    const response = await bidApp().request(
+      '/api/me',
+      { headers: { Authorization: `Bearer ${jwt}` } },
+      env(),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: 'missing_auth' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });
