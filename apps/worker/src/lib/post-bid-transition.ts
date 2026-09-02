@@ -27,6 +27,11 @@ export interface TransitionRosterEntry extends FutureRosterObservation {
   readonly rank: string | null;
   readonly specialty: string | null;
   readonly priorAssignmentPositionId: string | null;
+  readonly currentShift: string | null;
+  readonly currentStation: string | null;
+  readonly currentUnit: string | null;
+  readonly currentPosition: string | null;
+  readonly currentADay: string | null;
   readonly positionId: string;
   readonly annualSessionId: string;
   readonly annualBidYear: number;

@@ -237,6 +237,41 @@ async function roster(
   const identityByMemberId = new Map(identities.map((identity) => [identity.id, identity]));
   if (identityByMemberId.size !== memberIds.length)
     return { ok: false, error: 'frozen_member_identity_missing' };
+  const completionOn = new Date(projected.value.completion.completedAtMs)
+    .toISOString()
+    .slice(0, 10);
+  const currentAssignments = (
+    await db
+      .prepare(
+        `SELECT assignment.member_id, position.shift, position.station, position.unit, position.position_name,
+                observation.source_a_r_day
+           FROM member_assignments assignment
+           JOIN staffing_positions position ON position.id = assignment.staffing_position_id
+      LEFT JOIN assignment_observations observation ON observation.id = assignment.source_observation_id
+          WHERE assignment.member_id IN (${memberIds.map(() => '?').join(',')})
+            AND assignment.status = 'active'
+            AND assignment.effective_from <= ?
+            AND (assignment.effective_to IS NULL OR assignment.effective_to >= ?)
+          ORDER BY assignment.member_id, assignment.effective_from DESC, assignment.id DESC`,
+      )
+      .bind(...memberIds, completionOn, completionOn)
+      .all()
+  ).results as unknown as Array<{
+    member_id: number;
+    shift: string | null;
+    station: string | null;
+    unit: string | null;
+    position_name: string | null;
+    source_a_r_day: string | null;
+  }>;
+  // The first row is deterministic by effective date. No overlay table is
+  // consulted: temporary light-duty/special-assignment data cannot become a
+  // permanent annual transition value.
+  const currentAssignmentByMemberId = new Map<number, (typeof currentAssignments)[number]>();
+  for (const current of currentAssignments) {
+    if (!currentAssignmentByMemberId.has(current.member_id))
+      currentAssignmentByMemberId.set(current.member_id, current);
+  }
   const rows: TransitionRosterEntry[] = projected.value.participants.map((participant) => {
     const identity = identityByMemberId.get(participant.memberId);
     if (identity === undefined) throw new Error('frozen_member_identity_missing');
@@ -253,6 +288,11 @@ async function roster(
       aDay: participant.aDay,
       specialty: participant.specialty,
       priorAssignmentPositionId: identity.prior_position_id,
+      currentShift: currentAssignmentByMemberId.get(participant.memberId)?.shift ?? null,
+      currentStation: currentAssignmentByMemberId.get(participant.memberId)?.station ?? null,
+      currentUnit: currentAssignmentByMemberId.get(participant.memberId)?.unit ?? null,
+      currentPosition: currentAssignmentByMemberId.get(participant.memberId)?.position_name ?? null,
+      currentADay: currentAssignmentByMemberId.get(participant.memberId)?.source_a_r_day ?? null,
       annualSessionId: sessionId,
       annualBidYear: session.bid_year,
       ruleBookVersion: projected.value.frozen.ruleBookVersion,
@@ -469,6 +509,11 @@ router.get('/:id/telestaff-package.csv', async (c) => {
       { header: 'member_name', value: (r) => r.memberName },
       { header: 'rank', value: (r) => r.rank },
       { header: 'current_assignment_position_id', value: (r) => r.priorAssignmentPositionId },
+      { header: 'current_shift', value: (r) => r.currentShift },
+      { header: 'current_station', value: (r) => r.currentStation },
+      { header: 'current_unit', value: (r) => r.currentUnit },
+      { header: 'current_position', value: (r) => r.currentPosition },
+      { header: 'current_a_day', value: (r) => r.currentADay },
       { header: 'new_shift', value: (r) => r.shift },
       { header: 'new_station', value: (r) => r.station },
       { header: 'new_unit', value: (r) => r.unit },
