@@ -1,0 +1,741 @@
+import type { JwtPayload } from '@mbfd/shared';
+import { Hono } from 'hono';
+import { ulid } from 'ulid';
+import { z } from 'zod';
+
+import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
+import { getDb } from '../../db/index.js';
+import { projectCanonicalAnnualCompletion } from '../../lib/annual-completion-result.js';
+import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
+import { createCsvStream } from '../../lib/csv-stream.js';
+import {
+  type FutureRosterObservation,
+  type TransitionRosterEntry,
+  evaluateFinalization,
+  evaluateLeadTime,
+  reconcileFutureRoster,
+} from '../../lib/post-bid-transition.js';
+import { requireStepUpAuth } from '../../middleware/require-step-up.js';
+import type { WorkerEnv } from '../../types/env.js';
+import { requireAdmin, requireLiveBidAction } from './middleware.js';
+
+type AdminEnv = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
+const router = new Hono<AdminEnv>();
+router.use('*', requireAdmin);
+
+const policySchema = z
+  .object({
+    policy_version: z.string().trim().min(1).max(200),
+    lead_time: z
+      .object({
+        mode: z.enum(['HARD_MINIMUM', 'TARGET', 'WARNING_ONLY']),
+        days: z.number().int().min(0).max(366),
+      })
+      .strict(),
+    publication_gates: z
+      .array(z.enum(['APPROVED', 'PACKAGE_GENERATED', 'RECONCILED']))
+      .min(1)
+      .max(3),
+  })
+  .strict();
+const reviewSchema = z
+  .object({ policy: policySchema, reason: z.string().trim().min(4).max(500) })
+  .strict();
+const approveSchema = z
+  .object({ effective_on: z.string(), reason: z.string().trim().min(4).max(500) })
+  .strict();
+const reconcileSchema = z
+  .object({
+    observed: z
+      .array(
+        z
+          .object({
+            memberId: z.number().int().positive(),
+            shift: z.string().nullable(),
+            station: z.string().nullable(),
+            unit: z.string().nullable(),
+            position: z.string().nullable(),
+            aDay: z.string().nullable(),
+            mappingStatus: z
+              .enum(['MAPPED', 'UNMAPPED_POSITION', 'DUPLICATE_OR_AMBIGUOUS_MAPPING'])
+              .optional(),
+            knownMember: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .max(2_000),
+    reason: z.string().trim().min(4).max(500),
+  })
+  .strict();
+const reasonSchema = z.object({ reason: z.string().trim().min(4).max(500) }).strict();
+
+interface TransitionRow {
+  status: string;
+  policy_json: string;
+  effective_on: string | null;
+  future_roster_json: string;
+  reconciliation_json: string | null;
+}
+interface CanonicalStateMetadataRow {
+  current_seq: number;
+  last_command_id: string | null;
+}
+interface CompletionReceiptRow {
+  command_type: string;
+  outcome: string;
+  result_seq: number;
+}
+interface AmendmentRow {
+  original_bid_id: string;
+  replacement_bid_id: string;
+}
+
+function idempotency(c: { req: { header(name: string): string | undefined } }) {
+  const key = c.req.header('Idempotency-Key');
+  return key !== undefined && key === key.trim() && key.length > 0 && key.length <= 256
+    ? key
+    : null;
+}
+function actor(c: { get(key: 'claims'): JwtPayload }): number | null {
+  const value = c.get('claims').sub;
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+function opaque(value: string): boolean {
+  return value.trim() === value && value.length > 0 && value.length <= 256;
+}
+function parse<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function receipt(db: D1Database, key: string): Promise<Record<string, unknown> | null> {
+  const result = await db
+    .prepare('SELECT response_json FROM bid_post_bid_operation_receipts WHERE idempotency_key = ?')
+    .bind(key)
+    .first<{ response_json: string }>();
+  return result === null ? null : parse<Record<string, unknown>>(result.response_json);
+}
+async function transition(db: D1Database, sessionId: string): Promise<TransitionRow | null> {
+  return db
+    .prepare(
+      'SELECT status, policy_json, effective_on, future_roster_json, reconciliation_json FROM bid_post_bid_transitions WHERE bid_session_id = ?',
+    )
+    .bind(sessionId)
+    .first<TransitionRow>();
+}
+async function roster(
+  db: D1Database,
+  sessionId: string,
+): Promise<
+  | { ok: true; rows: TransitionRosterEntry[]; completionAt: number; year: number }
+  | { ok: false; error: string }
+> {
+  const session = await db
+    .prepare('SELECT bid_year, is_mock FROM bid_sessions WHERE id = ?')
+    .bind(sessionId)
+    .first<{ bid_year: number; is_mock: number }>();
+  if (session === null) return { ok: false, error: 'session_not_found' };
+  if (session.is_mock !== 0) return { ok: false, error: 'mock_session_not_transitionable' };
+  const canonical = await loadCanonicalBidSessionState(db, sessionId);
+  if (canonical === null) return { ok: false, error: 'annual_completion_required' };
+  const frozen = await loadFrozenSessionBidPolicy(getDb(db), sessionId);
+  if (!frozen.ok || frozen.snapshot.settings.v !== 3)
+    return { ok: false, error: 'frozen_policy_required' };
+  const metadata = await db
+    .prepare(
+      'SELECT current_seq, last_command_id FROM canonical_bid_session_state WHERE bid_session_id = ?',
+    )
+    .bind(sessionId)
+    .first<CanonicalStateMetadataRow>();
+  if (metadata === null || metadata.last_command_id === null)
+    return { ok: false, error: 'annual_completion_receipt_required' };
+  const receipt = await db
+    .prepare(
+      'SELECT command_type, outcome, result_seq FROM bid_command_receipts WHERE command_id = ? AND bid_session_id = ?',
+    )
+    .bind(metadata.last_command_id, sessionId)
+    .first<CompletionReceiptRow>();
+  if (
+    receipt === null ||
+    receipt.command_type !== 'live.complete_session' ||
+    receipt.outcome !== 'accepted' ||
+    receipt.result_seq !== metadata.current_seq
+  )
+    return { ok: false, error: 'annual_completion_receipt_required' };
+  const amendments = (
+    await db
+      .prepare(
+        'SELECT original_bid_id, replacement_bid_id FROM bid_award_amendments WHERE bid_session_id = ? ORDER BY created_at, id',
+      )
+      .bind(sessionId)
+      .all()
+  ).results as unknown as AmendmentRow[];
+  const projected = projectCanonicalAnnualCompletion({
+    session: { id: sessionId, mode: 'REAL', bidYear: session.bid_year },
+    completion: {
+      commandId: metadata.last_command_id,
+      revision: metadata.current_seq,
+      completedAtMs: canonical.annual?.completion?.readyForFinalizationAtMs ?? 0,
+      receiptIntegrity: 'VERIFIED',
+    },
+    frozen: {
+      ruleBookVersion: frozen.snapshot.ruleBookVersion,
+      topologyReference: frozen.snapshot.positionTemplateVersion,
+      staffingReference: frozen.snapshot.staffingBaseline?.baselineAcceptanceId ?? null,
+      members: frozen.snapshot.members.map((member) => ({
+        memberId: member.memberId,
+        rank: member.rank,
+      })),
+      positions: frozen.snapshot.ruleBookMaterial.positions.map((position) => ({
+        id: position.id,
+        shift: position.shift,
+        station: position.station,
+        unit: position.unit,
+        position: position.positionName,
+        specialty: null,
+      })),
+    },
+    state: canonical,
+    amendmentLinks: amendments.map((amendment) => ({
+      originalBidId: amendment.original_bid_id,
+      replacementBidId: amendment.replacement_bid_id,
+    })),
+  });
+  if (!projected.ok) return { ok: false, error: projected.code };
+  const finalization = evaluateFinalization({
+    annualCompletionAtMs: projected.value.completion.completedAtMs,
+    expectedPositionIds: frozen.coverage.validRulePositionIds,
+    awards: projected.value.participants.map((participant) => ({
+      memberId: participant.memberId,
+      positionId: participant.positionId,
+    })),
+    unresolvedMemberIds: projected.value.unresolvedMemberIds,
+    topologyReference: projected.value.frozen.topologyReference,
+    ruleBookVersion: projected.value.frozen.ruleBookVersion,
+  });
+  if (!finalization.ok) return { ok: false, error: finalization.blockingCodes.join(',') };
+  const memberIds = projected.value.participants.map((participant) => participant.memberId);
+  const identities = (
+    await db
+      .prepare(
+        `SELECT id, employee_id, first_name, last_name, rank, prior_position_id
+           FROM members WHERE id IN (${memberIds.map(() => '?').join(',')})`,
+      )
+      .bind(...memberIds)
+      .all()
+  ).results as unknown as Array<{
+    id: number;
+    employee_id: string;
+    first_name: string;
+    last_name: string;
+    rank: string | null;
+    prior_position_id: string | null;
+  }>;
+  const identityByMemberId = new Map(identities.map((identity) => [identity.id, identity]));
+  if (identityByMemberId.size !== memberIds.length)
+    return { ok: false, error: 'frozen_member_identity_missing' };
+  const completionOn = new Date(projected.value.completion.completedAtMs)
+    .toISOString()
+    .slice(0, 10);
+  const currentAssignments = (
+    await db
+      .prepare(
+        `SELECT assignment.member_id, position.shift, position.station, position.unit, position.position_name,
+                observation.source_a_r_day
+           FROM member_assignments assignment
+           JOIN staffing_positions position ON position.id = assignment.staffing_position_id
+      LEFT JOIN assignment_observations observation ON observation.id = assignment.source_observation_id
+          WHERE assignment.member_id IN (${memberIds.map(() => '?').join(',')})
+            AND assignment.status = 'active'
+            AND assignment.effective_from <= ?
+            AND (assignment.effective_to IS NULL OR assignment.effective_to >= ?)
+          ORDER BY assignment.member_id, assignment.effective_from DESC, assignment.id DESC`,
+      )
+      .bind(...memberIds, completionOn, completionOn)
+      .all()
+  ).results as unknown as Array<{
+    member_id: number;
+    shift: string | null;
+    station: string | null;
+    unit: string | null;
+    position_name: string | null;
+    source_a_r_day: string | null;
+  }>;
+  // The first row is deterministic by effective date. No overlay table is
+  // consulted: temporary light-duty/special-assignment data cannot become a
+  // permanent annual transition value.
+  const currentAssignmentByMemberId = new Map<number, (typeof currentAssignments)[number]>();
+  for (const current of currentAssignments) {
+    if (!currentAssignmentByMemberId.has(current.member_id))
+      currentAssignmentByMemberId.set(current.member_id, current);
+  }
+  const rows: TransitionRosterEntry[] = projected.value.participants.map((participant) => {
+    const identity = identityByMemberId.get(participant.memberId);
+    if (identity === undefined) throw new Error('frozen_member_identity_missing');
+    return {
+      memberId: participant.memberId,
+      employeeId: identity.employee_id,
+      memberName: `${identity.first_name} ${identity.last_name}`,
+      rank: participant.rank ?? identity.rank,
+      shift: participant.shift,
+      station: participant.station,
+      unit: participant.unit,
+      position: participant.position,
+      positionId: participant.positionId,
+      aDay: participant.aDay,
+      specialty: participant.specialty,
+      priorAssignmentPositionId: identity.prior_position_id,
+      currentShift: currentAssignmentByMemberId.get(participant.memberId)?.shift ?? null,
+      currentStation: currentAssignmentByMemberId.get(participant.memberId)?.station ?? null,
+      currentUnit: currentAssignmentByMemberId.get(participant.memberId)?.unit ?? null,
+      currentPosition: currentAssignmentByMemberId.get(participant.memberId)?.position_name ?? null,
+      currentADay: currentAssignmentByMemberId.get(participant.memberId)?.source_a_r_day ?? null,
+      annualSessionId: sessionId,
+      annualBidYear: session.bid_year,
+      ruleBookVersion: projected.value.frozen.ruleBookVersion,
+    };
+  });
+  return {
+    ok: true,
+    rows,
+    completionAt: projected.value.completion.completedAtMs,
+    year: session.bid_year,
+  };
+}
+
+function audit(
+  db: D1Database,
+  sessionId: string,
+  actorId: number,
+  action: string,
+  reason: string,
+  after: unknown,
+  now: number,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      "INSERT INTO audit_log (id,bid_session_id,seq,actor_type,actor_id,action,target_kind,target_id,before_state,after_state,reason,client_meta,created_at) SELECT ?,?,COALESCE(MAX(seq),0)+1,'admin',? ,?,'post_bid_transition',?,NULL,?,?,?,? FROM audit_log WHERE bid_session_id = ?",
+    )
+    .bind(
+      ulid(),
+      sessionId,
+      actorId,
+      action,
+      sessionId,
+      JSON.stringify(after),
+      reason,
+      JSON.stringify({ v: 1, operation: action }),
+      Math.floor(now / 1000),
+      sessionId,
+    );
+}
+function receiptStatement(
+  db: D1Database,
+  key: string,
+  sessionId: string,
+  operation: string,
+  request: unknown,
+  response: unknown,
+  actorId: number,
+  now: number,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      'INSERT INTO bid_post_bid_operation_receipts (idempotency_key,bid_session_id,operation,request_json,response_json,actor_member_id,created_at) VALUES (?,?,?,?,?,?,?)',
+    )
+    .bind(
+      key,
+      sessionId,
+      operation,
+      JSON.stringify(request),
+      JSON.stringify(response),
+      actorId,
+      now,
+    );
+}
+
+/** Command Staff history index. Detail remains at /:id to avoid sending a
+ * complete personnel snapshot when the operator only needs to find a year. */
+router.get('/', async (c) => {
+  const yearRaw = c.req.query('year');
+  const statusRaw = c.req.query('status');
+  const query = c.req.query('q')?.trim() ?? '';
+  const statuses = new Set([
+    'REVIEWED',
+    'APPROVED',
+    'PACKAGE_GENERATED',
+    'RECONCILED',
+    'PUBLISHED',
+  ]);
+  if (
+    (yearRaw !== undefined && !/^\d{4}$/.test(yearRaw)) ||
+    (statusRaw !== undefined && !statuses.has(statusRaw)) ||
+    query.length > 200
+  )
+    return c.json({ error: 'invalid_query' }, 400);
+  const conditions: string[] = [];
+  const bindings: Array<string | number> = [];
+  if (yearRaw !== undefined) {
+    conditions.push('bid_year = ?');
+    bindings.push(Number(yearRaw));
+  }
+  if (statusRaw !== undefined) {
+    conditions.push('status = ?');
+    bindings.push(statusRaw);
+  }
+  if (query.length > 0) {
+    conditions.push('future_roster_json LIKE ?');
+    bindings.push(`%${query}%`);
+  }
+  const rows = (
+    await c.env.DB.prepare(
+      `SELECT bid_session_id, bid_year, status, policy_version, effective_on, annual_completion_at,
+                reviewed_at, approved_at, package_generated_at, reconciled_at, published_at
+           FROM bid_post_bid_transitions
+          ${conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`}
+          ORDER BY bid_year DESC, annual_completion_at DESC LIMIT 100`,
+    )
+      .bind(...bindings)
+      .all()
+  ).results as unknown as Array<{
+    bid_session_id: string;
+    bid_year: number;
+    status: string;
+    policy_version: string;
+    effective_on: string | null;
+    annual_completion_at: number;
+    reviewed_at: number;
+    approved_at: number | null;
+    package_generated_at: number | null;
+    reconciled_at: number | null;
+    published_at: number | null;
+  }>;
+  return c.json({
+    transitions: rows.map((row) => ({
+      bidSessionId: row.bid_session_id,
+      bidYear: row.bid_year,
+      status: row.status,
+      policyVersion: row.policy_version,
+      effectiveOn: row.effective_on,
+      annualCompletionAt: row.annual_completion_at,
+      reviewedAt: row.reviewed_at,
+      approvedAt: row.approved_at,
+      packageGeneratedAt: row.package_generated_at,
+      reconciledAt: row.reconciled_at,
+      publishedAt: row.published_at,
+    })),
+  });
+});
+
+router.get('/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!opaque(id)) return c.json({ error: 'invalid_session_id' }, 400);
+  const row = await transition(c.env.DB, id);
+  return row === null
+    ? c.json({ error: 'not_found' }, 404)
+    : c.json({
+        transition: {
+          ...row,
+          policy: parse(row.policy_json),
+          futureRoster: parse(row.future_roster_json),
+          reconciliation: row.reconciliation_json === null ? null : parse(row.reconciliation_json),
+        },
+      });
+});
+
+router.post(
+  '/:id/review',
+  requireStepUpAuth(),
+  requireLiveBidAction('approve_transition'),
+  async (c) => {
+    const sessionId = c.req.param('id');
+    const key = idempotency(c);
+    const actorId = actor(c);
+    const body = reviewSchema.safeParse(await c.req.json().catch(() => null));
+    if (!opaque(sessionId) || key === null || actorId === null || !body.success)
+      return c.json({ error: 'invalid_request' }, 400);
+    const prior = await receipt(c.env.DB, key);
+    if (prior !== null) return c.json({ ...prior, replayed: true });
+    const loaded = await roster(c.env.DB, sessionId);
+    if (!loaded.ok) return c.json({ error: loaded.error }, 409);
+    const now = Date.now();
+    const response = {
+      replayed: false,
+      status: 'REVIEWED',
+      futureRosterCount: loaded.rows.length,
+      annualCompletionAt: loaded.completionAt,
+    };
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "INSERT INTO bid_post_bid_transitions (bid_session_id,bid_year,status,policy_version,policy_json,annual_completion_at,reviewed_at,reviewed_by_member_id,future_roster_json,updated_at) VALUES (?,?, 'REVIEWED',?,?,?,?,?,?,?)",
+        ).bind(
+          sessionId,
+          loaded.year,
+          body.data.policy.policy_version,
+          JSON.stringify(body.data.policy),
+          loaded.completionAt,
+          now,
+          actorId,
+          JSON.stringify(loaded.rows),
+          now,
+        ),
+        receiptStatement(
+          c.env.DB,
+          key,
+          sessionId,
+          'FINALIZATION_REVIEW',
+          body.data,
+          response,
+          actorId,
+          now,
+        ),
+        audit(
+          c.env.DB,
+          sessionId,
+          actorId,
+          'post_bid_finalization_review',
+          body.data.reason,
+          response,
+          now,
+        ),
+      ]);
+    } catch {
+      return c.json({ error: 'finalization_review_not_applied' }, 409);
+    }
+    return c.json(response, 201);
+  },
+);
+
+router.post(
+  '/:id/approve',
+  requireStepUpAuth(),
+  requireLiveBidAction('approve_transition'),
+  async (c) => {
+    const sessionId = c.req.param('id');
+    const key = idempotency(c);
+    const actorId = actor(c);
+    const body = approveSchema.safeParse(await c.req.json().catch(() => null));
+    if (!opaque(sessionId) || key === null || actorId === null || !body.success)
+      return c.json({ error: 'invalid_request' }, 400);
+    const prior = await receipt(c.env.DB, key);
+    if (prior !== null) return c.json({ ...prior, replayed: true });
+    const row = await transition(c.env.DB, sessionId);
+    if (row === null || row.status !== 'REVIEWED')
+      return c.json({ error: 'finalization_review_required' }, 409);
+    const policy = parse<{
+      lead_time: { mode: 'HARD_MINIMUM' | 'TARGET' | 'WARNING_ONLY'; days: number };
+    }>(row.policy_json);
+    const loaded = await roster(c.env.DB, sessionId);
+    if (!loaded.ok || policy === null)
+      return c.json({ error: loaded.ok ? 'transition_policy_missing' : loaded.error }, 409);
+    const lead = evaluateLeadTime({
+      completionOn: new Date(loaded.completionAt).toISOString().slice(0, 10),
+      effectiveOn: body.data.effective_on,
+      policy: policy.lead_time,
+    });
+    if (!lead.ok) return c.json({ error: lead.code }, 409);
+    const now = Date.now();
+    const response = {
+      replayed: false,
+      status: 'APPROVED',
+      effectiveOn: body.data.effective_on,
+      ...(lead.warning === undefined ? {} : { warning: lead.warning }),
+    };
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE bid_post_bid_transitions SET status='APPROVED',approved_at=?,approved_by_member_id=?,effective_on=?,updated_at=? WHERE bid_session_id=? AND status='REVIEWED'",
+        ).bind(now, actorId, body.data.effective_on, now, sessionId),
+        receiptStatement(c.env.DB, key, sessionId, 'APPROVE', body.data, response, actorId, now),
+        audit(c.env.DB, sessionId, actorId, 'post_bid_approved', body.data.reason, response, now),
+      ]);
+    } catch {
+      return c.json({ error: 'approval_not_applied' }, 409);
+    }
+    return c.json(response, 201);
+  },
+);
+
+router.get('/:id/telestaff-package.csv', async (c) => {
+  const sessionId = c.req.param('id');
+  if (!opaque(sessionId)) return c.json({ error: 'invalid_session_id' }, 400);
+  const row = await transition(c.env.DB, sessionId);
+  if (
+    row === null ||
+    !['APPROVED', 'PACKAGE_GENERATED', 'RECONCILED', 'PUBLISHED'].includes(row.status)
+  )
+    return c.json({ error: 'approval_required' }, 409);
+  const rows = parse<TransitionRosterEntry[]>(row.future_roster_json);
+  if (rows === null) return c.json({ error: 'future_roster_invalid' }, 409);
+  const safeRows = rows;
+  async function* source() {
+    for (const item of safeRows) yield item;
+  }
+  return new Response(
+    createCsvStream(source(), [
+      { header: 'member_id', value: (r) => r.memberId },
+      { header: 'employee_id', value: (r) => r.employeeId },
+      { header: 'member_name', value: (r) => r.memberName },
+      { header: 'rank', value: (r) => r.rank },
+      { header: 'current_assignment_position_id', value: (r) => r.priorAssignmentPositionId },
+      { header: 'current_shift', value: (r) => r.currentShift },
+      { header: 'current_station', value: (r) => r.currentStation },
+      { header: 'current_unit', value: (r) => r.currentUnit },
+      { header: 'current_position', value: (r) => r.currentPosition },
+      { header: 'current_a_day', value: (r) => r.currentADay },
+      { header: 'new_shift', value: (r) => r.shift },
+      { header: 'new_station', value: (r) => r.station },
+      { header: 'new_unit', value: (r) => r.unit },
+      { header: 'new_position', value: (r) => r.position },
+      { header: 'new_a_day', value: (r) => r.aDay },
+      { header: 'specialty', value: (r) => r.specialty },
+      { header: 'effective_date', value: () => row.effective_on },
+      { header: 'source_annual_session', value: () => sessionId },
+      { header: 'annual_bid_year', value: (r) => r.annualBidYear },
+      { header: 'rulebook_version', value: (r) => r.ruleBookVersion },
+      { header: 'change_type', value: () => 'ANNUAL_BID_TRANSITION' },
+      { header: 'validation_status', value: () => 'APPROVED' },
+    ]),
+    {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="mbfd-telestaff-package-${sessionId}.csv"`,
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
+});
+
+router.post(
+  '/:id/package',
+  requireStepUpAuth(),
+  requireLiveBidAction('approve_transition'),
+  async (c) => {
+    const sessionId = c.req.param('id');
+    const key = idempotency(c);
+    const actorId = actor(c);
+    const body = reasonSchema.safeParse(await c.req.json().catch(() => null));
+    if (!opaque(sessionId) || key === null || actorId === null || !body.success)
+      return c.json({ error: 'invalid_request' }, 400);
+    const prior = await receipt(c.env.DB, key);
+    if (prior !== null) return c.json({ ...prior, replayed: true });
+    const row = await transition(c.env.DB, sessionId);
+    if (row === null || row.status !== 'APPROVED')
+      return c.json({ error: 'approval_required' }, 409);
+    const now = Date.now();
+    const response = {
+      replayed: false,
+      status: 'PACKAGE_GENERATED',
+      export: 'telestaff-package.csv',
+      writeback: 'not_supported_or_enabled',
+    };
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE bid_post_bid_transitions SET status='PACKAGE_GENERATED',package_generated_at=?,updated_at=? WHERE bid_session_id=? AND status='APPROVED'",
+        ).bind(now, now, sessionId),
+        receiptStatement(c.env.DB, key, sessionId, 'PACKAGE', body.data, response, actorId, now),
+        audit(
+          c.env.DB,
+          sessionId,
+          actorId,
+          'post_bid_package_generated',
+          body.data.reason,
+          response,
+          now,
+        ),
+      ]);
+    } catch {
+      return c.json({ error: 'package_not_applied' }, 409);
+    }
+    return c.json(response, 201);
+  },
+);
+
+router.post(
+  '/:id/reconcile',
+  requireStepUpAuth(),
+  requireLiveBidAction('approve_final_results'),
+  async (c) => {
+    const sessionId = c.req.param('id');
+    const key = idempotency(c);
+    const actorId = actor(c);
+    const body = reconcileSchema.safeParse(await c.req.json().catch(() => null));
+    if (!opaque(sessionId) || key === null || actorId === null || !body.success)
+      return c.json({ error: 'invalid_request' }, 400);
+    const prior = await receipt(c.env.DB, key);
+    if (prior !== null) return c.json({ ...prior, replayed: true });
+    const row = await transition(c.env.DB, sessionId);
+    const expected = row === null ? null : parse<FutureRosterObservation[]>(row.future_roster_json);
+    if (
+      row === null ||
+      expected === null ||
+      !['APPROVED', 'PACKAGE_GENERATED'].includes(row.status)
+    )
+      return c.json({ error: 'package_or_approval_required' }, 409);
+    const observed: FutureRosterObservation[] = body.data.observed.map(
+      ({ mappingStatus, knownMember, ...assignment }) => ({
+        ...assignment,
+        ...(mappingStatus === undefined ? {} : { mappingStatus }),
+        ...(knownMember === undefined ? {} : { knownMember }),
+      }),
+    );
+    const findings = reconcileFutureRoster(expected, observed);
+    const now = Date.now();
+    const response = { replayed: false, status: 'RECONCILED', findings };
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE bid_post_bid_transitions SET status='RECONCILED',reconciliation_json=?,reconciled_at=?,reconciled_by_member_id=?,updated_at=? WHERE bid_session_id=? AND status IN ('APPROVED','PACKAGE_GENERATED')",
+        ).bind(JSON.stringify(findings), now, actorId, now, sessionId),
+        receiptStatement(c.env.DB, key, sessionId, 'RECONCILE', body.data, response, actorId, now),
+        audit(c.env.DB, sessionId, actorId, 'post_bid_reconciled', body.data.reason, response, now),
+      ]);
+    } catch {
+      return c.json({ error: 'reconciliation_not_applied' }, 409);
+    }
+    return c.json(response, 201);
+  },
+);
+
+router.post('/:id/publish', requireStepUpAuth(), requireLiveBidAction('publish'), async (c) => {
+  const sessionId = c.req.param('id');
+  const key = idempotency(c);
+  const actorId = actor(c);
+  const body = reasonSchema.safeParse(await c.req.json().catch(() => null));
+  if (!opaque(sessionId) || key === null || actorId === null || !body.success)
+    return c.json({ error: 'invalid_request' }, 400);
+  const prior = await receipt(c.env.DB, key);
+  if (prior !== null) return c.json({ ...prior, replayed: true });
+  const row = await transition(c.env.DB, sessionId);
+  const policy = row === null ? null : parse<{ publication_gates: string[] }>(row.policy_json);
+  if (row === null || policy === null) return c.json({ error: 'transition_policy_missing' }, 409);
+  const gates = new Set(policy.publication_gates);
+  if (
+    (gates.has('APPROVED') &&
+      !['APPROVED', 'PACKAGE_GENERATED', 'RECONCILED'].includes(row.status)) ||
+    (gates.has('PACKAGE_GENERATED') && !['PACKAGE_GENERATED', 'RECONCILED'].includes(row.status)) ||
+    (gates.has('RECONCILED') && row.status !== 'RECONCILED')
+  )
+    return c.json({ error: 'publication_gate_not_satisfied' }, 409);
+  const now = Date.now();
+  const response = { replayed: false, status: 'PUBLISHED', publishedAt: now };
+  try {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE bid_post_bid_transitions SET status='PUBLISHED',published_at=?,published_by_member_id=?,updated_at=? WHERE bid_session_id=? AND status <> 'PUBLISHED'",
+      ).bind(now, actorId, now, sessionId),
+      receiptStatement(c.env.DB, key, sessionId, 'PUBLISH', body.data, response, actorId, now),
+      audit(c.env.DB, sessionId, actorId, 'post_bid_published', body.data.reason, response, now),
+    ]);
+  } catch {
+    return c.json({ error: 'publication_not_applied' }, 409);
+  }
+  return c.json(response, 201);
+});
+
+export default router;

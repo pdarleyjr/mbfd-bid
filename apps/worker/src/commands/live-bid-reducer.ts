@@ -88,6 +88,11 @@ export function reduceLiveBidCommand(
   );
   if (!permitted) return { ok: false, code: 'LIVE_ACTION_FORBIDDEN' };
   if (state.frozenAt !== null) return { ok: false, code: 'SESSION_FROZEN' };
+  // `live.complete_session` seals the exact canonical result consumed by
+  // Post-Bid. Receipt replay remains handled before reduction; a new command
+  // must never mutate awards, A-Day, disposition, or staging afterwards.
+  if (state.annual?.completion !== null && state.annual?.completion !== undefined)
+    return { ok: false, code: 'ANNUAL_COMPLETION_SEALED' };
   const live = progress(state);
   const currentStageId = stageFor(state);
   if (currentStageId === null || !policy.stages.some((stage) => stage.id === currentStageId))

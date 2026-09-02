@@ -21,6 +21,7 @@ import adminPersonnel from './routes/admin/personnel.js';
 import adminPlacements from './routes/admin/placements.js';
 import adminPortal from './routes/admin/portal.js';
 import adminPositions from './routes/admin/positions.js';
+import adminPostBidTransition from './routes/admin/post-bid-transition.js';
 import adminQualificationLifecycle from './routes/admin/qualification-lifecycle.js';
 import adminReadiness from './routes/admin/readiness.js';
 import adminRehearsal from './routes/admin/rehearsal.js';
@@ -62,6 +63,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/bid-session', adminForceADay)
   .route('/api/admin/audit', adminAudit)
   .route('/api/admin/bid-award-transition', adminBidAwardTransition)
+  .route('/api/admin/post-bid-transition', adminPostBidTransition)
   .route('/api/admin/exports', adminExports)
   .route('/api/admin', adminPortal)
   .route('/api/admin/eligibility', adminEligibilityPreview)

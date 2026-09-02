@@ -26,6 +26,7 @@ import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-m
 import { validateEnv } from '../lib/env.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeOnDeck } from '../lib/on-deck.js';
+import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
 import type { WorkerEnv } from '../types/env.js';
 
 type BidContext = Context<{ Bindings: WorkerEnv }>;
@@ -93,6 +94,58 @@ bid.get('/me', async (c) => {
     rank: claims.rank,
     firstName: claims.first_name,
     lastName: claims.last_name,
+  });
+});
+
+/**
+ * Member-safe published annual result. The roster is the immutable snapshot
+ * created at finalization review, never a projection of today's personnel
+ * record or an unpublished Command Staff work item.
+ */
+bid.get('/me/post-bid-result', async (c) => {
+  const claims = await requireJwt(c);
+  if (!claims) return c.json({ error: 'missing_auth' }, 401);
+  const sessionId = readSessionQuery(c);
+  if (!sessionId || sessionId.trim() === '') return c.json({ error: 'session_required' }, 400);
+  const row = await c.env.DB.prepare(
+    `SELECT bid_year, policy_version, effective_on, annual_completion_at, published_at, future_roster_json
+         FROM bid_post_bid_transitions WHERE bid_session_id = ? AND status = 'PUBLISHED'`,
+  )
+    .bind(sessionId)
+    .first<{
+      bid_year: number;
+      policy_version: string;
+      effective_on: string;
+      annual_completion_at: number;
+      published_at: number;
+      future_roster_json: string;
+    }>();
+  if (row === null) return c.json({ error: 'results_not_published' }, 404);
+  let roster: TransitionRosterEntry[];
+  try {
+    roster = JSON.parse(row.future_roster_json) as TransitionRosterEntry[];
+  } catch {
+    return c.json({ error: 'published_results_unavailable' }, 503);
+  }
+  const result = roster.find((entry) => entry.memberId === claims.sub);
+  if (result === undefined) return c.json({ error: 'member_not_in_published_results' }, 404);
+  return c.json({
+    annualSessionId: result.annualSessionId,
+    annualBidYear: row.bid_year,
+    completionAt: row.annual_completion_at,
+    effectiveOn: row.effective_on,
+    publishedAt: row.published_at,
+    policyVersion: row.policy_version,
+    ruleBookVersion: result.ruleBookVersion,
+    result: {
+      assignment: result.position,
+      positionId: result.positionId,
+      shift: result.shift,
+      station: result.station,
+      unit: result.unit,
+      aDay: result.aDay,
+      specialty: result.specialty,
+    },
   });
 });
 
