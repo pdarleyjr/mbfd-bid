@@ -839,6 +839,31 @@ router.post('/temporary-overlays', requireStepUpAuth(), async (c) => {
   );
 });
 
+router.post('/temporary-overlays/:overlayId/end', requireStepUpAuth(), async (c) => {
+  const raw = (await c.req.json().catch(() => null)) as { actual_end_on?: unknown } | null;
+  if (typeof raw?.actual_end_on !== 'string' || !isIsoCalendarDate(raw.actual_end_on))
+    return c.json({ error: 'invalid_actual_end_on' }, 400);
+  const actor = String(c.get('claims').sub ?? '');
+  const overlay = await first<{ id: string; status: string }>(
+    c.env.DB,
+    'SELECT id,status FROM temporary_operational_overlays WHERE id = ?',
+    c.req.param('overlayId'),
+  );
+  if (overlay === undefined) return c.json({ error: 'overlay_not_found' }, 404);
+  if (overlay.status !== 'active') return c.json({ error: 'overlay_not_active' }, 409);
+  await c.env.DB.prepare(
+    "UPDATE temporary_operational_overlays SET status = 'ended', actual_end_on = ?, ended_by_subject = ? WHERE id = ? AND status = 'active'",
+  )
+    .bind(raw.actual_end_on, actor, overlay.id)
+    .run();
+  return c.json({
+    overlayId: overlay.id,
+    status: 'ended',
+    operationalAssignment: 'UNDERLYING_ASSIGNMENT_RESTORED',
+    annualBidAssignment: 'UNCHANGED',
+  });
+});
+
 /** Side-effect-free preview for the supported permanent lifecycle operations. */
 router.post('/changes/preview', async (c) => {
   const raw = await c.req.json().catch(() => null);
