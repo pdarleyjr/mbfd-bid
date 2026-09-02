@@ -42,6 +42,33 @@ beforeEach(async () => {
 afterEach(async () => teardownTestD1(h));
 
 describe('member published Post-Bid results', () => {
+  it('lets Command Staff filter immutable transition history by year and roster identity', async () => {
+    const token = await signJwt(
+      {
+        sub: 7,
+        emp: '70007',
+        role: 'admin',
+        rank: 'CHIEF',
+        first_name: 'Published',
+        last_name: 'Member',
+        fresh_auth_at: Math.floor(Date.now() / 1000),
+      },
+      KEY,
+    );
+    const response = await request('/api/admin/post-bid-transition?year=2030&q=70007', token);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      transitions: [
+        expect.objectContaining({
+          bidSessionId: 'annual-2030',
+          bidYear: 2030,
+          status: 'PUBLISHED',
+          effectiveOn: '2030-02-01',
+        }),
+      ],
+    });
+  });
+
   it('returns only the caller’s immutable published result', async () => {
     const token = await signJwt(
       {

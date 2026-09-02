@@ -357,6 +357,79 @@ function receiptStatement(
     );
 }
 
+/** Command Staff history index. Detail remains at /:id to avoid sending a
+ * complete personnel snapshot when the operator only needs to find a year. */
+router.get('/', async (c) => {
+  const yearRaw = c.req.query('year');
+  const statusRaw = c.req.query('status');
+  const query = c.req.query('q')?.trim() ?? '';
+  const statuses = new Set([
+    'REVIEWED',
+    'APPROVED',
+    'PACKAGE_GENERATED',
+    'RECONCILED',
+    'PUBLISHED',
+  ]);
+  if (
+    (yearRaw !== undefined && !/^\d{4}$/.test(yearRaw)) ||
+    (statusRaw !== undefined && !statuses.has(statusRaw)) ||
+    query.length > 200
+  )
+    return c.json({ error: 'invalid_query' }, 400);
+  const conditions: string[] = [];
+  const bindings: Array<string | number> = [];
+  if (yearRaw !== undefined) {
+    conditions.push('bid_year = ?');
+    bindings.push(Number(yearRaw));
+  }
+  if (statusRaw !== undefined) {
+    conditions.push('status = ?');
+    bindings.push(statusRaw);
+  }
+  if (query.length > 0) {
+    conditions.push('future_roster_json LIKE ?');
+    bindings.push(`%${query}%`);
+  }
+  const rows = (
+    await c.env.DB.prepare(
+      `SELECT bid_session_id, bid_year, status, policy_version, effective_on, annual_completion_at,
+                reviewed_at, approved_at, package_generated_at, reconciled_at, published_at
+           FROM bid_post_bid_transitions
+          ${conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`}
+          ORDER BY bid_year DESC, annual_completion_at DESC LIMIT 100`,
+    )
+      .bind(...bindings)
+      .all()
+  ).results as unknown as Array<{
+    bid_session_id: string;
+    bid_year: number;
+    status: string;
+    policy_version: string;
+    effective_on: string | null;
+    annual_completion_at: number;
+    reviewed_at: number;
+    approved_at: number | null;
+    package_generated_at: number | null;
+    reconciled_at: number | null;
+    published_at: number | null;
+  }>;
+  return c.json({
+    transitions: rows.map((row) => ({
+      bidSessionId: row.bid_session_id,
+      bidYear: row.bid_year,
+      status: row.status,
+      policyVersion: row.policy_version,
+      effectiveOn: row.effective_on,
+      annualCompletionAt: row.annual_completion_at,
+      reviewedAt: row.reviewed_at,
+      approvedAt: row.approved_at,
+      packageGeneratedAt: row.package_generated_at,
+      reconciledAt: row.reconciled_at,
+      publishedAt: row.published_at,
+    })),
+  });
+});
+
 router.get('/:id', async (c) => {
   const id = c.req.param('id');
   if (!opaque(id)) return c.json({ error: 'invalid_session_id' }, 400);
