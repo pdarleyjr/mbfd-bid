@@ -117,6 +117,28 @@ const ReviewBatchInputSchema = z
   })
   .strict();
 
+const ReviewRowInputSchema = z
+  .object({
+    source_member_reference: z.string().trim().min(1).max(128),
+    source_credential_reference: z.string().trim().min(1).max(256),
+    source_status: z.enum(['active', 'expired', 'revoked']).default('active'),
+    effective_on: z.string().optional(),
+    expires_on: z.string().nullable().optional(),
+    provenance: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+const ReviewDecisionInputSchema = z
+  .object({
+    decision: z.enum(['accepted', 'rejected', 'needs_review']),
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+const ReviewApplyInputSchema = z
+  .object({ reason: z.string().trim().min(4).max(500).optional() })
+  .strict();
+
 const router = new Hono<AdminEnv>();
 router.use('*', requireAdmin);
 
@@ -393,6 +415,76 @@ router.get('/reviews/batches', async (c) => {
   });
 });
 
+/** A batch detail is deliberately exception-first.  Exact/rejected rows stay
+ * available for audit, but normal operators do not have to inspect them before
+ * resolving unknown or changed evidence. */
+router.get('/reviews/batches/:batchId', async (c) => {
+  const batch = await first<{
+    id: string;
+    source_system: string;
+    source_reference: string;
+    status: string;
+    created_by_subject: string;
+    created_at: number;
+  }>(
+    c.env.DB,
+    'SELECT id,source_system,source_reference,status,created_by_subject,created_at FROM qualification_review_batches WHERE id = ?',
+    c.req.param('batchId'),
+  );
+  if (batch === undefined) return c.json({ error: 'review_batch_not_found' }, 404);
+  const requestedClassification = c.req.query('classification');
+  const requestedDecision = c.req.query('decision');
+  const rows = await all<{
+    id: string;
+    member_id: number | null;
+    credential_id: number | null;
+    source_member_reference: string;
+    source_credential_reference: string;
+    source_status: string;
+    effective_on: string | null;
+    expires_on: string | null;
+    provenance: string;
+    classification: string;
+    decision: string | null;
+    reviewed_by_subject: string | null;
+    reviewed_at: number | null;
+    applied_event_id: string | null;
+    created_at: number;
+  }>(
+    c.env.DB,
+    `SELECT id,member_id,credential_id,source_member_reference,source_credential_reference,source_status,
+            effective_on,expires_on,provenance,classification,decision,reviewed_by_subject,reviewed_at,
+            applied_event_id,created_at
+       FROM qualification_review_rows
+      WHERE batch_id = ?
+        AND (? IS NULL OR classification = ?)
+        AND (? IS NULL OR COALESCE(decision, 'undecided') = ?)
+      ORDER BY CASE WHEN classification = 'EXACT_MATCH' THEN 1 ELSE 0 END, created_at ASC, id ASC`,
+    batch.id,
+    requestedClassification ?? null,
+    requestedClassification ?? null,
+    requestedDecision ?? null,
+    requestedDecision ?? null,
+  );
+  return c.json({
+    batch,
+    annualEligibility: 'PENDING_CONFIGURATION',
+    rows: rows.map((row) => ({
+      ...row,
+      memberId: row.member_id,
+      credentialId: row.credential_id,
+      sourceMemberReference: row.source_member_reference,
+      sourceCredentialReference: row.source_credential_reference,
+      sourceStatus: row.source_status,
+      effectiveOn: row.effective_on,
+      expiresOn: row.expires_on,
+      reviewedBySubject: row.reviewed_by_subject,
+      reviewedAt: row.reviewed_at,
+      appliedEventId: row.applied_event_id,
+    })),
+  });
+});
+
 router.post('/reviews/batches', requireStepUpAuth(), async (c) => {
   const parsed = ReviewBatchInputSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
@@ -422,14 +514,20 @@ router.post('/reviews/batches', requireStepUpAuth(), async (c) => {
 });
 
 router.post('/reviews/batches/:batchId/rows', requireStepUpAuth(), async (c) => {
-  const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const parsed = ReviewRowInputSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const raw = parsed.data;
   if (
-    raw === null ||
-    typeof raw.source_member_reference !== 'string' ||
-    typeof raw.source_credential_reference !== 'string' ||
-    typeof raw.provenance !== 'string'
+    (raw.effective_on !== undefined && !isQualificationCalendarDate(raw.effective_on)) ||
+    (raw.expires_on !== undefined &&
+      raw.expires_on !== null &&
+      !isQualificationCalendarDate(raw.expires_on)) ||
+    (raw.effective_on !== undefined &&
+      raw.expires_on !== null &&
+      raw.expires_on !== undefined &&
+      raw.expires_on < raw.effective_on)
   )
-    return c.json({ error: 'invalid_body' }, 400);
+    return c.json({ error: 'invalid_qualification_dates' }, 422);
   const batch = await first<{ id: string }>(
     c.env.DB,
     "SELECT id FROM qualification_review_batches WHERE id = ? AND status = 'staged'",
@@ -451,16 +549,46 @@ router.post('/reviews/batches/:batchId/rows', requireStepUpAuth(), async (c) => 
   const key = c.req.header('Idempotency-Key');
   if (key === undefined || key.trim().length === 0)
     return c.json({ error: 'idempotency_key_required' }, 400);
-  const classification =
+  let classification =
     member === undefined
       ? 'UNKNOWN_MEMBER'
       : credential === undefined
         ? 'UNKNOWN_QUALIFICATION'
         : 'NEW_QUALIFICATION';
+  if (member !== undefined && credential !== undefined) {
+    const current = await first<{ start_date: string | null; expiration_date: string | null }>(
+      c.env.DB,
+      'SELECT start_date,expiration_date FROM member_credentials WHERE member_id = ? AND credential_id = ?',
+      member.id,
+      credential.id,
+    );
+    if (current !== undefined) {
+      const sourceEffective = raw.effective_on ?? null;
+      const sourceExpires = raw.expires_on ?? null;
+      if (
+        raw.source_status === 'active' &&
+        current.start_date === sourceEffective &&
+        current.expiration_date === sourceExpires
+      ) {
+        classification = 'EXACT_MATCH';
+      } else if (
+        current.start_date !== sourceEffective &&
+        current.expiration_date !== sourceExpires
+      ) {
+        classification = 'MULTIPLE_FIELD_CHANGE';
+      } else if (current.start_date !== sourceEffective) {
+        classification = 'ISSUE_DATE_CHANGE';
+      } else if (current.expiration_date !== sourceExpires) {
+        classification = 'EXPIRATION_DATE_CHANGE';
+      } else {
+        classification = 'STATUS_CHANGE';
+      }
+    }
+  }
   const id = ulid();
   try {
     await c.env.DB.prepare(
-      'INSERT INTO qualification_review_rows (id,batch_id,member_id,credential_id,source_member_reference,source_credential_reference,source_status,provenance,classification,idempotency_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO qualification_review_rows (id,batch_id,member_id,credential_id,source_member_reference,source_credential_reference,source_status,effective_on,expires_on,provenance,classification,idempotency_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
     )
       .bind(
         id,
@@ -469,7 +597,9 @@ router.post('/reviews/batches/:batchId/rows', requireStepUpAuth(), async (c) => 
         credential?.id ?? null,
         raw.source_member_reference,
         raw.source_credential_reference,
-        'active',
+        raw.source_status,
+        raw.effective_on ?? null,
+        raw.expires_on ?? null,
         raw.provenance,
         classification,
         key,
@@ -483,13 +613,10 @@ router.post('/reviews/batches/:batchId/rows', requireStepUpAuth(), async (c) => 
 });
 
 router.post('/reviews/rows/:rowId/decision', requireStepUpAuth(), async (c) => {
-  const raw = (await c.req.json().catch(() => null)) as { decision?: unknown } | null;
-  if (
-    raw?.decision !== 'accepted' &&
-    raw?.decision !== 'rejected' &&
-    raw?.decision !== 'needs_review'
-  )
-    return c.json({ error: 'invalid_decision' }, 400);
+  const parsed = ReviewDecisionInputSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: 'invalid_decision', issues: parsed.error.issues }, 400);
+  const raw = parsed.data;
   const actor = String(c.get('claims').sub ?? '');
   if (actor.length === 0) return c.json({ error: 'invalid_actor_subject' }, 400);
   const row = await first<{ id: string; classification: string; applied_event_id: string | null }>(
@@ -514,6 +641,143 @@ router.post('/reviews/rows/:rowId/decision', requireStepUpAuth(), async (c) => {
     decision: raw.decision,
     annualEligibility: 'PENDING_CONFIGURATION',
   });
+});
+
+/**
+ * Applies only an explicitly accepted, resolvable review row.  It writes the
+ * canonical qualification ledger and links the immutable event back to the
+ * source row in the same D1 batch.  It intentionally does not update the old
+ * member_credentials projection or an annual Bid snapshot.
+ */
+router.post('/reviews/rows/:rowId/apply', requireStepUpAuth(), async (c) => {
+  const parsed = ReviewApplyInputSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const idempotencyKey = c.req.header('Idempotency-Key');
+  if (
+    idempotencyKey === undefined ||
+    idempotencyKey.trim().length === 0 ||
+    idempotencyKey.length > 256
+  )
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const actorSubject = String(c.get('claims').sub ?? '');
+  if (actorSubject.length === 0 || actorSubject.length > 256)
+    return c.json({ error: 'invalid_actor_subject' }, 400);
+  const row = await first<{
+    id: string;
+    member_id: number | null;
+    credential_id: number | null;
+    source_status: 'active' | 'expired' | 'revoked';
+    effective_on: string | null;
+    expires_on: string | null;
+    provenance: string;
+    classification: string;
+    decision: string | null;
+    applied_event_id: string | null;
+  }>(
+    c.env.DB,
+    `SELECT id,member_id,credential_id,source_status,effective_on,expires_on,provenance,
+            classification,decision,applied_event_id
+       FROM qualification_review_rows WHERE id = ?`,
+    c.req.param('rowId'),
+  );
+  if (row === undefined) return c.json({ error: 'review_row_not_found' }, 404);
+  if (row.applied_event_id !== null)
+    return c.json({
+      replayed: true,
+      rowId: row.id,
+      appliedEventId: row.applied_event_id,
+      annualEligibility: 'PENDING_CONFIGURATION',
+    });
+  if (row.decision !== 'accepted') return c.json({ error: 'review_row_not_accepted' }, 422);
+  if (row.member_id === null || row.credential_id === null || row.effective_on === null)
+    return c.json({ error: 'review_row_not_resolvable' }, 422);
+  if (
+    !isQualificationCalendarDate(row.effective_on) ||
+    (row.expires_on !== null && !isQualificationCalendarDate(row.expires_on))
+  )
+    return c.json({ error: 'review_row_invalid_dates' }, 422);
+  const kind: QualificationLifecycleKind =
+    row.source_status === 'active'
+      ? 'CERTIFICATION_GAINED'
+      : row.source_status === 'expired'
+        ? 'CERTIFICATION_EXPIRED'
+        : 'CERTIFICATION_REVOKED';
+  if (kind === 'CERTIFICATION_EXPIRED' && row.expires_on !== row.effective_on)
+    return c.json({ error: 'expired_source_requires_matching_effective_date' }, 422);
+  if (kind === 'CERTIFICATION_REVOKED' && row.expires_on !== null)
+    return c.json({ error: 'revoked_source_cannot_set_expiration' }, 422);
+  const existing = await first<{ id: string }>(
+    c.env.DB,
+    'SELECT id FROM member_qualification_events WHERE idempotency_key = ?',
+    idempotencyKey,
+  );
+  if (existing !== undefined) return c.json({ error: 'idempotency_key_reused' }, 409);
+  const eventId = ulid();
+  const now = Date.now();
+  const beforeState = { v: 1, reviewRowId: row.id, classification: row.classification };
+  const afterState = {
+    v: 1,
+    reviewRowId: row.id,
+    memberId: row.member_id,
+    credentialId: row.credential_id,
+    kind,
+    effectiveOn: row.effective_on,
+    expiresOn: row.expires_on,
+    annualEligibility: 'PENDING_CONFIGURATION',
+  };
+  try {
+    const results = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO member_qualification_events
+          (id,member_id,credential_id,specialty_code,specialty_terminal_status,kind,effective_on,expires_on,
+           evidence_source,evidence_reference,reason,actor_subject,idempotency_key,before_state,after_state,created_at)
+         VALUES (?,?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        eventId,
+        row.member_id,
+        row.credential_id,
+        kind,
+        row.effective_on,
+        row.expires_on,
+        'qualification_review',
+        row.provenance,
+        parsed.data.reason ?? `Applied review row ${row.id}`,
+        actorSubject,
+        idempotencyKey,
+        JSON.stringify(beforeState),
+        JSON.stringify(afterState),
+        now,
+      ),
+      c.env.DB.prepare(
+        'UPDATE qualification_review_rows SET applied_event_id = ? WHERE id = ? AND applied_event_id IS NULL',
+      ).bind(eventId, row.id),
+    ]);
+    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1)
+      return c.json({ error: 'qualification_review_apply_rejected' }, 409);
+  } catch {
+    const race = await first<{ applied_event_id: string | null }>(
+      c.env.DB,
+      'SELECT applied_event_id FROM qualification_review_rows WHERE id = ?',
+      row.id,
+    );
+    if (race?.applied_event_id !== null && race?.applied_event_id !== undefined)
+      return c.json({
+        replayed: true,
+        rowId: row.id,
+        appliedEventId: race.applied_event_id,
+        annualEligibility: 'PENDING_CONFIGURATION',
+      });
+    return c.json({ error: 'qualification_review_apply_rejected' }, 409);
+  }
+  return c.json(
+    {
+      replayed: false,
+      rowId: row.id,
+      appliedEventId: eventId,
+      annualEligibility: 'PENDING_CONFIGURATION',
+    },
+    201,
+  );
 });
 
 router.post('/events', requireStepUpAuth(), async (c) => {

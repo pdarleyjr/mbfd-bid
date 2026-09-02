@@ -508,4 +508,98 @@ describe('admin qualification lifecycle', () => {
       error: 'qualification_lifecycle_data_invalid',
     });
   });
+
+  it('stages, reviews, and explicitly applies a resolved qualification row through the canonical ledger', async () => {
+    const auth = {
+      Authorization: `Bearer ${await adminJwt()}`,
+      'Content-Type': 'application/json',
+    };
+    const batch = await request(h, '/api/admin/qualification-lifecycle/reviews/batches', {
+      method: 'POST',
+      headers: { ...auth, 'Idempotency-Key': 'review-batch-apply-001' },
+      body: JSON.stringify({
+        source_system: 'synthetic-registry',
+        source_reference: 'SYNTHETIC-IMPORT-001',
+      }),
+    });
+    expect(batch.status).toBe(201);
+    const { batchId } = (await batch.json()) as { batchId: string };
+
+    const staged = await request(
+      h,
+      `/api/admin/qualification-lifecycle/reviews/batches/${batchId}/rows`,
+      {
+        method: 'POST',
+        headers: { ...auth, 'Idempotency-Key': 'review-row-apply-001' },
+        body: JSON.stringify({
+          source_member_reference: 'synthetic-qualification-001',
+          source_credential_reference: 'Synthetic EMT',
+          source_status: 'active',
+          effective_on: '2026-08-01',
+          expires_on: '2027-08-01',
+          provenance: 'synthetic-registry/SYNTHETIC-IMPORT-001/row-1',
+        }),
+      },
+    );
+    expect(staged.status).toBe(201);
+    const { rowId } = (await staged.json()) as { rowId: string };
+
+    const decision = await request(
+      h,
+      `/api/admin/qualification-lifecycle/reviews/rows/${rowId}/decision`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ decision: 'accepted', note: 'Synthetic operator review.' }),
+      },
+    );
+    expect(decision.status).toBe(200);
+
+    const applied = await request(
+      h,
+      `/api/admin/qualification-lifecycle/reviews/rows/${rowId}/apply`,
+      {
+        method: 'POST',
+        headers: { ...auth, 'Idempotency-Key': 'review-apply-001' },
+        body: JSON.stringify({ reason: 'Synthetic reviewed qualification evidence applied.' }),
+      },
+    );
+    expect(applied.status).toBe(201);
+    await expect(applied.json()).resolves.toMatchObject({
+      replayed: false,
+      rowId,
+      annualEligibility: 'PENDING_CONFIGURATION',
+    });
+
+    const replay = await request(
+      h,
+      `/api/admin/qualification-lifecycle/reviews/rows/${rowId}/apply`,
+      {
+        method: 'POST',
+        headers: { ...auth, 'Idempotency-Key': 'review-apply-001' },
+        body: JSON.stringify({ reason: 'Synthetic reviewed qualification evidence applied.' }),
+      },
+    );
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({ replayed: true, rowId });
+
+    const detail = await request(
+      h,
+      `/api/admin/qualification-lifecycle/reviews/batches/${batchId}`,
+    );
+    expect(detail.status).toBe(200);
+    await expect(detail.json()).resolves.toMatchObject({
+      annualEligibility: 'PENDING_CONFIGURATION',
+      rows: [
+        expect.objectContaining({
+          id: rowId,
+          decision: 'accepted',
+          appliedEventId: expect.any(String),
+        }),
+      ],
+    });
+    expect(
+      await h.db.run('SELECT count(*) AS count FROM member_qualification_events'),
+    ).toMatchObject({ results: [{ count: 1 }] });
+  });
 });

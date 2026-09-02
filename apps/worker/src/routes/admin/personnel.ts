@@ -610,7 +610,15 @@ router.get('/summary', async (c) => {
 router.get('/operations-dashboard', async (c) => {
   const asOf = c.req.query('as_of') ?? todayUtc();
   if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
-  const [overlays, reviewRows, personnel] = await Promise.all([
+  const [
+    overlays,
+    reviewRows,
+    personnel,
+    vacancies,
+    changes,
+    reconciliationExceptions,
+    credentialExceptions,
+  ] = await Promise.all([
     all<{ kind: string; count: number }>(
       c.env.DB,
       "SELECT kind, count(*) AS count FROM temporary_operational_overlays WHERE status = 'active' AND effective_on <= ? AND (actual_end_on IS NULL OR actual_end_on > ?) GROUP BY kind",
@@ -625,8 +633,49 @@ router.get('/operations-dashboard', async (c) => {
       c.env.DB,
       "SELECT count(*) AS count FROM members WHERE employment_status = 'active'",
     ),
+    first<{ count: number }>(
+      c.env.DB,
+      `SELECT count(*) AS count
+         FROM staffing_positions position
+        WHERE position.review_status = 'approved'
+          AND (position.active_from IS NULL OR position.active_from <= ?)
+          AND (position.active_to IS NULL OR position.active_to >= ?)
+          AND NOT EXISTS (
+            SELECT 1 FROM member_assignments assignment
+             WHERE assignment.staffing_position_id = position.id
+               AND assignment.status <> 'cancelled'
+               AND assignment.effective_from <= ?
+               AND (assignment.effective_to IS NULL OR assignment.effective_to >= ?)
+          )`,
+      asOf,
+      asOf,
+      asOf,
+      asOf,
+    ),
+    all<{ kind: string; count: number }>(
+      c.env.DB,
+      `SELECT kind,count(*) AS count FROM personnel_lifecycle_events
+        WHERE effective_on <= ?
+          AND kind IN ('PROMOTION','RETIREMENT','SEPARATION','TRANSFER','ADMIN_REASSIGNMENT')
+        GROUP BY kind`,
+      asOf,
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      `SELECT count(*) AS count FROM assignment_import_rows
+        WHERE reconciliation_classification IS NOT NULL
+          AND reconciliation_classification <> 'UNCHANGED'
+          AND review_status <> 'rejected'`,
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      `SELECT count(*) AS count FROM qualification_review_rows
+        WHERE classification NOT IN ('EXACT_MATCH')
+          AND (decision IS NULL OR decision <> 'rejected')`,
+    ),
   ]);
   const overlayCounts = Object.fromEntries(overlays.map((row) => [row.kind, Number(row.count)]));
+  const changeCounts = Object.fromEntries(changes.map((row) => [row.kind, Number(row.count)]));
   return c.json({
     asOf,
     activePersonnel: Number(personnel?.count ?? 0),
@@ -635,8 +684,16 @@ router.get('/operations-dashboard', async (c) => {
     dailyStaffingVacancies:
       (overlayCounts.SPECIAL_ASSIGNMENT ?? 0) + (overlayCounts.LIGHT_DUTY ?? 0),
     annualBidVacanciesFromOverlays: 0,
+    permanentVacancies: Number(vacancies?.count ?? 0),
     destinationStaffing: 'POLICY_PENDING',
     qualificationRowsNeedingReview: Number(reviewRows?.count ?? 0),
+    credentialExceptions: Number(credentialExceptions?.count ?? 0),
+    teleStaffReconciliationExceptions: Number(reconciliationExceptions?.count ?? 0),
+    promotions: changeCounts.PROMOTION ?? 0,
+    retirements: changeCounts.RETIREMENT ?? 0,
+    separations: changeCounts.SEPARATION ?? 0,
+    permanentAssignmentChanges:
+      (changeCounts.TRANSFER ?? 0) + (changeCounts.ADMIN_REASSIGNMENT ?? 0),
   });
 });
 
@@ -807,6 +864,45 @@ router.get('/temporary-overlays', async (c) => {
   return c.json({ overlays: rows, destinationStaffing: 'POLICY_PENDING' });
 });
 
+router.get('/temporary-overlays/:overlayId', async (c) => {
+  const overlay = await first<{
+    id: string;
+    member_id: number;
+    kind: string;
+    underlying_assignment_id: string;
+    underlying_position_id: string | null;
+    temporary_position_id: string | null;
+    effective_on: string;
+    planned_end_on: string | null;
+    actual_end_on: string | null;
+    status: string;
+    provenance: string;
+    notes: string | null;
+    actor_subject: string;
+    ended_by_subject: string | null;
+    created_at: number;
+  }>(
+    c.env.DB,
+    `SELECT overlay.id,overlay.member_id,overlay.kind,overlay.underlying_assignment_id,
+            assignment.staffing_position_id AS underlying_position_id,overlay.temporary_position_id,
+            overlay.effective_on,overlay.planned_end_on,overlay.actual_end_on,overlay.status,
+            overlay.provenance,overlay.notes,overlay.actor_subject,overlay.ended_by_subject,overlay.created_at
+       FROM temporary_operational_overlays overlay
+       JOIN member_assignments assignment ON assignment.id = overlay.underlying_assignment_id
+      WHERE overlay.id = ?`,
+    c.req.param('overlayId'),
+  );
+  if (overlay === undefined) return c.json({ error: 'overlay_not_found' }, 404);
+  return c.json({
+    overlay,
+    underlyingBidAssignmentPreserved: true,
+    aDayPreserved: true,
+    dailyStaffingVacancy: overlay.status === 'active',
+    annualBidVacancy: false,
+    destinationStaffing: 'POLICY_PENDING',
+  });
+});
+
 router.post('/temporary-overlays', requireStepUpAuth(), async (c) => {
   const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   if (
@@ -819,10 +915,46 @@ router.post('/temporary-overlays', requireStepUpAuth(), async (c) => {
   )
     return c.json({ error: 'invalid_overlay' }, 400);
   if (!isIsoCalendarDate(raw.effective_on)) return c.json({ error: 'invalid_effective_on' }, 422);
+  if (
+    raw.planned_end_on !== undefined &&
+    raw.planned_end_on !== null &&
+    (typeof raw.planned_end_on !== 'string' ||
+      !isIsoCalendarDate(raw.planned_end_on) ||
+      raw.planned_end_on < raw.effective_on)
+  )
+    return c.json({ error: 'invalid_planned_end_on' }, 422);
   const key = c.req.header('Idempotency-Key');
   if (key === undefined || key.trim().length === 0)
     return c.json({ error: 'idempotency_key_required' }, 400);
   const actor = String(c.get('claims').sub ?? '');
+  const existingReceipt = await first<{
+    id: string;
+    member_id: number;
+    kind: string;
+    underlying_assignment_id: string;
+    effective_on: string;
+  }>(
+    c.env.DB,
+    'SELECT id,member_id,kind,underlying_assignment_id,effective_on FROM temporary_operational_overlays WHERE idempotency_key = ?',
+    key,
+  );
+  if (existingReceipt !== undefined) {
+    if (
+      existingReceipt.member_id === raw.member_id &&
+      existingReceipt.kind === raw.kind &&
+      existingReceipt.underlying_assignment_id === raw.underlying_assignment_id &&
+      existingReceipt.effective_on === raw.effective_on
+    ) {
+      return c.json({
+        replayed: true,
+        overlayId: existingReceipt.id,
+        dailyVacancy: true,
+        annualBidVacancy: false,
+        destinationStaffing: 'POLICY_PENDING',
+      });
+    }
+    return c.json({ error: 'idempotency_key_reused' }, 409);
+  }
   const assignment = await first<{ id: string }>(
     c.env.DB,
     'SELECT id FROM member_assignments WHERE id = ? AND member_id = ?',
@@ -873,23 +1005,54 @@ router.post('/temporary-overlays', requireStepUpAuth(), async (c) => {
 });
 
 router.post('/temporary-overlays/:overlayId/end', requireStepUpAuth(), async (c) => {
-  const raw = (await c.req.json().catch(() => null)) as { actual_end_on?: unknown } | null;
+  const raw = (await c.req.json().catch(() => null)) as {
+    actual_end_on?: unknown;
+    reason?: unknown;
+  } | null;
   if (typeof raw?.actual_end_on !== 'string' || !isIsoCalendarDate(raw.actual_end_on))
     return c.json({ error: 'invalid_actual_end_on' }, 400);
   const actor = String(c.get('claims').sub ?? '');
-  const overlay = await first<{ id: string; status: string }>(
+  if (actor.length === 0) return c.json({ error: 'invalid_actor_subject' }, 400);
+  const key = c.req.header('Idempotency-Key');
+  if (key === undefined || key.trim().length === 0)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const overlay = await first<{
+    id: string;
+    status: string;
+    effective_on: string;
+    actual_end_on: string | null;
+    ended_by_subject: string | null;
+  }>(
     c.env.DB,
-    'SELECT id,status FROM temporary_operational_overlays WHERE id = ?',
+    'SELECT id,status,effective_on,actual_end_on,ended_by_subject FROM temporary_operational_overlays WHERE id = ?',
     c.req.param('overlayId'),
   );
   if (overlay === undefined) return c.json({ error: 'overlay_not_found' }, 404);
-  if (overlay.status !== 'active') return c.json({ error: 'overlay_not_active' }, 409);
+  if (raw.actual_end_on < overlay.effective_on)
+    return c.json({ error: 'end_before_effective_on' }, 422);
+  if (overlay.status !== 'active') {
+    if (
+      overlay.status === 'ended' &&
+      overlay.actual_end_on === raw.actual_end_on &&
+      overlay.ended_by_subject === actor
+    ) {
+      return c.json({
+        replayed: true,
+        overlayId: overlay.id,
+        status: 'ended',
+        operationalAssignment: 'UNDERLYING_ASSIGNMENT_RESTORED',
+        annualBidAssignment: 'UNCHANGED',
+      });
+    }
+    return c.json({ error: 'overlay_not_active' }, 409);
+  }
   await c.env.DB.prepare(
     "UPDATE temporary_operational_overlays SET status = 'ended', actual_end_on = ?, ended_by_subject = ? WHERE id = ? AND status = 'active'",
   )
     .bind(raw.actual_end_on, actor, overlay.id)
     .run();
   return c.json({
+    replayed: false,
     overlayId: overlay.id,
     status: 'ended',
     operationalAssignment: 'UNDERLYING_ASSIGNMENT_RESTORED',
