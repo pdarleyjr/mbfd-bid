@@ -607,6 +607,39 @@ router.get('/summary', async (c) => {
   });
 });
 
+router.get('/operations-dashboard', async (c) => {
+  const asOf = c.req.query('as_of') ?? todayUtc();
+  if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
+  const [overlays, reviewRows, personnel] = await Promise.all([
+    all<{ kind: string; count: number }>(
+      c.env.DB,
+      "SELECT kind, count(*) AS count FROM temporary_operational_overlays WHERE status = 'active' AND effective_on <= ? AND (actual_end_on IS NULL OR actual_end_on > ?) GROUP BY kind",
+      asOf,
+      asOf,
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      "SELECT count(*) AS count FROM qualification_review_rows WHERE decision IS NULL OR decision = 'needs_review'",
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      "SELECT count(*) AS count FROM members WHERE employment_status = 'active'",
+    ),
+  ]);
+  const overlayCounts = Object.fromEntries(overlays.map((row) => [row.kind, Number(row.count)]));
+  return c.json({
+    asOf,
+    activePersonnel: Number(personnel?.count ?? 0),
+    specialAssignment: overlayCounts.SPECIAL_ASSIGNMENT ?? 0,
+    lightDuty: overlayCounts.LIGHT_DUTY ?? 0,
+    dailyStaffingVacancies:
+      (overlayCounts.SPECIAL_ASSIGNMENT ?? 0) + (overlayCounts.LIGHT_DUTY ?? 0),
+    annualBidVacanciesFromOverlays: 0,
+    destinationStaffing: 'POLICY_PENDING',
+    qualificationRowsNeedingReview: Number(reviewRows?.count ?? 0),
+  });
+});
+
 router.get('/members', async (c) => {
   const status = c.req.query('employment_status');
   if (status !== undefined && !(EMPLOYMENT_STATUSES as readonly string[]).includes(status)) {
