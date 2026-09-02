@@ -1,7 +1,7 @@
 import type { FrozenLiveBidPolicy, LiveBidCommand } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import { reduceLiveBidCommand } from '../../src/commands/live-bid-reducer.js';
-import { emptyBidSessionState } from '../../src/durable/bid-session-state.js';
+import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
 
 const policy: FrozenLiveBidPolicy = {
   v: 1,
@@ -49,7 +49,7 @@ const policy: FrozenLiveBidPolicy = {
   transitionPolicyReference: null,
   publicationPolicyReference: null,
 };
-function state() {
+function state(): BidSessionState {
   return {
     ...emptyBidSessionState('s'),
     currentPhase: 'position_bid' as const,
@@ -131,5 +131,117 @@ describe('live canonical reducer', () => {
       'b1',
     );
     expect(result).toMatchObject({ ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' });
+  });
+  it('does not mark a completed session ready for finalization without frozen annual policy', () => {
+    const result = reduceLiveBidCommand(
+      { ...state(), currentPhase: 'complete' },
+      policy,
+      command('live.complete_session', {
+        commandId: '00000000-0000-4000-8000-000000000099',
+        expectedSeq: 0,
+      }),
+      100,
+      'b-final',
+    );
+    expect(result).toMatchObject({ ok: false, code: 'ANNUAL_OPERATIONS_POLICY_MISSING' });
+  });
+  it('records three minimal contact attempts and returns an unreachable member without rewinding the order', () => {
+    let current = state();
+    for (const [index, method] of ['PHONE', 'TEXT', 'PHONE'].entries()) {
+      const result = reduceLiveBidCommand(
+        current,
+        {
+          ...policy,
+          annualOperations: {
+            v: 1,
+            stageOrder: ['d'],
+            requiredTopologyPositionIds: ['p1'],
+            contact: {
+              minimumAttempts: 3,
+              timingMode: 'OPERATOR_DISCRETION',
+              durationSeconds: null,
+            },
+            aDay: {
+              combatGroups: ['G1', 'G2', 'G3', 'G4'],
+              min: 18,
+              max: 19,
+              captainDcMax: 2,
+              specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+            },
+          },
+        },
+        command('live.record_contact_attempt', {
+          commandId: `00000000-0000-4000-8000-00000000000${index + 4}`,
+          expectedSeq: index,
+          memberId: 1,
+          method,
+        }),
+        100 + index,
+        `b${index + 4}`,
+      );
+      if (!result.ok) throw new Error(result.code);
+      current = result.state;
+    }
+    const unreachable = reduceLiveBidCommand(
+      current,
+      {
+        ...policy,
+        annualOperations: {
+          v: 1,
+          stageOrder: ['d'],
+          requiredTopologyPositionIds: ['p1'],
+          contact: { minimumAttempts: 3, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+          aDay: {
+            combatGroups: ['G1', 'G2', 'G3', 'G4'],
+            min: 18,
+            max: 19,
+            captainDcMax: 2,
+            specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+          },
+        },
+      },
+      command('live.declare_unreachable', {
+        commandId: '00000000-0000-4000-8000-000000000007',
+        expectedSeq: 3,
+        memberId: 1,
+      }),
+      104,
+      'b7',
+    );
+    if (!unreachable.ok) throw new Error(unreachable.code);
+    const returned = reduceLiveBidCommand(
+      unreachable.state,
+      {
+        ...policy,
+        annualOperations: {
+          v: 1,
+          stageOrder: ['d'],
+          requiredTopologyPositionIds: ['p1'],
+          contact: { minimumAttempts: 3, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+          aDay: {
+            combatGroups: ['G1', 'G2', 'G3', 'G4'],
+            min: 18,
+            max: 19,
+            captainDcMax: 2,
+            specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+          },
+        },
+      },
+      command('live.return_at_current_sequence', {
+        commandId: '00000000-0000-4000-8000-000000000008',
+        expectedSeq: 4,
+        memberId: 1,
+      }),
+      105,
+      'b8',
+    );
+    expect(returned).toMatchObject({ ok: true });
+    if (!returned.ok) return;
+    expect(returned.state.currentBidderId).toBe(1);
+    expect(returned.state.bidOrder).toHaveLength(2);
+    expect(returned.state.annual?.returnedAtCurrentSequence).toEqual([
+      { memberId: 1, sequence: 4 },
+    ]);
+    expect(returned.state.annual?.returningMemberId).toBe(1);
   });
 });

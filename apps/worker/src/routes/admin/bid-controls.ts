@@ -74,7 +74,14 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
               : 'skip_defer'
             : command.data.type === 'live.transition_stage'
               ? 'approve_transition'
-              : 'pause_resume';
+              : command.data.type === 'live.complete_session'
+                ? 'approve_final_results'
+                : command.data.type === 'live.record_contact_attempt' ||
+                    command.data.type === 'live.declare_unreachable'
+                  ? 'mark_unreachable'
+                  : command.data.type === 'live.return_at_current_sequence'
+                    ? 'skip_defer'
+                    : 'pause_resume';
   if (
     !isLiveBidActionAuthorized(
       frozen.snapshot.settings.livePolicy,

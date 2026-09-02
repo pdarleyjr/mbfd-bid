@@ -41,6 +41,71 @@ export const BidDispositionSchema = z.enum([
 ]);
 export type BidDisposition = z.infer<typeof BidDispositionSchema>;
 
+/**
+ * Immutable execution facts needed after an annual configuration is frozen.
+ * These are deliberately configuration data, not inferred from historical
+ * rosters or current staffing. Missing values therefore block real execution.
+ */
+export const FrozenAnnualOperationsPolicySchema = z
+  .object({
+    v: z.literal(1),
+    stageOrder: z.array(z.string().trim().min(1).max(80)).min(1),
+    /** Dedicated specialty seats must be named in frozen topology, never inferred from staffing. */
+    requiredTopologyPositionIds: z.array(z.string().trim().min(1).max(160)).min(1),
+    contact: z
+      .object({
+        minimumAttempts: z.literal(3),
+        timingMode: z.enum(['HARD_MINIMUM', 'TARGET', 'OPERATOR_DISCRETION']),
+        durationSeconds: z.number().int().min(0).max(86_400).nullable(),
+      })
+      .strict()
+      .superRefine((contact, ctx) => {
+        if (contact.timingMode !== 'OPERATOR_DISCRETION' && contact.durationSeconds === null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['durationSeconds'],
+            message: 'hard-minimum and target contact timing require an explicit duration',
+          });
+        }
+      }),
+    aDay: z
+      .object({
+        combatGroups: z.tuple([z.literal('G1'), z.literal('G2'), z.literal('G3'), z.literal('G4')]),
+        min: z.literal(18),
+        max: z.literal(19),
+        captainDcMax: z.literal(2),
+        specialtyMaximums: z
+          .object({
+            MARINE_ASSIGNED: z.literal(1),
+            MARINE_FLOAT: z.literal(1),
+            DE: z.literal(2),
+            SWAT: z.literal(1),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((policy, ctx) => {
+    if (new Set(policy.stageOrder).size !== policy.stageOrder.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['stageOrder'],
+        message: 'annual stage ids must be unique',
+      });
+    }
+    if (
+      new Set(policy.requiredTopologyPositionIds).size !== policy.requiredTopologyPositionIds.length
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requiredTopologyPositionIds'],
+        message: 'annual specialty topology position ids must be unique',
+      });
+    }
+  });
+export type FrozenAnnualOperationsPolicy = z.infer<typeof FrozenAnnualOperationsPolicySchema>;
+
 const FrozenLiveStageSchema = z
   .object({
     id: z.string().trim().min(1).max(80),
@@ -100,6 +165,8 @@ export const FrozenLiveBidPolicySchema = z
     actionPermissions: z.array(LiveActionPermissionSchema).length(11),
     specialtyCatalogReference: z.string().trim().min(1).max(200).nullable(),
     aDayPolicyReference: z.string().trim().min(1).max(200).nullable(),
+    /** Omitted only for pre-Annual-Operations sessions; live operations then fail closed. */
+    annualOperations: FrozenAnnualOperationsPolicySchema.optional(),
     transitionPolicyReference: z.string().trim().min(1).max(200).nullable(),
     publicationPolicyReference: z.string().trim().min(1).max(200).nullable(),
   })

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BidConfigurationSettingsSchema,
   BidSessionPolicySnapshotSchema,
+  FrozenAnnualOperationsPolicySchema,
   FrozenLiveBidPolicySchema,
   isLiveBidActionAuthorized,
 } from '../../src/index.js';
@@ -119,6 +120,28 @@ const completeV3Snapshot = {
 };
 
 describe('Bid configuration and session policy contracts', () => {
+  it('does not silently invent annual contact timing or A-Day limits', () => {
+    expect(
+      FrozenAnnualOperationsPolicySchema.safeParse({
+        v: 1,
+        stageOrder: [
+          'D_CAPTAIN',
+          'D_LIEUTENANT',
+          'ABC_CAPTAIN',
+          'ABC_LIEUTENANT',
+          'ABC_FIREFIGHTER',
+        ],
+        contact: { minimumAttempts: 3, timingMode: 'HARD_MINIMUM', durationSeconds: null },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 18,
+          max: 19,
+          captainDcMax: 2,
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+        },
+      }).success,
+    ).toBe(false);
+  });
   it('requires an explicit, complete policy before a live action is authorized', () => {
     const policy = FrozenLiveBidPolicySchema.parse(completeLivePolicy);
     expect(isLiveBidActionAuthorized(policy, 'record_selection', 101)).toBe(true);

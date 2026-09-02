@@ -299,6 +299,8 @@ bid.get('/board', async (c) => {
     body.queueCursor = canonicalState.queueCursor;
     body.frozenAt = canonicalState.frozenAt;
     body.aDay = canonicalState.aDay;
+    // This is a read model only. All mutations still cross canonical commands.
+    body.annual = canonicalState.annual;
   }
 
   // Merge D1-committed bids into the fills map. Auto-bid / admin bid-for-

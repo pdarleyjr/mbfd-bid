@@ -50,6 +50,13 @@ const LIVE_ACTIONS = [
   'publish',
 ];
 const LIVE_DISPOSITIONS = ['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'];
+const ANNUAL_STAGE_IDS = [
+  'D_CAPTAIN',
+  'D_LIEUTENANT',
+  'ABC_CAPTAIN',
+  'ABC_LIEUTENANT',
+  'ABC_FIREFIGHTER',
+];
 
 function liveSettings(grants: string[]) {
   return {
@@ -60,16 +67,14 @@ function liveSettings(grants: string[]) {
     livePolicy: {
       v: 1,
       policyRevision: 'lifecycle-test',
-      stages: [
-        {
-          id: 'D_CAPTAIN',
-          label: 'D Captain',
-          order: 0,
-          memberIds: [POLICY_MEMBER_ID],
-          opportunityPositionIds: ['A101'],
-          kind: 'CAPTAIN',
-        },
-      ],
+      stages: ANNUAL_STAGE_IDS.map((id, order) => ({
+        id,
+        label: id,
+        order,
+        memberIds: [POLICY_MEMBER_ID + order],
+        opportunityPositionIds: ['A101'],
+        kind: order === 0 ? 'D_SHIFT' : 'MIXED',
+      })),
       dispositions: LIVE_DISPOSITIONS.map((disposition) => ({
         disposition,
         advances: true,
@@ -85,6 +90,23 @@ function liveSettings(grants: string[]) {
         action,
         actorMemberIds: grants.includes(action) ? [POLICY_MEMBER_ID] : [99],
       })),
+      annualOperations: {
+        v: 1,
+        stageOrder: ANNUAL_STAGE_IDS,
+        requiredTopologyPositionIds: ['A101'],
+        contact: {
+          minimumAttempts: 3,
+          timingMode: 'OPERATOR_DISCRETION',
+          durationSeconds: null,
+        },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 18,
+          max: 19,
+          captainDcMax: 2,
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+        },
+      },
       specialtyCatalogReference: null,
       aDayPolicyReference: null,
       transitionPolicyReference: null,
@@ -162,19 +184,32 @@ async function seedFrozenPolicySnapshot(
             : liveSettings(options.liveActionGrants),
         credentialEvaluationOn: '2026-01-15',
         capturedAtMs: capturedAt,
-        members: [
-          {
-            memberId: POLICY_MEMBER_ID,
-            pool: 'FF',
-            rscSeniority: 1,
-            rankSeniority: null,
-            exclusionReason: null,
-            authoritativeAssignmentId: null,
-            rank: 'FF',
-            isProbationary: false,
-            credentialNames: [],
-          },
-        ],
+        members:
+          options.liveActionGrants === undefined
+            ? [
+                {
+                  memberId: POLICY_MEMBER_ID,
+                  pool: 'FF' as const,
+                  rscSeniority: 1,
+                  rankSeniority: null,
+                  exclusionReason: null,
+                  authoritativeAssignmentId: null,
+                  rank: 'FF',
+                  isProbationary: false,
+                  credentialNames: [],
+                },
+              ]
+            : ANNUAL_STAGE_IDS.map((_, index) => ({
+                memberId: POLICY_MEMBER_ID + index,
+                pool: 'FF' as const,
+                rscSeniority: index + 1,
+                rankSeniority: null,
+                exclusionReason: null,
+                authoritativeAssignmentId: null,
+                rank: 'FF',
+                isProbationary: false,
+                credentialNames: [],
+              })),
         ruleBookMaterial: {
           v: 1,
           rules: [

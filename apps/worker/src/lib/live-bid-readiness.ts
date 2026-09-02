@@ -8,6 +8,7 @@ import { and, eq, ne } from 'drizzle-orm';
 import type { DB } from '../db/index.js';
 import { bidSessions } from '../db/schema.js';
 import type { WorkerEnv } from '../types/env.js';
+import { validateAnnualOperationsReadiness } from './annual-bid-operations.js';
 import { evaluateAuthoritativeStaffingBaseline } from './authoritative-staffing-baseline.js';
 import { type FrozenSessionBidPolicy, loadConfiguredBidYearPolicy } from './bid-policy.js';
 
@@ -109,6 +110,23 @@ export async function evaluateLiveBidReadiness(
   const ruleIds = new Set(snapshot.ruleBookMaterial.rules.map((rule) => rule.positionId));
   const rulesCoverBiddablePositions =
     biddablePositions.length > 0 && biddablePositions.every((position) => ruleIds.has(position.id));
+  const annualOperations =
+    snapshot.settings.v === 3 ? snapshot.settings.livePolicy.annualOperations : undefined;
+  const annualReadiness = validateAnnualOperationsReadiness({
+    operations: annualOperations,
+    bidYear,
+    isMock: false,
+    configuredStageIds:
+      snapshot.settings.v === 3 ? snapshot.settings.livePolicy.stages.map((stage) => stage.id) : [],
+    // Exact specialty seats are frozen configuration. Current staffing never
+    // creates a topology id; missing configured ids therefore block a real run.
+    missingTopologyIds: annualOperations
+      ? annualOperations.requiredTopologyPositionIds.filter(
+          (positionId) =>
+            !snapshot.ruleBookMaterial.positions.some((position) => position.id === positionId),
+        )
+      : [],
+  });
 
   return evaluateLiveReadiness({
     requiredCheckIds: [
@@ -118,6 +136,7 @@ export async function evaluateLiveBidReadiness(
       'participant_population',
       'position_catalog',
       'qualification_rule_readiness',
+      'annual_operations_policy',
       'no_conflicting_active_real_bid',
       'audit_infrastructure',
       'runtime_bindings',
@@ -164,6 +183,17 @@ export async function evaluateLiveBidReadiness(
         rulesCoverBiddablePositions
           ? 'Every frozen biddable position has immutable rule coverage.'
           : 'One or more frozen biddable positions lacks immutable rule coverage.',
+      ),
+      check(
+        'annual_operations_policy',
+        annualReadiness.ok,
+        annualReadiness.ok
+          ? 'Annual stage, contact, and A-Day execution policy is frozen and complete.'
+          : `Annual operations cannot start: ${annualReadiness.code}${
+              'detail' in annualReadiness && annualReadiness.detail
+                ? ` (${annualReadiness.detail})`
+                : ''
+            }.`,
       ),
       check(
         'no_conflicting_active_real_bid',

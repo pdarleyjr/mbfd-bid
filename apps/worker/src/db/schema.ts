@@ -284,6 +284,89 @@ export const bidSessions = sqliteTable('bid_sessions', {
   mockControlRevision: integer('mock_control_revision').notNull().default(0),
 });
 
+/** Frozen decision-support source; command staff still confirms every award. */
+export const bidPreferenceSheets = sqliteTable(
+  'bid_preference_sheets',
+  {
+    id: text('id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'restrict' }),
+    memberId: integer('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    source: text('source', { enum: ['MEMBER_SUBMISSION', 'OPERATOR_ENTERED'] }).notNull(),
+    status: text('status', { enum: ['DRAFT', 'SUBMITTED', 'REVIEWED', 'FROZEN'] }).notNull(),
+    submittedAt: integer('submitted_at', { mode: 'timestamp_ms' }).notNull(),
+    frozenAt: integer('frozen_at', { mode: 'timestamp_ms' }),
+    positionPreferencesJson: text('position_preferences_json').notNull(),
+    aDayPreferencesJson: text('a_day_preferences_json').notNull(),
+    provenanceReference: text('provenance_reference'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    sessionStatusIdx: index('idx_bid_preference_sheets_session_status').on(
+      t.bidSessionId,
+      t.status,
+      t.memberId,
+    ),
+  }),
+);
+
+export const bidContactAttempts = sqliteTable(
+  'bid_contact_attempts',
+  {
+    id: text('id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'restrict' }),
+    memberId: integer('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    attemptNumber: integer('attempt_number').notNull(),
+    method: text('method', { enum: ['PHONE', 'TEXT'] }).notNull(),
+    operatorMemberId: integer('operator_member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    attemptedAt: integer('attempted_at', { mode: 'timestamp_ms' }).notNull(),
+    disposition: text('disposition', { enum: ['RECORDED', 'UNREACHABLE'] }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    sessionMemberIdx: index('idx_bid_contact_attempts_session_member').on(
+      t.bidSessionId,
+      t.memberId,
+      t.attemptNumber,
+    ),
+  }),
+);
+
+export const bidSessionCheckpoints = sqliteTable(
+  'bid_session_checkpoints',
+  {
+    id: text('id').primaryKey(),
+    bidSessionId: text('bid_session_id')
+      .notNull()
+      .references(() => bidSessions.id, { onDelete: 'restrict' }),
+    commandId: text('command_id').notNull(),
+    name: text('name').notNull(),
+    actorMemberId: integer('actor_member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'restrict' }),
+    sessionSequence: integer('session_sequence').notNull(),
+    checkpointJson: text('checkpoint_json').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    sessionSequenceIdx: index('idx_bid_session_checkpoints_session_sequence').on(
+      t.bidSessionId,
+      t.sessionSequence,
+      t.createdAt,
+    ),
+  }),
+);
+
 /**
  * Durable idempotency receipts for the legacy mock rehearsal controls. A row
  * starts pending, then becomes an immutable completed applied response exactly once.

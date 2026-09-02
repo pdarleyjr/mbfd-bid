@@ -7,6 +7,7 @@ import { MockBanner } from '../../_components/MockBanner';
 import type { BidderContext } from '../../_components/bid/BidderCard';
 import type { MemberLite, PositionMeta } from '../../_components/bid/types';
 import { AdminBidShell } from './_components/AdminBidShell';
+import type { AnnualOperationsStatusPayload } from './_components/AnnualOperationsStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,7 @@ interface BoardSnapshot {
   turnTimerSeconds?: number;
   /** V3 immutable rule-book position material for this exact session. */
   positions?: PositionMeta[];
+  annual?: AnnualOperationsStatusPayload | null;
 }
 
 interface ActiveSessionResponse {
@@ -125,6 +127,7 @@ export default async function AdminBidPage({
         wsBase={getWorkerBase()}
         isMock={board.isMock === true}
         mockControlRevision={board.mockControlRevision}
+        annual={board.annual}
       />
     </div>
   );

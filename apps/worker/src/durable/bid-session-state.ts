@@ -1,4 +1,5 @@
 import type { ADayPick, GroupCapacityConfig, WeekdayCapacityConfig } from '@mbfd/a-day';
+import type { AnnualOperationsState } from '../lib/annual-bid-operations.js';
 
 export interface DOStorageLike {
   get<T>(key: string): Promise<T | undefined>;
@@ -76,6 +77,8 @@ export interface BidSessionState {
    */
   aDay: PersistedADayState | null;
   live?: LiveBidProgress | null;
+  /** Annual operations are canonical-state material and survive DO eviction. */
+  annual?: AnnualOperationsState | null;
 }
 
 export function emptyBidSessionState(bidSessionId: string): BidSessionState {
@@ -92,6 +95,7 @@ export function emptyBidSessionState(bidSessionId: string): BidSessionState {
     frozenAt: null,
     aDay: null,
     live: null,
+    annual: null,
   };
 }
 
@@ -106,7 +110,12 @@ export async function loadBidSessionState(
   const persisted = await storage.get<BidSessionState>(bidSessionStateStorageKey(bidSessionId));
   if (!persisted) return emptyBidSessionState(bidSessionId);
   // Forward-compatibility: legacy snapshots predating Plan 07 lack `aDay`.
-  return { ...persisted, aDay: persisted.aDay ?? null, live: persisted.live ?? null };
+  return {
+    ...persisted,
+    aDay: persisted.aDay ?? null,
+    live: persisted.live ?? null,
+    annual: persisted.annual ?? null,
+  };
 }
 
 export async function persistBidSessionState(

@@ -2,6 +2,10 @@
 import type { BidderContext } from '../../../_components/bid/BidderCard';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { AdminBoard } from './AdminBoard';
+import {
+  AnnualOperationsStatus,
+  type AnnualOperationsStatusPayload,
+} from './AnnualOperationsStatus';
 import { BidRoster } from './BidRoster';
 import { LiveCommandBar } from './LiveCommandBar';
 import { ManualPickBar } from './ManualPickBar';
@@ -35,6 +39,7 @@ interface Props {
   isMock: boolean;
   /** D1 mock-control revision passed to the mock-only manual command. */
   mockControlRevision: number | null;
+  annual?: AnnualOperationsStatusPayload | null | undefined;
 }
 
 /**
@@ -61,6 +66,8 @@ export function AdminBidShell(props: Props) {
           currentBidderId={props.currentBidderId}
           onDeck={props.onDeck}
         />
+
+        <AnnualOperationsStatus annual={props.annual} />
 
         <ManualPickBar isMock={props.isMock} members={props.members} />
 
