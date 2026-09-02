@@ -145,6 +145,40 @@ describe('live canonical reducer', () => {
     );
     expect(result).toMatchObject({ ok: false, code: 'ANNUAL_OPERATIONS_POLICY_MISSING' });
   });
+  it('seals completed annual results against later amendments', () => {
+    const initial = state();
+    const live = initial.live;
+    if (live === null || live === undefined) throw new Error('fixture live state missing');
+    const result = reduceLiveBidCommand(
+      {
+        ...initial,
+        currentPhase: 'complete',
+        fills: { p1: { memberId: 1, ordinal: 1, bidId: 'b1' } },
+        live: {
+          ...live,
+          lastSelectionBidId: 'b1',
+        },
+        annual: {
+          preferenceSheets: [],
+          contactAttempts: [],
+          unresolvedMemberIds: [],
+          returnedAtCurrentSequence: [],
+          returningMemberId: null,
+          checkpoint: null,
+          completion: { readyForFinalizationAtMs: 100, actorMemberId: 99 },
+        },
+      },
+      policy,
+      command('live.amend_selection', {
+        commandId: '00000000-0000-4000-8000-000000000100',
+        positionId: 'p1',
+        replacementMemberId: 2,
+      }),
+      101,
+      'b2',
+    );
+    expect(result).toMatchObject({ ok: false, code: 'ANNUAL_COMPLETION_SEALED' });
+  });
   it('records three minimal contact attempts and returns an unreachable member without rewinding the order', () => {
     let current = state();
     for (const [index, method] of ['PHONE', 'TEXT', 'PHONE'].entries()) {
