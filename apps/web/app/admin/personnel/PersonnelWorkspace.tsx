@@ -126,6 +126,8 @@ export function PersonnelWorkspace({
   const [success, setSuccess] = useState<string | null>(null);
   const [history, setHistory] = useState<LifecycleHistory | null>(null);
   const [historyMemberId, setHistoryMemberId] = useState<number | null>(null);
+  const [pendingChange, setPendingChange] = useState<Record<string, unknown> | null>(null);
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
 
   const selectedMember = useMemo(
     () => members.find((member) => member.id === Number(memberId)) ?? null,
@@ -137,6 +139,7 @@ export function PersonnelWorkspace({
   const requiresSeparationType = kind === 'RETIREMENT' || kind === 'SEPARATION';
   const requiresSlot = kind === 'VACATE' || kind === 'POSITION_RETIRE';
   const isCorrection = kind === 'CORRECTION';
+  const canPreview = !isNewHire && !isPositionChange;
 
   const loadHistory = useCallback(async (id: number) => {
     setError(null);
@@ -203,6 +206,28 @@ export function PersonnelWorkspace({
         if (requiresSeparationType) payload.separation_type = separationType.trim();
       }
 
+      if (pendingChange === null && canPreview) {
+        const previewResponse = await fetch('/api/admin/personnel/changes/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+        const previewBody: unknown = await previewResponse.json().catch(() => null);
+        if (!previewResponse.ok) {
+          const detail =
+            previewBody !== null && typeof previewBody === 'object' && 'error' in previewBody
+              ? String((previewBody as { error: unknown }).error)
+              : `Preview failed (${previewResponse.status}).`;
+          setError(detail);
+          return;
+        }
+        setPendingChange(payload);
+        setPreviewMessage(
+          'Preview complete. Confirm to record this effective-dated change; the preview made no changes.',
+        );
+        return;
+      }
       const response = await fetch('/api/admin/personnel/changes', {
         method: 'POST',
         headers: {
@@ -210,7 +235,7 @@ export function PersonnelWorkspace({
           'Idempotency-Key': randomIdempotencyKey(),
         },
         credentials: 'include',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(pendingChange),
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
@@ -227,6 +252,8 @@ export function PersonnelWorkspace({
           : 'The reviewed lifecycle change was recorded. Refresh the workspace to view the new projection.',
       );
       setReason('');
+      setPendingChange(null);
+      setPreviewMessage(null);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : 'Personnel change could not be recorded.',
@@ -547,16 +574,29 @@ export function PersonnelWorkspace({
                 {success}
               </output>
             )}
+            {previewMessage !== null && (
+              <output aria-live="polite" className="block text-sm text-sky-200">
+                {previewMessage}
+              </output>
+            )}
             <button
               type="submit"
               disabled={busy || reason.trim().length < 4}
               className="mt-2 min-h-11 rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy ? 'Recording change…' : 'Review and record change'}
+              {busy
+                ? pendingChange === null && canPreview
+                  ? 'Previewing change…'
+                  : 'Recording change…'
+                : pendingChange === null && canPreview
+                  ? 'Preview before recording'
+                  : 'Confirm and record change'}
             </button>
           </div>
         </form>
       </section>
+
+      <TemporaryOverlayWorkspace members={members} asOf={summary.asOf} />
 
       <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/40">
         <div className="border-b border-slate-700 px-5 py-4">
@@ -650,6 +690,291 @@ export function PersonnelWorkspace({
         )}
       </section>
     </div>
+  );
+}
+
+function TemporaryOverlayWorkspace({
+  members,
+  asOf,
+}: {
+  members: PersonnelMember[];
+  asOf: string;
+}) {
+  const [kind, setKind] = useState<'SPECIAL_ASSIGNMENT' | 'LIGHT_DUTY'>('SPECIAL_ASSIGNMENT');
+  const [memberId, setMemberId] = useState(String(members[0]?.id ?? ''));
+  const [underlyingAssignmentId, setUnderlyingAssignmentId] = useState('');
+  const [underlyingPositionId, setUnderlyingPositionId] = useState('');
+  const [temporaryPositionId, setTemporaryPositionId] = useState('');
+  const [effectiveOn, setEffectiveOn] = useState(asOf);
+  const [plannedEndOn, setPlannedEndOn] = useState('');
+  const [provenance, setProvenance] = useState('');
+  const [pending, setPending] = useState<Record<string, unknown> | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [overlays, setOverlays] = useState<
+    Array<{
+      id: string;
+      member_id: number;
+      kind: string;
+      effective_on: string;
+      status: string;
+      actual_end_on: string | null;
+    }>
+  >([]);
+
+  const load = useCallback(async () => {
+    const response = await fetch('/api/admin/personnel/temporary-overlays', {
+      credentials: 'include',
+    });
+    if (!response.ok) return;
+    const body = (await response.json()) as { overlays?: typeof overlays };
+    setOverlays(body.overlays ?? []);
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+    const payload = pending ?? {
+      kind,
+      member_id: Number(memberId),
+      underlying_assignment_id: underlyingAssignmentId.trim(),
+      underlying_position_id: underlyingPositionId.trim(),
+      temporary_position_id: temporaryPositionId.trim(),
+      effective_on: effectiveOn,
+      planned_end_on: plannedEndOn || null,
+      provenance: provenance.trim(),
+    };
+    const path =
+      pending === null
+        ? '/api/admin/personnel/temporary-overlays/preview'
+        : '/api/admin/personnel/temporary-overlays';
+    const response = await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(pending === null ? {} : { 'Idempotency-Key': randomIdempotencyKey() }),
+      },
+      body: JSON.stringify(payload),
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      setError(
+        body !== null && typeof body === 'object' && 'error' in body
+          ? String((body as { error: unknown }).error)
+          : `Overlay request failed (${response.status}).`,
+      );
+      return;
+    }
+    if (pending === null) {
+      setPending(payload);
+      setMessage(
+        'Preview confirms a daily-staffing-only impact. The underlying permanent and annual Bid assignments stay unchanged; confirm to record.',
+      );
+      return;
+    }
+    setPending(null);
+    setMessage(
+      'Temporary overlay recorded. It can be ended explicitly below; no annual Bid vacancy was created.',
+    );
+    await load();
+  }
+
+  async function endOverlay(id: string) {
+    const response = await fetch(`/api/admin/personnel/temporary-overlays/${id}/end`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomIdempotencyKey() },
+      body: JSON.stringify({
+        actual_end_on: asOf,
+        reason: 'Command Staff ended the temporary overlay.',
+      }),
+    });
+    if (!response.ok) {
+      setError(`Overlay end failed (${response.status}).`);
+      return;
+    }
+    setMessage(
+      'Overlay ended. The operational view returns to the underlying assignment; annual Bid assignment is unchanged.',
+    );
+    await load();
+  }
+
+  return (
+    <section
+      className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+      aria-labelledby="temporary-overlays-heading"
+    >
+      <h2 id="temporary-overlays-heading" className="font-heading text-xl text-white">
+        Temporary operational overlays
+      </h2>
+      <p className="mt-2 text-sm text-slate-300">
+        Special Assignment and Light Duty affect daily staffing only. Destination staffing remains
+        policy pending; this does not create an annual Bid vacancy.
+      </p>
+      <form
+        onSubmit={submit}
+        data-testid="temporary-overlay-form"
+        className="mt-5 grid gap-3 lg:grid-cols-2"
+      >
+        <label className="block">
+          <span className="text-sm text-slate-200">Overlay type</span>
+          <select
+            value={kind}
+            onChange={(event) => {
+              setKind(event.target.value as typeof kind);
+              setPending(null);
+            }}
+            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          >
+            <option value="SPECIAL_ASSIGNMENT">Special Assignment</option>
+            <option value="LIGHT_DUTY">Light Duty</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-200">Member</span>
+          <select
+            required
+            value={memberId}
+            onChange={(event) => {
+              setMemberId(event.target.value);
+              setPending(null);
+            }}
+            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          >
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.lastName}, {member.firstName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-200">Underlying assignment ID</span>
+          <input
+            required
+            value={underlyingAssignmentId}
+            onChange={(event) => {
+              setUnderlyingAssignmentId(event.target.value);
+              setPending(null);
+            }}
+            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-200">Underlying position ID</span>
+          <input
+            required
+            value={underlyingPositionId}
+            onChange={(event) => {
+              setUnderlyingPositionId(event.target.value);
+              setPending(null);
+            }}
+            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-200">Temporary operational position ID</span>
+          <input
+            required
+            value={temporaryPositionId}
+            onChange={(event) => {
+              setTemporaryPositionId(event.target.value);
+              setPending(null);
+            }}
+            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-200">Effective date</span>
+          <input
+            required
+            type="date"
+            value={effectiveOn}
+            onChange={(event) => {
+              setEffectiveOn(event.target.value);
+              setPending(null);
+            }}
+            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-200">Planned end (optional)</span>
+          <input
+            type="date"
+            value={plannedEndOn}
+            onChange={(event) => {
+              setPlannedEndOn(event.target.value);
+              setPending(null);
+            }}
+            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-200">Source / provenance</span>
+          <input
+            required
+            value={provenance}
+            onChange={(event) => {
+              setProvenance(event.target.value);
+              setPending(null);
+            }}
+            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          />
+        </label>
+        <div className="lg:col-span-2">
+          {error !== null && (
+            <output aria-live="polite" className="block text-sm text-red-300">
+              {error}
+            </output>
+          )}
+          {message !== null && (
+            <output aria-live="polite" className="block text-sm text-sky-200">
+              {message}
+            </output>
+          )}
+          <button
+            type="submit"
+            className="mt-2 min-h-11 rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600"
+          >
+            {pending === null ? 'Preview overlay' : 'Confirm and record overlay'}
+          </button>
+        </div>
+      </form>
+      <div className="mt-5 border-t border-slate-700 pt-4">
+        <h3 className="font-semibold text-white">Recorded overlays</h3>
+        {overlays.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-400">No temporary overlays are recorded.</p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {overlays.map((overlay) => (
+              <li
+                key={overlay.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-700 p-3 text-sm text-slate-200"
+              >
+                <span>
+                  {overlay.kind} · member #{overlay.member_id} · {overlay.effective_on} ·{' '}
+                  {overlay.status}
+                </span>
+                {overlay.status === 'active' && (
+                  <button
+                    type="button"
+                    onClick={() => void endOverlay(overlay.id)}
+                    className="min-h-10 rounded border border-amber-700 px-3 text-xs font-semibold text-amber-100"
+                  >
+                    End overlay
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
 

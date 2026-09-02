@@ -18,6 +18,7 @@ import {
   isIsoCalendarDate,
   planPersonnelLifecycleChange,
 } from '../../lib/personnel-lifecycle.js';
+import { previewTemporaryOverlay } from '../../lib/temporary-assignment-overlay.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -606,6 +607,96 @@ router.get('/summary', async (c) => {
   });
 });
 
+router.get('/operations-dashboard', async (c) => {
+  const asOf = c.req.query('as_of') ?? todayUtc();
+  if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
+  const [
+    overlays,
+    reviewRows,
+    personnel,
+    vacancies,
+    changes,
+    reconciliationExceptions,
+    credentialExceptions,
+  ] = await Promise.all([
+    all<{ kind: string; count: number }>(
+      c.env.DB,
+      "SELECT kind, count(*) AS count FROM temporary_operational_overlays WHERE status = 'active' AND effective_on <= ? AND (actual_end_on IS NULL OR actual_end_on > ?) GROUP BY kind",
+      asOf,
+      asOf,
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      "SELECT count(*) AS count FROM qualification_review_rows WHERE decision IS NULL OR decision = 'needs_review'",
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      "SELECT count(*) AS count FROM members WHERE employment_status = 'active'",
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      `SELECT count(*) AS count
+         FROM staffing_positions position
+        WHERE position.review_status = 'approved'
+          AND (position.active_from IS NULL OR position.active_from <= ?)
+          AND (position.active_to IS NULL OR position.active_to >= ?)
+          AND NOT EXISTS (
+            SELECT 1 FROM member_assignments assignment
+             WHERE assignment.staffing_position_id = position.id
+               AND assignment.status <> 'cancelled'
+               AND assignment.effective_from <= ?
+               AND (assignment.effective_to IS NULL OR assignment.effective_to >= ?)
+          )`,
+      asOf,
+      asOf,
+      asOf,
+      asOf,
+    ),
+    all<{ kind: string; count: number }>(
+      c.env.DB,
+      `SELECT kind,count(*) AS count FROM personnel_lifecycle_events
+        WHERE effective_on <= ?
+          AND kind IN ('PROMOTION','RETIREMENT','SEPARATION','TRANSFER','ADMIN_REASSIGNMENT')
+        GROUP BY kind`,
+      asOf,
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      `SELECT count(*) AS count FROM assignment_import_rows
+        WHERE reconciliation_classification IS NOT NULL
+          AND reconciliation_classification <> 'UNCHANGED'
+          AND review_status <> 'rejected'`,
+    ),
+    first<{ count: number }>(
+      c.env.DB,
+      `SELECT count(*) AS count FROM qualification_review_rows
+        WHERE classification NOT IN ('EXACT_MATCH')
+          AND (decision IS NULL OR decision <> 'rejected')`,
+    ),
+  ]);
+  const overlayCounts = Object.fromEntries(overlays.map((row) => [row.kind, Number(row.count)]));
+  const changeCounts = Object.fromEntries(changes.map((row) => [row.kind, Number(row.count)]));
+  return c.json({
+    asOf,
+    activePersonnel: Number(personnel?.count ?? 0),
+    specialAssignment: overlayCounts.SPECIAL_ASSIGNMENT ?? 0,
+    lightDuty: overlayCounts.LIGHT_DUTY ?? 0,
+    dailyStaffingVacancies:
+      (overlayCounts.SPECIAL_ASSIGNMENT ?? 0) + (overlayCounts.LIGHT_DUTY ?? 0),
+    annualBidVacanciesFromOverlays: 0,
+    permanentVacancies: Number(vacancies?.count ?? 0),
+    destinationStaffing: 'POLICY_PENDING',
+    qualificationRowsNeedingReview: Number(reviewRows?.count ?? 0),
+    credentialExceptions: Number(credentialExceptions?.count ?? 0),
+    teleStaffReconciliationExceptions: Number(reconciliationExceptions?.count ?? 0),
+    promotions: changeCounts.PROMOTION ?? 0,
+    retirements: changeCounts.RETIREMENT ?? 0,
+    separations: changeCounts.SEPARATION ?? 0,
+    permanentAssignmentChanges:
+      (changeCounts.TRANSFER ?? 0) + (changeCounts.ADMIN_REASSIGNMENT ?? 0),
+  });
+});
+
 router.get('/members', async (c) => {
   const status = c.req.query('employment_status');
   if (status !== undefined && !(EMPLOYMENT_STATUSES as readonly string[]).includes(status)) {
@@ -711,6 +802,337 @@ router.get('/changes', async (c) => {
           requestedMemberId,
         );
   return c.json({ changes: events.map(mapEvent), count: events.length });
+});
+
+const TemporaryOverlayPreviewSchema = z
+  .object({
+    kind: z.enum([
+      'SPECIAL_ASSIGNMENT',
+      'LIGHT_DUTY',
+      'TEMPORARY_DUTY',
+      'DETAIL',
+      'EXECUTIVE_ASSIGNMENT',
+      'TEMPORARY_A_DAY_CHANGE',
+    ]),
+    member_id: z.number().int().positive(),
+    underlying_assignment_id: z.string().trim().min(1).max(128),
+    underlying_position_id: z.string().trim().min(1).max(128),
+    temporary_position_id: z.string().trim().min(1).max(128),
+    effective_on: z.string(),
+    planned_end_on: z.string().nullable(),
+  })
+  .strict();
+
+router.post('/temporary-overlays/preview', async (c) => {
+  const parsed = TemporaryOverlayPreviewSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const body = parsed.data;
+  if (
+    !isIsoCalendarDate(body.effective_on) ||
+    (body.planned_end_on !== null && !isIsoCalendarDate(body.planned_end_on))
+  )
+    return c.json({ error: 'invalid_effective_date' }, 422);
+  const preview = previewTemporaryOverlay({
+    kind: body.kind,
+    memberId: body.member_id,
+    underlyingAssignmentId: body.underlying_assignment_id,
+    underlyingPositionId: body.underlying_position_id,
+    temporaryPositionId: body.temporary_position_id,
+    effectiveOn: body.effective_on,
+    plannedEndOn: body.planned_end_on,
+  });
+  return preview.ok ? c.json({ preview: true, ...preview }) : c.json(preview, 422);
+});
+
+router.get('/temporary-overlays', async (c) => {
+  const rows = await all<{
+    id: string;
+    member_id: number;
+    kind: string;
+    underlying_assignment_id: string;
+    temporary_position_id: string | null;
+    effective_on: string;
+    planned_end_on: string | null;
+    actual_end_on: string | null;
+    status: string;
+    provenance: string;
+    notes: string | null;
+  }>(
+    c.env.DB,
+    'SELECT id,member_id,kind,underlying_assignment_id,temporary_position_id,effective_on,planned_end_on,actual_end_on,status,provenance,notes FROM temporary_operational_overlays ORDER BY effective_on DESC',
+  );
+  return c.json({ overlays: rows, destinationStaffing: 'POLICY_PENDING' });
+});
+
+router.get('/temporary-overlays/:overlayId', async (c) => {
+  const overlay = await first<{
+    id: string;
+    member_id: number;
+    kind: string;
+    underlying_assignment_id: string;
+    underlying_position_id: string | null;
+    temporary_position_id: string | null;
+    effective_on: string;
+    planned_end_on: string | null;
+    actual_end_on: string | null;
+    status: string;
+    provenance: string;
+    notes: string | null;
+    actor_subject: string;
+    ended_by_subject: string | null;
+    created_at: number;
+  }>(
+    c.env.DB,
+    `SELECT overlay.id,overlay.member_id,overlay.kind,overlay.underlying_assignment_id,
+            assignment.staffing_position_id AS underlying_position_id,overlay.temporary_position_id,
+            overlay.effective_on,overlay.planned_end_on,overlay.actual_end_on,overlay.status,
+            overlay.provenance,overlay.notes,overlay.actor_subject,overlay.ended_by_subject,overlay.created_at
+       FROM temporary_operational_overlays overlay
+       JOIN member_assignments assignment ON assignment.id = overlay.underlying_assignment_id
+      WHERE overlay.id = ?`,
+    c.req.param('overlayId'),
+  );
+  if (overlay === undefined) return c.json({ error: 'overlay_not_found' }, 404);
+  return c.json({
+    overlay,
+    underlyingBidAssignmentPreserved: true,
+    aDayPreserved: true,
+    dailyStaffingVacancy: overlay.status === 'active',
+    annualBidVacancy: false,
+    destinationStaffing: 'POLICY_PENDING',
+  });
+});
+
+router.post('/temporary-overlays', requireStepUpAuth(), async (c) => {
+  const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (
+    raw === null ||
+    (raw.kind !== 'SPECIAL_ASSIGNMENT' && raw.kind !== 'LIGHT_DUTY') ||
+    typeof raw.member_id !== 'number' ||
+    typeof raw.underlying_assignment_id !== 'string' ||
+    typeof raw.effective_on !== 'string' ||
+    typeof raw.provenance !== 'string'
+  )
+    return c.json({ error: 'invalid_overlay' }, 400);
+  if (!isIsoCalendarDate(raw.effective_on)) return c.json({ error: 'invalid_effective_on' }, 422);
+  if (
+    raw.planned_end_on !== undefined &&
+    raw.planned_end_on !== null &&
+    (typeof raw.planned_end_on !== 'string' ||
+      !isIsoCalendarDate(raw.planned_end_on) ||
+      raw.planned_end_on < raw.effective_on)
+  )
+    return c.json({ error: 'invalid_planned_end_on' }, 422);
+  const key = c.req.header('Idempotency-Key');
+  if (key === undefined || key.trim().length === 0)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const actor = String(c.get('claims').sub ?? '');
+  const existingReceipt = await first<{
+    id: string;
+    member_id: number;
+    kind: string;
+    underlying_assignment_id: string;
+    effective_on: string;
+  }>(
+    c.env.DB,
+    'SELECT id,member_id,kind,underlying_assignment_id,effective_on FROM temporary_operational_overlays WHERE idempotency_key = ?',
+    key,
+  );
+  if (existingReceipt !== undefined) {
+    if (
+      existingReceipt.member_id === raw.member_id &&
+      existingReceipt.kind === raw.kind &&
+      existingReceipt.underlying_assignment_id === raw.underlying_assignment_id &&
+      existingReceipt.effective_on === raw.effective_on
+    ) {
+      return c.json({
+        replayed: true,
+        overlayId: existingReceipt.id,
+        dailyVacancy: true,
+        annualBidVacancy: false,
+        destinationStaffing: 'POLICY_PENDING',
+      });
+    }
+    return c.json({ error: 'idempotency_key_reused' }, 409);
+  }
+  const assignment = await first<{ id: string }>(
+    c.env.DB,
+    'SELECT id FROM member_assignments WHERE id = ? AND member_id = ?',
+    raw.underlying_assignment_id,
+    raw.member_id,
+  );
+  if (assignment === undefined || actor.length === 0)
+    return c.json({ error: 'underlying_assignment_not_found' }, 404);
+  const active = await first<{ id: string }>(
+    c.env.DB,
+    "SELECT id FROM temporary_operational_overlays WHERE member_id = ? AND status = 'active'",
+    raw.member_id,
+  );
+  if (active !== undefined) return c.json({ error: 'active_overlay_conflict' }, 409);
+  const id = ulid();
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO temporary_operational_overlays (id,member_id,kind,underlying_assignment_id,temporary_position_id,effective_on,planned_end_on,status,provenance,notes,actor_subject,idempotency_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    )
+      .bind(
+        id,
+        raw.member_id,
+        raw.kind,
+        raw.underlying_assignment_id,
+        typeof raw.temporary_position_id === 'string' ? raw.temporary_position_id : null,
+        raw.effective_on,
+        typeof raw.planned_end_on === 'string' ? raw.planned_end_on : null,
+        'active',
+        raw.provenance,
+        typeof raw.notes === 'string' ? raw.notes : null,
+        actor,
+        key,
+        Date.now(),
+      )
+      .run();
+  } catch {
+    return c.json({ error: 'overlay_not_created' }, 409);
+  }
+  return c.json(
+    {
+      overlayId: id,
+      dailyVacancy: true,
+      annualBidVacancy: false,
+      destinationStaffing: 'POLICY_PENDING',
+    },
+    201,
+  );
+});
+
+router.post('/temporary-overlays/:overlayId/end', requireStepUpAuth(), async (c) => {
+  const raw = (await c.req.json().catch(() => null)) as {
+    actual_end_on?: unknown;
+    reason?: unknown;
+  } | null;
+  if (typeof raw?.actual_end_on !== 'string' || !isIsoCalendarDate(raw.actual_end_on))
+    return c.json({ error: 'invalid_actual_end_on' }, 400);
+  const actor = String(c.get('claims').sub ?? '');
+  if (actor.length === 0) return c.json({ error: 'invalid_actor_subject' }, 400);
+  const key = c.req.header('Idempotency-Key');
+  if (key === undefined || key.trim().length === 0)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const overlay = await first<{
+    id: string;
+    status: string;
+    effective_on: string;
+    actual_end_on: string | null;
+    ended_by_subject: string | null;
+  }>(
+    c.env.DB,
+    'SELECT id,status,effective_on,actual_end_on,ended_by_subject FROM temporary_operational_overlays WHERE id = ?',
+    c.req.param('overlayId'),
+  );
+  if (overlay === undefined) return c.json({ error: 'overlay_not_found' }, 404);
+  if (raw.actual_end_on < overlay.effective_on)
+    return c.json({ error: 'end_before_effective_on' }, 422);
+  if (overlay.status !== 'active') {
+    if (
+      overlay.status === 'ended' &&
+      overlay.actual_end_on === raw.actual_end_on &&
+      overlay.ended_by_subject === actor
+    ) {
+      return c.json({
+        replayed: true,
+        overlayId: overlay.id,
+        status: 'ended',
+        operationalAssignment: 'UNDERLYING_ASSIGNMENT_RESTORED',
+        annualBidAssignment: 'UNCHANGED',
+      });
+    }
+    return c.json({ error: 'overlay_not_active' }, 409);
+  }
+  await c.env.DB.prepare(
+    "UPDATE temporary_operational_overlays SET status = 'ended', actual_end_on = ?, ended_by_subject = ? WHERE id = ? AND status = 'active'",
+  )
+    .bind(raw.actual_end_on, actor, overlay.id)
+    .run();
+  return c.json({
+    replayed: false,
+    overlayId: overlay.id,
+    status: 'ended',
+    operationalAssignment: 'UNDERLYING_ASSIGNMENT_RESTORED',
+    annualBidAssignment: 'UNCHANGED',
+  });
+});
+
+/** Side-effect-free preview for the supported permanent lifecycle operations. */
+router.post('/changes/preview', async (c) => {
+  const raw = await c.req.json().catch(() => null);
+  const parsed = PersonnelChangeSchema.safeParse(raw);
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const body = parsed.data;
+  if (!isIsoCalendarDate(body.effective_on) || body.member_id === undefined) {
+    return c.json({ error: 'preview_requires_supported_member_change' }, 422);
+  }
+  if (
+    body.kind === 'NEW_HIRE' ||
+    body.kind === 'POSITION_CREATE' ||
+    body.kind === 'POSITION_RETIRE'
+  ) {
+    return c.json({ error: 'preview_requires_supported_member_change' }, 422);
+  }
+  const member = await loadMember(c.env.DB, body.member_id);
+  if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
+  const assignments = await all<AssignmentDbRow>(
+    c.env.DB,
+    `SELECT id, member_id, staffing_position_id, status, effective_from, effective_to
+       FROM member_assignments WHERE member_id = ?`,
+    member.id,
+  );
+  const plan = planPersonnelLifecycleChange({
+    kind: body.kind,
+    effectiveOn: body.effective_on,
+    reason: body.reason,
+    actorSubject: String(c.get('claims').sub ?? 'preview'),
+    idempotencyKey: 'preview-only',
+    member: toMemberState(member),
+    activeAssignments: assignments.map(toAssignmentState),
+    ...(body.staffing_position_id === undefined
+      ? {}
+      : { staffingPositionId: body.staffing_position_id }),
+    ...(body.rank_after === undefined ? {} : { rankAfter: body.rank_after }),
+    ...(body.separation_type === undefined ? {} : { separationType: body.separation_type }),
+    ...(body.employment_status_after === undefined
+      ? {}
+      : { employmentStatusAfter: body.employment_status_after }),
+    ...(body.supersedes_event_id === undefined
+      ? {}
+      : { supersedesEventId: body.supersedes_event_id }),
+    nowOn: todayUtc(),
+    eventId: 'preview-only',
+  });
+  if (!plan.ok) return c.json({ error: plan.error }, 422);
+  const targetOccupant =
+    body.staffing_position_id === undefined
+      ? null
+      : await first<{ member_id: number }>(
+          c.env.DB,
+          `SELECT member_id FROM member_assignments WHERE staffing_position_id = ? AND status <> 'cancelled'
+       AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?) LIMIT 1`,
+          body.staffing_position_id,
+          body.effective_on,
+          body.effective_on,
+        );
+  return c.json({
+    preview: true,
+    current: { member: mapMember(member), assignments: assignments.map(mapAssignment) },
+    proposed: plan,
+    vacancyImpact:
+      targetOccupant === null
+        ? 'NOT_DETERMINED_BY_PERSONNEL_PREVIEW'
+        : targetOccupant === undefined
+          ? 'KNOWN_VACANT'
+          : targetOccupant.member_id === member.id
+            ? 'CURRENT_MEMBER_OCCUPIES_TARGET'
+            : 'KNOWN_OCCUPIED',
+    qualificationImpact: 'NOT_DETERMINED_BY_PERSONNEL_PREVIEW',
+    establishedBidSnapshotImpact: 'NONE',
+  });
 });
 
 async function ensureTargetPositionAvailable(

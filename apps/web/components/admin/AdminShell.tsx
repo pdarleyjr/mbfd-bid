@@ -40,7 +40,9 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
     exact: false,
     subnav: [
       { href: '/admin/personnel', label: 'Personnel lifecycle' },
+      { href: '/admin/personnel/operations', label: 'Year-round operations' },
       { href: '/admin/personnel/qualifications', label: 'Qualification Evidence' },
+      { href: '/admin/personnel/reviews', label: 'Qualification Review' },
     ],
   },
   {

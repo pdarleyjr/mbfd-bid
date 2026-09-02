@@ -64,6 +64,78 @@ describe('personnel lifecycle administration', () => {
     await teardownTestD1(h);
   });
 
+  it('previews a permanent assignment change without writing D1 or changing an established session', async () => {
+    const before = await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events');
+    const response = await request(h, '/api/admin/personnel/changes/preview', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await adminJwt()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'TRANSFER',
+        member_id: 1,
+        staffing_position_id: 'slot-vacant',
+        effective_on: '2026-09-15',
+        reason: 'Synthetic preview remains non-mutating.',
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: true,
+      vacancyImpact: 'KNOWN_VACANT',
+      establishedBidSnapshotImpact: 'NONE',
+    });
+    expect(await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events')).toEqual(
+      before,
+    );
+  });
+
+  it('keeps a no-target lifecycle preview non-speculative about vacancy impact', async () => {
+    const before = await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events');
+    const response = await request(h, '/api/admin/personnel/changes/preview', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await adminJwt()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'RETIREMENT',
+        member_id: 1,
+        effective_on: '2026-09-15',
+        separation_type: 'Synthetic retirement preview.',
+        reason: 'Synthetic preview remains non-mutating.',
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: true,
+      vacancyImpact: 'NOT_DETERMINED_BY_PERSONNEL_PREVIEW',
+      establishedBidSnapshotImpact: 'NONE',
+    });
+    expect(await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events')).toEqual(
+      before,
+    );
+  });
+
+  it('keeps a Special Assignment as a non-mutating daily-vacancy overlay', async () => {
+    const response = await request(h, '/api/admin/personnel/temporary-overlays/preview', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await adminJwt()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'SPECIAL_ASSIGNMENT',
+        member_id: 1,
+        underlying_assignment_id: 'assignment-current',
+        underlying_position_id: 'slot-ff',
+        temporary_position_id: 'staff-a',
+        effective_on: '2026-09-15',
+        planned_end_on: null,
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      underlyingBidAssignmentPreserved: true,
+      aDayPreserved: true,
+      memberRemainsBidEligible: true,
+      dailyVacancy: { bidVacancy: false },
+      temporaryDestinationStaffingCount: 'POLICY_PENDING',
+    });
+  });
+
   it('requires a fresh administrator step-up before a lifecycle mutation', async () => {
     const response = await request(h, '/api/admin/personnel/changes', {
       method: 'POST',
@@ -755,5 +827,71 @@ describe('personnel lifecycle administration', () => {
     expect(await h.db.run('SELECT count(*) AS count FROM member_assignments')).toMatchObject({
       results: [{ count: 1 }],
     });
+  });
+
+  it('retains the underlying assignment while an overlay is active and restores it through an idempotent end receipt', async () => {
+    const auth = {
+      Authorization: `Bearer ${await adminJwt()}`,
+      'Content-Type': 'application/json',
+    };
+    const created = await request(h, '/api/admin/personnel/temporary-overlays', {
+      method: 'POST',
+      headers: { ...auth, 'Idempotency-Key': 'synthetic-overlay-001' },
+      body: JSON.stringify({
+        kind: 'SPECIAL_ASSIGNMENT',
+        member_id: 1,
+        underlying_assignment_id: 'assignment-current',
+        temporary_position_id: 'temporary-command-staff',
+        effective_on: '2026-08-28',
+        planned_end_on: null,
+        provenance: 'synthetic overlay acceptance evidence',
+      }),
+    });
+    expect(created.status).toBe(201);
+    const { overlayId } = (await created.json()) as { overlayId: string };
+
+    const detail = await request(h, `/api/admin/personnel/temporary-overlays/${overlayId}`, {
+      headers: auth,
+    });
+    expect(detail.status).toBe(200);
+    await expect(detail.json()).resolves.toMatchObject({
+      overlay: expect.objectContaining({
+        kind: 'SPECIAL_ASSIGNMENT',
+        underlying_assignment_id: 'assignment-current',
+        underlying_position_id: 'slot-ff',
+      }),
+      underlyingBidAssignmentPreserved: true,
+      aDayPreserved: true,
+      dailyStaffingVacancy: true,
+      annualBidVacancy: false,
+      destinationStaffing: 'POLICY_PENDING',
+    });
+
+    const end = await request(h, `/api/admin/personnel/temporary-overlays/${overlayId}/end`, {
+      method: 'POST',
+      headers: { ...auth, 'Idempotency-Key': 'synthetic-overlay-end-001' },
+      body: JSON.stringify({ actual_end_on: '2026-08-29' }),
+    });
+    expect(end.status).toBe(200);
+    await expect(end.json()).resolves.toMatchObject({
+      replayed: false,
+      operationalAssignment: 'UNDERLYING_ASSIGNMENT_RESTORED',
+    });
+
+    const replay = await request(h, `/api/admin/personnel/temporary-overlays/${overlayId}/end`, {
+      method: 'POST',
+      headers: { ...auth, 'Idempotency-Key': 'synthetic-overlay-end-001' },
+      body: JSON.stringify({ actual_end_on: '2026-08-29' }),
+    });
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      replayed: true,
+      annualBidAssignment: 'UNCHANGED',
+    });
+    expect(
+      await h.db.run(
+        "SELECT status,effective_to FROM member_assignments WHERE id = 'assignment-current'",
+      ),
+    ).toMatchObject({ results: [{ status: 'active', effective_to: null }] });
   });
 });

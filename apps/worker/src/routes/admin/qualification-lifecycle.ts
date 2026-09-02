@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 
+import { classifyCertificationReadiness } from '../../lib/certification-readiness.js';
 import {
   type LegacyCredentialBaseline,
   type QualificationLifecycleEvent,
@@ -108,6 +109,35 @@ const EventInputSchema = z
   });
 
 type EventInput = z.infer<typeof EventInputSchema>;
+
+const ReviewBatchInputSchema = z
+  .object({
+    source_system: z.string().trim().min(1).max(128),
+    source_reference: z.string().trim().min(1).max(512),
+  })
+  .strict();
+
+const ReviewRowInputSchema = z
+  .object({
+    source_member_reference: z.string().trim().min(1).max(128),
+    source_credential_reference: z.string().trim().min(1).max(256),
+    source_status: z.enum(['active', 'expired', 'revoked']).default('active'),
+    effective_on: z.string().optional(),
+    expires_on: z.string().nullable().optional(),
+    provenance: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+const ReviewDecisionInputSchema = z
+  .object({
+    decision: z.enum(['accepted', 'rejected', 'needs_review']),
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+const ReviewApplyInputSchema = z
+  .object({ reason: z.string().trim().min(4).max(500).optional() })
+  .strict();
 
 const router = new Hono<AdminEnv>();
 router.use('*', requireAdmin);
@@ -289,6 +319,465 @@ router.get('/members/:memberId{\\d+}', async (c) => {
     specialties: projection.specialties,
     events: loadedEvents.events.map(presentEvent),
   });
+});
+
+/** Command-staff read model. This is deliberately projection-only: it creates no D1 state. */
+router.get('/readiness', async (c) => {
+  const asOf = c.req.query('as_of') ?? new Date().toISOString().slice(0, 10);
+  if (!isQualificationCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
+  const rawDays = Number(c.req.query('expiring_soon_days') ?? '30');
+  const expiringSoonDays =
+    Number.isInteger(rawDays) && rawDays >= 1 && rawDays <= 365 ? rawDays : 30;
+  const rows = await all<{
+    member_id: number;
+    first_name: string;
+    last_name: string;
+    rank: string;
+    credential_name: string | null;
+    specialty_code: string | null;
+    specialty_terminal_status: string | null;
+    kind: string;
+    effective_on: string;
+    expires_on: string | null;
+    evidence_source: string | null;
+    evidence_reference: string | null;
+    created_at: number | null;
+  }>(
+    c.env.DB,
+    `
+    SELECT member_record.id AS member_id, member_record.first_name, member_record.last_name, member_record.rank,
+           credential.name AS credential_name, event.specialty_code, event.specialty_terminal_status, event.kind, event.effective_on, event.expires_on,
+           event.evidence_source, event.evidence_reference, event.created_at
+      FROM member_qualification_events event
+      JOIN members member_record ON member_record.id = event.member_id
+      LEFT JOIN credentials credential ON credential.id = event.credential_id
+     WHERE event.effective_on <= ?
+     ORDER BY member_record.last_name, member_record.first_name, event.effective_on DESC, event.created_at DESC`,
+    asOf,
+  );
+  return c.json(
+    classifyCertificationReadiness({
+      asOf,
+      expiringSoonDays,
+      annualEvaluationOn: null,
+      rows: rows.map((row) => ({
+        memberId: row.member_id,
+        memberName: `${row.last_name}, ${row.first_name}`,
+        rank: row.rank,
+        credential: row.credential_name,
+        specialty: row.specialty_code,
+        status:
+          row.specialty_terminal_status === 'EXPIRED' || row.kind === 'CERTIFICATION_EXPIRED'
+            ? 'expired'
+            : row.specialty_terminal_status === 'REVOKED' || row.kind === 'CERTIFICATION_REVOKED'
+              ? 'revoked'
+              : row.specialty_terminal_status === 'REMOVED'
+                ? 'removed'
+                : 'active',
+        effectiveOn: row.effective_on,
+        expiresOn: row.expires_on,
+        evidenceSource: row.evidence_source,
+        evidenceReference: row.evidence_reference,
+        changedAt:
+          row.created_at === null ? null : new Date(row.created_at).toISOString().slice(0, 10),
+      })),
+    }),
+  );
+});
+
+router.get('/reviews/batches', async (c) => {
+  const rows = await all<{
+    id: string;
+    source_system: string;
+    source_reference: string;
+    status: string;
+    created_by_subject: string;
+    created_at: number;
+    total: number;
+    needs_review: number;
+    applied: number;
+  }>(
+    c.env.DB,
+    `SELECT batch.id, batch.source_system, batch.source_reference, batch.status, batch.created_by_subject, batch.created_at,
+    count(row.id) AS total, sum(CASE WHEN row.decision = 'needs_review' OR row.decision IS NULL THEN 1 ELSE 0 END) AS needs_review,
+    sum(CASE WHEN row.applied_event_id IS NOT NULL THEN 1 ELSE 0 END) AS applied
+    FROM qualification_review_batches batch LEFT JOIN qualification_review_rows row ON row.batch_id = batch.id
+    GROUP BY batch.id ORDER BY batch.created_at DESC`,
+  );
+  return c.json({
+    annualEligibility: 'PENDING_CONFIGURATION',
+    batches: rows.map((row) => ({
+      ...row,
+      total: Number(row.total),
+      needsReview: Number(row.needs_review),
+      applied: Number(row.applied),
+    })),
+  });
+});
+
+/** A batch detail is deliberately exception-first.  Exact/rejected rows stay
+ * available for audit, but normal operators do not have to inspect them before
+ * resolving unknown or changed evidence. */
+router.get('/reviews/batches/:batchId', async (c) => {
+  const batch = await first<{
+    id: string;
+    source_system: string;
+    source_reference: string;
+    status: string;
+    created_by_subject: string;
+    created_at: number;
+  }>(
+    c.env.DB,
+    'SELECT id,source_system,source_reference,status,created_by_subject,created_at FROM qualification_review_batches WHERE id = ?',
+    c.req.param('batchId'),
+  );
+  if (batch === undefined) return c.json({ error: 'review_batch_not_found' }, 404);
+  const requestedClassification = c.req.query('classification');
+  const requestedDecision = c.req.query('decision');
+  const rows = await all<{
+    id: string;
+    member_id: number | null;
+    credential_id: number | null;
+    source_member_reference: string;
+    source_credential_reference: string;
+    source_status: string;
+    effective_on: string | null;
+    expires_on: string | null;
+    provenance: string;
+    classification: string;
+    decision: string | null;
+    reviewed_by_subject: string | null;
+    reviewed_at: number | null;
+    applied_event_id: string | null;
+    created_at: number;
+  }>(
+    c.env.DB,
+    `SELECT id,member_id,credential_id,source_member_reference,source_credential_reference,source_status,
+            effective_on,expires_on,provenance,classification,decision,reviewed_by_subject,reviewed_at,
+            applied_event_id,created_at
+       FROM qualification_review_rows
+      WHERE batch_id = ?
+        AND (? IS NULL OR classification = ?)
+        AND (? IS NULL OR COALESCE(decision, 'undecided') = ?)
+      ORDER BY CASE WHEN classification = 'EXACT_MATCH' THEN 1 ELSE 0 END, created_at ASC, id ASC`,
+    batch.id,
+    requestedClassification ?? null,
+    requestedClassification ?? null,
+    requestedDecision ?? null,
+    requestedDecision ?? null,
+  );
+  return c.json({
+    batch,
+    annualEligibility: 'PENDING_CONFIGURATION',
+    rows: rows.map((row) => ({
+      ...row,
+      memberId: row.member_id,
+      credentialId: row.credential_id,
+      sourceMemberReference: row.source_member_reference,
+      sourceCredentialReference: row.source_credential_reference,
+      sourceStatus: row.source_status,
+      effectiveOn: row.effective_on,
+      expiresOn: row.expires_on,
+      reviewedBySubject: row.reviewed_by_subject,
+      reviewedAt: row.reviewed_at,
+      appliedEventId: row.applied_event_id,
+    })),
+  });
+});
+
+router.post('/reviews/batches', requireStepUpAuth(), async (c) => {
+  const parsed = ReviewBatchInputSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const idempotencyKey = c.req.header('Idempotency-Key');
+  if (idempotencyKey === undefined || idempotencyKey.trim().length === 0)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const actor = String(c.get('claims').sub ?? '');
+  if (actor.length === 0) return c.json({ error: 'invalid_actor_subject' }, 400);
+  const existing = await first<{ id: string }>(
+    c.env.DB,
+    'SELECT id FROM qualification_review_batches WHERE source_reference = ? AND created_by_subject = ?',
+    parsed.data.source_reference,
+    actor,
+  );
+  if (existing !== undefined) return c.json({ replayed: true, batchId: existing.id });
+  const id = ulid();
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO qualification_review_batches (id, source_system, source_reference, status, created_by_subject, created_at) VALUES (?, ?, ?, 'staged', ?, ?)`,
+    )
+      .bind(id, parsed.data.source_system, parsed.data.source_reference, actor, Date.now())
+      .run();
+  } catch {
+    return c.json({ error: 'qualification_review_batch_not_created' }, 409);
+  }
+  return c.json({ replayed: false, batchId: id, annualEligibility: 'PENDING_CONFIGURATION' }, 201);
+});
+
+router.post('/reviews/batches/:batchId/rows', requireStepUpAuth(), async (c) => {
+  const parsed = ReviewRowInputSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const raw = parsed.data;
+  if (
+    (raw.effective_on !== undefined && !isQualificationCalendarDate(raw.effective_on)) ||
+    (raw.expires_on !== undefined &&
+      raw.expires_on !== null &&
+      !isQualificationCalendarDate(raw.expires_on)) ||
+    (raw.effective_on !== undefined &&
+      raw.expires_on !== null &&
+      raw.expires_on !== undefined &&
+      raw.expires_on < raw.effective_on)
+  )
+    return c.json({ error: 'invalid_qualification_dates' }, 422);
+  const batch = await first<{ id: string }>(
+    c.env.DB,
+    "SELECT id FROM qualification_review_batches WHERE id = ? AND status = 'staged'",
+    c.req.param('batchId'),
+  );
+  if (batch === undefined) return c.json({ error: 'review_batch_not_staged' }, 409);
+  const [member, credential] = await Promise.all([
+    first<{ id: number }>(
+      c.env.DB,
+      'SELECT id FROM members WHERE employee_id = ?',
+      raw.source_member_reference,
+    ),
+    first<{ id: number }>(
+      c.env.DB,
+      'SELECT id FROM credentials WHERE name = ?',
+      raw.source_credential_reference,
+    ),
+  ]);
+  const key = c.req.header('Idempotency-Key');
+  if (key === undefined || key.trim().length === 0)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  let classification =
+    member === undefined
+      ? 'UNKNOWN_MEMBER'
+      : credential === undefined
+        ? 'UNKNOWN_QUALIFICATION'
+        : 'NEW_QUALIFICATION';
+  if (member !== undefined && credential !== undefined) {
+    const current = await first<{ start_date: string | null; expiration_date: string | null }>(
+      c.env.DB,
+      'SELECT start_date,expiration_date FROM member_credentials WHERE member_id = ? AND credential_id = ?',
+      member.id,
+      credential.id,
+    );
+    if (current !== undefined) {
+      const sourceEffective = raw.effective_on ?? null;
+      const sourceExpires = raw.expires_on ?? null;
+      if (
+        raw.source_status === 'active' &&
+        current.start_date === sourceEffective &&
+        current.expiration_date === sourceExpires
+      ) {
+        classification = 'EXACT_MATCH';
+      } else if (
+        current.start_date !== sourceEffective &&
+        current.expiration_date !== sourceExpires
+      ) {
+        classification = 'MULTIPLE_FIELD_CHANGE';
+      } else if (current.start_date !== sourceEffective) {
+        classification = 'ISSUE_DATE_CHANGE';
+      } else if (current.expiration_date !== sourceExpires) {
+        classification = 'EXPIRATION_DATE_CHANGE';
+      } else {
+        classification = 'STATUS_CHANGE';
+      }
+    }
+  }
+  const id = ulid();
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO qualification_review_rows (id,batch_id,member_id,credential_id,source_member_reference,source_credential_reference,source_status,effective_on,expires_on,provenance,classification,idempotency_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    )
+      .bind(
+        id,
+        batch.id,
+        member?.id ?? null,
+        credential?.id ?? null,
+        raw.source_member_reference,
+        raw.source_credential_reference,
+        raw.source_status,
+        raw.effective_on ?? null,
+        raw.expires_on ?? null,
+        raw.provenance,
+        classification,
+        key,
+        Date.now(),
+      )
+      .run();
+  } catch {
+    return c.json({ error: 'review_row_not_created' }, 409);
+  }
+  return c.json({ rowId: id, classification, annualEligibility: 'PENDING_CONFIGURATION' }, 201);
+});
+
+router.post('/reviews/rows/:rowId/decision', requireStepUpAuth(), async (c) => {
+  const parsed = ReviewDecisionInputSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: 'invalid_decision', issues: parsed.error.issues }, 400);
+  const raw = parsed.data;
+  const actor = String(c.get('claims').sub ?? '');
+  if (actor.length === 0) return c.json({ error: 'invalid_actor_subject' }, 400);
+  const row = await first<{ id: string; classification: string; applied_event_id: string | null }>(
+    c.env.DB,
+    'SELECT id, classification, applied_event_id FROM qualification_review_rows WHERE id = ?',
+    c.req.param('rowId'),
+  );
+  if (row === undefined) return c.json({ error: 'review_row_not_found' }, 404);
+  if (row.applied_event_id !== null) return c.json({ error: 'review_row_already_applied' }, 409);
+  if (
+    (row.classification === 'UNKNOWN_MEMBER' || row.classification === 'UNKNOWN_QUALIFICATION') &&
+    raw.decision === 'accepted'
+  )
+    return c.json({ error: 'unresolved_row_requires_needs_review' }, 422);
+  await c.env.DB.prepare(
+    'UPDATE qualification_review_rows SET decision = ?, reviewed_by_subject = ?, reviewed_at = ? WHERE id = ?',
+  )
+    .bind(raw.decision, actor, Date.now(), row.id)
+    .run();
+  return c.json({
+    rowId: row.id,
+    decision: raw.decision,
+    annualEligibility: 'PENDING_CONFIGURATION',
+  });
+});
+
+/**
+ * Applies only an explicitly accepted, resolvable review row.  It writes the
+ * canonical qualification ledger and links the immutable event back to the
+ * source row in the same D1 batch.  It intentionally does not update the old
+ * member_credentials projection or an annual Bid snapshot.
+ */
+router.post('/reviews/rows/:rowId/apply', requireStepUpAuth(), async (c) => {
+  const parsed = ReviewApplyInputSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const idempotencyKey = c.req.header('Idempotency-Key');
+  if (
+    idempotencyKey === undefined ||
+    idempotencyKey.trim().length === 0 ||
+    idempotencyKey.length > 256
+  )
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const actorSubject = String(c.get('claims').sub ?? '');
+  if (actorSubject.length === 0 || actorSubject.length > 256)
+    return c.json({ error: 'invalid_actor_subject' }, 400);
+  const row = await first<{
+    id: string;
+    member_id: number | null;
+    credential_id: number | null;
+    source_status: 'active' | 'expired' | 'revoked';
+    effective_on: string | null;
+    expires_on: string | null;
+    provenance: string;
+    classification: string;
+    decision: string | null;
+    applied_event_id: string | null;
+  }>(
+    c.env.DB,
+    `SELECT id,member_id,credential_id,source_status,effective_on,expires_on,provenance,
+            classification,decision,applied_event_id
+       FROM qualification_review_rows WHERE id = ?`,
+    c.req.param('rowId'),
+  );
+  if (row === undefined) return c.json({ error: 'review_row_not_found' }, 404);
+  if (row.applied_event_id !== null)
+    return c.json({
+      replayed: true,
+      rowId: row.id,
+      appliedEventId: row.applied_event_id,
+      annualEligibility: 'PENDING_CONFIGURATION',
+    });
+  if (row.decision !== 'accepted') return c.json({ error: 'review_row_not_accepted' }, 422);
+  if (row.member_id === null || row.credential_id === null || row.effective_on === null)
+    return c.json({ error: 'review_row_not_resolvable' }, 422);
+  if (
+    !isQualificationCalendarDate(row.effective_on) ||
+    (row.expires_on !== null && !isQualificationCalendarDate(row.expires_on))
+  )
+    return c.json({ error: 'review_row_invalid_dates' }, 422);
+  const kind: QualificationLifecycleKind =
+    row.source_status === 'active'
+      ? 'CERTIFICATION_GAINED'
+      : row.source_status === 'expired'
+        ? 'CERTIFICATION_EXPIRED'
+        : 'CERTIFICATION_REVOKED';
+  if (kind === 'CERTIFICATION_EXPIRED' && row.expires_on !== row.effective_on)
+    return c.json({ error: 'expired_source_requires_matching_effective_date' }, 422);
+  if (kind === 'CERTIFICATION_REVOKED' && row.expires_on !== null)
+    return c.json({ error: 'revoked_source_cannot_set_expiration' }, 422);
+  const existing = await first<{ id: string }>(
+    c.env.DB,
+    'SELECT id FROM member_qualification_events WHERE idempotency_key = ?',
+    idempotencyKey,
+  );
+  if (existing !== undefined) return c.json({ error: 'idempotency_key_reused' }, 409);
+  const eventId = ulid();
+  const now = Date.now();
+  const beforeState = { v: 1, reviewRowId: row.id, classification: row.classification };
+  const afterState = {
+    v: 1,
+    reviewRowId: row.id,
+    memberId: row.member_id,
+    credentialId: row.credential_id,
+    kind,
+    effectiveOn: row.effective_on,
+    expiresOn: row.expires_on,
+    annualEligibility: 'PENDING_CONFIGURATION',
+  };
+  try {
+    const results = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO member_qualification_events
+          (id,member_id,credential_id,specialty_code,specialty_terminal_status,kind,effective_on,expires_on,
+           evidence_source,evidence_reference,reason,actor_subject,idempotency_key,before_state,after_state,created_at)
+         VALUES (?,?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        eventId,
+        row.member_id,
+        row.credential_id,
+        kind,
+        row.effective_on,
+        row.expires_on,
+        'qualification_review',
+        row.provenance,
+        parsed.data.reason ?? `Applied review row ${row.id}`,
+        actorSubject,
+        idempotencyKey,
+        JSON.stringify(beforeState),
+        JSON.stringify(afterState),
+        now,
+      ),
+      c.env.DB.prepare(
+        'UPDATE qualification_review_rows SET applied_event_id = ? WHERE id = ? AND applied_event_id IS NULL',
+      ).bind(eventId, row.id),
+    ]);
+    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1)
+      return c.json({ error: 'qualification_review_apply_rejected' }, 409);
+  } catch {
+    const race = await first<{ applied_event_id: string | null }>(
+      c.env.DB,
+      'SELECT applied_event_id FROM qualification_review_rows WHERE id = ?',
+      row.id,
+    );
+    if (race?.applied_event_id !== null && race?.applied_event_id !== undefined)
+      return c.json({
+        replayed: true,
+        rowId: row.id,
+        appliedEventId: race.applied_event_id,
+        annualEligibility: 'PENDING_CONFIGURATION',
+      });
+    return c.json({ error: 'qualification_review_apply_rejected' }, 409);
+  }
+  return c.json(
+    {
+      replayed: false,
+      rowId: row.id,
+      appliedEventId: eventId,
+      annualEligibility: 'PENDING_CONFIGURATION',
+    },
+    201,
+  );
 });
 
 router.post('/events', requireStepUpAuth(), async (c) => {

@@ -45,6 +45,11 @@ describe('PersonnelWorkspace', () => {
     expect(html).toContain('New hire / reactivation');
     expect(html).toContain('No historical member or assignment is deleted');
     expect(html).toContain('data-testid="personnel-change-form"');
+    expect(html).toContain('Preview before recording');
+    expect(html).toContain('Temporary operational overlays');
+    expect(html).toContain('data-testid="temporary-overlay-form"');
+    expect(html).toContain('Special Assignment');
+    expect(html).toContain('Light Duty');
   });
 
   it('uses a member and assignment query hint to orient an operator in history', () => {
