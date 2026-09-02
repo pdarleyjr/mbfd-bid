@@ -754,6 +754,91 @@ router.post('/temporary-overlays/preview', async (c) => {
   return preview.ok ? c.json({ preview: true, ...preview }) : c.json(preview, 422);
 });
 
+router.get('/temporary-overlays', async (c) => {
+  const rows = await all<{
+    id: string;
+    member_id: number;
+    kind: string;
+    underlying_assignment_id: string;
+    temporary_position_id: string | null;
+    effective_on: string;
+    planned_end_on: string | null;
+    actual_end_on: string | null;
+    status: string;
+    provenance: string;
+    notes: string | null;
+  }>(
+    c.env.DB,
+    'SELECT id,member_id,kind,underlying_assignment_id,temporary_position_id,effective_on,planned_end_on,actual_end_on,status,provenance,notes FROM temporary_operational_overlays ORDER BY effective_on DESC',
+  );
+  return c.json({ overlays: rows, destinationStaffing: 'POLICY_PENDING' });
+});
+
+router.post('/temporary-overlays', requireStepUpAuth(), async (c) => {
+  const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (
+    raw === null ||
+    (raw.kind !== 'SPECIAL_ASSIGNMENT' && raw.kind !== 'LIGHT_DUTY') ||
+    typeof raw.member_id !== 'number' ||
+    typeof raw.underlying_assignment_id !== 'string' ||
+    typeof raw.effective_on !== 'string' ||
+    typeof raw.provenance !== 'string'
+  )
+    return c.json({ error: 'invalid_overlay' }, 400);
+  if (!isIsoCalendarDate(raw.effective_on)) return c.json({ error: 'invalid_effective_on' }, 422);
+  const key = c.req.header('Idempotency-Key');
+  if (key === undefined || key.trim().length === 0)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const actor = String(c.get('claims').sub ?? '');
+  const assignment = await first<{ id: string }>(
+    c.env.DB,
+    'SELECT id FROM member_assignments WHERE id = ? AND member_id = ?',
+    raw.underlying_assignment_id,
+    raw.member_id,
+  );
+  if (assignment === undefined || actor.length === 0)
+    return c.json({ error: 'underlying_assignment_not_found' }, 404);
+  const active = await first<{ id: string }>(
+    c.env.DB,
+    "SELECT id FROM temporary_operational_overlays WHERE member_id = ? AND status = 'active'",
+    raw.member_id,
+  );
+  if (active !== undefined) return c.json({ error: 'active_overlay_conflict' }, 409);
+  const id = ulid();
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO temporary_operational_overlays (id,member_id,kind,underlying_assignment_id,temporary_position_id,effective_on,planned_end_on,status,provenance,notes,actor_subject,idempotency_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    )
+      .bind(
+        id,
+        raw.member_id,
+        raw.kind,
+        raw.underlying_assignment_id,
+        typeof raw.temporary_position_id === 'string' ? raw.temporary_position_id : null,
+        raw.effective_on,
+        typeof raw.planned_end_on === 'string' ? raw.planned_end_on : null,
+        'active',
+        raw.provenance,
+        typeof raw.notes === 'string' ? raw.notes : null,
+        actor,
+        key,
+        Date.now(),
+      )
+      .run();
+  } catch {
+    return c.json({ error: 'overlay_not_created' }, 409);
+  }
+  return c.json(
+    {
+      overlayId: id,
+      dailyVacancy: true,
+      annualBidVacancy: false,
+      destinationStaffing: 'POLICY_PENDING',
+    },
+    201,
+  );
+});
+
 /** Side-effect-free preview for the supported permanent lifecycle operations. */
 router.post('/changes/preview', async (c) => {
   const raw = await c.req.json().catch(() => null);
