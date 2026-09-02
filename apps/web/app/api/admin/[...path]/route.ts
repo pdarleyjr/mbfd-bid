@@ -1,5 +1,5 @@
 import { cfEnv } from '@/lib/cf-env';
-import { JWT_COOKIE_NAME } from '@/lib/cookies';
+import { JWT_COOKIE_NAME, JWT_COOKIE_OPTS } from '@/lib/cookies';
 import { csrfFailureForUnsafeRequest } from '@/lib/server-csrf';
 import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
@@ -43,7 +43,8 @@ async function proxyAdminRequest(req: Request, context: RouteContext): Promise<R
     }
   }
 
-  const jwt = (await cookies()).get(JWT_COOKIE_NAME)?.value;
+  const cookieStore = await cookies();
+  const jwt = cookieStore.get(JWT_COOKIE_NAME)?.value;
   if (!jwt) {
     return NextResponse.json({ error: 'missing_auth' }, { status: 401 });
   }
@@ -73,6 +74,8 @@ async function proxyAdminRequest(req: Request, context: RouteContext): Promise<R
     return NextResponse.json({ error: 'worker_unavailable', detail }, { status: 503 });
   }
 
+  const refreshedJwt = upstream.headers.get('X-MBFD-Session-Refresh');
+  if (refreshedJwt !== null) cookieStore.set(JWT_COOKIE_NAME, refreshedJwt, JWT_COOKIE_OPTS);
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,

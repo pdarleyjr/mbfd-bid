@@ -7,12 +7,16 @@ const TEST_KEY = 'A'.repeat(64); // 32-byte hex placeholder
 
 const payload = {
   sub: 555,
+  hub_user_id: 555,
+  member_id: 42,
   emp: '20731',
   role: 'member' as const,
+  security_version: 3,
   rank: 'LT' as const,
   first_name: 'Peter',
   last_name: 'Darley',
   fresh_auth_at: Math.floor(Date.now() / 1000),
+  authz_checked_at: Math.floor(Date.now() / 1000),
 };
 
 describe('signJwt / verifyJwt', () => {
@@ -37,9 +41,9 @@ describe('signJwt / verifyJwt', () => {
     await expect(verifyJwt(token, TEST_KEY)).rejects.toThrow();
   });
 
-  it('serializes the numeric member id to an RFC-compliant subject while preserving the typed ticket API', async () => {
+  it('serializes the canonical Hub subject while preserving explicit operational ticket identity', async () => {
     const ticket = await signWebSocketTicket(
-      { sub: 555, role: 'member', session_id: 'session-1' },
+      { sub: 555, member_id: 42, security_version: 3, role: 'member', session_id: 'session-1' },
       TEST_KEY,
     );
     const raw = decodeJwt(ticket);
@@ -54,7 +58,13 @@ describe('signJwt / verifyJwt', () => {
       audience: WEBSOCKET_TICKET_AUDIENCE,
     });
     const claims = WebSocketTicketClaimsSchema.parse(verified);
-    expect(claims).toMatchObject({ sub: 555, role: 'member', session_id: 'session-1' });
+    expect(claims).toMatchObject({
+      sub: 555,
+      member_id: 42,
+      security_version: 3,
+      role: 'member',
+      session_id: 'session-1',
+    });
     expect(claims.exp - claims.iat).toBe(60);
   });
 });

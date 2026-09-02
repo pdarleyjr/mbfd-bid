@@ -483,7 +483,7 @@ async function readUploadForm(c: { req: { formData: () => Promise<FormData> } })
 }
 
 function actorMemberId(claims: JwtPayload): number | null {
-  return Number.isSafeInteger(claims.sub) && claims.sub > 0 ? claims.sub : null;
+  return Number.isSafeInteger(claims.member_id) && claims.member_id > 0 ? claims.member_id : null;
 }
 
 function previousCalendarDate(date: string): string {

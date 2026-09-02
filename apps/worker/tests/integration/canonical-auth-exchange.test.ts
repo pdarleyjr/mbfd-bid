@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { signJwt } from '../../src/lib/jwt.js';
 import auth from '../../src/routes/auth';
 import type { WorkerEnv } from '../../src/types/env';
 
@@ -11,7 +12,7 @@ function env(environment: 'staging' | 'production' = 'staging'): WorkerEnv {
     PORTAL_BASE_URL:
       environment === 'staging' ? 'https://staging.mbfdhub.com' : 'https://www.mbfdhub.com',
     JWT_SIGNING_KEY: 'A'.repeat(64),
-    PORTAL_BID_READER: 'reader-token',
+    PORTAL_BID_FEDERATION_TOKEN: 'federation-token',
     DB: {} as never,
     KV: {} as never,
     BID_SESSION: {} as never,
@@ -33,6 +34,8 @@ function hubSuccess(overrides: Record<string, unknown> = {}) {
     JSON.stringify({
       issuer: 'https://staging.mbfdhub.com',
       audience: 'bid',
+      hub_user_id: 901,
+      security_version: 3,
       member_id: 555,
       employee_id: '55555',
       first_name: 'Peter',
@@ -82,7 +85,7 @@ describe('POST /api/auth/exchange', () => {
       RequestInit,
     ];
     expect(url).toBe('https://staging.mbfdhub.com/api/v2/bid/auth/exchange');
-    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer reader-token');
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer federation-token');
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body).toEqual({
       code: 'A'.repeat(43),
@@ -155,7 +158,7 @@ describe('POST /api/auth/exchange', () => {
     await expect(response.json()).resolves.toEqual({ error: 'portal_unavailable' });
   });
 
-  it('applies the staging administrator override to canonical federation', async () => {
+  it('does not infer admin from employee ID when Hub reports member', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       hubSuccess({ role: 'member', employee_id: '20731' }),
     );
@@ -174,6 +177,86 @@ describe('POST /api/auth/exchange', () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ role: 'admin' });
+    await expect(response.json()).resolves.toMatchObject({ role: 'member' });
+  });
+});
+
+describe('POST /api/auth/revalidate', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = ORIG_FETCH;
+  });
+
+  async function sessionToken() {
+    return signJwt(
+      {
+        sub: 901,
+        hub_user_id: 901,
+        member_id: 555,
+        emp: '55555',
+        role: 'admin',
+        security_version: 3,
+        rank: 'LT',
+        first_name: 'Peter',
+        last_name: 'Darley',
+        fresh_auth_at: 1_700_000_000,
+        authz_checked_at: 1_700_000_000,
+      },
+      'A'.repeat(64),
+    );
+  }
+
+  it('uses the federation credential and adopts Hub role downgrade without changing identities', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      hubSuccess({ role: 'member', rank: 'Lieutenant' }),
+    );
+    const response = await app().request(
+      '/api/auth/revalidate',
+      { method: 'POST', headers: { Authorization: `Bearer ${await sessionToken()}` } },
+      env(),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ role: 'member' });
+    const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe('https://staging.mbfdhub.com/api/v2/bid/auth/revalidate');
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer federation-token');
+    expect(JSON.parse(String(init.body))).toEqual({
+      hub_user_id: 901,
+      security_version: 3,
+      member_id: 555,
+    });
+  });
+
+  it('fails closed when Hub rejects a disabled, unlinked, or security-version-mismatched identity', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(null, { status: 401 }),
+    );
+    const response = await app().request(
+      '/api/auth/revalidate',
+      { method: 'POST', headers: { Authorization: `Bearer ${await sessionToken()}` } },
+      env(),
+    );
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: 'invalid_identity' });
+  });
+
+  it('does not turn Hub unavailability into a local authorization decision', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(null, { status: 503 }),
+    );
+    const response = await app().request(
+      '/api/auth/revalidate',
+      { method: 'POST', headers: { Authorization: `Bearer ${await sessionToken()}` } },
+      env(),
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: 'authorization_unavailable' });
   });
 });

@@ -69,7 +69,7 @@ router.post('/import', requireStepUpAuth(), async (c) => {
     auditInsertStatement(c.env.DB, {
       bidSessionId: null,
       actorType: 'admin',
-      actorId: c.get('claims').sub ?? null,
+      actorId: c.get('claims').member_id,
       action: 'credentials_import',
       afterState: { inserted, updated, errorCount: result.errors.length },
     }),

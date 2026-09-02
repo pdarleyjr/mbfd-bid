@@ -57,7 +57,7 @@ settings.put('/bid-pin', async (c) => {
     return c.json({ error: 'invalid_pin', detail: 'PIN must be 4–8 digits.' }, 400);
   }
   const claims = c.get('claims');
-  const updatedBy = claims.emp ?? `member:${claims.sub}`;
+  const updatedBy = claims.emp ?? `member:${claims.member_id}`;
   // KV and D1 cannot share a transaction. Record the settings mutation before
   // changing the authentication control, and never include the PIN itself in
   // an audit payload.
@@ -65,7 +65,7 @@ settings.put('/bid-pin', async (c) => {
     auditInsertStatement(c.env.DB, {
       bidSessionId: null,
       actorType: 'admin',
-      actorId: claims.sub > 0 ? claims.sub : null,
+      actorId: claims.member_id,
       action: 'setting_change',
       targetKind: 'authentication_setting',
       targetId: 'member_bid_pin',

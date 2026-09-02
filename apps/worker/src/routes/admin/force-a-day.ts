@@ -93,7 +93,7 @@ router.post('/:id/force-a-day', requireStepUpAuth(), async (c) => {
   }
 
   const claims = c.get('claims');
-  const adminActorId = claims.sub > 0 ? claims.sub : 0;
+  const adminActorId = claims.member_id;
   const idemKey = c.req.header('Idempotency-Key')?.trim() || ulid();
 
   // Forward to the DO. Forced=true is passed through; the DO handler bypasses

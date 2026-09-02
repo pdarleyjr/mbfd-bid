@@ -906,7 +906,7 @@ router.post('/events', requireStepUpAuth(), async (c) => {
     input.credential_id === undefined
       ? `${input.member_id}:${input.specialty_code}`
       : `${input.member_id}:${input.credential_id}`;
-  const actorId = typeof c.get('claims').sub === 'number' ? c.get('claims').sub : null;
+  const actorId = c.get('claims').member_id;
   const terminalStatus = specialtyTerminalStatus(input.kind);
   const persistedKind = terminalStatus === null ? input.kind : 'SPECIALTY_QUALIFIED';
 

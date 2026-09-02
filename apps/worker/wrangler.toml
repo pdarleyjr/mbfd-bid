@@ -108,9 +108,8 @@ crons = ["15 4 * * *"]
 #   TELESTAFF_HMAC_KEY     (dedicated 32-byte source-reference HMAC key;
 #                           required before the manual TeleStaff upload route
 #                           can stage an import; never reuse JWT_SIGNING_KEY)
-#   LOCAL_ADMIN_PASSWORD_HASH (bcrypt of the staging-only local admin password;
-#                              do not configure it for production)
-#   PORTAL_BID_READER      (service token for /verify-credentials)
+#   PORTAL_BID_FEDERATION_TOKEN (dedicated service token for Hub authorization
+#                              code exchange and identity revalidation)
 #   PORTAL_BID_WRITER      (production-only service token for /bid-assignment;
 #                           it must remain absent from staging)
 #   AUDIT_SIGNING_PRIVKEY  (Plan 08 — ed25519 32-byte base64url; per year per env)

@@ -20,7 +20,11 @@ export async function GET(request: Request) {
   const returnedState = url.searchParams.get('state');
   const store = await cookies();
   const stateCookie = store.get(FEDERATION_STATE_COOKIE_NAME)?.value ?? null;
-  if (!validateFederationState(stateCookie, returnedState)) {
+  const signingKey = cfEnv('JWT_SIGNING_KEY');
+  const transaction = signingKey
+    ? await validateFederationState(stateCookie, returnedState, signingKey)
+    : null;
+  if (transaction === null) {
     return NextResponse.json({ error: 'invalid_state' }, { status: 400 });
   }
   store.delete(FEDERATION_STATE_COOKIE_NAME);
@@ -51,12 +55,12 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=${error}`);
   }
 
-  const signingKey = cfEnv('JWT_SIGNING_KEY');
   const claims = signingKey ? await verifyJwt(body.jwt, signingKey).catch(() => null) : null;
   if (!claims || (claims.role !== 'admin' && claims.role !== 'member')) {
     return NextResponse.redirect(`${origin}/login?error=auth_unavailable`);
   }
 
   store.set(JWT_COOKIE_NAME, body.jwt, JWT_COOKIE_OPTS);
-  return NextResponse.redirect(`${origin}${claims.role === 'admin' ? '/admin' : '/lobby'}`);
+  const defaultTarget = claims.role === 'admin' ? '/admin' : '/lobby';
+  return NextResponse.redirect(`${origin}${transaction.returnTo ?? defaultTarget}`);
 }

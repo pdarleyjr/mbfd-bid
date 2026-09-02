@@ -14,19 +14,23 @@ describe('A-Day REST routes (Plan 07 Task 13)', () => {
         JWT_SIGNING_KEY: 'test-key-with-at-least-32-characters-long',
         ENV: 'staging',
         PORTAL_BASE_URL: 'https://example.org',
-        PORTAL_BID_READER: 'x',
+        PORTAL_BID_FEDERATION_TOKEN: 'x',
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });
     memberJwt = await signJwt(
       {
         sub: 1,
+        hub_user_id: 1,
+        member_id: 1,
         emp: '1',
         role: 'member',
+        security_version: 1,
         rank: 'FF',
         first_name: 'Test',
         last_name: 'User',
         fresh_auth_at: Math.floor(Date.now() / 1000),
+        authz_checked_at: Math.floor(Date.now() / 1000),
       },
       'test-key-with-at-least-32-characters-long',
     );

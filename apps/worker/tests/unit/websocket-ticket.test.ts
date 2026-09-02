@@ -15,6 +15,8 @@ function signingKey(key: string): Uint8Array {
 async function signedTicket(overrides: Record<string, unknown> = {}): Promise<string> {
   const payload = {
     sub: '17',
+    member_id: 17,
+    security_version: 1,
     role: 'member',
     session_id: '01HZZ0000000000000WSTICKET',
     ...overrides,
@@ -57,6 +59,8 @@ describe('verifyWebSocketTicket', () => {
     );
     const wrongAudience = await new SignJWT({
       sub: '17',
+      member_id: 17,
+      security_version: 1,
       role: 'member',
       session_id: '01HZZ0000000000000WSTICKET',
     })

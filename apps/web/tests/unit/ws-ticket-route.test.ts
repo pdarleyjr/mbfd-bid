@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   signWebSocketTicket: vi.fn(),
   verifyJwt: vi.fn(),
+  getWorkerBase: vi.fn(() => 'https://api.staging.bid.mbfdhub.com'),
 }));
 
 vi.mock('next/headers', () => ({ cookies: mocks.cookies }));
@@ -13,6 +14,7 @@ vi.mock('@/lib/jwt', () => ({
   signWebSocketTicket: mocks.signWebSocketTicket,
   verifyJwt: mocks.verifyJwt,
 }));
+vi.mock('@/lib/worker-base', () => ({ getWorkerBase: mocks.getWorkerBase }));
 
 const csrfToken = 'csrf_123e4567-e89b-12d3-a456-426614174000';
 
@@ -52,11 +54,22 @@ describe('POST /api/auth/ws-ticket', () => {
         if (name === 'mbfd_bid_csrf') return { value: csrfToken };
         return undefined;
       }),
+      set: vi.fn(),
     });
     mocks.verifyJwt.mockReset();
-    mocks.verifyJwt.mockResolvedValue({ sub: 7, role: 'member' });
+    mocks.verifyJwt.mockResolvedValue({
+      sub: 7,
+      hub_user_id: 7,
+      member_id: 42,
+      security_version: 3,
+      role: 'member',
+    });
     mocks.signWebSocketTicket.mockReset();
     mocks.signWebSocketTicket.mockResolvedValue('opaque-short-lived-ticket');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ jwt: 'refreshed-jwt' }), { status: 200 })),
+    );
   });
 
   it('verifies the HttpOnly session then returns a session-scoped opaque ticket', async () => {
@@ -66,9 +79,9 @@ describe('POST /api/auth/ws-ticket', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ticket: 'opaque-short-lived-ticket' });
-    expect(mocks.verifyJwt).toHaveBeenCalledWith('session-jwt', 'test-signing-key');
+    expect(mocks.verifyJwt).toHaveBeenCalledWith('refreshed-jwt', 'test-signing-key');
     expect(mocks.signWebSocketTicket).toHaveBeenCalledWith(
-      { sub: 7, role: 'member', session_id: 'session-1' },
+      { sub: 7, member_id: 42, security_version: 3, role: 'member', session_id: 'session-1' },
       'test-signing-key',
     );
     expect(response.headers.get('cache-control')).toBe('no-store');

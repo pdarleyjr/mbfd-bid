@@ -30,8 +30,8 @@ If an administrator changes it to another valid 4–8 digit PIN, that new value
 becomes authoritative immediately and 2300 stops working. If the canonical
 record is missing, malformed, or unavailable, verification fails closed with
 `PIN_NOT_CONFIGURED` (503); the application must not restore or assume 2300.
-Use `/admin-bootstrap` only for the documented one-time recovery path and
-never to overwrite an already configured PIN.
+There is no local admin-bootstrap route. Recover the PIN only through an
+authorized Hub-admin session and the normal admin settings surface.
 
 ## How to rotate the JWT signing key
 

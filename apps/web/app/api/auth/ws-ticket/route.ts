@@ -1,7 +1,8 @@
 import { cfEnv } from '@/lib/cf-env';
-import { JWT_COOKIE_NAME } from '@/lib/cookies';
+import { JWT_COOKIE_NAME, JWT_COOKIE_OPTS } from '@/lib/cookies';
 import { signWebSocketTicket, verifyJwt } from '@/lib/jwt';
 import { csrfFailureForUnsafeRequest } from '@/lib/server-csrf';
+import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -29,7 +30,15 @@ export async function POST(request: Request) {
   const signingKey = cfEnv('JWT_SIGNING_KEY');
   if (!signingKey) return NextResponse.json({ error: 'misconfigured' }, { status: 500 });
 
-  const claims = await verifyJwt(jwt, signingKey).catch(() => null);
+  const refresh = await fetch(`${getWorkerBase()}/api/auth/revalidate`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${jwt}` },
+  }).catch(() => null);
+  const refreshed = (await refresh?.json().catch(() => null)) as { jwt?: unknown } | null;
+  const currentJwt = refresh?.ok && typeof refreshed?.jwt === 'string' ? refreshed.jwt : null;
+  if (currentJwt === null)
+    return NextResponse.json({ error: 'session_revalidation_required' }, { status: 401 });
+  const claims = await verifyJwt(currentJwt, signingKey).catch(() => null);
   if (claims === null) return NextResponse.json({ error: 'invalid_session' }, { status: 401 });
 
   const parsed = Body.safeParse(await request.json().catch(() => null));
@@ -38,10 +47,14 @@ export async function POST(request: Request) {
   const ticket = await signWebSocketTicket(
     {
       sub: claims.sub,
+      member_id: claims.member_id,
+      security_version: claims.security_version,
       role: claims.role,
       session_id: parsed.data.session_id,
     },
     signingKey,
   );
-  return NextResponse.json({ ticket }, { headers: { 'cache-control': 'no-store' } });
+  const response = NextResponse.json({ ticket }, { headers: { 'cache-control': 'no-store' } });
+  (await cookies()).set(JWT_COOKIE_NAME, currentJwt, JWT_COOKIE_OPTS);
+  return response;
 }

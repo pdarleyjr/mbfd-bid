@@ -90,13 +90,13 @@ export default async function BidPage({
         currentBidderId={board.currentBidderId}
         currentBidder={board.currentBidder ?? null}
         currentPhase={board.currentPhase}
-        meMemberId={claims.sub}
+        meMemberId={claims.member_id}
       />
-      <OnDeckQueue onDeck={board.onDeck ?? []} meMemberId={claims.sub} />
+      <OnDeckQueue onDeck={board.onDeck ?? []} meMemberId={claims.member_id} />
       <BidBoard
         bidSessionId={board.bidSessionId}
         initialSeq={board.lastSeq}
-        meMemberId={claims.sub}
+        meMemberId={claims.member_id}
         initialFills={board.fills}
         eligiblePositionIds={eligiblePositionIds}
         members={board.members ?? {}}

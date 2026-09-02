@@ -71,7 +71,13 @@ async function websocketTicket(
   role: 'member' | 'admin',
   signingKey: string,
 ): Promise<string> {
-  return new SignJWT({ sub: String(memberId), role, session_id: sessionId })
+  return new SignJWT({
+    sub: String(memberId),
+    member_id: memberId,
+    security_version: 1,
+    role,
+    session_id: sessionId,
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setAudience(WEBSOCKET_TICKET_AUDIENCE)
     .setIssuedAt()

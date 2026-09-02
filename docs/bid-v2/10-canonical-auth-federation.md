@@ -11,6 +11,6 @@ The active Bid web flow redirects humans to MBFD Hub and never renders or submit
   administrator override.
 - Admin step-up redirects through the same canonical flow; it does not ask for credentials in Bid.
 
-The legacy Worker `/api/auth/login` and Hub `/api/v2/verify-credentials` endpoints are retained for a
-safe deployment transition. They are not called by the active Bid web or step-up path. Retire them only
-after Hub is deployed first, Bid is deployed second, and production evidence shows zero legacy use.
+Bid no longer exposes the legacy Worker `/api/auth/login` route or uses Hub
+`/api/v2/verify-credentials`. All human Bid authentication uses this
+authorization-code exchange and the Hub revalidation contract.

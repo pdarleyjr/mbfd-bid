@@ -15,12 +15,16 @@ async function makeJwt(opts: {
   return signJwt(
     {
       sub: 99,
+      hub_user_id: 99,
+      member_id: 99,
       emp: '99',
       role: opts.role,
+      security_version: 1,
       rank: 'CHIEF',
       first_name: 'Admin',
       last_name: 'User',
       fresh_auth_at: freshAuthAt,
+      authz_checked_at: Math.floor(Date.now() / 1000),
     },
     SIGNING_KEY,
   );
@@ -37,7 +41,7 @@ describe('POST /api/admin/bid-session/:id/force-a-day (Plan 07 Task 14)', () => 
         JWT_SIGNING_KEY: SIGNING_KEY,
         ENV: 'staging',
         PORTAL_BASE_URL: 'https://example.org',
-        PORTAL_BID_READER: 'x',
+        PORTAL_BID_FEDERATION_TOKEN: 'x',
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });

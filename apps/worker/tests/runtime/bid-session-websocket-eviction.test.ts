@@ -77,7 +77,13 @@ function policy() {
 }
 
 async function ticket(sessionName = SESSION_NAME): Promise<string> {
-  return new SignJWT({ sub: '17', role: 'admin', session_id: sessionName })
+  return new SignJWT({
+    sub: '17',
+    member_id: 17,
+    security_version: 1,
+    role: 'admin',
+    session_id: sessionName,
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setAudience(WEBSOCKET_TICKET_AUDIENCE)
     .setIssuedAt()

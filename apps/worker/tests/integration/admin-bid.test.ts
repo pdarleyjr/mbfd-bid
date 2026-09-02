@@ -16,19 +16,23 @@ describe('admin bid routes (Plan 04 Task 9)', () => {
         JWT_SIGNING_KEY: KEY,
         ENV: 'staging',
         PORTAL_BASE_URL: 'https://x.example',
-        PORTAL_BID_READER: 'x',
+        PORTAL_BID_FEDERATION_TOKEN: 'x',
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });
     adminJwt = await signJwt(
       {
-        sub: 0,
+        sub: 1,
+        hub_user_id: 1,
+        member_id: 1,
         emp: 'admin',
         role: 'admin',
+        security_version: 1,
         rank: 'CHIEF',
         first_name: 'A',
         last_name: 'B',
         fresh_auth_at: Math.floor(Date.now() / 1000),
+        authz_checked_at: Math.floor(Date.now() / 1000),
       },
       KEY,
     );

@@ -12,7 +12,7 @@ PORTAL_BASE_URL = "https://staging.bid.mbfdhub.com"
 PORTAL_WRITEBACK_ENABLED = "false"
 PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid"
 JWT_SIGNING_KEY = "test-key-with-at-least-32-characters-long"
-PORTAL_BID_READER = "test-reader"
+PORTAL_BID_FEDERATION_TOKEN = "test-federation"
 
 [[durable_objects.bindings]]
 name = "BID_SESSION"

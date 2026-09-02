@@ -1231,10 +1231,12 @@ router.post('/:sessionId/apply', requireStepUpAuth(), async (c) => {
     return c.json({ error: 'invalid_idempotency_key' }, 400);
   }
   const claims = c.get('claims');
-  if (!Number.isSafeInteger(claims.sub) || claims.sub < 0) {
+  // Production JWT validation requires a positive member_id. The nonnegative
+  // branch remains only for the isolated legacy fixture decoder used by tests.
+  if (!Number.isSafeInteger(claims.member_id) || claims.member_id < 0) {
     return c.json({ error: 'operator_identity_required' }, 403);
   }
-  const actorId = claims.sub;
+  const actorId = claims.member_id;
   const actorSubject = String(actorId);
   const transition = transitionKey(sessionId, idempotencyKey);
   const requestEvidence = {

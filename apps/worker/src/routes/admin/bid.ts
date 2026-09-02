@@ -60,7 +60,7 @@ r.post('/skip', requireStepUpAuth(), zValidator('json', SkipBody), async (c) => 
   const stub = getDoStub(c.env, body.bidSessionId);
   const res = await stub.fetch('https://do/admin/skip', {
     method: 'POST',
-    body: JSON.stringify({ adminActorId: c.get('claims').sub, reason: body.reason }),
+    body: JSON.stringify({ adminActorId: c.get('claims').member_id, reason: body.reason }),
   });
   const payload = (await res.json()) as Record<string, unknown>;
   return c.json(payload, res.status as 200 | 409);
@@ -83,7 +83,7 @@ r.post('/override', requireStepUpAuth(), zValidator('json', OverrideBody), async
   const res = await stub.fetch('https://do/admin/force-pick', {
     method: 'POST',
     body: JSON.stringify({
-      adminActorId: c.get('claims').sub,
+      adminActorId: c.get('claims').member_id,
       targetMemberId: body.targetMemberId,
       positionId: body.positionId,
       reason: body.reason,
@@ -107,7 +107,7 @@ r.post('/freeze', requireStepUpAuth(), zValidator('json', FreezeBody), async (c)
   const stub = getDoStub(c.env, body.bidSessionId);
   const res = await stub.fetch('https://do/admin/freeze', {
     method: 'POST',
-    body: JSON.stringify({ adminActorId: c.get('claims').sub, reason: body.reason }),
+    body: JSON.stringify({ adminActorId: c.get('claims').member_id, reason: body.reason }),
   });
   const payload = (await res.json()) as Record<string, unknown>;
   return c.json(payload, res.status as 200 | 409);

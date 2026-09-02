@@ -13,8 +13,8 @@ values are stored in this file.** All values are generated outside the repo
 | Secret name | Staging set? | Prod requires fresh value? | Source / generator |
 |---|---|---|---|
 | `JWT_SIGNING_KEY` | yes | **YES** | `openssl rand -base64 32` — different key per environment |
-| `LOCAL_ADMIN_PASSWORD_HASH` | yes | **must remain absent** | bcrypt of a separately managed staging-only bootstrap password |
-| `PORTAL_BID_READER` | yes | **YES** | new service token from portal team |
+| `PORTAL_BID_FEDERATION_TOKEN` | yes | **YES** | Hub federation service token for exchange and revalidation |
+| `PORTAL_BID_READER` | optional | **YES when portal bridge is enabled** | read-only Hub-to-Bid bridge credential; never a human-login or federation credential |
 | `PORTAL_BID_WRITER` | **no — must remain absent** | separate future authorization | portal write capability is intentionally disabled in staging |
 | `AUDIT_SIGNING_PRIVKEY` | yes | **YES** | `openssl genpkey -algorithm Ed25519` — per-year / per-env |
 | `AUDIT_SIGNING_PUBKEY` | yes (vars) | **YES** | derived from new privkey; non-secret, set as `vars` |

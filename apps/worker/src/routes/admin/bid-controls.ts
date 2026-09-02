@@ -54,7 +54,7 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
   const command = LiveBidCommandSchema.safeParse({
     ...raw,
     bidSessionId: sessionId,
-    actor: { id: claims.sub, role: 'admin' },
+    actor: { id: claims.member_id, role: 'admin' },
   });
   if (!command.success) return c.json({ error: 'invalid_live_bid_command' }, 400);
   const db = getDb(c.env.DB);
@@ -82,13 +82,7 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
                   : command.data.type === 'live.return_at_current_sequence'
                     ? 'skip_defer'
                     : 'pause_resume';
-  if (
-    !isLiveBidActionAuthorized(
-      frozen.snapshot.settings.livePolicy,
-      action,
-      claims.sub > 0 ? claims.sub : null,
-    )
-  )
+  if (!isLiveBidActionAuthorized(frozen.snapshot.settings.livePolicy, action, claims.member_id))
     return c.json({ error: 'live_action_forbidden', action }, 403);
   const stub = c.env.BID_SESSION.get(c.env.BID_SESSION.idFromName(sessionId));
   const response = await stub.fetch('https://bid.internal/admin/commands/live', {
@@ -174,7 +168,7 @@ router.post(
     // A bridge-only administrator may not have a canonical Bid member row.
     // Persist NULL rather than the synthetic id 0 so a strict FK cannot turn
     // an otherwise authorized, active-session action into a 500.
-    const adminActorId = claims.sub > 0 ? claims.sub : null;
+    const adminActorId = claims.member_id;
     const now = new Date();
 
     const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
@@ -324,7 +318,7 @@ router.post(
       await writeAuditLog(db, {
         bidSessionId: sessionId,
         actorType: 'admin',
-        actorId: claims.sub > 0 ? claims.sub : 0,
+        actorId: claims.member_id,
         action: 'skip',
         targetKind: 'member',
         targetId: String(body.member_id),
@@ -411,7 +405,7 @@ router.post(
     const claims = c.get('claims');
     // See force-pick: bridge-only admin identities are auditable by type but
     // cannot be represented as a nonexistent member id 0.
-    const adminActorId = claims.sub > 0 ? claims.sub : null;
+    const adminActorId = claims.member_id;
     const bidId = ulid();
 
     const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
@@ -533,7 +527,7 @@ router.post(
     const replacementBidId = ulid();
     const idempotencyKey =
       c.req.header('Idempotency-Key')?.trim() || `amend:${body.bid_id}:${body.position_id}`;
-    const actorMemberId = c.get('claims').sub > 0 ? c.get('claims').sub : null;
+    const actorMemberId = c.get('claims').member_id;
     const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
       const current = await db
         .select()
@@ -735,7 +729,7 @@ router.post(
         auditInsertStatement(c.env.DB, {
           bidSessionId: sessionId,
           actorType: 'admin',
-          actorId: claims.sub > 0 ? claims.sub : 0,
+          actorId: claims.member_id,
           action: 'lock_position',
           targetKind: 'position',
           targetId: body.position_id,

@@ -45,7 +45,7 @@ router.post('/portal-retry/:bid_id', requireStepUpAuth(), async (c) => {
     auditInsertStatement(c.env.DB, {
       bidSessionId: bid.bidSessionId,
       actorType: 'admin',
-      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : null,
+      actorId: c.get('claims').member_id,
       action: 'portal_writeback_retry',
       targetKind: 'portal_writeback_bid',
       targetId: bidId,
@@ -123,7 +123,7 @@ router.post('/portal-clear-year', requireStepUpAuth(), async (c) => {
     auditInsertStatement(c.env.DB, {
       bidSessionId: null,
       actorType: 'admin',
-      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : null,
+      actorId: c.get('claims').member_id,
       action: 'portal_writeback_clear',
       targetKind: 'portal_writeback_year',
       targetId: String(body.year),

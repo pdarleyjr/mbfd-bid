@@ -19,10 +19,14 @@ export interface WorkerEnv {
   /** Dedicated, rotation-stable HMAC key for persisted TeleStaff source references.
    *  It must never fall back to the JWT signing key. */
   TELESTAFF_HMAC_KEY?: string;
-  PORTAL_BID_READER: string;
+  /** Dedicated Hub federation credential for code exchange and revalidation.
+   * It is never interchangeable with the retired verify-credentials token. */
+  PORTAL_BID_FEDERATION_TOKEN?: string;
+  /** Optional Hub-to-Bid read-only bridge credential. It is never used for
+   * normal-human authentication, federation exchange, or revalidation. */
+  PORTAL_BID_READER?: string;
   /** Plan 08 — bearer token used by portal-client to POST /bid-assignment. */
   PORTAL_BID_WRITER?: string;
-  LOCAL_ADMIN_PASSWORD_HASH?: string;
   // Plan 08 — audit chain + exports
   AUDIT_SIGNING_PRIVKEY: string;
   AUDIT_SIGNING_PUBKEY: string;

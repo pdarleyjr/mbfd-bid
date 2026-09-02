@@ -4,9 +4,10 @@
  * The MBFD Hub Employee Portal embeds a "My Bid Certifications" page that
  * pulls a member's cert list from this Worker, and a "Bid Access PIN" admin
  * page that mirrors the same KV-backed PIN setting the staging bid console
- * exposes. Gated by a shared bearer token (env `PORTAL_BID_READER`) matching
- * the value the portal stores as `BID_READER_TOKEN`. No user JWT involved —
- * this is server-to-server.
+ * exposes. Gated by the optional read-only bridge token
+ * (`PORTAL_BID_READER`/Hub `BID_READER_TOKEN`). It is not a normal-human
+ * authentication credential and is never eligible for federation exchange or
+ * revalidation. No user JWT is involved — this is server-to-server.
  *
  * Routes (mounted at /api/portal):
  *   GET /members/:employee_id/credentials

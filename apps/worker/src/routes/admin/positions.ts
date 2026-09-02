@@ -203,7 +203,7 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
     auditInsertStatement(c.env.DB, {
       bidSessionId: null,
       actorType: 'admin',
-      actorId: c.get('claims').sub ?? null,
+      actorId: c.get('claims').member_id,
       action: 'positions_clone',
       targetKind: 'position_template',
       targetId: destVersion,
@@ -334,7 +334,7 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
         auditInsertStatement(c.env.DB, {
           bidSessionId: null,
           actorType: 'admin',
-          actorId: c.get('claims').sub ?? null,
+          actorId: c.get('claims').member_id,
           action: 'override_rule',
           targetKind: 'position_staffing_binding',
           targetId: STATION_SIX_TARGET,
@@ -478,7 +478,7 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
          SELECT ?, NULL, COALESCE(MAX(seq), 0) + 1, 'admin', ?, 'override_rule', 'position_template', ?, ?, ?, ?, NULL, NULL, ? FROM audit_log WHERE bid_session_id IS NULL`,
     ).bind(
       ulid(),
-      c.get('claims').sub,
+      c.get('claims').member_id,
       STATION_SIX_TARGET,
       JSON.stringify({
         source_template: STATION_SIX_SOURCE,

@@ -121,7 +121,7 @@ router.post('/:sessionId/mark-mock', requireStepUpAuth(), async (c) => {
     auditInsertStatement(c.env.DB, {
       bidSessionId: sessionId,
       actorType: 'admin',
-      actorId: claims.sub > 0 ? claims.sub : null,
+      actorId: claims.member_id,
       action: 'mark_mock',
       targetKind: 'bid_session',
       targetId: sessionId,
@@ -211,7 +211,7 @@ router.post(
       commandId: commandId.data,
       bidSessionId: sessionId,
       expectedSeq: body.expectedSeq,
-      actor: { id: claims.sub, role: 'admin' },
+      actor: { id: claims.member_id, role: 'admin' },
       reason: body.reason,
     });
 
@@ -326,7 +326,7 @@ router.post(
       auditInsertStatement(c.env.DB, {
         bidSessionId: sessionId,
         actorType: 'admin',
-        actorId: claims.sub > 0 ? claims.sub : null,
+        actorId: claims.member_id,
         action: 'mock_session_closed',
         targetKind: 'bid_session',
         targetId: sessionId,
@@ -1120,7 +1120,7 @@ router.post(
           .all();
         const takenPositionIds = new Set(existingBids.map((entry) => entry.positionId));
         const maxOrdinal = existingBids.reduce((max, entry) => Math.max(max, entry.ordinal), 0);
-        const adminActorId: number | null = claims.sub > 0 ? claims.sub : null;
+        const adminActorId: number | null = claims.member_id > 0 ? claims.member_id : null;
         let currentBidder = bootstrapped
           ? (orderForPlan[0]?.memberId ?? null)
           : session.currentBidderId;
@@ -1486,7 +1486,7 @@ router.post(
         return c.json({ error: 'position_already_filled', bid_id: existingForPosition.id }, 409);
       }
 
-      const adminActorId: number | null = claims.sub > 0 ? claims.sub : null;
+      const adminActorId: number | null = claims.member_id > 0 ? claims.member_id : null;
       const bidId = ulid();
       const maxOrdRow = await db
         .select({ m: sql<number | null>`max(${bids.ordinal})` })
@@ -1645,7 +1645,7 @@ router.post('/findings', zValidator('json', PostFindingBodySchema), async (c) =>
   if (s === undefined) return c.json({ error: 'session_not_found' }, 404);
 
   const claims = c.get('claims');
-  const authorId = claims.sub > 0 ? claims.sub : null;
+  const authorId = claims.member_id;
   const id = ulid();
   const createdAt = new Date();
 

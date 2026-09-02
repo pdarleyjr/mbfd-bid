@@ -120,7 +120,7 @@ export default async function AdminBidPage({
         sessionStartedAt={board.sessionStartedAt}
         turnStartedAtMs={board.turnStartedAtMs ?? 0}
         turnTimerSeconds={board.turnTimerSeconds ?? 180}
-        meMemberId={claims.sub}
+        meMemberId={claims.member_id}
         initialFills={board.fills}
         members={board.members ?? {}}
         positions={board.positions}

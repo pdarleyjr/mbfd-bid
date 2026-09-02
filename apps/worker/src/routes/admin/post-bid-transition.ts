@@ -97,7 +97,7 @@ function idempotency(c: { req: { header(name: string): string | undefined } }) {
     : null;
 }
 function actor(c: { get(key: 'claims'): JwtPayload }): number | null {
-  const value = c.get('claims').sub;
+  const value = c.get('claims').member_id;
   return Number.isInteger(value) && value > 0 ? value : null;
 }
 function opaque(value: string): boolean {

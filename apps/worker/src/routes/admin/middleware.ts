@@ -4,6 +4,8 @@ import type { MiddlewareHandler } from 'hono';
 import { getDb } from '../../db/index.js';
 import { bidSessions } from '../../db/schema.js';
 import { loadBidSessionPolicySnapshot } from '../../lib/bid-policy.js';
+import { validateEnv } from '../../lib/env.js';
+import { refreshFederatedSession } from '../../lib/federated-session.js';
 import { verifyJwt } from '../../lib/jwt.js';
 import type { WorkerEnv } from '../../types/env.js';
 
@@ -29,6 +31,16 @@ export const requireAdmin: MiddlewareHandler<AdminEnv> = async (c, next) => {
   } catch {
     return c.json({ error: 'invalid_token' }, 401);
   }
+
+  const refreshed = await refreshFederatedSession(claims, validateEnv(c.env));
+  if (!refreshed.ok) {
+    return c.json(
+      { error: refreshed.category },
+      refreshed.category === 'invalid_identity' ? 401 : 503,
+    );
+  }
+  claims = refreshed.claims;
+  if (refreshed.jwt !== null) c.header('X-MBFD-Session-Refresh', refreshed.jwt);
 
   if (claims.role !== 'admin') {
     return c.json({ error: 'forbidden' }, 403);
@@ -62,7 +74,7 @@ export function requireLiveBidAction(action: LiveBidAction): MiddlewareHandler<A
       if (loaded.snapshot === null || loaded.snapshot.v !== 3 || loaded.snapshot.settings.v !== 3) {
         return c.json({ error: 'live_action_policy_missing', action }, 409);
       }
-      const actorMemberId = c.get('claims').sub > 0 ? c.get('claims').sub : null;
+      const actorMemberId = c.get('claims').member_id;
       if (!isLiveBidActionAuthorized(loaded.snapshot.settings.livePolicy, action, actorMemberId)) {
         return c.json({ error: 'live_action_forbidden', action }, 403);
       }

@@ -24,6 +24,7 @@ import {
 } from '../lib/bid-policy.js';
 import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-merge.js';
 import { validateEnv } from '../lib/env.js';
+import { refreshFederatedSession } from '../lib/federated-session.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeOnDeck } from '../lib/on-deck.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
@@ -38,7 +39,11 @@ async function requireJwt(c: BidContext) {
   const auth = c.req.header('Authorization');
   if (!auth?.startsWith('Bearer ')) return null;
   try {
-    return await verifyJwt(auth.slice(7), env.JWT_SIGNING_KEY);
+    const claims = await verifyJwt(auth.slice(7), env.JWT_SIGNING_KEY);
+    const refreshed = await refreshFederatedSession(claims, env);
+    if (!refreshed.ok) return null;
+    if (refreshed.jwt !== null) c.header('X-MBFD-Session-Refresh', refreshed.jwt);
+    return refreshed.claims;
   } catch {
     return null;
   }
@@ -88,7 +93,7 @@ bid.get('/me', async (c) => {
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
   return c.json({
-    memberId: claims.sub,
+    memberId: claims.member_id,
     employeeId: claims.emp,
     role: claims.role,
     rank: claims.rank,
@@ -127,7 +132,7 @@ bid.get('/me/post-bid-result', async (c) => {
   } catch {
     return c.json({ error: 'published_results_unavailable' }, 503);
   }
-  const result = roster.find((entry) => entry.memberId === claims.sub);
+  const result = roster.find((entry) => entry.memberId === claims.member_id);
   if (result === undefined) return c.json({ error: 'member_not_in_published_results' }, 404);
   return c.json({
     annualSessionId: result.annualSessionId,
@@ -183,7 +188,9 @@ bid.get('/me/eligibility', async (c) => {
       409,
     );
   }
-  const frozenMember = frozenPolicy.snapshot.members.find((entry) => entry.memberId === claims.sub);
+  const frozenMember = frozenPolicy.snapshot.members.find(
+    (entry) => entry.memberId === claims.member_id,
+  );
   if (frozenMember === undefined) {
     return c.json({ error: 'member_not_in_session_policy_snapshot' }, 403);
   }
@@ -201,7 +208,7 @@ bid.get('/me/eligibility', async (c) => {
   }
   if (frozenMember.pool === 'EXCLUDED') {
     return c.json({
-      memberId: claims.sub,
+      memberId: claims.member_id,
       excluded_from_bid_pool: true,
       exclusion_reason: frozenMember.exclusionReason,
       rule_book_version: version,
@@ -221,7 +228,10 @@ bid.get('/me/eligibility', async (c) => {
     for (const row of rows) filled.add(row.positionId);
   }
 
-  const eligibilityMember = frozenEligibilityMemberForSession(frozenPolicy.snapshot, claims.sub);
+  const eligibilityMember = frozenEligibilityMemberForSession(
+    frozenPolicy.snapshot,
+    claims.member_id,
+  );
   if (eligibilityMember === null) {
     return c.json(
       {
@@ -250,7 +260,7 @@ bid.get('/me/eligibility', async (c) => {
   }
 
   return c.json({
-    memberId: claims.sub,
+    memberId: claims.member_id,
     rule_book_version: version,
     position_template_version: frozenPolicy.snapshot.positionTemplateVersion,
     positions,
@@ -612,7 +622,7 @@ bid.get('/bid/a-day-state', async (c) => {
     });
   }
 
-  const memberId = Number(claims.sub);
+  const memberId = claims.member_id;
   const members = await loadFrozenMembersForADay(c, sessionId);
   if (members === null) {
     return c.json(
@@ -650,7 +660,7 @@ bid.post('/bid/a-day-pick', async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'invalid_payload', issues: parsed.error.issues }, 400);
   }
-  const memberId = Number(claims.sub);
+  const memberId = claims.member_id;
   const snapshot = await fetchSessionSnapshot(c, parsed.data.bidSessionId);
   if (!snapshot) return c.json({ error: 'session_not_found' }, 404);
   if (snapshot.currentPhase !== 'a_day_bid' || !snapshot.aDay) {

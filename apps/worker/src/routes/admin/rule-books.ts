@@ -122,7 +122,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), 
         WHERE bid_session_id IS NULL`,
   ).bind(
     ulid(),
-    claims.sub ?? null,
+    claims.member_id,
     newVersion,
     JSON.stringify(beforeState),
     JSON.stringify(afterState),
@@ -357,7 +357,7 @@ router.put(
         {
           bidSessionId: null,
           actorType: 'admin',
-          actorId: c.get('claims').sub > 0 ? c.get('claims').sub : null,
+          actorId: c.get('claims').member_id,
           action: 'override_rule',
           targetKind: 'rule_book_position_participation',
           targetId: `${version}:${positionId}`,
@@ -482,7 +482,7 @@ router.post(
     }
 
     const claims = c.get('claims');
-    const actorId = claims.sub > 0 ? claims.sub : null;
+    const actorId = claims.member_id;
 
     // D1 batches the state transition.  The archive is conditioned on the
     // exact draft revision that was validated above; if a PATCH wins the race,

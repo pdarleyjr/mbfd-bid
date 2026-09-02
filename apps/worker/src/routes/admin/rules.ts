@@ -257,7 +257,7 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     auditInsertStatement(c.env.DB, {
       bidSessionId: null,
       actorType: 'admin',
-      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+      actorId: c.get('claims').member_id,
       action: 'override_rule',
       targetKind: 'position_rule',
       targetId: String(id),
@@ -332,7 +332,7 @@ router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     auditInsertStatement(c.env.DB, {
       bidSessionId: null,
       actorType: 'admin',
-      actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+      actorId: c.get('claims').member_id,
       action: 'override_rule',
       targetKind: 'position_rule',
       targetId: String(id),

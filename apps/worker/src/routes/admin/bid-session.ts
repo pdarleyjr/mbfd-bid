@@ -68,7 +68,7 @@ const LiveReadinessPreviewSchema = z.object({
 });
 
 function actorIdFromClaims(claims: JwtPayload): number | null {
-  return claims.sub > 0 ? claims.sub : null;
+  return claims.member_id;
 }
 
 function orderMatchesFrozenSnapshot(

@@ -3,12 +3,16 @@ import { JwtPayloadSchema } from '../../src/schemas/jwt.js';
 
 const validPayload = {
   sub: 555,
+  hub_user_id: 555,
+  member_id: 42,
   emp: '20731',
   role: 'member' as const,
+  security_version: 3,
   rank: 'LT' as const,
   first_name: 'Peter',
   last_name: 'Darley',
   fresh_auth_at: 1_700_000_000,
+  authz_checked_at: 1_700_000_000,
   iat: 1_700_000_000,
   exp: 1_700_028_800,
 };
@@ -28,8 +32,8 @@ describe('JwtPayloadSchema', () => {
     expect(JwtPayloadSchema.safeParse(rest).success).toBe(false);
   });
 
-  it('accepts sub = 0 (synthetic local admin identity)', () => {
-    expect(JwtPayloadSchema.safeParse({ ...validPayload, sub: 0 }).success).toBe(true);
+  it('rejects sub = 0; a Bid session always identifies a canonical Hub user', () => {
+    expect(JwtPayloadSchema.safeParse({ ...validPayload, sub: 0 }).success).toBe(false);
   });
 
   it('rejects negative sub', () => {

@@ -16,6 +16,11 @@ const mocks = vi.hoisted(() => {
     })),
     getWorkerBase: vi.fn(() => 'https://api.staging.bid.mbfdhub.com'),
     verifyJwt: vi.fn(),
+    createFederationState: vi.fn(async () => ({
+      state: 'A'.repeat(43),
+      cookieValue: 'signed-state',
+    })),
+    validateFederationState: vi.fn(async () => null),
   };
 });
 
@@ -23,6 +28,10 @@ vi.mock('next/headers', () => ({ cookies: mocks.cookies }));
 vi.mock('@/lib/cf-env', () => ({ cfEnv: mocks.cfEnv }));
 vi.mock('@/lib/worker-base', () => ({ getWorkerBase: mocks.getWorkerBase }));
 vi.mock('@/lib/jwt', () => ({ verifyJwt: mocks.verifyJwt }));
+vi.mock('@/lib/federation-state', () => ({
+  createFederationState: mocks.createFederationState,
+  validateFederationState: mocks.validateFederationState,
+}));
 
 describe('canonical Bid authentication routes', () => {
   beforeEach(() => {
@@ -30,6 +39,8 @@ describe('canonical Bid authentication routes', () => {
     mocks.cookieDelete.mockReset();
     mocks.cookieGet.mockReset();
     mocks.cookieSet.mockReset();
+    mocks.createFederationState.mockReset();
+    mocks.validateFederationState.mockReset();
     mocks.cookies.mockClear();
     mocks.getWorkerBase.mockReturnValue('https://api.staging.bid.mbfdhub.com');
     mocks.cfEnv.mockImplementation((key: string) => {
@@ -38,6 +49,11 @@ describe('canonical Bid authentication routes', () => {
       return undefined;
     });
     mocks.verifyJwt.mockResolvedValue({ sub: 555, emp: '20731', role: 'admin' });
+    mocks.createFederationState.mockResolvedValue({
+      state: 'A'.repeat(43),
+      cookieValue: 'signed-state',
+    });
+    mocks.validateFederationState.mockResolvedValue(null);
   });
 
   it('starts login with an exact registered callback and an HTTP-only expiring state cookie', async () => {
@@ -58,7 +74,7 @@ describe('canonical Bid authentication routes', () => {
     expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(mocks.cookieSet).toHaveBeenCalledWith(
       'mbfd_bid_auth_state',
-      expect.stringContaining(`.${state}`),
+      'signed-state',
       expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'lax', maxAge: 300 }),
     );
   });
@@ -85,6 +101,7 @@ describe('canonical Bid authentication routes', () => {
     mocks.cookieGet.mockImplementation((name: string) =>
       name === 'mbfd_bid_auth_state' ? { value: `${now}.${state}` } : undefined,
     );
+    mocks.validateFederationState.mockResolvedValue({ returnTo: null });
     vi.spyOn(Date, 'now').mockReturnValue(now + 1_000);
     vi.stubGlobal(
       'fetch',
@@ -152,6 +169,7 @@ describe('canonical Bid authentication routes', () => {
     const now = Date.now();
     const state = 'A'.repeat(43);
     mocks.cookieGet.mockReturnValue({ value: `${now}.${state}` });
+    mocks.validateFederationState.mockResolvedValue({ returnTo: null });
     vi.spyOn(Date, 'now').mockReturnValue(now + 1_000);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

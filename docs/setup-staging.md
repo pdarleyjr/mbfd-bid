@@ -98,8 +98,7 @@ Required secrets (per env):
 | Name | Purpose | Plan |
 |------|---------|------|
 | `JWT_SIGNING_KEY` | HS256 JWT signing (32-byte hex) | 01 |
-| `LOCAL_ADMIN_PASSWORD_HASH` | bcrypt digest for the staging-only `admin` login; never document the plaintext password | 02 |
-| `PORTAL_BID_READER` | Portal `/verify-credentials` service token | 01 |
+| `PORTAL_BID_FEDERATION_TOKEN` | Hub authorization-code exchange and identity revalidation service token | SSO |
 | `AUDIT_SIGNING_PRIVKEY` | ed25519 private key for R2 audit chunks | 08 |
 
 The OpenNext Web Worker is a separate Worker and must also have its own
@@ -137,9 +136,8 @@ assume 2300.
 
 Administrators change the PIN through **Admin → Settings → Bid Access PIN**.
 The newly saved valid 4–8 digit value becomes canonical immediately; a prior
-value (including 2300) must fail. `/admin-bootstrap` may only perform the
-staging one-time recovery path and returns `PIN_ALREADY_CONFIGURED` without
-overwriting a valid record.
+value (including 2300) must fail. There is no local admin-bootstrap endpoint;
+PIN recovery requires an authorized Hub-admin session.
 
 Generator for the non-JWT audit signing key:
 

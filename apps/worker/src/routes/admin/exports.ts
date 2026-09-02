@@ -294,7 +294,7 @@ router.post('/roster/:shift', requireStepUpAuth(), async (c) => {
       auditInsertStatement(c.env.DB, {
         bidSessionId: parsed.data.session_id,
         actorType: 'admin',
-        actorId: claims.sub > 0 ? claims.sub : null,
+        actorId: claims.member_id,
         action: 'export_generate',
         targetKind: 'roster_pdf',
         targetId: `${parsed.data.session_id}:${shift}`,
@@ -338,7 +338,7 @@ router.post('/audit-csv', requireStepUpAuth(), async (c) => {
       auditInsertStatement(c.env.DB, {
         bidSessionId: parsed.data.session_id,
         actorType: 'admin',
-        actorId: claims.sub > 0 ? claims.sub : null,
+        actorId: claims.member_id,
         action: 'export_generate',
         targetKind: 'audit_csv',
         targetId: parsed.data.session_id,

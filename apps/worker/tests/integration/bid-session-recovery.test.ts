@@ -44,7 +44,13 @@ function keyBytes(key: string): Uint8Array {
 }
 
 async function browserTicket(sessionId: string): Promise<string> {
-  return new SignJWT({ sub: '1', role: 'admin', session_id: sessionId })
+  return new SignJWT({
+    sub: '1',
+    member_id: 1,
+    security_version: 1,
+    role: 'admin',
+    session_id: sessionId,
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setAudience(WEBSOCKET_TICKET_AUDIENCE)
     .setIssuedAt()
@@ -230,7 +236,7 @@ describe('BidSession DO recovery (Plan 04 Task 15)', () => {
         JWT_SIGNING_KEY: LOCAL_SIGNING_KEY,
         ENV: 'staging',
         PORTAL_BASE_URL: 'https://x.example',
-        PORTAL_BID_READER: 'x',
+        PORTAL_BID_FEDERATION_TOKEN: 'x',
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });

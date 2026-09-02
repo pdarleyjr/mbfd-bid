@@ -42,7 +42,7 @@ export default async function LobbyPage() {
         <dl className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Card label="Employee ID" value={payload.emp} numeric />
           <Card label="Rank" value={RANK_LABELS[payload.rank]} />
-          <Card label="Member ID" value={String(payload.sub)} numeric />
+          <Card label="Member ID" value={String(payload.member_id)} numeric />
           <Card label="Role" value={payload.role} />
         </dl>
       </main>

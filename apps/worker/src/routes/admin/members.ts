@@ -423,7 +423,7 @@ router.patch('/bid-order', requireStepUpAuth(), async (c) => {
   }
 
   const now = new Date();
-  const actorId = c.get('claims').sub > 0 ? c.get('claims').sub : 0;
+  const actorId = c.get('claims').member_id;
   await c.env.DB.batch([
     ...overrides.map((override) =>
       c.env.DB.prepare(
@@ -832,7 +832,7 @@ router.post('/seed-from-synthesis', requireStepUpAuth(), async (c) => {
   await writeAuditLog(db, {
     bidSessionId: null,
     actorType: 'admin',
-    actorId: c.get('claims').sub > 0 ? c.get('claims').sub : 0,
+    actorId: c.get('claims').member_id,
     action: 'members_import',
     targetKind: 'synthesis_seed',
     afterState: {

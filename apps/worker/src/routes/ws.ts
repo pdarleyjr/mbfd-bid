@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { getDb } from '../db/index.js';
 import { bidSessions } from '../db/schema.js';
 import { validateEnv } from '../lib/env.js';
+import { refreshFederatedSession } from '../lib/federated-session.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { isExpectedPublicWebOrigin } from '../lib/public-web-origin.js';
 import { verifiedWebSocketIdentityHeaders } from '../lib/websocket-identity.js';
@@ -62,7 +63,7 @@ ws.get('/session/:id', async (c) => {
       if (claims.session_id !== id) {
         return c.json({ error: 'websocket_ticket_session_mismatch' }, 401);
       }
-      identity = { memberId: claims.sub, role: claims.role };
+      identity = { memberId: claims.member_id, role: claims.role };
     } catch {
       return c.json({ error: 'invalid_websocket_ticket' }, 401);
     }
@@ -71,7 +72,13 @@ ws.get('/session/:id', async (c) => {
     if (auth?.startsWith('Bearer ')) {
       try {
         const claims = await verifyJwt(auth.slice(7), env.JWT_SIGNING_KEY);
-        identity = { memberId: claims.sub, role: claims.role };
+        const refreshed = await refreshFederatedSession(claims, env);
+        if (!refreshed.ok)
+          return c.json(
+            { error: refreshed.category },
+            refreshed.category === 'invalid_identity' ? 401 : 503,
+          );
+        identity = { memberId: refreshed.claims.member_id, role: refreshed.claims.role };
       } catch {
         return c.json({ error: 'invalid_token' }, 401);
       }

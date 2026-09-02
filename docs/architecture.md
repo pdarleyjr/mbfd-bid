@@ -1,20 +1,19 @@
-# Architecture (Plan 01 — Foundation)
+# Architecture
 
-This document captures what shipped in Plan 01. The full design is in the
-companion `MBFD_Hub` repository:
-`docs/superpowers/specs/2026-05-17-mbfd-bid-webapp-design.md`.
+This document describes the current Bid authentication boundary. The Hub is
+the canonical authentication and authorization authority.
 
 ## What's wired today
 
 ```
-┌──────────────────┐    PIN cookie    ┌──────────────────┐    /api/auth/login
+┌──────────────────┐    PIN cookie    ┌──────────────────┐   authorization code
 │  staging.bid.    │ ◄───────────────│  Cloudflare      │ ──────────────────►
 │  mbfdhub.com     │                  │  OpenNext Worker │
 │  (Next.js 15)    │ ───────────────► │  middleware      │ ◄────────────────── 
 │                  │   JWT cookie     │                  │     api.staging.bid.mbfdhub.com
 └──────────────────┘                  └──────────────────┘     (Hono Worker)
                                                                        │
-                                                                       │ POST /verify-credentials
+                                                                       │ POST /api/v2/bid/auth/exchange
                                                                        ▼
                                                               www.mbfdhub.com
                                                               (Laravel Hub — verified staging bridge origin)
@@ -43,12 +42,16 @@ companion `MBFD_Hub` repository:
 ## Worker routes (Plan 01)
 
 - `GET /api/health` — liveness probe
-- `POST /api/auth/login` — Zod-validated body; calls portal; returns `{ jwt, role, member }`
+- `POST /api/auth/exchange` — exchanges a one-time Hub authorization code with
+  the dedicated federation credential and returns a signed Bid session.
+- `POST /api/auth/revalidate` — forces Hub authorization revalidation for a
+  current signed Bid session; no password input is accepted.
 
 ## Web routes (Plan 01)
 
 - `/` — PIN form (Server Component + `PinForm` client component)
-- `/login` — Employee ID + password form (Server Component + `LoginForm` client)
+- `/login` — canonical Hub-federation entry point; Bid never renders a human
+  password form.
 - `/lobby` — protected landing page (Server Component; verifies JWT; renders member profile cards)
 - `/api/pin` — sets `mbfd_pin` cookie when PIN matches
 - `/api/auth/session-finalize` — verifies a worker-issued JWT and sets `mbfd_bid_jwt` cookie

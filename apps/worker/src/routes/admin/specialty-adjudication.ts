@@ -177,7 +177,7 @@ function idempotencyHeaderMatches(
 
 function auditContext(claims: JwtPayload, reason: string) {
   return {
-    actorId: claims.sub,
+    actorId: claims.member_id,
     reason,
     origin: 'synthetic_specialty_test' as const,
     effectiveDate: null,

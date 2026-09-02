@@ -9,6 +9,8 @@ describe('WebSocketTicketClaimsSchema', () => {
   const validTicket = {
     aud: WEBSOCKET_TICKET_AUDIENCE,
     sub: '17',
+    member_id: 17,
+    security_version: 3,
     role: 'member',
     session_id: '01HZZ0000000000000WEBSOCKET',
     iat: 1_784_160_000,

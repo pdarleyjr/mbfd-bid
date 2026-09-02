@@ -8,9 +8,8 @@ import { RoleSchema } from './auth.js';
  */
 export const WEBSOCKET_TICKET_AUDIENCE = 'mbfd-bid-websocket' as const;
 
-// RFC 7519 defines `sub` as a StringOrURI. The public API keeps member IDs as
-// numbers, so parse the compact wire form back to a safe integer at the trust
-// boundary rather than relying on a non-standard numeric JWT subject.
+// RFC 7519 defines `sub` as a StringOrURI.  It is the canonical Hub User
+// identity; the operational identity remains explicit as member_id.
 const WebSocketTicketSubjectSchema = z
   .string()
   .regex(/^(?:0|[1-9][0-9]{0,14})$/)
@@ -21,6 +20,8 @@ export const WebSocketTicketClaimsSchema = z
   .object({
     aud: z.literal(WEBSOCKET_TICKET_AUDIENCE),
     sub: WebSocketTicketSubjectSchema,
+    member_id: z.number().int().positive(),
+    security_version: z.number().int().positive(),
     role: RoleSchema,
     session_id: z.string().trim().min(1).max(160),
     iat: z.number().int(),

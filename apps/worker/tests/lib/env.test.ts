@@ -6,7 +6,7 @@ describe('EnvSchema', () => {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.mbfdhub.com',
     JWT_SIGNING_KEY: 'a'.repeat(32),
-    PORTAL_BID_READER: 'xxx',
+    PORTAL_BID_FEDERATION_TOKEN: 'xxx',
   } as const;
 
   it('parses the core worker environment', () => {
