@@ -421,6 +421,101 @@ router.post('/reviews/batches', requireStepUpAuth(), async (c) => {
   return c.json({ replayed: false, batchId: id, annualEligibility: 'PENDING_CONFIGURATION' }, 201);
 });
 
+router.post('/reviews/batches/:batchId/rows', requireStepUpAuth(), async (c) => {
+  const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (
+    raw === null ||
+    typeof raw.source_member_reference !== 'string' ||
+    typeof raw.source_credential_reference !== 'string' ||
+    typeof raw.provenance !== 'string'
+  )
+    return c.json({ error: 'invalid_body' }, 400);
+  const batch = await first<{ id: string }>(
+    c.env.DB,
+    "SELECT id FROM qualification_review_batches WHERE id = ? AND status = 'staged'",
+    c.req.param('batchId'),
+  );
+  if (batch === undefined) return c.json({ error: 'review_batch_not_staged' }, 409);
+  const [member, credential] = await Promise.all([
+    first<{ id: number }>(
+      c.env.DB,
+      'SELECT id FROM members WHERE employee_id = ?',
+      raw.source_member_reference,
+    ),
+    first<{ id: number }>(
+      c.env.DB,
+      'SELECT id FROM credentials WHERE name = ?',
+      raw.source_credential_reference,
+    ),
+  ]);
+  const key = c.req.header('Idempotency-Key');
+  if (key === undefined || key.trim().length === 0)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const classification =
+    member === undefined
+      ? 'UNKNOWN_MEMBER'
+      : credential === undefined
+        ? 'UNKNOWN_QUALIFICATION'
+        : 'NEW_QUALIFICATION';
+  const id = ulid();
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO qualification_review_rows (id,batch_id,member_id,credential_id,source_member_reference,source_credential_reference,source_status,provenance,classification,idempotency_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    )
+      .bind(
+        id,
+        batch.id,
+        member?.id ?? null,
+        credential?.id ?? null,
+        raw.source_member_reference,
+        raw.source_credential_reference,
+        'active',
+        raw.provenance,
+        classification,
+        key,
+        Date.now(),
+      )
+      .run();
+  } catch {
+    return c.json({ error: 'review_row_not_created' }, 409);
+  }
+  return c.json({ rowId: id, classification, annualEligibility: 'PENDING_CONFIGURATION' }, 201);
+});
+
+router.post('/reviews/rows/:rowId/decision', requireStepUpAuth(), async (c) => {
+  const raw = (await c.req.json().catch(() => null)) as { decision?: unknown } | null;
+  if (
+    raw?.decision !== 'accepted' &&
+    raw?.decision !== 'rejected' &&
+    raw?.decision !== 'needs_review'
+  )
+    return c.json({ error: 'invalid_decision' }, 400);
+  const actor = String(c.get('claims').sub ?? '');
+  if (actor.length === 0) return c.json({ error: 'invalid_actor_subject' }, 400);
+  const row = await first<{ id: string; classification: string; applied_event_id: string | null }>(
+    c.env.DB,
+    'SELECT id, classification, applied_event_id FROM qualification_review_rows WHERE id = ?',
+    c.req.param('rowId'),
+  );
+  if (row === undefined) return c.json({ error: 'review_row_not_found' }, 404);
+  if (row.applied_event_id !== null) return c.json({ error: 'review_row_already_applied' }, 409);
+  if (
+    (row.classification === 'UNKNOWN_MEMBER' || row.classification === 'UNKNOWN_QUALIFICATION') &&
+    raw.decision === 'accepted'
+  )
+    return c.json({ error: 'unresolved_row_requires_needs_review' }, 422);
+  await c.env.DB.prepare(
+    'UPDATE qualification_review_rows SET decision = ?, reviewed_by_subject = ?, reviewed_at = ? WHERE id = ?',
+  )
+    .bind(raw.decision, actor, Date.now(), row.id)
+    .run();
+  return c.json({
+    rowId: row.id,
+    decision: raw.decision,
+    annualEligibility: 'PENDING_CONFIGURATION',
+  });
+});
+
 router.post('/events', requireStepUpAuth(), async (c) => {
   const raw = await c.req.json().catch(() => null);
   const parsed = EventInputSchema.safeParse(raw);
