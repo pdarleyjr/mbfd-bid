@@ -1,5 +1,13 @@
 import type { FrozenLiveBidPolicy, LiveBidAction, LiveBidCommand } from '@mbfd/shared';
 import type { BidSessionState, Fill, LiveBidProgress } from '../durable/bid-session-state.js';
+import {
+  checkpointAnnualOperations,
+  declareUnreachable,
+  initializeAnnualOperations,
+  markReadyForFinalization,
+  recordContactAttempt,
+  returnAtCurrentSequence,
+} from '../lib/annual-bid-operations.js';
 
 export type LiveReduction =
   | {
@@ -23,7 +31,15 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
       return 'force';
     case 'live.pause':
     case 'live.resume':
+    case 'live.checkpoint':
       return 'pause_resume';
+    case 'live.record_contact_attempt':
+    case 'live.declare_unreachable':
+      return 'mark_unreachable';
+    case 'live.return_at_current_sequence':
+      return 'skip_defer';
+    case 'live.complete_session':
+      return 'approve_final_results';
     case 'live.transition_stage':
       return 'approve_transition';
   }
@@ -137,6 +153,95 @@ export function reduceLiveBidCommand(
       supersedesBidId: null,
     };
   }
+  const annual = state.annual ?? initializeAnnualOperations({ preferenceSheets: [] });
+  const annualPolicy = policy.annualOperations;
+  if (command.type === 'live.record_contact_attempt') {
+    const result = recordContactAttempt(annual, {
+      memberId: command.memberId,
+      method: command.method,
+      actorMemberId: command.actor.id,
+      atMs: now,
+    });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      state: { ...state, annual: result.state, lastSeq: state.lastSeq + 1 },
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'record_contact_attempt',
+        memberId: command.memberId,
+        method: command.method,
+      },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.declare_unreachable') {
+    const result = declareUnreachable(annual, annualPolicy, {
+      memberId: command.memberId,
+      actorMemberId: command.actor.id,
+    });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      state: { ...state, annual: result.state, lastSeq: state.lastSeq + 1 },
+      eventType: 'live_command_applied',
+      payload: { operation: 'declare_unreachable', memberId: command.memberId },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.return_at_current_sequence') {
+    const result = returnAtCurrentSequence(annual, {
+      memberId: command.memberId,
+      sequence: state.lastSeq,
+    });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      state: {
+        ...state,
+        annual: result.state,
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: { operation: 'return_at_current_sequence', memberId: command.memberId },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.checkpoint') {
+    return {
+      ok: true,
+      state: {
+        ...state,
+        annual: checkpointAnnualOperations(annual, {
+          name: command.name,
+          actorMemberId: command.actor.id,
+          createdAtMs: now,
+          sequence: state.lastSeq + 1,
+        }),
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: { operation: 'checkpoint', name: command.name },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.complete_session') {
+    if (state.currentPhase !== 'complete') return { ok: false, code: 'SESSION_NOT_COMPLETE' };
+    if (annualPolicy === undefined) return { ok: false, code: 'ANNUAL_OPERATIONS_POLICY_MISSING' };
+    const result = markReadyForFinalization(annual, {
+      actorMemberId: command.actor.id,
+      atMs: now,
+      unresolvedMembersBlock: true,
+    });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      state: { ...state, annual: result.state, lastSeq: state.lastSeq + 1 },
+      eventType: 'live_command_applied',
+      payload: { operation: 'ready_for_finalization' },
+      supersedesBidId: null,
+    };
+  }
   if (command.type === 'live.amend_selection') {
     if (live.lastSelectionBidId === null) return { ok: false, code: 'NO_AMENDABLE_SELECTION' };
     const prior = state.fills[command.positionId];
@@ -210,7 +315,13 @@ export function reduceLiveBidCommand(
   }
   const memberId = command.type === 'live.force_selection' ? command.memberId : command.memberId;
   const positionId = command.positionId;
-  if (command.type === 'live.record_selection' && memberId !== state.currentBidderId)
+  const isReturnedAtCurrentSequence =
+    command.type === 'live.record_selection' && annual.returningMemberId === memberId;
+  if (
+    command.type === 'live.record_selection' &&
+    memberId !== state.currentBidderId &&
+    !isReturnedAtCurrentSequence
+  )
     return { ok: false, code: 'NOT_CURRENT_BIDDER' };
   if (state.fills[positionId]) return { ok: false, code: 'POSITION_FILLED' };
   const stage = policy.stages.find((candidate) => candidate.id === currentStageId);
@@ -227,6 +338,7 @@ export function reduceLiveBidCommand(
       ...advance,
       fills: { ...state.fills, [positionId]: { memberId, ordinal: entry.ordinal, bidId } },
       live: { ...live, lastSelectionBidId: bidId },
+      annual: isReturnedAtCurrentSequence ? { ...annual, returningMemberId: null } : annual,
       lastSeq: state.lastSeq + 1,
     },
     eventType: 'live_command_applied',
@@ -236,6 +348,9 @@ export function reduceLiveBidCommand(
       memberId,
       positionId,
       stageId: currentStageId,
+      ...(command.type === 'live.record_selection' && command.preferenceSheetId
+        ? { preferenceSheetId: command.preferenceSheetId }
+        : {}),
     },
     supersedesBidId: null,
   };

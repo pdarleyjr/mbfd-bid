@@ -37,6 +37,11 @@ interface LegacyPickPresenceRow {
   has_a_day_picks: number;
 }
 
+interface FrozenPreferenceSheetRow {
+  member_id: number;
+  position_preferences_json: string;
+}
+
 export interface CommitMockFreezeCommandInput {
   db: D1Database;
   command: MockFreezeCommand;
@@ -716,6 +721,44 @@ export async function commitLiveBidCommand(
     );
     return { result, canonicalState: null };
   }
+  if (
+    input.command.type === 'live.record_selection' &&
+    input.command.preferenceSheetId !== undefined &&
+    input.command.preferenceSheetId !== null
+  ) {
+    const sheet = await first<FrozenPreferenceSheetRow>(
+      input.db,
+      "SELECT member_id, position_preferences_json FROM bid_preference_sheets WHERE id = ? AND bid_session_id = ? AND status = 'FROZEN'",
+      [input.command.preferenceSheetId, input.command.bidSessionId],
+    );
+    let preferencePositions: unknown = null;
+    try {
+      preferencePositions = sheet === null ? null : JSON.parse(sheet.position_preferences_json);
+    } catch {
+      preferencePositions = null;
+    }
+    if (
+      sheet === null ||
+      sheet.member_id !== input.command.memberId ||
+      !Array.isArray(preferencePositions) ||
+      !preferencePositions.includes(input.command.positionId)
+    ) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code: 'FROZEN_PREFERENCE_SHEET_INVALID',
+        currentSeq: current.lastSeq,
+      };
+      await insertRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
+  }
   const reduction = reduceLiveBidCommand(current, input.policy, input.command, now, newId());
   if (!reduction.ok) {
     const result: LiveBidCommandResult = {
@@ -847,6 +890,59 @@ export async function commitLiveBidCommand(
       input.db
         .prepare("UPDATE bids SET portal_sync_status='superseded' WHERE id=?")
         .bind(reduction.supersedesBidId),
+    );
+  }
+  if (input.command.type === 'live.record_contact_attempt') {
+    const attempt = reduction.state.annual?.contactAttempts.at(-1);
+    if (attempt === undefined) throw new Error('Accepted contact reduction is missing its attempt');
+    const attemptNumber = reduction.state.annual?.contactAttempts.filter(
+      (entry) => entry.memberId === attempt.memberId,
+    ).length;
+    statements.push(
+      input.db
+        .prepare(
+          "INSERT INTO bid_contact_attempts (id,bid_session_id,member_id,attempt_number,method,operator_member_id,attempted_at,disposition,created_at) VALUES (?,?,?,?,?,?,?,'RECORDED',?)",
+        )
+        .bind(
+          newId(),
+          input.command.bidSessionId,
+          attempt.memberId,
+          attemptNumber,
+          attempt.method,
+          attempt.actorMemberId,
+          attempt.atMs,
+          now,
+        ),
+    );
+  }
+  if (input.command.type === 'live.declare_unreachable') {
+    statements.push(
+      input.db
+        .prepare(
+          "UPDATE bid_contact_attempts SET disposition='UNREACHABLE' WHERE bid_session_id=? AND member_id=? AND attempt_number=3",
+        )
+        .bind(input.command.bidSessionId, input.command.memberId),
+    );
+  }
+  if (input.command.type === 'live.checkpoint') {
+    const checkpoint = reduction.state.annual?.checkpoint;
+    if (checkpoint === null || checkpoint === undefined)
+      throw new Error('Accepted checkpoint reduction is missing checkpoint state');
+    statements.push(
+      input.db
+        .prepare(
+          'INSERT INTO bid_session_checkpoints (id,bid_session_id,command_id,name,actor_member_id,session_sequence,checkpoint_json,created_at) VALUES (?,?,?,?,?,?,?,?)',
+        )
+        .bind(
+          newId(),
+          input.command.bidSessionId,
+          input.command.commandId,
+          checkpoint.name,
+          checkpoint.actorMemberId,
+          checkpoint.sequence,
+          canonicalJson(reduction.state),
+          now,
+        ),
     );
   }
   statements.push(

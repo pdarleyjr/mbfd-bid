@@ -55,6 +55,27 @@ describe('bid-session-state (Plan 04 Task 4)', () => {
     expect(loaded).toEqual(state);
   });
 
+  it('preserves annual checkpoint and unresolved-return state through Durable Object reconstruction', async () => {
+    const storage = new InMemoryStorage();
+    const state: BidSessionState = {
+      ...emptyBidSessionState('01HANNUAL'),
+      currentPhase: 'position_bid',
+      lastSeq: 42,
+      annual: {
+        preferenceSheets: [],
+        contactAttempts: [{ memberId: 7, method: 'PHONE', actorMemberId: 1, atMs: 100 }],
+        unresolvedMemberIds: [7],
+        returnedAtCurrentSequence: [],
+        returningMemberId: null,
+        checkpoint: { name: 'day-one-close', actorMemberId: 1, createdAtMs: 101, sequence: 42 },
+        completion: null,
+      },
+    };
+    await persistBidSessionState(storage, state);
+
+    expect(await loadBidSessionState(storage, '01HANNUAL')).toEqual(state);
+  });
+
   it('load returns empty state when nothing persisted', async () => {
     const storage = new InMemoryStorage();
     const loaded = await loadBidSessionState(storage, '01HSESS');

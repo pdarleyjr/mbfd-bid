@@ -87,6 +87,8 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('live.record_selection'),
     memberId: z.number().int().positive(),
     positionId: z.string().min(1),
+    /** Frozen sheet provenance only; it never changes a command into auto-award. */
+    preferenceSheetId: z.string().min(1).nullable().optional(),
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.amend_selection'),
@@ -104,6 +106,24 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   }).strict(),
   LiveCommandBase.extend({ type: z.literal('live.pause') }).strict(),
   LiveCommandBase.extend({ type: z.literal('live.resume') }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.record_contact_attempt'),
+    memberId: z.number().int().positive(),
+    method: z.enum(['PHONE', 'TEXT']),
+  }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.declare_unreachable'),
+    memberId: z.number().int().positive(),
+  }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.return_at_current_sequence'),
+    memberId: z.number().int().positive(),
+  }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.checkpoint'),
+    name: z.string().trim().min(1).max(160),
+  }).strict(),
+  LiveCommandBase.extend({ type: z.literal('live.complete_session') }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.transition_stage'),
     stageId: z.string().min(1),
