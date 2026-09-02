@@ -110,6 +110,13 @@ const EventInputSchema = z
 
 type EventInput = z.infer<typeof EventInputSchema>;
 
+const ReviewBatchInputSchema = z
+  .object({
+    source_system: z.string().trim().min(1).max(128),
+    source_reference: z.string().trim().min(1).max(512),
+  })
+  .strict();
+
 const router = new Hono<AdminEnv>();
 router.use('*', requireAdmin);
 
@@ -354,6 +361,64 @@ router.get('/readiness', async (c) => {
       })),
     }),
   );
+});
+
+router.get('/reviews/batches', async (c) => {
+  const rows = await all<{
+    id: string;
+    source_system: string;
+    source_reference: string;
+    status: string;
+    created_by_subject: string;
+    created_at: number;
+    total: number;
+    needs_review: number;
+    applied: number;
+  }>(
+    c.env.DB,
+    `SELECT batch.id, batch.source_system, batch.source_reference, batch.status, batch.created_by_subject, batch.created_at,
+    count(row.id) AS total, sum(CASE WHEN row.decision = 'needs_review' OR row.decision IS NULL THEN 1 ELSE 0 END) AS needs_review,
+    sum(CASE WHEN row.applied_event_id IS NOT NULL THEN 1 ELSE 0 END) AS applied
+    FROM qualification_review_batches batch LEFT JOIN qualification_review_rows row ON row.batch_id = batch.id
+    GROUP BY batch.id ORDER BY batch.created_at DESC`,
+  );
+  return c.json({
+    annualEligibility: 'PENDING_CONFIGURATION',
+    batches: rows.map((row) => ({
+      ...row,
+      total: Number(row.total),
+      needsReview: Number(row.needs_review),
+      applied: Number(row.applied),
+    })),
+  });
+});
+
+router.post('/reviews/batches', requireStepUpAuth(), async (c) => {
+  const parsed = ReviewBatchInputSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const idempotencyKey = c.req.header('Idempotency-Key');
+  if (idempotencyKey === undefined || idempotencyKey.trim().length === 0)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const actor = String(c.get('claims').sub ?? '');
+  if (actor.length === 0) return c.json({ error: 'invalid_actor_subject' }, 400);
+  const existing = await first<{ id: string }>(
+    c.env.DB,
+    'SELECT id FROM qualification_review_batches WHERE source_reference = ? AND created_by_subject = ?',
+    parsed.data.source_reference,
+    actor,
+  );
+  if (existing !== undefined) return c.json({ replayed: true, batchId: existing.id });
+  const id = ulid();
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO qualification_review_batches (id, source_system, source_reference, status, created_by_subject, created_at) VALUES (?, ?, ?, 'staged', ?, ?)`,
+    )
+      .bind(id, parsed.data.source_system, parsed.data.source_reference, actor, Date.now())
+      .run();
+  } catch {
+    return c.json({ error: 'qualification_review_batch_not_created' }, 409);
+  }
+  return c.json({ replayed: false, batchId: id, annualEligibility: 'PENDING_CONFIGURATION' }, 201);
 });
 
 router.post('/events', requireStepUpAuth(), async (c) => {
