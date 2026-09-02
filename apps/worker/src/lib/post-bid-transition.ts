@@ -14,6 +14,23 @@ export interface FutureRosterObservation {
   readonly unit: string | null;
   readonly position: string | null;
   readonly aDay: string | null;
+  /** Provenance from the fresh staffing observation; never inferred. */
+  readonly mappingStatus?: 'MAPPED' | 'UNMAPPED_POSITION' | 'DUPLICATE_OR_AMBIGUOUS_MAPPING';
+  /** False only when the observation cannot be linked to a canonical member. */
+  readonly knownMember?: boolean;
+}
+
+/** Immutable Post-Bid roster record, persisted at finalization review. */
+export interface TransitionRosterEntry extends FutureRosterObservation {
+  readonly employeeId: string;
+  readonly memberName: string;
+  readonly rank: string | null;
+  readonly specialty: string | null;
+  readonly priorAssignmentPositionId: string | null;
+  readonly positionId: string;
+  readonly annualSessionId: string;
+  readonly annualBidYear: number;
+  readonly ruleBookVersion: string;
 }
 
 export function evaluateFinalization(input: {
@@ -45,9 +62,7 @@ export function evaluateFinalization(input: {
     input.expectedPositionIds.some((positionId) => !positions.has(positionId))
   )
     blocking.add('REQUIRED_ANNUAL_AWARD_MISSING');
-  return blocking.size === 0
-    ? { ok: true }
-    : { ok: false, blockingCodes: [...blocking].sort() };
+  return blocking.size === 0 ? { ok: true } : { ok: false, blockingCodes: [...blocking].sort() };
 }
 
 function isCalendarDate(value: string): boolean {
@@ -66,7 +81,13 @@ export function evaluateLeadTime(input: {
   policy: { mode: LeadTimeMode; days: number } | null;
 }):
   | { ok: true; warning?: 'EFFECTIVE_DATE_TARGET_NOT_MET' | 'EFFECTIVE_DATE_WARNING' }
-  | { ok: false; code: 'TRANSITION_POLICY_MISSING' | 'INVALID_EFFECTIVE_DATE' | 'EFFECTIVE_DATE_HARD_MINIMUM_NOT_MET' } {
+  | {
+      ok: false;
+      code:
+        | 'TRANSITION_POLICY_MISSING'
+        | 'INVALID_EFFECTIVE_DATE'
+        | 'EFFECTIVE_DATE_HARD_MINIMUM_NOT_MET';
+    } {
   if (input.policy === null) return { ok: false, code: 'TRANSITION_POLICY_MISSING' };
   if (
     !isCalendarDate(input.completionOn) ||
@@ -96,7 +117,9 @@ export type ReconciliationClassification =
   | 'POSITION_MISMATCH'
   | 'A_DAY_MISMATCH'
   | 'UNKNOWN_MEMBER'
-  | 'DUPLICATE_AMBIGUOUS_MAPPING';
+  | 'UNMAPPED_POSITION'
+  | 'DUPLICATE_OR_AMBIGUOUS_MAPPING'
+  | 'EXTRA_UNEXPECTED_CHANGE';
 
 export function reconcileFutureRoster(
   expected: readonly FutureRosterObservation[],
@@ -114,30 +137,47 @@ export function reconcileFutureRoster(
     observedByMember.set(row.memberId, row);
   }
   const results: Array<{ memberId: number; classification: ReconciliationClassification }> = [];
-  for (const memberId of [...new Set([...expectedByMember.keys(), ...observedByMember.keys()])].sort(
-    (a, b) => a - b,
-  )) {
+  for (const memberId of [
+    ...new Set([...expectedByMember.keys(), ...observedByMember.keys()]),
+  ].sort((a, b) => a - b)) {
     if (duplicateMembers.has(memberId)) {
-      results.push({ memberId, classification: 'DUPLICATE_AMBIGUOUS_MAPPING' });
+      results.push({ memberId, classification: 'DUPLICATE_OR_AMBIGUOUS_MAPPING' });
       continue;
     }
     const wanted = expectedByMember.get(memberId);
     const seen = observedByMember.get(memberId);
     if (wanted === undefined) {
-      results.push({ memberId, classification: 'UNKNOWN_MEMBER' });
+      results.push({
+        memberId,
+        classification: seen?.knownMember === false ? 'UNKNOWN_MEMBER' : 'EXTRA_UNEXPECTED_CHANGE',
+      });
       continue;
     }
     if (seen === undefined) {
       results.push({ memberId, classification: 'MISSING_EXPECTED_CHANGE' });
       continue;
     }
-    const field = ([
-      ['shift', 'SHIFT_MISMATCH'],
-      ['station', 'STATION_MISMATCH'],
-      ['unit', 'UNIT_MISMATCH'],
-      ['position', 'POSITION_MISMATCH'],
-      ['aDay', 'A_DAY_MISMATCH'],
-    ] as const).find(([key]) => wanted[key] !== seen[key]);
+    if (seen.knownMember === false) {
+      results.push({ memberId, classification: 'UNKNOWN_MEMBER' });
+      continue;
+    }
+    if (seen.mappingStatus === 'UNMAPPED_POSITION') {
+      results.push({ memberId, classification: 'UNMAPPED_POSITION' });
+      continue;
+    }
+    if (seen.mappingStatus === 'DUPLICATE_OR_AMBIGUOUS_MAPPING') {
+      results.push({ memberId, classification: 'DUPLICATE_OR_AMBIGUOUS_MAPPING' });
+      continue;
+    }
+    const field = (
+      [
+        ['shift', 'SHIFT_MISMATCH'],
+        ['station', 'STATION_MISMATCH'],
+        ['unit', 'UNIT_MISMATCH'],
+        ['position', 'POSITION_MISMATCH'],
+        ['aDay', 'A_DAY_MISMATCH'],
+      ] as const
+    ).find(([key]) => wanted[key] !== seen[key]);
     results.push({ memberId, classification: field?.[1] ?? 'EXACT_MATCH' });
   }
   return results;

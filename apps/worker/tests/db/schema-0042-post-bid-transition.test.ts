@@ -8,7 +8,9 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const migrationsDir = resolve(__dirname, '../../migrations');
 
 function apply(sqlite: Database.Database, through: string): void {
-  for (const file of readdirSync(migrationsDir).filter((file) => file.endsWith('.sql')).sort()) {
+  for (const file of readdirSync(migrationsDir)
+    .filter((file) => file.endsWith('.sql'))
+    .sort()) {
     if (file <= through) sqlite.exec(readFileSync(resolve(migrationsDir, file), 'utf8'));
   }
 }
@@ -19,10 +21,12 @@ describe('migration 0042 post-Bid transition', () => {
     sqlite.pragma('foreign_keys = ON');
     apply(sqlite, '0042_post_bid_transition.sql');
     const names = sqlite.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'").all();
-    expect(names).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'bid_post_bid_transitions' }),
-      expect.objectContaining({ name: 'bid_post_bid_operation_receipts' }),
-    ]));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'bid_post_bid_transitions' }),
+        expect.objectContaining({ name: 'bid_post_bid_operation_receipts' }),
+      ]),
+    );
     expect(sqlite.pragma('quick_check', { simple: true })).toBe('ok');
     expect(sqlite.pragma('foreign_key_check')).toEqual([]);
     sqlite.close();
@@ -31,7 +35,9 @@ describe('migration 0042 post-Bid transition', () => {
   it('applies cleanly as the explicit 0040-to-0042 upgrade path', () => {
     const sqlite = new Database(':memory:');
     apply(sqlite, '0040_annual_bid_operations.sql');
-    expect(() => sqlite.exec(readFileSync(resolve(migrationsDir, '0042_post_bid_transition.sql'), 'utf8'))).not.toThrow();
+    expect(() =>
+      sqlite.exec(readFileSync(resolve(migrationsDir, '0042_post_bid_transition.sql'), 'utf8')),
+    ).not.toThrow();
     sqlite.close();
   });
 });

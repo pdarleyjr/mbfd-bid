@@ -10,6 +10,7 @@ import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
 import {
   type FutureRosterObservation,
+  type TransitionRosterEntry,
   evaluateFinalization,
   evaluateLeadTime,
   reconcileFutureRoster,
@@ -55,6 +56,10 @@ const reconcileSchema = z
             unit: z.string().nullable(),
             position: z.string().nullable(),
             aDay: z.string().nullable(),
+            mappingStatus: z
+              .enum(['MAPPED', 'UNMAPPED_POSITION', 'DUPLICATE_OR_AMBIGUOUS_MAPPING'])
+              .optional(),
+            knownMember: z.boolean().optional(),
           })
           .strict(),
       )
@@ -125,7 +130,7 @@ async function roster(
   db: D1Database,
   sessionId: string,
 ): Promise<
-  | { ok: true; rows: FutureRosterObservation[]; completionAt: number; year: number }
+  | { ok: true; rows: TransitionRosterEntry[]; completionAt: number; year: number }
   | { ok: false; error: string }
 > {
   const session = await db
@@ -212,9 +217,50 @@ async function roster(
     ruleBookVersion: projected.value.frozen.ruleBookVersion,
   });
   if (!finalization.ok) return { ok: false, error: finalization.blockingCodes.join(',') };
+  const memberIds = projected.value.participants.map((participant) => participant.memberId);
+  const identities = (
+    await db
+      .prepare(
+        `SELECT id, employee_id, first_name, last_name, rank, prior_position_id
+           FROM members WHERE id IN (${memberIds.map(() => '?').join(',')})`,
+      )
+      .bind(...memberIds)
+      .all()
+  ).results as unknown as Array<{
+    id: number;
+    employee_id: string;
+    first_name: string;
+    last_name: string;
+    rank: string | null;
+    prior_position_id: string | null;
+  }>;
+  const identityByMemberId = new Map(identities.map((identity) => [identity.id, identity]));
+  if (identityByMemberId.size !== memberIds.length)
+    return { ok: false, error: 'frozen_member_identity_missing' };
+  const rows: TransitionRosterEntry[] = projected.value.participants.map((participant) => {
+    const identity = identityByMemberId.get(participant.memberId);
+    if (identity === undefined) throw new Error('frozen_member_identity_missing');
+    return {
+      memberId: participant.memberId,
+      employeeId: identity.employee_id,
+      memberName: `${identity.first_name} ${identity.last_name}`,
+      rank: participant.rank ?? identity.rank,
+      shift: participant.shift,
+      station: participant.station,
+      unit: participant.unit,
+      position: participant.position,
+      positionId: participant.positionId,
+      aDay: participant.aDay,
+      specialty: participant.specialty,
+      priorAssignmentPositionId: identity.prior_position_id,
+      annualSessionId: sessionId,
+      annualBidYear: session.bid_year,
+      ruleBookVersion: projected.value.frozen.ruleBookVersion,
+    };
+  });
   return {
     ok: true,
-    rows: [...projected.value.futureRoster],
+    rows,
     completionAt: projected.value.completion.completedAtMs,
     year: session.bid_year,
   };
@@ -410,7 +456,7 @@ router.get('/:id/telestaff-package.csv', async (c) => {
     !['APPROVED', 'PACKAGE_GENERATED', 'RECONCILED', 'PUBLISHED'].includes(row.status)
   )
     return c.json({ error: 'approval_required' }, 409);
-  const rows = parse<FutureRosterObservation[]>(row.future_roster_json);
+  const rows = parse<TransitionRosterEntry[]>(row.future_roster_json);
   if (rows === null) return c.json({ error: 'future_roster_invalid' }, 409);
   const safeRows = rows;
   async function* source() {
@@ -419,13 +465,21 @@ router.get('/:id/telestaff-package.csv', async (c) => {
   return new Response(
     createCsvStream(source(), [
       { header: 'member_id', value: (r) => r.memberId },
+      { header: 'employee_id', value: (r) => r.employeeId },
+      { header: 'member_name', value: (r) => r.memberName },
+      { header: 'rank', value: (r) => r.rank },
+      { header: 'current_assignment_position_id', value: (r) => r.priorAssignmentPositionId },
       { header: 'new_shift', value: (r) => r.shift },
       { header: 'new_station', value: (r) => r.station },
       { header: 'new_unit', value: (r) => r.unit },
       { header: 'new_position', value: (r) => r.position },
       { header: 'new_a_day', value: (r) => r.aDay },
+      { header: 'specialty', value: (r) => r.specialty },
       { header: 'effective_date', value: () => row.effective_on },
       { header: 'source_annual_session', value: () => sessionId },
+      { header: 'annual_bid_year', value: (r) => r.annualBidYear },
+      { header: 'rulebook_version', value: (r) => r.ruleBookVersion },
+      { header: 'change_type', value: () => 'ANNUAL_BID_TRANSITION' },
       { header: 'validation_status', value: () => 'APPROVED' },
     ]),
     {
@@ -505,7 +559,14 @@ router.post(
       !['APPROVED', 'PACKAGE_GENERATED'].includes(row.status)
     )
       return c.json({ error: 'package_or_approval_required' }, 409);
-    const findings = reconcileFutureRoster(expected, body.data.observed);
+    const observed: FutureRosterObservation[] = body.data.observed.map(
+      ({ mappingStatus, knownMember, ...assignment }) => ({
+        ...assignment,
+        ...(mappingStatus === undefined ? {} : { mappingStatus }),
+        ...(knownMember === undefined ? {} : { knownMember }),
+      }),
+    );
+    const findings = reconcileFutureRoster(expected, observed);
     const now = Date.now();
     const response = { replayed: false, status: 'RECONCILED', findings };
     try {

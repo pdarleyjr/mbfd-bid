@@ -34,20 +34,67 @@ describe('post-Bid transition policy', () => {
 
   it('keeps the two-week statement configurable: hard-minimum blocks, target only warns', () => {
     expect(
-      evaluateLeadTime({ completionOn: '2030-01-01', effectiveOn: '2030-01-10', policy: { mode: 'HARD_MINIMUM', days: 14 } }),
+      evaluateLeadTime({
+        completionOn: '2030-01-01',
+        effectiveOn: '2030-01-10',
+        policy: { mode: 'HARD_MINIMUM', days: 14 },
+      }),
     ).toEqual({ ok: false, code: 'EFFECTIVE_DATE_HARD_MINIMUM_NOT_MET' });
     expect(
-      evaluateLeadTime({ completionOn: '2030-01-01', effectiveOn: '2030-01-10', policy: { mode: 'TARGET', days: 14 } }),
+      evaluateLeadTime({
+        completionOn: '2030-01-01',
+        effectiveOn: '2030-01-10',
+        policy: { mode: 'TARGET', days: 14 },
+      }),
     ).toEqual({ ok: true, warning: 'EFFECTIVE_DATE_TARGET_NOT_MET' });
   });
 
   it('classifies post-TeleStaff observations without changing canonical expected results', () => {
-    const expected: FutureRosterObservation[] = [{ memberId: 1, shift: 'A', station: '1', unit: 'Engine', position: 'FF', aDay: 'G1' }];
-    expect(reconcileFutureRoster(expected, expected)).toEqual([{ memberId: 1, classification: 'EXACT_MATCH' }]);
+    const expected: FutureRosterObservation[] = [
+      { memberId: 1, shift: 'A', station: '1', unit: 'Engine', position: 'FF', aDay: 'G1' },
+    ];
+    expect(reconcileFutureRoster(expected, expected)).toEqual([
+      { memberId: 1, classification: 'EXACT_MATCH' },
+    ]);
     expect(
       reconcileFutureRoster(expected, [
         { memberId: 1, shift: 'B', station: '1', unit: 'Engine', position: 'FF', aDay: 'G1' },
       ]),
     ).toEqual([{ memberId: 1, classification: 'SHIFT_MISMATCH' }]);
+  });
+
+  it('keeps unmapped, duplicate, unknown, and extra observations explicit for review', () => {
+    const expected: FutureRosterObservation[] = [
+      { memberId: 1, shift: 'A', station: '1', unit: 'Engine', position: 'FF', aDay: 'G1' },
+      { memberId: 2, shift: 'B', station: '2', unit: 'Truck', position: 'LT', aDay: 'G2' },
+    ];
+    expect(
+      reconcileFutureRoster(expected, [
+        {
+          memberId: 1,
+          shift: 'A',
+          station: '1',
+          unit: 'Engine',
+          position: 'FF',
+          aDay: 'G1',
+          mappingStatus: 'UNMAPPED_POSITION',
+        },
+        {
+          memberId: 3,
+          shift: 'C',
+          station: '3',
+          unit: 'Rescue',
+          position: 'FF',
+          aDay: 'G3',
+          knownMember: false,
+        },
+        { memberId: 4, shift: 'C', station: '3', unit: 'Rescue', position: 'FF', aDay: 'G3' },
+      ]),
+    ).toEqual([
+      { memberId: 1, classification: 'UNMAPPED_POSITION' },
+      { memberId: 2, classification: 'MISSING_EXPECTED_CHANGE' },
+      { memberId: 3, classification: 'UNKNOWN_MEMBER' },
+      { memberId: 4, classification: 'EXTRA_UNEXPECTED_CHANGE' },
+    ]);
   });
 });
