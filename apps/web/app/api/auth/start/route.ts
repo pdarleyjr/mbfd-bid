@@ -5,7 +5,7 @@ import { createFederationState } from '@/lib/federation-state';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-export async function GET(request = new Request('https://bid.invalid/api/auth/start')) {
+export async function GET(request: Request) {
   const environment = cfEnv('ENV');
   const callback = bidCallbackUri(environment);
   const authorizationEndpoint = hubAuthorizationEndpoint(environment);

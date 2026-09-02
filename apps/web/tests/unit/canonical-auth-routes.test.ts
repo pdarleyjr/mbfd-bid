@@ -20,7 +20,15 @@ const mocks = vi.hoisted(() => {
       state: 'A'.repeat(43),
       cookieValue: 'signed-state',
     })),
-    validateFederationState: vi.fn(async () => null),
+    validateFederationState: vi.fn<
+      (
+        cookieValue: string | null,
+        returnedState: string | null,
+        signingKey: string,
+      ) => Promise<{
+        returnTo: string | null;
+      } | null>
+    >(async () => null),
   };
 });
 
@@ -59,7 +67,7 @@ describe('canonical Bid authentication routes', () => {
   it('starts login with an exact registered callback and an HTTP-only expiring state cookie', async () => {
     const { GET } = await import('../../app/api/auth/start/route');
 
-    const response = await GET();
+    const response = await GET(new Request('https://staging.bid.mbfdhub.com/api/auth/start'));
 
     expect(response.status).toBe(307);
     const location = new URL(response.headers.get('Location') ?? '');
@@ -85,7 +93,7 @@ describe('canonical Bid authentication routes', () => {
     );
     const { GET } = await import('../../app/api/auth/start/route');
 
-    const response = await GET();
+    const response = await GET(new Request('https://bid.mbfdhub.com/api/auth/start'));
     const location = new URL(response.headers.get('Location') ?? '');
 
     expect(location.searchParams.get('redirect_uri')).toBe(
