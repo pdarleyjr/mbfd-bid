@@ -42,6 +42,11 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
       return 'approve_final_results';
     case 'live.transition_stage':
       return 'approve_transition';
+    case 'live.start_specialty_adjudication':
+    case 'live.resolve_specialty_candidate':
+      return 'approve_transition';
+    case 'live.set_presentation_mode':
+      return 'publish';
   }
 }
 
@@ -155,6 +160,136 @@ export function reduceLiveBidCommand(
       },
       eventType: 'live_command_applied',
       payload: { operation: 'transition_stage', fromStageId: currentStageId, stageId: target.id },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.set_presentation_mode') {
+    const heldProjection =
+      command.mode === 'HOLD'
+        ? {
+            currentBidderId: state.currentBidderId,
+            currentStageId,
+            currentPhase: state.currentPhase,
+            fills: { ...state.fills },
+          }
+        : null;
+    return {
+      ok: true,
+      state: {
+        ...state,
+        live: {
+          ...live,
+          presentation: {
+            mode: command.mode,
+            heldAtSeq: command.mode === 'HOLD' ? state.lastSeq : null,
+            heldProjection,
+          },
+        },
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: { operation: 'set_presentation_mode', mode: command.mode },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.start_specialty_adjudication') {
+    if (state.currentPhase !== 'position_bid') return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (state.currentBidderId === null) return { ok: false, code: 'NO_CURRENT_BIDDER' };
+    if (live.specialty !== null && live.specialty !== undefined)
+      return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
+    const specialty = policy.annualOperations?.specialties?.find(
+      (entry) => entry.id === command.specialtyId,
+    );
+    if (specialty === undefined) return { ok: false, code: 'LIVE_SPECIALTY_POLICY_MISSING' };
+    if (!specialty.opportunityPositionIds.includes(command.positionId))
+      return { ok: false, code: 'SPECIALTY_POSITION_NOT_CONFIGURED' };
+    if (state.fills[command.positionId] !== undefined)
+      return { ok: false, code: 'POSITION_FILLED' };
+    if (new Set(command.candidateMemberIds).size !== command.candidateMemberIds.length)
+      return { ok: false, code: 'SPECIALTY_CANDIDATE_ORDER_INVALID' };
+    return {
+      ok: true,
+      state: {
+        ...state,
+        live: {
+          ...live,
+          specialty: {
+            specialtyId: specialty.id,
+            positionId: command.positionId,
+            suspendedBidderId: state.currentBidderId,
+            candidateMemberIds: command.candidateMemberIds,
+            candidateCursor: 0,
+          },
+        },
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'start_specialty_adjudication',
+        specialtyId: specialty.id,
+        positionId: command.positionId,
+        suspendedBidderId: state.currentBidderId,
+      },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.resolve_specialty_candidate') {
+    const specialty = live.specialty;
+    if (specialty === null || specialty === undefined)
+      return { ok: false, code: 'NO_ACTIVE_SPECIALTY_ADJUDICATION' };
+    const expectedCandidateId = specialty.candidateMemberIds[specialty.candidateCursor];
+    if (expectedCandidateId !== command.memberId)
+      return { ok: false, code: 'SPECIALTY_CANDIDATE_OUT_OF_ORDER' };
+    if (command.outcome === 'ACCEPT') {
+      const fill: Fill = {
+        memberId: command.memberId,
+        ordinal: state.bidOrder.find((entry) => entry.memberId === command.memberId)?.ordinal ?? 0,
+        bidId,
+      };
+      return {
+        ok: true,
+        state: {
+          ...state,
+          fills: { ...state.fills, [specialty.positionId]: fill },
+          live: { ...live, specialty: null },
+          lastSeq: state.lastSeq + 1,
+        },
+        eventType: 'live_command_applied',
+        payload: {
+          operation: 'resolve_specialty_candidate',
+          specialtyId: specialty.specialtyId,
+          positionId: specialty.positionId,
+          memberId: command.memberId,
+          outcome: command.outcome,
+          resumedBidderId: specialty.suspendedBidderId,
+        },
+        supersedesBidId: null,
+      };
+    }
+    const nextCursor = specialty.candidateCursor + 1;
+    return {
+      ok: true,
+      state: {
+        ...state,
+        live: {
+          ...live,
+          specialty:
+            nextCursor < specialty.candidateMemberIds.length
+              ? { ...specialty, candidateCursor: nextCursor }
+              : null,
+        },
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'resolve_specialty_candidate',
+        specialtyId: specialty.specialtyId,
+        positionId: specialty.positionId,
+        memberId: command.memberId,
+        outcome: command.outcome,
+        resumedBidderId:
+          nextCursor < specialty.candidateMemberIds.length ? null : specialty.suspendedBidderId,
+      },
       supersedesBidId: null,
     };
   }
@@ -272,6 +407,8 @@ export function reduceLiveBidCommand(
     };
   }
   if (state.currentPhase !== 'position_bid') return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+  if (live.specialty !== null && live.specialty !== undefined)
+    return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
   if (command.type === 'live.disposition') {
     const rule = policy.dispositions.find(
       (candidate) => candidate.disposition === command.disposition,

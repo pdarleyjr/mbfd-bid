@@ -42,6 +42,74 @@ export const BidDispositionSchema = z.enum([
 export type BidDisposition = z.infer<typeof BidDispositionSchema>;
 
 /**
+ * A specialty is annual policy material, not a client-supplied ranking. The
+ * candidate pool is recalculated from the session's frozen evidence whenever
+ * an interruption is opened.
+ */
+export const FrozenAnnualSpecialtyPolicySchema = z
+  .object({
+    id: z.string().trim().min(1).max(80),
+    label: z.string().trim().min(1).max(160),
+    mode: z.enum(['INTERRUPTING', 'PRIORITY_ONLY']),
+    opportunityPositionIds: z.array(z.string().trim().min(1).max(160)).min(1),
+    requiredCredentialNames: z.array(z.string().trim().min(1).max(160)),
+    requiredSpecialtyCodes: z.array(z.string().trim().min(1).max(128)),
+    points: z
+      .array(
+        z
+          .object({
+            credentialName: z.string().trim().min(1).max(160),
+            value: z.number().int().min(0).max(10_000),
+          })
+          .strict(),
+      )
+      .max(100),
+    tieBreakChain: z
+      .array(z.enum(['POINTS', 'RSC_SENIORITY', 'RANK_SENIORITY']))
+      .min(1)
+      .max(3),
+  })
+  .strict()
+  .superRefine((specialty, ctx) => {
+    if (new Set(specialty.opportunityPositionIds).size !== specialty.opportunityPositionIds.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['opportunityPositionIds'],
+        message: 'specialty opportunity positions must be unique',
+      });
+    if (
+      new Set(specialty.requiredCredentialNames).size !== specialty.requiredCredentialNames.length
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requiredCredentialNames'],
+        message: 'specialty credentials must be unique',
+      });
+    if (new Set(specialty.requiredSpecialtyCodes).size !== specialty.requiredSpecialtyCodes.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requiredSpecialtyCodes'],
+        message: 'specialty qualification codes must be unique',
+      });
+    if (
+      new Set(specialty.points.map((entry) => entry.credentialName)).size !==
+      specialty.points.length
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['points'],
+        message: 'a credential may have only one specialty point value',
+      });
+    if (new Set(specialty.tieBreakChain).size !== specialty.tieBreakChain.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tieBreakChain'],
+        message: 'specialty tiebreak entries must be unique',
+      });
+  });
+export type FrozenAnnualSpecialtyPolicy = z.infer<typeof FrozenAnnualSpecialtyPolicySchema>;
+
+/**
  * Immutable execution facts needed after an annual configuration is frozen.
  * These are deliberately configuration data, not inferred from historical
  * rosters or current staffing. Missing values therefore block real execution.
@@ -52,6 +120,7 @@ export const FrozenAnnualOperationsPolicySchema = z
     stageOrder: z.array(z.string().trim().min(1).max(80)).min(1),
     /** Dedicated specialty seats must be named in frozen topology, never inferred from staffing. */
     requiredTopologyPositionIds: z.array(z.string().trim().min(1).max(160)).min(1),
+    specialties: z.array(FrozenAnnualSpecialtyPolicySchema).max(100).optional(),
     contact: z
       .object({
         minimumAttempts: z.literal(3),
@@ -71,15 +140,15 @@ export const FrozenAnnualOperationsPolicySchema = z
     aDay: z
       .object({
         combatGroups: z.tuple([z.literal('G1'), z.literal('G2'), z.literal('G3'), z.literal('G4')]),
-        min: z.literal(18),
-        max: z.literal(19),
-        captainDcMax: z.literal(2),
+        min: z.number().int().min(0).max(1_000),
+        max: z.number().int().min(0).max(1_000),
+        captainDcMax: z.number().int().min(0).max(1_000),
         specialtyMaximums: z
           .object({
-            MARINE_ASSIGNED: z.literal(1),
-            MARINE_FLOAT: z.literal(1),
-            DE: z.literal(2),
-            SWAT: z.literal(1),
+            MARINE_ASSIGNED: z.number().int().min(0).max(1_000),
+            MARINE_FLOAT: z.number().int().min(0).max(1_000),
+            DE: z.number().int().min(0).max(1_000),
+            SWAT: z.number().int().min(0).max(1_000),
           })
           .strict(),
       })
@@ -101,6 +170,21 @@ export const FrozenAnnualOperationsPolicySchema = z
         code: z.ZodIssueCode.custom,
         path: ['requiredTopologyPositionIds'],
         message: 'annual specialty topology position ids must be unique',
+      });
+    }
+    if (policy.aDay.min > policy.aDay.max) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['aDay'],
+        message: 'A-Day minimum cannot exceed maximum',
+      });
+    }
+    const specialtyIds = policy.specialties?.map((specialty) => specialty.id) ?? [];
+    if (new Set(specialtyIds).size !== specialtyIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['specialties'],
+        message: 'annual specialty ids must be unique',
       });
     }
   });

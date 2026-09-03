@@ -53,6 +53,25 @@ export interface LiveBidProgress {
     reason: string;
     evidenceReference: string | null;
   }[];
+  /** An interruption suspends the exact normal bidder without rewinding the queue. */
+  specialty?: {
+    specialtyId: string;
+    positionId: string;
+    suspendedBidderId: number;
+    candidateMemberIds: readonly number[];
+    candidateCursor: number;
+  } | null;
+  /** Read-only audience publication is deliberately independent from Bid execution. */
+  presentation?: {
+    mode: 'OFF' | 'LIVE' | 'HOLD';
+    heldAtSeq: number | null;
+    heldProjection: {
+      currentBidderId: number | null;
+      currentStageId: string | null;
+      currentPhase: CurrentPhase;
+      fills: Record<string, Fill>;
+    } | null;
+  } | null;
 }
 
 export interface BidSessionState {

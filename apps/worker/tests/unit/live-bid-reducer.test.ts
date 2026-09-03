@@ -84,6 +84,89 @@ function command(
   } as LiveBidCommand;
 }
 describe('live canonical reducer', () => {
+  it('suspends the exact normal bidder for frozen specialty adjudication and resumes without queue rewind', () => {
+    const specialtyPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      annualOperations: {
+        v: 1,
+        stageOrder: ['d'],
+        requiredTopologyPositionIds: ['p1'],
+        specialties: [
+          {
+            id: 'marine',
+            label: 'Marine',
+            mode: 'INTERRUPTING',
+            opportunityPositionIds: ['p1'],
+            requiredCredentialNames: ['Marine'],
+            requiredSpecialtyCodes: ['MARINE'],
+            points: [{ credentialName: 'Marine', value: 8 }],
+            tieBreakChain: ['POINTS', 'RSC_SENIORITY', 'RANK_SENIORITY'],
+          },
+        ],
+        contact: { minimumAttempts: 3, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 18,
+          max: 19,
+          captainDcMax: 2,
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+        },
+      },
+    };
+    const started = reduceLiveBidCommand(
+      state(),
+      specialtyPolicy,
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'marine',
+        positionId: 'p1',
+        candidateMemberIds: [2],
+      }),
+      100,
+      'specialty-start',
+    );
+    if (!started.ok) throw new Error(started.code);
+    expect(started.state.live?.specialty?.suspendedBidderId).toBe(1);
+    expect(
+      reduceLiveBidCommand(
+        started.state,
+        specialtyPolicy,
+        command('live.record_selection', { memberId: 1, positionId: 'p1' }),
+        101,
+        'blocked-pick',
+      ),
+    ).toMatchObject({ ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' });
+    const resolved = reduceLiveBidCommand(
+      started.state,
+      specialtyPolicy,
+      command('live.resolve_specialty_candidate', { memberId: 2, outcome: 'ACCEPT' }),
+      102,
+      'specialty-award',
+    );
+    if (!resolved.ok) throw new Error(resolved.code);
+    expect(resolved.state).toMatchObject({
+      currentBidderId: 1,
+      fills: { p1: { memberId: 2, bidId: 'specialty-award' } },
+      live: { specialty: null },
+    });
+  });
+
+  it('holds the department presentation without pausing the bid', () => {
+    const held = reduceLiveBidCommand(
+      state(),
+      policy,
+      command('live.set_presentation_mode', { mode: 'HOLD' }),
+      100,
+      'presentation-hold',
+    );
+    if (!held.ok) throw new Error(held.code);
+    expect(held.state).toMatchObject({
+      currentPhase: 'position_bid',
+      live: {
+        presentation: { mode: 'HOLD', heldAtSeq: 0, heldProjection: { currentBidderId: 1 } },
+      },
+    });
+  });
+
   it('records a staged selection and seals it after the next selection', () => {
     const first = reduceLiveBidCommand(
       state(),

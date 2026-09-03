@@ -826,11 +826,22 @@ export async function commitLiveBidCommand(
         )
         .bind(input.command.bidSessionId, current.lastSeq, canonicalJson(current), now, now),
     );
+  const specialtyPositionId =
+    input.command.type === 'live.resolve_specialty_candidate' && input.command.outcome === 'ACCEPT'
+      ? (reduction.payload.positionId as string | undefined)
+      : undefined;
+  const directSelectionPositionId =
+    input.command.type === 'live.record_selection' || input.command.type === 'live.force_selection'
+      ? input.command.positionId
+      : undefined;
   if (
     input.command.type === 'live.record_selection' ||
-    input.command.type === 'live.force_selection'
+    input.command.type === 'live.force_selection' ||
+    specialtyPositionId !== undefined
   ) {
-    const fill = reduction.state.fills[input.command.positionId];
+    const positionId = specialtyPositionId ?? directSelectionPositionId;
+    if (positionId === undefined) throw new Error('Accepted selection is missing its position');
+    const fill = reduction.state.fills[positionId];
     if (fill === undefined) throw new Error('Accepted selection reduction is missing its fill');
     statements.push(
       input.db
@@ -842,7 +853,7 @@ export async function commitLiveBidCommand(
           input.command.bidSessionId,
           fill.ordinal,
           fill.memberId,
-          input.command.positionId,
+          positionId,
           null,
           now,
           input.command.type === 'live.force_selection' ? 1 : 0,

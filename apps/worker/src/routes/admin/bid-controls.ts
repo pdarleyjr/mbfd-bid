@@ -16,6 +16,7 @@ import { ulid } from 'ulid';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidAwardAmendments, bidSessions, bids } from '../../db/schema.js';
+import { rankFrozenSpecialtyCandidates } from '../../lib/annual-specialty-policy.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import {
   eligibilityMemberFromFrozen,
@@ -51,16 +52,52 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
     return c.json({ error: 'invalid_live_bid_command' }, 400);
   const claims = c.get('claims');
-  const command = LiveBidCommandSchema.safeParse({
-    ...raw,
-    bidSessionId: sessionId,
-    actor: { id: claims.member_id, role: 'admin' },
-  });
-  if (!command.success) return c.json({ error: 'invalid_live_bid_command' }, 400);
   const db = getDb(c.env.DB);
   const frozen = await loadFrozenSessionBidPolicy(db, sessionId);
   if (!frozen.ok || frozen.snapshot.settings.v !== 3)
     return c.json({ error: 'live_action_policy_missing' }, 409);
+  let normalizedRaw: Record<string, unknown> = raw;
+  if (raw.type === 'live.start_specialty_adjudication') {
+    const specialtyId = typeof raw.specialtyId === 'string' ? raw.specialtyId : null;
+    const specialty = frozen.snapshot.settings.livePolicy.annualOperations?.specialties?.find(
+      (entry) => entry.id === specialtyId,
+    );
+    if (specialty === undefined) return c.json({ error: 'live_specialty_policy_missing' }, 409);
+    if (frozen.snapshot.credentialEvaluationOn === undefined)
+      return c.json({ error: 'live_specialty_evidence_date_missing' }, 409);
+    try {
+      const candidates = rankFrozenSpecialtyCandidates({
+        policy: specialty,
+        evaluationOn: frozen.snapshot.credentialEvaluationOn,
+        members: frozen.snapshot.members
+          .filter((member) => member.pool !== 'EXCLUDED')
+          .map((member) => ({
+            memberId: member.memberId,
+            rscSeniority: member.rscSeniority,
+            rankSeniority: member.rankSeniority,
+            credentialNames: member.credentialNames,
+            specialtyQualifications: member.specialtyQualifications,
+          })),
+      });
+      if (candidates.length === 0)
+        return c.json({ error: 'live_specialty_candidate_pool_empty' }, 409);
+      normalizedRaw = {
+        ...raw,
+        candidateMemberIds: candidates.map((candidate) => candidate.memberId),
+      };
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'live_specialty_policy_invalid' },
+        409,
+      );
+    }
+  }
+  const command = LiveBidCommandSchema.safeParse({
+    ...normalizedRaw,
+    bidSessionId: sessionId,
+    actor: { id: claims.member_id, role: 'admin' },
+  });
+  if (!command.success) return c.json({ error: 'invalid_live_bid_command' }, 400);
   const action =
     command.data.type === 'live.record_selection'
       ? 'record_selection'
@@ -81,7 +118,12 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
                   ? 'mark_unreachable'
                   : command.data.type === 'live.return_at_current_sequence'
                     ? 'skip_defer'
-                    : 'pause_resume';
+                    : command.data.type === 'live.set_presentation_mode'
+                      ? 'publish'
+                      : command.data.type === 'live.start_specialty_adjudication' ||
+                          command.data.type === 'live.resolve_specialty_candidate'
+                        ? 'approve_transition'
+                        : 'pause_resume';
   if (!isLiveBidActionAuthorized(frozen.snapshot.settings.livePolicy, action, claims.member_id))
     return c.json({ error: 'live_action_forbidden', action }, 403);
   const stub = c.env.BID_SESSION.get(c.env.BID_SESSION.idFromName(sessionId));
