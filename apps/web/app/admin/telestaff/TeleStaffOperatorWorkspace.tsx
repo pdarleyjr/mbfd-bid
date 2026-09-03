@@ -107,6 +107,23 @@ interface BaselineAcceptanceResult {
   baseline: { status: string };
 }
 
+interface UnknownEmployeeIdentity {
+  rowId: string;
+  sourceRowNumber: number;
+  sourceEmployeeId: string;
+  sourceDisplayName: string;
+}
+
+interface UnknownEmployeeDraft {
+  firstName: string;
+  lastName: string;
+  rank: '' | 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+  bidCategory: '' | 'OFC' | 'FF' | 'EXCLUDED';
+  rscSeniority: string;
+  rankSeniority: string;
+  effectiveOn: string;
+}
+
 function errorCode(body: unknown, fallback: string): string {
   if (body !== null && typeof body === 'object' && 'error' in body) {
     const value = (body as ApiError).error;
@@ -207,10 +224,265 @@ function importFormData(
   return data;
 }
 
+export function UnknownEmployeeOnboardingPanel(props: {
+  importId: string;
+  expectedRevision: number;
+  employees: UnknownEmployeeIdentity[];
+  busy: boolean;
+  onComplete: () => void | Promise<void>;
+  onError: (code: string) => void;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, UnknownEmployeeDraft>>(() =>
+    Object.fromEntries(
+      props.employees.map((employee) => [
+        employee.rowId,
+        {
+          firstName: '',
+          lastName: '',
+          rank: '',
+          bidCategory: '',
+          rscSeniority: '',
+          rankSeniority: '',
+          effectiveOn: '',
+        },
+      ]),
+    ),
+  );
+  const [submitting, setSubmitting] = useState(false);
+
+  function update(rowId: string, values: Partial<UnknownEmployeeDraft>) {
+    setDrafts((current) => {
+      const existing = current[rowId];
+      return existing === undefined ? current : { ...current, [rowId]: { ...existing, ...values } };
+    });
+  }
+
+  async function submit() {
+    const entries = props.employees.map((employee) => ({
+      employee,
+      draft: drafts[employee.rowId],
+    }));
+    if (
+      entries.some(
+        ({ draft }) =>
+          draft === undefined ||
+          draft.firstName.trim() === '' ||
+          draft.lastName.trim() === '' ||
+          draft.rank === '' ||
+          draft.bidCategory === '' ||
+          !/^\d+$/.test(draft.rscSeniority) ||
+          draft.effectiveOn === '',
+      )
+    ) {
+      props.onError('complete_reviewed_employee_details_required');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      for (const { employee, draft } of entries) {
+        if (draft === undefined || draft.rank === '' || draft.bidCategory === '') continue;
+        const response = await csrfFetch('/api/admin/personnel/changes', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `telestaff-onboard:${props.importId}:${employee.rowId}`,
+          },
+          body: JSON.stringify({
+            kind: 'NEW_HIRE',
+            new_member: {
+              employee_id: employee.sourceEmployeeId,
+              first_name: draft.firstName.trim(),
+              last_name: draft.lastName.trim(),
+              rank: draft.rank,
+              bid_category: draft.bidCategory,
+              rsc_seniority: Number(draft.rscSeniority),
+              ...(draft.rankSeniority === ''
+                ? {}
+                : { rank_seniority: Number(draft.rankSeniority) }),
+              hired_at: draft.effectiveOn,
+            },
+            effective_on: draft.effectiveOn,
+            reason: 'Reviewed TeleStaff unknown employee onboarding.',
+          }),
+        });
+        const body = await parseResponse(response);
+        if (
+          !response.ok &&
+          !(response.status === 409 && errorCode(body, '') === 'employee_id_exists')
+        ) {
+          props.onError(errorCode(body, 'personnel_onboarding_unavailable'));
+          return;
+        }
+      }
+      const reconcile = await csrfFetch(
+        `/api/admin/telestaff/imports/${encodeURIComponent(props.importId)}/reconcile`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expected_reconciliation_revision: props.expectedRevision,
+          }),
+        },
+      );
+      const reconcileBody = await parseResponse(reconcile);
+      if (!reconcile.ok) {
+        props.onError(errorCode(reconcileBody, 'reconciliation_unavailable'));
+        return;
+      }
+      await props.onComplete();
+    } catch {
+      props.onError('personnel_onboarding_unavailable');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section
+      data-testid="telestaff-unknown-onboarding"
+      className="mt-4 rounded-lg border border-violet-700 bg-violet-950/30 p-4"
+    >
+      <h3 className="font-semibold text-white">Unknown employee onboarding</h3>
+      <p className="mt-2 text-sm text-slate-300">
+        Source identity is held in reviewed browser memory only. Confirm canonical personnel data;
+        rank, category, and seniority are never inferred from TeleStaff.
+      </p>
+      <div className="mt-4 space-y-4">
+        {props.employees.map((employee) => {
+          const draft = drafts[employee.rowId];
+          if (draft === undefined) return null;
+          return (
+            <fieldset key={employee.rowId} className="rounded border border-slate-700 p-3">
+              <legend className="px-1 text-sm font-semibold text-white">
+                Source row {employee.sourceRowNumber}: {employee.sourceDisplayName} ·{' '}
+                {employee.sourceEmployeeId}
+              </legend>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <OnboardingInput
+                  name={`first_name-${employee.rowId}`}
+                  label="Canonical first name"
+                  value={draft.firstName}
+                  onChange={(value) => update(employee.rowId, { firstName: value })}
+                />
+                <OnboardingInput
+                  name={`last_name-${employee.rowId}`}
+                  label="Canonical last name"
+                  value={draft.lastName}
+                  onChange={(value) => update(employee.rowId, { lastName: value })}
+                />
+                <label className="block text-sm text-slate-200">
+                  Rank
+                  <select
+                    name={`rank-${employee.rowId}`}
+                    required
+                    value={draft.rank}
+                    onChange={(event) =>
+                      update(employee.rowId, {
+                        rank: event.target.value as UnknownEmployeeDraft['rank'],
+                      })
+                    }
+                    className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  >
+                    <option value="">Select rank</option>
+                    {['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'].map((rank) => (
+                      <option key={rank} value={rank}>
+                        {rank}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm text-slate-200">
+                  Bid category
+                  <select
+                    name={`bid_category-${employee.rowId}`}
+                    required
+                    value={draft.bidCategory}
+                    onChange={(event) =>
+                      update(employee.rowId, {
+                        bidCategory: event.target.value as UnknownEmployeeDraft['bidCategory'],
+                      })
+                    }
+                    className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  >
+                    <option value="">Select category</option>
+                    <option value="FF">FF</option>
+                    <option value="OFC">OFC</option>
+                    <option value="EXCLUDED">EXCLUDED</option>
+                  </select>
+                </label>
+                <OnboardingInput
+                  name={`rsc_seniority-${employee.rowId}`}
+                  label="RSC seniority"
+                  type="number"
+                  value={draft.rscSeniority}
+                  onChange={(value) => update(employee.rowId, { rscSeniority: value })}
+                />
+                <OnboardingInput
+                  name={`rank_seniority-${employee.rowId}`}
+                  label="Rank seniority (optional)"
+                  type="number"
+                  required={false}
+                  value={draft.rankSeniority}
+                  onChange={(value) => update(employee.rowId, { rankSeniority: value })}
+                />
+                <OnboardingInput
+                  name={`effective_on-${employee.rowId}`}
+                  label="Hire effective date"
+                  type="date"
+                  value={draft.effectiveOn}
+                  onChange={(value) => update(employee.rowId, { effectiveOn: value })}
+                />
+              </div>
+            </fieldset>
+          );
+        })}
+      </div>
+      <button
+        data-testid="telestaff-onboard-unknown-submit"
+        type="button"
+        disabled={props.busy || submitting}
+        onClick={() => void submit()}
+        className="mt-4 min-h-11 rounded bg-violet-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
+      >
+        {submitting
+          ? 'Creating reviewed personnel…'
+          : `Create or link ${props.employees.length} reviewed employee(s)`}
+      </button>
+    </section>
+  );
+}
+
+function OnboardingInput(props: {
+  name: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: 'text' | 'number' | 'date';
+  required?: boolean;
+}) {
+  return (
+    <label className="block text-sm text-slate-200">
+      {props.label}
+      <input
+        name={props.name}
+        type={props.type ?? 'text'}
+        min={props.type === 'number' ? 0 : undefined}
+        required={props.required ?? true}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+        className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+      />
+    </label>
+  );
+}
+
 /**
- * Intentionally displays only aggregate and reconciliation metadata. The selected
- * HTML File remains browser-memory input; source names and identifiers are never
- * rendered or stored in component state.
+ * Retained views display only sanitized reconciliation metadata. Immediately
+ * after staging, unknown identities may be displayed transiently for explicit
+ * reviewed onboarding; they are never retained by the server.
  */
 export function TeleStaffOperatorWorkspace() {
   const [file, setFile] = useState<File | null>(null);
@@ -222,6 +494,7 @@ export function TeleStaffOperatorWorkspace() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [imports, setImports] = useState<ImportSummary[]>([]);
   const [detail, setDetail] = useState<ImportDetail | null>(null);
+  const [unknownEmployees, setUnknownEmployees] = useState<UnknownEmployeeIdentity[]>([]);
   const [canonicalEffectiveOn, setCanonicalEffectiveOn] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -346,6 +619,14 @@ export function TeleStaffOperatorWorkspace() {
         setError('stage_unavailable');
         return;
       }
+      const transientUnknowns =
+        body !== null &&
+        typeof body === 'object' &&
+        'unknownEmployees' in body &&
+        Array.isArray((body as { unknownEmployees?: unknown }).unknownEmployees)
+          ? (body as { unknownEmployees: UnknownEmployeeIdentity[] }).unknownEmployees
+          : [];
+      setUnknownEmployees(transientUnknowns);
       await Promise.all([loadImport(importId), loadImports()]);
       setPreview(null);
       setNotice(
@@ -886,6 +1167,24 @@ export function TeleStaffOperatorWorkspace() {
               omits raw HTML, source locators, mappings, names, employee IDs, and HMAC values.
             </p>
 
+            {unknownEmployees.length > 0 && (
+              <UnknownEmployeeOnboardingPanel
+                key={detail.import.id}
+                importId={detail.import.id}
+                expectedRevision={detail.import.reconciliationRevision}
+                employees={unknownEmployees}
+                busy={busy}
+                onError={(code) => setError(code)}
+                onComplete={async () => {
+                  setUnknownEmployees([]);
+                  await Promise.all([loadImport(detail.import.id), loadImports()]);
+                  setNotice(
+                    'Reviewed personnel records were created or linked by exact Employee ID, then reconciled once.',
+                  );
+                }}
+              />
+            )}
+
             <section
               className="mt-4 rounded-lg border border-sky-700 bg-sky-950/30 p-4"
               aria-labelledby="telestaff-certification-heading"
@@ -1134,6 +1433,7 @@ export function TeleStaffOperatorWorkspace() {
                 onClick={() => {
                   setError(null);
                   setNotice(null);
+                  setUnknownEmployees([]);
                   void loadImport(item.id);
                 }}
                 className="flex w-full flex-wrap items-center justify-between gap-2 rounded border border-slate-700 bg-slate-950/50 px-3 py-3 text-left text-sm hover:border-slate-500"

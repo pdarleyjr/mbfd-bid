@@ -90,7 +90,8 @@ const SCHEMA = `
     id TEXT PRIMARY KEY,
     source_hash TEXT NOT NULL,
     source_kind TEXT NOT NULL,
-    status TEXT NOT NULL
+    status TEXT NOT NULL,
+    source_snapshot_as_of TEXT NOT NULL
   );
   CREATE TABLE assignment_import_rows (
     id TEXT PRIMARY KEY,
@@ -99,6 +100,13 @@ const SCHEMA = `
     staffing_position_source_mapping_id TEXT,
     source_topology_completeness TEXT NOT NULL,
     reconciliation_classification TEXT
+  );
+  CREATE TABLE personnel_lifecycle_events (
+    id TEXT PRIMARY KEY,
+    staffing_position_id TEXT,
+    kind TEXT NOT NULL,
+    effective_on TEXT NOT NULL,
+    origin TEXT NOT NULL
   );
 `;
 
@@ -120,15 +128,26 @@ function seedReference(db: Database.Database) {
        'synthetic', NULL, 'fixture', 'admin', 'q3-key', '{}', '{}', 1);
     INSERT INTO staffing_positions VALUES
       ('p1', 'A-1-E1-FF', 'Operations', 'A', '1', 'E1', 'Firefighter', 'FF',
-       '2026-01-01', NULL, 'approved', 1, 1);
+       '2026-01-01', NULL, 'approved', 1, 1),
+      ('p2', 'A-1-E1-FF-VACANT', 'Operations', 'A', '1', 'E1', 'Firefighter', 'FF',
+       '2026-02-01', NULL, 'approved', 1, 1),
+      ('p3', 'SYNTHETIC-FIXTURE', 'Operations', 'A', '99', 'TEST', 'Fixture', 'FF',
+       '2026-01-01', NULL, 'approved', 1, 1),
+      ('p4', 'RETIRED-SLOT', 'Operations', 'A', '2', 'E2', 'Firefighter', 'FF',
+       '2026-01-01', '2026-08-31', 'retired', 1, 1);
     INSERT INTO staffing_position_source_mappings VALUES
       ('map1', 'p1', 'telestaff', '{"v":1}', 'primary', '${'b'.repeat(64)}',
        'TELSTAFF_ASSIGNMENTS_HTML_V1', '${SOURCE_HASH}', '2026-01-01', NULL, 1);
-    INSERT INTO assignment_imports VALUES ('import1', '${SOURCE_HASH}', 'official', 'committed');
+    INSERT INTO assignment_imports VALUES
+      ('import1', '${SOURCE_HASH}', 'official', 'committed', '2026-09-03');
     INSERT INTO assignment_import_rows VALUES
       ('r1', 'import1', 1, 'map1', 'complete', 'NEW_ASSIGNMENT'),
       ('r2', 'import1', 2, NULL, 'incomplete', 'INCOMPLETE_TOPOLOGY'),
       ('r3', 'import1', NULL, NULL, 'complete', 'UNKNOWN_EMPLOYEE');
+    INSERT INTO personnel_lifecycle_events VALUES
+      ('position-create-p2', 'p2', 'POSITION_CREATE', '2026-02-01', 'ADMIN'),
+      ('position-create-p4', 'p4', 'POSITION_CREATE', '2026-01-01', 'ADMIN'),
+      ('position-retire-p4', 'p4', 'POSITION_RETIRE', '2026-09-01', 'ADMIN');
   `);
 }
 
@@ -149,23 +168,26 @@ describe('production canonical baseline bootstrap plan', () => {
     production.close();
   });
 
-  it('copies only official-source matched members and their reviewed canonical dependencies', () => {
+  it('copies official-source members plus reviewed active positions, including a legitimate vacancy', () => {
     const plan = planProductionBaseline(reference, production, SOURCE_HASH);
 
     expect(plan.summary).toEqual({
       matchedMembers: 2,
-      staffingPositions: 1,
+      staffingPositions: 2,
       sourceMappings: 1,
       credentials: 1,
       memberCredentialReferences: 2,
       qualificationEvidence: 1,
-      insertsRequired: 8,
+      insertsRequired: 9,
     });
     const sql = buildProductionBaselineSql(plan);
     expect(sql).not.toContain('member_assignments');
     expect(sql).not.toContain('bid_sessions');
     expect(sql).not.toContain('audit_log');
     expect(sql).not.toContain('staging-only');
+    expect(sql).toContain('A-1-E1-FF-VACANT');
+    expect(sql).not.toContain('SYNTHETIC-FIXTURE');
+    expect(sql).not.toContain('RETIRED-SLOT');
   });
 
   it('is idempotent after the deterministic plan is applied', () => {

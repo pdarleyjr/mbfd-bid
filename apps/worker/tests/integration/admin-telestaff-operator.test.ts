@@ -362,6 +362,126 @@ describe('admin TeleStaff operator workflow', () => {
     expect(member.status).toBe(403);
   });
 
+  it('onboards a reviewed unknown employee through the personnel ledger and then re-reconciles', async () => {
+    await seedOperatorAndMappedSlot(h);
+    const employeeId = 'SYNTH-009999';
+    const stage = await request(h, '/imports', {
+      method: 'POST',
+      body: importForm({ employeeId }),
+    });
+    expect(stage.status).toBe(201);
+    const staged = (await stage.json()) as {
+      import: { id: string; reconciliationRevision: number };
+      unknownEmployees: Array<{
+        rowId: string;
+        sourceRowNumber: number;
+        sourceEmployeeId: string;
+        sourceDisplayName: string;
+      }>;
+    };
+    expect(staged.unknownEmployees).toEqual([
+      {
+        rowId: expect.any(String),
+        sourceRowNumber: 1,
+        sourceEmployeeId: employeeId,
+        sourceDisplayName: 'Safe Synthetic',
+      },
+    ]);
+
+    const retainedBefore = await h.db.run(
+      `SELECT member_reference_hmac, normalized_source_topology
+         FROM assignment_import_rows WHERE import_id = ?`,
+      [staged.import.id],
+    );
+    expect(JSON.stringify(retainedBefore.results)).not.toContain(employeeId);
+    expect(JSON.stringify(retainedBefore.results)).not.toContain('Safe Synthetic');
+
+    const hire = await app.fetch(
+      new Request('http://x/api/admin/personnel/changes', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await jwt()}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `telestaff-onboard:${staged.import.id}:1`,
+        },
+        body: JSON.stringify({
+          kind: 'NEW_HIRE',
+          new_member: {
+            employee_id: employeeId,
+            first_name: 'Reviewed',
+            last_name: 'Firefighter',
+            rank: 'FF',
+            bid_category: 'FF',
+            rsc_seniority: 999,
+            hired_at: SOURCE_SNAPSHOT,
+          },
+          effective_on: SOURCE_SNAPSHOT,
+          reason: 'Reviewed TeleStaff unknown employee onboarding.',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY, TELESTAFF_HMAC_KEY: HMAC_KEY },
+    );
+    expect(hire.status).toBe(201);
+
+    const reconciled = await request(h, `/imports/${staged.import.id}/reconcile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_reconciliation_revision: staged.import.reconciliationRevision,
+      }),
+    });
+    expect(reconciled.status).toBe(200);
+    await expect(reconciled.json()).resolves.toMatchObject({
+      import: { id: staged.import.id, status: 'reviewed' },
+      reconciliation: { NEW_ASSIGNMENT: 1, UNKNOWN_EMPLOYEE: 0 },
+    });
+    expect(
+      (
+        await h.db.run(
+          `SELECT kind, origin, idempotency_key FROM personnel_lifecycle_events
+             WHERE kind = 'NEW_HIRE'`,
+        )
+      ).results,
+    ).toEqual([
+      {
+        kind: 'NEW_HIRE',
+        origin: 'ADMIN',
+        idempotency_key: `telestaff-onboard:${staged.import.id}:1`,
+      },
+    ]);
+
+    const detail = await request(h, `/imports/${staged.import.id}`);
+    expect(detail.status).toBe(200);
+    const detailBody = await detail.text();
+    expect(detailBody).toContain('NEW_ASSIGNMENT');
+    expect(detailBody).not.toContain(employeeId);
+    expect(detailBody).not.toContain('Safe Synthetic');
+  });
+
+  it('requires administrator role and fresh step-up for reviewed re-reconciliation', async () => {
+    const importId = '01M1C1Q6RBEN5N2MCE9YMPHDEE';
+    const member = await request(h, `/imports/${importId}/reconcile`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await jwt({ role: 'member' })}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ expected_reconciliation_revision: 0 }),
+    });
+    expect(member.status).toBe(403);
+
+    const stale = await request(h, `/imports/${importId}/reconcile`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await jwt({ fresh: false })}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ expected_reconciliation_revision: 0 }),
+    });
+    expect(stale.status).toBe(401);
+    await expect(stale.json()).resolves.toMatchObject({ error: 'step_up_required' });
+  });
+
   it('denies a normal member from invoking deterministic staffing certification', async () => {
     const response = await request(
       h,

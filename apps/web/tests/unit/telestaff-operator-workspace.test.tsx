@@ -4,7 +4,10 @@ import { type Root, createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { TeleStaffOperatorWorkspace } from '../../app/admin/telestaff/TeleStaffOperatorWorkspace';
+import {
+  TeleStaffOperatorWorkspace,
+  UnknownEmployeeOnboardingPanel,
+} from '../../app/admin/telestaff/TeleStaffOperatorWorkspace';
 
 const roots: Root[] = [];
 
@@ -47,7 +50,126 @@ async function click(control: HTMLElement): Promise<void> {
   });
 }
 
+async function setValue(
+  control: HTMLInputElement | HTMLSelectElement,
+  value: string,
+): Promise<void> {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    control instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype,
+    'value',
+  );
+  descriptor?.set?.call(control, value);
+  await act(async () => {
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+    control.dispatchEvent(new Event('input', { bubbles: true }));
+    await Promise.resolve();
+  });
+}
+
+function requiredControl(
+  container: HTMLElement,
+  selector: string,
+): HTMLInputElement | HTMLSelectElement {
+  const control = container.querySelector(selector);
+  if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLSelectElement)) {
+    throw new Error(`Required test control did not render: ${selector}`);
+  }
+  return control;
+}
+
 describe('TeleStaffOperatorWorkspace', () => {
+  it('creates reviewed unknown employees through personnel lifecycle then re-reconciles once', async () => {
+    const completed = vi.fn();
+    const failed = vi.fn();
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input) => {
+        const url = String(input);
+        if (url === '/api/auth/csrf') {
+          return new Response(
+            JSON.stringify({ token: 'csrf_123e4567-e89b-12d3-a456-426614174000' }),
+            { status: 200 },
+          );
+        }
+        if (url === '/api/admin/personnel/changes') {
+          return new Response(JSON.stringify({ replayed: false, event: { kind: 'NEW_HIRE' } }), {
+            status: 201,
+          });
+        }
+        if (url === '/api/admin/telestaff/imports/import-unknown/reconcile') {
+          return new Response(
+            JSON.stringify({ import: { id: 'import-unknown' }, reconciliation: {} }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    act(() => {
+      root.render(
+        <UnknownEmployeeOnboardingPanel
+          importId="import-unknown"
+          expectedRevision={7}
+          employees={[
+            {
+              rowId: 'row-1',
+              sourceRowNumber: 4,
+              sourceEmployeeId: 'E-1234',
+              sourceDisplayName: 'Source Person',
+            },
+          ]}
+          busy={false}
+          onComplete={completed}
+          onError={failed}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Source Person');
+    expect(container.textContent).toContain('E-1234');
+    expect(container.textContent).toContain('reviewed browser memory only');
+    await setValue(requiredControl(container, '[name="first_name-row-1"]'), 'Canonical');
+    await setValue(requiredControl(container, '[name="last_name-row-1"]'), 'Member');
+    await setValue(requiredControl(container, '[name="rank-row-1"]'), 'FF');
+    await setValue(requiredControl(container, '[name="bid_category-row-1"]'), 'FF');
+    await setValue(requiredControl(container, '[name="rsc_seniority-row-1"]'), '42');
+    await setValue(requiredControl(container, '[name="effective_on-row-1"]'), '2026-09-03');
+
+    const submit = container.querySelector<HTMLButtonElement>(
+      '[data-testid="telestaff-onboard-unknown-submit"]',
+    );
+    if (!submit) throw new Error('Unknown employee onboarding submit did not render.');
+    await click(submit);
+
+    const personnelCall = fetchMock.mock.calls.find(
+      ([input]) => String(input) === '/api/admin/personnel/changes',
+    );
+    expect(JSON.parse(String(personnelCall?.[1]?.body))).toMatchObject({
+      kind: 'NEW_HIRE',
+      new_member: {
+        employee_id: 'E-1234',
+        first_name: 'Canonical',
+        last_name: 'Member',
+        rank: 'FF',
+        bid_category: 'FF',
+        rsc_seniority: 42,
+      },
+      effective_on: '2026-09-03',
+    });
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === '/api/admin/telestaff/imports/import-unknown/reconcile',
+      ),
+    ).toHaveLength(1);
+    expect(completed).toHaveBeenCalledOnce();
+    expect(failed).not.toHaveBeenCalled();
+  });
+
   it('requires a deliberate source-kind declaration before an HTML preview', () => {
     const markup = renderToStaticMarkup(<TeleStaffOperatorWorkspace />);
 

@@ -32,6 +32,7 @@ interface Options {
   productionDb: 'mbfd-bid-production';
   productionEnv: 'production';
   sourceHtml: string;
+  sourceSnapshotAsOf?: string;
   backupBucket: 'mbfd-bid-prod-backups';
   confirm?: string;
 }
@@ -55,6 +56,7 @@ function parseOptions(args: string[]): Options {
   return {
     mode,
     sourceHtml: resolve(sourceHtml),
+    sourceSnapshotAsOf: optionValue(args, '--source-snapshot-as-of'),
     referenceDb: requiredExact(args, '--reference-db', 'mbfd-bid-staging'),
     referenceEnv: requiredExact(args, '--reference-env', 'staging'),
     productionDb: requiredExact(args, '--production-db', 'mbfd-bid-production'),
@@ -152,7 +154,9 @@ async function main(): Promise<void> {
     reference = loadExport(referenceExport);
     production = loadExport(productionExport);
 
-    const plan = planProductionBaseline(reference, production, source.sourceHash);
+    const plan = planProductionBaseline(reference, production, source.sourceHash, {
+      asOf: options.sourceSnapshotAsOf,
+    });
     output({ phase: 'baseline-plan', mode: options.mode, ...plan.summary });
     if (options.mode === 'dry-run') return;
     if (plan.summary.insertsRequired === 0) {
@@ -204,7 +208,9 @@ async function main(): Promise<void> {
     exportD1(options.productionDb, options.productionEnv, afterExport);
     production.close();
     production = loadExport(afterExport);
-    const verification = planProductionBaseline(reference, production, source.sourceHash);
+    const verification = planProductionBaseline(reference, production, source.sourceHash, {
+      asOf: options.sourceSnapshotAsOf,
+    });
     if (verification.summary.insertsRequired !== 0) {
       throw new Error('post-apply idempotency verification failed');
     }

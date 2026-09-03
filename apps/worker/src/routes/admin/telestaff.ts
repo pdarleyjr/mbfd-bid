@@ -295,6 +295,12 @@ const SafeExceptionResolutionRequestSchema = z
   })
   .strict();
 
+const ReconcileRequestSchema = z
+  .object({
+    expected_reconciliation_revision: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const ApplyRequestSchema = z
   .object({
     expected_reconciliation_revision: z.number().int().nonnegative(),
@@ -1022,15 +1028,70 @@ router.post('/imports', requireStepUpAuth(), async (c) => {
   }
   const importRecord = await loadImportSummary(c.env.DB, importId);
   if (importRecord === undefined) return c.json({ error: 'import_not_found' }, 500);
+  const unknownRowResult = await c.env.DB.prepare(
+    `SELECT id, source_row_number
+       FROM assignment_import_rows
+      WHERE import_id = ? AND reconciliation_classification = 'UNKNOWN_EMPLOYEE'
+      ORDER BY source_row_number ASC, id ASC`,
+  )
+    .bind(importId)
+    .all();
+  const unknownRowByNumber = new Map(
+    (unknownRowResult.results as unknown as Array<{ id: string; source_row_number: number }>).map(
+      (row) => [row.source_row_number, row.id],
+    ),
+  );
+  // This is a one-response, authenticated review handoff. Raw identity remains
+  // only in request/browser memory and is never written to D1, logs, exports,
+  // public routes, or AI prompts.
+  const unknownEmployees = parsed.rows.flatMap((row) => {
+    const rowId = unknownRowByNumber.get(row.sourceRowNumber);
+    if (rowId === undefined || row.employeeId === null || row.sourceName === null) return [];
+    return [
+      {
+        rowId,
+        sourceRowNumber: row.sourceRowNumber,
+        sourceEmployeeId: row.employeeId,
+        sourceDisplayName: row.sourceName,
+      },
+    ];
+  });
   return c.json(
     {
       import: mapImport(importRecord),
       reconciliation: reconciliation.counts,
+      unknownEmployees,
       preview,
       readiness: READINESS,
     },
     201,
   );
+});
+
+/** Re-runs exact-HMAC reconciliation after reviewed canonical onboarding. */
+router.post('/imports/:importId/reconcile', requireStepUpAuth(), async (c) => {
+  const importId = c.req.param('importId');
+  if (!isOpaqueId(importId)) return c.json({ error: 'invalid_import_id' }, 400);
+  const parsed = ReconcileRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_reconciliation_request' }, 400);
+  if (!hasUsableTeleStaffHmacKey(c.env.TELESTAFF_HMAC_KEY)) {
+    return c.json({ error: 'telestaff_configuration_unavailable' }, 503);
+  }
+  const before = await loadImportSummary(c.env.DB, importId);
+  if (before === undefined || before.source_kind !== 'official' || before.status !== 'reviewed') {
+    return c.json({ error: 'import_not_reconcilable' }, 409);
+  }
+  if (before.reconciliation_revision !== parsed.data.expected_reconciliation_revision) {
+    return c.json({ error: 'reconciliation_revision_conflict' }, 409);
+  }
+  const reconciliation = await reconcileStagedTeleStaffImport(c.env.DB, {
+    importId,
+    hmacKey: c.env.TELESTAFF_HMAC_KEY,
+  });
+  if (!reconciliation.ok) return c.json({ error: 'reconciliation_unavailable' }, 409);
+  const after = await loadImportSummary(c.env.DB, importId);
+  if (after === undefined) return c.json({ error: 'import_not_found' }, 500);
+  return c.json({ import: mapImport(after), reconciliation: reconciliation.counts });
 });
 
 /** Lists sanitized import-level history only. */

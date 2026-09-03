@@ -16,6 +16,7 @@ type BaselineTable = (typeof TABLE_ORDER)[number];
 
 export interface ProductionBaselinePlan {
   sourceHash: string;
+  asOf: string;
   rows: Record<BaselineTable, SqlRow[]>;
   summary: {
     matchedMembers: number;
@@ -136,10 +137,11 @@ export function planProductionBaseline(
   reference: SqliteDb,
   production: SqliteDb,
   sourceHash: string,
+  options: { asOf?: string } = {},
 ): ProductionBaselinePlan {
   const manifests = rows(
     reference,
-    `SELECT id FROM assignment_imports
+    `SELECT id, source_snapshot_as_of FROM assignment_imports
       WHERE source_hash = ? AND source_kind = 'official' AND status = 'committed'
       ORDER BY id`,
     sourceHash,
@@ -147,6 +149,10 @@ export function planProductionBaseline(
   if (manifests.length !== 1) throw new Error('REFERENCE_OFFICIAL_MANIFEST_NOT_UNIQUE');
   const manifestId = manifests[0]?.id;
   if (typeof manifestId !== 'string') throw new Error('REFERENCE_OFFICIAL_MANIFEST_INVALID');
+  const asOf = options.asOf ?? manifests[0]?.source_snapshot_as_of;
+  if (typeof asOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+    throw new Error('REFERENCE_SOURCE_SNAPSHOT_AS_OF_INVALID');
+  }
 
   const matchedMembers = rows(
     reference,
@@ -162,24 +168,51 @@ export function planProductionBaseline(
   const staffingPositions = rows(
     reference,
     `SELECT DISTINCT position_record.*
-       FROM assignment_import_rows source_row
-       JOIN staffing_position_source_mappings source_mapping
-         ON source_mapping.id = source_row.staffing_position_source_mapping_id
-       JOIN staffing_positions position_record ON position_record.id = source_mapping.staffing_position_id
-      WHERE source_row.import_id = ? AND position_record.review_status = 'approved'
+       FROM staffing_positions position_record
+      WHERE position_record.review_status = 'approved'
+        AND (position_record.active_from IS NULL OR position_record.active_from <= ?)
+        AND (position_record.active_to IS NULL OR position_record.active_to >= ?)
+        AND (
+          EXISTS (
+            SELECT 1
+              FROM assignment_import_rows source_row
+              JOIN staffing_position_source_mappings source_mapping
+                ON source_mapping.id = source_row.staffing_position_source_mapping_id
+             WHERE source_row.import_id = ?
+               AND source_mapping.staffing_position_id = position_record.id
+          )
+          OR (
+            EXISTS (
+              SELECT 1 FROM personnel_lifecycle_events created_event
+               WHERE created_event.staffing_position_id = position_record.id
+                 AND created_event.kind = 'POSITION_CREATE'
+                 AND created_event.origin = 'ADMIN'
+                 AND created_event.effective_on <= ?
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM personnel_lifecycle_events retired_event
+               WHERE retired_event.staffing_position_id = position_record.id
+                 AND retired_event.kind = 'POSITION_RETIRE'
+                 AND retired_event.effective_on <= ?
+            )
+          )
+        )
       ORDER BY position_record.id`,
+    asOf,
+    asOf,
     manifestId,
+    asOf,
+    asOf,
   );
+  const selectedPositionIds = new Set(staffingPositions.map((position) => position.id));
   const sourceMappings = rows(
     reference,
-    `SELECT DISTINCT source_mapping.*
-       FROM assignment_import_rows source_row
-       JOIN staffing_position_source_mappings source_mapping
-         ON source_mapping.id = source_row.staffing_position_source_mapping_id
-      WHERE source_row.import_id = ?
-      ORDER BY source_mapping.id`,
-    manifestId,
-  );
+    `SELECT * FROM staffing_position_source_mappings
+      WHERE effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)
+      ORDER BY id`,
+    asOf,
+    asOf,
+  ).filter((mapping) => selectedPositionIds.has(mapping.staffing_position_id));
   const credentials = rows(reference, 'SELECT * FROM credentials ORDER BY id');
   const memberCredentials = rows(
     reference,
@@ -225,6 +258,7 @@ export function planProductionBaseline(
 
   return {
     sourceHash,
+    asOf,
     rows: plannedRows,
     summary: {
       matchedMembers: matchedMembers.length,
