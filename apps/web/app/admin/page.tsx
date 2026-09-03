@@ -12,6 +12,14 @@ type ControlArea = {
 
 const CONTROL_AREAS: readonly ControlArea[] = [
   {
+    href: '/admin/staffing-structure',
+    title: 'Staffing Structure',
+    description:
+      'Manage authorized seats, manning capacity, occupancy, and effective-dated retirement.',
+    state: 'Year-round control',
+    stateClassName: 'text-slate-300',
+  },
+  {
     href: '/admin/current-rosters',
     title: 'Current Rosters',
     description:
@@ -28,9 +36,17 @@ const CONTROL_AREAS: readonly ControlArea[] = [
   },
   {
     href: '/admin/members',
-    title: 'Members & Credentials',
+    title: 'Members',
     description: 'Review member and credential records separately from operational staffing.',
     state: 'Administration',
+    stateClassName: 'text-slate-300',
+  },
+  {
+    href: '/admin/credentials',
+    title: 'Credentials & Specialty Points',
+    description:
+      'Maintain credential references and default informational points with lifecycle links.',
+    state: 'Catalog control',
     stateClassName: 'text-slate-300',
   },
   {

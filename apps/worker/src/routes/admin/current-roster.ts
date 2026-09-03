@@ -173,6 +173,7 @@ async function loadCurrentRosterProjection(
   const columnByFilter: Record<string, string> = {
     shift: 'sp.shift',
     station: 'sp.station',
+    division: 'sp.division',
     unit: 'sp.unit',
     rank: 'sp.applicable_rank',
   };
@@ -408,6 +409,7 @@ function requestProjectionInput(c: { req: { query(name: string): string | undefi
     filterInputs: [
       { name: 'shift', value: c.req.query('shift') },
       { name: 'station', value: c.req.query('station') },
+      { name: 'division', value: c.req.query('division') },
       { name: 'unit', value: c.req.query('unit') },
       { name: 'rank', value: c.req.query('rank') },
     ],

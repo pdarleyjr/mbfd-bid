@@ -134,6 +134,7 @@ const StaffingPositionCreateSchema = z
     position_name: z.string().trim().max(256).nullable().optional(),
     applicable_rank: RankSchema.nullable().optional(),
     active_from: z.string().optional(),
+    review_status: z.enum(['draft', 'approved']).optional(),
   })
   .strict();
 
@@ -411,6 +412,10 @@ function sameReceipt(
         sameNullableValue(
           staffingPositionAfterState.applicable_rank,
           body.staffing_position.applicable_rank,
+        ) &&
+        sameNullableValue(
+          staffingPositionAfterState.reviewStatus,
+          body.staffing_position.review_status ?? 'draft',
         ) &&
         sameNullableValue(
           staffingPositionAfterState.activeFrom,
@@ -1242,7 +1247,11 @@ async function createOrRetirePosition(
       idempotencyKey,
       beforeState: { staffingPosition: null },
       afterState: {
-        staffingPosition: { ...position, activeFrom: position.active_from ?? body.effective_on },
+        staffingPosition: {
+          ...position,
+          reviewStatus: position.review_status ?? 'draft',
+          activeFrom: position.active_from ?? body.effective_on,
+        },
       },
       supersedesEventId: body.supersedes_event_id ?? null,
     };
@@ -1251,7 +1260,7 @@ async function createOrRetirePosition(
         `INSERT INTO staffing_positions
              (id, stable_slot_key, division, shift, station, unit, position_name,
               applicable_rank, active_from, review_status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         position.id,
         position.stable_slot_key,
@@ -1262,6 +1271,7 @@ async function createOrRetirePosition(
         position.position_name ?? null,
         position.applicable_rank ?? null,
         position.active_from ?? body.effective_on,
+        position.review_status ?? 'draft',
         now,
         now,
       ),

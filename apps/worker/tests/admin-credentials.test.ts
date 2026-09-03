@@ -398,4 +398,130 @@ describe('admin credentials routes', () => {
     expect(body.credential.name).toBe('Hazmat Awareness');
     expect(body.credential.fyPointsDefault).toBe(2);
   });
+
+  it('creates and updates a credential through step-up protected, idempotent catalog commands', async () => {
+    const { app, sqlite } = makeApp();
+    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+    const headers = {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'credential-create-001',
+    };
+
+    const created = await app.request(
+      '/admin/credentials',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: 'Swift Water Rescue',
+          fy_points_default: 0,
+          reason: 'Catalog review approved this credential.',
+        }),
+      },
+      mkEnv(sqlite),
+    );
+    expect(created.status).toBe(201);
+    const createBody = (await created.json()) as {
+      replayed: boolean;
+      credential: { id: number; name: string; fyPointsDefault: number; holderCount: number };
+    };
+    expect(createBody).toMatchObject({
+      replayed: false,
+      credential: { name: 'Swift Water Rescue', fyPointsDefault: 0, holderCount: 0 },
+    });
+
+    const replay = await app.request(
+      '/admin/credentials',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: 'Swift Water Rescue',
+          fy_points_default: 0,
+          reason: 'Catalog review approved this credential.',
+        }),
+      },
+      mkEnv(sqlite),
+    );
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({
+      replayed: true,
+      credential: createBody.credential,
+    });
+
+    const updated = await app.request(
+      `/admin/credentials/${createBody.credential.id}`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, 'Idempotency-Key': 'credential-update-001' },
+        body: JSON.stringify({
+          name: 'Swift Water Rescue Technician',
+          fy_points_default: 4,
+          reason: 'Catalog title and default points corrected.',
+        }),
+      },
+      mkEnv(sqlite),
+    );
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({
+      replayed: false,
+      credential: {
+        id: createBody.credential.id,
+        name: 'Swift Water Rescue Technician',
+        fyPointsDefault: 4,
+      },
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 2 });
+  });
+
+  it('lists holder counts and exposes member history links without treating a legacy reference as lifecycle proof', async () => {
+    const { app, sqlite } = makeApp();
+    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+    sqlite
+      .prepare('INSERT INTO credentials (id, name, fy_points_default) VALUES (41, ?, 3)')
+      .run('Hazmat Technician');
+    sqlite
+      .prepare(
+        `INSERT INTO members
+          (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, created_at, updated_at)
+         VALUES (9, 'SYNTH-009', 'Avery', 'Operator', 'FF', 'FF', 9, 1, 1)`,
+      )
+      .run();
+    sqlite
+      .prepare('INSERT INTO member_credentials (member_id, credential_id) VALUES (9, 41)')
+      .run();
+
+    const list = await app.request(
+      '/admin/credentials',
+      { headers: { Authorization: `Bearer ${jwt}` } },
+      mkEnv(sqlite),
+    );
+    expect(list.status).toBe(200);
+    expect(await list.json()).toMatchObject({
+      credentials: [expect.objectContaining({ id: 41, name: 'Hazmat Technician', holderCount: 1 })],
+    });
+
+    const holders = await app.request(
+      '/admin/credentials/41/holders',
+      { headers: { Authorization: `Bearer ${jwt}` } },
+      mkEnv(sqlite),
+    );
+    expect(holders.status).toBe(200);
+    expect(await holders.json()).toEqual({
+      credential: { id: 41, name: 'Hazmat Technician', fyPointsDefault: 3 },
+      holders: [
+        {
+          memberId: 9,
+          employeeId: 'SYNTH-009',
+          firstName: 'Avery',
+          lastName: 'Operator',
+          historyHref: '/admin/personnel/qualifications?memberId=9',
+          legacyReference: true,
+        },
+      ],
+      lifecycleNotice:
+        'Legacy credential references do not establish current qualification status.',
+    });
+  });
 });

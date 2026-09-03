@@ -17,16 +17,36 @@ function validAsOf(value: string | undefined): string | undefined {
 export default async function CurrentRostersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ as_of?: string }>;
+  searchParams: Promise<{
+    as_of?: string;
+    shift?: string;
+    station?: string;
+    division?: string;
+    unit?: string;
+    rank?: string;
+  }>;
 }) {
   await requireAdmin();
 
-  const asOf = validAsOf((await searchParams).as_of);
+  const search = await searchParams;
+  const asOf = validAsOf(search.as_of);
+  const filterEntries = Object.entries({
+    shift: search.shift,
+    station: search.station,
+    division: search.division,
+    unit: search.unit,
+    rank: search.rank,
+  }).filter(
+    (entry): entry is [string, string] =>
+      typeof entry[1] === 'string' && entry[1].trim().length > 0,
+  );
+  const filters = Object.fromEntries(filterEntries) as Record<string, string>;
+  const query = new URLSearchParams({ ...(asOf === undefined ? {} : { as_of: asOf }), ...filters });
   let roster: CurrentRosterResponse | null = null;
   let error: string | null = null;
   try {
     const response = await serverWorkerFetch(
-      `/api/admin/current-roster${asOf === undefined ? '' : `?as_of=${encodeURIComponent(asOf)}`}`,
+      `/api/admin/current-roster${query.size === 0 ? '' : `?${query.toString()}`}`,
     );
     if (!response.ok) {
       error = `The staffing projection service returned ${response.status}.`;
@@ -38,7 +58,7 @@ export default async function CurrentRostersPage({
       caught instanceof Error ? caught.message : 'The staffing projection could not be loaded.';
   }
 
-  if (roster !== null) return <CurrentRostersWorkspace roster={roster} />;
+  if (roster !== null) return <CurrentRostersWorkspace roster={roster} filters={filters} />;
 
   return (
     <section className="max-w-3xl space-y-6" aria-labelledby="current-rosters-heading">

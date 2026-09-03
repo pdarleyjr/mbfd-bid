@@ -36,8 +36,9 @@ describe('MBFD identity and operator navigation', () => {
     expect(ADMIN_NAV_LINKS.map(({ href, label }) => ({ href, label }))).toEqual([
       { href: '/admin', label: 'Dashboard' },
       { href: '/admin/current-rosters', label: 'Current Rosters' },
+      { href: '/admin/staffing-structure', label: 'Staffing Structure' },
       { href: '/admin/telestaff', label: 'TeleStaff' },
-      { href: '/admin/members', label: 'Members & Credentials' },
+      { href: '/admin/members', label: 'Members' },
       { href: '/admin/personnel', label: 'Personnel Changes' },
       { href: '/admin/bid-setup', label: 'Bid Setup' },
       { href: '/admin/ai-assist', label: 'AI Assist' },
@@ -61,6 +62,14 @@ describe('MBFD identity and operator navigation', () => {
     expect(personnel?.subnav).toContainEqual({
       href: '/admin/personnel/qualifications',
       label: 'Qualification Evidence',
+    });
+  });
+
+  it('makes the credentials catalog and specialty points workspace discoverable from Members', () => {
+    const members = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/members');
+    expect(members?.subnav).toContainEqual({
+      href: '/admin/credentials',
+      label: 'Credentials & Specialty Points',
     });
   });
 });

@@ -618,6 +618,7 @@ describe('personnel lifecycle administration', () => {
       staffing_position: {
         id: 'slot-created',
         stable_slot_key: 'SYNTHETIC/C/3/FF',
+        review_status: 'approved',
         shift: 'C',
         station: '3',
         position_name: 'Synthetic Firefighter',
@@ -636,7 +637,7 @@ describe('personnel lifecycle administration', () => {
     expect(create.status).toBe(201);
     expect(
       await h.db.run("SELECT review_status FROM staffing_positions WHERE id = 'slot-created'"),
-    ).toMatchObject({ results: [{ review_status: 'draft' }] });
+    ).toMatchObject({ results: [{ review_status: 'approved' }] });
 
     const conflictedRetry = await request(h, '/api/admin/personnel/changes', {
       method: 'POST',

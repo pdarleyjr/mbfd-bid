@@ -22,16 +22,17 @@ export type AdminNavLink = {
 export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
   { href: '/admin', label: 'Dashboard', exact: true },
   { href: '/admin/current-rosters', label: 'Current Rosters', exact: false },
+  { href: '/admin/staffing-structure', label: 'Staffing Structure', exact: false },
   { href: '/admin/telestaff', label: 'TeleStaff', exact: false },
   {
     href: '/admin/members',
-    label: 'Members & Credentials',
+    label: 'Members',
     exact: false,
     activePrefixes: ['/admin/credentials'],
     subnav: [
       { href: '/admin/members', label: 'Members' },
       { href: '/admin/members/roster', label: 'Member Roster' },
-      { href: '/admin/credentials', label: 'Credentials' },
+      { href: '/admin/credentials', label: 'Credentials & Specialty Points' },
     ],
   },
   {

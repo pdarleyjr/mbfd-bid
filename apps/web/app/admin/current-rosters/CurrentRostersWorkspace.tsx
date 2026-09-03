@@ -155,8 +155,15 @@ function RosterTable({ positions }: { positions: readonly CurrentRosterPosition[
   );
 }
 
-export function CurrentRostersWorkspace({ roster }: { roster: CurrentRosterResponse }) {
+export function CurrentRostersWorkspace({
+  roster,
+  filters = {},
+}: {
+  roster: CurrentRosterResponse;
+  filters?: Record<string, string>;
+}) {
   const hasProjectedRoster = roster.positions.length > 0;
+  const query = new URLSearchParams({ as_of: roster.asOf, ...filters }).toString();
 
   return (
     <section className="space-y-7" aria-labelledby="current-rosters-heading">
@@ -195,6 +202,52 @@ export function CurrentRostersWorkspace({ roster }: { roster: CurrentRosterRespo
             className="mt-1 block min-h-11 rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
           />
         </label>
+        <label className="block">
+          <span className="text-sm font-medium text-slate-200">Shift</span>
+          <select
+            name="shift"
+            defaultValue={filters.shift ?? ''}
+            className="mt-1 block min-h-11 rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+          >
+            <option value="">All shifts</option>
+            <option value="A">A Shift</option>
+            <option value="B">B Shift</option>
+            <option value="C">C Shift</option>
+            <option value="D">D / Days</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-slate-200">Station</span>
+          <input
+            name="station"
+            defaultValue={filters.station ?? ''}
+            className="mt-1 block min-h-11 w-28 rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-slate-200">Division</span>
+          <input
+            name="division"
+            defaultValue={filters.division ?? ''}
+            className="mt-1 block min-h-11 w-36 rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-slate-200">Unit</span>
+          <input
+            name="unit"
+            defaultValue={filters.unit ?? ''}
+            className="mt-1 block min-h-11 w-36 rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-slate-200">Rank</span>
+          <input
+            name="rank"
+            defaultValue={filters.rank ?? ''}
+            className="mt-1 block min-h-11 w-24 rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+          />
+        </label>
         <button
           type="submit"
           className="min-h-11 rounded border border-slate-500 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-slate-300"
@@ -205,11 +258,17 @@ export function CurrentRostersWorkspace({ roster }: { roster: CurrentRosterRespo
           Future dates show planned assignments; prior dates preserve reviewed history.
         </p>
         <a
-          href={`/api/admin/current-roster/export.csv?as_of=${encodeURIComponent(roster.asOf)}`}
+          href={`/api/admin/current-roster/export.csv?${query}`}
           className="inline-flex min-h-11 items-center rounded border border-sky-700 px-4 py-2 text-sm font-semibold text-sky-100 hover:border-sky-400 hover:text-white"
         >
           Download roster CSV
         </a>
+        <Link
+          href={`/admin/current-rosters/print?${query}` as Route}
+          className="inline-flex min-h-11 items-center rounded border border-slate-500 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-slate-300"
+        >
+          Printable roster
+        </Link>
       </form>
 
       <section aria-labelledby="roster-summary-heading">
