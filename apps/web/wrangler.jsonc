@@ -23,6 +23,20 @@
         "WORKER_URL": "https://api.staging.bid.mbfdhub.com",
         "WORKER_BASE_URL": "https://api.staging.bid.mbfdhub.com"
       }
+    },
+    "production": {
+      "name": "mbfd-bid-web-production-opennext",
+      "routes": [
+        {
+          "pattern": "bid.mbfdhub.com",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "ENV": "production",
+        "WORKER_URL": "https://api.bid.mbfdhub.com",
+        "WORKER_BASE_URL": "https://api.bid.mbfdhub.com"
+      }
     }
   }
 }

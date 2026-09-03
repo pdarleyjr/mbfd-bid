@@ -15,7 +15,10 @@
     "cf-typegen": "wrangler types --env staging --env-interface CloudflareEnv cloudflare-env.d.ts",
     "build:opennext:staging": "node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env staging",
     "preview:opennext:staging": "pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js preview --env staging",
-    "deploy:staging": "pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env staging"
+    "deploy:staging": "pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env staging",
+    "build:opennext:production": "node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env production",
+    "preview:opennext:production": "pnpm build:opennext:production && node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js preview --env production",
+    "deploy:production": "pnpm build:opennext:production && node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env production"
   },
   "dependencies": {
     "@mbfd/shared": "workspace:*",

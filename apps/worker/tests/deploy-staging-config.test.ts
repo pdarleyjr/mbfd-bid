@@ -67,4 +67,22 @@ describe('staging release configuration', () => {
       'pnpm -r --filter "./packages/*" build && pnpm -r typecheck',
     );
   });
+
+  it('keeps production writeback disabled and has a manual release path guarded by the production D1 ledger', () => {
+    const config = readWorkerConfig().slice(readWorkerConfig().indexOf('[env.production]'));
+    const workflow = readFileSync(
+      resolve(repositoryRoot, '.github', 'workflows', 'deploy-production.yml'),
+      'utf8',
+    );
+
+    expect(config).toContain('PORTAL_BASE_URL = "https://www.mbfdhub.com"');
+    expect(config).toContain('PORTAL_WRITEBACK_ENABLED = "false"');
+    expect(config).not.toContain('[[env.production.queues.producers]]');
+    expect(config).not.toContain('[[env.production.queues.consumers]]');
+    expect(workflow).toContain('workflow_dispatch:');
+    expect(workflow).toContain('node scripts/assert-production-d1-migration-guard.mjs');
+    expect(workflow).toContain('pnpm --dir apps/worker exec wrangler deploy --env production');
+    expect(workflow).not.toMatch(/wrangler\s+d1\s+migrations\s+apply/);
+    expect(workflow).not.toContain('db:seed:remote');
+  });
 });

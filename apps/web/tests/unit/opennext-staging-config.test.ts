@@ -22,7 +22,7 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-describe('staging OpenNext configuration', () => {
+describe('OpenNext deployment configuration', () => {
   it('uses the supported OpenNext runtime and removes the retired Pages adapter', () => {
     const packageJson = JSON.parse(readAppFile('package.json')) as {
       dependencies: Record<string, string | undefined>;
@@ -39,7 +39,6 @@ describe('staging OpenNext configuration', () => {
     // to the retired Pages adapter.
     expect(packageJson.devDependencies['@cloudflare/workers-types']).toBe('5.20260826.1');
     expect(packageJson.scripts['build:pages']).toBeUndefined();
-    expect(packageJson.scripts['deploy:production']).toBeUndefined();
     expect(packageJson.scripts.prebuild).toBe(
       'pnpm -r --filter @mbfd/shared --filter @mbfd/eligibility --filter @mbfd/a-day run build',
     );
@@ -55,9 +54,18 @@ describe('staging OpenNext configuration', () => {
     expect(packageJson.scripts['deploy:staging']).toBe(
       'pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env staging',
     );
+    expect(packageJson.scripts['build:opennext:production']).toBe(
+      'node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env production',
+    );
+    expect(packageJson.scripts['preview:opennext:production']).toBe(
+      'pnpm build:opennext:production && node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js preview --env production',
+    );
+    expect(packageJson.scripts['deploy:production']).toBe(
+      'pnpm build:opennext:production && node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env production',
+    );
   });
 
-  it('is explicitly bound to the staging API and staging hostname only', () => {
+  it('binds staging and production to distinct API and custom-domain targets', () => {
     const wrangler = JSON.parse(readAppFile('wrangler.jsonc')) as {
       main?: string;
       workers_dev?: boolean;
@@ -73,6 +81,7 @@ describe('staging OpenNext configuration', () => {
       >;
     };
     const staging = wrangler.env?.staging;
+    const production = wrangler.env?.production;
 
     expect(wrangler.main).toBe('.open-next/worker.js');
     expect(wrangler.workers_dev).toBe(false);
@@ -87,6 +96,16 @@ describe('staging OpenNext configuration', () => {
     });
     expect(readAppFile('.env.staging')).toBe(
       'NEXT_PUBLIC_WORKER_BASE=https://api.staging.bid.mbfdhub.com\n',
+    );
+    expect(production).toMatchObject({ name: 'mbfd-bid-web-production-opennext' });
+    expect(production?.routes).toEqual([{ pattern: 'bid.mbfdhub.com', custom_domain: true }]);
+    expect(production?.vars).toMatchObject({
+      ENV: 'production',
+      WORKER_URL: 'https://api.bid.mbfdhub.com',
+      WORKER_BASE_URL: 'https://api.bid.mbfdhub.com',
+    });
+    expect(readAppFile('.env.production')).toBe(
+      'NEXT_PUBLIC_WORKER_BASE=https://api.bid.mbfdhub.com\n',
     );
   });
 
@@ -108,8 +127,8 @@ describe('staging OpenNext configuration', () => {
     expect(headers).toContain('Cache-Control: public,max-age=31536000,immutable');
     expect(headers).toContain('https://api.staging.bid.mbfdhub.com');
     expect(headers).toContain('wss://api.staging.bid.mbfdhub.com');
-    expect(headers).not.toContain('https://api.bid.mbfdhub.com');
-    expect(headers).not.toContain('wss://api.bid.mbfdhub.com');
+    expect(headers).toContain('https://api.bid.mbfdhub.com');
+    expect(headers).toContain('wss://api.bid.mbfdhub.com');
 
     const edgeRuntimeFiles = sourceFiles(join(appRoot, 'app')).filter((filePath) =>
       readFileSync(filePath, 'utf8').includes("export const runtime = 'edge'"),
@@ -117,9 +136,10 @@ describe('staging OpenNext configuration', () => {
     expect(edgeRuntimeFiles).toEqual([]);
   });
 
-  it('has CI build the OpenNext artifact while staging deployment contains no Pages path', () => {
+  it('has CI build the staging artifact and a manual-only production release workflow without a Pages path', () => {
     const ci = readRepoFile('.github/workflows/ci.yml');
     const deployStaging = readRepoFile('.github/workflows/deploy-staging.yml');
+    const deployProduction = readRepoFile('.github/workflows/deploy-production.yml');
     const workerPackageJson = JSON.parse(readRepoFile('apps/worker/package.json')) as {
       scripts: Record<string, string | undefined>;
     };
@@ -136,5 +156,17 @@ describe('staging OpenNext configuration', () => {
     expect(deployStaging).not.toMatch(/wrangler\s+d1\s+migrations\s+apply/);
     expect(deployStaging).not.toContain('pnpm db:seed:remote');
     expect(workerPackageJson.scripts['db:seed:remote']).toBe('tsx seed/2026.ts --remote');
+    expect(deployProduction).toContain('workflow_dispatch:');
+    expect(deployProduction).not.toContain('\n  push:');
+    expect(deployProduction).not.toContain('\n  pull_request:');
+    expect(deployProduction).toContain('environment:\n      name: production');
+    expect(deployProduction).toContain('inputs.release_sha');
+    expect(deployProduction).toContain('node scripts/assert-production-d1-migration-guard.mjs');
+    expect(deployProduction).toContain('pnpm deploy:production');
+    expect(deployProduction).toContain('wrangler deploy --env production');
+    expect(deployProduction).not.toContain('Cloudflare Pages');
+    expect(deployProduction).not.toContain('next-on-pages');
+    expect(deployProduction).not.toContain('--commit-dirty');
+    expect(deployProduction).not.toContain('db:seed:remote');
   });
 });

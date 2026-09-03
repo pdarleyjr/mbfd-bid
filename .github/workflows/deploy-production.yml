@@ -1,0 +1,167 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full immutable commit SHA approved for this production release
+        required: true
+        type: string
+      backup_evidence:
+        description: Required D1 backup artifact key and Time Travel bookmark recorded before release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  PNPM_VERSION: 9.12.0
+  NODE_VERSION: 22.x
+
+jobs:
+  validate-artifacts:
+    name: Validate immutable production artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      BACKUP_EVIDENCE: ${{ inputs.backup_evidence }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Require a full immutable SHA and recorded rollback evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ -n "$BACKUP_EVIDENCE" ]]
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+      - name: Verify checked-out source identity is clean and exact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git diff --check
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm -r --filter "./packages/*" build
+      - run: pnpm typecheck
+      - name: Run release-configuration and auth regression assertions
+        run: |
+          pnpm --filter @mbfd/web test -- tests/unit/opennext-staging-config.test.ts
+          pnpm --filter @mbfd/worker exec vitest run --config vitest.config.ts tests/deploy-staging-config.test.ts tests/integration/legacy-password-removal.test.ts
+          node scripts/test-deploy-production-migration-guard.mjs
+      - name: Build production OpenNext artifact without deployment
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_WORKER_BASE: https://api.bid.mbfdhub.com
+        run: pnpm build:opennext:production
+
+  deploy-worker:
+    name: Deploy Worker (production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: validate-artifacts
+    environment:
+      name: production
+      url: https://api.bid.mbfdhub.com
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Require the controlled production D1 migration procedure
+        # This workflow is deliberately read-only against D1. If the ledger is
+        # behind, stop so the separately approved backup, Time Travel, and
+        # ordered migration procedure can run without reseeding any data.
+        run: node scripts/assert-production-d1-migration-guard.mjs
+      - name: Deploy Worker and record the exact release
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/worker exec wrangler deploy --env production | tee worker-deploy.log
+          {
+            echo "## Production Worker deployment"
+            echo "- SHA: \`$RELEASE_SHA\`"
+            echo "- Backup evidence: recorded at dispatch"
+            echo "- Wrangler deployment record:"
+            grep -E 'Deployment ID|Version ID|https://' worker-deploy.log || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-worker-deployment-${{ inputs.release_sha }}
+          path: worker-deploy.log
+          retention-days: 90
+
+  deploy-web:
+    name: Deploy Web (OpenNext Worker, production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [validate-artifacts, deploy-worker]
+    environment:
+      name: production
+      url: https://bid.mbfdhub.com
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build and deploy production OpenNext Worker
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_WORKER_BASE: https://api.bid.mbfdhub.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm deploy:production | tee web-deploy.log
+          {
+            echo "## Production Web deployment"
+            echo "- SHA: \`$RELEASE_SHA\`"
+            echo "- Wrangler deployment record:"
+            grep -E 'Deployment ID|Version ID|https://' web-deploy.log || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-web-deployment-${{ inputs.release_sha }}
+          path: apps/web/web-deploy.log
+          retention-days: 90
