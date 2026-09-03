@@ -18,13 +18,17 @@ async function makeAdminJwt() {
   const key = new TextEncoder().encode(SIGNING_KEY);
   const nowSec = Math.floor(Date.now() / 1000);
   return new SignJWT({
-    sub: 1 as unknown as string,
+    sub: 1,
+    hub_user_id: 1,
+    member_id: 1,
     emp: '10001',
     role: 'admin',
+    security_version: 1,
     rank: 'CPT',
     first_name: 'Admin',
     last_name: 'Tester',
     fresh_auth_at: nowSec,
+    authz_checked_at: nowSec,
   } as Record<string, unknown>)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()

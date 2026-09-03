@@ -22,12 +22,16 @@ async function makeJwt(role: 'admin' | 'member') {
   const nowSec = Math.floor(Date.now() / 1000);
   return new SignJWT({
     sub: 1,
+    hub_user_id: 1,
+    member_id: 1,
     emp: '10001',
     role,
+    security_version: 1,
     rank: 'CPT',
     first_name: 'Admin',
     last_name: 'Tester',
     fresh_auth_at: nowSec,
+    authz_checked_at: nowSec,
   } as Record<string, unknown>)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -111,9 +115,8 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Current Rosters', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'TeleStaff', exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: 'Members & Credentials', exact: true }),
-    ).toBeVisible();
+    await expect(page.locator('a[href="/admin/members"]')).toBeVisible();
+    await expect(page.locator('a[href="/admin/credentials"]')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Bid Setup', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'AI Assist', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Mock Bids', exact: true })).toBeVisible();
@@ -135,7 +138,7 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await page.goto('/admin');
 
     const mobileNavigation = page.locator('#admin-mobile-navigation');
-    const toggle = page.getByRole('button', { name: 'Open admin navigation', exact: true });
+    const toggle = page.getByRole('button', { name: /admin navigation$/ });
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(mobileNavigation).toBeHidden();

@@ -6,7 +6,9 @@ type AdvisoryKind = 'specialty_priority' | 'eligibility';
 
 interface AdvisoryStatus {
   provider: string;
+  model: string | null;
   mode: string;
+  providerAvailable: boolean;
   advisoryOnly: boolean;
   mayCommitBid: boolean;
   mayMutatePolicy: boolean;
@@ -15,7 +17,9 @@ interface AdvisoryStatus {
 
 const fallbackStatus: AdvisoryStatus = {
   provider: 'PENDING_CONFIGURATION',
+  model: null,
   mode: 'deterministic_fallback',
+  providerAvailable: false,
   advisoryOnly: true,
   mayCommitBid: false,
   mayMutatePolicy: false,
@@ -35,8 +39,8 @@ function describeError(payload: unknown, fallback: string): string {
 }
 
 /**
- * A compact, no-free-prompt interface for deterministic facts. The Worker
- * never sends this input to an external provider in this release.
+ * A compact, no-free-prompt interface for structured deterministic facts.
+ * The Worker strips reference fields before an optional advisory provider call.
  */
 export function AiAssistWorkspace() {
   const [status, setStatus] = useState<AdvisoryStatus>(fallbackStatus);
@@ -115,6 +119,24 @@ export function AiAssistWorkspace() {
         return;
       }
       if (typeof body === 'object' && body !== null && 'explanation' in body) {
+        if (
+          'provider' in body &&
+          typeof body.provider === 'string' &&
+          'model' in body &&
+          (typeof body.model === 'string' || body.model === null) &&
+          'mode' in body &&
+          typeof body.mode === 'string' &&
+          'providerAvailable' in body &&
+          typeof body.providerAvailable === 'boolean'
+        ) {
+          setStatus((current) => ({
+            ...current,
+            provider: body.provider as string,
+            model: body.model as string | null,
+            mode: body.mode as string,
+            providerAvailable: body.providerAvailable as boolean,
+          }));
+        }
         const explanation = body.explanation;
         if (typeof explanation === 'string') {
           setAnswer(explanation);
@@ -144,7 +166,9 @@ export function AiAssistWorkspace() {
             </p>
           </div>
           <span className="rounded-full border border-amber-600 bg-amber-950/40 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-100">
-            Deterministic fallback
+            {status.providerAvailable
+              ? 'Cloudflare Workers AI — advisory only'
+              : 'Deterministic fallback — provider unavailable'}
           </span>
         </div>
 
@@ -163,7 +187,9 @@ export function AiAssistWorkspace() {
           </div>
           <div className="rounded border border-slate-700 bg-slate-900/50 p-3">
             <dt className="text-slate-400">External provider</dt>
-            <dd className="mt-1 text-white">Not configured</dd>
+            <dd className="mt-1 text-white">
+              {status.providerAvailable ? (status.model ?? 'Configured') : 'Unavailable'}
+            </dd>
           </div>
         </dl>
 
@@ -188,8 +214,8 @@ export function AiAssistWorkspace() {
         <div>
           <h2 className="font-heading text-lg text-white">Explain supplied facts</h2>
           <p id="ai-assist-facts-help" className="mt-1 max-w-3xl text-sm text-slate-300">
-            Use an anonymous member reference rather than a name. The fallback validates the
-            structured facts locally and does not send them to an external model.
+            Use an anonymous member reference rather than a name. Reference fields are removed
+            before the structured facts reach the advisory provider.
           </p>
         </div>
 

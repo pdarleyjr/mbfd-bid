@@ -5,10 +5,13 @@ import { setupTestD1, teardownTestD1 } from './integration/helpers/test-d1.js';
 
 const workerRoot = resolve(import.meta.dirname, '..');
 
-describe('AI feature retirement configuration', () => {
-  it('has no Workers AI binding, dedicated AI KV binding, or per-minute cron', () => {
+describe('AI advisory configuration', () => {
+  it('binds Workers AI without restoring AI KV state or a per-minute cron', () => {
     const config = readFileSync(resolve(workerRoot, 'wrangler.toml'), 'utf8');
-    expect(config).not.toMatch(/^\s*\[env\.(?:staging|production)\.ai\]/m);
+    expect(config).toMatch(/^\s*\[env\.staging\.ai\]/m);
+    expect(config).toMatch(/^\s*\[env\.production\.ai\]/m);
+    expect(config.match(/binding = "AI"/g)).toHaveLength(2);
+    expect(config).toContain('AI_MODEL');
     expect(config).not.toContain('binding = "AI_KV"');
     expect(config).not.toContain('*/1 * * * *');
     expect(config).not.toContain('CF_AI_GATEWAY_URL');

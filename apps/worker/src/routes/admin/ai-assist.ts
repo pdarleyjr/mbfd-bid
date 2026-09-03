@@ -7,19 +7,23 @@ import { requireAdmin } from './middleware.js';
 
 type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
-/**
- * There is deliberately no live provider in this release. These routes turn
- * already-computed, structured engine facts into operational language without
- * accepting a free-form prompt, retaining a conversation, or mutating state.
- */
-const PROVIDER_STATUS = {
-  provider: 'PENDING_CONFIGURATION',
-  mode: 'deterministic_fallback',
+const ADVISORY_BOUNDARY = {
   advisoryOnly: true,
   mayCommitBid: false,
   mayMutatePolicy: false,
   mayMutateAssignments: false,
 } as const;
+
+function providerStatus(env: WorkerEnv) {
+  const providerAvailable = env.AI !== undefined && env.AI_MODEL !== undefined;
+  return {
+    provider: providerAvailable ? 'Cloudflare Workers AI' : 'PENDING_CONFIGURATION',
+    model: providerAvailable ? env.AI_MODEL : null,
+    mode: providerAvailable ? 'advisory_ai' : 'deterministic_fallback',
+    providerAvailable,
+    ...ADVISORY_BOUNDARY,
+  } as const;
+}
 
 const ReferenceSchema = z
   .string()
@@ -123,6 +127,45 @@ const ExplainSchema = z.discriminatedUnion('kind', [
 
 type ExplainRequest = z.infer<typeof ExplainSchema>;
 
+function deidentify(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(deidentify);
+  if (typeof value !== 'object' || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !key.endsWith('_reference'))
+      .map(([key, item]) => [key, deidentify(item)]),
+  );
+}
+
+async function providerExplanation(env: WorkerEnv, request: ExplainRequest): Promise<string> {
+  if (env.AI === undefined || env.AI_MODEL === undefined) {
+    throw new Error('provider unavailable');
+  }
+  const result = await env.AI.run(env.AI_MODEL, {
+    messages: [
+      {
+        role: 'system',
+        content:
+          'Explain the supplied structured MBFD Bid facts concisely. You are advisory only. Never make an award, change policy, change an assignment, infer missing facts, or claim that an action was performed.',
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ kind: request.kind, facts: deidentify(request.facts) }),
+      },
+    ],
+  });
+  if (
+    typeof result !== 'object' ||
+    result === null ||
+    !('response' in result) ||
+    typeof result.response !== 'string' ||
+    result.response.trim().length === 0
+  ) {
+    throw new Error('provider returned no explanation');
+  }
+  return result.response.trim().slice(0, 4_000);
+}
+
 function countWord(value: number): string {
   const words = [
     'zero',
@@ -219,15 +262,34 @@ function explain(request: ExplainRequest): string {
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
 
-router.get('/status', (c) => c.json(PROVIDER_STATUS));
+router.get('/status', (c) => c.json(providerStatus(c.env)));
 
 router.post('/explain', async (c) => {
   const raw = await c.req.json().catch(() => null);
   const parsed = ExplainSchema.safeParse(raw);
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
 
+  const status = providerStatus(c.env);
+  if (status.providerAvailable) {
+    try {
+      return c.json({
+        ...status,
+        determinationSource: 'supplied_deterministic_facts',
+        explanation: await providerExplanation(c.env, parsed.data),
+      });
+    } catch {
+      return c.json({
+        ...status,
+        mode: 'deterministic_fallback',
+        providerAvailable: false,
+        determinationSource: 'supplied_deterministic_facts',
+        explanation: explain(parsed.data),
+      });
+    }
+  }
+
   return c.json({
-    ...PROVIDER_STATUS,
+    ...status,
     determinationSource: 'supplied_deterministic_facts',
     explanation: explain(parsed.data),
   });

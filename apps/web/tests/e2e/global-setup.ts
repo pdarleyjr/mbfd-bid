@@ -11,12 +11,16 @@ export default async function globalSetup(_: FullConfig) {
   const nowSec = Math.floor(Date.now() / 1000);
   const payload: Record<string, unknown> = {
     sub: 555,
+    hub_user_id: 555,
+    member_id: 555,
     emp: '20731',
     role: 'member',
+    security_version: 1,
     rank: 'LT',
     first_name: 'Peter',
     last_name: 'Darley',
     fresh_auth_at: nowSec,
+    authz_checked_at: nowSec,
   };
   const jwt = await new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })

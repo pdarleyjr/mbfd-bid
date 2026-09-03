@@ -25,7 +25,9 @@ describe('year-round admin control-center safety', () => {
     expect(workspace).toContain('mayCommitBid: false');
     expect(workspace).toContain('mayMutatePolicy: false');
     expect(workspace).toContain('mayMutateAssignments: false');
-    expect(workspace).toContain('PENDING_CONFIGURATION');
+    expect(workspace).toContain('Cloudflare Workers AI');
+    expect(workspace).toContain('providerAvailable');
+    expect(workspace).toContain('Deterministic fallback — provider unavailable');
   });
 
   it('keeps System/Integrations as an authenticated, non-operational landing state', () => {

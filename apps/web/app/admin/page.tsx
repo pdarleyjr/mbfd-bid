@@ -24,15 +24,15 @@ const CONTROL_AREAS: readonly ControlArea[] = [
     title: 'Current Rosters',
     description:
       'Read the Bid-side staffing projection without treating vacancies as bid openings.',
-    state: 'Baseline pending',
-    stateClassName: 'text-amber-200',
+    state: 'Canonical projection',
+    stateClassName: 'text-slate-300',
   },
   {
     href: '/admin/telestaff',
     title: 'TeleStaff',
     description: 'Review the controlled staffing-source intake and reconciliation boundary.',
-    state: 'Read-only landing',
-    stateClassName: 'text-amber-200',
+    state: 'Controlled reconciliation',
+    stateClassName: 'text-slate-300',
   },
   {
     href: '/admin/members',
@@ -68,16 +68,17 @@ const CONTROL_AREAS: readonly ControlArea[] = [
   {
     href: '/admin/ai-assist',
     title: 'AI Assist',
-    description: 'See the explicit non-operational state for any future advisory assistance.',
-    state: 'Unavailable',
-    stateClassName: 'text-amber-200',
+    description:
+      'Explain de-identified deterministic facts with explicit provider/fallback status.',
+    state: 'Advisory only',
+    stateClassName: 'text-slate-300',
   },
   {
     href: '/admin/rehearsal',
     title: 'Mock Bids',
     description: 'Review rehearsal evidence without using mock activity as a staffing source.',
-    state: 'Baseline-gated',
-    stateClassName: 'text-amber-200',
+    state: 'Isolated rehearsal',
+    stateClassName: 'text-slate-300',
   },
   {
     href: '/admin/bid',
@@ -122,10 +123,10 @@ export default async function AdminDashboardPage() {
       </header>
 
       <div className="border-l-4 border-amber-500 bg-amber-950/30 px-4 py-4 text-sm text-amber-100">
-        <p className="font-semibold">Readiness boundaries remain in effect</p>
+        <p className="font-semibold">Operational safeguards remain in effect</p>
         <p className="mt-1 text-amber-100/90">
-          The authoritative staffing baseline is not loaded. Portal write-back remains disabled, and
-          no control on this dashboard starts a live bid or changes operational staffing.
+          Roster and staffing screens reflect the configured environment's canonical data. Portal
+          write-back remains disabled, and no control on this dashboard starts a live bid.
         </p>
       </div>
 

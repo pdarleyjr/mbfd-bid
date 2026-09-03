@@ -15,7 +15,10 @@ routes = [{ pattern = "api.staging.bid.mbfdhub.com", custom_domain = true }]
 # Read-only portal authentication remains available through PORTAL_BASE_URL.
 # Outbound bid publication is a separate, explicit capability and staging must
 # not obtain it merely by having a queue binding.
-vars = { ENV = "staging", PORTAL_BASE_URL = "https://staging.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid", R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging-v2" }
+vars = { ENV = "staging", PORTAL_BASE_URL = "https://staging.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid", R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging-v2", AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
+
+[env.staging.ai]
+binding = "AI"
 
 [[env.staging.d1_databases]]
 binding = "DB"
@@ -60,7 +63,10 @@ name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
 # Production publication remains disabled until a separate, accountable
 # configuration change explicitly sets a writer, endpoint, and literal true.
-vars = { ENV = "production", PORTAL_BASE_URL = "https://www.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid", R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-production-v2" }
+vars = { ENV = "production", PORTAL_BASE_URL = "https://www.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid", R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-production-v2", AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
+
+[env.production.ai]
+binding = "AI"
 
 [[env.production.d1_databases]]
 binding = "DB"

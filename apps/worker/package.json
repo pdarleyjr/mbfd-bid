@@ -21,7 +21,8 @@
     "db:migrate:local": "wrangler d1 migrations apply mbfd-bid-staging --env staging --local",
     "db:migrate:remote": "wrangler d1 migrations apply mbfd-bid-staging --remote --env staging",
     "db:seed:local": "tsx seed/2026.ts --local",
-    "db:seed:remote": "tsx seed/2026.ts --remote"
+    "db:seed:remote": "tsx seed/2026.ts --remote",
+    "production:baseline": "tsx scripts/production-baseline-bootstrap.ts"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.1.0",
