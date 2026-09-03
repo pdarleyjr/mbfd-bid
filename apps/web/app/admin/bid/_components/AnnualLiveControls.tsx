@@ -16,6 +16,7 @@ type Candidate = {
 };
 type SpecialtyState = {
   sequence: number;
+  current_bidder: Candidate | null;
   remaining_order: number[];
   fills: Record<string, { member_id: number }>;
   specialties: Array<{
@@ -62,6 +63,7 @@ export function AnnualLiveControls(props: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [amendFrom, setAmendFrom] = useState('');
   const [amendTo, setAmendTo] = useState('');
+  const [selectionPositionId, setSelectionPositionId] = useState('');
   const orderSequence = useRef<number | null>(null);
   const [order, setOrder] = useState<number[]>(() => {
     const cursor = props.bidOrder.findIndex((entry) => entry.memberId === props.currentBidderId);
@@ -96,6 +98,12 @@ export function AnnualLiveControls(props: Props) {
     const timer = setInterval(() => void load().catch(() => undefined), 2500);
     return () => clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    if (selectionPositionId && state?.fills[selectionPositionId] !== undefined) {
+      setSelectionPositionId('');
+    }
+  }, [selectionPositionId, state]);
 
   const selectedSpecialty =
     state?.specialties.find((specialty) => specialty.id === specialtyId) ?? null;
@@ -349,6 +357,47 @@ export function AnnualLiveControls(props: Props) {
             ) : null}
           </article>
         ) : null}
+
+        <article className="rounded border border-stone-300 p-3">
+          <h3 className="font-semibold text-stone-900">Record current bidder selection</h3>
+          <p className="text-xs text-stone-600">
+            Canonical selection for the active member; the frozen stage policy remains enforced.
+          </p>
+          <select
+            aria-label="Position selected by current bidder"
+            value={selectionPositionId}
+            onChange={(event) => setSelectionPositionId(event.target.value)}
+            className="mt-2 block w-full rounded border border-stone-400 px-2 py-2 text-sm"
+          >
+            <option value="">Open opportunity</option>
+            {props.positions
+              ?.filter((position) =>
+                state === null
+                  ? props.fills[position.id] === undefined
+                  : state.fills[position.id] === undefined,
+              )
+              .map((position) => (
+                <option key={position.id} value={position.id}>
+                  {position.id} · {position.positionName}
+                </option>
+              ))}
+          </select>
+          <button
+            type="button"
+            disabled={
+              busy || state === null || state.current_bidder === null || !selectionPositionId
+            }
+            onClick={() =>
+              void command('live.record_selection', {
+                memberId: state?.current_bidder?.member_id,
+                positionId: selectionPositionId,
+              })
+            }
+            className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
+          >
+            Commit selection
+          </button>
+        </article>
 
         <article className="rounded border border-stone-300 p-3">
           <h3 className="font-semibold text-stone-900">Amend latest committed selection</h3>
