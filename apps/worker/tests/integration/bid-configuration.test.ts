@@ -180,6 +180,23 @@ async function designateDraft(
   });
 }
 
+async function seedReplacementDraft(h: TestD1, version = '2027.3'): Promise<void> {
+  await h.db.run(
+    "INSERT INTO rule_books (version, effective_year, status) VALUES (?, 2027, 'draft')",
+    [version],
+  );
+  await h.db.run(
+    `INSERT INTO position_rules
+       (rule_book_version, position_id, template_version, required_criteria,
+        points_preference, tie_break_chain)
+     VALUES (?, 'A101', '2027.1',
+       '{"rank":["FF"],"credentials":[],"custom":[]}',
+       '{"max":0,"items":[]}',
+       '["points","rsc_seniority","rank_seniority"]')`,
+    [version],
+  );
+}
+
 describe('annual bid configuration selection', () => {
   let h: TestD1;
 
@@ -234,6 +251,78 @@ describe('annual bid configuration selection', () => {
     const stale = await designateDraft(h, 0);
     expect(stale.status).toBe(409);
     expect(await stale.json()).toEqual({ error: 'bid_configuration_changed' });
+  });
+
+  it('allows an audited replacement draft after publication only when no real session exists', async () => {
+    expect((await designateDraft(h)).status).toBe(200);
+    await h.db.run("UPDATE rule_books SET status = 'archived' WHERE version = '2027.1'");
+    await h.db.run("UPDATE rule_books SET status = 'active' WHERE version = '2027.2'");
+    await seedReplacementDraft(h);
+
+    const replacement = await adminRequest(h, '/api/admin/bid-configuration/2027', {
+      method: 'PUT',
+      body: JSON.stringify({
+        rule_book_version: '2027.3',
+        expected_configuration_revision: 1,
+        settings: {
+          expected_duration_days: 2,
+          turn_timer_seconds: 180,
+          credential_evaluation_on: '2027-01-15',
+        },
+        reason: 'Replace the published rehearsal designation before any real session exists.',
+      }),
+    });
+
+    expect(replacement.status).toBe(200);
+    expect(await replacement.json()).toMatchObject({
+      configuration: {
+        ruleBookVersion: '2027.3',
+        configurationRevision: 2,
+        annualPolicyDocumentId: null,
+        lifecycle: 'DRAFT',
+      },
+    });
+    expect(
+      (
+        await h.db.run(
+          "SELECT count(*) AS count FROM audit_log WHERE action = 'bid_configuration_set' AND target_id = '2027'",
+        )
+      ).results[0]?.count,
+    ).toBe(2);
+  });
+
+  it('refuses to replace a frozen designation after any real session history exists', async () => {
+    expect((await designateDraft(h)).status).toBe(200);
+    await h.db.run("UPDATE rule_books SET status = 'archived' WHERE version = '2027.1'");
+    await h.db.run("UPDATE rule_books SET status = 'active' WHERE version = '2027.2'");
+    await seedReplacementDraft(h);
+    await h.db.run(
+      `INSERT INTO bid_sessions
+        (id, bid_year, started_at, current_phase, turn_timer_seconds,
+         expected_duration_days, day_count, is_mock)
+       VALUES ('01HZZ000000000000REAL0001', 2027, ?, 'complete', 180, 2, 1, 0)`,
+      [NOW],
+    );
+
+    const replacement = await adminRequest(h, '/api/admin/bid-configuration/2027', {
+      method: 'PUT',
+      body: JSON.stringify({
+        rule_book_version: '2027.3',
+        expected_configuration_revision: 1,
+        settings: {
+          expected_duration_days: 2,
+          turn_timer_seconds: 180,
+          credential_evaluation_on: '2027-01-15',
+        },
+        reason: 'Attempt replacement after real session history exists.',
+      }),
+    });
+
+    expect(replacement.status).toBe(409);
+    expect(await replacement.json()).toEqual({ error: 'bid_configuration_real_session_exists' });
+    expect(
+      (await h.db.run('SELECT rule_book_version FROM bid_years WHERE year = 2027')).results,
+    ).toEqual([{ rule_book_version: '2027.2' }]);
   });
 
   it('rejects a new designation that omits the credential evaluation date instead of treating V1 settings as compliant', async () => {

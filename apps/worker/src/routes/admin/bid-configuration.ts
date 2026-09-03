@@ -140,7 +140,8 @@ router.get('/:year', async (c) => {
  *
  * Designates the one editable draft that subsequent mocks must snapshot. The
  * route is step-up protected, optimistic-concurrency guarded, and cannot
- * replace a configuration once its designated book is frozen/active.
+ * replace a frozen/active designation only while the year is still configuring
+ * and no real session history exists.
  */
 router.put(
   '/:year',
@@ -197,7 +198,16 @@ router.put(
             .where(eq(annualBidPolicyDocuments.id, body.annual_policy_document_id))
             .get(),
     ]);
-    if (currentBook?.status === 'active') return c.json({ error: 'bid_configuration_frozen' }, 409);
+    if (currentBook?.status === 'active') {
+      const realSession = await c.env.DB.prepare(
+        'SELECT 1 AS present FROM bid_sessions WHERE bid_year = ? AND is_mock = 0 LIMIT 1',
+      )
+        .bind(parsedYear.data)
+        .first<{ present: number }>();
+      if (realSession !== null) {
+        return c.json({ error: 'bid_configuration_real_session_exists' }, 409);
+      }
+    }
     if (candidateBook === undefined) return c.json({ error: 'rule_book_not_found' }, 404);
     if (candidateBook.effectiveYear !== parsedYear.data) {
       return c.json({ error: 'rule_book_year_mismatch' }, 409);
@@ -266,11 +276,19 @@ router.put(
         WHERE year = ?
           AND status = 'configuring'
           AND configuration_revision = ?
-          AND NOT EXISTS (
-            SELECT 1
-            FROM rule_books configured_book
-            WHERE configured_book.version = bid_years.rule_book_version
-              AND configured_book.status = 'active'
+          AND (
+            NOT EXISTS (
+              SELECT 1
+              FROM rule_books configured_book
+              WHERE configured_book.version = bid_years.rule_book_version
+                AND configured_book.status = 'active'
+            )
+            OR NOT EXISTS (
+              SELECT 1
+              FROM bid_sessions real_session
+              WHERE real_session.bid_year = bid_years.year
+                AND real_session.is_mock = 0
+            )
           )
           AND EXISTS (
             SELECT 1
@@ -338,8 +356,15 @@ router.put(
           .from(ruleBooks)
           .where(eq(ruleBooks.version, current.ruleBookVersion))
           .get();
-        if (currentTarget?.status === 'active')
-          return c.json({ error: 'bid_configuration_frozen' }, 409);
+        if (currentTarget?.status === 'active') {
+          const realSession = await c.env.DB.prepare(
+            'SELECT 1 AS present FROM bid_sessions WHERE bid_year = ? AND is_mock = 0 LIMIT 1',
+          )
+            .bind(parsedYear.data)
+            .first<{ present: number }>();
+          if (realSession !== null)
+            return c.json({ error: 'bid_configuration_real_session_exists' }, 409);
+        }
       }
       return c.json({ error: 'bid_configuration_changed' }, 409);
     }

@@ -428,6 +428,63 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     ).toEqual([{ member_id: POLICY_MEMBER_ID, pool: 'FF' }]);
   });
 
+  it('starts a V3 mock with the exact annual stage order and canonical annual state', async () => {
+    await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
+    await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
+      sessionId,
+    ]);
+    await seedFrozenPolicySnapshot(h, sessionId, Date.now(), {
+      liveActionGrants: ['approve_transition'],
+    });
+
+    const res = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await freshPolicyAdmin()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    expect(
+      (
+        await h.db.run(
+          'SELECT ordinal, member_id, stage_id FROM bid_order WHERE bid_session_id = ? ORDER BY ordinal',
+          [sessionId],
+        )
+      ).results,
+    ).toEqual(
+      ANNUAL_STAGE_IDS.map((stageId, index) => ({
+        ordinal: index + 1,
+        member_id: POLICY_MEMBER_ID + index,
+        stage_id: stageId,
+      })),
+    );
+    const canonical = await h.db.run(
+      'SELECT current_seq, state_json FROM canonical_bid_session_state WHERE bid_session_id = ?',
+      [sessionId],
+    );
+    expect(canonical.results).toHaveLength(1);
+    const row = canonical.results[0] as { current_seq: number; state_json: string };
+    expect(row.current_seq).toBe(0);
+    expect(JSON.parse(row.state_json)).toMatchObject({
+      bidSessionId: sessionId,
+      currentPhase: 'position_bid',
+      currentBidderId: POLICY_MEMBER_ID,
+      queueCursor: 0,
+      live: {
+        currentStageId: 'D_CAPTAIN',
+        completedStageIds: [],
+        presentation: { mode: 'OFF' },
+      },
+      annual: {
+        preferenceSheets: [],
+        contactAttempts: [],
+        unresolvedMemberIds: [],
+      },
+    });
+  });
+
   it('fails closed for a live session when required readiness facts are absent', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {

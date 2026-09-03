@@ -154,4 +154,67 @@ describe('BidSetupWorkspace', () => {
 
     expect(html).not.toContain('data-testid="reviewed-2026-source-bootstrap"');
   });
+
+  it('offers a guarded replacement draft for a frozen configuring year', () => {
+    const html = renderToString(
+      <BidSetupWorkspace
+        year={2027}
+        configuration={{
+          ...DRAFT_CONFIGURATION,
+          ruleBookVersion: '2027.2',
+          settings: {
+            ...DRAFT_CONFIGURATION.settings,
+            v: 3,
+            livePolicy: {
+              v: 1,
+              policyRevision: 'synthetic-ui-test',
+              stages: [],
+              dispositions: [],
+              actionPermissions: [],
+              annualOperations: {
+                v: 1,
+                stageOrder: [],
+                requiredTopologyPositionIds: [],
+                contact: {
+                  minimumAttempts: 3,
+                  timingMode: 'OPERATOR_DISCRETION',
+                  durationSeconds: null,
+                },
+                aDay: {
+                  combatGroups: ['G1', 'G2', 'G3', 'G4'],
+                  min: 18,
+                  max: 19,
+                  captainDcMax: 2,
+                  specialtyMaximums: {
+                    MARINE_ASSIGNED: 1,
+                    MARINE_FLOAT: 1,
+                    DE: 2,
+                    SWAT: 1,
+                  },
+                },
+              },
+              specialtyCatalogReference: null,
+              aDayPolicyReference: null,
+              transitionPolicyReference: null,
+              publicationPolicyReference: null,
+            },
+          },
+          lifecycle: 'FROZEN',
+        }}
+        ruleBooks={[
+          { version: '2027.2', effectiveYear: 2027, status: 'active' },
+          { version: '2027.3', effectiveYear: 2027, status: 'draft' },
+        ]}
+        configurationError={null}
+        ruleBooksError={null}
+      />,
+    );
+
+    expect(html).toContain('Designate reviewed replacement draft');
+    expect(html).toContain('<option value="2027.3">');
+    expect(html).toContain(' (draft)');
+    expect(html).toContain('blocks the replacement if any real session history exists');
+    expect(html).toContain('value="2027-01-15"');
+    expect(html).toContain('data-testid="bid-configuration-save"');
+  });
 });

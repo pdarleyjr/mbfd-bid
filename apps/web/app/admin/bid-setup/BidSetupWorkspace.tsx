@@ -84,7 +84,9 @@ export function BidSetupWorkspace({
   const draftRuleBooks = ruleBooks.filter(
     (ruleBook) => ruleBook.effectiveYear === year && ruleBook.status === 'draft',
   );
-  const [selectedVersion, setSelectedVersion] = useState(configuration?.ruleBookVersion ?? '');
+  const [selectedVersion, setSelectedVersion] = useState(
+    configuration?.lifecycle === 'FROZEN' ? '' : (configuration?.ruleBookVersion ?? ''),
+  );
   const [expectedDurationDays, setExpectedDurationDays] = useState(
     configuration?.settings?.expectedDurationDays ?? 2,
   );
@@ -92,7 +94,9 @@ export function BidSetupWorkspace({
     configuration?.settings?.turnTimerSeconds ?? 180,
   );
   const [credentialEvaluationOn, setCredentialEvaluationOn] = useState(
-    configuration?.settings?.v === 2 ? configuration.settings.credentialEvaluationOn : '',
+    configuration?.settings?.v === 2 || configuration?.settings?.v === 3
+      ? configuration.settings.credentialEvaluationOn
+      : '',
   );
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +110,8 @@ export function BidSetupWorkspace({
     configuration.bidYearStatus === 'configuring' &&
     (configuration.lifecycle === 'UNCONFIGURED' ||
       configuration.lifecycle === 'DRAFT' ||
-      configuration.lifecycle === 'LEGACY_EVALUATION_DATE_REQUIRED');
+      configuration.lifecycle === 'LEGACY_EVALUATION_DATE_REQUIRED' ||
+      (configuration.lifecycle === 'FROZEN' && draftRuleBooks.length > 0));
 
   async function saveConfiguration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -320,7 +325,7 @@ export function BidSetupWorkspace({
               <div>
                 <dt className="text-slate-400">Credential evaluation date</dt>
                 <dd className="mt-0.5 font-mono text-white">
-                  {configuration.settings?.v === 2
+                  {configuration.settings?.v === 2 || configuration.settings?.v === 3
                     ? configuration.settings.credentialEvaluationOn
                     : 'Required before a new session'}
                 </dd>
@@ -339,9 +344,11 @@ export function BidSetupWorkspace({
             )}
 
             {configuration.lifecycle === 'FROZEN' && (
-              <p className="mt-4 rounded border border-slate-600 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
-                This configuration is frozen. It is read-only here; no replacement designation is
-                offered.
+              <p className="mt-4 rounded border border-amber-700 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+                The designated rule book remains frozen. A reviewed replacement draft can be
+                designated only while this bid year is configuring, and the server blocks the
+                replacement if any real session history exists. Replacing the designation clears the
+                prior annual-policy binding so the new draft must be reviewed and published.
               </p>
             )}
 
@@ -405,9 +412,11 @@ export function BidSetupWorkspace({
                   <h3 className="font-heading text-base text-white">
                     {configuration.lifecycle === 'DRAFT'
                       ? 'Update designated draft configuration'
-                      : configuration.lifecycle === 'LEGACY_EVALUATION_DATE_REQUIRED'
-                        ? 'Upgrade legacy designated configuration'
-                        : 'Designate draft configuration'}
+                      : configuration.lifecycle === 'FROZEN'
+                        ? 'Designate reviewed replacement draft'
+                        : configuration.lifecycle === 'LEGACY_EVALUATION_DATE_REQUIRED'
+                          ? 'Upgrade legacy designated configuration'
+                          : 'Designate draft configuration'}
                   </h3>
                   <p className="mt-1 text-sm text-slate-300">
                     Draft candidates come from the existing rule-book listing. The designated
@@ -422,7 +431,8 @@ export function BidSetupWorkspace({
                     onChange={(event) => setSelectedVersion(event.target.value)}
                     className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 font-mono text-white"
                   >
-                    {configuration.lifecycle === 'UNCONFIGURED' && (
+                    {(configuration.lifecycle === 'UNCONFIGURED' ||
+                      configuration.lifecycle === 'FROZEN') && (
                       <option value="">Select a draft candidate</option>
                     )}
                     {draftRuleBooks.map((ruleBook) => (

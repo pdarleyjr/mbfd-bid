@@ -18,6 +18,7 @@ import {
 import { getDb } from '../../db/index.js';
 import { bidOrder, bidSessions, bidYears } from '../../db/schema.js';
 import type { BidSessionState } from '../../durable/bid-session-state.js';
+import { initializeAnnualOperations } from '../../lib/annual-bid-operations.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import {
@@ -410,7 +411,7 @@ router.post(
       return c.json({ error: 'live_stage_policy_required' }, 409);
     }
     const stagedOrder =
-      !s.isMock && frozenPolicy.snapshot.v === 3 && frozenPolicy.snapshot.settings.v === 3
+      frozenPolicy.snapshot.v === 3 && frozenPolicy.snapshot.settings.v === 3
         ? computeFrozenStageOrder(frozenPolicy.snapshot, frozenPolicy.snapshot.settings.livePolicy)
         : null;
     if (stagedOrder !== null && !stagedOrder.ok) {
@@ -488,6 +489,33 @@ router.post(
         );
       }
     }
+    const canonicalState: BidSessionState | null =
+      stagedOrder?.ok === true
+        ? {
+            bidSessionId: id,
+            currentPhase: 'position_bid',
+            currentBidderId: expectedOrder[0]?.memberId ?? null,
+            turnStartedAtMs: now.getTime(),
+            turnTimerSeconds: frozenPolicy.snapshot.settings.turnTimerSeconds,
+            lastSeq: 0,
+            fills: {},
+            bidOrder: expectedOrder,
+            queueCursor: 0,
+            frozenAt: null,
+            aDay: null,
+            live: {
+              currentStageId: expectedOrder[0]?.stageId ?? null,
+              completedStageIds: [],
+              pausedPhase: null,
+              lastSelectionBidId: null,
+              dispositions: [],
+              specialty: null,
+              presentation: { mode: 'OFF', heldAtSeq: null, heldProjection: null },
+            },
+            annual: initializeAnnualOperations({ preferenceSheets: [] }),
+          }
+        : null;
+    const sessionUpdateIndex = statements.length;
     statements.push(
       c.env.DB.prepare(
         `UPDATE bid_sessions
@@ -498,6 +526,17 @@ router.post(
                 mock_control_revision = mock_control_revision + 1
           WHERE id = ? AND current_phase = 'config'`,
       ).bind(expectedOrder[0]?.memberId ?? null, now.getTime(), now.getTime(), id),
+    );
+    if (canonicalState !== null) {
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO canonical_bid_session_state
+             (bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at)
+           VALUES (?, 0, ?, NULL, ?, ?)`,
+        ).bind(id, JSON.stringify(canonicalState), now.getTime(), now.getTime()),
+      );
+    }
+    statements.push(
       auditInsertStatement(
         c.env.DB,
         {
@@ -532,7 +571,7 @@ router.post(
       }
       const results = await c.env.DB.batch(statements);
       if (
-        results[results.length - 2]?.meta.changes !== 1 ||
+        results[sessionUpdateIndex]?.meta.changes !== 1 ||
         results[results.length - 1]?.meta.changes !== 1
       ) {
         return c.json({ error: 'session_state_changed' }, 409);

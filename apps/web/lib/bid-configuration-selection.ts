@@ -1,3 +1,5 @@
+import type { BidConfigurationSettings } from '@mbfd/shared';
+
 export type BidConfigurationLifecycle =
   | 'UNCONFIGURED'
   | 'DRAFT'
@@ -12,19 +14,7 @@ export interface BidConfiguration {
   positionTemplateVersion: string | null;
   configurationRevision: number;
   ruleBookRevision: number | null;
-  settings:
-    | {
-        v: 1;
-        expectedDurationDays: number;
-        turnTimerSeconds: number;
-      }
-    | {
-        v: 2;
-        expectedDurationDays: number;
-        turnTimerSeconds: number;
-        credentialEvaluationOn: string;
-      }
-    | null;
+  settings: BidConfigurationSettings | null;
   lifecycle: BidConfigurationLifecycle;
 }
 
@@ -68,7 +58,7 @@ export function isBoundBidConfiguration(
     configuration.ruleBookVersion.length > 0 &&
     typeof configuration.positionTemplateVersion === 'string' &&
     configuration.positionTemplateVersion.length > 0 &&
-    configuration.settings?.v === 2 &&
+    (configuration.settings?.v === 2 || configuration.settings?.v === 3) &&
     Number.isSafeInteger(configuration.configurationRevision) &&
     configuration.configurationRevision >= 0
   );
