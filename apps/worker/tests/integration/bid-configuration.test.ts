@@ -367,6 +367,24 @@ describe('annual bid configuration selection', () => {
     });
   });
 
+  it('rehearses the exact designated configuration after its rule book is published', async () => {
+    expect((await designateDraft(h)).status).toBe(200);
+    await seedCommittedTeleStaffBaseline(h);
+    await h.db.run("UPDATE rule_books SET status = 'archived' WHERE version = '2027.1';");
+    await h.db.run("UPDATE rule_books SET status = 'active' WHERE version = '2027.2';");
+
+    const created = await adminRequest(h, '/api/admin/bid-session', {
+      method: 'POST',
+      body: JSON.stringify({ bid_year: 2027, is_mock: true }),
+    });
+
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({
+      is_mock: true,
+      rule_book_version: '2027.2',
+    });
+  });
+
   it('keeps Mock A immutable when the same draft configuration and rules evolve for Mock B', async () => {
     expect((await designateDraft(h)).status).toBe(200);
     const canonicalAssignmentsBefore = await h.db.run(

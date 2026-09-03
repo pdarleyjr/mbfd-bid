@@ -240,7 +240,10 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
           FROM rule_books
           WHERE version = ?
             AND revision = ?
-            AND status = ?
+            AND (
+              (? = 'mock' AND status IN ('draft', 'active'))
+              OR (? = 'live' AND status = 'active')
+            )
         )
         AND EXISTS (
           SELECT 1
@@ -259,7 +262,8 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       requestedMode === 'mock' ? 1 : 0,
       policy.snapshot.ruleBookVersion,
       policy.snapshot.ruleBookRevision,
-      requestedMode === 'mock' ? 'draft' : 'active',
+      requestedMode,
+      requestedMode,
       body.bid_year,
       policy.snapshot.ruleBookVersion,
       policy.snapshot.positionTemplateVersion,

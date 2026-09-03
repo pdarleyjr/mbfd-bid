@@ -698,7 +698,11 @@ export async function loadConfiguredBidYearPolicy(
     .get();
   if (book === undefined) return { ok: false, code: 'bid_configuration_rule_book_missing' };
   if (book.effectiveYear !== bidYear) return { ok: false, code: 'bid_configuration_year_mismatch' };
-  if (mode === 'mock' && book.status !== 'draft') {
+  // Rehearsal must remain available both before and after publication so the
+  // exact designated evidence can be regression-tested without reopening or
+  // replacing a frozen production configuration. Archived books are still
+  // rejected, and live mode remains active-only below.
+  if (mode === 'mock' && book.status !== 'draft' && book.status !== 'active') {
     return { ok: false, code: 'bid_configuration_draft_required' };
   }
   if (mode === 'live' && book.status !== 'active') {
