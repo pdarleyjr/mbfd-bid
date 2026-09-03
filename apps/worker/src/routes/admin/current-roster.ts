@@ -121,6 +121,15 @@ function currentUtcDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function canonicalRosterShift(value: string | null): string | null {
+  if (value === null) return null;
+  const normalized = value.trim().toUpperCase();
+  const match = /^([ABCD])(?: SHIFT)?$/.exec(normalized);
+  if (match?.[1] !== undefined) return match[1];
+  if (normalized === 'D / DAYS' || normalized === 'DAYS') return 'D';
+  return value;
+}
+
 function readFilter(value: string | undefined, name: string): { value?: string; error?: string } {
   if (value === undefined) return {};
   const trimmed = value.trim();
@@ -199,6 +208,21 @@ async function loadCurrentRosterProjection(
   ];
   for (const { name, value } of parsedFilters) {
     if (!value) continue;
+    if (name === 'shift' && /^[ABCD]$/.test(value.toUpperCase())) {
+      where.push(
+        `CASE UPPER(TRIM(sp.shift))
+           WHEN 'A SHIFT' THEN 'A'
+           WHEN 'B SHIFT' THEN 'B'
+           WHEN 'C SHIFT' THEN 'C'
+           WHEN 'D SHIFT' THEN 'D'
+           WHEN 'D / DAYS' THEN 'D'
+           WHEN 'DAYS' THEN 'D'
+           ELSE UPPER(TRIM(sp.shift))
+         END = ?`,
+      );
+      bindings.push(value.toUpperCase());
+      continue;
+    }
     where.push(`${columnByFilter[name]} = ?`);
     bindings.push(value);
   }
@@ -336,7 +360,7 @@ async function loadCurrentRosterProjection(
     id: row.id,
     stableSlotKey: row.stable_slot_key,
     division: row.division,
-    shift: row.shift,
+    shift: canonicalRosterShift(row.shift),
     station: row.station,
     unit: row.unit,
     positionName: row.position_name,
