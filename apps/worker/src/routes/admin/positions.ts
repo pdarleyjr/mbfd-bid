@@ -14,6 +14,12 @@ import {
   staffingPositions,
 } from '../../db/schema.js';
 import { auditInsertStatement } from '../../lib/audit.js';
+import {
+  REVIEWED_2026_DRAFT_RULE_BOOK,
+  REVIEWED_2026_SOURCE_PROVENANCE,
+  REVIEWED_2026_SOURCE_TEMPLATE,
+  buildReviewed2026Source,
+} from '../../lib/reviewed-2026-source.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -32,6 +38,8 @@ const ReconcileStationSixSchema = z
 const STATION_SIX_SOURCE = '2026.1';
 const STATION_SIX_TARGET = '2026.2';
 const STATION_SIX_RULE_BOOK = '2026.2';
+const REVIEWED_SOURCE_REFERENCE =
+  'User-supplied 2026 Bid policy v3, staffing guidance, assignment source, credentials package, and workbook package';
 const ADMINISTRATIVE_DIVISION_CHIEF_BINDINGS = [
   { positionId: 'A211', shift: 'A Shift', shiftCode: 'A' },
   { positionId: 'B211', shift: 'B Shift', shiftCode: 'B' },
@@ -211,6 +219,240 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
     }),
   ]);
   return c.json({ destVersion, destYear, copied: srcPositions.length });
+});
+
+/**
+ * Authenticated one-time bridge from an empty production database to the
+ * reviewed 2026 annual configuration workflow. It creates an immutable source
+ * snapshot and a cloned draft in one D1 batch. It never designates, publishes,
+ * or starts a Bid; the ordinary reconciliation and configuration routes retain
+ * those separate gates.
+ */
+router.post('/bootstrap-reviewed-2026-source', requireStepUpAuth(), async (c) => {
+  const parsed = ReconcileStationSixSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  if (parsed.data.reason_code !== 'rule_override.policy_direction') {
+    return c.json({ error: 'invalid_reason_for_action' }, 400);
+  }
+
+  const db = getDb(c.env.DB);
+  const [year, sourceTemplate, targetTemplate, sourceBook, draftBook] = await Promise.all([
+    db.select().from(bidYears).where(eq(bidYears.year, 2026)).get(),
+    db
+      .select()
+      .from(positionTemplates)
+      .where(eq(positionTemplates.version, REVIEWED_2026_SOURCE_TEMPLATE))
+      .get(),
+    db
+      .select()
+      .from(positionTemplates)
+      .where(eq(positionTemplates.version, STATION_SIX_TARGET))
+      .get(),
+    db.select().from(ruleBooks).where(eq(ruleBooks.version, REVIEWED_2026_SOURCE_TEMPLATE)).get(),
+    db.select().from(ruleBooks).where(eq(ruleBooks.version, REVIEWED_2026_DRAFT_RULE_BOOK)).get(),
+  ]);
+
+  if (year === undefined) return c.json({ error: 'bid_year_not_found' }, 404);
+  if (
+    year.status !== 'configuring' ||
+    year.positionTemplateVersion !== null ||
+    year.ruleBookVersion !== null
+  ) {
+    return c.json({ error: 'bid_year_already_designated' }, 409);
+  }
+
+  const stateCounts = await c.env.DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM positions WHERE template_version = ?) AS source_positions,
+       (SELECT COUNT(*) FROM positions WHERE template_version = ?) AS target_positions,
+       (SELECT COUNT(*) FROM position_rules WHERE rule_book_version = ?) AS source_rules,
+       (SELECT COUNT(*) FROM position_rules WHERE rule_book_version = ?) AS draft_rules,
+       (SELECT COUNT(*) FROM rule_book_position_participation WHERE rule_book_version = ?) AS source_participation,
+       (SELECT COUNT(*) FROM rule_book_position_participation WHERE rule_book_version = ?) AS draft_participation`,
+  )
+    .bind(
+      REVIEWED_2026_SOURCE_TEMPLATE,
+      STATION_SIX_TARGET,
+      REVIEWED_2026_SOURCE_TEMPLATE,
+      REVIEWED_2026_DRAFT_RULE_BOOK,
+      REVIEWED_2026_SOURCE_TEMPLATE,
+      REVIEWED_2026_DRAFT_RULE_BOOK,
+    )
+    .first<{
+      source_positions: number;
+      target_positions: number;
+      source_rules: number;
+      draft_rules: number;
+      source_participation: number;
+      draft_participation: number;
+    }>();
+  if (stateCounts === null) return c.json({ error: 'reviewed_source_state_unavailable' }, 500);
+
+  const preReconciliationComplete =
+    sourceTemplate !== undefined &&
+    targetTemplate === undefined &&
+    sourceBook?.status === 'archived' &&
+    draftBook?.status === 'draft' &&
+    stateCounts.source_positions === 233 &&
+    stateCounts.target_positions === 0 &&
+    stateCounts.source_rules === 229 &&
+    stateCounts.draft_rules === 229 &&
+    stateCounts.source_participation === 3 &&
+    stateCounts.draft_participation === 3;
+  const postReconciliationComplete =
+    sourceTemplate !== undefined &&
+    targetTemplate !== undefined &&
+    sourceBook?.status === 'archived' &&
+    draftBook?.status === 'draft' &&
+    stateCounts.source_positions === 233 &&
+    stateCounts.target_positions === 242 &&
+    stateCounts.source_rules === 229 &&
+    stateCounts.draft_rules === 238 &&
+    stateCounts.source_participation === 3 &&
+    stateCounts.draft_participation === 3;
+  if (preReconciliationComplete || postReconciliationComplete) {
+    return c.json({
+      source_template_version: REVIEWED_2026_SOURCE_TEMPLATE,
+      source_rule_book_version: REVIEWED_2026_SOURCE_TEMPLATE,
+      draft_rule_book_version: REVIEWED_2026_DRAFT_RULE_BOOK,
+      source_positions: 233,
+      source_rules: 229,
+      administrative_positions: 3,
+      resumed: true,
+    });
+  }
+
+  const emptyState =
+    sourceTemplate === undefined &&
+    targetTemplate === undefined &&
+    sourceBook === undefined &&
+    draftBook === undefined &&
+    Object.values(stateCounts).every((count) => count === 0);
+  if (!emptyState) {
+    return c.json({ error: 'reviewed_source_state_conflict' }, 409);
+  }
+
+  const source = buildReviewed2026Source();
+  const statements: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      'INSERT INTO position_templates (version, effective_year, notes) VALUES (?, 2026, ?)',
+    ).bind(
+      REVIEWED_2026_SOURCE_TEMPLATE,
+      `${REVIEWED_SOURCE_REFERENCE}; source snapshot retained for traceable draft reconciliation`,
+    ),
+    c.env.DB.prepare(
+      `INSERT INTO rule_books (version, effective_year, status, notes)
+       VALUES (?, 2026, 'draft', ?), (?, 2026, 'draft', ?)`,
+    ).bind(
+      REVIEWED_2026_SOURCE_TEMPLATE,
+      'Reviewed immutable 2026.1 source snapshot; never published as the production policy',
+      REVIEWED_2026_DRAFT_RULE_BOOK,
+      'Editable 2026.2 draft cloned from the reviewed source package',
+    ),
+  ];
+
+  for (let offset = 0; offset < source.positions.length; offset += 8) {
+    const chunk = source.positions.slice(offset, offset + 8);
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO positions (
+           id, template_version, shift, station, division, unit, rank_required,
+           position_name, is_floating, is_vacant_by_design, is_excluded_from_count
+         ) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}`,
+      ).bind(
+        ...chunk.flatMap((position) => [
+          position.id,
+          REVIEWED_2026_SOURCE_TEMPLATE,
+          position.shift,
+          position.station,
+          position.division,
+          position.unit,
+          position.rankRequired,
+          position.positionName,
+          position.isFloating ? 1 : 0,
+          position.isVacantByDesign ? 1 : 0,
+          position.isExcludedFromCount ? 1 : 0,
+        ]),
+      ),
+    );
+  }
+
+  for (const ruleBookVersion of [REVIEWED_2026_SOURCE_TEMPLATE, REVIEWED_2026_DRAFT_RULE_BOOK]) {
+    for (let offset = 0; offset < source.rules.length; offset += 10) {
+      const chunk = source.rules.slice(offset, offset + 10);
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO position_rules (
+             rule_book_version, position_id, template_version, required_criteria,
+             points_preference, tie_break_chain, notes
+           ) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}`,
+        ).bind(
+          ...chunk.flatMap((rule) => [
+            ruleBookVersion,
+            rule.positionId,
+            REVIEWED_2026_SOURCE_TEMPLATE,
+            rule.requiredCriteria,
+            rule.pointsPreference,
+            rule.tieBreakChain,
+            rule.notes,
+          ]),
+        ),
+      );
+    }
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO rule_book_position_participation (
+           rule_book_version, position_id, template_version, bid_participation,
+           authoritative_source_ref, created_at
+         ) VALUES ${source.administrativePositionIds.map(() => "(?, ?, ?, 'ADMIN_ASSIGNED_NON_BIDDABLE', ?, ?)").join(', ')}`,
+      ).bind(
+        ...source.administrativePositionIds.flatMap((positionId) => [
+          ruleBookVersion,
+          positionId,
+          REVIEWED_2026_SOURCE_TEMPLATE,
+          '2026 Bid Policy v3 administrative Division Chief direction',
+          Date.now(),
+        ]),
+      ),
+    );
+  }
+  statements.push(
+    // Participation rows are protected by a draft-only trigger. Archive the
+    // immutable source only after those rows exist, still inside this batch.
+    c.env.DB.prepare(
+      "UPDATE rule_books SET status = 'archived' WHERE version = ? AND status = 'draft'",
+    ).bind(REVIEWED_2026_SOURCE_TEMPLATE),
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: c.get('claims').member_id,
+      action: 'override_rule',
+      targetKind: 'position_template',
+      targetId: REVIEWED_2026_SOURCE_TEMPLATE,
+      afterState: {
+        source_positions: source.positions.length,
+        source_rules: source.rules.length,
+        draft_rule_book_version: REVIEWED_2026_DRAFT_RULE_BOOK,
+        administrative_positions: source.administrativePositionIds.length,
+        provenance: REVIEWED_2026_SOURCE_PROVENANCE,
+      },
+      reason: parsed.data.reason,
+    }),
+  );
+  await c.env.DB.batch(statements);
+
+  return c.json(
+    {
+      source_template_version: REVIEWED_2026_SOURCE_TEMPLATE,
+      source_rule_book_version: REVIEWED_2026_SOURCE_TEMPLATE,
+      draft_rule_book_version: REVIEWED_2026_DRAFT_RULE_BOOK,
+      source_positions: source.positions.length,
+      source_rules: source.rules.length,
+      administrative_positions: source.administrativePositionIds.length,
+      resumed: false,
+    },
+    201,
+  );
 });
 
 /**

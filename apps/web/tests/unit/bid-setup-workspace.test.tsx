@@ -106,4 +106,52 @@ describe('BidSetupWorkspace', () => {
     expect(html).toContain('<option value="" selected="">Select a draft candidate</option>');
     expect(html).not.toContain('<option value="2028.1" selected="">');
   });
+
+  it('offers the reviewed source bootstrap only for an empty 2026 configuration', () => {
+    const html = renderToString(
+      <BidSetupWorkspace
+        year={2026}
+        configuration={{
+          bidYear: 2026,
+          bidYearStatus: 'configuring',
+          ruleBookVersion: null,
+          positionTemplateVersion: null,
+          configurationRevision: 0,
+          ruleBookRevision: null,
+          settings: null,
+          lifecycle: 'UNCONFIGURED',
+        }}
+        ruleBooks={[]}
+        configurationError={null}
+        ruleBooksError={null}
+      />,
+    );
+
+    expect(html).toContain('Initialize reviewed 2026 source');
+    expect(html).toContain('data-testid="reviewed-2026-source-bootstrap"');
+    expect(html).toContain('does not designate, publish, or start a Bid');
+  });
+
+  it('does not offer the 2026 source bootstrap for another year', () => {
+    const html = renderToString(
+      <BidSetupWorkspace
+        year={2028}
+        configuration={{
+          bidYear: 2028,
+          bidYearStatus: 'configuring',
+          ruleBookVersion: null,
+          positionTemplateVersion: null,
+          configurationRevision: 0,
+          ruleBookRevision: null,
+          settings: null,
+          lifecycle: 'UNCONFIGURED',
+        }}
+        ruleBooks={[]}
+        configurationError={null}
+        ruleBooksError={null}
+      />,
+    );
+
+    expect(html).not.toContain('data-testid="reviewed-2026-source-bootstrap"');
+  });
 });

@@ -99,6 +99,7 @@ export function BidSetupWorkspace({
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [reconcilingStationSix, setReconcilingStationSix] = useState(false);
+  const [bootstrappingReviewedSource, setBootstrappingReviewedSource] = useState(false);
 
   const editable =
     configuration !== null &&
@@ -176,6 +177,36 @@ export function BidSetupWorkspace({
       setError(caught instanceof Error ? caught.message : 'Station 6 reconciliation failed.');
     } finally {
       setReconcilingStationSix(false);
+    }
+  }
+
+  async function bootstrapReviewed2026Source() {
+    setError(null);
+    setSuccess(null);
+    setBootstrappingReviewedSource(true);
+    try {
+      const response = await fetch('/api/admin/positions/bootstrap-reviewed-2026-source', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          reason_code: 'rule_override.policy_direction',
+          reason: 'Initialize the user-supplied reviewed 2026 source package for configuration.',
+        }),
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(
+          describeError(body, `Reviewed source initialization failed (${response.status}).`),
+        );
+        return;
+      }
+      setSuccess('The reviewed 2026 source and editable draft were initialized. Refreshing…');
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Reviewed source initialization failed.');
+    } finally {
+      setBootstrappingReviewedSource(false);
     }
   }
 
@@ -336,11 +367,33 @@ export function BidSetupWorkspace({
               </p>
             )}
 
-            {editable && draftRuleBooks.length === 0 && (
+            {editable && draftRuleBooks.length === 0 && year !== 2026 && (
               <p className="mt-4 rounded border border-amber-700 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
                 No draft rule-book candidate is available for {year}. This page cannot infer or
                 create one.
               </p>
+            )}
+
+            {editable && draftRuleBooks.length === 0 && year === 2026 && (
+              <div className="mt-4 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
+                <p className="font-semibold">Reviewed source package is ready to initialize</p>
+                <p className="mt-1">
+                  Create the traceable 2026.1 source snapshot and editable 2026.2 draft from the
+                  supplied policy, staffing, assignment, credential, and workbook package. This does
+                  not designate, publish, or start a Bid.
+                </p>
+                <button
+                  data-testid="reviewed-2026-source-bootstrap"
+                  type="button"
+                  onClick={bootstrapReviewed2026Source}
+                  disabled={bootstrappingReviewedSource}
+                  className="mt-3 min-h-11 rounded bg-amber-700 px-4 py-2 font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {bootstrappingReviewedSource
+                    ? 'Initializing reviewed source…'
+                    : 'Initialize reviewed 2026 source'}
+                </button>
+              </div>
             )}
 
             {editable && draftRuleBooks.length > 0 && (
