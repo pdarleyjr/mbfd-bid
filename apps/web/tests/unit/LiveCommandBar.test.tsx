@@ -1,5 +1,5 @@
 import { renderToString } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LiveCommandBar } from '../../app/admin/bid/_components/LiveCommandBar';
 
 function ssr(node: React.ReactElement): string {
@@ -92,5 +92,18 @@ describe('LiveCommandBar SSR', () => {
     );
     expect(withQueue).toContain('data-testid="on-deck-strip"');
     expect(withQueue).toContain('Sola');
+  });
+
+  it('keeps the server-rendered timer markup stable across wall-clock changes', () => {
+    const now = vi.spyOn(Date, 'now');
+    now.mockReturnValue(2_000_000);
+    const first = ssr(<LiveCommandBar {...BASE_PROPS} />);
+    now.mockReturnValue(2_500_000);
+    const second = ssr(<LiveCommandBar {...BASE_PROPS} />);
+    now.mockRestore();
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/data-testid="session-uptime"[^>]*>—</);
+    expect(first).toMatch(/data-testid="turn-remaining"[^>]*>—</);
   });
 });

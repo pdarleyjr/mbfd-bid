@@ -30,13 +30,15 @@ function formatDuration(ms: number): string {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${minutes}:${ss}`;
 }
 
-function useTick(intervalMs = 1000): number {
-  const [, setT] = useState(0);
+function useTick(intervalMs = 1000): number | null {
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
-    const id = setInterval(() => setT((t) => t + 1), intervalMs);
+    const tick = () => setNow(Date.now());
+    tick();
+    const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
   }, [intervalMs]);
-  return Date.now();
+  return now;
 }
 
 /**
@@ -68,12 +70,15 @@ export function LiveCommandBar({
   const { pickMode, setPickMode } = useManualPick();
 
   const sessionUptime =
-    sessionStartedAt && sessionStartedAt > 0 ? formatDuration(now - sessionStartedAt) : '—';
+    now !== null && sessionStartedAt && sessionStartedAt > 0
+      ? formatDuration(now - sessionStartedAt)
+      : '—';
   const remainingMs =
-    turnStartedAtMs && turnStartedAtMs > 0
+    now !== null && turnStartedAtMs && turnStartedAtMs > 0
       ? Math.max(0, turnStartedAtMs + turnTimerSeconds * 1000 - now)
       : 0;
-  const turnDisplay = turnStartedAtMs && turnStartedAtMs > 0 ? formatDuration(remainingMs) : '—';
+  const turnDisplay =
+    now !== null && turnStartedAtMs && turnStartedAtMs > 0 ? formatDuration(remainingMs) : '—';
   const turnUrgency: 'normal' | 'warn' | 'critical' =
     remainingMs === 0
       ? 'normal'
