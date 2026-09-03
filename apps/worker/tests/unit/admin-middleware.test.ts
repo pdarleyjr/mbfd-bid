@@ -7,13 +7,26 @@ import type { WorkerEnv } from '../../src/types/env';
 
 const KEY = 'a'.repeat(64);
 
-function mkEnv(): WorkerEnv {
+function memberLookupDb(rows: Record<string, number> = {}): D1Database {
+  return {
+    prepare: () => ({
+      bind: (employeeId: string) => ({
+        first: async () => {
+          const id = rows[employeeId];
+          return id === undefined ? null : { id };
+        },
+      }),
+    }),
+  } as unknown as D1Database;
+}
+
+function mkEnv(memberRows: Record<string, number> = {}): WorkerEnv {
   return {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: KEY,
     PORTAL_BID_READER: 'tok',
-    DB: {} as never,
+    DB: memberLookupDb(memberRows),
     KV: {} as never,
     BID_SESSION: {} as never,
     AUDIT_SIGNING_PRIVKEY: '',
@@ -102,5 +115,37 @@ describe('requireAdmin middleware', () => {
     const res = await app.request('/me', { headers: { Authorization: `Bearer ${jwt}` } }, mkEnv());
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ emp: '14335', role: 'admin' });
+  });
+
+  it('maps an admin to the local Bid member by exact employee ID', async () => {
+    const app = new Hono<{ Bindings: WorkerEnv; Variables: { claims: JwtPayload } }>();
+    app.use('*', requireAdmin);
+    app.get('/me', (c) => c.json({ memberId: c.get('claims').member_id }));
+    const jwt = await signJwt({ ...BASE_PAYLOAD, sub: 67, member_id: 67, role: 'admin' }, KEY);
+
+    const res = await app.request(
+      '/me',
+      { headers: { Authorization: `Bearer ${jwt}` } },
+      mkEnv({ '14335': 64 }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ memberId: 64 });
+  });
+
+  it('does not infer a local Bid member when the exact employee ID is absent', async () => {
+    const app = new Hono<{ Bindings: WorkerEnv; Variables: { claims: JwtPayload } }>();
+    app.use('*', requireAdmin);
+    app.get('/me', (c) => c.json({ memberId: c.get('claims').member_id }));
+    const jwt = await signJwt({ ...BASE_PAYLOAD, sub: 67, member_id: 67, role: 'admin' }, KEY);
+
+    const res = await app.request(
+      '/me',
+      { headers: { Authorization: `Bearer ${jwt}` } },
+      mkEnv({ unrelated: 64 }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ memberId: 67 });
   });
 });

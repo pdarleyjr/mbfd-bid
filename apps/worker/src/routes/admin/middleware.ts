@@ -7,6 +7,7 @@ import { loadBidSessionPolicySnapshot } from '../../lib/bid-policy.js';
 import { validateEnv } from '../../lib/env.js';
 import { refreshFederatedSession } from '../../lib/federated-session.js';
 import { verifyJwt } from '../../lib/jwt.js';
+import { withLocalMemberIdentity } from '../../lib/local-member-identity.js';
 import type { WorkerEnv } from '../../types/env.js';
 
 type AdminEnv = {
@@ -44,6 +45,12 @@ export const requireAdmin: MiddlewareHandler<AdminEnv> = async (c, next) => {
 
   if (claims.role !== 'admin') {
     return c.json({ error: 'forbidden' }, 403);
+  }
+
+  try {
+    claims = await withLocalMemberIdentity(c.env.DB, claims);
+  } catch {
+    return c.json({ error: 'member_identity_unavailable' }, 503);
   }
 
   c.set('claims', claims);
