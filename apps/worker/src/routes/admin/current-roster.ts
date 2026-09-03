@@ -124,7 +124,7 @@ function currentUtcDate(): string {
 function canonicalRosterShift(value: string | null): string | null {
   if (value === null) return null;
   const normalized = value.trim().toUpperCase();
-  const match = /^([ABCD])(?: SHIFT)?$/.exec(normalized);
+  const match = /^([ABCD])(?: SHIFT(?:\s+.*)?)?$/.exec(normalized);
   if (match?.[1] !== undefined) return match[1];
   if (normalized === 'D / DAYS' || normalized === 'DAYS') return 'D';
   return value;
@@ -210,13 +210,12 @@ async function loadCurrentRosterProjection(
     if (!value) continue;
     if (name === 'shift' && /^[ABCD]$/.test(value.toUpperCase())) {
       where.push(
-        `CASE UPPER(TRIM(sp.shift))
-           WHEN 'A SHIFT' THEN 'A'
-           WHEN 'B SHIFT' THEN 'B'
-           WHEN 'C SHIFT' THEN 'C'
-           WHEN 'D SHIFT' THEN 'D'
-           WHEN 'D / DAYS' THEN 'D'
-           WHEN 'DAYS' THEN 'D'
+        `CASE
+           WHEN UPPER(TRIM(sp.shift)) = 'A' OR UPPER(TRIM(sp.shift)) LIKE 'A SHIFT%' THEN 'A'
+           WHEN UPPER(TRIM(sp.shift)) = 'B' OR UPPER(TRIM(sp.shift)) LIKE 'B SHIFT%' THEN 'B'
+           WHEN UPPER(TRIM(sp.shift)) = 'C' OR UPPER(TRIM(sp.shift)) LIKE 'C SHIFT%' THEN 'C'
+           WHEN UPPER(TRIM(sp.shift)) = 'D' OR UPPER(TRIM(sp.shift)) LIKE 'D SHIFT%'
+             OR UPPER(TRIM(sp.shift)) IN ('D / DAYS', 'DAYS') THEN 'D'
            ELSE UPPER(TRIM(sp.shift))
          END = ?`,
       );

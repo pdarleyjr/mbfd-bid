@@ -307,7 +307,10 @@ describe('Current Roster admin projection', () => {
   });
 
   it('normalizes TeleStaff shift labels for the A/B/C/D operator filters and response', async () => {
-    await h.db.run("UPDATE staffing_positions SET shift = 'A Shift' WHERE id = 'slot-a'");
+    await h.db.run(
+      `UPDATE staffing_positions SET shift = 'A Shift' WHERE id = 'slot-a';
+       UPDATE staffing_positions SET shift = 'D Shift 4/10' WHERE id = 'slot-b211';`,
+    );
 
     const response = await app.fetch(
       new Request(`http://x/api/admin/current-roster?as_of=${AS_OF}&shift=A`, {
@@ -325,6 +328,18 @@ describe('Current Roster admin projection', () => {
       ]),
     );
     expect(body.summary).toMatchObject({ totalPositions: 2, occupiedPositions: 1 });
+
+    const daysResponse = await app.fetch(
+      new Request(`http://x/api/admin/current-roster?as_of=${AS_OF}&shift=D`, {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(daysResponse.status).toBe(200);
+    const daysBody = (await daysResponse.json()) as CurrentRosterResponse;
+    expect(daysBody.positions).toEqual([
+      expect.objectContaining({ id: 'slot-b211', shift: 'D', occupancy: 'occupied' }),
+    ]);
   });
 
   it('exports the same effective-dated, filtered projection as an administrator-only CSV without mutation', async () => {
