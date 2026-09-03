@@ -6,6 +6,7 @@ import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'u'.repeat(64);
 const SESSION = '01HZZ000000000ANNUALLIVE1';
+const MOCK_SESSION = '01HZZ000000000ANNUALMOCK1';
 const actions = [
   'record_selection',
   'amend_selection',
@@ -277,6 +278,33 @@ describe('annual live operator and presentation surfaces', () => {
         suspended_turn: true,
         resume: { member_id: 1, queue_cursor: 1 },
       },
+    });
+  });
+
+  it('serves canonical specialty state for an isolated mock rehearsal', async () => {
+    await h.db.run(
+      "INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,is_mock) VALUES (?,2027,2,'position_bid',2,180,2,0,1)",
+      [MOCK_SESSION],
+    );
+    await h.db.run(
+      'INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) SELECT ?,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+      [MOCK_SESSION, SESSION],
+    );
+    await h.db.run(
+      "INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) SELECT ?,current_seq,json_set(state_json, '$.bidSessionId', ?),last_command_id,created_at,updated_at FROM canonical_bid_session_state WHERE bid_session_id=?",
+      [MOCK_SESSION, MOCK_SESSION, SESSION],
+    );
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${MOCK_SESSION}/specialty-live`, {
+        headers: { Authorization: `Bearer ${await token('admin', 99)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      bid_session_id: MOCK_SESSION,
+      sequence: 8,
+      active: { suspended_turn: true },
     });
   });
 

@@ -69,7 +69,6 @@ export function AnnualLiveControls(props: Props) {
   });
 
   const load = useCallback(async () => {
-    if (props.isMock) return;
     const response = await fetch(
       `/api/admin/bid-session/${encodeURIComponent(props.bidSessionId)}/specialty-live`,
       { cache: 'no-store' },
@@ -88,7 +87,7 @@ export function AnnualLiveControls(props: Props) {
       setOrder(next.remaining_order);
     }
     setState(next);
-  }, [props.bidSessionId, props.isMock]);
+  }, [props.bidSessionId]);
 
   useEffect(() => {
     void load().catch((error: unknown) =>
@@ -163,9 +162,13 @@ export function AnnualLiveControls(props: Props) {
     });
   }
 
-  if (props.isMock) return null;
   return (
     <section className="border-y border-stone-300 bg-white p-4" data-testid="annual-live-controls">
+      {props.isMock ? (
+        <p className="mb-4 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-900">
+          MOCK REHEARSAL — canonical commands remain isolated from staffing and portal write-back.
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-end gap-3">
         <div className="mr-auto">
           <p className="text-xs font-bold uppercase tracking-wide text-red-700">

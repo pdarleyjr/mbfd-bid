@@ -59,4 +59,23 @@ describe('annual live product surfaces', () => {
     expect(html).toContain('Amend latest committed selection');
     expect(html).toContain('Alter remaining order');
   });
+
+  it('exposes the canonical controls in an isolated mock rehearsal', () => {
+    const html = renderToString(
+      <AnnualLiveControls
+        bidSessionId="mock-s1"
+        isMock={true}
+        currentBidderId={1}
+        bidOrder={[{ memberId: 1 }, { memberId: 2 }]}
+        fills={{}}
+        members={{}}
+        positions={[]}
+      />,
+    );
+    expect(html).toContain('data-testid="annual-live-controls"');
+    expect(html).toContain('MOCK REHEARSAL');
+    expect(html).toContain('canonical commands remain isolated');
+    expect(html).toContain('HOLD DISPLAY');
+    expect(html).toContain('Start specialty review');
+  });
 });
