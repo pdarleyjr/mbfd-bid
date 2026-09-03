@@ -864,7 +864,7 @@ export async function commitLiveBidCommand(
     );
   }
   if (input.command.type === 'live.amend_selection' && reduction.supersedesBidId !== null) {
-    const fill = reduction.state.fills[input.command.positionId];
+    const fill = reduction.state.fills[input.command.toPositionId];
     if (fill === undefined)
       throw new Error('Accepted amendment reduction is missing its replacement');
     statements.push(
@@ -877,7 +877,7 @@ export async function commitLiveBidCommand(
           input.command.bidSessionId,
           fill.ordinal,
           fill.memberId,
-          input.command.positionId,
+          input.command.toPositionId,
           null,
           now,
           input.command.actor.id,
@@ -893,6 +893,34 @@ export async function commitLiveBidCommand(
           input.command.bidSessionId,
           reduction.supersedesBidId,
           fill.bidId,
+          input.command.actor.id,
+          input.command.expectedSeq,
+          input.command.reason,
+          now,
+        ),
+      input.db
+        .prepare("UPDATE bids SET portal_sync_status='superseded' WHERE id=?")
+        .bind(reduction.supersedesBidId),
+    );
+  }
+  if (
+    input.command.type === 'live.resolve_specialty_candidate' &&
+    input.command.outcome === 'ACCEPT' &&
+    reduction.supersedesBidId !== null
+  ) {
+    const replacement = reduction.state.fills[reduction.payload.positionId as string];
+    if (replacement === undefined)
+      throw new Error('Accepted specialty replacement is missing its fill');
+    statements.push(
+      input.db
+        .prepare(
+          'INSERT INTO bid_award_amendments (id,bid_session_id,original_bid_id,replacement_bid_id,actor_member_id,expected_session_revision,reason,created_at) VALUES (?,?,?,?,?,?,?,?)',
+        )
+        .bind(
+          newId(),
+          input.command.bidSessionId,
+          reduction.supersedesBidId,
+          replacement.bidId,
           input.command.actor.id,
           input.command.expectedSeq,
           input.command.reason,
@@ -926,13 +954,27 @@ export async function commitLiveBidCommand(
         ),
     );
   }
-  if (input.command.type === 'live.declare_unreachable') {
+  if (
+    input.command.type === 'live.declare_unreachable' ||
+    (input.command.type === 'live.resolve_specialty_candidate' &&
+      input.command.outcome === 'UNREACHABLE')
+  ) {
     statements.push(
       input.db
         .prepare(
-          "UPDATE bid_contact_attempts SET disposition='UNREACHABLE' WHERE bid_session_id=? AND member_id=? AND attempt_number=3",
+          `UPDATE bid_contact_attempts SET disposition='UNREACHABLE'
+            WHERE bid_session_id=? AND member_id=?
+              AND attempt_number=(
+                SELECT MAX(attempt_number) FROM bid_contact_attempts
+                WHERE bid_session_id=? AND member_id=?
+              )`,
         )
-        .bind(input.command.bidSessionId, input.command.memberId),
+        .bind(
+          input.command.bidSessionId,
+          input.command.memberId,
+          input.command.bidSessionId,
+          input.command.memberId,
+        ),
     );
   }
   if (input.command.type === 'live.checkpoint') {
@@ -986,7 +1028,7 @@ export async function commitLiveBidCommand(
       ),
     input.db
       .prepare(
-        "INSERT INTO audit_log (id,bid_session_id,seq,actor_type,actor_id,action,target_kind,target_id,before_state,after_state,reason,ai_advisory_id,client_meta,created_at) SELECT ?,?,COALESCE(MAX(seq),0)+1,'admin',?,?,'session',?,NULL,?,?,NULL,NULL,? FROM audit_log WHERE bid_session_id=?",
+        "INSERT INTO audit_log (id,bid_session_id,seq,actor_type,actor_id,action,target_kind,target_id,before_state,after_state,reason,ai_advisory_id,client_meta,created_at) SELECT ?,?,COALESCE(MAX(seq),0)+1,'admin',?,?,'session',?,?,?,?,NULL,NULL,? FROM audit_log WHERE bid_session_id=?",
       )
       .bind(
         auditId,
@@ -994,7 +1036,8 @@ export async function commitLiveBidCommand(
         input.command.actor.id,
         input.command.type,
         input.command.bidSessionId,
-        canonicalJson({ seq: reduction.state.lastSeq, payload: reduction.payload }),
+        canonicalJson(current),
+        canonicalJson(reduction.state),
         input.command.reason,
         Math.floor(now / 1000),
         input.command.bidSessionId,

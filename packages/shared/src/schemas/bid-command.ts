@@ -92,8 +92,9 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.amend_selection'),
-    positionId: z.string().min(1),
-    replacementMemberId: z.number().int().positive(),
+    memberId: z.number().int().positive(),
+    fromPositionId: z.string().min(1),
+    toPositionId: z.string().min(1),
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.disposition'),
@@ -127,6 +128,10 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.transition_stage'),
     stageId: z.string().min(1),
+  }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.alter_order'),
+    orderedRemainingMemberIds: z.array(z.number().int().positive()).min(1).max(2_000),
   }).strict(),
   /** Candidate ids are injected by the Worker from frozen evidence, never accepted from a browser body. */
   LiveCommandBase.extend({

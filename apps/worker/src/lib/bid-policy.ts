@@ -8,11 +8,13 @@ import {
   BidSessionPolicySnapshotSchema,
   type FrozenBidEligibilityMember,
   type FrozenBidPoolMember,
+  FrozenLiveBidPolicySchema,
 } from '@mbfd/shared';
 import { and, eq } from 'drizzle-orm';
 
 import type { DB } from '../db/index.js';
 import {
+  annualBidPolicyDocuments,
   assignmentObservations,
   bidSessionPolicySnapshots,
   bidYears,
@@ -458,6 +460,104 @@ export async function loadActiveRuleBookCoverage(
 
 export type BidSessionMode = 'mock' | 'live';
 
+/** Validates editable annual policy identifiers against the same immutable source material used by sessions. */
+export function validateAnnualPolicySourceReferences(
+  snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }>,
+  livePolicy: BidConfigurationSettingsV3['livePolicy'],
+): string[] {
+  const errors: string[] = [];
+  const allMemberIds = new Set(snapshot.members.map((member) => member.memberId));
+  const participantIds = new Set(
+    snapshot.members
+      .filter((member) => member.pool !== 'EXCLUDED')
+      .map((member) => member.memberId),
+  );
+  const biddablePositionIds = new Set(
+    snapshot.ruleBookMaterial.rules.map((rule) => rule.positionId),
+  );
+  const memberById = new Map(snapshot.members.map((member) => [member.memberId, member]));
+  const positionById = new Map(
+    snapshot.ruleBookMaterial.positions.map((position) => [position.id, position]),
+  );
+  const stagedMembers = livePolicy.stages.flatMap((stage) => stage.memberIds);
+  const stagedMemberIds = new Set(stagedMembers);
+  if (
+    stagedMembers.length !== participantIds.size ||
+    [...participantIds].some((memberId) => !stagedMemberIds.has(memberId))
+  )
+    errors.push('stage_member_population_mismatch');
+  if (stagedMembers.some((memberId) => !participantIds.has(memberId)))
+    errors.push('stage_member_reference_invalid');
+  if (
+    livePolicy.stages.some((stage) =>
+      stage.opportunityPositionIds.some((positionId) => !biddablePositionIds.has(positionId)),
+    )
+  )
+    errors.push('stage_position_reference_invalid');
+  const expectedRank = new Map([
+    ['CAPTAIN', 'CPT'],
+    ['LIEUTENANT', 'LT'],
+    ['FIREFIGHTER', 'FF'],
+  ]);
+  for (const stage of livePolicy.stages) {
+    const rank = expectedRank.get(stage.kind);
+    if (
+      rank !== undefined &&
+      (stage.memberIds.some((id) => memberById.get(id)?.rank !== rank) ||
+        stage.opportunityPositionIds.some((id) => positionById.get(id)?.rankRequired !== rank))
+    )
+      errors.push('stage_rank_category_mismatch');
+    if (
+      stage.kind === 'D_SHIFT' &&
+      stage.opportunityPositionIds.some((id) => positionById.get(id)?.shift !== 'D')
+    )
+      errors.push('stage_shift_applicability_mismatch');
+  }
+  if (
+    livePolicy.actionPermissions.some((grant) =>
+      grant.actorMemberIds.some((memberId) => !allMemberIds.has(memberId)),
+    )
+  )
+    errors.push('action_actor_reference_invalid');
+  const annual = livePolicy.annualOperations;
+  if (annual !== undefined) {
+    const orderedStageIds = [...livePolicy.stages]
+      .sort((left, right) => left.order - right.order)
+      .map((stage) => stage.id);
+    if (JSON.stringify(annual.stageOrder) !== JSON.stringify(orderedStageIds))
+      errors.push('annual_stage_order_mismatch');
+    if (annual.requiredTopologyPositionIds.some((id) => !biddablePositionIds.has(id)))
+      errors.push('annual_topology_position_reference_invalid');
+    if (
+      annual.specialties?.some((specialty) =>
+        specialty.opportunityPositionIds.some((id) => !biddablePositionIds.has(id)),
+      )
+    )
+      errors.push('specialty_position_reference_invalid');
+    const credentialNames = new Set(snapshot.members.flatMap((member) => member.credentialNames));
+    const specialtyCodes = new Set(
+      snapshot.members.flatMap((member) =>
+        (member.specialtyQualifications ?? []).map((qualification) => qualification.specialtyCode),
+      ),
+    );
+    if (
+      annual.specialties?.some(
+        (specialty) =>
+          specialty.requiredCredentialNames.some((name) => !credentialNames.has(name)) ||
+          specialty.points.some((entry) => !credentialNames.has(entry.credentialName)),
+      )
+    )
+      errors.push('specialty_credential_reference_invalid');
+    if (
+      annual.specialties?.some((specialty) =>
+        specialty.requiredSpecialtyCodes.some((code) => !specialtyCodes.has(code)),
+      )
+    )
+      errors.push('specialty_qualification_reference_invalid');
+  }
+  return [...new Set(errors)];
+}
+
 export interface ConfiguredBidYearPolicy {
   bidYear: number;
   configurationRevision: number;
@@ -466,6 +566,13 @@ export interface ConfiguredBidYearPolicy {
   ruleBookRevision: number;
   positionTemplateVersion: string;
   coverage: RuleBookCoverage;
+  annualPolicyDocument: {
+    id: string;
+    revision: number;
+    ruleBookVersion: string;
+    policyText: string;
+    executablePolicyRevision: string;
+  } | null;
 }
 
 export type ConfiguredBidYearPolicyError =
@@ -474,6 +581,8 @@ export type ConfiguredBidYearPolicyError =
   | 'bid_configuration_settings_invalid'
   | 'bid_configuration_credential_evaluation_date_required'
   | 'bid_configuration_live_policy_required'
+  | 'bid_configuration_annual_policy_document_required'
+  | 'bid_configuration_annual_policy_document_invalid'
   | 'bid_configuration_rule_book_missing'
   | 'bid_configuration_year_mismatch'
   | 'bid_configuration_template_mismatch'
@@ -513,6 +622,7 @@ export async function loadConfiguredBidYearPolicy(
       positionTemplateVersion: bidYears.positionTemplateVersion,
       configJson: bidYears.configJson,
       configurationRevision: bidYears.configurationRevision,
+      annualPolicyDocumentId: bidYears.annualPolicyDocumentId,
     })
     .from(bidYears)
     .where(eq(bidYears.year, bidYear))
@@ -532,6 +642,48 @@ export async function loadConfiguredBidYearPolicy(
   }
   if (mode === 'live' && settings.v !== 3) {
     return { ok: false, code: 'bid_configuration_live_policy_required' };
+  }
+  let annualPolicyDocument: ConfiguredBidYearPolicy['annualPolicyDocument'] = null;
+  if (settings.v === 3) {
+    // A null pointer identifies a pre-0044 recovery configuration. Current
+    // application writes can only create V3 settings by binding a document.
+    if (year.annualPolicyDocumentId === null) {
+      annualPolicyDocument = null;
+    } else {
+      const document = await db
+        .select()
+        .from(annualBidPolicyDocuments)
+        .where(eq(annualBidPolicyDocuments.id, year.annualPolicyDocumentId))
+        .get();
+      let executionPolicy: ReturnType<typeof FrozenLiveBidPolicySchema.safeParse> | null = null;
+      if (document !== undefined) {
+        try {
+          executionPolicy = FrozenLiveBidPolicySchema.safeParse(
+            JSON.parse(document.executionPolicyJson) as unknown,
+          );
+        } catch {
+          executionPolicy = null;
+        }
+      }
+      if (
+        document === undefined ||
+        executionPolicy === null ||
+        !executionPolicy.success ||
+        document.effectiveYear !== bidYear ||
+        document.ruleBookVersion !== year.ruleBookVersion ||
+        document.status === 'SUPERSEDED' ||
+        (mode === 'live' && document.status !== 'PUBLISHED') ||
+        JSON.stringify(executionPolicy.data) !== JSON.stringify(settings.livePolicy)
+      )
+        return { ok: false, code: 'bid_configuration_annual_policy_document_invalid' };
+      annualPolicyDocument = {
+        id: document.id,
+        revision: document.revision,
+        ruleBookVersion: document.ruleBookVersion,
+        policyText: document.policyText,
+        executablePolicyRevision: executionPolicy.data.policyRevision,
+      };
+    }
   }
 
   const book = await db
@@ -569,6 +721,7 @@ export async function loadConfiguredBidYearPolicy(
       ruleBookRevision: book.revision,
       positionTemplateVersion: year.positionTemplateVersion,
       coverage,
+      annualPolicyDocument,
     },
   };
 }
@@ -1172,6 +1325,17 @@ export async function prepareBidSessionPolicySnapshot(
         rank: member.rank,
       }))
       .sort((left, right) => left.memberId - right.memberId),
+    ...(policy.annualPolicyDocument === null
+      ? {}
+      : {
+          annualPolicyEvidence: {
+            documentId: policy.annualPolicyDocument.id,
+            documentRevision: policy.annualPolicyDocument.revision,
+            ruleBookVersion: policy.annualPolicyDocument.ruleBookVersion,
+            executablePolicyRevision: policy.annualPolicyDocument.executablePolicyRevision,
+            policyText: policy.annualPolicyDocument.policyText,
+          },
+        }),
     ruleBookMaterial,
   });
   if (snapshot.v !== 3) {

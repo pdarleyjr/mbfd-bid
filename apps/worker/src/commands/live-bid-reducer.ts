@@ -42,6 +42,8 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
       return 'approve_final_results';
     case 'live.transition_stage':
       return 'approve_transition';
+    case 'live.alter_order':
+      return 'alter_order';
     case 'live.start_specialty_adjudication':
     case 'live.resolve_specialty_candidate':
       return 'approve_transition';
@@ -171,6 +173,9 @@ export function reduceLiveBidCommand(
             currentStageId,
             currentPhase: state.currentPhase,
             fills: { ...state.fills },
+            bidOrder: [...state.bidOrder],
+            queueCursor: state.queueCursor,
+            specialty: live.specialty ?? null,
           }
         : null;
     return {
@@ -189,6 +194,52 @@ export function reduceLiveBidCommand(
       },
       eventType: 'live_command_applied',
       payload: { operation: 'set_presentation_mode', mode: command.mode },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.alter_order') {
+    if (state.currentPhase !== 'position_bid') return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (live.specialty !== null && live.specialty !== undefined)
+      return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
+    const committed = state.bidOrder.slice(0, state.queueCursor);
+    const remaining = state.bidOrder.slice(state.queueCursor);
+    const supplied = command.orderedRemainingMemberIds;
+    if (
+      supplied.length !== remaining.length ||
+      new Set(supplied).size !== supplied.length ||
+      remaining.some((entry) => !supplied.includes(entry.memberId))
+    ) {
+      return { ok: false, code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' };
+    }
+    const byMember = new Map(remaining.map((entry) => [entry.memberId, entry]));
+    const reordered = supplied.map((memberId) => byMember.get(memberId));
+    if (reordered.some((entry) => entry === undefined))
+      return { ok: false, code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' };
+    const stageOrder = new Map(policy.stages.map((stage) => [stage.id, stage.order]));
+    let priorStageOrder = Number.NEGATIVE_INFINITY;
+    for (const entry of reordered) {
+      const order = entry?.stageId === undefined ? undefined : stageOrder.get(entry.stageId ?? '');
+      if (order === undefined || order < priorStageOrder)
+        return { ok: false, code: 'ALTER_ORDER_STAGE_SEQUENCE_INVALID' };
+      priorStageOrder = order;
+    }
+    const beforeMemberIds = remaining.map((entry) => entry.memberId);
+    const bidOrder = [...committed, ...(reordered as typeof remaining)];
+    return {
+      ok: true,
+      state: {
+        ...state,
+        bidOrder,
+        currentBidderId: bidOrder[state.queueCursor]?.memberId ?? null,
+        turnStartedAtMs: now,
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'alter_order',
+        beforeMemberIds,
+        afterMemberIds: supplied,
+      },
       supersedesBidId: null,
     };
   }
@@ -240,17 +291,53 @@ export function reduceLiveBidCommand(
     const expectedCandidateId = specialty.candidateMemberIds[specialty.candidateCursor];
     if (expectedCandidateId !== command.memberId)
       return { ok: false, code: 'SPECIALTY_CANDIDATE_OUT_OF_ORDER' };
+    if (command.outcome !== 'ACCEPT') {
+      const disposition = command.outcome === 'DECLINE' ? 'DECLINED' : command.outcome;
+      const rule = policy.dispositions.find((candidate) => candidate.disposition === disposition);
+      if (rule === undefined) return { ok: false, code: 'LIVE_DISPOSITION_POLICY_INCOMPLETE' };
+      if (rule.requiresEvidence && command.evidenceReference === null)
+        return { ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' };
+      if (command.outcome === 'UNREACHABLE') {
+        const minimumAttempts = policy.annualOperations?.contact.minimumAttempts;
+        if (minimumAttempts === undefined) return { ok: false, code: 'CONTACT_POLICY_MISSING' };
+        const attempts = (state.annual?.contactAttempts ?? []).filter(
+          (attempt) => attempt.memberId === command.memberId,
+        ).length;
+        if (attempts < minimumAttempts) return { ok: false, code: 'CONTACT_ATTEMPTS_INCOMPLETE' };
+      }
+    }
     if (command.outcome === 'ACCEPT') {
+      const existingFills = Object.entries(state.fills).filter(
+        ([, candidateFill]) => candidateFill.memberId === command.memberId,
+      );
+      if (existingFills.length > 1)
+        return { ok: false, code: 'SPECIALTY_CANDIDATE_FILL_AMBIGUOUS' };
+      const prior = existingFills[0];
       const fill: Fill = {
         memberId: command.memberId,
-        ordinal: state.bidOrder.find((entry) => entry.memberId === command.memberId)?.ordinal ?? 0,
+        ordinal:
+          prior?.[1].ordinal ??
+          state.bidOrder.find((entry) => entry.memberId === command.memberId)?.ordinal ??
+          0,
         bidId,
       };
+      const fills = { ...state.fills };
+      if (prior !== undefined) delete fills[prior[0]];
+      fills[specialty.positionId] = fill;
+      const candidateOrderIndex = state.bidOrder.findIndex(
+        (entry) => entry.memberId === command.memberId,
+      );
+      const removeFromRemainingOrder =
+        prior === undefined && candidateOrderIndex >= state.queueCursor;
+      const bidOrder = removeFromRemainingOrder
+        ? state.bidOrder.filter((entry) => entry.memberId !== command.memberId)
+        : state.bidOrder;
       return {
         ok: true,
         state: {
           ...state,
-          fills: { ...state.fills, [specialty.positionId]: fill },
+          fills,
+          bidOrder,
           live: { ...live, specialty: null },
           lastSeq: state.lastSeq + 1,
         },
@@ -262,8 +349,11 @@ export function reduceLiveBidCommand(
           memberId: command.memberId,
           outcome: command.outcome,
           resumedBidderId: specialty.suspendedBidderId,
+          releasedPositionId: prior?.[0] ?? null,
+          supersedesBidId: prior?.[1].bidId ?? null,
+          removedFromRemainingOrder: removeFromRemainingOrder,
         },
-        supersedesBidId: null,
+        supersedesBidId: prior?.[1].bidId ?? null,
       };
     }
     const nextCursor = specialty.candidateCursor + 1;
@@ -384,23 +474,37 @@ export function reduceLiveBidCommand(
   }
   if (command.type === 'live.amend_selection') {
     if (live.lastSelectionBidId === null) return { ok: false, code: 'NO_AMENDABLE_SELECTION' };
-    const prior = state.fills[command.positionId];
+    if (command.fromPositionId === command.toPositionId)
+      return { ok: false, code: 'AMENDMENT_POSITION_UNCHANGED' };
+    const prior = state.fills[command.fromPositionId];
     if (!prior || prior.bidId !== live.lastSelectionBidId)
       return { ok: false, code: 'SELECTION_SEALED' };
-    const fill: Fill = { ...prior, memberId: command.replacementMemberId, bidId };
+    if (prior.memberId !== command.memberId)
+      return { ok: false, code: 'AMENDMENT_MEMBER_MISMATCH' };
+    if (state.fills[command.toPositionId] !== undefined)
+      return { ok: false, code: 'POSITION_FILLED' };
+    const selectedEntry = state.bidOrder.find((entry) => entry.memberId === command.memberId);
+    const selectedStage = policy.stages.find((stage) => stage.id === selectedEntry?.stageId);
+    if (!selectedStage?.opportunityPositionIds.includes(command.toPositionId))
+      return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
+    const fill: Fill = { ...prior, bidId };
+    const fills = { ...state.fills };
+    delete fills[command.fromPositionId];
+    fills[command.toPositionId] = fill;
     return {
       ok: true,
       state: {
         ...state,
-        fills: { ...state.fills, [command.positionId]: fill },
+        fills,
         live: { ...live, lastSelectionBidId: bidId },
         lastSeq: state.lastSeq + 1,
       },
       eventType: 'live_command_applied',
       payload: {
         operation: 'amend_selection',
-        positionId: command.positionId,
-        replacementMemberId: command.replacementMemberId,
+        memberId: command.memberId,
+        fromPositionId: command.fromPositionId,
+        toPositionId: command.toPositionId,
         supersedesBidId: prior.bidId,
       },
       supersedesBidId: prior.bidId,
@@ -466,6 +570,8 @@ export function reduceLiveBidCommand(
   )
     return { ok: false, code: 'NOT_CURRENT_BIDDER' };
   if (state.fills[positionId]) return { ok: false, code: 'POSITION_FILLED' };
+  if (Object.values(state.fills).some((fill) => fill.memberId === memberId))
+    return { ok: false, code: 'MEMBER_ALREADY_SELECTED' };
   const stage = policy.stages.find((candidate) => candidate.id === currentStageId);
   if (!stage) return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
   if (!stage.memberIds.includes(memberId) || !stage.opportunityPositionIds.includes(positionId))

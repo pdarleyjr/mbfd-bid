@@ -13,10 +13,17 @@ import {
 import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
-import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
+import {
+  hasCanonicalBidSessionState,
+  loadCanonicalBidSessionState,
+} from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidAwardAmendments, bidSessions, bids } from '../../db/schema.js';
-import { higherPriorityFrozenSpecialtyCandidates } from '../../lib/annual-specialty-policy.js';
+import type { BidSessionState } from '../../durable/bid-session-state.js';
+import {
+  higherPriorityFrozenSpecialtyCandidates,
+  rankFrozenSpecialtyCandidates,
+} from '../../lib/annual-specialty-policy.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import {
   eligibilityMemberFromFrozen,
@@ -40,8 +47,138 @@ function isBidCommandPhase(phase: string): boolean {
   return phase === 'position_bid' || phase === 'a_day_bid';
 }
 
+async function loadLiveAdapterState(
+  env: WorkerEnv,
+  sessionId: string,
+): Promise<BidSessionState | null> {
+  const canonical = await loadCanonicalBidSessionState(env.DB, sessionId);
+  if (canonical !== null) return canonical;
+  const stub = env.BID_SESSION.get(env.BID_SESSION.idFromName(sessionId));
+  const response = await stub.fetch('https://bid.internal/admin/state/live');
+  return response.ok ? ((await response.json()) as BidSessionState) : null;
+}
+
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
+
+router.get('/:id/specialty-live', async (c) => {
+  const sessionId = c.req.param('id');
+  const [canonical, frozen] = await Promise.all([
+    loadLiveAdapterState(c.env, sessionId),
+    loadFrozenSessionBidPolicy(getDb(c.env.DB), sessionId),
+  ]);
+  if (canonical === null) return c.json({ error: 'live_state_missing' }, 409);
+  if (!frozen.ok || frozen.snapshot.settings.v !== 3)
+    return c.json({ error: 'live_action_policy_missing' }, 409);
+  const policy = frozen.snapshot.settings.livePolicy;
+  const identities = new Map(
+    (frozen.snapshot.operatorIdentityProjection ?? []).map((identity) => [
+      identity.memberId,
+      identity,
+    ]),
+  );
+  const member = (memberId: number) => {
+    const identity = identities.get(memberId);
+    return {
+      member_id: memberId,
+      first_name: identity?.firstName ?? '',
+      last_name: identity?.lastName ?? '',
+      rank: identity?.rank ?? null,
+    };
+  };
+  const active = canonical.live?.specialty ?? null;
+  let activeProjection: Record<string, unknown> | null = null;
+  if (active !== null) {
+    const specialty = policy.annualOperations?.specialties?.find(
+      (candidate) => candidate.id === active.specialtyId,
+    );
+    if (specialty === undefined || frozen.snapshot.credentialEvaluationOn === undefined)
+      return c.json({ error: 'live_specialty_policy_missing' }, 409);
+    const ranked = rankFrozenSpecialtyCandidates({
+      policy: specialty,
+      evaluationOn: frozen.snapshot.credentialEvaluationOn,
+      members: frozen.snapshot.members.map((candidate) => ({
+        memberId: candidate.memberId,
+        rscSeniority: candidate.rscSeniority,
+        rankSeniority: candidate.rankSeniority,
+        credentialNames: candidate.credentialNames,
+        specialtyQualifications: candidate.specialtyQualifications,
+      })),
+    });
+    const byMember = new Map(
+      ranked.map((candidate, index) => [
+        candidate.memberId,
+        { points: candidate.points, policy_rank: index + 1 },
+      ]),
+    );
+    const currentCandidateId = active.candidateMemberIds[active.candidateCursor] ?? null;
+    const attempts = canonical.annual?.contactAttempts ?? [];
+    activeProjection = {
+      specialty_id: active.specialtyId,
+      specialty_label: specialty.label,
+      requested_position_id: active.positionId,
+      original_bidder: {
+        ...member(active.suspendedBidderId),
+        ...byMember.get(active.suspendedBidderId),
+      },
+      candidates: active.candidateMemberIds.map((memberId) => ({
+        ...member(memberId),
+        ...byMember.get(memberId),
+        status:
+          memberId === currentCandidateId
+            ? 'CURRENT'
+            : active.candidateMemberIds.indexOf(memberId) < active.candidateCursor
+              ? 'RESOLVED'
+              : 'REMAINING',
+        contact_history: attempts
+          .filter((attempt) => attempt.memberId === memberId)
+          .map((attempt) => ({
+            method: attempt.method,
+            at_ms: attempt.atMs,
+            actor_member_id: attempt.actorMemberId,
+          })),
+      })),
+      current_candidate_id: currentCandidateId,
+      remaining_candidate_ids: active.candidateMemberIds.slice(active.candidateCursor),
+      suspended_turn: true,
+      resume: {
+        member_id: active.suspendedBidderId,
+        queue_cursor: canonical.queueCursor,
+        current_phase: canonical.currentPhase,
+      },
+    };
+  }
+  return c.json({
+    bid_session_id: sessionId,
+    sequence: canonical.lastSeq,
+    current_bidder: canonical.currentBidderId === null ? null : member(canonical.currentBidderId),
+    remaining_order: canonical.bidOrder.slice(canonical.queueCursor).map((entry) => entry.memberId),
+    fills: Object.fromEntries(
+      Object.entries(canonical.fills).map(([positionId, fill]) => [
+        positionId,
+        { member_id: fill.memberId },
+      ]),
+    ),
+    specialties: (policy.annualOperations?.specialties ?? []).map((specialty) => ({
+      id: specialty.id,
+      label: specialty.label,
+      mode: specialty.mode,
+      positions: specialty.opportunityPositionIds.map((positionId) => {
+        const position = frozen.snapshot.ruleBookMaterial.positions.find(
+          (item) => item.id === positionId,
+        );
+        return {
+          id: positionId,
+          label:
+            position === undefined
+              ? positionId
+              : `${position.station} ${position.unit} ${position.positionName}`,
+        };
+      }),
+    })),
+    active: activeProjection,
+  });
+});
 
 // The adapter deliberately assigns actor/session identity.  It is the one
 // public entry point for real mutations; older force/skip routes remain
@@ -65,20 +202,16 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
     if (specialty === undefined) return c.json({ error: 'live_specialty_policy_missing' }, 409);
     if (frozen.snapshot.credentialEvaluationOn === undefined)
       return c.json({ error: 'live_specialty_evidence_date_missing' }, 409);
-    const session = await db
-      .select({ currentBidderId: bidSessions.currentBidderId })
-      .from(bidSessions)
-      .where(eq(bidSessions.id, sessionId))
-      .get();
-    if (session === undefined || session.currentBidderId === null)
+    const canonical = await loadLiveAdapterState(c.env, sessionId);
+    if (canonical === null || canonical.currentBidderId === null)
       return c.json({ error: 'live_specialty_requester_missing' }, 409);
     const target = await resolveFrozenSessionBidTarget(db, {
       bidSessionId: sessionId,
-      memberId: session.currentBidderId,
+      memberId: canonical.currentBidderId,
       positionId: typeof raw.positionId === 'string' ? raw.positionId : '',
     });
     if (!target.ok) return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
-    const requester = frozenEligibilityMemberForSession(frozen.snapshot, session.currentBidderId);
+    const requester = frozenEligibilityMemberForSession(frozen.snapshot, canonical.currentBidderId);
     if (requester === null) return c.json({ error: 'live_specialty_requester_missing' }, 409);
     if (!evaluateEligibility(eligibilityMemberFromFrozen(requester), target.rule).eligible)
       return c.json({ error: 'live_specialty_requester_position_ineligible' }, 409);
@@ -111,7 +244,7 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
             credentialNames: member.credentialNames,
             specialtyQualifications: member.specialtyQualifications,
           })),
-        requesterMemberId: session.currentBidderId,
+        requesterMemberId: canonical.currentBidderId,
         positionEligibleMemberIds,
       });
       if (candidates.length === 0)
@@ -146,19 +279,21 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
               : 'skip_defer'
             : command.data.type === 'live.transition_stage'
               ? 'approve_transition'
-              : command.data.type === 'live.complete_session'
-                ? 'approve_final_results'
-                : command.data.type === 'live.record_contact_attempt' ||
-                    command.data.type === 'live.declare_unreachable'
-                  ? 'mark_unreachable'
-                  : command.data.type === 'live.return_at_current_sequence'
-                    ? 'skip_defer'
-                    : command.data.type === 'live.set_presentation_mode'
-                      ? 'publish'
-                      : command.data.type === 'live.start_specialty_adjudication' ||
-                          command.data.type === 'live.resolve_specialty_candidate'
-                        ? 'approve_transition'
-                        : 'pause_resume';
+              : command.data.type === 'live.alter_order'
+                ? 'alter_order'
+                : command.data.type === 'live.complete_session'
+                  ? 'approve_final_results'
+                  : command.data.type === 'live.record_contact_attempt' ||
+                      command.data.type === 'live.declare_unreachable'
+                    ? 'mark_unreachable'
+                    : command.data.type === 'live.return_at_current_sequence'
+                      ? 'skip_defer'
+                      : command.data.type === 'live.set_presentation_mode'
+                        ? 'publish'
+                        : command.data.type === 'live.start_specialty_adjudication' ||
+                            command.data.type === 'live.resolve_specialty_candidate'
+                          ? 'approve_transition'
+                          : 'pause_resume';
   if (!isLiveBidActionAuthorized(frozen.snapshot.settings.livePolicy, action, claims.member_id))
     return c.json({ error: 'live_action_forbidden', action }, 403);
   const stub = c.env.BID_SESSION.get(c.env.BID_SESSION.idFromName(sessionId));

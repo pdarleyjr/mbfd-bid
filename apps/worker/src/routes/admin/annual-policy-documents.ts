@@ -1,5 +1,9 @@
 import { zValidator } from '@hono/zod-validator';
-import { FrozenLiveBidPolicySchema, type JwtPayload } from '@mbfd/shared';
+import {
+  BidConfigurationSettingsV3Schema,
+  FrozenLiveBidPolicySchema,
+  type JwtPayload,
+} from '@mbfd/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
@@ -8,6 +12,11 @@ import { z } from 'zod';
 import { getDb } from '../../db/index.js';
 import { annualBidPolicyDocuments, bidYears, ruleBooks } from '../../db/schema.js';
 import { auditInsertStatement } from '../../lib/audit.js';
+import {
+  parseBidConfigurationSettings,
+  prepareBidSessionPolicySnapshot,
+  validateAnnualPolicySourceReferences,
+} from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -31,6 +40,54 @@ const PublishDocumentSchema = z.object({ reason: z.string().trim().min(4).max(50
 
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
+
+/** Real source/frozen-policy options for the no-code editor. */
+router.get('/:year/editor-data', async (c) => {
+  const year = YearSchema.safeParse(c.req.param('year'));
+  if (!year.success) return c.json({ error: 'invalid_bid_year' }, 400);
+  const prepared = await prepareBidSessionPolicySnapshot(
+    getDb(c.env.DB),
+    year.data,
+    Date.now(),
+    'mock',
+  );
+  if (!prepared.ok)
+    return c.json({ error: 'annual_policy_source_unavailable', policy_error: prepared.code }, 409);
+  const identities = new Map(
+    (prepared.snapshot.operatorIdentityProjection ?? []).map((identity) => [
+      identity.memberId,
+      identity,
+    ]),
+  );
+  return c.json({
+    rule_book_version: prepared.snapshot.ruleBookVersion,
+    configuration_revision: prepared.snapshot.configurationRevision,
+    credential_evaluation_on: prepared.snapshot.credentialEvaluationOn,
+    members: prepared.snapshot.members.map((member) => ({
+      member_id: member.memberId,
+      first_name: identities.get(member.memberId)?.firstName ?? '',
+      last_name: identities.get(member.memberId)?.lastName ?? '',
+      rank: member.rank,
+      pool: member.pool,
+      rsc_seniority: member.rscSeniority,
+      rank_seniority: member.rankSeniority,
+      credential_names: member.credentialNames,
+      specialty_qualification_codes: (member.specialtyQualifications ?? []).map(
+        (qualification) => qualification.specialtyCode,
+      ),
+    })),
+    positions: prepared.snapshot.ruleBookMaterial.positions
+      .filter((position) => prepared.coverage.rules.some((rule) => rule.positionId === position.id))
+      .map((position) => ({
+        id: position.id,
+        shift: position.shift,
+        station: position.station,
+        unit: position.unit,
+        rank_required: position.rankRequired,
+        position_name: position.positionName,
+      })),
+  });
+});
 
 /** Returns language and parsed policy material; no personnel or credential evidence is exposed. */
 router.get('/:year', async (c) => {
@@ -88,6 +145,30 @@ router.post('/:year', requireStepUpAuth(), zValidator('json', DraftDocumentSchem
     return c.json({ error: 'rule_book_year_mismatch' }, 409);
   if (ruleBook.status !== 'draft')
     return c.json({ error: 'annual_policy_requires_draft_rule_book' }, 409);
+  const prepared = await prepareBidSessionPolicySnapshot(db, year.data, Date.now(), 'mock');
+  if (!prepared.ok)
+    return c.json({ error: 'annual_policy_source_unavailable', policy_error: prepared.code }, 409);
+  if (prepared.snapshot.ruleBookVersion !== body.rule_book_version)
+    return c.json({ error: 'annual_policy_rule_book_not_configured' }, 409);
+  const sourceErrors = validateAnnualPolicySourceReferences(
+    prepared.snapshot,
+    body.execution_policy,
+  );
+  if (sourceErrors.length > 0)
+    return c.json(
+      { error: 'annual_policy_source_validation_failed', validation_errors: sourceErrors },
+      409,
+    );
+  const currentSettings = parseBidConfigurationSettings(bidYear.configJson);
+  if (currentSettings === null || currentSettings.v === 1)
+    return c.json({ error: 'annual_policy_configuration_required' }, 409);
+  const settings = BidConfigurationSettingsV3Schema.parse({
+    v: 3,
+    expectedDurationDays: currentSettings.expectedDurationDays,
+    turnTimerSeconds: currentSettings.turnTimerSeconds,
+    credentialEvaluationOn: currentSettings.credentialEvaluationOn,
+    livePolicy: body.execution_policy,
+  });
   const now = Date.now();
   const id = ulid();
   let result: D1Result[];
@@ -111,6 +192,17 @@ router.post('/:year', requireStepUpAuth(), zValidator('json', DraftDocumentSchem
         previousPublished?.id ?? null,
         body.rule_book_version,
       ),
+      c.env.DB.prepare(
+        `UPDATE bid_years
+            SET annual_policy_document_id = ?, config_json = ?,
+                configuration_revision = configuration_revision + 1
+          WHERE year = ? AND status = 'configuring'
+            AND rule_book_version = ?
+            AND EXISTS (
+              SELECT 1 FROM annual_bid_policy_documents
+              WHERE id = ? AND status = 'DRAFT'
+            )`,
+      ).bind(id, JSON.stringify(settings), year.data, body.rule_book_version, id),
       auditInsertStatement(c.env.DB, {
         bidSessionId: null,
         actorType: 'admin',
@@ -127,14 +219,26 @@ router.post('/:year', requireStepUpAuth(), zValidator('json', DraftDocumentSchem
       return c.json({ error: 'annual_policy_changed' }, 409);
     throw error;
   }
-  if (result[0]?.meta.changes !== 1) return c.json({ error: 'annual_policy_changed' }, 409);
+  if (
+    result[0]?.meta.changes !== 1 ||
+    result[1]?.meta.changes !== 1 ||
+    result[2]?.meta.changes !== 1
+  )
+    return c.json({ error: 'annual_policy_changed' }, 409);
   const document = await db
     .select({ revision: annualBidPolicyDocuments.revision })
     .from(annualBidPolicyDocuments)
     .where(eq(annualBidPolicyDocuments.id, id))
     .get();
   if (document === undefined) return c.json({ error: 'annual_policy_changed' }, 409);
-  return c.json({ id, revision: document.revision, status: 'DRAFT' }, 201);
+  return c.json(
+    {
+      id,
+      revision: document.revision,
+      status: 'DRAFT',
+    },
+    201,
+  );
 });
 
 /** Publishes one immutable revision and atomically retires any prior published revision. */
@@ -164,6 +268,8 @@ router.post(
     if (bidYear === undefined) return c.json({ error: 'bid_year_not_found' }, 404);
     if (bidYear.status !== 'configuring')
       return c.json({ error: 'annual_policy_year_not_configuring' }, 409);
+    if (bidYear.annualPolicyDocumentId !== document.id)
+      return c.json({ error: 'annual_policy_document_not_configured' }, 409);
     const now = Date.now();
     const results = await c.env.DB.batch([
       c.env.DB.prepare(

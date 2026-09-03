@@ -70,6 +70,9 @@ export interface LiveBidProgress {
       currentStageId: string | null;
       currentPhase: CurrentPhase;
       fills: Record<string, Fill>;
+      bidOrder?: BidSessionState['bidOrder'];
+      queueCursor?: number;
+      specialty?: LiveBidProgress['specialty'];
     } | null;
   } | null;
 }

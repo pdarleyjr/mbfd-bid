@@ -123,9 +123,11 @@ export const FrozenAnnualOperationsPolicySchema = z
     specialties: z.array(FrozenAnnualSpecialtyPolicySchema).max(100).optional(),
     contact: z
       .object({
-        minimumAttempts: z.literal(3),
+        minimumAttempts: z.number().int().min(1).max(10),
         timingMode: z.enum(['HARD_MINIMUM', 'TARGET', 'OPERATOR_DISCRETION']),
         durationSeconds: z.number().int().min(0).max(86_400).nullable(),
+        /** Explicit annual evidence policy; omitted only for pre-editor recovery material. */
+        evidenceRequired: z.boolean().optional(),
       })
       .strict()
       .superRefine((contact, ctx) => {
@@ -560,6 +562,18 @@ export const FrozenOperatorIdentitySchema = z
   .strict();
 export type FrozenOperatorIdentity = z.infer<typeof FrozenOperatorIdentitySchema>;
 
+/** Exact human-readable and executable policy relationship frozen for a session. */
+export const FrozenAnnualPolicyEvidenceSchema = z
+  .object({
+    documentId: z.string().trim().min(1),
+    documentRevision: z.number().int().positive(),
+    ruleBookVersion: z.string().trim().min(1),
+    executablePolicyRevision: z.string().trim().min(1),
+    policyText: z.string().trim().min(1).max(100_000),
+  })
+  .strict();
+export type FrozenAnnualPolicyEvidence = z.infer<typeof FrozenAnnualPolicyEvidenceSchema>;
+
 /**
  * Immutable session input captured before ordinary Bid initialization. It is
  * deliberately limited to normalized identifiers and ordering data; no source
@@ -614,6 +628,8 @@ const BidSessionPolicySnapshotV3Schema = z
     members: z.array(FrozenBidEligibilityMemberSchema),
     /** Fresh snapshots materialize this; optional only for historical recovery. */
     operatorIdentityProjection: z.array(FrozenOperatorIdentitySchema).optional(),
+    /** Optional only for pre-0044 recovery snapshots. Fresh annual V3 sessions materialize it. */
+    annualPolicyEvidence: FrozenAnnualPolicyEvidenceSchema.optional(),
     ruleBookMaterial: FrozenRuleBookMaterialSchema,
   })
   .strict();
@@ -625,6 +641,30 @@ export const BidSessionPolicySnapshotSchema = z
     BidSessionPolicySnapshotV3Schema,
   ])
   .superRefine((snapshot, ctx) => {
+    if (
+      snapshot.v === 3 &&
+      snapshot.annualPolicyEvidence !== undefined &&
+      snapshot.annualPolicyEvidence.ruleBookVersion !== snapshot.ruleBookVersion
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['annualPolicyEvidence', 'ruleBookVersion'],
+        message: 'annual policy evidence rule book must match the session snapshot',
+      });
+    }
+    if (
+      snapshot.v === 3 &&
+      snapshot.settings.v === 3 &&
+      snapshot.annualPolicyEvidence !== undefined &&
+      snapshot.annualPolicyEvidence.executablePolicyRevision !==
+        snapshot.settings.livePolicy.policyRevision
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['annualPolicyEvidence', 'executablePolicyRevision'],
+        message: 'annual policy evidence must name the frozen executable policy revision',
+      });
+    }
     const seen = new Set<number>();
     for (const [index, member] of snapshot.members.entries()) {
       if (seen.has(member.memberId)) {
@@ -738,7 +778,9 @@ export const BidSessionPolicySnapshotSchema = z
         priorSpecialtyCode = specialty.specialtyCode;
 
         const credentialEvaluationOn =
-          snapshot.settings.v === 2 ? snapshot.credentialEvaluationOn : undefined;
+          snapshot.settings.v === 2 || snapshot.settings.v === 3
+            ? snapshot.credentialEvaluationOn
+            : undefined;
         if (credentialEvaluationOn === undefined) continue;
         if (specialty.effectiveOn > credentialEvaluationOn) {
           ctx.addIssue({

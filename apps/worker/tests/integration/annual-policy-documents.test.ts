@@ -90,7 +90,24 @@ describe('annual policy documents', () => {
   beforeEach(async () => {
     h = await setupTestD1();
     await h.db.run(
-      "INSERT INTO bid_years (year,status) VALUES (2027,'configuring'); INSERT INTO rule_books (version,effective_year,status) VALUES ('2027.1',2027,'draft'),('2028.1',2028,'draft'),('2027.2',2027,'active');",
+      `INSERT INTO members
+         (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,
+          employment_status,employment_status_effective_on,created_at,updated_at)
+       VALUES (1,'policy-operator-1','Policy','Operator','FF','FF',1,0,'active','2027-01-01',1,1);
+       INSERT INTO position_templates (version,effective_year) VALUES ('2027.1',2027);
+       INSERT INTO positions
+         (id,template_version,shift,station,division,unit,rank_required,position_name)
+       VALUES ('A101','2027.1','A','1','Combat','Engine 1','FF','Firefighter');
+       INSERT INTO rule_books (version,effective_year,status)
+       VALUES ('2027.1',2027,'draft'),('2028.1',2028,'draft'),('2027.2',2027,'active');
+       INSERT INTO position_rules
+         (rule_book_version,position_id,template_version,required_criteria,points_preference,tie_break_chain)
+       VALUES ('2027.1','A101','2027.1','{"rank":["FF"],"credentials":[],"custom":[]}',
+         '{"max":0,"items":[]}','["points","rsc_seniority","rank_seniority"]');
+       INSERT INTO bid_years
+         (year,status,position_template_version,rule_book_version,config_json,configuration_revision)
+       VALUES (2027,'configuring','2027.1','2027.1',
+         '{"v":2,"expectedDurationDays":2,"turnTimerSeconds":180,"credentialEvaluationOn":"2027-01-15"}',0);`,
     );
   });
   afterEach(async () => teardownTestD1(h));
@@ -232,5 +249,60 @@ describe('annual policy documents', () => {
         )
       ).results,
     ).toEqual([{ count: 2 }]);
+    await expect(
+      h.db.run("UPDATE annual_bid_policy_documents SET policy_text = 'mutated text' WHERE id = ?", [
+        firstDocument.id,
+      ]),
+    ).rejects.toThrow(/immutable/i);
+  });
+
+  it('freezes exact document evidence into a mock session across later draft revisions', async () => {
+    const first = await adminRequest(h, '/api/admin/annual-policy-documents/2027', {
+      method: 'POST',
+      body: body(),
+    });
+    expect(first.status).toBe(201);
+    const firstDocument = (await first.json()) as { id: string; revision: number };
+
+    const session = await adminRequest(h, '/api/admin/bid-session', {
+      method: 'POST',
+      body: JSON.stringify({ bid_year: 2027, mode: 'mock' }),
+    });
+    expect(session.status).toBe(201);
+    const sessionId = ((await session.json()) as { id: string }).id;
+    const frozenBefore = (
+      await h.db.run(
+        'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id = ?',
+        [sessionId],
+      )
+    ).results[0] as { snapshot_json: string };
+    expect(JSON.parse(frozenBefore.snapshot_json)).toMatchObject({
+      annualPolicyEvidence: {
+        documentId: firstDocument.id,
+        documentRevision: firstDocument.revision,
+        ruleBookVersion: '2027.1',
+        executablePolicyRevision: 'annual-policy-test',
+        policyText: 'Annual policy language with enough text to satisfy validation.',
+      },
+    });
+
+    expect(
+      (
+        await adminRequest(h, '/api/admin/annual-policy-documents/2027', {
+          method: 'POST',
+          body: JSON.stringify({
+            ...JSON.parse(body()),
+            policy_text: 'A later annual policy draft with independently versioned language.',
+          }),
+        })
+      ).status,
+    ).toBe(201);
+    const frozenAfter = (
+      await h.db.run(
+        'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id = ?',
+        [sessionId],
+      )
+    ).results[0] as { snapshot_json: string };
+    expect(frozenAfter.snapshot_json).toBe(frozenBefore.snapshot_json);
   });
 });

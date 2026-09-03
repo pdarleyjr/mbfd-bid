@@ -166,8 +166,6 @@ export function validateAnnualOperationsReadiness(input: {
       code: 'ANNUAL_TOPOLOGY_INCOMPLETE',
       detail: input.missingTopologyIds.join(','),
     };
-  if (input.operations.contact.minimumAttempts !== 3)
-    return { ok: false, code: 'CONTACT_ATTEMPT_POLICY_INVALID' };
   if (
     input.operations.contact.timingMode !== 'OPERATOR_DISCRETION' &&
     (input.operations.contact.durationSeconds === null ||
@@ -183,8 +181,6 @@ export function recordContactAttempt(
 ): { ok: true; state: AnnualOperationsState } | { ok: false; code: string } {
   if (attempt.method !== 'PHONE' && attempt.method !== 'TEXT')
     return { ok: false, code: 'CONTACT_METHOD_UNSUPPORTED' };
-  const existing = state.contactAttempts.filter((item) => item.memberId === attempt.memberId);
-  if (existing.length >= 3) return { ok: false, code: 'CONTACT_ATTEMPT_LIMIT_REACHED' };
   if (!Number.isInteger(attempt.atMs) || attempt.atMs < 0)
     return { ok: false, code: 'CONTACT_TIMESTAMP_INVALID' };
   return { ok: true, state: { ...state, contactAttempts: [...state.contactAttempts, attempt] } };

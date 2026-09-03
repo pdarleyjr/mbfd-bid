@@ -76,21 +76,22 @@ function expectFinalIntegrity(sqlite: Database.Database): void {
   );
 }
 
-describe('integration migration chain 0038 through 0043', () => {
+describe('integration migration chain 0038 through 0044', () => {
   it('is gap-free and applies from a fresh database through the final candidate', () => {
-    expect(migrationFiles().slice(-6)).toEqual([
+    expect(migrationFiles().slice(-7)).toEqual([
       '0038_live_policy_participation_and_amendments.sql',
       '0039_restore_rule_book_participation_guards.sql',
       '0040_annual_bid_operations.sql',
       '0041_year_round_operations.sql',
       '0042_post_bid_transition.sql',
       '0043_annual_bid_policy_documents.sql',
+      '0044_annual_policy_session_evidence.sql',
     ]);
 
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
-    const applied = applyThrough(sqlite, '0043_annual_bid_policy_documents.sql');
-    expect(applied.at(-1)).toBe('0043_annual_bid_policy_documents.sql');
+    const applied = applyThrough(sqlite, '0044_annual_policy_session_evidence.sql');
+    expect(applied.at(-1)).toBe('0044_annual_policy_session_evidence.sql');
     expectFinalIntegrity(sqlite);
 
     // A D1 migration ledger would record every applied filename; a second
@@ -111,8 +112,11 @@ describe('integration migration chain 0038 through 0043', () => {
     applyOne(sqlite, '0041_year_round_operations.sql');
     applyOne(sqlite, '0042_post_bid_transition.sql');
     applyOne(sqlite, '0043_annual_bid_policy_documents.sql');
+    applyOne(sqlite, '0044_annual_policy_session_evidence.sql');
 
     expectFinalIntegrity(sqlite);
+    const bidYearColumns = sqlite.pragma('table_info(bid_years)') as Array<{ name: string }>;
+    expect(bidYearColumns.map((column) => column.name)).toContain('annual_policy_document_id');
     sqlite.close();
   });
 });

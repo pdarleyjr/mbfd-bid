@@ -2,6 +2,7 @@
 import type { BidderContext } from '../../../_components/bid/BidderCard';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { AdminBoard } from './AdminBoard';
+import { AnnualLiveControls } from './AnnualLiveControls';
 import {
   AnnualOperationsStatus,
   type AnnualOperationsStatusPayload,
@@ -68,6 +69,16 @@ export function AdminBidShell(props: Props) {
         />
 
         <AnnualOperationsStatus annual={props.annual} />
+
+        <AnnualLiveControls
+          bidSessionId={props.bidSessionId}
+          isMock={props.isMock}
+          currentBidderId={props.currentBidderId}
+          bidOrder={props.bidOrder}
+          fills={props.initialFills}
+          members={props.members}
+          positions={props.positions}
+        />
 
         <ManualPickBar isMock={props.isMock} members={props.members} />
 

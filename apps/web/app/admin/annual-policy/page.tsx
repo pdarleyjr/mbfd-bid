@@ -14,7 +14,7 @@ export default async function AnnualPolicyPage({
 }: {
   searchParams: Promise<{ year?: string }>;
 }) {
-  const claims = await requireAdmin();
+  await requireAdmin();
   const year = yearFrom((await searchParams).year);
   let documents: AnnualPolicyDocument[] = [];
   let loadError: string | null = null;
@@ -27,12 +27,5 @@ export default async function AnnualPolicyPage({
   } catch (error) {
     loadError = error instanceof Error ? error.message : 'Policy service could not be reached.';
   }
-  return (
-    <AnnualPolicyWorkspace
-      year={year}
-      documents={documents}
-      loadError={loadError}
-      actorMemberId={claims.member_id}
-    />
-  );
+  return <AnnualPolicyWorkspace year={year} documents={documents} loadError={loadError} />;
 }

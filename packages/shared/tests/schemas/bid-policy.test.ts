@@ -5,6 +5,7 @@ import {
   BidSessionPolicySnapshotSchema,
   FrozenAnnualOperationsPolicySchema,
   FrozenLiveBidPolicySchema,
+  LiveBidCommandSchema,
   isLiveBidActionAuthorized,
 } from '../../src/index.js';
 
@@ -22,6 +23,48 @@ const liveActions = [
   'publish',
 ] as const;
 const dispositions = ['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'] as const;
+
+describe('live command policy contracts', () => {
+  const base = {
+    v: 1,
+    commandId: '00000000-0000-4000-8000-000000000001',
+    bidSessionId: 'session-1',
+    expectedSeq: 1,
+    actor: { id: 99, role: 'admin' },
+    reason: 'Chief-approved correction',
+    evidenceReference: null,
+  } as const;
+
+  it('accepts only the same-member opportunity amendment contract', () => {
+    expect(
+      LiveBidCommandSchema.safeParse({
+        ...base,
+        type: 'live.amend_selection',
+        memberId: 1,
+        fromPositionId: 'p1',
+        toPositionId: 'p2',
+      }).success,
+    ).toBe(true);
+    expect(
+      LiveBidCommandSchema.safeParse({
+        ...base,
+        type: 'live.amend_selection',
+        positionId: 'p1',
+        replacementMemberId: 2,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts an explicit remaining-member order command', () => {
+    expect(
+      LiveBidCommandSchema.safeParse({
+        ...base,
+        type: 'live.alter_order',
+        orderedRemainingMemberIds: [2, 1],
+      }).success,
+    ).toBe(true);
+  });
+});
 
 const completeLivePolicy = {
   v: 1,
@@ -206,6 +249,28 @@ describe('Bid configuration and session policy contracts', () => {
         positions: [{ id: 'position-001', bidParticipation: 'BIDDABLE' }],
       },
     });
+  });
+
+  it('binds annual policy evidence to the snapshot rule book', () => {
+    const evidence = {
+      documentId: 'annual-policy-document-1',
+      documentRevision: 3,
+      ruleBookVersion: '2027.2',
+      executablePolicyRevision: '2027.2-policy-r3',
+      policyText: 'Approved annual policy language retained with the immutable session.',
+    };
+    expect(
+      BidSessionPolicySnapshotSchema.parse({
+        ...completeV3Snapshot,
+        annualPolicyEvidence: evidence,
+      }),
+    ).toMatchObject({ annualPolicyEvidence: { documentRevision: 3 } });
+    expect(
+      BidSessionPolicySnapshotSchema.safeParse({
+        ...completeV3Snapshot,
+        annualPolicyEvidence: { ...evidence, ruleBookVersion: '2027.99' },
+      }).success,
+    ).toBe(false);
   });
 
   it('keeps legacy V3 specialty evidence absent-but-distinguishable and validates new frozen specialty facts', () => {

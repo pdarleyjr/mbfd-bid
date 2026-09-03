@@ -1,7 +1,11 @@
 import { zValidator } from '@hono/zod-validator';
 import {
+  type BidConfigurationSettingsV2,
   BidConfigurationSettingsV2Schema,
+  type BidConfigurationSettingsV3,
+  BidConfigurationSettingsV3Schema,
   CredentialEvaluationDateSchema,
+  FrozenLiveBidPolicySchema,
   type JwtPayload,
 } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
@@ -9,7 +13,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { getDb } from '../../db/index.js';
-import { bidYears, ruleBooks } from '../../db/schema.js';
+import { annualBidPolicyDocuments, bidYears, ruleBooks } from '../../db/schema.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import { loadRuleBookCoverage, parseBidConfigurationSettings } from '../../lib/bid-policy.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
@@ -25,6 +29,7 @@ const SetBidConfigurationSchema = z
       .string()
       .trim()
       .regex(/^\d{4}\.\d+$/),
+    annual_policy_document_id: z.string().trim().min(1).optional(),
     expected_configuration_revision: z.number().int().nonnegative(),
     settings: z
       .object({
@@ -56,6 +61,7 @@ function configurationResponse(
     positionTemplateVersion: string | null;
     configJson: string | null;
     configurationRevision: number;
+    annualPolicyDocumentId?: string | null;
   },
   book:
     | {
@@ -90,6 +96,7 @@ function configurationResponse(
     ruleBookVersion: year.ruleBookVersion,
     positionTemplateVersion: year.positionTemplateVersion,
     configurationRevision: year.configurationRevision,
+    annualPolicyDocumentId: year.annualPolicyDocumentId ?? null,
     ruleBookRevision: book?.revision ?? null,
     settings,
     lifecycle,
@@ -143,7 +150,7 @@ router.put(
     const parsedYear = YearParamSchema.safeParse(c.req.param('year'));
     if (!parsedYear.success) return c.json({ error: 'invalid_bid_year' }, 400);
     const body = c.req.valid('json');
-    const settings = BidConfigurationSettingsV2Schema.parse({
+    const baseSettings = BidConfigurationSettingsV2Schema.parse({
       v: 2,
       expectedDurationDays: body.settings.expected_duration_days,
       turnTimerSeconds: body.settings.turn_timer_seconds,
@@ -159,7 +166,7 @@ router.put(
       return c.json({ error: 'bid_configuration_changed' }, 409);
     }
 
-    const [currentBook, candidateBook] = await Promise.all([
+    const [currentBook, candidateBook, policyDocument] = await Promise.all([
       year.ruleBookVersion === null
         ? Promise.resolve(undefined)
         : db
@@ -182,6 +189,13 @@ router.put(
         .from(ruleBooks)
         .where(eq(ruleBooks.version, body.rule_book_version))
         .get(),
+      body.annual_policy_document_id === undefined
+        ? Promise.resolve(undefined)
+        : db
+            .select()
+            .from(annualBidPolicyDocuments)
+            .where(eq(annualBidPolicyDocuments.id, body.annual_policy_document_id))
+            .get(),
     ]);
     if (currentBook?.status === 'active') return c.json({ error: 'bid_configuration_frozen' }, 409);
     if (candidateBook === undefined) return c.json({ error: 'rule_book_not_found' }, 404);
@@ -193,6 +207,36 @@ router.put(
         { error: 'bid_configuration_draft_required', status: candidateBook.status },
         409,
       );
+    }
+    if (body.annual_policy_document_id !== undefined) {
+      if (policyDocument === undefined)
+        return c.json({ error: 'annual_policy_document_not_found' }, 404);
+      if (
+        policyDocument.effectiveYear !== parsedYear.data ||
+        policyDocument.ruleBookVersion !== candidateBook.version
+      )
+        return c.json({ error: 'annual_policy_document_configuration_mismatch' }, 409);
+      if (policyDocument.status === 'SUPERSEDED')
+        return c.json({ error: 'annual_policy_document_superseded' }, 409);
+    }
+    let settings: BidConfigurationSettingsV2 | BidConfigurationSettingsV3 = baseSettings;
+    if (policyDocument !== undefined) {
+      let executionPolicyJson: unknown;
+      try {
+        executionPolicyJson = JSON.parse(policyDocument.executionPolicyJson) as unknown;
+      } catch {
+        return c.json({ error: 'annual_policy_execution_invalid' }, 409);
+      }
+      const executionPolicy = FrozenLiveBidPolicySchema.safeParse(executionPolicyJson);
+      if (!executionPolicy.success)
+        return c.json({ error: 'annual_policy_execution_invalid' }, 409);
+      settings = BidConfigurationSettingsV3Schema.parse({
+        v: 3,
+        expectedDurationDays: baseSettings.expectedDurationDays,
+        turnTimerSeconds: baseSettings.turnTimerSeconds,
+        credentialEvaluationOn: baseSettings.credentialEvaluationOn,
+        livePolicy: executionPolicy.data,
+      });
     }
     const coverage = await loadRuleBookCoverage(db, candidateBook.version);
     if (!coverage.valid || coverage.templateVersion === null) {
@@ -216,6 +260,7 @@ router.put(
       `UPDATE bid_years
           SET rule_book_version = ?,
               position_template_version = ?,
+              annual_policy_document_id = ?,
               config_json = ?,
               configuration_revision = configuration_revision + 1
         WHERE year = ?
@@ -234,21 +279,36 @@ router.put(
               AND candidate_book.effective_year = ?
               AND candidate_book.status = 'draft'
               AND candidate_book.revision = ?
+          )
+          AND (
+            ? IS NULL OR EXISTS (
+              SELECT 1 FROM annual_bid_policy_documents policy_document
+              WHERE policy_document.id = ?
+                AND policy_document.rule_book_version = ?
+                AND policy_document.effective_year = ?
+                AND policy_document.status != 'SUPERSEDED'
+            )
           )`,
     ).bind(
       candidateBook.version,
       coverage.templateVersion,
+      policyDocument?.id ?? null,
       JSON.stringify(settings),
       parsedYear.data,
       body.expected_configuration_revision,
       candidateBook.version,
       parsedYear.data,
       candidateBook.revision,
+      policyDocument?.id ?? null,
+      policyDocument?.id ?? null,
+      candidateBook.version,
+      parsedYear.data,
     );
     const anticipated = {
       ...year,
       ruleBookVersion: candidateBook.version,
       positionTemplateVersion: coverage.templateVersion,
+      annualPolicyDocumentId: policyDocument?.id ?? null,
       configJson: JSON.stringify(settings),
       configurationRevision: year.configurationRevision + 1,
     };

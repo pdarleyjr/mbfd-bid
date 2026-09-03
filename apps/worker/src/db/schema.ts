@@ -273,6 +273,10 @@ export const bidYears = sqliteTable('bid_years', {
     () => positionTemplates.version,
   ),
   ruleBookVersion: text('rule_book_version').references(() => ruleBooks.version),
+  annualPolicyDocumentId: text('annual_policy_document_id').references(
+    () => annualBidPolicyDocuments.id,
+    { onDelete: 'restrict' },
+  ),
   configJson: text('config_json'),
   // Optimistic token for the designated annual configuration source. It is
   // intentionally separate from a draft rule book's own revision.
