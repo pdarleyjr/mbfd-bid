@@ -1455,6 +1455,14 @@ export class BidSessionDO implements DurableObject {
         headers: { 'content-type': 'application/json' },
       });
     }
+    if (url.pathname === '/admin/state/live') {
+      const canonical = await loadCanonicalBidSessionState(this.env.DB, this.namedSessionId());
+      const current = canonical ?? (await this.getState());
+      return new Response(JSON.stringify(current), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     if (url.pathname === '/admin/commands/live') {
       const raw = await req.json().catch(() => null);
       const parsed = LiveBidCommandSchema.safeParse(raw);

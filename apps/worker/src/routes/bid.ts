@@ -26,6 +26,7 @@ import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-m
 import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
 import { verifyJwt } from '../lib/jwt.js';
+import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
 import { computeOnDeck } from '../lib/on-deck.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
 import type { WorkerEnv } from '../types/env.js';
@@ -99,6 +100,112 @@ bid.get('/me', async (c) => {
     rank: claims.rank,
     firstName: claims.first_name,
     lastName: claims.last_name,
+  });
+});
+
+/** Member-safe, read-only audience projection controlled independently from execution. */
+bid.get('/presentation', async (c) => {
+  const claims = await requireJwt(c);
+  if (!claims) return c.json({ error: 'missing_auth' }, 401);
+  const bidSessionId = await resolveBidSessionId(c, c.req.query('bidSessionId'));
+  if (bidSessionId === null) return c.json({ mode: 'OFF', session: null });
+  const [canonical, session, frozen] = await Promise.all([
+    loadCanonicalBidSessionState(c.env.DB, bidSessionId),
+    getDb(c.env.DB)
+      .select({ bidYear: bidSessionsTable.bidYear, isMock: bidSessionsTable.isMock })
+      .from(bidSessionsTable)
+      .where(eq(bidSessionsTable.id, bidSessionId))
+      .get(),
+    loadFrozenSessionBidPolicy(getDb(c.env.DB), bidSessionId),
+  ]);
+  if (session === undefined || !frozen.ok)
+    return c.json({ error: 'presentation_state_unavailable' }, 409);
+  if (canonical === null)
+    return c.json({ mode: 'OFF', session: { id: bidSessionId, bid_year: session.bidYear } });
+  const presentation = canonical.live?.presentation ?? null;
+  if (presentation === null || presentation.mode === 'OFF')
+    return c.json({ mode: 'OFF', session: { id: bidSessionId, bid_year: session.bidYear } });
+  const held = presentation.mode === 'HOLD' ? presentation.heldProjection : null;
+  const fills = held?.fills ?? canonical.fills;
+  const order = held?.bidOrder ?? canonical.bidOrder;
+  const queueCursor = held?.queueCursor ?? canonical.queueCursor;
+  const currentBidderId = held?.currentBidderId ?? canonical.currentBidderId;
+  const currentPhase = held?.currentPhase ?? canonical.currentPhase;
+  const currentStageId = held?.currentStageId ?? canonical.live?.currentStageId ?? null;
+  const specialtyState = held?.specialty ?? canonical.live?.specialty ?? null;
+  const identities = new Map(
+    (frozen.snapshot.operatorIdentityProjection ?? []).map((identity) => [
+      identity.memberId,
+      identity,
+    ]),
+  );
+  const safeMember = (memberId: number | null) => {
+    if (memberId === null) return null;
+    const identity = identities.get(memberId);
+    return identity === undefined
+      ? { member_id: memberId, name: `Member ${memberId}`, rank: null }
+      : {
+          member_id: memberId,
+          name: `${identity.firstName} ${identity.lastName}`,
+          rank: identity.rank,
+        };
+  };
+  const biddablePositionIds = new Set(
+    frozen.snapshot.v === 3
+      ? frozen.snapshot.ruleBookMaterial.rules.map((rule) => rule.positionId)
+      : [],
+  );
+  const positions =
+    frozen.snapshot.v === 3
+      ? frozen.snapshot.ruleBookMaterial.positions.filter((position) =>
+          biddablePositionIds.has(position.id),
+        )
+      : [];
+  const specialtyPolicy =
+    frozen.snapshot.settings.v === 3 && specialtyState !== null
+      ? frozen.snapshot.settings.livePolicy.annualOperations?.specialties?.find(
+          (specialty) => specialty.id === specialtyState.specialtyId,
+        )
+      : undefined;
+  return c.json({
+    mode: presentation.mode,
+    held_at_sequence: presentation.heldAtSeq,
+    sequence: canonical.lastSeq,
+    session: { id: bidSessionId, bid_year: session.bidYear, is_mock: session.isMock },
+    current_stage: {
+      id: currentStageId,
+      label:
+        frozen.snapshot.settings.v === 3
+          ? (frozen.snapshot.settings.livePolicy.stages.find((stage) => stage.id === currentStageId)
+              ?.label ?? currentStageId)
+          : currentStageId,
+    },
+    current_bidder: safeMember(currentBidderId),
+    on_deck: order
+      .slice(queueCursor + 1, queueCursor + 3)
+      .map((entry) => safeMember(entry.memberId)),
+    phase: currentPhase,
+    paused: currentPhase === 'paused',
+    complete: currentPhase === 'complete',
+    progress: { filled: Object.keys(fills).length, total: positions.length },
+    positions: positions.map((position) => ({
+      id: position.id,
+      shift: position.shift,
+      station: position.station,
+      unit: position.unit,
+      position_name: position.positionName,
+      rank_required: position.rankRequired,
+      filled_by: safeMember(fills[position.id]?.memberId ?? null),
+    })),
+    specialty:
+      specialtyState === null
+        ? null
+        : {
+            active: true,
+            label: specialtyPolicy?.label ?? specialtyState.specialtyId,
+            position_id: specialtyState.positionId,
+            status: 'PRIORITY REVIEW IN PROGRESS',
+          },
   });
 });
 
@@ -409,7 +516,29 @@ bid.get('/board', async (c) => {
       409,
     );
   }
-  const frozenOrder = computeBidOrder(bidOrderInputFromSnapshot(frozenBoardPolicy.snapshot));
+  const legacyFrozenOrder = computeBidOrder(bidOrderInputFromSnapshot(frozenBoardPolicy.snapshot));
+  const modernFrozenOrder =
+    frozenBoardPolicy.snapshot.settings.v === 3
+      ? computeFrozenStageOrder(
+          frozenBoardPolicy.snapshot,
+          frozenBoardPolicy.snapshot.settings.livePolicy,
+        )
+      : null;
+  if (modernFrozenOrder !== null && !modernFrozenOrder.ok)
+    return c.json(
+      { error: 'bid_order_not_frozen_policy', policy_error: modernFrozenOrder.code },
+      409,
+    );
+  const poolByMember = new Map(
+    frozenBoardPolicy.snapshot.members.map((member) => [member.memberId, member.pool]),
+  );
+  const frozenOrder =
+    modernFrozenOrder?.ok === true
+      ? modernFrozenOrder.entries.map((entry) => ({
+          ...entry,
+          pool: poolByMember.get(entry.memberId) as 'OFC' | 'FF',
+        }))
+      : legacyFrozenOrder;
   const frozenMemberIds = new Set(
     frozenBoardPolicy.snapshot.members
       .filter((member) => member.pool !== 'EXCLUDED')

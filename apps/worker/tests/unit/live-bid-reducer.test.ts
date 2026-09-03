@@ -84,6 +84,263 @@ function command(
   } as LiveBidCommand;
 }
 describe('live canonical reducer', () => {
+  it('suspends the exact normal bidder for frozen specialty adjudication and resumes without queue rewind', () => {
+    const specialtyPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      annualOperations: {
+        v: 1,
+        stageOrder: ['d'],
+        requiredTopologyPositionIds: ['p1'],
+        specialties: [
+          {
+            id: 'marine',
+            label: 'Marine',
+            mode: 'INTERRUPTING',
+            opportunityPositionIds: ['p1'],
+            requiredCredentialNames: ['Marine'],
+            requiredSpecialtyCodes: ['MARINE'],
+            points: [{ credentialName: 'Marine', value: 8 }],
+            tieBreakChain: ['POINTS', 'RSC_SENIORITY', 'RANK_SENIORITY'],
+          },
+        ],
+        contact: { minimumAttempts: 3, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 18,
+          max: 19,
+          captainDcMax: 2,
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+        },
+      },
+    };
+    const started = reduceLiveBidCommand(
+      state(),
+      specialtyPolicy,
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'marine',
+        positionId: 'p1',
+        candidateMemberIds: [2],
+      }),
+      100,
+      'specialty-start',
+    );
+    if (!started.ok) throw new Error(started.code);
+    expect(started.state.live?.specialty?.suspendedBidderId).toBe(1);
+    expect(
+      reduceLiveBidCommand(
+        started.state,
+        specialtyPolicy,
+        command('live.record_selection', { memberId: 1, positionId: 'p1' }),
+        101,
+        'blocked-pick',
+      ),
+    ).toMatchObject({ ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' });
+    const resolved = reduceLiveBidCommand(
+      started.state,
+      specialtyPolicy,
+      command('live.resolve_specialty_candidate', { memberId: 2, outcome: 'ACCEPT' }),
+      102,
+      'specialty-award',
+    );
+    if (!resolved.ok) throw new Error(resolved.code);
+    expect(resolved.state).toMatchObject({
+      currentBidderId: 1,
+      fills: { p1: { memberId: 2, bidId: 'specialty-award' } },
+      bidOrder: [{ memberId: 1 }],
+      live: { specialty: null },
+    });
+  });
+
+  it('supersedes a specialty candidate previous award without losing its bid ordinal', () => {
+    const specialtyPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      annualOperations: {
+        v: 1,
+        stageOrder: ['d'],
+        requiredTopologyPositionIds: ['p1'],
+        specialties: [
+          {
+            id: 'marine',
+            label: 'Marine',
+            mode: 'INTERRUPTING',
+            opportunityPositionIds: ['p1'],
+            requiredCredentialNames: ['Marine'],
+            requiredSpecialtyCodes: ['MARINE'],
+            points: [],
+            tieBreakChain: ['RSC_SENIORITY'],
+          },
+        ],
+        contact: { minimumAttempts: 3, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 18,
+          max: 19,
+          captainDcMax: 2,
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+        },
+      },
+    };
+    const priorAward = {
+      ...state(),
+      bidOrder: [{ ordinal: 1, memberId: 1, pool: 'FF' as const, stageId: 'd' }],
+      fills: { p2: { memberId: 2, ordinal: 2, bidId: 'prior-award' } },
+    };
+    const started = reduceLiveBidCommand(
+      priorAward,
+      specialtyPolicy,
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'marine',
+        positionId: 'p1',
+        candidateMemberIds: [2],
+      }),
+      100,
+      'specialty-start',
+    );
+    if (!started.ok) throw new Error(started.code);
+
+    const resolved = reduceLiveBidCommand(
+      started.state,
+      specialtyPolicy,
+      command('live.resolve_specialty_candidate', { memberId: 2, outcome: 'ACCEPT' }),
+      101,
+      'specialty-replacement',
+    );
+    if (!resolved.ok) throw new Error(resolved.code);
+    expect(resolved.state.fills).toEqual({
+      p1: { memberId: 2, ordinal: 2, bidId: 'specialty-replacement' },
+    });
+    expect(resolved.supersedesBidId).toBe('prior-award');
+    expect(resolved.payload).toMatchObject({
+      releasedPositionId: 'p2',
+      supersedesBidId: 'prior-award',
+      removedFromRemainingOrder: false,
+    });
+  });
+
+  it('holds the department presentation without pausing the bid', () => {
+    const held = reduceLiveBidCommand(
+      state(),
+      policy,
+      command('live.set_presentation_mode', { mode: 'HOLD' }),
+      100,
+      'presentation-hold',
+    );
+    if (!held.ok) throw new Error(held.code);
+    expect(held.state).toMatchObject({
+      currentPhase: 'position_bid',
+      live: {
+        presentation: { mode: 'HOLD', heldAtSeq: 0, heldProjection: { currentBidderId: 1 } },
+      },
+    });
+  });
+
+  it('keeps the exact original bidder active after specialty decline and exhaustion', () => {
+    const specialtyPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      annualOperations: {
+        v: 1,
+        stageOrder: ['d'],
+        requiredTopologyPositionIds: ['p1'],
+        specialties: [
+          {
+            id: 'marine',
+            label: 'Marine',
+            mode: 'INTERRUPTING',
+            opportunityPositionIds: ['p1'],
+            requiredCredentialNames: ['Marine'],
+            requiredSpecialtyCodes: ['MARINE'],
+            points: [],
+            tieBreakChain: ['RSC_SENIORITY'],
+          },
+        ],
+        contact: { minimumAttempts: 3, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 18,
+          max: 19,
+          captainDcMax: 2,
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+        },
+      },
+    };
+    const started = reduceLiveBidCommand(
+      state(),
+      specialtyPolicy,
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'marine',
+        positionId: 'p1',
+        candidateMemberIds: [2, 3],
+      }),
+      100,
+      'start',
+    );
+    if (!started.ok) throw new Error(started.code);
+    const firstDecline = reduceLiveBidCommand(
+      started.state,
+      specialtyPolicy,
+      command('live.resolve_specialty_candidate', {
+        expectedSeq: 1,
+        memberId: 2,
+        outcome: 'DECLINE',
+      }),
+      101,
+      'decline-one',
+    );
+    if (!firstDecline.ok) throw new Error(firstDecline.code);
+    expect(firstDecline.state.live?.specialty).toMatchObject({
+      candidateCursor: 1,
+      suspendedBidderId: 1,
+    });
+    const premature = reduceLiveBidCommand(
+      firstDecline.state,
+      specialtyPolicy,
+      command('live.resolve_specialty_candidate', {
+        expectedSeq: 2,
+        memberId: 3,
+        outcome: 'UNREACHABLE',
+        evidenceReference: 'contact-log-3',
+      }),
+      102,
+      'decline-two',
+    );
+    expect(premature).toMatchObject({ ok: false, code: 'CONTACT_ATTEMPTS_INCOMPLETE' });
+    let contacted = firstDecline.state;
+    for (const index of [0, 1, 2]) {
+      const attempt = reduceLiveBidCommand(
+        contacted,
+        specialtyPolicy,
+        command('live.record_contact_attempt', {
+          commandId: `10000000-0000-4000-8000-00000000000${index}`,
+          expectedSeq: contacted.lastSeq,
+          memberId: 3,
+          method: index === 1 ? 'TEXT' : 'PHONE',
+        }),
+        102 + index,
+        `contact-${index}`,
+      );
+      if (!attempt.ok) throw new Error(attempt.code);
+      contacted = attempt.state;
+    }
+    const exhausted = reduceLiveBidCommand(
+      contacted,
+      specialtyPolicy,
+      command('live.resolve_specialty_candidate', {
+        expectedSeq: contacted.lastSeq,
+        memberId: 3,
+        outcome: 'UNREACHABLE',
+        evidenceReference: 'contact-log-3',
+      }),
+      106,
+      'decline-two',
+    );
+    if (!exhausted.ok) throw new Error(exhausted.code);
+    expect(exhausted.state).toMatchObject({
+      currentBidderId: 1,
+      live: { specialty: null },
+      fills: {},
+    });
+  });
+
   it('records a staged selection and seals it after the next selection', () => {
     const first = reduceLiveBidCommand(
       state(),
@@ -114,13 +371,76 @@ describe('live canonical reducer', () => {
       command('live.amend_selection', {
         commandId: '00000000-0000-4000-8000-000000000003',
         expectedSeq: 2,
-        positionId: 'p1',
-        replacementMemberId: 2,
+        memberId: 1,
+        fromPositionId: 'p1',
+        toPositionId: 'p2',
       }),
       102,
       'b3',
     );
     expect(amended).toMatchObject({ ok: false, code: 'SELECTION_SEALED' });
+  });
+  it('amends the latest member selection to another eligible open opportunity', () => {
+    const selected = reduceLiveBidCommand(
+      state(),
+      policy,
+      command('live.record_selection', { memberId: 1, positionId: 'p1' }),
+      100,
+      'b1',
+    );
+    if (!selected.ok) throw new Error(selected.code);
+
+    const amended = reduceLiveBidCommand(
+      selected.state,
+      policy,
+      command('live.amend_selection', {
+        commandId: '00000000-0000-4000-8000-000000000003',
+        expectedSeq: 1,
+        memberId: 1,
+        fromPositionId: 'p1',
+        toPositionId: 'p2',
+      }),
+      101,
+      'b2',
+    );
+    if (!amended.ok) throw new Error(amended.code);
+    expect(amended.state.fills).toEqual({ p2: { memberId: 1, ordinal: 1, bidId: 'b2' } });
+    expect(amended.payload).toMatchObject({
+      operation: 'amend_selection',
+      memberId: 1,
+      fromPositionId: 'p1',
+      toPositionId: 'p2',
+      supersedesBidId: 'b1',
+    });
+  });
+
+  it('alters only the uncommitted order and preserves frozen member entries', () => {
+    const result = reduceLiveBidCommand(
+      state(),
+      policy,
+      command('live.alter_order', { orderedRemainingMemberIds: [2, 1] }),
+      100,
+      'unused',
+    );
+    if (!result.ok) throw new Error(result.code);
+    expect(result.state.bidOrder.map((entry) => entry.memberId)).toEqual([2, 1]);
+    expect(result.state.currentBidderId).toBe(2);
+    expect(result.payload).toMatchObject({
+      operation: 'alter_order',
+      beforeMemberIds: [1, 2],
+      afterMemberIds: [2, 1],
+    });
+  });
+
+  it('rejects an altered order that drops a remaining member', () => {
+    const result = reduceLiveBidCommand(
+      state(),
+      policy,
+      command('live.alter_order', { orderedRemainingMemberIds: [2] }),
+      100,
+      'unused',
+    );
+    expect(result).toMatchObject({ ok: false, code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' });
   });
   it('fails closed when a required disposition evidence pointer is absent', () => {
     const result = reduceLiveBidCommand(
@@ -171,8 +491,9 @@ describe('live canonical reducer', () => {
       policy,
       command('live.amend_selection', {
         commandId: '00000000-0000-4000-8000-000000000100',
-        positionId: 'p1',
-        replacementMemberId: 2,
+        memberId: 1,
+        fromPositionId: 'p1',
+        toPositionId: 'p2',
       }),
       101,
       'b2',

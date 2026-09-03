@@ -1,0 +1,148 @@
+import { createServer } from 'node:http';
+
+const port = 31987;
+let sequence = 3;
+const contactHistory = [];
+
+function json(response, status, body) {
+  response.writeHead(status, { 'content-type': 'application/json' });
+  response.end(JSON.stringify(body));
+}
+
+function bidder(memberId, firstName, lastName, ordinal) {
+  return {
+    memberId,
+    ordinal,
+    pool: 'FF',
+    firstName,
+    lastName,
+    rank: 'FF',
+    employeeId: String(9000 + memberId),
+  };
+}
+
+const server = createServer((request, response) => {
+  const url = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
+  if (request.method === 'GET' && url.pathname === '/health') {
+    json(response, 200, { ok: true });
+    return;
+  }
+  if (request.method === 'GET' && url.pathname === '/api/board') {
+    json(response, 200, {
+      bidSessionId: 'annual-specialty-e2e',
+      lastSeq: sequence,
+      currentPhase: 'position_bid',
+      currentBidderId: 1,
+      currentBidder: bidder(1, 'Alex', 'Original', 1),
+      onDeck: [bidder(2, 'Jordan', 'Candidate', 2)],
+      members: {
+        1: { id: 1, firstName: 'Alex', lastName: 'Original', rank: 'FF', employeeId: '9001' },
+        2: { id: 2, firstName: 'Jordan', lastName: 'Candidate', rank: 'FF', employeeId: '9002' },
+      },
+      fills: {},
+      bidOrder: [
+        { ordinal: 1, memberId: 1, pool: 'FF' },
+        { ordinal: 2, memberId: 2, pool: 'FF' },
+      ],
+      bidOrderPreview: false,
+      isMock: false,
+      mockControlRevision: null,
+      sessionStartedAt: Date.now() - 60_000,
+      turnStartedAtMs: Date.now(),
+      turnTimerSeconds: 180,
+      positions: [
+        {
+          id: 'A101',
+          templateVersion: '2027.1',
+          bidParticipation: 'BIDDABLE',
+          shift: 'A',
+          station: '1',
+          unit: 'Marine 1',
+          rankRequired: 'FF',
+          positionName: 'Marine Firefighter',
+        },
+      ],
+      annual: null,
+    });
+    return;
+  }
+  if (
+    request.method === 'GET' &&
+    url.pathname === '/api/admin/bid-session/annual-specialty-e2e/specialty-live'
+  ) {
+    json(response, 200, {
+      bid_session_id: 'annual-specialty-e2e',
+      sequence,
+      current_bidder: { member_id: 1, first_name: 'Alex', last_name: 'Original', rank: 'FF' },
+      remaining_order: [1, 2],
+      fills: {},
+      specialties: [
+        {
+          id: 'marine',
+          label: 'Marine',
+          mode: 'INTERRUPTING',
+          positions: [{ id: 'A101', label: '1 Marine 1 Marine Firefighter' }],
+        },
+      ],
+      active: {
+        specialty_id: 'marine',
+        specialty_label: 'Marine',
+        requested_position_id: 'A101',
+        original_bidder: {
+          member_id: 1,
+          first_name: 'Alex',
+          last_name: 'Original',
+          rank: 'FF',
+          points: 3,
+          policy_rank: 2,
+        },
+        candidates: [
+          {
+            member_id: 2,
+            first_name: 'Jordan',
+            last_name: 'Candidate',
+            rank: 'FF',
+            points: 8,
+            policy_rank: 1,
+            status: 'CURRENT',
+            contact_history: contactHistory,
+          },
+        ],
+        current_candidate_id: 2,
+        remaining_candidate_ids: [2],
+        suspended_turn: true,
+        resume: { member_id: 1, queue_cursor: 0, current_phase: 'position_bid' },
+      },
+    });
+    return;
+  }
+  if (
+    request.method === 'POST' &&
+    url.pathname === '/api/admin/bid-session/annual-specialty-e2e/commands/live'
+  ) {
+    let raw = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk) => {
+      raw += chunk;
+    });
+    request.on('end', () => {
+      const command = JSON.parse(raw);
+      sequence += 1;
+      if (command.type === 'live.record_contact_attempt') {
+        contactHistory.push({ method: command.method, at_ms: Date.now(), actor_member_id: 901 });
+      }
+      json(response, 200, { kind: 'accepted', commandId: command.commandId, seq: sequence });
+    });
+    return;
+  }
+  json(response, 404, { error: 'annual_local_worker_route_not_found' });
+});
+
+server.listen(port, '127.0.0.1');
+
+function close() {
+  server.close(() => process.exit(0));
+}
+
+process.on('SIGINT', close);
+process.on('SIGTERM', close);

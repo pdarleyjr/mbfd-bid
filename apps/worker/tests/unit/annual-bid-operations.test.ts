@@ -109,6 +109,24 @@ describe('annual bid operations', () => {
     });
   });
 
+  it('honors a configured contact-attempt threshold instead of fixing it at three', () => {
+    const policy = { ...operations, contact: { ...operations.contact, minimumAttempts: 2 } };
+    let state = initializeAnnualOperations({ preferenceSheets: [] });
+    for (const method of ['PHONE', 'TEXT'] as const) {
+      const result = recordContactAttempt(state, {
+        memberId: 9,
+        method,
+        actorMemberId: 99,
+        atMs: state.contactAttempts.length + 1,
+      });
+      if (!result.ok) throw new Error(result.code);
+      state = result.state;
+    }
+    expect(declareUnreachable(state, policy, { memberId: 9, actorMemberId: 99 })).toMatchObject({
+      ok: true,
+    });
+  });
+
   it('keeps dedicated specialty topology distinct from membership-only SWAT and enforces known A-Day maxima', () => {
     expect(
       evaluateSpecialtyEligibility({

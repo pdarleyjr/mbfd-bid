@@ -49,6 +49,14 @@ function source(
           position: 'Rescue Firefighter',
           specialty: 'RESCUE',
         },
+        {
+          id: 'P-RESCUE-2',
+          shift: 'B',
+          station: '2',
+          unit: 'Rescue',
+          position: 'Rescue Firefighter',
+          specialty: 'RESCUE',
+        },
       ],
     },
     state: {
@@ -132,7 +140,7 @@ describe('canonical annual completion projection', () => {
           label: 'Annual',
           order: 0,
           memberIds: [101, 202, 303],
-          opportunityPositionIds: ['P-ENGINE-1', 'P-RESCUE-1'],
+          opportunityPositionIds: ['P-ENGINE-1', 'P-RESCUE-1', 'P-RESCUE-2'],
           kind: 'FIREFIGHTER',
         },
       ],
@@ -159,7 +167,7 @@ describe('canonical annual completion projection', () => {
       annualOperations: {
         v: 1,
         stageOrder: ['annual'],
-        requiredTopologyPositionIds: ['P-ENGINE-1', 'P-RESCUE-1'],
+        requiredTopologyPositionIds: ['P-ENGINE-1', 'P-RESCUE-1', 'P-RESCUE-2'],
         contact: { minimumAttempts: 3, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
         aDay: {
           combatGroups: ['G1', 'G2', 'G3', 'G4'],
@@ -221,12 +229,16 @@ describe('canonical annual completion projection', () => {
     const amended = reduceLiveBidCommand(
       second.state,
       policy,
-      command('live.amend_selection', 2, { positionId: 'P-RESCUE-1', replacementMemberId: 303 }),
+      command('live.amend_selection', 2, {
+        memberId: 202,
+        fromPositionId: 'P-RESCUE-1',
+        toPositionId: 'P-RESCUE-2',
+      }),
       102,
       'award-3',
     );
     if (!amended.ok) throw new Error(amended.code);
-    const members: Member[] = [101, 303].map((memberId) => ({
+    const members: Member[] = [101, 202].map((memberId) => ({
       employeeId: String(memberId),
       firstName: 'Member',
       lastName: String(memberId),
@@ -240,10 +252,10 @@ describe('canonical annual completion projection', () => {
       amended.state,
       {
         members,
-        phase1Order: [101, 303],
+        phase1Order: [101, 202],
         phase1Picks: [
           { memberId: 101, positionId: 'P-ENGINE-1', shift: 'D' },
-          { memberId: 303, positionId: 'P-RESCUE-1', shift: 'D' },
+          { memberId: 202, positionId: 'P-RESCUE-2', shift: 'D' },
         ],
       },
       103,
@@ -256,7 +268,7 @@ describe('canonical annual completion projection', () => {
     if (firstADay.kind !== 'accepted') throw new Error(firstADay.code);
     const secondADay = handleSubmitADayPick(
       firstADay.newState,
-      { senderMemberId: 303, aDay: 'TUE', idempotencyKey: 'a-day-2', members },
+      { senderMemberId: 202, aDay: 'TUE', idempotencyKey: 'a-day-2', members },
       105,
     );
     if (secondADay.kind !== 'accepted') throw new Error(secondADay.code);
@@ -283,11 +295,11 @@ describe('canonical annual completion projection', () => {
     );
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) return;
-    expect(result.value.futureRoster.map((row) => row.memberId)).toEqual([101, 303]);
+    expect(result.value.futureRoster.map((row) => row.memberId)).toEqual([101, 202]);
     expect(
-      result.value.participants.find((participant) => participant.positionId === 'P-RESCUE-1'),
+      result.value.participants.find((participant) => participant.positionId === 'P-RESCUE-2'),
     ).toMatchObject({
-      memberId: 303,
+      memberId: 202,
       aDay: 'TUE',
       amendment: { originalBidId: 'award-2', replacementBidId: 'award-3' },
     });

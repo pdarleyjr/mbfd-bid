@@ -175,6 +175,35 @@ export const ruleBooks = sqliteTable('rule_books', {
   revision: integer('revision').notNull().default(0),
 });
 
+/** Versioned labor-management language paired with a reviewable execution policy. */
+export const annualBidPolicyDocuments = sqliteTable(
+  'annual_bid_policy_documents',
+  {
+    id: text('id').primaryKey(),
+    ruleBookVersion: text('rule_book_version')
+      .notNull()
+      .references(() => ruleBooks.version, { onDelete: 'restrict' }),
+    effectiveYear: integer('effective_year').notNull(),
+    revision: integer('revision').notNull(),
+    status: text('status', { enum: ['DRAFT', 'PUBLISHED', 'SUPERSEDED'] }).notNull(),
+    policyText: text('policy_text').notNull(),
+    executionPolicyJson: text('execution_policy_json').notNull(),
+    createdBy: integer('created_by').references(() => members.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+    publishedBy: integer('published_by').references(() => members.id, { onDelete: 'set null' }),
+    publishedAt: integer('published_at', { mode: 'timestamp_ms' }),
+    supersedesDocumentId: text('supersedes_document_id'),
+  },
+  (t) => ({
+    yearStatusIdx: index('idx_annual_bid_policy_documents_year_status').on(
+      t.effectiveYear,
+      t.status,
+      t.revision,
+    ),
+  }),
+);
+
 export const positionRules = sqliteTable(
   'position_rules',
   {
@@ -244,6 +273,10 @@ export const bidYears = sqliteTable('bid_years', {
     () => positionTemplates.version,
   ),
   ruleBookVersion: text('rule_book_version').references(() => ruleBooks.version),
+  annualPolicyDocumentId: text('annual_policy_document_id').references(
+    () => annualBidPolicyDocuments.id,
+    { onDelete: 'restrict' },
+  ),
   configJson: text('config_json'),
   // Optimistic token for the designated annual configuration source. It is
   // intentionally separate from a draft rule book's own revision.
@@ -555,6 +588,7 @@ export const auditLog = sqliteTable(
         'positions_clone',
         'rule_book_clone',
         'bid_configuration_set',
+        'annual_policy_published',
         'bid_award_transition',
         'telestaff_apply',
         'qualification_lifecycle',
