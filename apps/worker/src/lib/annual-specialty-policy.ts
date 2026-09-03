@@ -89,3 +89,29 @@ export function rankFrozenSpecialtyCandidates(input: {
     })
     .map(({ member, points }) => ({ memberId: member.memberId, points }));
 }
+
+/**
+ * Limits an interruption to candidates who are both ahead of the frozen
+ * requester in the specialty ordering and eligible for the exact frozen
+ * position. The caller supplies only eligibility outcomes derived from the
+ * same session snapshot; this function never reads a live roster or accepts a
+ * browser-provided rank/order.
+ */
+export function higherPriorityFrozenSpecialtyCandidates(input: {
+  readonly policy: FrozenAnnualSpecialtyPolicy;
+  readonly evaluationOn: string;
+  readonly members: readonly FrozenSpecialtyCandidateFact[];
+  readonly requesterMemberId: number;
+  readonly positionEligibleMemberIds: ReadonlySet<number>;
+}): readonly RankedFrozenSpecialtyCandidate[] {
+  if (!input.positionEligibleMemberIds.has(input.requesterMemberId))
+    throw new Error('SPECIALTY_REQUESTER_POSITION_INELIGIBLE');
+  const ranked = rankFrozenSpecialtyCandidates(input);
+  const requesterIndex = ranked.findIndex(
+    (candidate) => candidate.memberId === input.requesterMemberId,
+  );
+  if (requesterIndex < 0) throw new Error('SPECIALTY_REQUESTER_NOT_QUALIFIED');
+  return ranked
+    .slice(0, requesterIndex)
+    .filter((candidate) => input.positionEligibleMemberIds.has(candidate.memberId));
+}

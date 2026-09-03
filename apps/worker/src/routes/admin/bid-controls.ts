@@ -16,7 +16,7 @@ import { ulid } from 'ulid';
 import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidAwardAmendments, bidSessions, bids } from '../../db/schema.js';
-import { rankFrozenSpecialtyCandidates } from '../../lib/annual-specialty-policy.js';
+import { higherPriorityFrozenSpecialtyCandidates } from '../../lib/annual-specialty-policy.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import {
   eligibilityMemberFromFrozen,
@@ -65,8 +65,41 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
     if (specialty === undefined) return c.json({ error: 'live_specialty_policy_missing' }, 409);
     if (frozen.snapshot.credentialEvaluationOn === undefined)
       return c.json({ error: 'live_specialty_evidence_date_missing' }, 409);
+    const session = await db
+      .select({ currentBidderId: bidSessions.currentBidderId })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, sessionId))
+      .get();
+    if (session === undefined || session.currentBidderId === null)
+      return c.json({ error: 'live_specialty_requester_missing' }, 409);
+    const target = await resolveFrozenSessionBidTarget(db, {
+      bidSessionId: sessionId,
+      memberId: session.currentBidderId,
+      positionId: typeof raw.positionId === 'string' ? raw.positionId : '',
+    });
+    if (!target.ok) return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
+    const requester = frozenEligibilityMemberForSession(frozen.snapshot, session.currentBidderId);
+    if (requester === null) return c.json({ error: 'live_specialty_requester_missing' }, 409);
+    if (!evaluateEligibility(eligibilityMemberFromFrozen(requester), target.rule).eligible)
+      return c.json({ error: 'live_specialty_requester_position_ineligible' }, 409);
     try {
-      const candidates = rankFrozenSpecialtyCandidates({
+      const positionEligibleMemberIds = new Set(
+        frozen.snapshot.members
+          .filter((member) => {
+            const eligibilityMember = frozenEligibilityMemberForSession(
+              frozen.snapshot,
+              member.memberId,
+            );
+            return (
+              member.pool !== 'EXCLUDED' &&
+              eligibilityMember !== null &&
+              evaluateEligibility(eligibilityMemberFromFrozen(eligibilityMember), target.rule)
+                .eligible
+            );
+          })
+          .map((member) => member.memberId),
+      );
+      const candidates = higherPriorityFrozenSpecialtyCandidates({
         policy: specialty,
         evaluationOn: frozen.snapshot.credentialEvaluationOn,
         members: frozen.snapshot.members
@@ -78,9 +111,11 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
             credentialNames: member.credentialNames,
             specialtyQualifications: member.specialtyQualifications,
           })),
+        requesterMemberId: session.currentBidderId,
+        positionEligibleMemberIds,
       });
       if (candidates.length === 0)
-        return c.json({ error: 'live_specialty_candidate_pool_empty' }, 409);
+        return c.json({ error: 'live_specialty_no_higher_priority_candidate' }, 409);
       normalizedRaw = {
         ...raw,
         candidateMemberIds: candidates.map((candidate) => candidate.memberId),

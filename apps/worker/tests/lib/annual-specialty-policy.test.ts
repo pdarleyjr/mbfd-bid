@@ -1,6 +1,9 @@
 import type { FrozenAnnualSpecialtyPolicy } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
-import { rankFrozenSpecialtyCandidates } from '../../src/lib/annual-specialty-policy.js';
+import {
+  higherPriorityFrozenSpecialtyCandidates,
+  rankFrozenSpecialtyCandidates,
+} from '../../src/lib/annual-specialty-policy.js';
 
 const policy: FrozenAnnualSpecialtyPolicy = {
   id: 'marine-call-down',
@@ -78,5 +81,70 @@ describe('annual specialty policy', () => {
         members: [],
       }),
     ).toThrow('SPECIALTY_TIEBREAK_UNCONFIGURED');
+  });
+
+  it('calls down only to position-qualified candidates ranked ahead of the requesting bidder', () => {
+    const members = [1, 2, 3, 4].map((memberId) => ({
+      memberId,
+      rscSeniority: memberId,
+      rankSeniority: memberId,
+      credentialNames: ['Marine'],
+      specialtyQualifications: [
+        {
+          specialtyCode: 'MARINE',
+          status: 'active' as const,
+          effectiveOn: '2020-01-01',
+          expiresOn: null,
+        },
+      ],
+    }));
+
+    expect(
+      higherPriorityFrozenSpecialtyCandidates({
+        policy,
+        evaluationOn: '2026-01-15',
+        members,
+        requesterMemberId: 3,
+        positionEligibleMemberIds: new Set([1, 3, 4]),
+      }),
+    ).toEqual([{ memberId: 1, points: 8 }]);
+  });
+
+  it('does not call down for the top ranked requester and fails closed for an unresolved tie', () => {
+    const member = (memberId: number) => ({
+      memberId,
+      rscSeniority: 1,
+      rankSeniority: 1,
+      credentialNames: ['Marine'],
+      specialtyQualifications: [
+        {
+          specialtyCode: 'MARINE',
+          status: 'active' as const,
+          effectiveOn: '2020-01-01',
+          expiresOn: null,
+        },
+      ],
+    });
+    expect(
+      higherPriorityFrozenSpecialtyCandidates({
+        policy,
+        evaluationOn: '2026-01-15',
+        members: [
+          { ...member(1), rscSeniority: 1 },
+          { ...member(2), rscSeniority: 2 },
+        ],
+        requesterMemberId: 1,
+        positionEligibleMemberIds: new Set([1, 2]),
+      }),
+    ).toEqual([]);
+    expect(() =>
+      higherPriorityFrozenSpecialtyCandidates({
+        policy,
+        evaluationOn: '2026-01-15',
+        members: [member(1), member(2)],
+        requesterMemberId: 2,
+        positionEligibleMemberIds: new Set([1, 2]),
+      }),
+    ).toThrow('SPECIALTY_TIE_UNRESOLVED');
   });
 });

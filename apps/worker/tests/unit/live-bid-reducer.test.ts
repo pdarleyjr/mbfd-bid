@@ -167,6 +167,82 @@ describe('live canonical reducer', () => {
     });
   });
 
+  it('keeps the exact original bidder active after specialty decline and exhaustion', () => {
+    const specialtyPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      annualOperations: {
+        v: 1,
+        stageOrder: ['d'],
+        requiredTopologyPositionIds: ['p1'],
+        specialties: [
+          {
+            id: 'marine',
+            label: 'Marine',
+            mode: 'INTERRUPTING',
+            opportunityPositionIds: ['p1'],
+            requiredCredentialNames: ['Marine'],
+            requiredSpecialtyCodes: ['MARINE'],
+            points: [],
+            tieBreakChain: ['RSC_SENIORITY'],
+          },
+        ],
+        contact: { minimumAttempts: 3, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 18,
+          max: 19,
+          captainDcMax: 2,
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
+        },
+      },
+    };
+    const started = reduceLiveBidCommand(
+      state(),
+      specialtyPolicy,
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'marine',
+        positionId: 'p1',
+        candidateMemberIds: [2, 3],
+      }),
+      100,
+      'start',
+    );
+    if (!started.ok) throw new Error(started.code);
+    const firstDecline = reduceLiveBidCommand(
+      started.state,
+      specialtyPolicy,
+      command('live.resolve_specialty_candidate', {
+        expectedSeq: 1,
+        memberId: 2,
+        outcome: 'DECLINE',
+      }),
+      101,
+      'decline-one',
+    );
+    if (!firstDecline.ok) throw new Error(firstDecline.code);
+    expect(firstDecline.state.live?.specialty).toMatchObject({
+      candidateCursor: 1,
+      suspendedBidderId: 1,
+    });
+    const exhausted = reduceLiveBidCommand(
+      firstDecline.state,
+      specialtyPolicy,
+      command('live.resolve_specialty_candidate', {
+        expectedSeq: 2,
+        memberId: 3,
+        outcome: 'UNREACHABLE',
+      }),
+      102,
+      'decline-two',
+    );
+    if (!exhausted.ok) throw new Error(exhausted.code);
+    expect(exhausted.state).toMatchObject({
+      currentBidderId: 1,
+      live: { specialty: null },
+      fills: {},
+    });
+  });
+
   it('records a staged selection and seals it after the next selection', () => {
     const first = reduceLiveBidCommand(
       state(),

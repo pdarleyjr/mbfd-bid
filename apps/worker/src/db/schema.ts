@@ -582,6 +582,7 @@ export const auditLog = sqliteTable(
         'positions_clone',
         'rule_book_clone',
         'bid_configuration_set',
+        'annual_policy_published',
         'bid_award_transition',
         'telestaff_apply',
         'qualification_lifecycle',

@@ -50,6 +50,14 @@ const CONTROL_AREAS: readonly ControlArea[] = [
     stateClassName: 'text-slate-300',
   },
   {
+    href: '/admin/annual-policy',
+    title: 'Annual Policy',
+    description:
+      'Draft, review, publish, and supersede human-readable annual bid policy revisions.',
+    state: 'Versioned lifecycle',
+    stateClassName: 'text-slate-300',
+  },
+  {
     href: '/admin/ai-assist',
     title: 'AI Assist',
     description: 'See the explicit non-operational state for any future advisory assistance.',
