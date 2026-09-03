@@ -295,6 +295,8 @@ const SafeExceptionResolutionRequestSchema = z
   })
   .strict();
 
+const DeterministicReviewRequestSchema = SafeExceptionResolutionRequestSchema;
+
 const ReconcileRequestSchema = z
   .object({
     expected_reconciliation_revision: z.number().int().nonnegative(),
@@ -1541,6 +1543,121 @@ router.patch('/imports/:importId/rows/:rowId/review', requireStepUpAuth(), async
     row: { reviewStatus: mutation.reviewStatus, resolutionAction: mutation.resolutionAction },
   });
 });
+
+/**
+ * Records the same accept-observation decision as the per-row control for all
+ * currently safe deterministic rows. This avoids making a large official
+ * import impossible to finish when its review queue exceeds one UI page.
+ */
+router.post(
+  '/imports/:importId/review-deterministic-observations',
+  requireStepUpAuth(),
+  async (c) => {
+    const importId = c.req.param('importId');
+    if (!isOpaqueId(importId)) return c.json({ error: 'invalid_import_id' }, 400);
+    const parsed = DeterministicReviewRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_review_request' }, 400);
+    const actorId = actorMemberId(c.get('claims'));
+    if (actorId === null) return c.json({ error: 'operator_identity_required' }, 403);
+
+    const importRecord = await loadImportSummary(c.env.DB, importId);
+    if (
+      importRecord === undefined ||
+      importRecord.source_kind !== 'official' ||
+      importRecord.status !== 'reviewed'
+    )
+      return c.json({ error: 'import_not_reviewable' }, 409);
+    if (importRecord.reconciliation_revision !== parsed.data.expected_reconciliation_revision)
+      return c.json({ error: 'reconciliation_revision_conflict' }, 409);
+
+    const now = Date.now();
+    const updated = await c.env.DB.prepare(
+      `WITH eligible_import(id) AS MATERIALIZED (
+       SELECT id FROM assignment_imports
+        WHERE id = ? AND source_kind = 'official' AND status = 'reviewed'
+          AND reconciliation_revision = ?
+     )
+     UPDATE assignment_import_rows
+        SET review_status = 'approved', resolution_action = 'APPLY_OBSERVATION',
+            reviewed_at = ?, reviewed_by_member_id = ?,
+            resolution_reason = 'ACCEPT_TELESTAFF_OBSERVATION'
+      WHERE import_id IN (SELECT id FROM eligible_import)
+        AND review_status = 'pending'
+        AND reconciliation_classification IN ('MOVED', 'NEW_ASSIGNMENT')
+        AND NOT (
+          reconciliation_classification = 'MOVED'
+          AND resolved_member_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+              FROM member_assignments current_assignment
+              LEFT JOIN staffing_position_source_mappings source_mapping
+                ON source_mapping.id = assignment_import_rows.staffing_position_source_mapping_id
+              JOIN assignment_imports import_record ON import_record.id = assignment_import_rows.import_id
+             WHERE current_assignment.member_id = assignment_import_rows.resolved_member_id
+               AND current_assignment.status <> 'cancelled'
+               AND (
+                 current_assignment.effective_from > import_record.source_snapshot_as_of
+                 OR (
+                   current_assignment.origin_type <> 'TELESTAFF_IMPORT'
+                   AND current_assignment.effective_from <= import_record.source_snapshot_as_of
+                   AND (current_assignment.effective_to IS NULL
+                     OR current_assignment.effective_to >= import_record.source_snapshot_as_of)
+                 )
+               )
+               AND (source_mapping.staffing_position_id IS NULL
+                 OR current_assignment.staffing_position_id <> source_mapping.staffing_position_id)
+          )
+        )
+      RETURNING id`,
+    )
+      .bind(importId, parsed.data.expected_reconciliation_revision, now, actorId)
+      .all();
+    const acceptedObservations = updated.results.length;
+    if (acceptedObservations === 0) {
+      const refreshed = await loadImportSummary(c.env.DB, importId);
+      if (
+        refreshed !== undefined &&
+        refreshed.reconciliation_revision !== parsed.data.expected_reconciliation_revision
+      )
+        return c.json({ error: 'reconciliation_changed' }, 409);
+      return c.json({
+        import: refreshed === undefined ? null : mapImport(refreshed),
+        acceptedObservations: 0,
+        idempotent: true,
+      });
+    }
+
+    await c.env.DB.prepare(
+      `INSERT INTO audit_log
+       (id, bid_session_id, seq, actor_type, actor_id, action, target_kind, target_id,
+        before_state, after_state, reason, client_meta, created_at)
+     SELECT ?, NULL, COALESCE(MAX(seq), 0) + 1, 'admin', ?,
+            'telestaff_deterministic_observations_review', 'assignment_import', ?, ?, ?, ?, ?, ?
+       FROM audit_log WHERE bid_session_id IS NULL`,
+    )
+      .bind(
+        ulid(),
+        actorId,
+        importId,
+        JSON.stringify({
+          v: 1,
+          reconciliationRevision: parsed.data.expected_reconciliation_revision,
+          pendingDeterministicObservations: acceptedObservations,
+        }),
+        JSON.stringify({ v: 1, acceptedObservations }),
+        parsed.data.reason,
+        JSON.stringify({ v: 1, operation: 'telestaff_deterministic_observations_review' }),
+        Math.floor(now / 1000),
+      )
+      .run();
+    const refreshed = await loadImportSummary(c.env.DB, importId);
+    return c.json({
+      import: refreshed === undefined ? null : mapImport(refreshed),
+      acceptedObservations,
+      idempotent: false,
+    });
+  },
+);
 
 /**
  * Terminally resolves only evidence that cannot safely materialize a staffing

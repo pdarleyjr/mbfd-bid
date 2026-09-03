@@ -100,6 +100,11 @@ interface SafeExceptionResolutionResult {
   rejectedUnknownPerson: number;
 }
 
+interface DeterministicReviewResult {
+  acceptedObservations: number;
+  idempotent: boolean;
+}
+
 interface BaselineAcceptanceResult {
   acceptanceId: string;
   importId: string;
@@ -502,6 +507,9 @@ export function TeleStaffOperatorWorkspace() {
   const [certification, setCertification] = useState<CertificationResult | null>(null);
   const [safeExceptionResolution, setSafeExceptionResolution] =
     useState<SafeExceptionResolutionResult | null>(null);
+  const [deterministicReview, setDeterministicReview] = useState<DeterministicReviewResult | null>(
+    null,
+  );
   const [baselineAcceptance, setBaselineAcceptance] = useState<BaselineAcceptanceResult | null>(
     null,
   );
@@ -808,6 +816,59 @@ export function TeleStaffOperatorWorkspace() {
       );
     } catch {
       setError('safe_exception_resolution_unavailable');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewDeterministicObservations() {
+    if (detail === null) return;
+    if (
+      !window.confirm(
+        'Accept every currently safe deterministic TeleStaff observation? Newer protected canonical assignments, unresolved topology, incomplete evidence, and unknown personnel will not be accepted.',
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setDeterministicReview(null);
+    try {
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      const response = await csrfFetch(
+        `/api/admin/telestaff/imports/${encodeURIComponent(detail.import.id)}/review-deterministic-observations`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expected_reconciliation_revision: detail.import.reconciliationRevision,
+            reason:
+              'Operator-approved deterministic TeleStaff observations for canonical apply review.',
+          }),
+        },
+      );
+      const body = await parseResponse(response);
+      const result =
+        body !== null &&
+        typeof body === 'object' &&
+        'acceptedObservations' in body &&
+        typeof (body as { acceptedObservations?: unknown }).acceptedObservations === 'number'
+          ? {
+              acceptedObservations: (body as { acceptedObservations: number }).acceptedObservations,
+              idempotent:
+                'idempotent' in body && (body as { idempotent?: unknown }).idempotent === true,
+            }
+          : null;
+      if (!response.ok || result === null) {
+        setError(errorCode(body, 'deterministic_review_unavailable'));
+        return;
+      }
+      setDeterministicReview(result);
+      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      setNotice('Safe deterministic observations now have terminal review decisions.');
+    } catch {
+      setError('deterministic_review_unavailable');
     } finally {
       setBusy(false);
     }
@@ -1273,6 +1334,32 @@ export function TeleStaffOperatorWorkspace() {
                   incomplete evidence: {safeExceptionResolution.retainedIncompleteTopology} ·
                   Rejected unknown-person observations:{' '}
                   {safeExceptionResolution.rejectedUnknownPerson}
+                </p>
+              )}
+            </section>
+
+            <section className="mt-4 rounded-lg border border-sky-700 bg-sky-950/30 p-4">
+              <h3 className="font-semibold text-white">Deterministic observation review</h3>
+              <p className="mt-2 text-sm text-slate-300">
+                Accept all currently safe mapped observations, including rows beyond the first
+                review page. Newer protected assignments and unresolved evidence are excluded.
+              </p>
+              <button
+                type="button"
+                data-testid="telestaff-review-deterministic"
+                onClick={() => void reviewDeterministicObservations()}
+                disabled={busy || detail.import.reconciliation.pendingSourceRows === 0}
+                className="mt-3 min-h-11 rounded border border-sky-500 px-4 text-sm font-semibold text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Accept safe deterministic observations
+              </button>
+              {deterministicReview !== null && (
+                <p
+                  data-testid="telestaff-deterministic-review-result"
+                  className="mt-3 text-sm text-sky-100"
+                >
+                  Accepted observations: {deterministicReview.acceptedObservations} ·{' '}
+                  {deterministicReview.idempotent ? 'existing review confirmed' : 'review recorded'}
                 </p>
               )}
             </section>

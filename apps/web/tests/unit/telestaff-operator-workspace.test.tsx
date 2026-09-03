@@ -365,6 +365,86 @@ describe('TeleStaffOperatorWorkspace', () => {
     expect(container.textContent).toContain('Unresolved observations');
   });
 
+  it('reviews safe deterministic observations beyond the visible import page', async () => {
+    const importSummary = {
+      id: 'import-review-all-1',
+      status: 'reviewed',
+      sourceKind: 'official',
+      sourceSnapshotAsOf: '2026-08-28',
+      sourceObservedAt: null,
+      sourceObservationTimeBasis: 'date_only',
+      reconciliationRevision: 55,
+      normalizedDataRowCount: 262,
+      uniqueEmployeeCount: 262,
+      reconciliation: {
+        sourceRows: 262,
+        pendingSourceRows: 211,
+        hardBlockerSourceRows: 0,
+        incompleteTopologySourceRows: 11,
+        missingObservationFindings: 0,
+        pendingMissingObservationFindings: 0,
+      },
+    };
+    const detail = {
+      import: importSummary,
+      rows: [],
+      missingObservationFindings: [],
+      pagination: { totalRows: 262 },
+    };
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input) => {
+        const url = String(input);
+        if (url === '/api/admin/telestaff/imports?limit=25') {
+          return new Response(JSON.stringify({ imports: [importSummary] }), { status: 200 });
+        }
+        if (url === '/api/admin/telestaff/imports/import-review-all-1') {
+          return new Response(JSON.stringify(detail), { status: 200 });
+        }
+        if (url === '/api/auth/csrf') {
+          return new Response(
+            JSON.stringify({ token: 'csrf_123e4567-e89b-12d3-a456-426614174000' }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/review-deterministic-observations')) {
+          return new Response(JSON.stringify({ acceptedObservations: 211, idempotent: false }), {
+            status: 200,
+          });
+        }
+        return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal(
+      'confirm',
+      vi.fn(() => true),
+    );
+    const container = renderWorkspace();
+    await settle();
+    const importButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Snapshot 2026-08-28'),
+    );
+    if (!importButton) throw new Error('Retained import control did not render.');
+    await click(importButton);
+
+    const reviewButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="telestaff-review-deterministic"]',
+    );
+    if (!reviewButton) throw new Error('Deterministic review control did not render.');
+    await click(reviewButton);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/telestaff/imports/import-review-all-1/review-deterministic-observations',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ get: expect.any(Function) }),
+      }),
+    );
+    expect(
+      container.querySelector('[data-testid="telestaff-deterministic-review-result"]')?.textContent,
+    ).toContain('211');
+  });
+
   it('uses the authenticated CSRF path to designate a committed import as the 2026 staging baseline', async () => {
     const importSummary = {
       id: 'import-baseline-2026',

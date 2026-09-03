@@ -731,6 +731,90 @@ describe('admin TeleStaff operator workflow', () => {
     ).toEqual([{ count: 1 }]);
   });
 
+  it('accepts all safe deterministic observations without depending on the paged detail response', async () => {
+    await seedOperatorAndMappedSlot(h);
+    const stage = await request(h, '/imports', { method: 'POST', body: importForm() });
+    expect(stage.status).toBe(201);
+    const staged = (await stage.json()) as {
+      import: { id: string; reconciliationRevision: number };
+    };
+    await h.db.run(
+      `INSERT INTO assignment_import_rows
+         (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
+          source_topology_completeness, normalized_source_topology, source_a_r_day,
+          resolved_member_id, staffing_position_source_mapping_id, disposition,
+          reconciliation_classification, review_status, created_at)
+       SELECT '01M1MGP01FV41595YQZ0ABF4ZZ', import_id, source_row_number + 1000,
+              '${'c'.repeat(64)}', NULL, source_topology_completeness,
+              normalized_source_topology, source_a_r_day, resolved_member_id,
+              staffing_position_source_mapping_id, disposition,
+              reconciliation_classification, review_status, created_at
+         FROM assignment_import_rows WHERE import_id = ? LIMIT 1`,
+      [staged.import.id],
+    );
+    const refreshed = (await (await request(h, `/imports/${staged.import.id}`)).json()) as {
+      import: { reconciliationRevision: number };
+    };
+
+    const reviewed = await request(
+      h,
+      `/imports/${staged.import.id}/review-deterministic-observations`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_reconciliation_revision: refreshed.import.reconciliationRevision,
+          reason: 'Accept every safe deterministic observation in the official import.',
+        }),
+      },
+    );
+    expect(reviewed.status).toBe(200);
+    const reviewedBody = (await reviewed.json()) as {
+      import: { reconciliationRevision: number };
+      acceptedObservations: number;
+      idempotent: boolean;
+    };
+    expect(reviewedBody).toMatchObject({ acceptedObservations: 2, idempotent: false });
+    expect(
+      (
+        await h.db.run(
+          `SELECT review_status, resolution_action, resolution_reason
+             FROM assignment_import_rows WHERE import_id = ?`,
+          [staged.import.id],
+        )
+      ).results,
+    ).toEqual([
+      {
+        review_status: 'approved',
+        resolution_action: 'APPLY_OBSERVATION',
+        resolution_reason: 'ACCEPT_TELESTAFF_OBSERVATION',
+      },
+      {
+        review_status: 'approved',
+        resolution_action: 'APPLY_OBSERVATION',
+        resolution_reason: 'ACCEPT_TELESTAFF_OBSERVATION',
+      },
+    ]);
+
+    const replay = await request(
+      h,
+      `/imports/${staged.import.id}/review-deterministic-observations`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_reconciliation_revision: reviewedBody.import.reconciliationRevision,
+          reason: 'Confirm the deterministic review is idempotent on replay.',
+        }),
+      },
+    );
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      acceptedObservations: 0,
+      idempotent: true,
+    });
+  });
+
   it('certifies repeated complete topology into internal cardinality seats without deriving a policy distinction', async () => {
     await h.db.run(
       `INSERT INTO members
