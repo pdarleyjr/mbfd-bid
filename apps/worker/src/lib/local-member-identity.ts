@@ -12,11 +12,15 @@ type LocalMemberRow = { id: number };
  * member ID so an empty environment can still be initialized normally.
  */
 export async function withLocalMemberIdentity(
-  db: D1Database,
+  db: D1Database | undefined,
   claims: JwtPayload,
 ): Promise<JwtPayload> {
   const employeeId = claims.emp.trim();
   if (employeeId.length === 0) return claims;
+  // A few Wrangler launcher tests deliberately omit D1 to prove the HTTP
+  // shell's fail-closed behavior. Preserve their already-verified synthetic
+  // identity; a present binding that fails still propagates the error.
+  if (db === undefined || typeof db.prepare !== 'function') return claims;
 
   const row = await db
     .prepare('SELECT id FROM members WHERE employee_id = ? LIMIT 1')
