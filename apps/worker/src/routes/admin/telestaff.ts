@@ -30,6 +30,7 @@ import { requireAdmin } from './middleware.js';
 
 type AdminEnv = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 type ImportStatus = 'staged' | 'reviewed' | 'approved' | 'committed' | 'rejected';
+type FireRank = 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
 
 interface ImportDbRow {
   id: string;
@@ -94,7 +95,7 @@ interface ApplyDbRow {
   staffing_position_source_mapping_id: string | null;
   staffing_position_id: string | null;
   member_employment_status: 'unknown' | 'active' | 'inactive' | 'retired' | 'separated' | null;
-  member_rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF' | null;
+  member_rank: FireRank | 'CIVILIAN' | null;
   mapping_is_approved_for_snapshot: number;
 }
 
@@ -507,6 +508,10 @@ function activeOn(assignment: ActiveAssignmentDbRow, date: string): boolean {
   );
 }
 
+function lifecycleRank(rank: ApplyDbRow['member_rank']): FireRank | null {
+  return rank === 'CIVILIAN' ? null : rank;
+}
+
 function terminalApplyRows(rows: readonly ApplyDbRow[]): ApplyDbRow[] | null {
   const materialized: ApplyDbRow[] = [];
   for (const row of rows) {
@@ -854,7 +859,7 @@ function lifecycleEvidenceFor(
       reconciliationRevision: revision,
       memberId: row.resolved_member_id,
       employmentStatus: row.member_employment_status,
-      rank: row.member_rank,
+      rank: lifecycleRank(row.member_rank),
       assignment:
         previousAssignment === undefined
           ? null
@@ -872,7 +877,7 @@ function lifecycleEvidenceFor(
       reconciliationRevision: revision,
       memberId: row.resolved_member_id,
       employmentStatus: row.member_employment_status,
-      rank: row.member_rank,
+      rank: lifecycleRank(row.member_rank),
       assignment: {
         id: assignmentId,
         staffingPositionId: row.staffing_position_id,
@@ -914,8 +919,8 @@ function lifecycleStatement(
       canonicalEffectiveOn,
       row.member_employment_status,
       row.member_employment_status,
-      row.member_rank,
-      row.member_rank,
+      lifecycleRank(row.member_rank),
+      lifecycleRank(row.member_rank),
       'TeleStaff official source apply after terminal reconciliation',
       `admin:${actorId}`,
       // Source-row IDs are globally unique and bounded by the route contract;

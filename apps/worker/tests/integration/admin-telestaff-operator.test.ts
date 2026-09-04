@@ -760,6 +760,59 @@ describe('admin TeleStaff operator workflow', () => {
     ]);
   });
 
+  it('applies an excluded civilian observation without inventing a fire rank', async () => {
+    await seedOperatorAndMappedSlot(h);
+    await h.db.run(
+      "UPDATE members SET rank = 'CIVILIAN', bid_category = 'EXCLUDED', rsc_seniority = 0 WHERE id = 1",
+    );
+
+    const stage = await request(h, '/imports', { method: 'POST', body: importForm() });
+    expect(stage.status).toBe(201);
+    const staged = (await stage.json()) as { import: { id: string } };
+    const detail = (await (await request(h, `/imports/${staged.import.id}`)).json()) as {
+      import: { reconciliationRevision: number };
+      rows: Array<{ id: string }>;
+    };
+    const row = detail.rows[0];
+    expect(row).toBeDefined();
+    if (row === undefined) return;
+    const review = await request(h, `/imports/${staged.import.id}/rows/${row.id}/review`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_reconciliation_revision: detail.import.reconciliationRevision,
+        decision: 'accept_observation',
+      }),
+    });
+    expect(review.status).toBe(200);
+    const reviewed = (await review.json()) as { import: { reconciliationRevision: number } };
+
+    const apply = await request(h, `/imports/${staged.import.id}/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_reconciliation_revision: reviewed.import.reconciliationRevision,
+        canonical_effective_on: SOURCE_SNAPSHOT,
+      }),
+    });
+    expect(apply.status).toBe(200);
+    expect(
+      (
+        await h.db.run(
+          `SELECT rank_before, rank_after, before_state, after_state
+             FROM personnel_lifecycle_events`,
+        )
+      ).results,
+    ).toEqual([
+      expect.objectContaining({
+        rank_before: null,
+        rank_after: null,
+        before_state: expect.stringContaining('"rank":null'),
+        after_state: expect.stringContaining('"rank":null'),
+      }),
+    ]);
+  });
+
   it('certifies a unique complete official source topology without deriving a slot from identity', async () => {
     await h.db.run(
       `INSERT INTO members
