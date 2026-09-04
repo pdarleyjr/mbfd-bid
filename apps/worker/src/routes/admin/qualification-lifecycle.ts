@@ -4,6 +4,7 @@ import { ulid } from 'ulid';
 import { z } from 'zod';
 
 import { classifyCertificationReadiness } from '../../lib/certification-readiness.js';
+import { operationalDate } from '../../lib/operational-date.js';
 import {
   type LegacyCredentialBaseline,
   type QualificationLifecycleEvent,
@@ -297,7 +298,7 @@ function specialtyTerminalStatus(
 
 router.get('/members/:memberId{\\d+}', async (c) => {
   const memberId = Number(c.req.param('memberId'));
-  const asOf = c.req.query('as_of') ?? new Date().toISOString().slice(0, 10);
+  const asOf = c.req.query('as_of') ?? operationalDate();
   if (!isQualificationCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
   if (!(await memberExists(c.env.DB, memberId))) return c.json({ error: 'member_not_found' }, 404);
 
@@ -323,7 +324,7 @@ router.get('/members/:memberId{\\d+}', async (c) => {
 
 /** Command-staff read model. This is deliberately projection-only: it creates no D1 state. */
 router.get('/readiness', async (c) => {
-  const asOf = c.req.query('as_of') ?? new Date().toISOString().slice(0, 10);
+  const asOf = c.req.query('as_of') ?? operationalDate();
   if (!isQualificationCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
   const rawDays = Number(c.req.query('expiring_soon_days') ?? '30');
   const expiringSoonDays =

@@ -3,6 +3,7 @@ import { type Context, Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 
+import { operationalDate } from '../../lib/operational-date.js';
 import {
   EMPLOYMENT_STATUSES,
   type EmploymentStatus,
@@ -159,10 +160,6 @@ type PersonnelChangeBody = z.infer<typeof PersonnelChangeSchema>;
 const router = new Hono<AdminEnv>();
 
 router.use('*', requireAdmin);
-
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function priorCalendarDate(value: string): string {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -555,7 +552,7 @@ async function loadPosition(
 }
 
 router.get('/summary', async (c) => {
-  const asOf = c.req.query('as_of') ?? todayUtc();
+  const asOf = c.req.query('as_of') ?? operationalDate();
   if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
 
   // Future-effective lifecycle events are not prematurely written into the
@@ -613,7 +610,7 @@ router.get('/summary', async (c) => {
 });
 
 router.get('/operations-dashboard', async (c) => {
-  const asOf = c.req.query('as_of') ?? todayUtc();
+  const asOf = c.req.query('as_of') ?? operationalDate();
   if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
   const [
     overlays,
@@ -707,7 +704,7 @@ router.get('/members', async (c) => {
   if (status !== undefined && !(EMPLOYMENT_STATUSES as readonly string[]).includes(status)) {
     return c.json({ error: 'invalid_employment_status' }, 400);
   }
-  const asOf = c.req.query('as_of') ?? todayUtc();
+  const asOf = c.req.query('as_of') ?? operationalDate();
   if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
   const limitInput = Number(c.req.query('limit') ?? '100');
   const limit = Number.isInteger(limitInput) ? Math.min(500, Math.max(1, limitInput)) : 100;
@@ -1108,7 +1105,7 @@ router.post('/changes/preview', async (c) => {
     ...(body.supersedes_event_id === undefined
       ? {}
       : { supersedesEventId: body.supersedes_event_id }),
-    nowOn: todayUtc(),
+    nowOn: operationalDate(),
     eventId: 'preview-only',
   });
   if (!plan.ok) return c.json({ error: plan.error }, 422);
@@ -1410,7 +1407,7 @@ router.post('/changes', requireStepUpAuth(), async (c) => {
     return c.json({ error: 'member_id_required' }, 400);
   }
 
-  const nowOn = todayUtc();
+  const nowOn = operationalDate();
   const now = Date.now();
   const eventId = ulid();
   const assignmentId = ulid();

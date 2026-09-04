@@ -16,6 +16,7 @@ import {
 } from '../../lib/bid-award-transition.js';
 import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
+import { operationalDate } from '../../lib/operational-date.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -248,10 +249,6 @@ const ReceiptAuditAfterStateSchema = z
 const router = new Hono<AdminEnv>();
 router.use('*', requireAdmin);
 
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function isOpaqueId(value: string): boolean {
   return value.trim() === value && value.length > 0 && value.length <= 256;
 }
@@ -401,7 +398,7 @@ async function loadTransitionContext(
     all<MemberDbRow>(db, 'SELECT id, rank, employment_status FROM members'),
   ]);
 
-  const asOfDate = todayUtc();
+  const asOfDate = operationalDate();
   const planned = planBidAwardTransition({
     session: {
       id: session.id,

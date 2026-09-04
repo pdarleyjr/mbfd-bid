@@ -2,6 +2,7 @@ import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 
 import { createCsvStream } from '../../lib/csv-stream.js';
+import { operationalDate } from '../../lib/operational-date.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -115,10 +116,6 @@ function isCalendarDate(value: string): boolean {
   if (!ISO_DATE.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
-
-function currentUtcDate(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function canonicalRosterShift(value: string | null): string | null {
@@ -425,7 +422,7 @@ function requestProjectionInput(c: { req: { query(name: string): string | undefi
       filterInputs: ReadonlyArray<{ name: string; value: string | undefined }>;
     }
   | { error: string } {
-  const requestedAsOf = c.req.query('as_of') ?? currentUtcDate();
+  const requestedAsOf = c.req.query('as_of') ?? operationalDate();
   if (!isCalendarDate(requestedAsOf)) return { error: 'invalid_as_of' };
   return {
     requestedAsOf,

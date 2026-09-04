@@ -11,6 +11,7 @@ import {
   members,
   positionRules,
 } from '../../db/schema.js';
+import { operationalDate } from '../../lib/operational-date.js';
 import { isIsoCalendarDate } from '../../lib/personnel-lifecycle.js';
 import { decodeRuleBookRows } from '../../lib/position-rule.js';
 import { activeCredentialNamesByMemberAsOf } from '../../lib/qualification-lifecycle.js';
@@ -25,7 +26,7 @@ router.use('*', requireAdmin);
 router.post('/preview', zValidator('json', EligibilityPreviewSchema), async (c) => {
   const { member_id, position_id, rule_book_version, as_of: requestedAsOf } = c.req.valid('json');
   const db = getDb(c.env.DB);
-  const asOf = requestedAsOf ?? new Date().toISOString().slice(0, 10);
+  const asOf = requestedAsOf ?? operationalDate();
   if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
 
   // A preview has no bid-year/session context. Selecting an active rule book
