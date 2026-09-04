@@ -69,7 +69,8 @@ describe('POST /api/auth/ws-ticket', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request) => {
-        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         if (url.endsWith('/api/auth/revalidate'))
           return new Response(JSON.stringify({ jwt: 'refreshed-jwt' }), { status: 200 });
         if (url.endsWith('/api/me'))
@@ -98,7 +99,8 @@ describe('POST /api/auth/ws-ticket', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request) => {
-        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         if (url.endsWith('/api/auth/revalidate'))
           return new Response(JSON.stringify({ jwt: 'refreshed-jwt' }), { status: 200 });
         return new Response(JSON.stringify({ error: 'missing_member' }), { status: 404 });
