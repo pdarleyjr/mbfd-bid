@@ -90,6 +90,24 @@ function orderMatchesFrozenSnapshot(
   );
 }
 
+/**
+ * Canonical live commands may reorder the remaining bidders or consume an
+ * interrupting-specialty candidate.  The read model still requires every
+ * surviving entry to be one unique member of the immutable frozen order with
+ * its original ordinal and pool metadata unchanged.
+ */
+export function canonicalOrderUsesFrozenMembership(
+  persisted: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+  expected: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
+): boolean {
+  if (new Set(persisted.map((entry) => entry.memberId)).size !== persisted.length) return false;
+  const expectedByMember = new Map(expected.map((entry) => [entry.memberId, entry]));
+  return persisted.every((entry) => {
+    const frozen = expectedByMember.get(entry.memberId);
+    return frozen !== undefined && frozen.ordinal === entry.ordinal && frozen.pool === entry.pool;
+  });
+}
+
 bid.get('/me', async (c) => {
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
@@ -548,7 +566,11 @@ bid.get('/board', async (c) => {
     frozenBoardPolicy.coverage.rules.map((rule) => rule.positionId),
   );
   const bodyOrder = Array.isArray(body.bidOrder) ? body.bidOrder : [];
-  if (bodyOrder.length > 0 && !orderMatchesFrozenSnapshot(bodyOrder, frozenOrder)) {
+  const validBodyOrder =
+    canonicalState === null
+      ? orderMatchesFrozenSnapshot(bodyOrder, frozenOrder)
+      : canonicalOrderUsesFrozenMembership(bodyOrder, frozenOrder);
+  if (bodyOrder.length > 0 && !validBodyOrder) {
     return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
   }
   const boardFills = body.fills && typeof body.fills === 'object' ? body.fills : {};

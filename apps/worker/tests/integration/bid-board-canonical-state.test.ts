@@ -2,11 +2,43 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import { canonicalOrderUsesFrozenMembership } from '../../src/routes/bid.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'm'.repeat(64);
 const SESSION_ID = '01HZZ0000000000000BOARDCAN';
+
+describe('canonical board order validation', () => {
+  const frozen = [
+    { ordinal: 1, memberId: 10, pool: 'OFC' as const },
+    { ordinal: 2, memberId: 20, pool: 'FF' as const },
+    { ordinal: 3, memberId: 30, pool: 'FF' as const },
+  ] as const;
+
+  it('accepts an authorized canonical reorder or consumed-member subset', () => {
+    expect(canonicalOrderUsesFrozenMembership([frozen[1], frozen[0], frozen[2]], frozen)).toBe(
+      true,
+    );
+    expect(canonicalOrderUsesFrozenMembership([frozen[1], frozen[2]], frozen)).toBe(true);
+  });
+
+  it('rejects duplicates, unknown members, or changed frozen metadata', () => {
+    expect(canonicalOrderUsesFrozenMembership([frozen[0], frozen[0]], frozen)).toBe(false);
+    expect(
+      canonicalOrderUsesFrozenMembership(
+        [{ ordinal: 4, memberId: 40, pool: 'FF' as const }],
+        frozen,
+      ),
+    ).toBe(false);
+    expect(
+      canonicalOrderUsesFrozenMembership(
+        [{ ordinal: 99, memberId: 20, pool: 'FF' as const }],
+        frozen,
+      ),
+    ).toBe(false);
+  });
+});
 
 function stubBidSessionNamespace(): WorkerEnv['BID_SESSION'] {
   const stub = {
