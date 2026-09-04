@@ -738,12 +738,14 @@ async function loadFrozenMembersForADay(
 ): Promise<Member[] | null> {
   const policy = await loadFrozenSessionBidPolicy(getDb(c.env.DB), bidSessionId);
   if (!policy.ok || policy.snapshot.v !== 3) return null;
-  return policy.snapshot.members.map(
-    (member): Member => ({
-      ...eligibilityMemberFromFrozen(member),
-      employeeId: String(member.memberId),
-    }),
-  );
+  return policy.snapshot.members
+    .filter((member) => member.pool !== 'EXCLUDED')
+    .map(
+      (member): Member => ({
+        ...eligibilityMemberFromFrozen(member),
+        employeeId: String(member.memberId),
+      }),
+    );
 }
 
 async function fetchSessionSnapshot(

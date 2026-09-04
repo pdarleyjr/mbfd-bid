@@ -36,6 +36,7 @@ export type EmploymentStatus = (typeof EMPLOYMENT_STATUSES)[number];
 
 export const MEMBER_RANKS = ['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'] as const;
 export type MemberRank = (typeof MEMBER_RANKS)[number];
+export type PersonnelClassification = MemberRank | 'CIVILIAN';
 
 export type AssignmentStatus = 'planned' | 'active' | 'superseded' | 'cancelled' | 'ended';
 export type AssignmentOriginType =
@@ -51,7 +52,7 @@ export interface PersonnelMemberState {
   employeeId: string;
   firstName: string;
   lastName: string;
-  rank: MemberRank;
+  rank: PersonnelClassification;
   employmentStatus: EmploymentStatus;
   employmentStatusEffectiveOn: string | null;
   separationType: string | null;
@@ -111,7 +112,7 @@ export interface LifecycleMemberProjection {
   employmentStatus?: EmploymentStatus;
   employmentStatusEffectiveOn?: string;
   separationType?: string | null;
-  rank?: MemberRank;
+  rank?: PersonnelClassification;
   promotedAt?: string;
 }
 
@@ -140,8 +141,8 @@ export interface LifecycleEventDraft {
   effectiveOn: string;
   employmentStatusBefore: EmploymentStatus;
   employmentStatusAfter: EmploymentStatus;
-  rankBefore: MemberRank;
-  rankAfter: MemberRank;
+  rankBefore: MemberRank | null;
+  rankAfter: MemberRank | null;
   separationType: string | null;
   reason: string;
   origin: 'ADMIN';
@@ -342,7 +343,7 @@ function employmentStatusAfter(input: PersonnelLifecycleInput): EmploymentStatus
   }
 }
 
-function rankAfter(input: PersonnelLifecycleInput): MemberRank {
+function rankAfter(input: PersonnelLifecycleInput): PersonnelClassification {
   return input.rankAfter ?? input.member.rank;
 }
 
@@ -380,7 +381,11 @@ export function planPersonnelLifecycleChange(
     return failure('invalid_idempotency_key');
   }
 
-  if (requiresRankAfter(input.kind) && input.rankAfter === undefined) {
+  if (
+    requiresRankAfter(input.kind) &&
+    input.rankAfter === undefined &&
+    input.member.rank !== 'CIVILIAN'
+  ) {
     return failure('rank_after_required');
   }
   if (
@@ -415,13 +420,19 @@ export function planPersonnelLifecycleChange(
   }
   if (
     input.kind === 'PROMOTION' &&
-    (rankOrder.get(nextRank) ?? -1) <= (rankOrder.get(input.member.rank) ?? Number.MAX_SAFE_INTEGER)
+    (!isMemberRank(nextRank) ||
+      !isMemberRank(input.member.rank) ||
+      (rankOrder.get(nextRank) ?? -1) <=
+        (rankOrder.get(input.member.rank) ?? Number.MAX_SAFE_INTEGER))
   ) {
     return failure('invalid_promotion_rank');
   }
   if (
     input.kind === 'DEMOTION' &&
-    (rankOrder.get(nextRank) ?? Number.MAX_SAFE_INTEGER) >= (rankOrder.get(input.member.rank) ?? -1)
+    (!isMemberRank(nextRank) ||
+      !isMemberRank(input.member.rank) ||
+      (rankOrder.get(nextRank) ?? Number.MAX_SAFE_INTEGER) >=
+        (rankOrder.get(input.member.rank) ?? -1))
   ) {
     return failure('invalid_demotion_rank');
   }
@@ -498,7 +509,8 @@ export function planPersonnelLifecycleChange(
     employmentStatus: input.member.employmentStatus,
     employmentStatusEffectiveOn: input.member.employmentStatusEffectiveOn,
     separationType: input.member.separationType,
-    rank: input.member.rank,
+    rank: input.member.rank === 'CIVILIAN' ? null : input.member.rank,
+    ...(input.member.rank === 'CIVILIAN' ? { personnelClassification: 'CIVILIAN' } : {}),
     assignment:
       priorAssignment === null
         ? null
@@ -514,7 +526,8 @@ export function planPersonnelLifecycleChange(
     memberId: input.member.id,
     employmentStatus: nextEmploymentStatus,
     separationType: nextSeparationType,
-    rank: nextRank,
+    rank: nextRank === 'CIVILIAN' ? null : nextRank,
+    ...(nextRank === 'CIVILIAN' ? { personnelClassification: 'CIVILIAN' } : {}),
     staffingPositionId: assignmentCreation?.staffingPositionId ?? input.staffingPositionId ?? null,
     assignment:
       assignmentCreation === null
@@ -536,8 +549,8 @@ export function planPersonnelLifecycleChange(
       effectiveOn: input.effectiveOn,
       employmentStatusBefore: input.member.employmentStatus,
       employmentStatusAfter: nextEmploymentStatus,
-      rankBefore: input.member.rank,
-      rankAfter: nextRank,
+      rankBefore: isMemberRank(input.member.rank) ? input.member.rank : null,
+      rankAfter: isMemberRank(nextRank) ? nextRank : null,
       separationType: nextSeparationType,
       reason,
       origin: 'ADMIN',

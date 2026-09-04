@@ -20,7 +20,7 @@ export interface PersonnelMember {
   employeeId: string;
   firstName: string;
   lastName: string;
-  rank: string;
+  rank: string | null;
   employmentStatus: 'unknown' | 'active' | 'inactive' | 'retired' | 'separated';
   employmentStatusEffectiveOn: string | null;
   separationType: string | null;
@@ -192,11 +192,13 @@ export function PersonnelWorkspace({
           employee_id: newEmployeeId.trim(),
           first_name: newFirstName.trim(),
           last_name: newLastName.trim(),
-          rank: rankAfter,
+          rank: rankAfter === 'CIVILIAN' ? null : rankAfter,
           bid_category: newBidCategory,
-          rsc_seniority: Number.isFinite(seniority) ? seniority : -1,
+          ...(newBidCategory === 'EXCLUDED' && newRscSeniority.trim() === ''
+            ? {}
+            : { rsc_seniority: Number.isFinite(seniority) ? seniority : -1 }),
         };
-        payload.rank_after = rankAfter;
+        if (rankAfter !== 'CIVILIAN') payload.rank_after = rankAfter;
         if (staffingPositionId.trim()) payload.staffing_position_id = staffingPositionId.trim();
       } else {
         payload.member_id = Number(memberId);
@@ -301,6 +303,11 @@ export function PersonnelWorkspace({
               Record reviewed changes with an effective date, operator reason, and immutable
               receipt. No historical member or assignment is deleted.
             </p>
+            <p className="mt-2 max-w-3xl text-xs text-slate-400">
+              Civilian / no fire rank is supported as excluded personnel. Bid seniority is not
+              required for excluded personnel; the effective date records this roster action and is
+              not treated as a hire date.
+            </p>
             {validMemberIdHint !== undefined && (
               <p className="mt-2 text-xs text-sky-200" data-testid="personnel-link-context">
                 Linked member #{validMemberIdHint}
@@ -368,7 +375,8 @@ export function PersonnelWorkspace({
                 <option value="">Select a member</option>
                 {members.map((member) => (
                   <option key={member.id} value={member.id}>
-                    {member.lastName}, {member.firstName} — {member.rank} (
+                    {member.lastName}, {member.firstName} —{' '}
+                    {member.rank ?? 'Civilian / no fire rank'} (
                     {statusLabel(member.employmentStatus)})
                   </option>
                 ))}
@@ -397,7 +405,7 @@ export function PersonnelWorkspace({
               <label className="block">
                 <span className="text-sm text-slate-200">RSC seniority</span>
                 <input
-                  required
+                  required={newBidCategory !== 'EXCLUDED'}
                   type="number"
                   min={0}
                   value={newRscSeniority}
@@ -504,7 +512,14 @@ export function PersonnelWorkspace({
               <span className="text-sm text-slate-200">Rank after change</span>
               <select
                 value={rankAfter}
-                onChange={(event) => setRankAfter(event.target.value)}
+                onChange={(event) => {
+                  const nextRank = event.target.value;
+                  setRankAfter(nextRank);
+                  if (nextRank === 'CIVILIAN') {
+                    setNewBidCategory('EXCLUDED');
+                    setNewRscSeniority('');
+                  }
+                }}
                 className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
               >
                 {RANKS.map((rank) => (
@@ -512,6 +527,7 @@ export function PersonnelWorkspace({
                     {rank}
                   </option>
                 ))}
+                {isNewHire && <option value="CIVILIAN">Civilian / no fire rank</option>}
               </select>
             </label>
           )}
@@ -627,7 +643,9 @@ export function PersonnelWorkspace({
                       {member.employeeId}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-mono text-slate-200">{member.rank}</td>
+                  <td className="px-4 py-3 font-mono text-slate-200">
+                    {member.rank ?? 'Civilian / no fire rank'}
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClass(member.employmentStatus)}`}

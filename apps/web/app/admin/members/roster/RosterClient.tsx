@@ -17,6 +17,7 @@ const RANK_FILTERS: ReadonlyArray<{ value: ''; label: 'All' } | { value: string;
     { value: 'CPT', label: 'Captains' },
     { value: 'LT', label: 'Lieutenants' },
     { value: 'FF', label: 'Firefighters' },
+    { value: 'CIVILIAN', label: 'Civilians' },
   ];
 
 const LEGACY_CREDENTIAL_NOTICE =
@@ -232,7 +233,12 @@ export function RosterClient({
                       type="button"
                       aria-label={`Move ${m.last_name} up`}
                       onClick={() => moveMember(m.id, 'up')}
-                      disabled={idx === 0 || isPending || bidOrderSession === null}
+                      disabled={
+                        idx === 0 ||
+                        isPending ||
+                        bidOrderSession === null ||
+                        m.bid_category === 'EXCLUDED'
+                      }
                       className="rounded border border-slate-700 px-1 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-30"
                     >
                       ↑
@@ -241,7 +247,12 @@ export function RosterClient({
                       type="button"
                       aria-label={`Move ${m.last_name} down`}
                       onClick={() => moveMember(m.id, 'down')}
-                      disabled={idx === members.length - 1 || isPending || bidOrderSession === null}
+                      disabled={
+                        idx === members.length - 1 ||
+                        isPending ||
+                        bidOrderSession === null ||
+                        m.bid_category === 'EXCLUDED'
+                      }
                       className="rounded border border-slate-700 px-1 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-30"
                     >
                       ↓
@@ -267,11 +278,11 @@ export function RosterClient({
                       RANK_PILL_CLASS[m.rank],
                     ].join(' ')}
                   >
-                    {m.rank}
+                    {m.rank === 'CIVILIAN' ? 'Civilian' : m.rank}
                   </span>
                 </td>
                 <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
-                  {m.rsc_seniority}
+                  {m.rsc_seniority ?? 'Not applicable'}
                 </td>
                 <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
                   {m.rank_seniority ?? '—'}

@@ -529,6 +529,165 @@ describe('personnel lifecycle administration', () => {
     expect(events.results).toEqual([{ count: 1 }]);
   });
 
+  it('onboards a civilian as an excluded non-bid person without inventing rank, seniority, or hire date', async () => {
+    const response = await request(h, '/api/admin/personnel/changes', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await adminJwt()}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'synthetic-civilian-onboarding-001',
+      },
+      body: JSON.stringify({
+        kind: 'NEW_HIRE',
+        new_member: {
+          employee_id: 'civilian-001',
+          first_name: 'Civilian',
+          last_name: 'Employee',
+          rank: null,
+          bid_category: 'EXCLUDED',
+        },
+        effective_on: '2026-09-04',
+        reason: 'Owner-approved civilian roster tracking.',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      member: {
+        employeeId: 'civilian-001',
+        rank: null,
+        bidCategory: 'EXCLUDED',
+        rscSeniority: null,
+        hiredAt: null,
+      },
+    });
+    expect(
+      await h.db.run(
+        "SELECT rank,bid_category,rsc_seniority,rank_seniority,hired_at FROM members WHERE employee_id = 'civilian-001'",
+      ),
+    ).toMatchObject({
+      results: [
+        {
+          rank: 'CIVILIAN',
+          bid_category: 'EXCLUDED',
+          rsc_seniority: 0,
+          rank_seniority: null,
+          hired_at: null,
+        },
+      ],
+    });
+    const evidence = await h.db.run(
+      "SELECT rank_before,rank_after,after_state FROM personnel_lifecycle_events WHERE idempotency_key = 'synthetic-civilian-onboarding-001'",
+    );
+    expect(evidence.results[0]).toMatchObject({ rank_before: null, rank_after: null });
+    expect(JSON.parse(String(evidence.results[0]?.after_state))).toMatchObject({
+      rank: null,
+      personnelClassification: 'CIVILIAN',
+      rscSeniority: null,
+      hiredAt: null,
+    });
+    const roster = await request(h, '/api/admin/personnel/members?as_of=2026-09-04', {
+      headers: { Authorization: `Bearer ${await adminJwt()}` },
+    });
+    expect(roster.status).toBe(200);
+    const rosterBody = (await roster.json()) as { members: Array<Record<string, unknown>> };
+    expect(rosterBody.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          employeeId: 'civilian-001',
+          rank: null,
+          personnelClassification: 'CIVILIAN',
+          rscSeniority: null,
+        }),
+      ]),
+    );
+  });
+
+  it('onboards an appointed excluded Division Chief without requiring bid seniority or a hire date', async () => {
+    const response = await request(h, '/api/admin/personnel/changes', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await adminJwt()}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'synthetic-appointed-dc-onboarding-001',
+      },
+      body: JSON.stringify({
+        kind: 'NEW_HIRE',
+        new_member: {
+          employee_id: 'appointed-dc-001',
+          first_name: 'Appointed',
+          last_name: 'Chief',
+          rank: 'DC',
+          bid_category: 'EXCLUDED',
+        },
+        effective_on: '2026-09-04',
+        reason: 'Owner-approved appointed command roster tracking.',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      member: {
+        employeeId: 'appointed-dc-001',
+        rank: 'DC',
+        bidCategory: 'EXCLUDED',
+        rscSeniority: null,
+        hiredAt: null,
+      },
+    });
+    expect(
+      await h.db.run(
+        "SELECT rank,bid_category,rsc_seniority,hired_at FROM members WHERE employee_id = 'appointed-dc-001'",
+      ),
+    ).toMatchObject({
+      results: [{ rank: 'DC', bid_category: 'EXCLUDED', rsc_seniority: 0, hired_at: null }],
+    });
+  });
+
+  it('fails closed when a bidding member omits rank or seniority', async () => {
+    const headers = {
+      Authorization: `Bearer ${await adminJwt()}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'synthetic-invalid-bidder-onboarding-001',
+    };
+    const missingRank = await request(h, '/api/admin/personnel/changes', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        kind: 'NEW_HIRE',
+        new_member: {
+          employee_id: 'invalid-bidder-001',
+          first_name: 'Invalid',
+          last_name: 'Bidder',
+          rank: null,
+          bid_category: 'FF',
+          rsc_seniority: 1,
+        },
+        effective_on: '2026-09-04',
+        reason: 'Synthetic invalid bidder proof.',
+      }),
+    });
+    expect(missingRank.status).toBe(400);
+
+    const missingSeniority = await request(h, '/api/admin/personnel/changes', {
+      method: 'POST',
+      headers: { ...headers, 'Idempotency-Key': 'synthetic-invalid-bidder-onboarding-002' },
+      body: JSON.stringify({
+        kind: 'NEW_HIRE',
+        new_member: {
+          employee_id: 'invalid-bidder-002',
+          first_name: 'Invalid',
+          last_name: 'Bidder',
+          rank: 'FF',
+          bid_category: 'FF',
+        },
+        effective_on: '2026-09-04',
+        reason: 'Synthetic invalid bidder proof.',
+      }),
+    });
+    expect(missingSeniority.status).toBe(400);
+  });
+
   it('rejects a new-hire retry whose otherwise hidden onboarding state differs', async () => {
     const headers = {
       Authorization: `Bearer ${await adminJwt()}`,

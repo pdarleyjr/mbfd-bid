@@ -34,6 +34,7 @@ const RANK_LABELS: Record<string, string> = {
   DC: 'Division Chief',
   DEP_CHIEF: 'Deputy Fire Chief',
   CHIEF: 'Fire Chief',
+  CIVILIAN: 'Civilian / no fire rank',
 };
 
 function ProfileField({
@@ -133,7 +134,11 @@ export default async function MemberDetailPage({
         <ProfileField label="Member ID" value={String(member.id)} mono />
         <ProfileField label="Rank" value={RANK_LABELS[member.rank] ?? member.rank} />
         <ProfileField label="Bid Category" value={member.bidCategory} />
-        <ProfileField label="RSC Seniority" value={String(member.rscSeniority)} mono />
+        <ProfileField
+          label="RSC Seniority"
+          value={member.bidCategory === 'EXCLUDED' ? 'Not applicable' : String(member.rscSeniority)}
+          mono
+        />
         {member.rankSeniority !== null && (
           <ProfileField label="Rank Seniority" value={String(member.rankSeniority)} mono />
         )}

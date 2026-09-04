@@ -51,4 +51,34 @@ describe('qualification lifecycle discovery from member views', () => {
     expect(html).toContain('Legacy credential references');
     expect(html).toContain('effective-dated qualification lifecycle');
   });
+
+  it('labels tracked civilians without presenting bid seniority or reorder controls', () => {
+    const html = renderToString(
+      <RosterClient
+        initialMembers={[
+          {
+            id: 25982,
+            employee_id: '25982',
+            last_name: 'De Young',
+            first_name: 'Gerald',
+            rank: 'CIVILIAN',
+            bid_category: 'EXCLUDED',
+            rsc_seniority: null,
+            rank_seniority: null,
+            ordinal: 4,
+            manual_override_ordinal: null,
+            credential_ids: [],
+          },
+        ]}
+        credentials={[]}
+        initialSearch=""
+        bidOrderSession={{ sessionId: 'synthetic-session', label: 'Synthetic' }}
+      />,
+    );
+
+    expect(html).toContain('Civilian');
+    expect(html).toContain('Not applicable');
+    expect(html).toContain('aria-label="Move De Young up" disabled=""');
+    expect(html).toContain('aria-label="Move De Young down" disabled=""');
+  });
 });

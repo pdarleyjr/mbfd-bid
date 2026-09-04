@@ -411,7 +411,7 @@ export type FrozenSpecialtyQualification = z.infer<typeof FrozenSpecialtyQualifi
  * decisions without persisting names or source-system identifiers.
  */
 export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend({
-  rank: z.enum(['CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF']),
+  rank: z.enum(['CIVILIAN', 'CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF']),
   isProbationary: z.boolean(),
   credentialNames: z.array(z.string().trim().min(1)),
   /**
@@ -420,7 +420,17 @@ export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend
    * consumer must not treat an absent collection as evidence of eligibility.
    */
   specialtyQualifications: z.array(FrozenSpecialtyQualificationSchema).optional(),
-}).strict();
+})
+  .strict()
+  .superRefine((member, context) => {
+    if (member.rank === 'CIVILIAN' && member.pool !== 'EXCLUDED') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pool'],
+        message: 'civilian personnel must remain excluded from the annual bid pool',
+      });
+    }
+  });
 export type FrozenBidEligibilityMember = z.infer<typeof FrozenBidEligibilityMemberSchema>;
 
 /**

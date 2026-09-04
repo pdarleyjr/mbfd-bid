@@ -34,6 +34,16 @@ describe('PersonnelWorkspace', () => {
             employmentStatusEffectiveOn: null,
             separationType: null,
           },
+          {
+            id: 3,
+            employeeId: 'civilian-001',
+            firstName: 'Civilian',
+            lastName: 'Employee',
+            rank: null,
+            employmentStatus: 'active',
+            employmentStatusEffectiveOn: '2026-09-04',
+            separationType: null,
+          },
         ]}
       />,
     );
@@ -50,6 +60,9 @@ describe('PersonnelWorkspace', () => {
     expect(html).toContain('data-testid="temporary-overlay-form"');
     expect(html).toContain('Special Assignment');
     expect(html).toContain('Light Duty');
+    expect(html).toContain('Civilian / no fire rank');
+    expect(html).toContain('not required for excluded personnel');
+    expect(html).toContain('Civilian / no fire rank');
   });
 
   it('uses a member and assignment query hint to orient an operator in history', () => {

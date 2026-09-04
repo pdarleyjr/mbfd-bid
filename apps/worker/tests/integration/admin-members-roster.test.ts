@@ -142,6 +142,37 @@ describe('GET /api/admin/members/roster', () => {
     expect(body.members[0]?.rank).toBe('CPT');
   });
 
+  it('returns tracked civilian personnel as excluded with no applicable seniority', async () => {
+    const now = Date.now();
+    await h.db.run(
+      `INSERT INTO members
+        (employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+         rank_seniority, hired_at, is_probationary, created_at, updated_at)
+       VALUES ('25982', 'Gerald', 'De Young', 'CIVILIAN', 'EXCLUDED', 0,
+         NULL, NULL, 0, ?, ?)`,
+      [now, now],
+    );
+    const res = await app.fetch(
+      new Request('http://x/api/admin/members/roster?rank=CIVILIAN', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      total: 1,
+      members: [
+        {
+          employee_id: '25982',
+          rank: 'CIVILIAN',
+          bid_category: 'EXCLUDED',
+          rsc_seniority: null,
+          rank_seniority: null,
+        },
+      ],
+    });
+  });
+
   it('?station=de filter returns only members with Driver Engineer Qualified', async () => {
     const res = await app.fetch(
       new Request('http://x/api/admin/members/roster?station=de', {

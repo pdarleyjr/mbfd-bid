@@ -88,9 +88,9 @@ export interface RosterRow {
   employee_id: string;
   last_name: string;
   first_name: string;
-  rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+  rank: 'CIVILIAN' | 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
   bid_category: 'OFC' | 'FF' | 'EXCLUDED';
-  rsc_seniority: number;
+  rsc_seniority: number | null;
   rank_seniority: number | null;
   ordinal: number;
   manual_override_ordinal: number | null;
@@ -301,7 +301,7 @@ async function loadRoster(
       first_name: m.firstName,
       rank: m.rank,
       bid_category: m.bidCategory,
-      rsc_seniority: m.rscSeniority,
+      rsc_seniority: m.bidCategory === 'EXCLUDED' ? null : m.rscSeniority,
       rank_seniority: m.rankSeniority,
       ordinal: overrideOrdinal ?? naturalOrdinal,
       manual_override_ordinal: overrideOrdinal,
@@ -311,12 +311,15 @@ async function loadRoster(
 
   if (opts.station) {
     const station = opts.station;
-    rows = rows.filter((r) =>
-      isEligibleFor(station, {
-        rank: r.rank,
-        credentialNames: credNamesByMember.get(r.id) ?? [],
-        employeeId: r.employee_id,
-      }),
+    rows = rows.filter(
+      (r) =>
+        r.rank !== 'CIVILIAN' &&
+        r.bid_category !== 'EXCLUDED' &&
+        isEligibleFor(station, {
+          rank: r.rank,
+          credentialNames: credNamesByMember.get(r.id) ?? [],
+          employeeId: r.employee_id,
+        }),
     );
   }
 

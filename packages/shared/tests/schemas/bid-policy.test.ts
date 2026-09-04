@@ -251,6 +251,27 @@ describe('Bid configuration and session policy contracts', () => {
     });
   });
 
+  it('retains civilian personnel only as explicitly excluded non-bidders', () => {
+    const civilian = {
+      ...completeV3Snapshot,
+      members: [
+        {
+          ...completeV3Snapshot.members[0],
+          rank: 'CIVILIAN',
+          pool: 'EXCLUDED',
+          exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+        },
+      ],
+    };
+    expect(BidSessionPolicySnapshotSchema.safeParse(civilian).success).toBe(true);
+    expect(
+      BidSessionPolicySnapshotSchema.safeParse({
+        ...civilian,
+        members: [{ ...civilian.members[0], pool: 'FF', exclusionReason: null }],
+      }).success,
+    ).toBe(false);
+  });
+
   it('binds annual policy evidence to the snapshot rule book', () => {
     const evidence = {
       documentId: 'annual-policy-document-1',

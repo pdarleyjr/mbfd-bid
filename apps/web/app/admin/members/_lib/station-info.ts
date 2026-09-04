@@ -66,9 +66,9 @@ export interface RosterMember {
   employee_id: string;
   last_name: string;
   first_name: string;
-  rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+  rank: 'CIVILIAN' | 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
   bid_category: 'OFC' | 'FF' | 'EXCLUDED';
-  rsc_seniority: number;
+  rsc_seniority: number | null;
   rank_seniority: number | null;
   ordinal: number;
   manual_override_ordinal: number | null;
@@ -82,6 +82,7 @@ export interface CredentialRow {
 }
 
 export const RANK_PILL_CLASS: Record<RosterMember['rank'], string> = {
+  CIVILIAN: 'bg-emerald-900 text-emerald-100',
   FF: 'bg-stone-700 text-stone-100',
   LT: 'bg-blue-700 text-blue-50',
   CPT: 'bg-amber-700 text-amber-50',

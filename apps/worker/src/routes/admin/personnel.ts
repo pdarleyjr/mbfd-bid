@@ -13,6 +13,7 @@ import {
   type MemberRank,
   PERSONNEL_LIFECYCLE_KINDS,
   type PersonnelAssignmentState,
+  type PersonnelClassification,
   type PersonnelLifecycleKind,
   type PersonnelMemberState,
   derivePersonnelMemberAsOf,
@@ -33,7 +34,7 @@ interface MemberDbRow {
   employee_id: string;
   first_name: string;
   last_name: string;
-  rank: MemberRank;
+  rank: PersonnelClassification;
   bid_category: string;
   rsc_seniority: number;
   rank_seniority: number | null;
@@ -101,7 +102,7 @@ interface SupersededLifecycleEventDbRow {
 }
 
 interface ProjectedMemberDbRow extends MemberDbRow {
-  projected_rank: MemberRank;
+  projected_rank: PersonnelClassification;
   projected_employment_status: EmploymentStatus;
   projected_employment_status_effective_on: string | null;
   projected_separation_type: string | null;
@@ -116,13 +117,29 @@ const NewMemberSchema = z
     employee_id: z.string().trim().min(1).max(128),
     first_name: z.string().trim().min(1).max(128),
     last_name: z.string().trim().min(1).max(128),
-    rank: RankSchema,
+    rank: RankSchema.nullable(),
     bid_category: z.enum(['OFC', 'FF', 'EXCLUDED']),
-    rsc_seniority: z.number().int().nonnegative(),
+    rsc_seniority: z.number().int().nonnegative().nullable().optional(),
     rank_seniority: z.number().int().nonnegative().nullable().optional(),
     hired_at: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((member, context) => {
+    if (member.rank === null && member.bid_category !== 'EXCLUDED') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rank'],
+        message: 'rank is required for bidding personnel',
+      });
+    }
+    if (member.rsc_seniority == null && member.bid_category !== 'EXCLUDED') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rsc_seniority'],
+        message: 'rsc_seniority is required for bidding personnel',
+      });
+    }
+  });
 
 const StaffingPositionCreateSchema = z
   .object({
@@ -179,14 +196,16 @@ function safeJsonObject(value: string): Record<string, unknown> {
 }
 
 function mapMember(row: MemberDbRow) {
+  const excluded = row.bid_category === 'EXCLUDED';
   return {
     id: row.id,
     employeeId: row.employee_id,
     firstName: row.first_name,
     lastName: row.last_name,
-    rank: row.rank,
+    rank: row.rank === 'CIVILIAN' ? null : row.rank,
+    personnelClassification: row.rank === 'CIVILIAN' ? 'CIVILIAN' : 'SWORN',
     bidCategory: row.bid_category,
-    rscSeniority: row.rsc_seniority,
+    rscSeniority: excluded ? null : row.rsc_seniority,
     rankSeniority: row.rank_seniority,
     hiredAt: row.hired_at,
     promotedAt: row.promoted_at,
@@ -202,7 +221,8 @@ function mapMember(row: MemberDbRow) {
 function mapProjectedMember(row: ProjectedMemberDbRow) {
   return {
     ...mapMember(row),
-    rank: row.projected_rank,
+    rank: row.projected_rank === 'CIVILIAN' ? null : row.projected_rank,
+    personnelClassification: row.projected_rank === 'CIVILIAN' ? 'CIVILIAN' : 'SWORN',
     employmentStatus: row.projected_employment_status,
     employmentStatusEffectiveOn: row.projected_employment_status_effective_on,
     separationType: row.projected_separation_type,
@@ -384,9 +404,17 @@ function sameReceipt(
         afterState.firstName === body.new_member.first_name &&
         afterState.lastName === body.new_member.last_name &&
         afterState.bidCategory === body.new_member.bid_category &&
-        afterState.rscSeniority === body.new_member.rsc_seniority &&
+        sameNullableValue(
+          afterState.rscSeniority,
+          body.new_member.bid_category === 'EXCLUDED' ? null : body.new_member.rsc_seniority,
+        ) &&
         sameNullableValue(afterState.rankSeniority, body.new_member.rank_seniority) &&
-        sameNullableValue(afterState.hiredAt, body.new_member.hired_at ?? body.effective_on);
+        sameNullableValue(
+          afterState.hiredAt,
+          body.new_member.bid_category === 'EXCLUDED'
+            ? (body.new_member.hired_at ?? null)
+            : (body.new_member.hired_at ?? body.effective_on),
+        );
   const staffingPositionAfterState = asRecord(afterState.staffingPosition);
   const samePositionCreate =
     body.staffing_position === undefined
@@ -1427,12 +1455,13 @@ router.post('/changes', requireStepUpAuth(), async (c) => {
       newMember.employee_id,
     );
     if (duplicate !== undefined) return c.json({ error: 'employee_id_exists' }, 409);
+    const personnelClassification: PersonnelClassification = newMember.rank ?? 'CIVILIAN';
     member = {
       id: 0,
       employeeId: newMember.employee_id,
       firstName: newMember.first_name,
       lastName: newMember.last_name,
-      rank: newMember.rank,
+      rank: personnelClassification,
       employmentStatus: 'unknown',
       employmentStatusEffectiveOn: null,
       separationType: null,
@@ -1469,9 +1498,11 @@ router.post('/changes', requireStepUpAuth(), async (c) => {
       target.error === 'staffing_position_not_found' ? 404 : 409,
     );
 
-  // A new-hire identity includes the initial rank. Accept that canonical value
-  // when a non-UI client omitted the redundant rank_after field.
-  const requestedRankAfter = body.rank_after ?? (isNewHire ? body.new_member?.rank : undefined);
+  // Sworn onboarding includes the initial rank. Accept that canonical value
+  // when a non-UI client omitted the redundant rank_after field. Reviewed
+  // civilian onboarding intentionally records no fire rank.
+  const requestedRankAfter =
+    body.rank_after ?? (isNewHire ? (body.new_member?.rank ?? undefined) : undefined);
   const lifecycleInput = {
     kind: body.kind,
     effectiveOn: body.effective_on,
@@ -1509,9 +1540,13 @@ router.post('/changes', requireStepUpAuth(), async (c) => {
     eventAfterState.firstName = newMember.first_name;
     eventAfterState.lastName = newMember.last_name;
     eventAfterState.bidCategory = newMember.bid_category;
-    eventAfterState.rscSeniority = newMember.rsc_seniority;
+    eventAfterState.rscSeniority =
+      newMember.bid_category === 'EXCLUDED' ? null : newMember.rsc_seniority;
     eventAfterState.rankSeniority = newMember.rank_seniority ?? null;
-    eventAfterState.hiredAt = newMember.hired_at ?? body.effective_on;
+    eventAfterState.hiredAt =
+      newMember.bid_category === 'EXCLUDED'
+        ? (newMember.hired_at ?? null)
+        : (newMember.hired_at ?? body.effective_on);
   }
   const event: LifecycleEventDraft = {
     ...planned.event,
@@ -1534,11 +1569,13 @@ router.post('/changes', requireStepUpAuth(), async (c) => {
         newMember.employee_id,
         newMember.first_name,
         newMember.last_name,
-        newMember.rank,
+        newMember.rank ?? 'CIVILIAN',
         newMember.bid_category,
-        newMember.rsc_seniority,
+        newMember.rsc_seniority ?? 0,
         newMember.rank_seniority ?? null,
-        newMember.hired_at ?? body.effective_on,
+        newMember.bid_category === 'EXCLUDED'
+          ? (newMember.hired_at ?? null)
+          : (newMember.hired_at ?? body.effective_on),
         immediatelyActive ? 'active' : 'unknown',
         immediatelyActive ? body.effective_on : null,
         now,

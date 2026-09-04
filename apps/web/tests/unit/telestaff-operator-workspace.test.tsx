@@ -170,6 +170,88 @@ describe('TeleStaffOperatorWorkspace', () => {
     expect(failed).not.toHaveBeenCalled();
   });
 
+  it('creates a reviewed civilian without requiring fire rank or seniority', async () => {
+    const completed = vi.fn();
+    const failed = vi.fn();
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input) => {
+        const url = String(input);
+        if (url === '/api/auth/csrf') {
+          return new Response(
+            JSON.stringify({ token: 'csrf_123e4567-e89b-12d3-a456-426614174000' }),
+            { status: 200 },
+          );
+        }
+        if (url === '/api/admin/personnel/changes') {
+          return new Response(JSON.stringify({ replayed: false, event: { kind: 'NEW_HIRE' } }), {
+            status: 201,
+          });
+        }
+        if (url === '/api/admin/telestaff/imports/import-civilian/reconcile') {
+          return new Response(JSON.stringify({ import: { id: 'import-civilian' } }), {
+            status: 200,
+          });
+        }
+        return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    act(() => {
+      root.render(
+        <UnknownEmployeeOnboardingPanel
+          importId="import-civilian"
+          expectedRevision={8}
+          employees={[
+            {
+              rowId: 'row-civilian',
+              sourceRowNumber: 16,
+              sourceEmployeeId: '17951',
+              sourceDisplayName: 'ARMSTRONG, TOMAS',
+            },
+          ]}
+          busy={false}
+          onComplete={completed}
+          onError={failed}
+        />,
+      );
+    });
+
+    await setValue(requiredControl(container, '[name="first_name-row-civilian"]'), 'Tomas');
+    await setValue(requiredControl(container, '[name="last_name-row-civilian"]'), 'Armstrong');
+    await setValue(requiredControl(container, '[name="rank-row-civilian"]'), 'CIVILIAN');
+    await setValue(requiredControl(container, '[name="effective_on-row-civilian"]'), '2026-09-04');
+    const submit = container.querySelector<HTMLButtonElement>(
+      '[data-testid="telestaff-onboard-unknown-submit"]',
+    );
+    if (!submit) throw new Error('Unknown employee onboarding submit did not render.');
+    await click(submit);
+
+    const personnelCall = fetchMock.mock.calls.find(
+      ([input]) => String(input) === '/api/admin/personnel/changes',
+    );
+    expect(JSON.parse(String(personnelCall?.[1]?.body))).toMatchObject({
+      kind: 'NEW_HIRE',
+      new_member: {
+        employee_id: '17951',
+        first_name: 'Tomas',
+        last_name: 'Armstrong',
+        rank: null,
+        bid_category: 'EXCLUDED',
+      },
+      effective_on: '2026-09-04',
+    });
+    expect(JSON.parse(String(personnelCall?.[1]?.body)).new_member).not.toHaveProperty(
+      'rsc_seniority',
+    );
+    expect(completed).toHaveBeenCalledOnce();
+    expect(failed).not.toHaveBeenCalled();
+  });
+
   it('requires a deliberate source-kind declaration before an HTML preview', () => {
     const markup = renderToStaticMarkup(<TeleStaffOperatorWorkspace />);
 

@@ -122,7 +122,7 @@ interface UnknownEmployeeIdentity {
 interface UnknownEmployeeDraft {
   firstName: string;
   lastName: string;
-  rank: '' | 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+  rank: '' | 'CIVILIAN' | 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
   bidCategory: '' | 'OFC' | 'FF' | 'EXCLUDED';
   rscSeniority: string;
   rankSeniority: string;
@@ -275,7 +275,7 @@ export function UnknownEmployeeOnboardingPanel(props: {
           draft.lastName.trim() === '' ||
           draft.rank === '' ||
           draft.bidCategory === '' ||
-          !/^\d+$/.test(draft.rscSeniority) ||
+          (draft.bidCategory !== 'EXCLUDED' && !/^\d+$/.test(draft.rscSeniority)) ||
           draft.effectiveOn === '',
       )
     ) {
@@ -300,13 +300,13 @@ export function UnknownEmployeeOnboardingPanel(props: {
               employee_id: employee.sourceEmployeeId,
               first_name: draft.firstName.trim(),
               last_name: draft.lastName.trim(),
-              rank: draft.rank,
+              rank: draft.rank === 'CIVILIAN' ? null : draft.rank,
               bid_category: draft.bidCategory,
-              rsc_seniority: Number(draft.rscSeniority),
+              ...(draft.rscSeniority === '' ? {} : { rsc_seniority: Number(draft.rscSeniority) }),
               ...(draft.rankSeniority === ''
                 ? {}
                 : { rank_seniority: Number(draft.rankSeniority) }),
-              hired_at: draft.effectiveOn,
+              ...(draft.bidCategory === 'EXCLUDED' ? {} : { hired_at: draft.effectiveOn }),
             },
             effective_on: draft.effectiveOn,
             reason: 'Reviewed TeleStaff unknown employee onboarding.',
@@ -384,14 +384,23 @@ export function UnknownEmployeeOnboardingPanel(props: {
                     name={`rank-${employee.rowId}`}
                     required
                     value={draft.rank}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const rank = event.target.value as UnknownEmployeeDraft['rank'];
                       update(employee.rowId, {
-                        rank: event.target.value as UnknownEmployeeDraft['rank'],
-                      })
-                    }
+                        rank,
+                        ...(rank === 'CIVILIAN'
+                          ? {
+                              bidCategory: 'EXCLUDED' as const,
+                              rscSeniority: '',
+                              rankSeniority: '',
+                            }
+                          : {}),
+                      });
+                    }}
                     className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
                   >
                     <option value="">Select rank</option>
+                    <option value="CIVILIAN">Civilian / no fire rank</option>
                     {['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'].map((rank) => (
                       <option key={rank} value={rank}>
                         {rank}
@@ -420,8 +429,13 @@ export function UnknownEmployeeOnboardingPanel(props: {
                 </label>
                 <OnboardingInput
                   name={`rsc_seniority-${employee.rowId}`}
-                  label="RSC seniority"
+                  label={
+                    draft.bidCategory === 'EXCLUDED'
+                      ? 'RSC seniority (not required for excluded personnel)'
+                      : 'RSC seniority'
+                  }
                   type="number"
+                  required={draft.bidCategory !== 'EXCLUDED'}
                   value={draft.rscSeniority}
                   onChange={(value) => update(employee.rowId, { rscSeniority: value })}
                 />
@@ -435,7 +449,11 @@ export function UnknownEmployeeOnboardingPanel(props: {
                 />
                 <OnboardingInput
                   name={`effective_on-${employee.rowId}`}
-                  label="Hire effective date"
+                  label={
+                    draft.bidCategory === 'EXCLUDED'
+                      ? 'Roster record date (not a hire date)'
+                      : 'Hire effective date'
+                  }
                   type="date"
                   value={draft.effectiveOn}
                   onChange={(value) => update(employee.rowId, { effectiveOn: value })}

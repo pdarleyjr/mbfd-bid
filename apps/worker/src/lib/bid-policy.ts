@@ -357,12 +357,15 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
   employeeId: string;
   firstName: string;
   lastName: string;
-  rank: FrozenBidEligibilityMember['rank'];
+  rank: Exclude<FrozenBidEligibilityMember['rank'], 'CIVILIAN'>;
   rscSeniority: number;
   rankSeniority: number | undefined;
   isProbationary: boolean;
   credentials: Array<{ name: string }>;
 } {
+  if (member.rank === 'CIVILIAN') {
+    throw new Error('excluded civilian personnel cannot enter bid eligibility evaluation');
+  }
   return {
     employeeId: `snapshot-member-${member.memberId}`,
     firstName: '',
