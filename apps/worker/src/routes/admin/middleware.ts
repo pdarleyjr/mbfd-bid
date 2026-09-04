@@ -15,6 +15,11 @@ type AdminEnv = {
   Variables: { claims: JwtPayload };
 };
 
+/** Safe reads may reuse the short, role-specific Hub authorization window. */
+export function shouldForceAdminRevalidation(method: string): boolean {
+  return method !== 'GET' && method !== 'HEAD';
+}
+
 export const requireAdmin: MiddlewareHandler<AdminEnv> = async (c, next) => {
   const auth = c.req.header('Authorization');
   if (!auth || !auth.startsWith('Bearer ')) {
@@ -33,7 +38,12 @@ export const requireAdmin: MiddlewareHandler<AdminEnv> = async (c, next) => {
     return c.json({ error: 'invalid_token' }, 401);
   }
 
-  const refreshed = await refreshFederatedSession(claims, validateEnv(c.env));
+  const refreshed = await refreshFederatedSession(
+    claims,
+    validateEnv(c.env),
+    Math.floor(Date.now() / 1000),
+    shouldForceAdminRevalidation(c.req.method),
+  );
   if (!refreshed.ok) {
     return c.json(
       { error: refreshed.category },

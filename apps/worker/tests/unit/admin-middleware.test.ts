@@ -2,7 +2,7 @@ import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { signJwt } from '../../src/lib/jwt.js';
-import { requireAdmin } from '../../src/routes/admin/middleware.js';
+import { requireAdmin, shouldForceAdminRevalidation } from '../../src/routes/admin/middleware.js';
 import type { WorkerEnv } from '../../src/types/env';
 
 const KEY = 'a'.repeat(64);
@@ -56,6 +56,14 @@ function makeApp() {
 }
 
 describe('requireAdmin middleware', () => {
+  it('uses bounded freshness only for safe read methods', () => {
+    expect(shouldForceAdminRevalidation('GET')).toBe(false);
+    expect(shouldForceAdminRevalidation('HEAD')).toBe(false);
+    expect(shouldForceAdminRevalidation('POST')).toBe(true);
+    expect(shouldForceAdminRevalidation('PATCH')).toBe(true);
+    expect(shouldForceAdminRevalidation('DELETE')).toBe(true);
+  });
+
   it('returns 401 when no Authorization header', async () => {
     const res = await makeApp().request('/protected', {}, mkEnv());
     expect(res.status).toBe(401);
