@@ -13,6 +13,7 @@ export type AuthoritativeBaselineAcceptanceResult =
       acceptanceId: string;
       importId: string;
       idempotent: boolean;
+      supersededAcceptanceId: string | null;
       baseline: TeleStaffImportCompleteness;
     }
   | {
@@ -34,6 +35,7 @@ export interface AcceptAuthoritativeStaffingBaselineOptions {
   actorMemberId: number;
   reason: string;
   acceptedAtMs: number;
+  supersedeExisting?: boolean;
 }
 
 function isOpaqueId(value: string): boolean {
@@ -118,10 +120,13 @@ export async function acceptAuthoritativeStaffingBaseline(
         acceptanceId: existing.id,
         importId: existing.importId,
         idempotent: true,
+        supersededAcceptanceId: null,
         baseline,
       };
     }
-    return { ok: false, code: 'BASELINE_ALREADY_ACCEPTED' };
+    if (options.supersedeExisting !== true) {
+      return { ok: false, code: 'BASELINE_ALREADY_ACCEPTED' };
+    }
   }
 
   const baseline = await evaluateTeleStaffImportCompleteness(db, options.importId);
@@ -132,24 +137,45 @@ export async function acceptAuthoritativeStaffingBaseline(
     return { ok: false, code: 'SOURCE_IMPORT_NOT_COMPLETE', baseline };
   }
 
-  try {
-    await d1
-      .prepare(
-        `INSERT INTO bid_year_staffing_baselines
+  const insert = d1
+    .prepare(
+      `INSERT INTO bid_year_staffing_baselines
            (id, bid_year, assignment_import_id, status, accepted_at, accepted_by_member_id,
             acceptance_reason, created_at)
          VALUES (?, ?, ?, 'accepted', ?, ?, ?, ?)`,
-      )
-      .bind(
-        options.acceptanceId,
-        options.bidYear,
-        options.importId,
-        options.acceptedAtMs,
-        options.actorMemberId,
-        options.reason.trim(),
-        options.acceptedAtMs,
-      )
-      .run();
+    )
+    .bind(
+      options.acceptanceId,
+      options.bidYear,
+      options.importId,
+      options.acceptedAtMs,
+      options.actorMemberId,
+      options.reason.trim(),
+      options.acceptedAtMs,
+    );
+
+  try {
+    if (existing === undefined) {
+      await insert.run();
+    } else {
+      const supersede = d1
+        .prepare(
+          `UPDATE bid_year_staffing_baselines
+              SET status = 'superseded', superseded_at = ?, superseded_by_member_id = ?,
+                  supersession_reason = ?
+            WHERE id = ? AND bid_year = ? AND status = 'accepted'`,
+        )
+        .bind(
+          options.acceptedAtMs,
+          options.actorMemberId,
+          options.reason.trim(),
+          existing.id,
+          options.bidYear,
+        );
+      // D1 batches are transactional. The protected accepted row is replaced
+      // together with the new receipt, or neither ledger change is retained.
+      await d1.batch([supersede, insert]);
+    }
   } catch {
     const concurrent = await db
       .select({
@@ -183,6 +209,7 @@ export async function acceptAuthoritativeStaffingBaseline(
         acceptanceId: concurrent.id,
         importId: concurrent.importId,
         idempotent: true,
+        supersededAcceptanceId: null,
         baseline: currentBaseline,
       };
     }
@@ -197,6 +224,7 @@ export async function acceptAuthoritativeStaffingBaseline(
     acceptanceId: options.acceptanceId,
     importId: options.importId,
     idempotent: false,
+    supersededAcceptanceId: existing?.id ?? null,
     baseline,
   };
 }

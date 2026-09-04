@@ -688,7 +688,7 @@ describe('TeleStaffOperatorWorkspace', () => {
     ).toContain('211');
   });
 
-  it('uses the authenticated CSRF path to designate a committed import as the 2026 staging baseline', async () => {
+  it('uses the authenticated CSRF path to designate a committed import as the 2026 staffing baseline', async () => {
     const importSummary = {
       id: 'import-baseline-2026',
       status: 'committed',
@@ -737,6 +737,7 @@ describe('TeleStaffOperatorWorkspace', () => {
               acceptanceId: 'baseline-acceptance-2026-import-baseline-2026',
               importId: importSummary.id,
               idempotent: false,
+              supersededAcceptanceId: 'previous-baseline-acceptance',
               baseline: { status: 'PASS' },
             }),
             { status: 201 },
@@ -762,11 +763,14 @@ describe('TeleStaffOperatorWorkspace', () => {
     const baselineButton = container.querySelector<HTMLButtonElement>(
       '[data-testid="telestaff-baseline-acceptance"]',
     );
-    expect(baselineButton?.textContent).toContain('Designate 2026 staging baseline');
+    expect(baselineButton?.textContent).toContain('Designate 2026 staffing baseline');
     expect(baselineButton?.disabled).toBe(false);
     if (!baselineButton) throw new Error('Baseline acceptance control did not render.');
     await click(baselineButton);
-    expect(baselineButton.textContent).toContain('Confirm 2026 staging baseline');
+    expect(baselineButton.textContent).toContain('Confirm 2026 staffing baseline');
+    expect(container.textContent).toContain(
+      'This writes an acceptance receipt to production D1 and supersedes the previous 2026 baseline',
+    );
     expect(
       fetchMock.mock.calls.find(([input]) => String(input).endsWith('/baseline-acceptance')),
     ).toBeUndefined();
@@ -784,6 +788,10 @@ describe('TeleStaffOperatorWorkspace', () => {
     const headers = baselineCall?.[1]?.headers as Headers;
     expect(headers.get('X-MBFD-CSRF')).toBe('csrf_123e4567-e89b-12d3-a456-426614174000');
     expect(headers.get('Idempotency-Key')).toBe('baseline-acceptance-2026-import-baseline-2026');
+    expect(JSON.parse(String(baselineCall?.[1]?.body))).toMatchObject({
+      bid_year: 2026,
+      supersede_existing: true,
+    });
     expect(
       container.querySelector('[data-testid="telestaff-baseline-result"]')?.textContent,
     ).toContain('PASS');

@@ -128,6 +128,88 @@ describe('authoritative staffing baseline local acceptance control', () => {
     expect(conflictingPayload).toEqual({ ok: false, code: 'ACCEPTANCE_PAYLOAD_CONFLICT' });
   });
 
+  it('supersedes an older accepted baseline only when replacement is explicit and complete', async () => {
+    await seedAuthoritativeBaseline(h, {
+      bidYear: 2027,
+      importId: 'acceptance-original',
+      rows: [{ sourceRowNumber: 1, normalizedTopology: 'synthetic/original' }],
+    });
+    await seedAuthoritativeBaseline(h, {
+      bidYear: 2027,
+      importId: 'acceptance-replacement',
+      rows: [{ sourceRowNumber: 2, normalizedTopology: 'synthetic/replacement' }],
+      accept: false,
+    });
+    const replacement = {
+      acceptanceId: 'acceptance-replacement-ledger',
+      bidYear: 2027,
+      importId: 'acceptance-replacement',
+      actorMemberId: 9001,
+      reason: 'Complete replacement source reviewed for explicit baseline supersession.',
+      acceptedAtMs: SYNTHETIC_BASELINE_NOW + 1_000,
+    };
+
+    expect(
+      await acceptAuthoritativeStaffingBaseline(h.env.DB, getDb(h.env.DB), replacement),
+    ).toEqual({ ok: false, code: 'BASELINE_ALREADY_ACCEPTED' });
+
+    expect(
+      await acceptAuthoritativeStaffingBaseline(h.env.DB, getDb(h.env.DB), {
+        ...replacement,
+        acceptanceId: 'acceptance-original-acceptance',
+        supersedeExisting: true,
+      }),
+    ).toEqual({ ok: false, code: 'BASELINE_ALREADY_ACCEPTED' });
+    expect(
+      (
+        await h.db.run(
+          `SELECT id, status FROM bid_year_staffing_baselines
+            WHERE bid_year = 2027`,
+        )
+      ).results,
+    ).toEqual([{ id: 'acceptance-original-acceptance', status: 'accepted' }]);
+
+    const accepted = await acceptAuthoritativeStaffingBaseline(h.env.DB, getDb(h.env.DB), {
+      ...replacement,
+      supersedeExisting: true,
+    });
+    expect(accepted).toMatchObject({
+      ok: true,
+      idempotent: false,
+      supersededAcceptanceId: 'acceptance-original-acceptance',
+      baseline: { status: 'PASS' },
+    });
+    expect(
+      (
+        await h.db.run(
+          `SELECT id, assignment_import_id, status, superseded_at,
+                  superseded_by_member_id, supersession_reason
+             FROM bid_year_staffing_baselines
+            WHERE bid_year = 2027
+            ORDER BY created_at, id`,
+        )
+      ).results,
+    ).toEqual([
+      {
+        id: 'acceptance-original-acceptance',
+        assignment_import_id: 'acceptance-original',
+        status: 'superseded',
+        superseded_at: SYNTHETIC_BASELINE_NOW + 1_000,
+        superseded_by_member_id: 9001,
+        supersession_reason:
+          'Complete replacement source reviewed for explicit baseline supersession.',
+      },
+      {
+        id: 'acceptance-replacement-ledger',
+        assignment_import_id: 'acceptance-replacement',
+        status: 'accepted',
+        superseded_at: null,
+        superseded_by_member_id: null,
+        supersession_reason: null,
+      },
+    ]);
+  });
+
   it('does not report a retry as idempotent after its accepted canonical projection is no longer complete', async () => {
     await seedAuthoritativeBaseline(h, {
       bidYear: 2027,

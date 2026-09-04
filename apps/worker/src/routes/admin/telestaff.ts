@@ -279,6 +279,7 @@ const BaselineAcceptanceRequestSchema = z
   .object({
     bid_year: z.number().int().min(2000).max(9999),
     reason: z.string().trim().min(4).max(500),
+    supersede_existing: z.boolean().optional().default(false),
   })
   .strict();
 
@@ -2524,6 +2525,7 @@ router.post('/imports/:importId/baseline-acceptance', requireStepUpAuth(), async
     actorMemberId: actorId,
     reason: parsed.data.reason,
     acceptedAtMs: Date.now(),
+    supersedeExisting: parsed.data.supersede_existing,
   });
   if (!accepted.ok) {
     const status = accepted.code === 'INVALID_ACCEPTANCE_REQUEST' ? 400 : 409;

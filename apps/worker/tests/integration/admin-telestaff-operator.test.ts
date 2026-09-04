@@ -266,6 +266,46 @@ describe('admin TeleStaff operator workflow', () => {
     });
   });
 
+  it('requires an explicit request before superseding an existing annual baseline', async () => {
+    await seedAuthoritativeBaseline(h, {
+      bidYear: 2027,
+      importId: 'remote-original-import',
+      rows: [{ sourceRowNumber: 1, normalizedTopology: 'synthetic/original' }],
+    });
+    await seedAuthoritativeBaseline(h, {
+      bidYear: 2027,
+      importId: 'remote-replacement-import',
+      rows: [{ sourceRowNumber: 2, normalizedTopology: 'synthetic/replacement' }],
+      accept: false,
+    });
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'remote-replacement-import-2027',
+    };
+    const reason = 'Complete replacement source reviewed for explicit baseline supersession.';
+    const blocked = await request(h, '/imports/remote-replacement-import/baseline-acceptance', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ bid_year: 2027, reason }),
+    });
+    expect(blocked.status).toBe(409);
+    await expect(blocked.json()).resolves.toMatchObject({ error: 'baseline_already_accepted' });
+
+    const response = await request(h, '/imports/remote-replacement-import/baseline-acceptance', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ bid_year: 2027, reason, supersede_existing: true }),
+    });
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      importId: 'remote-replacement-import',
+      idempotent: false,
+      supersededAcceptanceId: 'remote-original-import-acceptance',
+      baseline: { status: 'PASS' },
+    });
+  });
+
   it('fails closed without a declared source kind and retains an explicit declaration with time provenance', async () => {
     const omitted = await request(h, '/imports/preview', {
       method: 'POST',

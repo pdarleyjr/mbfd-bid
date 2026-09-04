@@ -113,6 +113,7 @@ interface BaselineAcceptanceResult {
   acceptanceId: string;
   importId: string;
   idempotent: boolean;
+  supersededAcceptanceId: string | null;
   baseline: { status: string };
 }
 
@@ -149,6 +150,8 @@ export function teleStaffErrorCopy(error: string): string {
       return 'Fresh administrator authentication is required. After sign-in, you will return to this TeleStaff review.';
     case 'terminal_reconciliation_required':
       return 'Finish the pending review items before applying. The counts above must show zero pending rows and zero hard blockers.';
+    case 'baseline_already_accepted':
+      return 'A different 2026 baseline is already accepted. Review the selected committed import and use the confirmation step to replace it while preserving the prior receipt.';
     default:
       return `The requested operation was not completed: ${error.replaceAll('_', ' ')}.`;
   }
@@ -931,7 +934,7 @@ export function TeleStaffOperatorWorkspace() {
     if (!baselineConfirmationRequired) {
       setBaselineConfirmationRequired(true);
       setNotice(
-        'Review the committed official import, then confirm the 2026 staging baseline acceptance below.',
+        'Review the committed official import, then confirm the 2026 staffing baseline acceptance below.',
       );
       return;
     }
@@ -953,8 +956,8 @@ export function TeleStaffOperatorWorkspace() {
           },
           body: JSON.stringify({
             bid_year: 2026,
-            reason:
-              'Operator-designated 2026 staging staffing baseline after reviewed TeleStaff apply.',
+            supersede_existing: true,
+            reason: 'Operator-designated 2026 staffing baseline after reviewed TeleStaff apply.',
           }),
         },
       );
@@ -979,8 +982,10 @@ export function TeleStaffOperatorWorkspace() {
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice(
         result.idempotent
-          ? 'The existing 2026 staging baseline acceptance was confirmed.'
-          : 'The 2026 staging staffing baseline was accepted with the server-calculated completeness result below.',
+          ? 'The existing 2026 staffing baseline acceptance was confirmed.'
+          : result.supersededAcceptanceId === null
+            ? 'The 2026 staffing baseline was accepted with the server-calculated completeness result below.'
+            : 'The selected import is now the 2026 staffing baseline. The previous acceptance remains preserved as superseded history.',
       );
     } catch {
       setError('baseline_acceptance_unavailable');
@@ -1555,7 +1560,7 @@ export function TeleStaffOperatorWorkspace() {
         aria-labelledby="telestaff-baseline-heading"
       >
         <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
-          Staging lifecycle
+          Annual baseline lifecycle
         </p>
         <h2 id="telestaff-baseline-heading" className="mt-1 font-heading text-xl text-white">
           2026 staffing baseline
@@ -1563,11 +1568,14 @@ export function TeleStaffOperatorWorkspace() {
         <p className="mt-2 max-w-3xl text-sm text-slate-300">
           A baseline can be accepted only from the selected committed official import. The server
           rechecks authoritative-source completeness and records an idempotent acceptance receipt.
+          If an earlier baseline exists, the confirmation replaces it atomically while preserving
+          the complete acceptance history.
         </p>
         {baselineConfirmationRequired ? (
           <p className="mt-3 rounded border border-amber-500 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
-            Confirming records this committed official import as the 2026 staging baseline. It does
-            not write directly to D1 or affect production.
+            This writes an acceptance receipt to production D1 and supersedes the previous 2026
+            baseline if one exists. The previous receipt is retained for audit history, and no
+            TeleStaff writeback or Bid session is started.
           </p>
         ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -1579,8 +1587,8 @@ export function TeleStaffOperatorWorkspace() {
             className="min-h-11 rounded bg-amber-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {baselineConfirmationRequired
-              ? 'Confirm 2026 staging baseline'
-              : 'Designate 2026 staging baseline'}
+              ? 'Confirm 2026 staffing baseline'
+              : 'Designate 2026 staffing baseline'}
           </button>
           {baselineAcceptance !== null && (
             <div
@@ -1590,7 +1598,9 @@ export function TeleStaffOperatorWorkspace() {
               Completeness: {baselineAcceptance.baseline.status} ·{' '}
               {baselineAcceptance.idempotent
                 ? 'existing acceptance confirmed'
-                : 'acceptance recorded'}
+                : baselineAcceptance.supersededAcceptanceId === null
+                  ? 'acceptance recorded'
+                  : 'previous acceptance superseded'}
             </div>
           )}
         </div>
