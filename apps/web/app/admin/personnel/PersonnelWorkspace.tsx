@@ -237,7 +237,7 @@ export function PersonnelWorkspace({
           'Idempotency-Key': randomIdempotencyKey(),
         },
         credentials: 'include',
-        body: JSON.stringify(pendingChange),
+        body: JSON.stringify(pendingChange ?? payload),
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
