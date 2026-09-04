@@ -84,6 +84,21 @@ test.describe('Admin gate — no JWT', () => {
     await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible();
     await expect(page.getByLabel('Employee ID')).toBeVisible();
   });
+
+  test('the Administrator Guide is not public when no JWT is present', async ({ page }) => {
+    await page.context().clearCookies();
+    await page.context().addCookies([
+      {
+        name: 'mbfd_pin',
+        value: 'ok',
+        url: 'http://localhost:3000',
+        httpOnly: true,
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/admin/guide', { waitUntil: 'commit' });
+    await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/);
+  });
 });
 
 test.describe('Admin gate — member JWT', () => {
@@ -114,6 +129,9 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Current Rosters', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'Administrator Guide', exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole('link', { name: 'TeleStaff', exact: true })).toBeVisible();
     await expect(page.locator('a[href="/admin/members"]')).toBeVisible();
     await expect(page.locator('a[href="/admin/credentials"]')).toBeVisible();
@@ -124,6 +142,28 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await expect(page.getByRole('link', { name: 'Results & Audit', exact: true })).toBeVisible();
     await expect(
       page.getByRole('link', { name: 'System/Integrations', exact: true }),
+    ).toBeVisible();
+  });
+
+  test('an admin can open the searchable Administrator Guide', async ({ page }) => {
+    if (!process.env.JWT_SIGNING_KEY) {
+      test.skip(true, 'No JWT_SIGNING_KEY — cannot sign test JWT');
+      return;
+    }
+    const jwt = await makeJwt('admin');
+    await setAuthCookies(page, jwt);
+    await page.goto('/admin/guide');
+    await expect(
+      page.getByRole('heading', { name: 'Administrator Guide', exact: true }),
+    ).toBeVisible();
+    const search = page.getByRole('searchbox', { name: 'Search the Administrator Guide' });
+    await search.fill('hold presentation');
+    await expect(
+      page.getByRole('heading', { name: 'Live Presentation', exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Show how to use it', exact: true }).click();
+    await expect(
+      page.getByText('HOLD DISPLAY is not the same as pausing Bid execution'),
     ).toBeVisible();
   });
 
