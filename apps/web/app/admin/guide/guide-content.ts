@@ -141,6 +141,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Reconcile',
       'Review',
       'Apply',
+      'Designate 2026 staffing baseline',
       'Sanitized reconciliation export',
     ],
     steps: [
@@ -149,9 +150,10 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Reconcile changes, new positions, unknown employees, incomplete topology, and source mappings.',
       'Review safe exceptions and export the sanitized reconciliation package when needed.',
       'Apply only after reviewed exceptions are resolved or formally retained.',
+      'After a committed official import passes completeness checks, use the two-step baseline confirmation. It will atomically supersede the prior acceptance receipt while preserving that receipt in audit history.',
     ],
     important:
-      'Never invent a seat or identity for an unknown employee or incomplete topology. These conditions are meant to stay visible for authoritative resolution.',
+      'Never invent a seat or identity for an unknown employee or incomplete topology. Baseline confirmation writes an acceptance receipt to production D1, but it does not start a Bid session and does not write back to TeleStaff.',
     keywords: [
       'telestaff',
       'upload',
@@ -163,6 +165,8 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'incomplete topology',
       'source mapping',
       'sanitized export',
+      'baseline',
+      'supersede',
     ],
   }),
   section({

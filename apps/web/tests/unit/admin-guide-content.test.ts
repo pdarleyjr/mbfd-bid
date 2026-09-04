@@ -34,6 +34,16 @@ describe('Administrator Guide content contract', () => {
     expect(filterGuideSections('CSV').map((section) => section.id)).toContain('current-rosters');
   });
 
+  it('documents the production effect and audit history of annual TeleStaff baseline replacement', () => {
+    const teleStaff = GUIDE_SECTIONS.find((section) => section.id === 'telestaff');
+
+    expect(teleStaff?.controls).toContain('Designate 2026 staffing baseline');
+    expect(teleStaff?.steps.join(' ')).toContain('supersede the prior acceptance receipt');
+    expect(teleStaff?.important).toContain('production D1');
+    expect(teleStaff?.important).toContain('does not start a Bid session');
+    expect(teleStaff?.important).toContain('does not write back to TeleStaff');
+  });
+
   it('uses an intentional category, a real route, and concise guide content for each section', () => {
     expect(GUIDE_SECTIONS.length).toBeGreaterThanOrEqual(27);
 
