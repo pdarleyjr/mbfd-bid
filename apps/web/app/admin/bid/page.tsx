@@ -37,6 +37,10 @@ interface ActiveSessionResponse {
   session: { id: string } | null;
 }
 
+interface MeResponse {
+  memberId: number;
+}
+
 async function loadBoard(
   sessionId: string,
 ): Promise<{ board: BoardSnapshot | null; fetchError: string | null }> {
@@ -59,12 +63,21 @@ async function loadActiveSession(): Promise<string | null> {
   return body.session?.id ?? null;
 }
 
+async function loadLocalMemberId(): Promise<number | null> {
+  const res = await serverWorkerFetch('/api/me');
+  if (!res.ok) return null;
+  const body = (await res.json()) as Partial<MeResponse>;
+  return Number.isSafeInteger(body.memberId) && Number(body.memberId) > 0
+    ? Number(body.memberId)
+    : null;
+}
+
 export default async function AdminBidPage({
   searchParams,
 }: {
   searchParams: Promise<{ session_id?: string; bidSessionId?: string }>;
 }) {
-  const claims = await requireAdmin();
+  await requireAdmin();
 
   const sp = await searchParams;
   const sessionId = sp.session_id ?? sp.bidSessionId ?? (await loadActiveSession());
@@ -88,15 +101,19 @@ export default async function AdminBidPage({
   }
 
   const { board, fetchError } = await loadBoard(sessionId);
+  const localMemberId = await loadLocalMemberId();
 
-  if (fetchError !== null || board === null) {
+  if (fetchError !== null || board === null || localMemberId === null) {
     return (
       <div className="min-h-screen bg-stone-50 p-6">
         <header className="mb-4">
           <h1 className="font-display text-2xl text-stone-900">MBFD Annual Bid — Admin Console</h1>
         </header>
         <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
-          Could not load the bid board: {fetchError ?? 'no data'}.{' '}
+          Could not load the bid board:{' '}
+          {fetchError ??
+            (localMemberId === null ? 'exact Bid roster identity unavailable' : 'no data')}
+          .{' '}
           <span className="text-amber-800">
             Check the Worker logs and JWT validity, then reload this page.
           </span>
@@ -120,7 +137,7 @@ export default async function AdminBidPage({
         sessionStartedAt={board.sessionStartedAt}
         turnStartedAtMs={board.turnStartedAtMs ?? 0}
         turnTimerSeconds={board.turnTimerSeconds ?? 180}
-        meMemberId={claims.member_id}
+        meMemberId={localMemberId}
         initialFills={board.fills}
         members={board.members ?? {}}
         positions={board.positions}

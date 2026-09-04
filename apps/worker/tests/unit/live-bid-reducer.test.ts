@@ -213,6 +213,7 @@ describe('live canonical reducer', () => {
     expect(resolved.payload).toMatchObject({
       releasedPositionId: 'p2',
       supersedesBidId: 'prior-award',
+      replacementBidId: 'specialty-replacement',
       removedFromRemainingOrder: false,
     });
   });
@@ -411,6 +412,7 @@ describe('live canonical reducer', () => {
       fromPositionId: 'p1',
       toPositionId: 'p2',
       supersedesBidId: 'b1',
+      replacementBidId: 'b2',
     });
   });
 

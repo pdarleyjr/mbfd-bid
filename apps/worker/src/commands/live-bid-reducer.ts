@@ -351,6 +351,7 @@ export function reduceLiveBidCommand(
           resumedBidderId: specialty.suspendedBidderId,
           releasedPositionId: prior?.[0] ?? null,
           supersedesBidId: prior?.[1].bidId ?? null,
+          replacementBidId: prior === undefined ? null : bidId,
           removedFromRemainingOrder: removeFromRemainingOrder,
         },
         supersedesBidId: prior?.[1].bidId ?? null,
@@ -506,6 +507,7 @@ export function reduceLiveBidCommand(
         fromPositionId: command.fromPositionId,
         toPositionId: command.toPositionId,
         supersedesBidId: prior.bidId,
+        replacementBidId: bidId,
       },
       supersedesBidId: prior.bidId,
     };

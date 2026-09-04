@@ -36,6 +36,10 @@ interface EligibilityResponse {
   positions: Array<{ positionId: string; eligible: boolean }>;
 }
 
+interface MeResponse {
+  memberId: number;
+}
+
 async function loadBoard(
   sessionId?: string,
 ): Promise<{ board: BoardSnapshot | null; fetchError: string | null }> {
@@ -53,6 +57,15 @@ async function loadEligibility(sessionId: string): Promise<string[]> {
   if (!res.ok) return [];
   const body = (await res.json()) as EligibilityResponse;
   return body.positions.filter((p) => p.eligible).map((p) => p.positionId);
+}
+
+async function loadLocalMemberId(): Promise<number | null> {
+  const res = await serverWorkerFetch('/api/me');
+  if (!res.ok) return null;
+  const body = (await res.json()) as Partial<MeResponse>;
+  return Number.isSafeInteger(body.memberId) && Number(body.memberId) > 0
+    ? Number(body.memberId)
+    : null;
 }
 
 function BidUnavailable({ message }: { message: string }) {
@@ -76,11 +89,14 @@ export default async function BidPage({
 
   const signingKey = cfEnv('JWT_SIGNING_KEY');
   if (!signingKey) throw new Error('JWT_SIGNING_KEY not set');
-  const claims = await verifyJwt(jwt, signingKey);
+  await verifyJwt(jwt, signingKey);
 
   const sp = await searchParams;
   const { board, fetchError } = await loadBoard(sp.session_id ?? sp.bidSessionId);
   if (!board) return <BidUnavailable message={fetchError ?? 'no active session'} />;
+  const localMemberId = await loadLocalMemberId();
+  if (localMemberId === null)
+    return <BidUnavailable message="your exact Bid roster identity could not be resolved" />;
   const eligiblePositionIds = await loadEligibility(board.bidSessionId);
 
   return (
@@ -90,13 +106,13 @@ export default async function BidPage({
         currentBidderId={board.currentBidderId}
         currentBidder={board.currentBidder ?? null}
         currentPhase={board.currentPhase}
-        meMemberId={claims.member_id}
+        meMemberId={localMemberId}
       />
-      <OnDeckQueue onDeck={board.onDeck ?? []} meMemberId={claims.member_id} />
+      <OnDeckQueue onDeck={board.onDeck ?? []} meMemberId={localMemberId} />
       <BidBoard
         bidSessionId={board.bidSessionId}
         initialSeq={board.lastSeq}
-        meMemberId={claims.member_id}
+        meMemberId={localMemberId}
         initialFills={board.fills}
         eligiblePositionIds={eligiblePositionIds}
         members={board.members ?? {}}

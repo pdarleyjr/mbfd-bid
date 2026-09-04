@@ -275,7 +275,7 @@ describe('protected Bid routes', () => {
     globalThis.fetch = ORIG_FETCH;
   });
 
-  it('denies a freshly issued session when Hub now rejects its identity', async () => {
+  it('denies a safe read when the bounded Hub authorization window is stale and Hub rejects it', async () => {
     const now = Math.floor(Date.now() / 1000);
     const jwt = await signJwt(
       {
@@ -289,7 +289,7 @@ describe('protected Bid routes', () => {
         first_name: 'Canonical',
         last_name: 'Member',
         fresh_auth_at: now,
-        authz_checked_at: now,
+        authz_checked_at: now - 1_000,
       },
       'A'.repeat(64),
     );

@@ -68,7 +68,14 @@ describe('POST /api/auth/ws-ticket', () => {
     mocks.signWebSocketTicket.mockResolvedValue('opaque-short-lived-ticket');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ jwt: 'refreshed-jwt' }), { status: 200 })),
+      vi.fn(async (input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.endsWith('/api/auth/revalidate'))
+          return new Response(JSON.stringify({ jwt: 'refreshed-jwt' }), { status: 200 });
+        if (url.endsWith('/api/me'))
+          return new Response(JSON.stringify({ memberId: 314 }), { status: 200 });
+        return new Response(null, { status: 404 });
+      }),
     );
   });
 
@@ -81,10 +88,29 @@ describe('POST /api/auth/ws-ticket', () => {
     await expect(response.json()).resolves.toEqual({ ticket: 'opaque-short-lived-ticket' });
     expect(mocks.verifyJwt).toHaveBeenCalledWith('refreshed-jwt', 'test-signing-key');
     expect(mocks.signWebSocketTicket).toHaveBeenCalledWith(
-      { sub: 7, member_id: 42, security_version: 3, role: 'member', session_id: 'session-1' },
+      { sub: 7, member_id: 314, security_version: 3, role: 'member', session_id: 'session-1' },
       'test-signing-key',
     );
     expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('fails closed when the Worker cannot resolve the exact local member identity', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.endsWith('/api/auth/revalidate'))
+          return new Response(JSON.stringify({ jwt: 'refreshed-jwt' }), { status: 200 });
+        return new Response(JSON.stringify({ error: 'missing_member' }), { status: 404 });
+      }),
+    );
+    const { POST } = await import('../../app/api/auth/ws-ticket/route');
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: 'local_identity_required' });
+    expect(mocks.signWebSocketTicket).not.toHaveBeenCalled();
   });
 
   it('rejects a request without the matching CSRF nonce before reading the access JWT', async () => {

@@ -90,6 +90,26 @@ interface AmendmentRow {
   replacement_bid_id: string;
 }
 
+export async function loadCanonicalAmendmentLinks(
+  db: D1Database,
+  sessionId: string,
+): Promise<AmendmentRow[]> {
+  return (
+    await db
+      .prepare(
+        `SELECT json_extract(event_json, '$.supersedesBidId') AS original_bid_id,
+                json_extract(event_json, '$.replacementBidId') AS replacement_bid_id
+           FROM bid_command_events
+          WHERE bid_session_id = ?
+            AND json_type(event_json, '$.supersedesBidId') = 'text'
+            AND json_type(event_json, '$.replacementBidId') = 'text'
+          ORDER BY seq, id`,
+      )
+      .bind(sessionId)
+      .all()
+  ).results as unknown as AmendmentRow[];
+}
+
 function idempotency(c: { req: { header(name: string): string | undefined } }) {
   const key = c.req.header('Idempotency-Key');
   return key !== undefined && key === key.trim() && key.length > 0 && key.length <= 256
@@ -165,14 +185,7 @@ async function roster(
     receipt.result_seq !== metadata.current_seq
   )
     return { ok: false, error: 'annual_completion_receipt_required' };
-  const amendments = (
-    await db
-      .prepare(
-        'SELECT original_bid_id, replacement_bid_id FROM bid_award_amendments WHERE bid_session_id = ? ORDER BY created_at, id',
-      )
-      .bind(sessionId)
-      .all()
-  ).results as unknown as AmendmentRow[];
+  const amendments = await loadCanonicalAmendmentLinks(db, sessionId);
   const projected = projectCanonicalAnnualCompletion({
     session: { id: sessionId, mode: 'REAL', bidYear: session.bid_year },
     completion: {

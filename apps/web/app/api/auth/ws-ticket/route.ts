@@ -44,10 +44,25 @@ export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
 
+  const localIdentity = await fetch(`${getWorkerBase()}/api/me`, {
+    headers: { Authorization: `Bearer ${currentJwt}` },
+  }).catch(() => null);
+  const localIdentityBody = (await localIdentity?.json().catch(() => null)) as {
+    memberId?: unknown;
+  } | null;
+  const localMemberId = localIdentityBody?.memberId;
+  if (
+    !localIdentity?.ok ||
+    typeof localMemberId !== 'number' ||
+    !Number.isSafeInteger(localMemberId) ||
+    localMemberId <= 0
+  )
+    return NextResponse.json({ error: 'local_identity_required' }, { status: 401 });
+
   const ticket = await signWebSocketTicket(
     {
       sub: claims.sub,
-      member_id: claims.member_id,
+      member_id: localMemberId,
       security_version: claims.security_version,
       role: claims.role,
       session_id: parsed.data.session_id,
