@@ -149,7 +149,7 @@ const handler = {
         ['canonical audit archive', results[1]],
       ] as const) {
         if (result.status === 'rejected') {
-          console.error(`[scheduled] ${name} failed`, result.reason);
+          console.error('[scheduled] task failed', { name, reason: result.reason });
         }
       }
     }

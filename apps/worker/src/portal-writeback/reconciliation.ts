@@ -35,7 +35,7 @@ export async function runReconciliation(deps: ReconciliationDeps): Promise<Recon
       if (await deps.reEnqueue(r)) reEnqueued += 1;
     } catch (err) {
       // One stuck row shouldn't block the rest of the batch — log and proceed.
-      console.error(`[portal-reconciliation] reEnqueue failed for ${r.id}`, err);
+      console.error('[portal-reconciliation] reEnqueue failed', { id: r.id, error: err });
     }
   }
   const failed = await deps.listFailedBids();

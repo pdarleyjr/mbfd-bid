@@ -340,6 +340,155 @@ describe('TeleStaffOperatorWorkspace', () => {
       '/api/admin/telestaff/imports/import-safe-1/reconciliation.csv',
     );
     expect(exportLink?.hasAttribute('download')).toBe(true);
+    expect(container.querySelector('[data-testid="telestaff-next-steps"]')?.textContent).toContain(
+      'Recommended order',
+    );
+  });
+
+  it('lets operators navigate every reconciliation page', async () => {
+    const importSummary = {
+      id: 'import-paged-1',
+      status: 'reviewed',
+      sourceKind: 'official',
+      sourceSnapshotAsOf: '2026-08-28',
+      sourceObservedAt: null,
+      sourceObservationTimeBasis: 'date_only',
+      reconciliationRevision: 5,
+      normalizedDataRowCount: 262,
+      uniqueEmployeeCount: 262,
+      reconciliation: {
+        sourceRows: 262,
+        pendingSourceRows: 8,
+        hardBlockerSourceRows: 8,
+        incompleteTopologySourceRows: 0,
+        missingObservationFindings: 0,
+        pendingMissingObservationFindings: 0,
+      },
+    };
+    const detail = {
+      import: importSummary,
+      rows: [],
+      missingObservationFindings: [],
+      pagination: { totalRows: 262 },
+    };
+    const fetchMock = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async (input) => {
+      const url = String(input);
+      if (url === '/api/admin/telestaff/imports?limit=25') {
+        return new Response(JSON.stringify({ imports: [importSummary] }), { status: 200 });
+      }
+      if (
+        url === '/api/admin/telestaff/imports/import-paged-1' ||
+        url === '/api/admin/telestaff/imports/import-paged-1?limit=100&offset=100'
+      ) {
+        return new Response(JSON.stringify(detail), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const container = renderWorkspace();
+    await settle();
+    const importButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Snapshot 2026-08-28'),
+    );
+    if (!importButton) throw new Error('Retained import control did not render.');
+    await click(importButton);
+
+    expect(container.querySelector('[data-testid="telestaff-page-status"]')?.textContent).toContain(
+      'Page 1 of 3',
+    );
+    const next = container.querySelector<HTMLButtonElement>('[data-testid="telestaff-next-page"]');
+    if (!next) throw new Error('Next page control did not render.');
+    await click(next);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/telestaff/imports/import-paged-1?limit=100&offset=100',
+      expect.any(Object),
+    );
+    expect(container.querySelector('[data-testid="telestaff-page-status"]')?.textContent).toContain(
+      'Page 2 of 3',
+    );
+  });
+
+  it('reports when safe exception resolution has nothing eligible to change', async () => {
+    const importSummary = {
+      id: 'import-safe-noop',
+      status: 'reviewed',
+      sourceKind: 'official',
+      sourceSnapshotAsOf: '2026-08-28',
+      sourceObservedAt: null,
+      sourceObservationTimeBasis: 'date_only',
+      reconciliationRevision: 9,
+      normalizedDataRowCount: 2,
+      uniqueEmployeeCount: 2,
+      reconciliation: {
+        sourceRows: 2,
+        pendingSourceRows: 2,
+        hardBlockerSourceRows: 0,
+        incompleteTopologySourceRows: 0,
+        missingObservationFindings: 0,
+        pendingMissingObservationFindings: 0,
+      },
+    };
+    const detail = {
+      import: importSummary,
+      rows: [],
+      missingObservationFindings: [],
+      pagination: { totalRows: 2 },
+    };
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input) => {
+        const url = String(input);
+        if (url === '/api/admin/telestaff/imports?limit=25') {
+          return new Response(JSON.stringify({ imports: [importSummary] }), { status: 200 });
+        }
+        if (url === '/api/admin/telestaff/imports/import-safe-noop') {
+          return new Response(JSON.stringify(detail), { status: 200 });
+        }
+        if (url === '/api/auth/csrf') {
+          return new Response(
+            JSON.stringify({ token: 'csrf_123e4567-e89b-12d3-a456-426614174000' }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/resolve-safe-exceptions')) {
+          return new Response(
+            JSON.stringify({
+              counts: {
+                deferredRepeatedTopology: 0,
+                retainedIncompleteTopology: 0,
+                rejectedUnknownPerson: 0,
+                rejectedAmbiguousMapping: 0,
+              },
+              idempotent: true,
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal(
+      'confirm',
+      vi.fn(() => true),
+    );
+    const container = renderWorkspace();
+    await settle();
+    const importButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Snapshot 2026-08-28'),
+    );
+    if (!importButton) throw new Error('Retained import control did not render.');
+    await click(importButton);
+    const resolveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Resolve safe staging exceptions'),
+    );
+    if (!resolveButton) throw new Error('Safe resolution control did not render.');
+    await click(resolveButton);
+
+    expect(container.textContent).toContain('No eligible safe exceptions remained');
+    expect(container.textContent).not.toContain(
+      'Safe terminal review resolutions were recorded; canonical staffing was not changed.',
+    );
   });
 
   it('uses the same-origin CSRF path to certify and renders the structured result', async () => {
@@ -422,7 +571,7 @@ describe('TeleStaffOperatorWorkspace', () => {
       '[data-testid="telestaff-certify-deterministic"]',
     );
     expect(certifyButton?.textContent).toContain('Certify deterministic staffing positions');
-    expect(container.textContent).toContain('213 unique complete source tuples');
+    expect(container.textContent).toContain('every complete source topology');
 
     if (!certifyButton) throw new Error('Certification control did not render.');
     await click(certifyButton);

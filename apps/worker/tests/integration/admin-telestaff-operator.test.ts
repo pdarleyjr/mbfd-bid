@@ -948,6 +948,7 @@ describe('admin TeleStaff operator workflow', () => {
         deferredRepeatedTopology: 0,
         retainedIncompleteTopology: 0,
         rejectedUnknownPerson: 0,
+        rejectedAmbiguousMapping: 0,
       },
       idempotent: true,
     });
@@ -960,6 +961,78 @@ describe('admin TeleStaff operator workflow', () => {
         )
       ).results,
     ).toEqual([{ count: 0 }]);
+  });
+
+  it('terminally rejects an ambiguous source observation without changing canonical staffing', async () => {
+    await h.db.run(
+      `INSERT INTO members
+         (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+          employment_status, is_probationary, created_at, updated_at)
+       VALUES
+         (1, 'SYNTH-000001', 'Synthetic', 'One', 'FF', 'FF', 1, 'active', 0, ${NOW}, ${NOW});
+
+       INSERT INTO staffing_positions
+         (id, stable_slot_key, division, shift, station, unit, position_name, applicable_rank,
+          active_from, review_status, created_at, updated_at)
+       VALUES
+         ('slot-a', 'SYNTHETIC/A/ENGINE-1/FF-1', 'Suppression/Rescue', 'A Shift', '1',
+          'Engine 1', 'Firefighter', 'FF', '2026-01-01', 'approved', ${NOW}, ${NOW}),
+         ('slot-b', 'SYNTHETIC/A/ENGINE-1/FF-2', 'Suppression/Rescue', 'A Shift', '1',
+          'Engine 1', 'Firefighter', 'FF', '2026-01-01', 'approved', ${NOW}, ${NOW});
+
+       INSERT INTO staffing_position_source_mappings
+         (id, staffing_position_id, source_system, source_locator, source_discriminator,
+          source_signature, source_version, source_hash, effective_from, created_at)
+       VALUES
+         ('mapping-a', 'slot-a', 'telestaff', '${TOPOLOGY.replace(/'/g, "''")}',
+          'canonical-cardinality-001', '${'a'.repeat(64)}', 'TELSTAFF_ASSIGNMENTS_HTML_V1',
+          '${'b'.repeat(64)}', '2026-01-01', ${NOW}),
+         ('mapping-b', 'slot-b', 'telestaff', '${TOPOLOGY.replace(/'/g, "''")}',
+          'canonical-cardinality-002', '${'c'.repeat(64)}', 'TELSTAFF_ASSIGNMENTS_HTML_V1',
+          '${'d'.repeat(64)}', '2026-01-01', ${NOW});`,
+    );
+    const stagedResponse = await request(h, '/imports', { method: 'POST', body: importForm() });
+    expect(stagedResponse.status).toBe(201);
+    const staged = (await stagedResponse.json()) as {
+      import: { id: string; reconciliationRevision: number };
+    };
+
+    const resolution = await request(h, `/imports/${staged.import.id}/resolve-safe-exceptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_reconciliation_revision: staged.import.reconciliationRevision,
+        reason: 'Ambiguous source evidence cannot choose between canonical cardinality seats.',
+      }),
+    });
+    expect(resolution.status).toBe(200);
+    await expect(resolution.json()).resolves.toMatchObject({
+      counts: {
+        deferredRepeatedTopology: 0,
+        retainedIncompleteTopology: 0,
+        rejectedUnknownPerson: 0,
+        rejectedAmbiguousMapping: 1,
+      },
+      idempotent: false,
+    });
+    expect(
+      (
+        await h.db.run(
+          `SELECT reconciliation_classification, review_status, resolution_action
+             FROM assignment_import_rows WHERE import_id = ?`,
+          [staged.import.id],
+        )
+      ).results,
+    ).toEqual([
+      {
+        reconciliation_classification: 'AMBIGUOUS_MAPPING',
+        review_status: 'rejected',
+        resolution_action: 'REJECT_SOURCE_ROW',
+      },
+    ]);
+    expect((await h.db.run('SELECT COUNT(*) AS count FROM member_assignments')).results).toEqual([
+      { count: 0 },
+    ]);
   });
 
   it('accepts a trigger-inclusive native D1 review change count', async () => {

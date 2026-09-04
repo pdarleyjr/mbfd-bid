@@ -98,7 +98,11 @@ interface SafeExceptionResolutionResult {
   deferredRepeatedTopology: number;
   retainedIncompleteTopology: number;
   rejectedUnknownPerson: number;
+  rejectedAmbiguousMapping: number;
+  idempotent: boolean;
 }
+
+const REVIEW_PAGE_SIZE = 100;
 
 interface DeterministicReviewResult {
   acceptedObservations: number;
@@ -517,6 +521,7 @@ export function TeleStaffOperatorWorkspace() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [imports, setImports] = useState<ImportSummary[]>([]);
   const [detail, setDetail] = useState<ImportDetail | null>(null);
+  const [reviewOffset, setReviewOffset] = useState(0);
   const [unknownEmployees, setUnknownEmployees] = useState<UnknownEmployeeIdentity[]>([]);
   const [canonicalEffectiveOn, setCanonicalEffectiveOn] = useState('');
   const [busy, setBusy] = useState(false);
@@ -533,10 +538,12 @@ export function TeleStaffOperatorWorkspace() {
   );
   const [baselineConfirmationRequired, setBaselineConfirmationRequired] = useState(false);
 
-  async function loadImport(importId: string): Promise<ImportDetail | null> {
-    const response = await fetch(`/api/admin/telestaff/imports/${encodeURIComponent(importId)}`, {
-      credentials: 'include',
-    });
+  async function loadImport(importId: string, offset = 0): Promise<ImportDetail | null> {
+    const pageQuery = offset === 0 ? '' : `?limit=${REVIEW_PAGE_SIZE}&offset=${offset}`;
+    const response = await fetch(
+      `/api/admin/telestaff/imports/${encodeURIComponent(importId)}${pageQuery}`,
+      { credentials: 'include' },
+    );
     const body = await parseResponse(response);
     if (!response.ok || body === null || typeof body !== 'object') {
       setError(errorCode(body, 'import_detail_unavailable'));
@@ -544,6 +551,7 @@ export function TeleStaffOperatorWorkspace() {
     }
     const loaded = body as ImportDetail;
     setDetail(loaded);
+    setReviewOffset(offset);
     return loaded;
   }
 
@@ -690,7 +698,7 @@ export function TeleStaffOperatorWorkspace() {
         setError(errorCode(body, 'review_unavailable'));
         return;
       }
-      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice('Controlled review resolution recorded. Canonical staffing remains unchanged.');
     } catch {
       setError('review_unavailable');
@@ -725,7 +733,7 @@ export function TeleStaffOperatorWorkspace() {
         setError(errorCode(body, 'canonical_apply_unavailable'));
         return;
       }
-      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice('Canonical staffing was updated only for reviewed, deterministic observations.');
     } catch {
       setError('canonical_apply_unavailable');
@@ -737,8 +745,8 @@ export function TeleStaffOperatorWorkspace() {
   async function certifyDeterministicStaffing() {
     if (detail === null) return;
     const confirmed = window.confirm(
-      'Apply 213 deterministic staffing certifications?\n\n' +
-        'Six repeated Marine Float observations will remain unresolved because the source has no safe seat discriminator. This uses the staging portal only: no direct D1 writes and no production mutation.',
+      'Certify every deterministic staffing position in this import?\n\n' +
+        'Repeated or ambiguous source topology will remain unresolved unless the source provides a safe seat discriminator. This uses the staging portal only: no direct D1 writes and no production mutation.',
     );
     if (!confirmed) return;
 
@@ -774,7 +782,7 @@ export function TeleStaffOperatorWorkspace() {
         return;
       }
       setCertification(result);
-      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice(
         result.idempotent
           ? 'No duplicate canonical staffing was created; the prior deterministic certification was confirmed.'
@@ -791,7 +799,7 @@ export function TeleStaffOperatorWorkspace() {
     if (detail === null) return;
     if (
       !window.confirm(
-        'Resolve only safe staging exceptions? Repeated topology will be deferred without a seat, incomplete evidence retained without canonical staffing, and unknown-person observations rejected. No direct D1 writes or production mutation.',
+        'Resolve only safe staging exceptions? Repeated topology will be deferred without a seat, incomplete evidence retained without canonical staffing, and unknown-person or ambiguous source observations rejected. No direct D1 writes or production mutation.',
       )
     )
       return;
@@ -820,17 +828,27 @@ export function TeleStaffOperatorWorkspace() {
         'counts' in body &&
         (body as { counts?: unknown }).counts !== null &&
         typeof (body as { counts?: unknown }).counts === 'object'
-          ? ((body as { counts: SafeExceptionResolutionResult })
-              .counts as SafeExceptionResolutionResult)
+          ? (
+              body as {
+                counts: Omit<SafeExceptionResolutionResult, 'idempotent'>;
+                idempotent?: unknown;
+              }
+            ).counts
           : null;
       if (!response.ok || counts === null) {
         setError(errorCode(body, 'safe_exception_resolution_unavailable'));
         return;
       }
-      setSafeExceptionResolution(counts);
-      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      const result = {
+        ...counts,
+        idempotent: (body as { idempotent?: unknown }).idempotent === true,
+      };
+      setSafeExceptionResolution(result);
+      await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice(
-        'Safe terminal review resolutions were recorded; canonical staffing was not changed.',
+        result.idempotent
+          ? 'No eligible safe exceptions remained; canonical staffing was not changed.'
+          : 'Safe terminal review resolutions were recorded; canonical staffing was not changed.',
       );
     } catch {
       setError('safe_exception_resolution_unavailable');
@@ -883,7 +901,7 @@ export function TeleStaffOperatorWorkspace() {
         return;
       }
       setDeterministicReview(result);
-      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice('Safe deterministic observations now have terminal review decisions.');
     } catch {
       setError('deterministic_review_unavailable');
@@ -945,7 +963,7 @@ export function TeleStaffOperatorWorkspace() {
       }
       setBaselineAcceptance(result);
       setBaselineConfirmationRequired(false);
-      await Promise.all([loadImport(detail.import.id), loadImports()]);
+      await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice(
         result.idempotent
           ? 'The existing 2026 staging baseline acceptance was confirmed.'
@@ -1246,6 +1264,23 @@ export function TeleStaffOperatorWorkspace() {
               omits raw HTML, source locators, mappings, names, employee IDs, and HMAC values.
             </p>
 
+            <aside
+              data-testid="telestaff-next-steps"
+              className="mt-4 rounded-lg border border-emerald-700 bg-emerald-950/30 p-4"
+            >
+              <h3 className="font-semibold text-white">Recommended order</h3>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-200">
+                <li>Certify deterministic staffing positions.</li>
+                <li>Resolve safe exceptions that cannot select a canonical seat.</li>
+                <li>Accept all safe deterministic observations.</li>
+                <li>Confirm zero pending rows, choose the effective date, and apply.</li>
+              </ol>
+              <p className="mt-2 text-xs text-emerald-100">
+                The bulk controls process the entire import. Use the row pages below only when an
+                individual exception needs review.
+              </p>
+            </aside>
+
             {unknownEmployees.length > 0 && (
               <UnknownEmployeeOnboardingPanel
                 key={detail.import.id}
@@ -1256,7 +1291,7 @@ export function TeleStaffOperatorWorkspace() {
                 onError={(code) => setError(code)}
                 onComplete={async () => {
                   setUnknownEmployees([]);
-                  await Promise.all([loadImport(detail.import.id), loadImports()]);
+                  await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
                   setNotice(
                     'Reviewed personnel records were created or linked by exact Employee ID, then reconciled once.',
                   );
@@ -1275,10 +1310,10 @@ export function TeleStaffOperatorWorkspace() {
                 Deterministic staffing positions
               </h3>
               <p className="mt-2 text-sm text-slate-300">
-                The approved staging operation certifies 213 unique complete source tuples. Six
-                repeated Marine Float observations remain unresolved because the source has no safe
-                seat discriminator. It uses the authenticated staging API—never a direct D1 write or
-                a production mutation.
+                The approved staging operation certifies every complete source topology that can be
+                resolved without inventing seat identity. Repeated or ambiguous observations remain
+                unresolved unless the source provides a safe seat discriminator. It uses the
+                authenticated staging API—never a direct D1 write or a production mutation.
               </p>
               <button
                 data-testid="telestaff-certify-deterministic"
@@ -1335,10 +1370,11 @@ export function TeleStaffOperatorWorkspace() {
               <h3 className="font-semibold text-white">Safe exception resolution</h3>
               <p className="mt-2 text-sm text-slate-300">
                 Resolves only non-materializable evidence: defer repeated topology without a seat,
-                retain incomplete observations, and reject unknown-person observations. It cannot
-                create canonical staffing.
+                retain incomplete observations, and reject unknown-person or ambiguous source
+                observations. It cannot create canonical staffing.
               </p>
               <button
+                data-testid="telestaff-resolve-safe-exceptions"
                 type="button"
                 onClick={() => void resolveSafeExceptions()}
                 disabled={busy || detail.import.reconciliation.pendingSourceRows === 0}
@@ -1351,7 +1387,8 @@ export function TeleStaffOperatorWorkspace() {
                   Deferred topology: {safeExceptionResolution.deferredRepeatedTopology} · Retained
                   incomplete evidence: {safeExceptionResolution.retainedIncompleteTopology} ·
                   Rejected unknown-person observations:{' '}
-                  {safeExceptionResolution.rejectedUnknownPerson}
+                  {safeExceptionResolution.rejectedUnknownPerson} · Rejected ambiguous mappings:{' '}
+                  {safeExceptionResolution.rejectedAmbiguousMapping}
                 </p>
               )}
             </section>
@@ -1431,6 +1468,35 @@ export function TeleStaffOperatorWorkspace() {
                 </article>
               ))}
             </div>
+            <nav
+              aria-label="Reconciliation pages"
+              className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded border border-slate-700 bg-slate-950/50 px-3 py-2"
+            >
+              <button
+                type="button"
+                data-testid="telestaff-previous-page"
+                disabled={busy || reviewOffset === 0}
+                onClick={() =>
+                  void loadImport(detail.import.id, Math.max(0, reviewOffset - REVIEW_PAGE_SIZE))
+                }
+                className="min-h-10 rounded border border-slate-600 px-3 text-sm text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous rows
+              </button>
+              <span data-testid="telestaff-page-status" className="text-sm text-slate-300">
+                Page {Math.floor(reviewOffset / REVIEW_PAGE_SIZE) + 1} of{' '}
+                {Math.max(1, Math.ceil(detail.pagination.totalRows / REVIEW_PAGE_SIZE))}
+              </span>
+              <button
+                type="button"
+                data-testid="telestaff-next-page"
+                disabled={busy || reviewOffset + REVIEW_PAGE_SIZE >= detail.pagination.totalRows}
+                onClick={() => void loadImport(detail.import.id, reviewOffset + REVIEW_PAGE_SIZE)}
+                className="min-h-10 rounded border border-slate-600 px-3 text-sm text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next rows
+              </button>
+            </nav>
           </>
         )}
       </section>

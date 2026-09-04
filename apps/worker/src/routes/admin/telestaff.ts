@@ -1661,8 +1661,9 @@ router.post(
 
 /**
  * Terminally resolves only evidence that cannot safely materialize a staffing
- * position: repeated complete topology, incomplete topology, and unknown
- * personnel. It never creates or changes canonical staffing.
+ * position: repeated complete topology, incomplete topology, unknown
+ * personnel, and ambiguous source-to-seat mappings. It never creates or
+ * changes canonical staffing.
  */
 router.post('/imports/:importId/resolve-safe-exceptions', requireStepUpAuth(), async (c) => {
   const importId = c.req.param('importId');
@@ -1688,14 +1689,19 @@ router.post('/imports/:importId/resolve-safe-exceptions', requireStepUpAuth(), a
     `SELECT id, reconciliation_classification, normalized_source_topology
        FROM assignment_import_rows
       WHERE import_id = ? AND review_status = 'pending'
-        AND reconciliation_classification IN ('NEW_POSITION', 'INCOMPLETE_TOPOLOGY', 'UNKNOWN_EMPLOYEE')
+        AND reconciliation_classification IN
+          ('NEW_POSITION', 'INCOMPLETE_TOPOLOGY', 'UNKNOWN_EMPLOYEE', 'AMBIGUOUS_MAPPING')
       ORDER BY id ASC`,
   )
     .bind(importId)
     .all();
   const rows = result.results as unknown as Array<{
     id: string;
-    reconciliation_classification: 'NEW_POSITION' | 'INCOMPLETE_TOPOLOGY' | 'UNKNOWN_EMPLOYEE';
+    reconciliation_classification:
+      | 'NEW_POSITION'
+      | 'INCOMPLETE_TOPOLOGY'
+      | 'UNKNOWN_EMPLOYEE'
+      | 'AMBIGUOUS_MAPPING';
     normalized_source_topology: string | null;
   }>;
   const repeated = new Map<string, number>();
@@ -1724,6 +1730,7 @@ router.post('/imports/:importId/resolve-safe-exceptions', requireStepUpAuth(), a
     deferredRepeatedTopology: 0,
     retainedIncompleteTopology: 0,
     rejectedUnknownPerson: 0,
+    rejectedAmbiguousMapping: 0,
   };
   const statements: D1PreparedStatement[] = [];
   for (const row of rows) {
@@ -1740,15 +1747,23 @@ router.post('/imports/:importId/resolve-safe-exceptions', requireStepUpAuth(), a
               action: 'RETAIN_UNMATERIALIZED_SOURCE_ROW',
               reason: 'RETAIN_INCOMPLETE_SOURCE_ROW',
             }
-          : {
-              reviewStatus: 'rejected',
-              action: 'REJECT_SOURCE_ROW',
-              reason: 'REJECT_UNKNOWN_PERSON',
-            };
+          : row.reconciliation_classification === 'UNKNOWN_EMPLOYEE'
+            ? {
+                reviewStatus: 'rejected',
+                action: 'REJECT_SOURCE_ROW',
+                reason: 'REJECT_UNKNOWN_PERSON',
+              }
+            : {
+                reviewStatus: 'rejected',
+                action: 'REJECT_SOURCE_ROW',
+                reason: 'REJECT_AMBIGUOUS_SOURCE_MAPPING',
+              };
     if (row.reconciliation_classification === 'NEW_POSITION') counts.deferredRepeatedTopology += 1;
     else if (row.reconciliation_classification === 'INCOMPLETE_TOPOLOGY')
       counts.retainedIncompleteTopology += 1;
-    else counts.rejectedUnknownPerson += 1;
+    else if (row.reconciliation_classification === 'UNKNOWN_EMPLOYEE')
+      counts.rejectedUnknownPerson += 1;
+    else counts.rejectedAmbiguousMapping += 1;
     statements.push(
       c.env.DB.prepare(
         `UPDATE assignment_import_rows
