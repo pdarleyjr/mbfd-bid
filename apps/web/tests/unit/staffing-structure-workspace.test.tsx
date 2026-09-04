@@ -48,5 +48,8 @@ describe('StaffingStructureWorkspace', () => {
     expect(html).toContain('Retire seat');
     expect(html).toContain('Move or reassign a member');
     expect(html).toContain('never labelled a Bid opportunity');
+    expect(html).toContain('Projection date');
+    expect(html).toContain('name="as_of"');
+    expect(html).toContain('View projection');
   });
 });

@@ -314,14 +314,33 @@ export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterRe
               {roster.summary.occupiedPositions} occupied, {roster.summary.vacantPositions} vacant.
             </p>
           </div>
-          <label className="block">
-            <span className="text-sm text-slate-200">Search position</span>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="mt-1 min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
-            />
-          </label>
+          <div className="flex flex-wrap items-end gap-3">
+            <form action="/admin/staffing-structure" method="get" className="flex items-end gap-2">
+              <label className="block">
+                <span className="text-sm text-slate-200">Projection date</span>
+                <input
+                  type="date"
+                  name="as_of"
+                  defaultValue={roster.asOf}
+                  className="mt-1 min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                />
+              </label>
+              <button
+                type="submit"
+                className="min-h-11 rounded border border-slate-600 px-3 text-sm text-slate-100 hover:bg-slate-700"
+              >
+                View projection
+              </button>
+            </form>
+            <label className="block">
+              <span className="text-sm text-slate-200">Search position</span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="mt-1 min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              />
+            </label>
+          </div>
         </div>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[54rem] text-left text-sm">

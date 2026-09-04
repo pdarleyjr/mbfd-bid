@@ -1,4 +1,4 @@
-import type { R2Bucket } from '@cloudflare/workers-types';
+import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -7,6 +7,10 @@ import { signJwt } from '../../src/lib/jwt.js';
 import adminExports from '../../src/routes/admin/exports.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from '../integration/helpers/test-d1.js';
+
+const noLocalIdentityDb = {
+  prepare: () => ({ bind: () => ({ first: async () => null }) }),
+} as unknown as D1Database;
 
 function inMemR2(): R2Bucket & { _objects: Map<string, Uint8Array> } {
   const objects = new Map<string, Uint8Array>();
@@ -41,7 +45,7 @@ function makeEnv(r2: R2Bucket): WorkerEnv {
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'a'.repeat(64),
     PORTAL_BID_READER: 'tok',
-    DB: {} as never,
+    DB: noLocalIdentityDb,
     KV: {} as never,
     BID_SESSION: {} as never,
     AUDIT_SIGNING_PRIVKEY: '',

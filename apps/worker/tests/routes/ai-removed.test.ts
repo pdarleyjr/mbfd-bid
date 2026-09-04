@@ -7,7 +7,10 @@ const env = {
   ENV: 'staging',
   PORTAL_BASE_URL: 'https://portal.example',
   JWT_SIGNING_KEY: 'retired-ai-route-test-key'.repeat(3),
-} as WorkerEnv;
+  DB: {
+    prepare: () => ({ bind: () => ({ first: async () => null }) }),
+  },
+} as unknown as WorkerEnv;
 
 describe('retired AI endpoints', () => {
   it.each([

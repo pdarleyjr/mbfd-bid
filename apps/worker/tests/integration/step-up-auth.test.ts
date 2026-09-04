@@ -4,8 +4,17 @@ import { signJwt } from '../../src/lib/jwt.js';
 import { STEP_UP_MAX_AGE_SEC, isStepUpFresh } from '../../src/lib/step-up-auth.js';
 import { requireStepUpAuth } from '../../src/middleware/require-step-up.js';
 import { requireAdmin } from '../../src/routes/admin/middleware.js';
+import type { WorkerEnv } from '../../src/types/env.js';
 
 const KEY = 'a'.repeat(64);
+
+const authEnv = {
+  JWT_SIGNING_KEY: KEY,
+  PORTAL_BASE_URL: 'https://portal.example',
+  DB: {
+    prepare: () => ({ bind: () => ({ first: async () => null }) }),
+  },
+} as unknown as WorkerEnv;
 
 async function mintAdminJwt(freshAuthAt: number): Promise<string> {
   return signJwt(
@@ -61,7 +70,7 @@ describe('requireStepUpAuth middleware', () => {
     const res = await app.request(
       '/x',
       { headers: { Authorization: `Bearer ${staleJwt}` } },
-      { JWT_SIGNING_KEY: KEY },
+      authEnv,
     );
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: string };
@@ -80,7 +89,7 @@ describe('requireStepUpAuth middleware', () => {
     const res = await app.request(
       '/x',
       { headers: { Authorization: `Bearer ${freshJwt}` } },
-      { JWT_SIGNING_KEY: KEY },
+      authEnv,
     );
     expect(res.status).toBe(200);
   });

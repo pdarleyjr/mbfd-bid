@@ -27,6 +27,7 @@ import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
+import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
 import { computeOnDeck } from '../lib/on-deck.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
 import type { WorkerEnv } from '../types/env.js';
@@ -35,16 +36,26 @@ type BidContext = Context<{ Bindings: WorkerEnv }>;
 
 const bid = new Hono<{ Bindings: WorkerEnv }>();
 
+/** Safe member reads may reuse the bounded role-specific Hub authorization window. */
+export function shouldForceBidRevalidation(method: string): boolean {
+  return method !== 'GET' && method !== 'HEAD';
+}
+
 async function requireJwt(c: BidContext) {
   const env = validateEnv(c.env);
   const auth = c.req.header('Authorization');
   if (!auth?.startsWith('Bearer ')) return null;
   try {
     const claims = await verifyJwt(auth.slice(7), env.JWT_SIGNING_KEY);
-    const refreshed = await refreshFederatedSession(claims, env);
+    const refreshed = await refreshFederatedSession(
+      claims,
+      env,
+      Math.floor(Date.now() / 1000),
+      shouldForceBidRevalidation(c.req.method),
+    );
     if (!refreshed.ok) return null;
     if (refreshed.jwt !== null) c.header('X-MBFD-Session-Refresh', refreshed.jwt);
-    return refreshed.claims;
+    return await withLocalMemberIdentity(c.env.DB, refreshed.claims);
   } catch {
     return null;
   }

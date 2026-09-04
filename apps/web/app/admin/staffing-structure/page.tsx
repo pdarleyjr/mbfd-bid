@@ -5,9 +5,15 @@ import { StaffingStructureWorkspace } from './StaffingStructureWorkspace';
 
 export const dynamic = 'force-dynamic';
 
-export default async function StaffingStructurePage() {
+export default async function StaffingStructurePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ as_of?: string }>;
+}) {
   await requireAdmin();
-  const response = await serverWorkerFetch('/api/admin/current-roster');
+  const { as_of: requestedAsOf } = await searchParams;
+  const query = requestedAsOf ? `?as_of=${encodeURIComponent(requestedAsOf)}` : '';
+  const response = await serverWorkerFetch(`/api/admin/current-roster${query}`);
   if (!response.ok)
     return (
       <section className="rounded-xl border border-amber-700 bg-amber-950/30 p-5 text-amber-100">
