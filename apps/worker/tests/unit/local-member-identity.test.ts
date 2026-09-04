@@ -16,6 +16,8 @@ const claims: JwtPayload = {
   last_name: 'Member',
   fresh_auth_at: 1_700_000_000,
   authz_checked_at: 1_700_000_000,
+  iat: 1_700_000_000,
+  exp: 1_700_003_600,
 };
 
 describe('local Bid member identity', () => {
