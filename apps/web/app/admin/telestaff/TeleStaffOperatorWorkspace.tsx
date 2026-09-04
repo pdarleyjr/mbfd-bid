@@ -141,6 +141,19 @@ function errorCode(body: unknown, fallback: string): string {
   return fallback;
 }
 
+export function teleStaffErrorCopy(error: string): string {
+  switch (error) {
+    case 'canonical_state_changed':
+      return 'Canonical staffing changed after this import was reviewed. Retry after reloading the import. Exact prior TeleStaff matches are preserved automatically; a different member or seat remains blocked for review.';
+    case 'step_up_required':
+      return 'Fresh administrator authentication is required. After sign-in, you will return to this TeleStaff review.';
+    case 'terminal_reconciliation_required':
+      return 'Finish the pending review items before applying. The counts above must show zero pending rows and zero hard blockers.';
+    default:
+      return `The requested operation was not completed: ${error.replaceAll('_', ' ')}.`;
+  }
+}
+
 async function parseResponse(response: Response): Promise<unknown> {
   return response.json().catch(() => null);
 }
@@ -1180,7 +1193,7 @@ export function TeleStaffOperatorWorkspace() {
           role="alert"
           className="rounded border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-100"
         >
-          The requested operation was not completed: {error.replaceAll('_', ' ')}.
+          {teleStaffErrorCopy(error)}
         </p>
       )}
       {notice !== null && (

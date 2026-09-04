@@ -9,6 +9,11 @@ interface StepUpProviderProps {
 type FetchInput = Parameters<typeof fetch>[0];
 type FetchInit = Parameters<typeof fetch>[1];
 
+export function stepUpAuthenticationPath(pathname: string, search: string): string {
+  const returnTo = `${pathname}${search}`;
+  return `/api/auth/start?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 function isAdminApiRequest(input: FetchInput): boolean {
   const url =
     input instanceof Request
@@ -33,7 +38,9 @@ export function StepUpProvider({ children }: StepUpProviderProps) {
         .catch(() => null)) as { error?: string } | null;
       if (body?.error !== 'step_up_required') return response;
 
-      window.location.assign('/api/auth/start');
+      window.location.assign(
+        stepUpAuthenticationPath(window.location.pathname, window.location.search),
+      );
       return response;
     };
 

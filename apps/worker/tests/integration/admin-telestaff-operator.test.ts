@@ -641,6 +641,125 @@ describe('admin TeleStaff operator workflow', () => {
     });
   });
 
+  it('rolls an exact newer TeleStaff assignment into a later official import without a false conflict', async () => {
+    await seedOperatorAndMappedSlot(h);
+
+    const firstStage = await request(h, '/imports', { method: 'POST', body: importForm() });
+    expect(firstStage.status).toBe(201);
+    const firstStaged = (await firstStage.json()) as {
+      import: { id: string; reconciliationRevision: number };
+    };
+    const firstDetail = (await (await request(h, `/imports/${firstStaged.import.id}`)).json()) as {
+      import: { reconciliationRevision: number };
+      rows: Array<{ id: string }>;
+    };
+    const firstRow = firstDetail.rows[0];
+    expect(firstRow).toBeDefined();
+    if (firstRow === undefined) return;
+    const firstReview = await request(
+      h,
+      `/imports/${firstStaged.import.id}/rows/${firstRow.id}/review`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_reconciliation_revision: firstDetail.import.reconciliationRevision,
+          decision: 'accept_observation',
+        }),
+      },
+    );
+    expect(firstReview.status).toBe(200);
+    const firstReviewed = (await firstReview.json()) as {
+      import: { reconciliationRevision: number };
+    };
+    const firstApply = await request(h, `/imports/${firstStaged.import.id}/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_reconciliation_revision: firstReviewed.import.reconciliationRevision,
+        canonical_effective_on: '2026-09-03',
+      }),
+    });
+    expect(firstApply.status).toBe(200);
+
+    const secondStage = await request(h, '/imports', { method: 'POST', body: importForm() });
+    expect(secondStage.status).toBe(201);
+    const secondStaged = (await secondStage.json()) as {
+      import: { id: string; reconciliationRevision: number };
+    };
+    const secondDetail = (await (
+      await request(h, `/imports/${secondStaged.import.id}`)
+    ).json()) as {
+      import: { reconciliationRevision: number };
+      rows: Array<{
+        id: string;
+        reconciliationClassification: string;
+        reviewStatus: string;
+      }>;
+    };
+    expect(secondDetail.rows).toEqual([
+      expect.objectContaining({
+        reconciliationClassification: 'NEW_ASSIGNMENT',
+        reviewStatus: 'pending',
+      }),
+    ]);
+    const secondRow = secondDetail.rows[0];
+    expect(secondRow).toBeDefined();
+    if (secondRow === undefined) return;
+    const secondReview = await request(
+      h,
+      `/imports/${secondStaged.import.id}/rows/${secondRow.id}/review`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_reconciliation_revision: secondDetail.import.reconciliationRevision,
+          decision: 'accept_observation',
+        }),
+      },
+    );
+    expect(secondReview.status).toBe(200);
+    const secondReviewed = (await secondReview.json()) as {
+      import: { reconciliationRevision: number };
+    };
+
+    const secondApply = await request(h, `/imports/${secondStaged.import.id}/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_reconciliation_revision: secondReviewed.import.reconciliationRevision,
+        canonical_effective_on: '2026-09-04',
+      }),
+    });
+    expect(secondApply.status).toBe(200);
+    await expect(secondApply.json()).resolves.toMatchObject({
+      import: { id: secondStaged.import.id, status: 'committed' },
+      canonicalMutation: { createdObservations: 1, createdAssignments: 1, endedAssignments: 1 },
+    });
+    expect(
+      (
+        await h.db.run(
+          `SELECT status, effective_from, effective_to, origin_ref
+             FROM member_assignments
+            ORDER BY effective_from, id`,
+        )
+      ).results,
+    ).toEqual([
+      {
+        status: 'ended',
+        effective_from: '2026-09-03',
+        effective_to: '2026-09-03',
+        origin_ref: firstStaged.import.id,
+      },
+      {
+        status: 'active',
+        effective_from: '2026-09-04',
+        effective_to: null,
+        origin_ref: secondStaged.import.id,
+      },
+    ]);
+  });
+
   it('certifies a unique complete official source topology without deriving a slot from identity', async () => {
     await h.db.run(
       `INSERT INTO members

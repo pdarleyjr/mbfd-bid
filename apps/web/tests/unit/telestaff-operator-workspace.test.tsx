@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   TeleStaffOperatorWorkspace,
   UnknownEmployeeOnboardingPanel,
+  teleStaffErrorCopy,
 } from '../../app/admin/telestaff/TeleStaffOperatorWorkspace';
 
 const roots: Root[] = [];
@@ -34,6 +35,17 @@ function renderWorkspace(): HTMLElement {
   });
   return container;
 }
+
+describe('TeleStaff operator error guidance', () => {
+  it('explains recoverable canonical drift without exposing internal error syntax', () => {
+    expect(teleStaffErrorCopy('canonical_state_changed')).toContain(
+      'Exact prior TeleStaff matches are preserved automatically',
+    );
+    expect(teleStaffErrorCopy('terminal_reconciliation_required')).toContain(
+      'zero pending rows and zero hard blockers',
+    );
+  });
+});
 
 async function settle(): Promise<void> {
   await act(async () => {

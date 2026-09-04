@@ -701,19 +701,56 @@ export function teleStaffApplyGuards(input: {
   if (canonicalEffectiveOn !== undefined) {
     for (const row of materializedRows) {
       if (row.resolved_member_id === null || row.staffing_position_id === null) continue;
-      add(
-        `NOT EXISTS (
-           SELECT 1 FROM member_assignments current_assignment
-            WHERE current_assignment.staffing_position_id = ?
-              AND current_assignment.status <> 'cancelled'
-              AND current_assignment.effective_from <= ?
-              AND (current_assignment.effective_to IS NULL
-                OR current_assignment.effective_to >= ?)
-         )`,
-        row.staffing_position_id,
-        canonicalEffectiveOn,
-        canonicalEffectiveOn,
+      const previousAssignment = endAssignments.find(
+        (assignment) => assignment.sourceRowId === row.id,
       );
+      const exactTeleStaffRollover =
+        previousAssignment?.staffing_position_id === row.staffing_position_id;
+      if (exactTeleStaffRollover) {
+        add(
+          `(SELECT COUNT(*) FROM member_assignments current_assignment
+             WHERE current_assignment.staffing_position_id = ?
+               AND current_assignment.status <> 'cancelled'
+               AND current_assignment.effective_from <= ?
+               AND (current_assignment.effective_to IS NULL
+                 OR current_assignment.effective_to >= ?)) = 1`,
+          row.staffing_position_id,
+          canonicalEffectiveOn,
+          canonicalEffectiveOn,
+        );
+        add(
+          `EXISTS (
+             SELECT 1 FROM member_assignments current_assignment
+              WHERE current_assignment.id = ?
+                AND current_assignment.member_id = ?
+                AND current_assignment.staffing_position_id = ?
+                AND current_assignment.origin_type = 'TELESTAFF_IMPORT'
+                AND current_assignment.status <> 'cancelled'
+                AND current_assignment.effective_from <= ?
+                AND (current_assignment.effective_to IS NULL
+                  OR current_assignment.effective_to >= ?)
+           )`,
+          previousAssignment.id,
+          row.resolved_member_id,
+          row.staffing_position_id,
+          canonicalEffectiveOn,
+          canonicalEffectiveOn,
+        );
+      } else {
+        add(
+          `NOT EXISTS (
+             SELECT 1 FROM member_assignments current_assignment
+              WHERE current_assignment.staffing_position_id = ?
+                AND current_assignment.status <> 'cancelled'
+                AND current_assignment.effective_from <= ?
+                AND (current_assignment.effective_to IS NULL
+                  OR current_assignment.effective_to >= ?)
+           )`,
+          row.staffing_position_id,
+          canonicalEffectiveOn,
+          canonicalEffectiveOn,
+        );
+      }
       add(
         `NOT EXISTS (
            SELECT 1 FROM member_assignments newer_assignment
@@ -735,7 +772,7 @@ export function teleStaffApplyGuards(input: {
         importRecord.source_snapshot_as_of,
         importRecord.source_snapshot_as_of,
       );
-      if (row.reconciliation_classification === 'NEW_ASSIGNMENT') {
+      if (row.reconciliation_classification === 'NEW_ASSIGNMENT' && !exactTeleStaffRollover) {
         add(
           `NOT EXISTS (
              SELECT 1 FROM member_assignments current_assignment
@@ -2245,12 +2282,25 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
         assignment.staffing_position_id === row.staffing_position_id &&
         activeOn(assignment, canonicalEffectiveOn),
     );
-    if (targetAssignments.length > 0) return c.json({ error: 'canonical_state_changed' }, 409);
     const memberAssignments = activeAssignments.filter(
       (assignment) =>
         assignment.member_id === row.resolved_member_id &&
         activeOn(assignment, canonicalEffectiveOn),
     );
+    const exactCurrentAssignment =
+      targetAssignments.length === 1 &&
+      memberAssignments.length === 1 &&
+      targetAssignments[0]?.id === memberAssignments[0]?.id &&
+      targetAssignments[0]?.member_id === row.resolved_member_id
+        ? targetAssignments[0]
+        : undefined;
+    const exactTeleStaffRollover =
+      exactCurrentAssignment?.origin_type === 'TELESTAFF_IMPORT'
+        ? exactCurrentAssignment
+        : undefined;
+    if (targetAssignments.length > 0 && exactTeleStaffRollover === undefined) {
+      return c.json({ error: 'canonical_state_changed' }, 409);
+    }
     const protectedDifferentAssignment = activeAssignments.some(
       (assignment) =>
         assignment.member_id === row.resolved_member_id &&
@@ -2261,6 +2311,10 @@ router.post('/imports/:importId/apply', requireStepUpAuth(), async (c) => {
             activeOn(assignment, sourceSnapshotAsOf))),
     );
     if (protectedDifferentAssignment) return c.json({ error: 'canonical_state_changed' }, 409);
+    if (exactTeleStaffRollover !== undefined) {
+      endAssignments.push({ ...exactTeleStaffRollover, sourceRowId: row.id });
+      continue;
+    }
     if (row.reconciliation_classification === 'NEW_ASSIGNMENT') {
       if (memberAssignments.length > 0) return c.json({ error: 'canonical_state_changed' }, 409);
     } else if (row.reconciliation_classification === 'MOVED') {
