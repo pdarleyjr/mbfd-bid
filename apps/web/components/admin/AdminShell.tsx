@@ -21,6 +21,7 @@ export type AdminNavLink = {
  */
 export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
   { href: '/admin', label: 'Dashboard', exact: true },
+  { href: '/admin/guide', label: 'Administrator Guide', exact: false },
   { href: '/admin/current-rosters', label: 'Current Rosters', exact: false },
   { href: '/admin/staffing-structure', label: 'Staffing Structure', exact: false },
   { href: '/admin/telestaff', label: 'TeleStaff', exact: false },

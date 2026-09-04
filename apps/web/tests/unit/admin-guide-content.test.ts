@@ -1,0 +1,48 @@
+import { existsSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+import {
+  ADMIN_GUIDE_COVERAGE,
+  GUIDE_SECTIONS,
+  filterGuideSections,
+} from '../../app/admin/guide/guide-content';
+import { ADMIN_NAV_LINKS } from '../../components/admin/AdminShell';
+
+describe('Administrator Guide content contract', () => {
+  it('covers every current top-level Admin navigation area', () => {
+    const undocumented = ADMIN_NAV_LINKS.filter((link) => link.href !== '/admin/guide').filter(
+      (link) => !ADMIN_GUIDE_COVERAGE[link.href],
+    );
+
+    expect(undocumented).toEqual([]);
+  });
+
+  it('finds the operational phrases administrators are likely to search for', () => {
+    expect(filterGuideSections('TeleStaff').map((section) => section.id)).toContain('telestaff');
+    expect(filterGuideSections('retire member').map((section) => section.id)).toContain(
+      'personnel',
+    );
+    expect(filterGuideSections('change bid order').map((section) => section.id)).toContain(
+      'annual-policy',
+    );
+    expect(filterGuideSections('specialty').map((section) => section.id)).toContain(
+      'specialty-adjudication',
+    );
+    expect(filterGuideSections('hold presentation').map((section) => section.id)).toContain(
+      'live-presentation',
+    );
+    expect(filterGuideSections('CSV').map((section) => section.id)).toContain('current-rosters');
+  });
+
+  it('uses an intentional category, a real route, and concise guide content for each section', () => {
+    expect(GUIDE_SECTIONS.length).toBeGreaterThanOrEqual(27);
+
+    for (const section of GUIDE_SECTIONS) {
+      expect(section.category.length).toBeGreaterThan(0);
+      expect(section.route).toMatch(/^\/admin(?:\/|$)/);
+      expect(existsSync(new URL(`../../app${section.route}/page.tsx`, import.meta.url))).toBe(true);
+      expect(section.summary.length).toBeGreaterThan(20);
+      expect(section.steps.length).toBeGreaterThan(0);
+    }
+  });
+});
