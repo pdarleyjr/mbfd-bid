@@ -826,111 +826,11 @@ export async function commitLiveBidCommand(
         )
         .bind(input.command.bidSessionId, current.lastSeq, canonicalJson(current), now, now),
     );
-  const specialtyPositionId =
-    input.command.type === 'live.resolve_specialty_candidate' && input.command.outcome === 'ACCEPT'
-      ? (reduction.payload.positionId as string | undefined)
-      : undefined;
-  const directSelectionPositionId =
-    input.command.type === 'live.record_selection' || input.command.type === 'live.force_selection'
-      ? input.command.positionId
-      : undefined;
-  if (
-    input.command.type === 'live.record_selection' ||
-    input.command.type === 'live.force_selection' ||
-    specialtyPositionId !== undefined
-  ) {
-    const positionId = specialtyPositionId ?? directSelectionPositionId;
-    if (positionId === undefined) throw new Error('Accepted selection is missing its position');
-    const fill = reduction.state.fills[positionId];
-    if (fill === undefined) throw new Error('Accepted selection reduction is missing its fill');
-    statements.push(
-      input.db
-        .prepare(
-          "INSERT INTO bids (id,bid_session_id,ordinal,member_id,position_id,a_day,picked_at,forced,admin_actor_id,reason,idempotency_key,portal_sync_status,portal_sync_attempts) VALUES (?,?,?,?,?,?,?, ?,?,?,?,'pending',0)",
-        )
-        .bind(
-          fill.bidId,
-          input.command.bidSessionId,
-          fill.ordinal,
-          fill.memberId,
-          positionId,
-          null,
-          now,
-          input.command.type === 'live.force_selection' ? 1 : 0,
-          input.command.actor.id,
-          input.command.reason,
-          input.command.commandId,
-        ),
-    );
-  }
-  if (input.command.type === 'live.amend_selection' && reduction.supersedesBidId !== null) {
-    const fill = reduction.state.fills[input.command.toPositionId];
-    if (fill === undefined)
-      throw new Error('Accepted amendment reduction is missing its replacement');
-    statements.push(
-      input.db
-        .prepare(
-          "INSERT INTO bids (id,bid_session_id,ordinal,member_id,position_id,a_day,picked_at,forced,admin_actor_id,reason,idempotency_key,portal_sync_status,portal_sync_attempts) VALUES (?,?,?,?,?,?,?,0,?,?,?,'pending',0)",
-        )
-        .bind(
-          fill.bidId,
-          input.command.bidSessionId,
-          fill.ordinal,
-          fill.memberId,
-          input.command.toPositionId,
-          null,
-          now,
-          input.command.actor.id,
-          input.command.reason,
-          input.command.commandId,
-        ),
-      input.db
-        .prepare(
-          'INSERT INTO bid_award_amendments (id,bid_session_id,original_bid_id,replacement_bid_id,actor_member_id,expected_session_revision,reason,created_at) VALUES (?,?,?,?,?,?,?,?)',
-        )
-        .bind(
-          newId(),
-          input.command.bidSessionId,
-          reduction.supersedesBidId,
-          fill.bidId,
-          input.command.actor.id,
-          input.command.expectedSeq,
-          input.command.reason,
-          now,
-        ),
-      input.db
-        .prepare("UPDATE bids SET portal_sync_status='superseded' WHERE id=?")
-        .bind(reduction.supersedesBidId),
-    );
-  }
-  if (
-    input.command.type === 'live.resolve_specialty_candidate' &&
-    input.command.outcome === 'ACCEPT' &&
-    reduction.supersedesBidId !== null
-  ) {
-    const replacement = reduction.state.fills[reduction.payload.positionId as string];
-    if (replacement === undefined)
-      throw new Error('Accepted specialty replacement is missing its fill');
-    statements.push(
-      input.db
-        .prepare(
-          'INSERT INTO bid_award_amendments (id,bid_session_id,original_bid_id,replacement_bid_id,actor_member_id,expected_session_revision,reason,created_at) VALUES (?,?,?,?,?,?,?,?)',
-        )
-        .bind(
-          newId(),
-          input.command.bidSessionId,
-          reduction.supersedesBidId,
-          replacement.bidId,
-          input.command.actor.id,
-          input.command.expectedSeq,
-          input.command.reason,
-          now,
-        ),
-      input.db
-        .prepare("UPDATE bids SET portal_sync_status='superseded' WHERE id=?")
-        .bind(reduction.supersedesBidId),
-    );
-  }
+  // Once canonical session state exists, the 0022 guards intentionally reject
+  // every legacy `bids` projection write. Selections, amendments, and specialty
+  // awards therefore remain solely in the canonical state plus the immutable
+  // receipt/event/audit bundle committed below. Writing both authorities here
+  // would either fail the command atomically or permit divergent Bid truth.
   if (input.command.type === 'live.record_contact_attempt') {
     const attempt = reduction.state.annual?.contactAttempts.at(-1);
     if (attempt === undefined) throw new Error('Accepted contact reduction is missing its attempt');

@@ -3,11 +3,14 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { D1Database } from '@cloudflare/workers-types';
 import { DEFAULT_GROUP_CAPACITY } from '@mbfd/a-day';
-import type { MockFreezeCommand } from '@mbfd/shared';
+import type { FrozenLiveBidPolicy, LiveBidCommand, MockFreezeCommand } from '@mbfd/shared';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { commitMockFreezeCommand } from '../src/commands/canonical-command-service.js';
+import {
+  commitLiveBidCommand,
+  commitMockFreezeCommand,
+} from '../src/commands/canonical-command-service.js';
 import { getDb } from '../src/db/index.js';
 import { auditLog } from '../src/db/schema.js';
 import { type BidSessionState, emptyBidSessionState } from '../src/durable/bid-session-state.js';
@@ -475,5 +478,118 @@ describe('commitMockFreezeCommand', () => {
     expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_events').get()).toEqual({
       count: 1,
     });
+  });
+});
+
+describe('commitLiveBidCommand canonical authority', () => {
+  const sessionId = '01HZZ0000000000000LIVE01';
+  let sqlite: Database.Database;
+
+  const policy: FrozenLiveBidPolicy = {
+    v: 1,
+    policyRevision: 'policy-live-test',
+    stages: [
+      {
+        id: 'd',
+        label: 'D',
+        order: 0,
+        memberIds: [42],
+        opportunityPositionIds: ['D101'],
+        kind: 'D_SHIFT',
+      },
+    ],
+    dispositions: (['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE'] as const).map(
+      (disposition) => ({
+        disposition,
+        advances: disposition !== 'HOLD',
+        returns: false,
+        returnStageId: null,
+        retainsLaterSelectionRights: false,
+        terminal: disposition === 'DECLINED',
+        requiresReason: true,
+        requiresEvidence: disposition === 'UNREACHABLE',
+        contactPolicyReference: null,
+      }),
+    ),
+    actionPermissions: (
+      [
+        'record_selection',
+        'amend_selection',
+        'skip_defer',
+        'mark_unreachable',
+        'force',
+        'resolve_tie',
+        'alter_order',
+        'pause_resume',
+        'approve_transition',
+        'approve_final_results',
+        'publish',
+      ] as const
+    ).map((action) => ({ action, actorMemberIds: [99] })),
+    specialtyCatalogReference: null,
+    aDayPolicyReference: null,
+    transitionPolicyReference: null,
+    publicationPolicyReference: null,
+  };
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    applyMigrationsStrict(sqlite);
+    seedMockSession(sqlite, sessionId);
+  });
+
+  afterEach(() => sqlite.close());
+
+  it('commits a selection only to canonical state and immutable command evidence', async () => {
+    const state: BidSessionState = {
+      ...emptyBidSessionState(sessionId),
+      currentPhase: 'position_bid',
+      currentBidderId: 42,
+      bidOrder: [{ ordinal: 1, memberId: 42, pool: 'FF', stageId: 'd' }],
+      live: {
+        currentStageId: 'd',
+        completedStageIds: [],
+        pausedPhase: null,
+        lastSelectionBidId: null,
+        dispositions: [],
+      },
+    };
+    const command: LiveBidCommand = {
+      v: 1,
+      type: 'live.record_selection',
+      commandId: '22222222-2222-4222-8222-222222222222',
+      bidSessionId: sessionId,
+      expectedSeq: 0,
+      actor: { id: 99, role: 'admin' },
+      reason: 'Recorded during annual mock acceptance',
+      evidenceReference: null,
+      memberId: 42,
+      positionId: 'D101',
+      preferenceSheetId: null,
+    };
+
+    const committed = await commitLiveBidCommand({
+      db: makeTransactionalD1(sqlite),
+      command,
+      state,
+      policy,
+      nowMs: () => 1_700_000_000_000,
+      newId: (() => {
+        let next = 0;
+        return () => `canonical-live-${++next}`;
+      })(),
+    });
+
+    expect(committed.result).toMatchObject({ kind: 'accepted', seq: 1 });
+    expect(committed.canonicalState?.fills.D101).toMatchObject({ memberId: 42, ordinal: 1 });
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bids').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_receipts').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_events').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT count(*) AS count FROM audit_log').get()).toEqual({ count: 1 });
   });
 });
