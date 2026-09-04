@@ -835,6 +835,44 @@ describe('personnel lifecycle administration', () => {
     ).toMatchObject({ results: [{ kind: 'POSITION_CREATE' }, { kind: 'POSITION_RETIRE' }] });
   });
 
+  it('rejects retirement before a newly created position has an active day', async () => {
+    const create = await request(h, '/api/admin/personnel/changes', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await adminJwt()}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'synthetic-same-day-position-create-001',
+      },
+      body: JSON.stringify({
+        kind: 'POSITION_CREATE',
+        effective_on: '2026-09-04',
+        reason: 'Synthetic same-day retirement boundary proof.',
+        staffing_position: {
+          id: 'slot-created-same-day',
+          stable_slot_key: 'SYNTHETIC/QA/SAME-DAY',
+        },
+      }),
+    });
+    expect(create.status).toBe(201);
+
+    const retire = await request(h, '/api/admin/personnel/changes', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await adminJwt()}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'synthetic-same-day-position-retire-001',
+      },
+      body: JSON.stringify({
+        kind: 'POSITION_RETIRE',
+        staffing_position_id: 'slot-created-same-day',
+        effective_on: '2026-09-04',
+        reason: 'Synthetic same-day retirement boundary proof.',
+      }),
+    });
+    expect(retire.status).toBe(409);
+    expect(await retire.json()).toEqual({ error: 'position_retirement_precedes_active_window' });
+  });
+
   it('returns complete member lifecycle and assignment history without a mutating read', async () => {
     const mutation = await request(h, '/api/admin/personnel/changes', {
       method: 'POST',

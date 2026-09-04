@@ -1330,6 +1330,10 @@ async function createOrRetirePosition(
     }
     const position = await loadPosition(c.env.DB, body.staffing_position_id);
     if (position === undefined) return c.json({ error: 'staffing_position_not_found' }, 404);
+    const retirementActiveTo = priorCalendarDate(body.effective_on);
+    if (position.active_from !== null && retirementActiveTo < position.active_from) {
+      return c.json({ error: 'position_retirement_precedes_active_window' }, 409);
+    }
     const occupied = await first<{ id: string }>(
       c.env.DB,
       `SELECT id FROM member_assignments
@@ -1362,7 +1366,7 @@ async function createOrRetirePosition(
         staffingPosition: {
           ...position,
           reviewStatus: 'retired',
-          activeTo: priorCalendarDate(body.effective_on),
+          activeTo: retirementActiveTo,
         },
       },
       supersedesEventId: body.supersedes_event_id ?? null,
@@ -1370,7 +1374,7 @@ async function createOrRetirePosition(
     await c.env.DB.batch([
       c.env.DB.prepare(
         'UPDATE staffing_positions SET review_status = ?, active_to = ?, updated_at = ? WHERE id = ?',
-      ).bind('retired', priorCalendarDate(body.effective_on), now, position.id),
+      ).bind('retired', retirementActiveTo, now, position.id),
       eventStatement(c.env.DB, {
         id: eventId,
         memberId: null,
