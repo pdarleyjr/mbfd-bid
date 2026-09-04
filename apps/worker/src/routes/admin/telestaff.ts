@@ -1957,7 +1957,7 @@ router.post('/imports/:importId/certify-deterministic-staffing', requireStepUpAu
     const { row, sourceDiscriminator } = eligibleRow;
     if (
       !['active', 'unknown'].includes(row.employment_status) ||
-      !['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'].includes(row.member_rank)
+      !['CIVILIAN', 'FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'].includes(row.member_rank)
     ) {
       return c.json({ error: 'member_not_certifiable' }, 409);
     }

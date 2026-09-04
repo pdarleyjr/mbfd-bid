@@ -731,6 +731,52 @@ describe('admin TeleStaff operator workflow', () => {
     ).toEqual([{ count: 1 }]);
   });
 
+  it('certifies excluded civilian staffing without making the member bid eligible', async () => {
+    await h.db.run(
+      `INSERT INTO members
+         (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+          employment_status, is_probationary, created_at, updated_at)
+       VALUES (1, 'SYNTH-000001', 'Synthetic', 'Civilian', 'CIVILIAN', 'EXCLUDED', 0,
+               'unknown', 0, ${NOW}, ${NOW})`,
+    );
+    const stage = await request(h, '/imports', { method: 'POST', body: importForm() });
+    expect(stage.status).toBe(201);
+    const staged = (await stage.json()) as {
+      import: { id: string; reconciliationRevision: number };
+    };
+
+    const certified = await request(
+      h,
+      `/imports/${staged.import.id}/certify-deterministic-staffing`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_reconciliation_revision: staged.import.reconciliationRevision,
+          reason: 'Official civilian topology certification for production parity.',
+        }),
+      },
+    );
+
+    expect(certified.status).toBe(201);
+    await expect(certified.json()).resolves.toMatchObject({
+      certifiedRows: 1,
+      certification: { createdCanonicalStaffingPositions: 1, createdSourceMappings: 1 },
+    });
+    expect(
+      (
+        await h.db.run(
+          `SELECT member.rank, member.bid_category, position.applicable_rank
+             FROM members member
+             JOIN assignment_import_rows source_row ON source_row.resolved_member_id = member.id
+             JOIN staffing_position_source_mappings mapping
+               ON mapping.id = source_row.staffing_position_source_mapping_id
+             JOIN staffing_positions position ON position.id = mapping.staffing_position_id`,
+        )
+      ).results,
+    ).toEqual([{ rank: 'CIVILIAN', bid_category: 'EXCLUDED', applicable_rank: 'CIVILIAN' }]);
+  });
+
   it('accepts all safe deterministic observations without depending on the paged detail response', async () => {
     await seedOperatorAndMappedSlot(h);
     const stage = await request(h, '/imports', { method: 'POST', body: importForm() });
