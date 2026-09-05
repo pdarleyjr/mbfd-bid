@@ -99,6 +99,8 @@ jobs:
           node-version: '${{ env.NODE_VERSION }}'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build internal packages
+        run: pnpm -r --filter "./packages/*" build
       - name: Require the controlled production D1 migration procedure
         # This workflow is deliberately read-only against D1. If the ledger is
         # behind, stop so the separately approved backup, Time Travel, and

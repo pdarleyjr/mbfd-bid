@@ -82,6 +82,15 @@ describe('staging release configuration', () => {
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).toContain('node scripts/assert-production-d1-migration-guard.mjs');
     expect(workflow).toContain('pnpm --dir apps/worker exec wrangler deploy --env production');
+
+    const workerDeployStart = workflow.indexOf('  deploy-worker:');
+    const webDeployStart = workflow.indexOf('  deploy-web:');
+    const workerDeploy = workflow.slice(workerDeployStart, webDeployStart);
+
+    expect(workerDeploy).toContain('pnpm -r --filter "./packages/*" build');
+    expect(workerDeploy.indexOf('pnpm -r --filter "./packages/*" build')).toBeLessThan(
+      workerDeploy.indexOf('node scripts/assert-production-d1-migration-guard.mjs'),
+    );
     expect(workflow).not.toMatch(/wrangler\s+d1\s+migrations\s+apply/);
     expect(workflow).not.toContain('db:seed:remote');
   });
