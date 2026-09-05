@@ -19,7 +19,7 @@ describe('year-round admin control-center safety', () => {
     const panel = source('app/admin/bid/_components/BidAdvisoryPanel.tsx');
 
     expect(page).toContain('requireAdmin');
-    expect(page).toContain('advisory={board.advisory}');
+    expect(page).toContain('advisory={board.advisory ?? null}');
     expect(panel).toContain('Authoritative state');
     expect(panel).not.toMatch(/<(?:form|input|textarea|button)\b/i);
     expect(panel).not.toMatch(/provider|model|prompt|fallback/i);
