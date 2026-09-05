@@ -1261,6 +1261,9 @@ export async function prepareBidSessionPolicySnapshot(
       };
     })
     .sort((left, right) => left.memberId - right.memberId);
+  const uniformedOperatorMemberIds = new Set(
+    frozenMembers.filter((member) => member.rank !== 'CIVILIAN').map((member) => member.memberId),
+  );
 
   const participationByPositionId = new Map(
     snapshotParticipation.map((participation) => [participation.positionId, participation]),
@@ -1324,6 +1327,7 @@ export async function prepareBidSessionPolicySnapshot(
     capturedAtMs,
     members: frozenMembers,
     operatorIdentityProjection: memberRows
+      .filter((member) => uniformedOperatorMemberIds.has(member.id))
       .map((member) => ({
         memberId: member.id,
         employeeId: member.employeeId,

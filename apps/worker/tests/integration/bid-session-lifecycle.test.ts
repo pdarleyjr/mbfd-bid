@@ -317,6 +317,53 @@ describe('POST /api/admin/bid-session', () => {
     await teardownTestD1(h);
   });
 
+  it('creates a mock when tracked civilians are present without adding them to operator identities', async () => {
+    await h.db.run(
+      `INSERT INTO members
+         (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+          is_probationary, employment_status, employment_status_effective_on, created_at, updated_at)
+       VALUES (62, '60062', 'Civilian', 'Observer', 'CIVILIAN', 'EXCLUDED', 0,
+               0, 'active', '2026-01-01', 1, 1);`,
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await freshAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ bid_year: 2026, mode: 'mock' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { id: string };
+    expect(
+      (await h.db.run('SELECT is_mock, current_phase FROM bid_sessions WHERE id = ?', [created.id]))
+        .results,
+    ).toEqual([{ is_mock: 1, current_phase: 'config' }]);
+    const snapshotRow = (
+      await h.db.run(
+        'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id = ?',
+        [created.id],
+      )
+    ).results[0] as { snapshot_json: string };
+    const snapshot = JSON.parse(snapshotRow.snapshot_json) as {
+      members: Array<{ memberId: number; rank: string; pool: string }>;
+      operatorIdentityProjection: Array<{ memberId: number }>;
+    };
+    expect(snapshot.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ memberId: 62, rank: 'CIVILIAN', pool: 'EXCLUDED' }),
+      ]),
+    );
+    expect(snapshot.operatorIdentityProjection).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ memberId: 62 })]),
+    );
+  });
+
   it('keeps a real session closed until its annual configuration has an explicit V3 live policy', async () => {
     const res = await app.fetch(
       new Request('http://x/api/admin/bid-session', {

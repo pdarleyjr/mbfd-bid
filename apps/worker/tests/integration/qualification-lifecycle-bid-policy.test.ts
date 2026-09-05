@@ -710,4 +710,39 @@ describe('qualification evidence in frozen Bid policy', () => {
       ]),
     );
   });
+
+  it('keeps civilians excluded from the operator identity projection when preparing a mock snapshot', async () => {
+    await h.db.run(
+      `INSERT INTO members
+         (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
+          is_probationary, employment_status, employment_status_effective_on, created_at, updated_at)
+       VALUES (5, 'synthetic-civilian-005', 'Civilian', 'Observer', 'CIVILIAN', 'EXCLUDED', 0,
+               0, 'active', '2020-01-01', 1, 1);`,
+    );
+    await seedAcceptedMockParticipationBaseline(h);
+    await h.db.run("UPDATE rule_books SET status = 'draft' WHERE version = 'qualification.v1';");
+
+    const prepared = await prepareBidSessionPolicySnapshot(
+      getDb(h.env.DB),
+      2026,
+      CAPTURED_BEFORE_EXPIRY,
+      'mock',
+    );
+
+    expect(prepared).toMatchObject({ ok: true });
+    if (!prepared.ok || prepared.snapshot.v !== 3) return;
+    expect(prepared.snapshot.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: 5,
+          rank: 'CIVILIAN',
+          pool: 'EXCLUDED',
+          exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+        }),
+      ]),
+    );
+    expect(prepared.snapshot.operatorIdentityProjection).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ memberId: 5 })]),
+    );
+  });
 });
