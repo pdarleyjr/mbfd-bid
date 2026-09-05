@@ -1,6 +1,7 @@
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import { getWorkerBase } from '@/lib/worker-base';
+import type { BidAdvisoryBundle } from '@mbfd/shared';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { MockBanner } from '../../_components/MockBanner';
@@ -31,6 +32,7 @@ interface BoardSnapshot {
   /** V3 immutable rule-book position material for this exact session. */
   positions?: PositionMeta[];
   annual?: AnnualOperationsStatusPayload | null;
+  advisory: BidAdvisoryBundle;
 }
 
 interface ActiveSessionResponse {
@@ -145,6 +147,7 @@ export default async function AdminBidPage({
         isMock={board.isMock === true}
         mockControlRevision={board.mockControlRevision}
         annual={board.annual}
+        advisory={board.advisory}
       />
     </div>
   );

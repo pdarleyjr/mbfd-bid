@@ -1,4 +1,5 @@
 'use client';
+import type { BidAdvisoryBundle } from '@mbfd/shared';
 import type { BidderContext } from '../../../_components/bid/BidderCard';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { AdminBoard } from './AdminBoard';
@@ -41,6 +42,7 @@ interface Props {
   /** D1 mock-control revision passed to the mock-only manual command. */
   mockControlRevision: number | null;
   annual?: AnnualOperationsStatusPayload | null | undefined;
+  advisory: BidAdvisoryBundle;
 }
 
 /**
@@ -103,6 +105,7 @@ export function AdminBidShell(props: Props) {
               members={props.members}
               positions={props.positions}
               wsBase={props.wsBase}
+              advisory={props.advisory}
             />
           </div>
         </div>

@@ -74,14 +74,6 @@ const CONTROL_AREAS: readonly ControlArea[] = [
     stateClassName: 'text-slate-300',
   },
   {
-    href: '/admin/ai-assist',
-    title: 'AI Assist',
-    description:
-      'Explain de-identified deterministic facts with explicit provider/fallback status.',
-    state: 'Advisory only',
-    stateClassName: 'text-slate-300',
-  },
-  {
     href: '/admin/rehearsal',
     title: 'Mock Bids',
     description: 'Review rehearsal evidence without using mock activity as a staffing source.',
@@ -90,9 +82,10 @@ const CONTROL_AREAS: readonly ControlArea[] = [
   },
   {
     href: '/admin/bid',
-    title: 'Live Bid',
-    description: 'Open the guarded live-bid surface; this dashboard does not start a session.',
-    state: 'No active session assumed',
+    title: 'Live Bid & Advisory',
+    description:
+      'Open the guarded live-bid surface with deterministic explanations of authoritative state.',
+    state: 'Immediate read-only advisory',
     stateClassName: 'text-slate-300',
   },
   {

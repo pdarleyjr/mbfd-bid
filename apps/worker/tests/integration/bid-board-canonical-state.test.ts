@@ -275,6 +275,17 @@ describe('GET /api/board canonical mock state', () => {
       frozenAt: 1,
       bidOrder: [{ ordinal: 1, memberId: 77, pool: 'FF' }],
       bidOrderPreview: false,
+      advisory: {
+        v: 1,
+        determinationSource: 'authoritative_bid_state',
+        sessionId: SESSION_ID,
+        sequence: 8,
+        cards: expect.arrayContaining([
+          expect.objectContaining({ kind: 'bid_state', severity: 'attention' }),
+          expect.objectContaining({ kind: 'position_options' }),
+          expect.objectContaining({ kind: 'mock_boundary' }),
+        ]),
+      },
     });
   });
 
@@ -351,11 +362,13 @@ describe('GET /api/board canonical mock state', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
       members: {
         '77': { firstName: 'Member', lastName: '#77', employeeId: '#77' },
       },
     });
+    expect(body.advisory).toBeUndefined();
   });
 
   it('fails closed when an identity-bound canonical row lacks a complete session projection', async () => {

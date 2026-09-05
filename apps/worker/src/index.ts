@@ -4,7 +4,6 @@ import { logger } from 'hono/logger';
 import { isExpectedPublicWebOrigin } from './lib/public-web-origin.js';
 import { redactRequestLog } from './lib/request-log.js';
 import { applySecurityHeaders } from './middleware/security-headers.js';
-import adminAiAssist from './routes/admin/ai-assist.js';
 import adminAnnualPolicyDocuments from './routes/admin/annual-policy-documents.js';
 import adminAudit from './routes/admin/audit.js';
 import adminBidAwardTransition from './routes/admin/bid-award-transition.js';
@@ -46,7 +45,6 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/auth', auth)
   .route('/api', bid)
   .route('/api/ws', ws)
-  .route('/api/admin/ai-assist', adminAiAssist)
   .route('/api/admin/annual-policy-documents', adminAnnualPolicyDocuments)
   .route('/api/admin/members', adminMembers)
   .route('/api/admin/personnel', adminPersonnel)

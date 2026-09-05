@@ -42,9 +42,8 @@ describe('MBFD identity and operator navigation', () => {
       { href: '/admin/members', label: 'Members' },
       { href: '/admin/personnel', label: 'Personnel Changes' },
       { href: '/admin/bid-setup', label: 'Bid Setup' },
-      { href: '/admin/ai-assist', label: 'AI Assist' },
       { href: '/admin/rehearsal', label: 'Mock Bids' },
-      { href: '/admin/bid', label: 'Live Bid' },
+      { href: '/admin/bid', label: 'Live Bid & Advisory' },
       { href: '/admin/audit', label: 'Results & Audit' },
       { href: '/admin/system', label: 'System/Integrations' },
     ]);

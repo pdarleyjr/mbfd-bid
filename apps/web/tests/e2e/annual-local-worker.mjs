@@ -27,6 +27,10 @@ const server = createServer((request, response) => {
     json(response, 200, { ok: true });
     return;
   }
+  if (request.method === 'GET' && url.pathname === '/api/me') {
+    json(response, 200, { memberId: 1 });
+    return;
+  }
   if (request.method === 'GET' && url.pathname === '/api/board') {
     json(response, 200, {
       bidSessionId: 'annual-specialty-e2e',
@@ -63,6 +67,24 @@ const server = createServer((request, response) => {
         },
       ],
       annual: null,
+      advisory: {
+        v: 1,
+        determinationSource: 'authoritative_bid_state',
+        sessionId: 'annual-specialty-e2e',
+        sequence,
+        ruleBookVersion: '2027.1',
+        positionTemplateVersion: '2027.1',
+        configurationRevision: 1,
+        cards: [
+          {
+            kind: 'bid_state',
+            severity: 'ready',
+            title: 'Bid state',
+            summary: `Position bidding is active at sequence ${sequence}. Alex Original (order 1) is the current bidder.`,
+            sources: ['canonical_session_state', 'frozen_policy_snapshot'],
+          },
+        ],
+      },
     });
     return;
   }

@@ -36,7 +36,7 @@ export const CapacityMeterPayloadSchema = z.object({
   isFull: z.boolean(),
 });
 
-/** Snapshot of all capacity meters, used by board UI and AI advisory. */
+/** Snapshot of all capacity meters, used by the board UI and deterministic advisory. */
 export const MetersBundleSchema = z.object({
   groups: z.array(
     z.object({

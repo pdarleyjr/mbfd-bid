@@ -14,20 +14,15 @@ describe('year-round admin control-center safety', () => {
     expect(source('app/admin/page.tsx')).not.toMatch(/Telestaff CSV/i);
   });
 
-  it('keeps AI Assist authenticated while delegating only to the advisory workspace', () => {
-    const page = source('app/admin/ai-assist/page.tsx');
-    const workspace = source('app/admin/ai-assist/AiAssistWorkspace.tsx');
+  it('keeps the advisory embedded in the authenticated authoritative Bid board', () => {
+    const page = source('app/admin/bid/page.tsx');
+    const panel = source('app/admin/bid/_components/BidAdvisoryPanel.tsx');
 
     expect(page).toContain('requireAdmin');
-    expect(page).toContain('AiAssistWorkspace');
-    expect(page).not.toMatch(/<(?:form|button)\b/i);
-    expect(page).not.toMatch(/serverWorkerFetch|\bfetch\(/);
-    expect(workspace).toContain('mayCommitBid: false');
-    expect(workspace).toContain('mayMutatePolicy: false');
-    expect(workspace).toContain('mayMutateAssignments: false');
-    expect(workspace).toContain('Cloudflare Workers AI');
-    expect(workspace).toContain('providerAvailable');
-    expect(workspace).toContain('Deterministic fallback — provider unavailable');
+    expect(page).toContain('advisory={board.advisory}');
+    expect(panel).toContain('Authoritative state');
+    expect(panel).not.toMatch(/<(?:form|input|textarea|button)\b/i);
+    expect(panel).not.toMatch(/provider|model|prompt|fallback/i);
   });
 
   it('keeps System/Integrations as an authenticated, non-operational landing state', () => {

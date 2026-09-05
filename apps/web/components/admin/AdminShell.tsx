@@ -68,9 +68,8 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
       { href: '/admin/settings/bid-pin', label: 'Bid Access PIN' },
     ],
   },
-  { href: '/admin/ai-assist', label: 'AI Assist', exact: false },
   { href: '/admin/rehearsal', label: 'Mock Bids', exact: false },
-  { href: '/admin/bid', label: 'Live Bid', exact: false },
+  { href: '/admin/bid', label: 'Live Bid & Advisory', exact: false },
   {
     href: '/admin/audit',
     label: 'Results & Audit',

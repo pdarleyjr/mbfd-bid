@@ -136,9 +136,10 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await expect(page.locator('a[href="/admin/members"]')).toBeVisible();
     await expect(page.locator('a[href="/admin/credentials"]')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Bid Setup', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'AI Assist', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Mock Bids', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Live Bid', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'Live Bid & Advisory', exact: true }).first(),
+    ).toBeVisible();
     await expect(page.getByRole('link', { name: 'Results & Audit', exact: true })).toBeVisible();
     await expect(
       page.getByRole('link', { name: 'System/Integrations', exact: true }),

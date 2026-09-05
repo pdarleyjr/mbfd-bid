@@ -221,16 +221,17 @@ indicated future task / plan. Each is currently non-blocking.
 - **Lint:** 0 errors, 3 pre-existing warnings (all `console.log` in `scripts/copy-staging-fixtures.mjs`)
 - **Typecheck:** all 4 workspace packages green
 
-## Plan 06 — AI Integration (retired 2026-08-04)
+## Plan 06 — Generative advisory retired; deterministic BID Advisory active
 
-The AI advisor was fully removed from the active application after a legacy
-Workers AI forecast cron generated unexpected neuron charges while the staging
-site was idle. The retirement release removes the model binding, dedicated KV
-binding, per-minute schedule, AI API routes, member/admin UI, rehearsal AI
-strategy, prompt/evaluation code, cost polling, and advisory table. Migration
+The generative advisor is absent from the active application. The Worker has no
+model binding, model configuration, gateway dependency, advisory queue, or
+inference route. `BID Advisory` is a read-only deterministic projection attached
+to the authoritative `/api/board` response after canonical state and frozen
+policy validation. It reuses the existing frozen eligibility and A-Day engines,
+then formats their returned results for the administrator UI. Migration
 `0019_remove_ai_feature.sql` deletes the obsolete advisory rows. Historical
 audit-log compatibility fields remain so existing signed audit records can
-still be read; they cannot trigger inference.
+still be read; they cannot invoke any external service.
 
 ---
 

@@ -463,22 +463,22 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     ],
   }),
   section({
-    id: 'ai-assist',
-    category: 'Annual preparation',
-    title: 'AI Assist',
-    route: '/admin/ai-assist',
-    routeLabel: 'AI Assist',
+    id: 'bid-advisory',
+    category: 'Rehearse and operate',
+    title: 'BID Advisory',
+    route: '/admin/bid',
+    routeLabel: 'Live Bid & Advisory',
     summary:
-      'AI Assist can explain available Bid information and shows whether it is using Workers AI or its deterministic fallback.',
-    controls: ['Question prompt', 'Answer panel', 'AI availability or fallback status'],
+      'BID Advisory explains the current authoritative session, candidate order, position state, eligibility result, specialty interruption, A-Day result, and staffing boundary with deterministic application text.',
+    controls: ['Read-only advisory cards', 'Evidence-source labels', 'Authoritative sequence'],
     steps: [
-      'Ask a focused operational question.',
-      'Read the answer with the displayed availability state.',
-      'Verify a consequential action in its controlled workspace.',
+      'Open Live Bid & Advisory for the active or selected session.',
+      'Read the advisory sequence and evidence labels with the live board.',
+      'Use the controlled Bid workspace for any authorized operational action.',
     ],
     important:
-      'AI Assist is advisory only. It cannot modify staffing, policy, a Bid session, or other operational state.',
-    keywords: ['ai', 'workers ai', 'fallback', 'advisory', 'explain'],
+      'The composer explains existing BID results. It does not accept prompts, calculate a second outcome, make a selection, or change staffing, policy, assignments, or session state.',
+    keywords: ['advisory', 'explain', 'candidate order', 'position options', 'authoritative state'],
   }),
   section({
     id: 'mock-bids',
@@ -718,7 +718,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     route: '/admin/system',
     routeLabel: 'System/Integrations',
     summary:
-      'System & Integrations presents user-facing health and integration status for Hub federation, Workers AI, TeleStaff, and writeback safety.',
+      'System & Integrations presents user-facing health and integration status for Hub federation, TeleStaff, and writeback safety.',
     controls: ['Health and status indicators', 'Integration status'],
     steps: [
       'Review the displayed status before relying on an integration.',
@@ -732,7 +732,6 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'integration',
       'health',
       'hub federation',
-      'workers ai',
       'telestaff',
       'writeback safety',
     ],
@@ -773,14 +772,14 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     route: '/admin/system',
     routeLabel: 'System/Integrations',
     summary:
-      'Use the displayed condition and its source workflow to resolve missing records, unavailable actions, policy holds, AI fallback, and Mock-versus-live confusion safely.',
+      'Use the displayed condition and its source workflow to resolve missing records, unavailable actions, policy holds, stale advisory state, and Mock-versus-live confusion safely.',
     controls: ['Status indicators', 'Blocked notices', 'Step-up prompts', 'Guide search'],
     steps: [
       'Member or position missing: verify the effective date and source workflow; do not invent an assignment or seat.',
       'TeleStaff row unknown or incomplete: retain the exception and seek authoritative mapping.',
       'Button unavailable or step-up required: confirm authorization and the required state before retrying.',
       'Policy blocking or unconfigured: complete the approved policy/configuration work.',
-      'AI fallback: treat the response as advisory and use a controlled workspace to act.',
+      'Advisory sequence behind the board: reload Live Bid and verify the authoritative sequence before acting.',
     ],
     important:
       'Never start a real Bid merely to test it, and never treat Mock Bid behavior as proof of live authorization or a canonical staffing change.',
@@ -792,7 +791,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'step up',
       'blocking',
       'unconfigured',
-      'ai fallback',
+      'stale advisory',
       'mock vs live',
     ],
   }),
@@ -845,9 +844,8 @@ export const ADMIN_GUIDE_COVERAGE: Readonly<Record<string, readonly string[]>> =
     'bid-pin',
     'annual-policy',
   ],
-  '/admin/ai-assist': ['ai-assist'],
   '/admin/rehearsal': ['mock-bids'],
-  '/admin/bid': ['live-bid', 'specialty-adjudication', 'live-presentation'],
+  '/admin/bid': ['bid-advisory', 'live-bid', 'specialty-adjudication', 'live-presentation'],
   '/admin/audit': ['results-audit', 'exports', 'award-transition'],
   '/admin/system': ['system-integrations', 'troubleshooting-safety'],
 };

@@ -4,12 +4,18 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const webRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
-const adminDashboard = readFileSync(resolve(webRoot, 'app/admin/page.tsx'), 'utf8');
+const activeAdminSources = [
+  'app/admin/page.tsx',
+  'components/admin/AdminShell.tsx',
+  'app/admin/guide/guide-content.ts',
+].map((path) => readFileSync(resolve(webRoot, path), 'utf8'));
 const bidSocketHook = readFileSync(resolve(webRoot, 'app/bid/_hooks/useBidWebSocket.ts'), 'utf8');
 
 describe('retired AI references', () => {
-  it('does not advertise retired AI advisory controls in the active admin dashboard', () => {
-    expect(adminDashboard).not.toMatch(/AI advis(?:or(?:y|ies)|ories)/i);
+  it('does not advertise or route to the retired generative advisory workspace', () => {
+    for (const source of activeAdminSources) {
+      expect(source).not.toMatch(/AI Assist|Workers AI|\/admin\/ai-assist/i);
+    }
   });
 
   it('does not invalidate a query for a retired AI endpoint after bid events', () => {

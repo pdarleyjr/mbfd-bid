@@ -64,7 +64,7 @@ the source reference, actor, or reason. A pre-bridge V3 snapshot without those
 facts remains readable, but a new specialty test requiring a specialty code
 fails closed rather than treating absence as qualification.
 
-No annual A-Day or AI-assist setting is inferred or invented. A-Day phase state,
+No annual A-Day or advisory setting is inferred or invented. A-Day phase state,
 if created through its separately guarded lifecycle, is session state rather
 than a replacement for approved annual policy.
 

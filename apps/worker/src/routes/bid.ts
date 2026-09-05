@@ -6,7 +6,6 @@ import {
   canPick,
   computeAllMeters,
 } from '@mbfd/a-day';
-import { evaluateEligibility } from '@mbfd/eligibility';
 import { SubmitADayPickRequestSchema } from '@mbfd/shared';
 import { desc, eq } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
@@ -15,16 +14,17 @@ import { getDb } from '../db/index.js';
 import { bidSessions as bidSessionsTable, bids as bidsTable } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
+import { projectAuthoritativeBidAdvisory } from '../lib/bid-advisory-projection.js';
 import { computeBidOrder } from '../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
   eligibilityMemberFromFrozen,
-  frozenEligibilityMemberForSession,
   loadFrozenSessionBidPolicy,
 } from '../lib/bid-policy.js';
 import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-merge.js';
 import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
+import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-eligibility.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
 import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
@@ -364,11 +364,8 @@ bid.get('/me/eligibility', async (c) => {
     for (const row of rows) filled.add(row.positionId);
   }
 
-  const eligibilityMember = frozenEligibilityMemberForSession(
-    frozenPolicy.snapshot,
-    claims.member_id,
-  );
-  if (eligibilityMember === null) {
+  const positions = evaluateFrozenOpenPositionEligibility(frozenPolicy, claims.member_id, filled);
+  if (positions === null) {
     return c.json(
       {
         error: 'session_policy_snapshot_unavailable',
@@ -376,23 +373,6 @@ bid.get('/me/eligibility', async (c) => {
       },
       409,
     );
-  }
-
-  const positions: Array<{
-    positionId: string;
-    eligible: boolean;
-    reasons: ReturnType<typeof evaluateEligibility>['reasons'];
-    points: number;
-  }> = [];
-  for (const rule of frozenPolicy.coverage.rules) {
-    if (filled.has(rule.positionId)) continue;
-    const result = evaluateEligibility(eligibilityMemberFromFrozen(eligibilityMember), rule);
-    positions.push({
-      positionId: rule.positionId,
-      eligible: result.eligible,
-      reasons: result.reasons,
-      points: result.points,
-    });
   }
 
   return c.json({
@@ -692,6 +672,31 @@ bid.get('/board', async (c) => {
     ];
   });
 
+  const advisory =
+    claims.role === 'admin'
+      ? projectAuthoritativeBidAdvisory({
+          sessionId: bidSessionId,
+          sequence: typeof body.lastSeq === 'number' ? body.lastSeq : 0,
+          phase: body.currentPhase as BidSessionState['currentPhase'],
+          isMock,
+          frozenAt: typeof body.frozenAt === 'number' ? body.frozenAt : null,
+          currentBidderId,
+          currentBidder,
+          onDeck,
+          bidOrder,
+          fills: fillsRec,
+          aDay: (body.aDay ?? null) as PersistedADayState | null,
+          live: (canonicalState?.live ?? body.live ?? null) as NonNullable<
+            BidSessionState['live']
+          > | null,
+          annual: (canonicalState?.annual ?? body.annual ?? null) as NonNullable<
+            BidSessionState['annual']
+          > | null,
+          frozenPolicy: frozenBoardPolicy,
+          memberNames: members,
+        })
+      : undefined;
+
   return c.json({
     ...body,
     isMock,
@@ -704,6 +709,7 @@ bid.get('/board', async (c) => {
     onDeck,
     members,
     positions: frozenBoardPolicy.snapshot.ruleBookMaterial.positions,
+    advisory,
   });
 });
 

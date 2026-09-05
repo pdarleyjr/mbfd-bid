@@ -19,6 +19,8 @@ describe('retired AI endpoints', () => {
     ['GET', '/api/admin/ai/forecast?session_id=retired'],
     ['POST', '/api/admin/ai/advise-deep'],
     ['GET', '/api/ai/advise-me?session_id=retired'],
+    ['GET', '/api/admin/ai-assist/status'],
+    ['POST', '/api/admin/ai-assist/explain'],
   ])('returns 404 for %s %s', async (method, path) => {
     const jwt = await signJwt(
       {

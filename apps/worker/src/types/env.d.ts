@@ -19,15 +19,6 @@ export interface WorkerEnv {
   /** Dedicated, rotation-stable HMAC key for persisted TeleStaff source references.
    *  It must never fall back to the JWT signing key. */
   TELESTAFF_HMAC_KEY?: string;
-  /** Optional advisory-only Workers AI binding. The AI route receives only
-   * de-identified structured facts and has no database mutation capability. */
-  AI?: {
-    run(
-      model: string,
-      input: { messages: Array<{ role: 'system' | 'user'; content: string }> },
-    ): Promise<unknown>;
-  };
-  AI_MODEL?: string;
   /** Dedicated Hub federation credential for code exchange and revalidation.
    * It is never interchangeable with the retired verify-credentials token. */
   PORTAL_BID_FEDERATION_TOKEN?: string;

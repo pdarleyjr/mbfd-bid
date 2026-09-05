@@ -32,12 +32,6 @@ declare -A SECRETS=(
   [AUDIT_SIGNING_PRIVKEY]="ed25519 private key (PEM) for R2 audit chunk signatures. Plan 08 — can skip until then."
 )
 
-# NOTE: ANTHROPIC_API_KEY was removed in the 2026-05 Workers AI swap. The bid
-# worker now uses the env.AI binding (Llama 3.3 70B on Cloudflare's inference
-# network) — no Anthropic key required. If the legacy secret is still set
-# from a prior deploy, run `wrangler secret delete ANTHROPIC_API_KEY --env <env>`
-# to clear it. The variable is silently ignored by the worker either way.
-
 # Preserve insertion order
 ORDER=(PORTAL_BID_READER AUDIT_SIGNING_PRIVKEY)
 

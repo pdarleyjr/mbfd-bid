@@ -17,6 +17,7 @@ export * from './constants/bid-events.js';
 export * from './schemas/bid-events.js';
 export * from './schemas/bid-command.js';
 export * from './schemas/live-bid-interfaces.js';
+export * from './schemas/bid-advisory.js';
 export * from './schemas/websocket-ticket.js';
 // Plan 08 — audit chain wire types.
 export * from './schemas/audit-event.js';

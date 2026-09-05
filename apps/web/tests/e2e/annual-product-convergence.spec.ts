@@ -190,6 +190,10 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   });
 
   await page.goto('/admin/bid?session_id=annual-specialty-e2e');
+  const advisory = page.getByTestId('bid-advisory-panel');
+  await expect(advisory).toBeVisible();
+  await expect(advisory).toContainText('Authoritative state');
+  await expect(advisory.locator('button, input, textarea')).toHaveCount(0);
   const controls = page.getByTestId('annual-live-controls');
   await expect(controls).toBeVisible();
   await expect(controls.getByText(/Original bidder: FF Alex Original/)).toContainText(

@@ -65,8 +65,8 @@ export function isGroupFull(
 
 /**
  * Returns all 12 A/B/C group meters plus all 7 weekday meters in one pass.
- * Used by the UI to render the full picker board and by the AI advisory
- * to summarize current capacity in prompts.
+ * Used by the UI to render the full picker board and by the deterministic
+ * advisory projection to summarize the returned capacity result.
  */
 export function computeAllMeters(state: ADayState): {
   groups: Array<{ shift: Exclude<Shift, 'D'>; group: ADayGroupId; meter: CapacityMeter }>;
