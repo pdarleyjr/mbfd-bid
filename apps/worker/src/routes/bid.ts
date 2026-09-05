@@ -14,7 +14,7 @@ import { getDb } from '../db/index.js';
 import { bidSessions as bidSessionsTable, bids as bidsTable } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
-import { projectAuthoritativeBidAdvisory } from '../lib/bid-advisory-projection.js';
+import { safelyProjectAuthoritativeBidAdvisory } from '../lib/bid-advisory-projection.js';
 import { computeBidOrder } from '../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
@@ -674,7 +674,7 @@ bid.get('/board', async (c) => {
 
   const advisory =
     claims.role === 'admin'
-      ? projectAuthoritativeBidAdvisory({
+      ? safelyProjectAuthoritativeBidAdvisory({
           sessionId: bidSessionId,
           sequence: typeof body.lastSeq === 'number' ? body.lastSeq : 0,
           phase: body.currentPhase as BidSessionState['currentPhase'],

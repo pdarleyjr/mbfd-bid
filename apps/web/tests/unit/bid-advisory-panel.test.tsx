@@ -41,4 +41,11 @@ describe('BidAdvisoryPanel', () => {
     expect(html).not.toMatch(/<(?:form|input|textarea|button)\b/i);
     expect(html).not.toMatch(/provider|model|prompt|fallback/i);
   });
+
+  it('keeps the authoritative board renderable when Decision Details are unavailable', () => {
+    const html = renderToString(<BidAdvisoryPanel advisory={null} />);
+
+    expect(html).toContain('Decision Details are unavailable');
+    expect(html).toContain('authoritative BID board remains');
+  });
 });

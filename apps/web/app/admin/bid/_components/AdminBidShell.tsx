@@ -42,7 +42,7 @@ interface Props {
   /** D1 mock-control revision passed to the mock-only manual command. */
   mockControlRevision: number | null;
   annual?: AnnualOperationsStatusPayload | null | undefined;
-  advisory: BidAdvisoryBundle;
+  advisory: BidAdvisoryBundle | null;
 }
 
 /**

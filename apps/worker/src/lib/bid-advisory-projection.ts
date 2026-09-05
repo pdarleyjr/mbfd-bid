@@ -191,3 +191,18 @@ export function projectAuthoritativeBidAdvisory(
   // the shared serialized contract.
   return BidAdvisoryBundleSchema.parse(bundle);
 }
+
+/**
+ * Keeps explanatory projection failures outside the authoritative BID read
+ * path. A malformed or future advisory input therefore cannot suppress the
+ * board state that operators and members already depend on.
+ */
+export function safelyProjectAuthoritativeBidAdvisory(
+  input: AuthoritativeBidAdvisoryProjectionInput,
+): BidAdvisoryBundle | null {
+  try {
+    return projectAuthoritativeBidAdvisory(input);
+  } catch {
+    return null;
+  }
+}

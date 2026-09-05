@@ -469,7 +469,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     route: '/admin/bid',
     routeLabel: 'Live Bid & Advisory',
     summary:
-      'BID Advisory explains the current authoritative session, candidate order, position state, eligibility result, specialty interruption, A-Day result, and staffing boundary with deterministic application text.',
+      'BID Advisory immediately describes authoritative results already calculated by deterministic BID application rules. There is no AI or model generation delay.',
     controls: ['Read-only advisory cards', 'Evidence-source labels', 'Authoritative sequence'],
     steps: [
       'Open Live Bid & Advisory for the active or selected session.',
@@ -477,7 +477,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Use the controlled Bid workspace for any authorized operational action.',
     ],
     important:
-      'The composer explains existing BID results. It does not accept prompts, calculate a second outcome, make a selection, or change staffing, policy, assignments, or session state.',
+      'Decision Details explain why the current result is displayed. They do not make decisions, change eligibility, award positions, calculate a second outcome, or change staffing, policy, assignments, or session state.',
     keywords: ['advisory', 'explain', 'candidate order', 'position options', 'authoritative state'],
   }),
   section({

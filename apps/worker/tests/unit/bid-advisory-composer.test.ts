@@ -4,6 +4,7 @@ import {
   type BidAdvisoryComposerInput,
   composeBidAdvisoryBundle,
 } from '../../src/lib/bid-advisory-composer.js';
+import { safelyProjectAuthoritativeBidAdvisory } from '../../src/lib/bid-advisory-projection.js';
 
 function input(overrides: Partial<BidAdvisoryComposerInput> = {}): BidAdvisoryComposerInput {
   return {
@@ -89,6 +90,30 @@ describe('composeBidAdvisoryBundle', () => {
     )?.summary;
     expect(positionSummary).toContain('PARAMEDIC_REQUIRED');
     expect(positionSummary).not.toContain('Paramedic certification');
+  });
+
+  it('preserves an unmapped reason code without inventing a meaning', () => {
+    const facts = input();
+    const eligibility = facts.positions.currentBidderEligibility;
+    if (eligibility === null) throw new Error('test fixture must include eligibility');
+    const bundle = composeBidAdvisoryBundle({
+      ...facts,
+      positions: {
+        ...facts.positions,
+        currentBidderEligibility: {
+          ...eligibility,
+          blockingReasonLabels: ['UNMAPPED_FUTURE_REASON_731'],
+        },
+      },
+    });
+    const summary = bundle.cards.find((card) => card.kind === 'position_options')?.summary;
+
+    expect(summary).toContain('UNMAPPED_FUTURE_REASON_731');
+    expect(summary).not.toMatch(/means|because|therefore/i);
+  });
+
+  it('contains malformed advisory projection failures without mutating BID state', () => {
+    expect(safelyProjectAuthoritativeBidAdvisory(null as never)).toBeNull();
   });
 
   it('distinguishes a frozen policy snapshot from a paused bid session', () => {

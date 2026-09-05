@@ -32,7 +32,7 @@ interface BoardSnapshot {
   /** V3 immutable rule-book position material for this exact session. */
   positions?: PositionMeta[];
   annual?: AnnualOperationsStatusPayload | null;
-  advisory: BidAdvisoryBundle;
+  advisory?: BidAdvisoryBundle | null;
 }
 
 interface ActiveSessionResponse {
@@ -147,7 +147,7 @@ export default async function AdminBidPage({
         isMock={board.isMock === true}
         mockControlRevision={board.mockControlRevision}
         annual={board.annual}
-        advisory={board.advisory}
+        advisory={board.advisory ?? null}
       />
     </div>
   );

@@ -258,6 +258,17 @@ describe('GET /api/board canonical mock state', () => {
     await teardownTestD1(h);
   });
 
+  it('retains the existing authenticated-board boundary for unauthenticated requests', async () => {
+    const res = await app.fetch(new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`), {
+      ...h.env,
+      JWT_SIGNING_KEY: KEY,
+      BID_SESSION: stubBidSessionNamespace(),
+    });
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'missing_auth' });
+  });
+
   it('does not label a canonical paused session as an unstarted preview when it restores its frozen order', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
@@ -364,6 +375,11 @@ describe('GET /api/board canonical mock state', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).toMatchObject({
+      bidSessionId: SESSION_ID,
+      currentPhase: 'paused',
+      lastSeq: 8,
+      bidOrder: [{ ordinal: 1, memberId: 77, pool: 'FF' }],
+      positions: [expect.objectContaining({ id: 'A101', bidParticipation: 'BIDDABLE' })],
       members: {
         '77': { firstName: 'Member', lastName: '#77', employeeId: '#77' },
       },

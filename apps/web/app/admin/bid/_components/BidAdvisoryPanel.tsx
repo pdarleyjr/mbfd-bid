@@ -21,11 +21,23 @@ const SEVERITY_CLASSES = {
 } as const;
 
 interface Props {
-  advisory: BidAdvisoryBundle;
+  advisory: BidAdvisoryBundle | null;
 }
 
 /** Read-only rendering of server-composed explanations from the current board result. */
 export function BidAdvisoryPanel({ advisory }: Props) {
+  if (advisory === null) {
+    return (
+      <aside
+        data-testid="bid-advisory-unavailable"
+        className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+      >
+        Decision Details are unavailable for this snapshot. The authoritative BID board remains
+        available and unchanged.
+      </aside>
+    );
+  }
+
   return (
     <aside
       aria-labelledby="bid-advisory-heading"

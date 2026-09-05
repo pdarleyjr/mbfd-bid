@@ -29,7 +29,7 @@ interface Props {
    *  doesn't proxy WS). */
   wsBase?: string;
   /** Server-composed explanation of the same authoritative board snapshot. */
-  advisory: BidAdvisoryBundle;
+  advisory: BidAdvisoryBundle | null;
 }
 
 export function AdminBoard({

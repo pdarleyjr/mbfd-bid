@@ -44,6 +44,20 @@ describe('Administrator Guide content contract', () => {
     expect(teleStaff?.important).toContain('does not write back to TeleStaff');
   });
 
+  it('documents deterministic Decision Details without retaining the retired AI Assist workflow', () => {
+    const advisory = GUIDE_SECTIONS.find((section) => section.id === 'bid-advisory');
+    const text = `${advisory?.summary ?? ''} ${advisory?.important ?? ''}`;
+
+    expect(advisory).toMatchObject({ route: '/admin/bid', routeLabel: 'Live Bid & Advisory' });
+    expect(text).toContain('deterministic BID application rules');
+    expect(text).toContain('authoritative results');
+    expect(text).toContain('no AI or model generation delay');
+    expect(text).toContain('do not make decisions');
+    expect(text).toContain('change eligibility');
+    expect(text).toContain('award positions');
+    expect(text).not.toMatch(/AI Assist|Workers AI|\/admin\/ai-assist/i);
+  });
+
   it('uses an intentional category, a real route, and concise guide content for each section', () => {
     expect(GUIDE_SECTIONS.length).toBeGreaterThanOrEqual(27);
 
