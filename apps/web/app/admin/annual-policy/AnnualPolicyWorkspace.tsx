@@ -4,6 +4,7 @@ import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { FrozenLiveBidPolicySchema } from '@mbfd/shared';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { AnnualPolicyPublishGate } from './AnnualPolicyPublishGate';
 
 export interface AnnualPolicyDocument {
   id: string;
@@ -490,9 +491,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
     }
   }
 
-  async function publish(document: AnnualPolicyDocument) {
-    const publishReason = window.prompt('Publication reason (4–500 characters):');
-    if (publishReason === null) return;
+  async function publish(document: AnnualPolicyDocument, publishReason: string): Promise<boolean> {
     setBusy(true);
     setMessage(null);
     try {
@@ -510,11 +509,13 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
         throw new Error(workerError(body, `Publication failed (${response.status}).`));
       setMessage({ kind: 'success', text: `Revision ${document.revision} published.` });
       router.refresh();
+      return true;
     } catch (error) {
       setMessage({
         kind: 'error',
         text: error instanceof Error ? error.message : 'Publication failed.',
       });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -1150,14 +1151,10 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                     Load as new draft
                   </button>
                   {document.status === 'DRAFT' ? (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void publish(document)}
-                      className="rounded border border-emerald-700 px-3 py-1 text-sm text-emerald-200"
-                    >
-                      Publish revision
-                    </button>
+                    <AnnualPolicyPublishGate
+                      busy={busy}
+                      onConfirm={(publishReason) => publish(document, publishReason)}
+                    />
                   ) : null}
                   <span className="text-xs text-slate-400">Document {document.id}</span>
                   {document.supersedes_document_id ? (
