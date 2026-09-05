@@ -39,7 +39,7 @@ export default async function PersonnelPage({
   try {
     const [summaryResponse, membersResponse] = await Promise.all([
       serverWorkerFetch('/api/admin/personnel/summary'),
-      serverWorkerFetch('/api/admin/personnel/members?limit=250'),
+      serverWorkerFetch('/api/admin/personnel/members?limit=500'),
     ]);
     if (!summaryResponse.ok || !membersResponse.ok) {
       fetchError = `Personnel service returned ${!summaryResponse.ok ? summaryResponse.status : membersResponse.status}.`;
