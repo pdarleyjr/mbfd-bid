@@ -43,7 +43,7 @@ Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString(
   $file = Join-Path $TemporaryDirectory "$DbName-$now.sql"
 
   Write-Host "[d1-backup] exporting D1 $DbName ($Env) -> $file"
-  & pnpm exec wrangler d1 export $DbName --env $Env --remote --output $file
+  & pnpm --dir apps/worker exec wrangler d1 export $DbName --env $Env --remote --output $file
   if ($LASTEXITCODE -ne 0) { throw "wrangler d1 export failed (exit $LASTEXITCODE)" }
 
   $size = (Get-Item $file).Length
@@ -54,7 +54,7 @@ Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString(
 
   $result.Key = "d1/$day/$DbName-$now.sql"
   Write-Host "[d1-backup] uploading -> r2://$BucketName/$($result.Key)"
-  & pnpm exec wrangler r2 object put "$BucketName/$($result.Key)" --file=$file --remote
+  & pnpm --dir apps/worker exec wrangler r2 object put "$BucketName/$($result.Key)" --file=$file --remote
   if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object put failed (exit $LASTEXITCODE)" }
 }
 

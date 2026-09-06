@@ -44,6 +44,12 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('--env $Env --remote');
   });
 
+  it('runs Wrangler from the Worker package where the CLI dependency is installed', () => {
+    const src = readFileSync(BACKUP_SCRIPT, 'utf-8');
+    expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(2);
+    expect(src).not.toContain('& pnpm exec wrangler');
+  });
+
   it('backup script aborts if the dump is < 1KB (sanity guard)', () => {
     const src = readFileSync(BACKUP_SCRIPT, 'utf-8');
     expect(src).toContain('-lt 1024');
