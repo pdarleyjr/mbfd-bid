@@ -8,6 +8,7 @@ import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'm'.repeat(64);
 const SESSION_ID = '01HZZ0000000000000BOARDCAN';
+const OLDER_REAL_SESSION_ID = '01HZZ0000000000000BOARDOLD';
 
 describe('canonical board order validation', () => {
   const frozen = [
@@ -300,14 +301,43 @@ describe('GET /api/board canonical mock state', () => {
     });
   });
 
-  it('selects the canonical non-complete session when no query is supplied', async () => {
+  it('skips a newer canonically complete real session and selects the older unfinished real session', async () => {
     const newerCompleteId = '01HZZ0000000000000BOARDNEW';
     await h.db.run(
       `INSERT INTO bid_sessions (
         id, bid_year, started_at, current_phase, turn_timer_seconds,
         expected_duration_days, day_count, is_mock
-      ) VALUES (?, 2026, 2, 'position_bid', 180, 2, 0, 1);`,
+      ) VALUES (?, 2026, 0, 'position_bid', 180, 2, 0, 0);`,
+      [OLDER_REAL_SESSION_ID],
+    );
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots (
+        bid_session_id, rule_book_version, position_template_version,
+        rule_book_revision, snapshot_json, captured_at
+      )
+      SELECT ?, rule_book_version, position_template_version,
+             rule_book_revision, snapshot_json, captured_at
+        FROM bid_session_policy_snapshots
+       WHERE bid_session_id = ?;`,
+      [OLDER_REAL_SESSION_ID, SESSION_ID],
+    );
+    await h.db.run(
+      `INSERT INTO bid_sessions (
+        id, bid_year, started_at, current_phase, turn_timer_seconds,
+        expected_duration_days, day_count, is_mock
+      ) VALUES (?, 2026, 2, 'position_bid', 180, 2, 0, 0);`,
       [newerCompleteId],
+    );
+    await h.db.run(
+      `INSERT INTO bid_session_policy_snapshots (
+        bid_session_id, rule_book_version, position_template_version,
+        rule_book_revision, snapshot_json, captured_at
+      )
+      SELECT ?, rule_book_version, position_template_version,
+             rule_book_revision, snapshot_json, captured_at
+        FROM bid_session_policy_snapshots
+       WHERE bid_session_id = ?;`,
+      [newerCompleteId, SESSION_ID],
     );
     await h.db.run(
       `INSERT INTO canonical_bid_session_state (
@@ -340,9 +370,9 @@ describe('GET /api/board canonical mock state', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      bidSessionId: SESSION_ID,
-      currentPhase: 'paused',
-      lastSeq: 8,
+      bidSessionId: OLDER_REAL_SESSION_ID,
+      currentPhase: 'position_bid',
+      lastSeq: 7,
     });
   });
 

@@ -74,6 +74,7 @@ async function resolveBidSessionId(
   const sessions = await db
     .select({ id: bidSessionsTable.id, currentPhase: bidSessionsTable.currentPhase })
     .from(bidSessionsTable)
+    .where(eq(bidSessionsTable.isMock, false))
     .orderBy(desc(bidSessionsTable.startedAt))
     .all();
   for (const session of sessions) {
