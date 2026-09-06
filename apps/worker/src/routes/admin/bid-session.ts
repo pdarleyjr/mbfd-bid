@@ -110,6 +110,10 @@ router.use('*', requireAdmin);
 
 // GET /api/admin/bid-session/active
 router.get('/active', async (c) => {
+  const mode = c.req.query('mode');
+  if (mode !== undefined && mode !== 'live') {
+    return c.json({ error: 'invalid_active_session_mode' }, 400);
+  }
   const db = getDb(c.env.DB);
   const sessions = await db.select().from(bidSessions).orderBy(desc(bidSessions.startedAt)).all();
   for (const legacySession of sessions) {
@@ -135,6 +139,10 @@ router.get('/active', async (c) => {
                 : legacySession.pausedAt,
             frozenAt: canonical.frozenAt === null ? null : new Date(canonical.frozenAt),
           };
+    // The unqualified endpoint retains its legacy behavior for rehearsal
+    // consumers. The Live Bid page asks for live mode so an unfinished Mock
+    // can never be selected as its default operational session.
+    if (mode === 'live' && session.isMock) continue;
     if (session.currentPhase !== 'complete') return c.json({ session });
   }
 

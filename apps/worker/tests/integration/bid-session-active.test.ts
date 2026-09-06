@@ -43,6 +43,17 @@ describe('GET /api/admin/bid-session/active', () => {
     expect(body.session).toBeNull();
   });
 
+  it('rejects an unsupported active-session mode', async () => {
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session/active?mode=mock', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_active_session_mode' });
+  });
+
   it('returns the newest non-complete session', async () => {
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await h.db.run(
@@ -60,6 +71,24 @@ describe('GET /api/admin/bid-session/active', () => {
     const body = (await res.json()) as { session: { id: string; currentPhase: string } | null };
     expect(body.session?.id).toBe('new-live');
     expect(body.session?.currentPhase).toBe('paused');
+  });
+
+  it('returns the newest non-complete real session when live mode excludes mocks', async () => {
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
+    await h.db.run(
+      "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES ('live-session', 2026, ?, 'position_bid', 180, 2, 1, 0), ('newer-mock', 2026, ?, 'config', 180, 2, 1, 1);",
+      [Date.now() - 10_000, Date.now()],
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session/active?mode=live', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { session: { id: string; isMock: boolean } | null };
+    expect(body.session).toMatchObject({ id: 'live-session', isMock: false });
   });
 
   it('projects canonical state over stale legacy session fields', async () => {

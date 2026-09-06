@@ -25,6 +25,10 @@ describe('year-round admin control-center safety', () => {
     expect(panel).not.toMatch(/provider|model|prompt|fallback/i);
   });
 
+  it('does not select a mock as the default Live Bid session', () => {
+    expect(source('app/admin/bid/page.tsx')).toContain('/api/admin/bid-session/active?mode=live');
+  });
+
   it('keeps System/Integrations as an authenticated, non-operational landing state', () => {
     const page = source('app/admin/system/page.tsx');
 

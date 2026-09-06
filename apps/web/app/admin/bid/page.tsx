@@ -59,7 +59,7 @@ async function loadBoard(
 }
 
 async function loadActiveSession(): Promise<string | null> {
-  const res = await serverWorkerFetch('/api/admin/bid-session/active');
+  const res = await serverWorkerFetch('/api/admin/bid-session/active?mode=live');
   if (!res.ok) return null;
   const body = (await res.json()) as ActiveSessionResponse;
   return body.session?.id ?? null;
