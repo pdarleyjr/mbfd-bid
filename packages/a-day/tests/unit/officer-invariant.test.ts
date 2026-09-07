@@ -167,6 +167,53 @@ describe('validateOfficerInvariant — basic cases', () => {
 });
 
 describe('validateOfficerInvariant — feasibility across remaining bidders', () => {
+  it('rejects an existing overflow in another group even when this pick adds no officer', () => {
+    const picks: ADayPick[] = [1, 2, 3, 4, 5, 6].map((memberId) => ({
+      memberId,
+      shift: 'A',
+      aDay: 'G2',
+      pickedAtMs: 1,
+      forced: false,
+      adminActorId: null,
+    }));
+    const s = buildState({
+      picks,
+      members: [...picks.map((p) => officer(p.memberId)), ff(99)],
+      bidOrder: [99],
+      cursor: 0,
+      phase1Shifts: new Map([[99, 'A']]),
+    });
+    expect(validateOfficerInvariant(s, 'A', 'G1', 99)).toMatchObject({
+      feasible: false,
+      projectedOfficers: 0,
+      explanation: 'Officer count in A-shift G2 is already above 5.',
+    });
+  });
+
+  it('counts only known officers with phase-one evidence on the requested shift', () => {
+    const bidOrder = [99, 1, 2, 3, 4, 5];
+    bidOrder.length = 7;
+    const s = buildState({
+      picks: [
+        { memberId: 1, shift: 'B', aDay: 'G1', pickedAtMs: 1, forced: false, adminActorId: null },
+        { memberId: 404, shift: 'A', aDay: 'G1', pickedAtMs: 1, forced: false, adminActorId: null },
+      ],
+      members: [ff(99), officer(1), officer(3), officer(4), ff(5)],
+      bidOrder,
+      cursor: 0,
+      phase1Shifts: new Map([
+        [99, 'A'],
+        [1, 'B'],
+        [2, 'A'],
+        [4, 'A'],
+        [5, 'A'],
+      ]),
+    });
+    expect(projectedOfficers(s, 'A', 'G1', 404)).toBe(0);
+    const result = validateOfficerInvariant(s, 'A', 'G1', 404);
+    expect(result.feasible).toBe(false);
+    expect(result.explanation).toContain('only 1 officers remain');
+  });
   it('returns infeasible when accepting this pick leaves another group unable to reach 5', () => {
     const picksAt4 = (group: 'G1' | 'G2' | 'G3') =>
       [10, 11, 12, 13].map((base) => ({

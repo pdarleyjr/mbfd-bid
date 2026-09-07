@@ -45,6 +45,21 @@ describe('phase2BidOrder — strategy phase_1_order', () => {
 });
 
 describe('phase2BidOrder — strategy by_shift_then_seniority', () => {
+  it('excludes missing phase-one or roster evidence and sorts unranked ties last', () => {
+    expect(
+      phase2BidOrder({
+        strategy: 'by_shift_then_seniority',
+        phase1Order: [1, 2, 3, 4, 5],
+        phase1Picks: [1, 3, 4, 5].map((memberId) => ({
+          memberId,
+          shift: 'A' as const,
+          positionId: `A${memberId}`,
+        })),
+        members: [{ ...m(1, 10), rankSeniority: undefined }, m(2, 1), m(4, 10), m(5, 1)],
+        preSeededMemberIds: [5],
+      }),
+    ).toEqual([4, 1]);
+  });
   it('groups by shift in order A, B, C, D and sorts each by rsc_seniority ascending', () => {
     const order = phase2BidOrder({
       strategy: 'by_shift_then_seniority',

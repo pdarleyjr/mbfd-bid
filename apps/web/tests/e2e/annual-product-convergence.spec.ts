@@ -151,13 +151,15 @@ test('annual policy editor starts blocking and loads only real source members an
   });
 
   await page.goto('/admin/annual-policy?year=2027');
-  await expect(page.getByText('NOT CONFIGURED — BLOCKING')).toBeVisible();
-  await expect(page.locator('input[readonly]')).toHaveValue('2027-approved-candidate');
-  await page.getByRole('button', { name: 'Add stage' }).click();
-  await expect(page.getByRole('option', { name: /Firefighter, Avery.*RSC 100/ })).toBeVisible();
-  await expect(page.getByRole('option', { name: /A101.*Engine 1.*FF/ })).toBeVisible();
-  await expect(page.getByText('POLICY_STAGE_')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Save new draft revision' })).toBeDisabled();
+  const editor = page.getByRole('main');
+  await expect(editor.getByText('NOT CONFIGURED — BLOCKING')).toHaveCount(1);
+  await expect(editor.getByText('NOT CONFIGURED — BLOCKING')).toBeVisible();
+  await expect(editor.locator('input[readonly]')).toHaveValue('2027-approved-candidate');
+  await editor.getByRole('button', { name: 'Add stage' }).click();
+  await expect(editor.getByRole('option', { name: /Firefighter, Avery.*RSC 100/ })).toBeVisible();
+  await expect(editor.getByRole('option', { name: /A101.*Engine 1.*FF/ })).toBeVisible();
+  await expect(editor.getByText('POLICY_STAGE_')).toHaveCount(0);
+  await expect(editor.getByRole('button', { name: 'Save new draft revision' })).toBeDisabled();
 });
 
 test('specialty operator sees frozen ranking, contact state, resume state, and can dispatch', async ({

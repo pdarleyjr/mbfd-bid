@@ -22,13 +22,13 @@ Added direct: @base-ui/react 1.8.0 (MIT; React 19 peers) for accessible interact
 
 ## Temporary local CI validation
 
-GitHub Actions: availability must be established by the new PR runs; a historical minutes-limit claim is not current proof. Existing workflows remain unchanged. Reviewed CI, CodeQL, Dependency audit, Deploy staging, Deploy production and D1 backup.
+GitHub Actions is available: initial UI commit 680354cc7a084ded3ba936702f29a81400d96499 passed CI run 34145396161 and CodeQL run 34145396189. The coverage/recovery follow-up requires its own exact-source checks. Existing workflows remain unchanged. Reviewed CI, CodeQL, Dependency audit, Deploy staging, Deploy production and D1 backup.
 
 PASS — pnpm install --frozen-lockfile.
 PASS — pnpm lint (834 files, no fixes).
 PASS — pnpm typecheck (includes internal package builds).
 PASS — pnpm build (optimized Next build; local browser artifact built with NEXT_PUBLIC_WORKER_BASE=http://127.0.0.1:31987).
-PASS — pnpm test: eligibility 91 pass/1 skip; shared 166 pass; A-Day 62 pass; Worker 1,210 pass/1 skip; Wrangler launchers 25 pass; web 288 pass. Total 1,842 pass, two existing skips.
+PASS — pnpm test: eligibility 91 pass/1 skip; shared 166 pass; A-Day 69 pass; Worker 1,210 pass/1 skip; Wrangler launchers 25 pass; web 288 pass. Total 1,849 pass, two existing skips.
 PASS — pnpm audit --prod --audit-level=high (no known vulnerabilities at execution).
 PASS — ./scripts/test-d1-backup-preflight.ps1.
 PASS — node scripts/test-deploy-staging-migration-guard.mjs.
@@ -61,28 +61,32 @@ PASS — E2E_USE_BUILT_WEB=1 pnpm --filter @mbfd/web exec playwright test admin-
 
 Streaming temporarily retains hidden HTML copies. Browser form/text selectors are scoped to the visible main landmark, and catalog/evidence tests add unique-field assertions before filling. Tab tests select the visible accessible tab and explicitly assert its stable ID. Existing behavior/error assertions remain. An earlier attempt to repeat the entire stateful suite reused staffing fixtures and produced duplicate synthetic seats; final validation runs that suite once with a fresh server and repeats independent rendering tests separately.
 
-### Optional coverage shortfalls (unchanged source)
+### Coverage and release follow-up
 
-FAIL — pnpm --filter @mbfd/eligibility test:coverage: tests pass, lines/statements/functions 100%, branches 99.14%; existing threshold is 100%.
-FAIL — pnpm --filter @mbfd/a-day test:coverage: tests pass, lines/statements 95.4%, branches 89.21%, functions 88.23%; existing thresholds are 100%.
+PASS — pnpm --filter @mbfd/eligibility test:coverage: 91 pass/one existing skip, 100% statements, branches, functions and lines.
+PASS — pnpm --filter @mbfd/a-day test:coverage: 69 pass, 100% statements, branches, functions and lines.
 
-These packages, tests and thresholds are identical to main. Required CI does not invoke these optional coverage scripts. Thresholds were not lowered. Web/Worker-wide instrumented coverage and hosted CodeQL are not claimed from local unit-test counts.
+The previously reported failures were reproduced before correction. Reviewed service months and capacity limits now use their established defined-value guards without impossible fallback branches. Shift/seniority ordering filters missing phase-one/member evidence once; resulting valid ordering is unchanged. Seven new A-Day cases exercise completion, sparse/pre-seeded orders, unknown member/phase-one evidence, seniority fallback, capacity rejection and officer invariants. Thresholds, coverage exclusions and policy configuration are unchanged. Whole-app instrumented coverage is not inferred from these package metrics.
+
+After the correction, full lint, typecheck, optimized build and all 1,849 unit/integration tests passed (two existing skips). The full representative browser suite passed all 20 tests in 51.3 seconds against the rebuilt local artifact, with screenshots under apps/web/test-results/release-accepted. Its first rerun found a selector matching hidden streamed annual-policy HTML; the test now scopes the editor to the visible main landmark and additionally requires exactly one blocking status. All existing policy/source assertions remain.
+
+Production backup now captures a pre-export Time Travel bookmark and writes a private recovery receipt beside the SQL in the existing R2 bucket. The receipt records the SQL key, size, SHA-256, timestamp and source commit. Neither bookmark values nor raw lookup errors are printed; failure to obtain or upload the receipt prevents a success marker. Staging backup behavior remains unchanged. The existing preflight CI entrypoint exercises success, confidentiality, cleanup and seven failure paths through a local CLI double. No workflow, credential, binding, database, or schedule configuration changed.
 
 ## Integration preservation matrix
 
 | Boundary | Evidence | Remaining runtime gate |
 |---|---|---|
-| PIN/auth/roles/logout/Hub | Existing web and Worker auth tests; unchanged guards, cookies, federation handlers; isolated PIN UI test | Real authenticated staging federation/logout |
-| Workers/D1/R2/queues/DO | Full Worker/integration/launcher tests; unchanged backend/bindings/schema | Hosted staged services and authenticated evidence/export operations |
+| PIN/auth/roles/logout/Hub | Existing web and Worker auth tests; unchanged guards, cookies, federation handlers; isolated PIN UI test | Real authenticated federation/logout |
+| Workers/D1/R2/queues/DO | Full Worker/integration/launcher tests; unchanged backend/bindings/schema | Hosted services and authenticated evidence/export operations |
 | Cloudflare/OpenNext | Optimized Next build and Linux staging artifact; deployment-guard tests | Exact hosted deployment and runtime identity |
-| Current/historical/upcoming | Independent-source Board E2E, unchanged schema/query/cache selection | Actual staging source data |
+| Current/historical/upcoming | Independent-source Board E2E, unchanged schema/query/cache selection | Actual production source data |
 | Live/mock/eligibility/awards | Full deterministic package/Worker tests; isolated live UI, mock exact retry and read-only display tests | Authorized live acceptance; no real pick/award manufactured |
-| Configuration/personnel/TeleStaff | Preserved domain handlers, identity keys, retained edits, source provenance and refresh; existing suites plus representative E2E | Authenticated staging source intake and policy approval |
+| Configuration/personnel/TeleStaff | Preserved domain handlers, identity keys, retained edits, source provenance and refresh; existing suites plus representative E2E | Authenticated source intake and policy approval |
 | Audits/exports/print | Existing tests; unchanged endpoints, R2 and print renderer markup | Real generated export/physical print review |
 
 ## Release and rollback
 
-No remote deployment has been performed at this report snapshot. The existing guarded staging workflow must run only after candidate gates. Production requires the existing immutable SHA/backup-evidence workflow, environment gates and authenticated staging acceptance. No migrations are required by this change. Rollback uses an approved source/artifact revert through existing workflow. Never roll back D1 for this presentation change. PR checks and deployment outcomes belong to the final release follow-up.
+The owner explicitly requested resolution of the coverage/release blockers and live deployment on September 7, after clarifying that Mock Bids belongs within bid.mbfdhub.com/admin/rehearsal. This authorizes the normal merge and existing guarded immutable production workflow; no GitHub approval is fabricated or protection bypassed. Local authenticated fixture acceptance is complete; actual authenticated runtime and physical acceptance remain separately reported. Existing automatic staging configuration is retained. Fresh production SQL backup run 34146661502 succeeded before the release follow-up; the enhanced workflow will additionally record its private Time Travel receipt before deployment. No migrations are required. Rollback uses the previously deployed compatible source/artifact through the existing workflow; D1 rollback is not part of this release. Exact merge, CI, deployment and runtime identities will be recorded in PR #107 and the final release evidence.
 
 ## Complete route/surface inventory
 
@@ -343,3 +347,16 @@ Every page below inherits the shared foundation; direct workspaces/controls and 
 - .impeccable.md
 - plans/2026-09-07-shadcn-ui-enterprise-modernization.md
 - plans/2026-09-07-ui-inventory.md
+
+### Coverage and recovery follow-up files
+
+- packages/eligibility/src/evaluate.ts
+- packages/a-day/src/can-pick.ts
+- packages/a-day/src/order.ts
+- packages/a-day/tests/unit/can-pick.test.ts
+- packages/a-day/tests/unit/officer-invariant.test.ts
+- packages/a-day/tests/unit/order.test.ts
+- packages/a-day/tests/unit/state.test.ts
+- scripts/d1-backup.ps1
+- scripts/test-d1-backup-preflight.ps1
+- scripts/test-d1-backup-recovery.ps1

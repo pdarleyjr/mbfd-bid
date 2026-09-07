@@ -27,13 +27,14 @@ export function evaluateEligibility(member: Member, rule: PositionRule): Eligibi
       member.serviceCredits?.filter((credit) => credit.serviceCode === requirement.serviceCode) ??
       [];
     const credit = credits.length === 1 ? credits[0] : undefined;
-    const known = credit?.verifiedMonths !== null && credit?.verifiedMonths !== undefined;
+    const verifiedMonths = credit?.verifiedMonths;
+    const known = verifiedMonths !== null && verifiedMonths !== undefined;
     reasons.push({
       code: known ? 'service_months' : 'service_evidence_unknown',
       label: known
-        ? `${requirement.serviceCode}: ${credit?.verifiedMonths} reviewed cumulative months; ${requirement.minimumMonths} required`
+        ? `${requirement.serviceCode}: ${verifiedMonths} reviewed cumulative months; ${requirement.minimumMonths} required`
         : `${requirement.serviceCode}: cumulative service evidence requires review`,
-      satisfied: known && (credit?.verifiedMonths ?? -1) >= requirement.minimumMonths,
+      satisfied: known && verifiedMonths >= requirement.minimumMonths,
     });
   }
   for (const gate of rule.requiredCriteria.custom) {

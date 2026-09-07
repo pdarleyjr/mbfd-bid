@@ -67,7 +67,7 @@ export function canPick(state: ADayState, memberId: number, aDay: ADayValue): Pi
 
   // Capacity check
   const meter = computeCapacityMeter(state, shift, aDay);
-  if (meter.isFull) {
+  if (meter.max !== undefined && meter.total >= meter.max) {
     return {
       ok: false,
       reasonCode: shift === 'D' ? 'WEEKDAY_FULL' : 'GROUP_FULL',
@@ -75,7 +75,7 @@ export function canPick(state: ADayState, memberId: number, aDay: ADayValue): Pi
         shift === 'D'
           ? `Weekday ${aDay} on D-shift is full (${meter.total}/${meter.max}).`
           : `Group ${aDay} on ${shift}-shift is full (${meter.total}/${meter.max}).`,
-      detail: { total: meter.total, max: meter.max ?? -1 },
+      detail: { total: meter.total, max: meter.max },
     };
   }
 
