@@ -25,8 +25,8 @@
     "production:baseline": "tsx scripts/production-baseline-bootstrap.ts"
   },
   "dependencies": {
-    "@cloudflare/puppeteer": "^1.1.0",
-    "@hono/zod-validator": "0.4.1",
+    "@cloudflare/puppeteer": "^1.4.0",
+    "@hono/zod-validator": "0.9.1",
     "@mbfd/a-day": "workspace:^",
     "@mbfd/eligibility": "workspace:^",
     "@mbfd/shared": "workspace:*",
@@ -46,8 +46,8 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.0.0",
-    "@cloudflare/workers-types": "5.20260820.1",
+    "@cloudflare/vitest-plugin": "1.1.4",
+    "@cloudflare/workers-types": "5.20260904.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6",
     "@types/pako": "^2",
@@ -57,7 +57,7 @@
     "tsx": "4.22.1",
     "typescript": "5.6.3",
     "vitest": "4.1.0",
-    "wrangler": "4.125.0",
+    "wrangler": "4.129.0",
     "write-excel-file": "4.1.1"
   }
 }
