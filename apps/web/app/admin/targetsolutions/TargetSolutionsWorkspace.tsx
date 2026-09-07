@@ -129,7 +129,9 @@ export function TargetSolutionsWorkspace() {
       setFailed(true);
       setMessage(
         e instanceof Error
-          ? e.message
+          ? e.message === 'csrf_bootstrap_failed'
+            ? 'The secure connection could not be renewed. Your saved import and completed groups are retained. Wait briefly and retry; if it continues, sign in again below and resume this import.'
+            : e.message
           : 'The action could not complete. Refresh the review before retrying.',
       );
     } finally {
@@ -280,6 +282,18 @@ export function TargetSolutionsWorkspace() {
           className="rounded border border-border bg-card p-4"
         >
           {message || list.error?.message || detail.error?.message || catalog.error?.message}
+          {failed && (
+            <span className="mt-2 block">
+              <a
+                className="underline"
+                href={`/api/auth/start?returnTo=${encodeURIComponent(`/admin/targetsolutions${id ? `?import=${id}` : ''}`)}`}
+              >
+                Sign in again and return to this import
+              </a>
+              . Completed groups will not be duplicated. Enter your review note and apply the
+              remaining records.
+            </span>
+          )}
         </p>
       )}
       {id && detail.isPending && <output>Loading the saved comparison…</output>}
@@ -636,7 +650,7 @@ export function TargetSolutionsWorkspace() {
                 Previous 100
               </Button>
               <span className="self-center text-sm">
-                Records {offset + 1}–{offset + batch.rows.length}
+                Records {batch.rows.length ? offset + 1 : 0}–{offset + batch.rows.length}
               </span>
               <Button
                 variant="secondary"
