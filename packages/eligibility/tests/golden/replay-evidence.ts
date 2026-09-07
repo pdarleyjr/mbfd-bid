@@ -7,6 +7,7 @@ export interface ReplayExpectation {
   caseId: string;
   employeeId: string;
   positionId: string;
+  ruleBookVersion?: string;
   sourceLocation: string;
   authority: 'approved_expectation' | 'observed_award';
   eligible: boolean;
@@ -26,9 +27,16 @@ export interface ReplayManifest {
     sourceLocation: string;
     authority: ReplayExpectation['authority'];
     positionId: string;
+    ruleBookVersion?: string;
     candidateEmployeeIds: string[];
     /** Each group is an unresolved tie. Group order is the expected priority. */
     expectedPriorityGroups: string[][];
+  }>;
+  amendments?: Array<{
+    caseId: string;
+    sourceLocation: string;
+    beforeCaseId: string;
+    afterCaseId: string;
   }>;
 }
 
@@ -43,12 +51,29 @@ export function replayEvidence(members: Member[], rules: PositionRule[], manifes
   if (manifest.v !== 1 || !manifest.source.trim() || manifest.cases.length === 0)
     throw new Error('Replay requires source provenance and nonzero expected cases');
   const byMember = new Map(members.map((m) => [m.employeeId, m]));
-  const byRule = new Map(rules.map((r) => [r.positionId, r]));
+  const byRule = new Map(rules.map((r) => [JSON.stringify([r.positionId, r.ruleBookVersion]), r]));
   if (byMember.size !== members.length || byRule.size !== rules.length)
     throw new Error('Replay contains ambiguous members or rules');
   const ids = new Set<string>();
   const failures: string[] = [];
+  const approvedFailures: string[] = [];
+  const observedDifferences: string[] = [];
   let evaluated = 0;
+  const resolveRule = (ref: { positionId: string; ruleBookVersion?: string }) => {
+    const candidates = rules.filter(
+      (rule) =>
+        rule.positionId === ref.positionId &&
+        (ref.ruleBookVersion === undefined || rule.ruleBookVersion === ref.ruleBookVersion),
+    );
+    if (candidates.length > 1) throw new Error('Replay must select an unambiguous rule version');
+    return candidates[0];
+  };
+  const recordDifference = (authority: ReplayExpectation['authority'], difference: string) => {
+    failures.push(difference);
+    (authority === 'approved_expectation' ? approvedFailures : observedDifferences).push(
+      difference,
+    );
+  };
   const validAuthority = (value: string) =>
     value === 'approved_expectation' || value === 'observed_award';
   for (const expected of manifest.cases) {
@@ -63,13 +88,14 @@ export function replayEvidence(members: Member[], rules: PositionRule[], manifes
       throw new Error('Replay expectations require explicit authority and finite scores');
     ids.add(expected.caseId);
     const member = byMember.get(expected.employeeId);
-    const rule = byRule.get(expected.positionId);
+    const rule = resolveRule(expected);
     if (!member || !rule)
       throw new Error(`Replay case ${expected.caseId} is missing a member or rule`);
     const actual = evaluateEligibility(member, rule);
     evaluated++;
     for (const key of ['eligible', 'points', 'soPoints', 'moPoints'] as const) {
-      if (actual[key] !== expected[key]) failures.push(`${expected.caseId}:${key}`);
+      if (actual[key] !== expected[key])
+        recordDifference(expected.authority, `${expected.caseId}:${key}`);
     }
   }
   for (const ordering of manifest.orderings ?? []) {
@@ -81,7 +107,7 @@ export function replayEvidence(members: Member[], rules: PositionRule[], manifes
     )
       throw new Error('Replay ordering requires unique provenance and explicit authority');
     ids.add(ordering.caseId);
-    const rule = byRule.get(ordering.positionId);
+    const rule = resolveRule(ordering);
     if (!rule) throw new Error(`Replay ordering ${ordering.caseId} is missing a rule`);
     if (
       ordering.candidateEmployeeIds.length < 2 ||
@@ -122,15 +148,41 @@ export function replayEvidence(members: Member[], rules: PositionRule[], manifes
       JSON.stringify(normalize(groups)) !==
       JSON.stringify(normalize(ordering.expectedPriorityGroups))
     )
-      failures.push(`${ordering.caseId}:ordering`);
+      recordDifference(ordering.authority, `${ordering.caseId}:ordering`);
+  }
+  const byCase = new Map(manifest.cases.map((entry) => [entry.caseId, entry]));
+  for (const amendment of manifest.amendments ?? []) {
+    if (!amendment.caseId.trim() || ids.has(amendment.caseId) || !amendment.sourceLocation.trim())
+      throw new Error('Replay amendment requires unique provenance');
+    ids.add(amendment.caseId);
+    const before = byCase.get(amendment.beforeCaseId);
+    const after = byCase.get(amendment.afterCaseId);
+    if (!before || !after) throw new Error('Replay amendment is missing a before or after case');
+    if (
+      before.employeeId !== after.employeeId ||
+      before.positionId !== after.positionId ||
+      !before.ruleBookVersion ||
+      !after.ruleBookVersion ||
+      before.ruleBookVersion === after.ruleBookVersion ||
+      before.authority !== after.authority
+    )
+      throw new Error(
+        'Replay amendment requires the same member, position and authority across explicit different rule versions',
+      );
   }
   return {
     evaluated,
     evaluatedOrderings: manifest.orderings?.length ?? 0,
+    evaluatedAmendments: manifest.amendments?.length ?? 0,
     observedCases: manifest.cases.filter((c) => c.authority === 'observed_award').length,
     approvedCases: manifest.cases.filter((c) => c.authority === 'approved_expectation').length,
     eligibleCases: manifest.cases.filter((c) => c.eligible).length,
     negativeCases: manifest.cases.filter((c) => !c.eligible).length,
+    approvedNegativeCases: manifest.cases.filter(
+      (c) => !c.eligible && c.authority === 'approved_expectation',
+    ).length,
+    approvedFailures,
+    observedDifferences,
     failures,
   };
 }

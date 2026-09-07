@@ -66,6 +66,17 @@ describe('parseCredentialsXlsx (normalized)', () => {
 });
 
 describe('parseLegacyWideMatrix', () => {
+  it('rejects worksheets without qualification headers after the metadata columns', async () => {
+    const result = await parseLegacyWideMatrix(
+      await toArrayBuffer([['Synthetic rule title', '', '', '']]),
+      { metadataColumns: 4 },
+    );
+    expect(result.ok).toEqual([]);
+    expect(result.errors[0]?.message).toBe(
+      'no qualification headers after metadata columns; verify the worksheet format',
+    );
+  });
+
   it('extracts credential names from header row of wide-matrix sheet', async () => {
     const buf = await toArrayBuffer([
       [
@@ -101,14 +112,15 @@ describe('parseLegacyWideMatrix', () => {
   });
 });
 
-describe('parseLegacyWideMatrix golden', () => {
+describe('historical workbook format verification', () => {
   it.skipIf(!process.env.LOCAL_GOLDEN_TESTS)(
-    'extracts >= 30 credential names from the 2025 wide-matrix xlsx',
+    'rejects the actual 2025 narrative rule workbook as a wide qualification matrix',
     async () => {
       const fs = await import('node:fs/promises');
       const path = await import('node:path');
       const file = path.resolve(
-        '../../../MBFD/Bid/2025 Bid Documents/eligible/2025 Bid position requirements and points.xlsx',
+        process.env.LOCAL_GOLDEN_WORKBOOK ??
+          '../../../MBFD/Bid/2025 Bid Documents/eligible/2025 Bid position requirements and points.xlsx',
       );
       let fileData: Buffer;
       try {
@@ -124,8 +136,15 @@ describe('parseLegacyWideMatrix golden', () => {
         fileData.byteOffset,
         fileData.byteOffset + fileData.byteLength,
       ) as ArrayBuffer;
+      const { createHash } = await import('node:crypto');
+      expect(createHash('sha256').update(fileData).digest('hex')).toBe(
+        '9cee1412fca281fbf09c0dde41a71c7618a9410fcc76edc0d956728d789926db',
+      );
       const result = await parseLegacyWideMatrix(buf, { metadataColumns: 4 });
-      expect(result.ok.length).toBeGreaterThanOrEqual(30);
+      expect(result.ok).toEqual([]);
+      expect(result.errors[0]?.message).toContain('no qualification headers');
+      // A format rejection is negative import coverage, not credential extraction
+      // or approved eligibility/scoring/outcome replay evidence.
     },
   );
 });

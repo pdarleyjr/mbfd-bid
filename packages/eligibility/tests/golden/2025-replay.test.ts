@@ -49,7 +49,10 @@ describe.skipIf(!enabled)('2025 source-evidenced replay', () => {
     const result = replayEvidence(members, rules, manifest);
     expect(result.evaluated).toBeGreaterThan(0);
     expect(result.negativeCases).toBeGreaterThan(0);
+    expect(result.approvedCases).toBeGreaterThan(0);
+    expect(result.approvedNegativeCases).toBeGreaterThan(0);
     expect(result.evaluatedOrderings).toBeGreaterThan(0);
+    expect(result.evaluatedAmendments).toBeGreaterThan(0);
     expect(result.failures).toEqual([]);
     console.info('Historical replay coverage', {
       sourcePicks: picks.length,

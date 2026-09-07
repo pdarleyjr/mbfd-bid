@@ -42,6 +42,73 @@ const manifest: ReplayManifest = {
 };
 
 describe('replay evidence completeness', () => {
+  it('checks both sides of an explicitly sourced amendment without reinterpreting the old rule', () => {
+    const amended = {
+      ...rule,
+      ruleBookVersion: '2025.2',
+      pointsPreference: { ...rule.pointsPreference, max: 2 },
+    };
+    const before = { ...expected, caseId: 'before', ruleBookVersion: rule.ruleBookVersion };
+    const after = {
+      ...expected,
+      caseId: 'after',
+      ruleBookVersion: amended.ruleBookVersion,
+      points: 2,
+    };
+    const evidence = {
+      ...manifest,
+      cases: [before, after],
+      amendments: [
+        {
+          caseId: 'amendment',
+          sourceLocation: 'synthetic approved amendment only',
+          beforeCaseId: 'before',
+          afterCaseId: 'after',
+        },
+      ],
+    };
+    const originalBytes = JSON.stringify(rule);
+    expect(replayEvidence([member], [rule, amended], evidence)).toMatchObject({
+      evaluated: 2,
+      evaluatedAmendments: 1,
+      failures: [],
+    });
+    expect(JSON.stringify(rule)).toBe(originalBytes);
+    expect(
+      replayEvidence([member], [rule, amended], {
+        ...evidence,
+        cases: [before, { ...after, points: 3 }],
+      }).approvedFailures,
+    ).toEqual(['after:points']);
+    expect(() =>
+      replayEvidence([member], [rule, amended], { ...evidence, cases: [before] }),
+    ).toThrow('missing a before or after');
+    expect(() =>
+      replayEvidence([member], [rule, amended], {
+        ...evidence,
+        cases: [before, { ...after, ruleBookVersion: rule.ruleBookVersion, points: 3 }],
+      }),
+    ).toThrow('explicit different rule versions');
+    expect(() => replayEvidence([member], [rule, amended], manifest)).toThrow(
+      'unambiguous rule version',
+    );
+  });
+  it('reports observed differences separately from approved expectation failures', () => {
+    const evidence = {
+      ...manifest,
+      cases: [
+        { ...expected, caseId: 'observed', authority: 'observed_award' as const, points: 5 },
+        { ...expected, caseId: 'approved', points: 4 },
+      ],
+    };
+    expect(replayEvidence([member], [rule], evidence)).toMatchObject({
+      observedCases: 1,
+      approvedCases: 1,
+      observedDifferences: ['observed:points'],
+      approvedFailures: ['approved:points'],
+      failures: ['observed:points', 'approved:points'],
+    });
+  });
   it('checks expected ordering and preserves unresolved ties without using an identity tie-break', () => {
     const second = { ...member, employeeId: 'synthetic-second' };
     const ordering = {

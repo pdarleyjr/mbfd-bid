@@ -78,6 +78,10 @@ export async function parseLegacyWideMatrix(
   }
   const header = rows[0];
   if (!Array.isArray(header)) return parseError('missing header row');
+  if (!header.slice(opts.metadataColumns).some((value) => String(value ?? '').trim()))
+    return parseError(
+      'no qualification headers after metadata columns; verify the worksheet format',
+    );
 
   const seen = new Set<string>();
   const ok: CredentialImportRow[] = [];
