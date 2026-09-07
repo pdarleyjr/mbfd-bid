@@ -7,6 +7,7 @@ import {
 } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { z } from 'zod';
 import { operationalDate } from '../../lib/operational-date.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { loadCurrentRosterProjection } from './current-roster.js';
@@ -154,6 +155,108 @@ router.post(
     });
     if (!saved) return c.json({ error: 'historical_archive_already_published' }, 409);
     return c.json({ year: archive.year, sha256, publishedAt, alreadyPublished: false }, 201);
+  },
+);
+
+router.get('/:year/revisions/:revision', async (c) => {
+  const { year, revision } = c.req.param();
+  if (!/^\d{4}$/.test(year) || !/^(?:[a-f0-9]{64}|[a-f0-9-]{36})$/.test(revision))
+    return c.json({ error: 'invalid_historical_revision' }, 400);
+  const object = await c.env.R2_EXPORTS.get(`${PREFIX}revisions/${year}/${revision}.json`);
+  if (!object) return c.json({ error: 'historical_revision_not_found' }, 404);
+  const receipt = HistoricalBidReceiptSchema.parse(await object.json());
+  if (
+    receipt.archive.year !== Number(year) ||
+    (receipt.revisionId ?? receipt.sha256) !== revision ||
+    (await archiveHash(receipt.archive)) !== receipt.sha256
+  )
+    return c.json({ error: 'historical_archive_integrity_failed' }, 409);
+  return c.json(receipt);
+});
+
+router.post(
+  '/:year/amendments',
+  bodyLimit({
+    maxSize: 1_048_576,
+    onError: (c) => c.json({ error: 'historical_archive_too_large' }, 413),
+  }),
+  async (c) => {
+    const parsed = z
+      .object({
+        archive: HistoricalBidSchema,
+        expectedSha256: z.string().regex(/^[a-f0-9]{64}$/),
+        reason: z.string().trim().min(1).max(500),
+      })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_historical_amendment' }, 400);
+    const { archive, expectedSha256, reason } = parsed.data;
+    if (String(archive.year) !== c.req.param('year') || archive.year >= new Date().getUTCFullYear())
+      return c.json({ error: 'invalid_historical_year' }, 409);
+    const key = `${PREFIX}${archive.year}.json`;
+    const existing = await c.env.R2_EXPORTS.get(key);
+    if (!existing) return c.json({ error: 'historical_bid_not_found' }, 404);
+    const previous = HistoricalBidReceiptSchema.parse(await existing.json());
+    if (
+      previous.archive.year !== archive.year ||
+      (await archiveHash(previous.archive)) !== previous.sha256
+    )
+      return c.json({ error: 'historical_archive_integrity_failed' }, 409);
+    const sha256 = await archiveHash(archive);
+    if (
+      previous.sha256 === sha256 &&
+      previous.amendment?.supersedesSha256 === expectedSha256 &&
+      previous.amendment.reason === reason
+    )
+      return c.json({ year: archive.year, sha256, alreadyPublished: true });
+    if (previous.sha256 !== expectedSha256)
+      return c.json({ error: 'historical_revision_changed_reload_before_amending' }, 409);
+    if (sha256 === previous.sha256) return c.json({ error: 'historical_archive_unchanged' }, 409);
+    const originalRevision = previous.revisionId ?? previous.sha256;
+    const originalKey = `${PREFIX}revisions/${archive.year}/${originalRevision}.json`;
+    const createOptions = {
+      onlyIf: new Headers({ 'If-None-Match': '*' }) as unknown as WorkerHeaders,
+      httpMetadata: { contentType: 'application/json' },
+    };
+    const preserved = await c.env.R2_EXPORTS.put(
+      originalKey,
+      JSON.stringify(previous),
+      createOptions,
+    );
+    if (!preserved) {
+      const original = await c.env.R2_EXPORTS.get(originalKey);
+      if (!original || JSON.stringify(await original.json()) !== JSON.stringify(previous))
+        return c.json({ error: 'historical_revision_preservation_failed' }, 409);
+    }
+    const receipt = HistoricalBidReceiptSchema.parse({
+      archive,
+      sha256,
+      publishedAt: new Date().toISOString(),
+      publishedBy: String(c.get('claims').sub),
+      revisionId: crypto.randomUUID(),
+      amendment: {
+        supersedesRevisionId: originalRevision,
+        supersedesSha256: previous.sha256,
+        reason,
+      },
+    });
+    const saved = await c.env.R2_EXPORTS.put(
+      `${PREFIX}revisions/${archive.year}/${receipt.revisionId}.json`,
+      JSON.stringify(receipt),
+      createOptions,
+    );
+    if (!saved) return c.json({ error: 'historical_revision_conflict' }, 409);
+    // Only the selected-year pointer changes; both receipt objects remain immutable.
+    const selected = await c.env.R2_EXPORTS.put(key, JSON.stringify(receipt), {
+      onlyIf: { etagMatches: existing.etag },
+      httpMetadata: { contentType: 'application/json' },
+    });
+    if (!selected)
+      return c.json({ error: 'historical_revision_changed_reload_before_amending' }, 409);
+    return c.json(
+      { year: archive.year, sha256, revisionId: receipt.revisionId, alreadyPublished: false },
+      201,
+    );
   },
 );
 

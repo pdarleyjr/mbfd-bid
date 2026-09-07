@@ -80,6 +80,8 @@ test('historical awards, current Days supplement and reviewed upload remain sepa
   };
   let writes = 0;
   let lastUpload: unknown;
+  let selectedArchive = archive;
+  let selectedHash = 'b'.repeat(64);
   const csrfToken = 'csrf_11111111-1111-1111-1111-111111111111';
   await page.route('**/api/auth/csrf', (route) => route.fulfill({ json: { token: csrfToken } }));
   await page.route('**/api/admin/historical-bids', async (route) => {
@@ -93,13 +95,24 @@ test('historical awards, current Days supplement and reviewed upload remain sepa
   await page.route('**/api/admin/historical-bids/2025', (route) =>
     route.fulfill({
       json: {
-        archive,
-        sha256: 'b'.repeat(64),
+        archive: selectedArchive,
+        sha256: selectedHash,
         publishedAt: '2026-09-07T12:00:00.000Z',
         publishedBy: '901',
       },
     }),
   );
+  await page.route('**/api/admin/historical-bids/2024', (route) =>
+    route.fulfill({ status: 404, json: { error: 'historical_bid_not_found' } }),
+  );
+  await page.route('**/api/admin/historical-bids/2025/amendments', (route) => {
+    expect(route.request().headers()['x-mbfd-csrf']).toBe(csrfToken);
+    writes++;
+    lastUpload = route.request().postDataJSON();
+    selectedArchive = (lastUpload as { archive: typeof archive }).archive;
+    selectedHash = 'c'.repeat(64);
+    return route.fulfill({ status: 201, json: { sha256: selectedHash } });
+  });
   await page.route('**/api/admin/historical-bids/2025/days-supplement', (route) =>
     route.fulfill({
       json: {
@@ -180,20 +193,37 @@ test('historical awards, current Days supplement and reviewed upload remain sepa
   await page.getByLabel('Historical archive JSON').setInputFiles({
     name: 'synthetic-history.json',
     mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify(archive)),
+    buffer: Buffer.from(JSON.stringify({ ...archive, year: 2024 })),
   });
   await expect(
-    page.getByRole('button', { name: 'Publish reviewed 2025 historical bid' }),
+    page.getByRole('button', { name: 'Publish reviewed 2024 historical bid' }),
   ).toBeVisible();
   expect(writes).toBe(0);
-  await page.getByRole('button', { name: 'Publish reviewed 2025 historical bid' }).click();
-  await expect(page.getByText(/2025 historical bid published/)).toBeVisible();
+  await page.getByRole('button', { name: 'Publish reviewed 2024 historical bid' }).click();
+  await expect(page.getByText(/2024 historical bid published/)).toBeVisible();
   expect(writes).toBe(1);
-  expect(lastUpload).toEqual(archive);
+  expect(lastUpload).toEqual({ ...archive, year: 2024 });
+  const amendment = { ...archive, notes: [...archive.notes, 'Synthetic source correction'] };
+  await page.getByLabel('Historical archive JSON').setInputFiles({
+    name: 'synthetic-amendment.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(amendment)),
+  });
+  await expect(
+    page.getByRole('button', { name: 'Publish reviewed 2025 amendment' }),
+  ).toBeDisabled();
+  await page.getByLabel('Amendment reason').fill('Reviewed synthetic correction');
+  await page.getByRole('button', { name: 'Publish reviewed 2025 amendment' }).click();
+  await expect(page.getByText(/2025 historical bid published/)).toBeVisible();
+  expect(lastUpload).toEqual({
+    archive: amendment,
+    expectedSha256: 'b'.repeat(64),
+    reason: 'Reviewed synthetic correction',
+  });
   await page.goto('/admin/bid-board?view=upcoming&year=2026&shift=A');
   await expect(page.getByText('2026 prepared seat', { exact: true })).toBeVisible();
   await expect(page.getByText('Historical Image Winner', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Current Official Occupant', { exact: true })).toHaveCount(0);
-  expect(writes).toBe(1);
+  expect(writes).toBe(2);
   expect(errors).toEqual([]);
 });

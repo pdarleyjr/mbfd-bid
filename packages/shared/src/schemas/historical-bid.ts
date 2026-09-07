@@ -79,6 +79,15 @@ export const HistoricalBidReceiptSchema = z
     sha256,
     publishedAt: z.string().datetime(),
     publishedBy: z.string().min(1),
+    revisionId: z.string().uuid().optional(),
+    amendment: z
+      .object({
+        supersedesRevisionId: z.string().regex(/^(?:[a-f0-9]{64}|[a-f0-9-]{36})$/),
+        supersedesSha256: sha256,
+        reason: text,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type HistoricalBid = z.infer<typeof HistoricalBidSchema>;

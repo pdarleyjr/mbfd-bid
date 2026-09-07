@@ -14,7 +14,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { type HistoricalBid, HistoricalBidReceiptSchema, HistoricalBidSchema } from '@mbfd/shared';
+import {
+  type HistoricalBid,
+  type HistoricalBidReceipt,
+  HistoricalBidReceiptSchema,
+  HistoricalBidSchema,
+} from '@mbfd/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -110,7 +115,7 @@ export function HistoricalBidPanel({
 }: { year: number; shift: string; search: string }) {
   const archive = useQuery({
     queryKey: ['admin', 'historical-bids', year],
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 30_000,
     queryFn: async () => {
       const response = await fetch(`/api/admin/historical-bids/${year}`, {
         credentials: 'include',
@@ -156,6 +161,18 @@ export function HistoricalBidPanel({
             <p>{archive.data.archive.label}</p>
             <p>Published {new Date(archive.data.publishedAt).toLocaleString()}</p>
             <p className="break-all">Archive SHA-256: {archive.data.sha256}</p>
+            {archive.data.amendment && (
+              <div className="mt-3">
+                <p>Amendment: {archive.data.amendment.reason}</p>
+                <a
+                  className="text-info underline"
+                  download
+                  href={`/api/admin/historical-bids/${year}/revisions/${archive.data.amendment.supersedesRevisionId}`}
+                >
+                  Download preserved previous revision
+                </a>
+              </div>
+            )}
             {archive.data.archive.sources.map((source) => (
               <p key={source.id} className="mt-2 break-all">
                 {source.name} · SHA-256 {source.sha256}
@@ -229,14 +246,16 @@ export function HistoricalBidImport() {
   const [result, setResult] = useState('');
   const [busy, setBusy] = useState(false);
   const [previewShift, setPreviewShift] = useState('A');
+  const [reviewedExisting, setReviewedExisting] = useState<HistoricalBidReceipt | null>(null);
+  const [amendmentReason, setAmendmentReason] = useState('');
   return (
     <details className="rounded-lg border border-border bg-card p-4">
       <summary className="min-h-11 cursor-pointer font-semibold">
         Import historical bid results
       </summary>
       <p className="mb-4 text-sm text-muted-foreground">
-        Review a documentary archive before publishing. Published historical years cannot be
-        replaced here. Current rosters, annual preparation and live sessions are maintained
+        Review a documentary archive before publishing. Amendments require a reason and preserve
+        every earlier revision. Current rosters, annual preparation and live sessions are maintained
         separately.
       </p>
       <Label>
@@ -249,6 +268,8 @@ export function HistoricalBidImport() {
             setDraft(null);
             setError('');
             setResult('');
+            setReviewedExisting(null);
+            setAmendmentReason('');
             const file = event.target.files?.[0];
             if (!file) return;
             if (file.size > 1_048_576) {
@@ -256,11 +277,25 @@ export function HistoricalBidImport() {
               return;
             }
             try {
-              setDraft(HistoricalBidSchema.parse(JSON.parse(await file.text())));
+              setBusy(true);
+              const parsed = HistoricalBidSchema.parse(JSON.parse(await file.text()));
+              const response = await fetch(`/api/admin/historical-bids/${parsed.year}`, {
+                credentials: 'include',
+                cache: 'no-store',
+              });
+              if (response.ok)
+                setReviewedExisting(HistoricalBidReceiptSchema.parse(await response.json()));
+              else if (response.status !== 404)
+                throw new Error(
+                  'Could not verify the current historical revision. Reload and try again.',
+                );
+              setDraft(parsed);
             } catch {
               setError(
                 'The file is not a valid historical bid archive. Review the source format and required fields.',
               );
+            } finally {
+              setBusy(false);
             }
           }}
         />
@@ -287,19 +322,60 @@ export function HistoricalBidImport() {
             ))}
           </div>
           <HistoricalSeats archive={draft} shift={previewShift} search="" />
+          {reviewedExisting && (
+            <div className="space-y-3">
+              <p className="break-all text-sm">
+                Amending archive {reviewedExisting.sha256}. The previous revision will be preserved.
+              </p>
+              <p className="text-sm">
+                {
+                  draft.seats.filter(
+                    (seat) =>
+                      JSON.stringify(seat) !==
+                      JSON.stringify(
+                        reviewedExisting.archive.seats.find((previous) => previous.id === seat.id),
+                      ),
+                  ).length
+                }{' '}
+                changed source rows
+              </p>
+              <Label>
+                Amendment reason
+                <Input
+                  value={amendmentReason}
+                  maxLength={500}
+                  disabled={busy}
+                  onChange={(event) => setAmendmentReason(event.target.value)}
+                />
+              </Label>
+            </div>
+          )}
           <Button
             type="button"
-            disabled={busy}
+            disabled={busy || Boolean(reviewedExisting && !amendmentReason.trim())}
             onClick={async () => {
               setBusy(true);
               setError('');
               try {
-                const response = await fetch('/api/admin/historical-bids', {
-                  method: 'POST',
-                  credentials: 'include',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(draft),
-                });
+                const response = await fetch(
+                  reviewedExisting
+                    ? `/api/admin/historical-bids/${draft.year}/amendments`
+                    : '/api/admin/historical-bids',
+                  {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(
+                      reviewedExisting
+                        ? {
+                            archive: draft,
+                            expectedSha256: reviewedExisting.sha256,
+                            reason: amendmentReason.trim(),
+                          }
+                        : draft,
+                    ),
+                  },
+                );
                 const body = (await response.json()) as { error?: string; sha256?: string };
                 if (!response.ok)
                   throw new Error(
@@ -315,7 +391,11 @@ export function HistoricalBidImport() {
               }
             }}
           >
-            {busy ? 'Publishing…' : `Publish reviewed ${draft.year} historical bid`}
+            {busy
+              ? 'Publishing…'
+              : reviewedExisting
+                ? `Publish reviewed ${draft.year} amendment`
+                : `Publish reviewed ${draft.year} historical bid`}
           </Button>
         </div>
       )}
