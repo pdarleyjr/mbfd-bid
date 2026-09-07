@@ -245,6 +245,7 @@ describe('POST /api/admin/bid-session/:id/force-a-day frozen V3 member material'
           members: [
             {
               employeeId: '7',
+              memberId: 7,
               firstName: '',
               lastName: '',
               rank: 'FF',

@@ -3,6 +3,8 @@
 import { MBFD_MASTER_LOGO_PATH } from '@/components/BrandHeader';
 import { LogoutButton } from '@/components/LogoutButton';
 import { AdminSideNav } from '@/components/admin/AdminShell';
+import { BidYearContext } from '@/components/admin/BidYearContext';
+import { FeatureHelp } from '@/components/admin/FeatureHelp';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
@@ -60,7 +62,6 @@ export function AdminLayoutShell({
       // handoff during that state change; it belongs to the accepted new route.
       requestAnimationFrame(() => {
         mainContent.current?.focus();
-        navigationAccepted.current = false;
       });
     }
   }, [pathname, mobileNavOpen]);
@@ -183,6 +184,8 @@ export function AdminLayoutShell({
           className="admin-content min-w-0 px-4 py-6 outline-none sm:px-6 lg:px-8"
         >
           <Suspense fallback={<p className="text-muted-foreground">Loading workspace…</p>}>
+            <BidYearContext />
+            <FeatureHelp />
             {children}
           </Suspense>
         </main>
@@ -197,9 +200,13 @@ export function AdminLayoutShell({
               initialFocus={() =>
                 mobileNavigation.current?.querySelector<HTMLAnchorElement>('a[href]') ?? true
               }
-              finalFocus={() =>
-                navigationAccepted.current ? mainContent.current : mobileToggle.current
-              }
+              finalFocus={() => {
+                if (navigationAccepted.current) {
+                  mainContent.current?.focus();
+                  return false;
+                }
+                return mobileToggle.current;
+              }}
             >
               <Dialog.Title className="sr-only">Admin navigation</Dialog.Title>
               <Brand />

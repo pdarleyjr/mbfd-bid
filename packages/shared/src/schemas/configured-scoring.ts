@@ -1,12 +1,29 @@
 import { z } from 'zod';
 
 const CredentialToken = z.string().trim().min(1).max(160);
+const CalendarDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(
+    (v) => Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v,
+    'Valid calendar date required',
+  );
+const CompletionCredit = z
+  .object({
+    sourceRef: z.string().trim().min(4).max(1000),
+    effectiveFrom: CalendarDate,
+    effectiveThrough: CalendarDate,
+    memberIds: z.array(z.number().int().positive()).min(1).max(1000).optional(),
+  })
+  .strict()
+  .refine((v) => v.effectiveThrough >= v.effectiveFrom, 'Exception end must follow start');
 const ScoringItemSchema = z
   .object({
     credential: CredentialToken,
     alternatives: z.array(CredentialToken).max(50),
     requiresAll: z.array(CredentialToken).max(50),
     points: z.number().int().min(0).max(10000),
+    completionCredit: CompletionCredit.optional(),
   })
   .strict();
 const ScoringGroupSchema = z

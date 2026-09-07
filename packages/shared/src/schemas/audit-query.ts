@@ -16,6 +16,8 @@ const auditActionEnum = z.enum([
   'session_complete',
   'members_import',
   'credentials_import',
+  'targetsolutions_mapping',
+  'targetsolutions_apply',
   'positions_clone',
   'rule_book_clone',
   'bid_configuration_set',

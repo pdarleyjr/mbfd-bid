@@ -104,10 +104,10 @@ interface QualificationLifecycleWorkspaceProps {
 }
 
 const EVENT_KIND_LABELS: Record<QualificationEventKind, string> = {
-  CERTIFICATION_GAINED: 'Certification gained',
-  CERTIFICATION_EXPIRED: 'Certification expired',
-  CERTIFICATION_REVOKED: 'Certification revoked',
-  SPECIALTY_QUALIFIED: 'Specialty qualified',
+  CERTIFICATION_GAINED: 'Add, renew or correct certification',
+  CERTIFICATION_EXPIRED: 'Record certification expiration',
+  CERTIFICATION_REVOKED: 'Record certification revocation',
+  SPECIALTY_QUALIFIED: 'Record specialty qualification',
   SPECIALTY_EXPIRED: 'Specialty expired',
   SPECIALTY_REVOKED: 'Specialty revoked',
   SPECIALTY_REMOVED: 'Specialty removed',

@@ -14,7 +14,10 @@ import {
 import { operationalDate } from '../../lib/operational-date.js';
 import { isIsoCalendarDate } from '../../lib/personnel-lifecycle.js';
 import { decodeRuleBookRows } from '../../lib/position-rule.js';
-import { activeCredentialNamesByMemberAsOf } from '../../lib/qualification-lifecycle.js';
+import {
+  activeCredentialNamesByMemberAsOf,
+  completedCredentialNamesAsOf,
+} from '../../lib/qualification-lifecycle.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
 
@@ -130,6 +133,16 @@ router.post('/preview', zValidator('json', EligibilityPreviewSchema), async (c) 
       rankSeniority: member.rankSeniority ?? undefined,
       isProbationary: member.isProbationary,
       credentials: credentialNames.map((name) => ({ name })),
+      memberId: member.id,
+      scoringEvidence: {
+        evaluationOn: asOf,
+        completedCredentialNames: completedCredentialNamesAsOf({
+          memberId: member.id,
+          asOf,
+          legacyCredentials,
+          events: qualificationEvents.map((e) => ({ ...e, createdAt: e.createdAt.getTime() })),
+        }),
+      },
     },
     decodedRule,
   );

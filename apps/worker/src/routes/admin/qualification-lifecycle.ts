@@ -2,6 +2,11 @@ import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
+import { getDb } from '../../db/index.js';
+import {
+  loadBidEligibilityEvidence,
+  projectAnnualMemberEvidence,
+} from '../../lib/bid-eligibility-evidence.js';
 
 import { classifyCertificationReadiness } from '../../lib/certification-readiness.js';
 import { operationalDate } from '../../lib/operational-date.js';
@@ -163,7 +168,7 @@ async function all<T>(db: D1Database, query: string, ...bindings: unknown[]): Pr
   return result.results as T[];
 }
 
-function mapEvent(row: QualificationEventDbRow): QualificationLifecycleEvent | null {
+export function mapEvent(row: QualificationEventDbRow): QualificationLifecycleEvent | null {
   return normalizePersistedQualificationLifecycleEvent({
     id: row.id,
     memberId: row.member_id,
@@ -329,59 +334,38 @@ router.get('/readiness', async (c) => {
   const rawDays = Number(c.req.query('expiring_soon_days') ?? '30');
   const expiringSoonDays =
     Number.isInteger(rawDays) && rawDays >= 1 && rawDays <= 365 ? rawDays : 30;
-  const rows = await all<{
-    member_id: number;
-    first_name: string;
-    last_name: string;
-    rank: string;
-    credential_name: string | null;
-    specialty_code: string | null;
-    specialty_terminal_status: string | null;
-    kind: string;
-    effective_on: string;
-    expires_on: string | null;
-    evidence_source: string | null;
-    evidence_reference: string | null;
-    created_at: number | null;
-  }>(
-    c.env.DB,
-    `
-    SELECT member_record.id AS member_id, member_record.first_name, member_record.last_name, member_record.rank,
-           credential.name AS credential_name, event.specialty_code, event.specialty_terminal_status, event.kind, event.effective_on, event.expires_on,
-           event.evidence_source, event.evidence_reference, event.created_at
-      FROM member_qualification_events event
-      JOIN members member_record ON member_record.id = event.member_id
-      LEFT JOIN credentials credential ON credential.id = event.credential_id
-     WHERE event.effective_on <= ?
-     ORDER BY member_record.last_name, member_record.first_name, event.effective_on DESC, event.created_at DESC`,
-    asOf,
+  const evidence = await loadBidEligibilityEvidence(getDb(c.env.DB));
+  const projection = projectAnnualMemberEvidence(evidence, asOf, asOf);
+  if (!projection.ok) return c.json({ error: projection.error }, 409);
+  const rows = projection.members.flatMap((member) =>
+    [
+      ...member.certifications.map((q) => ({
+        ...q,
+        credential: q.name,
+        specialty: null,
+      })),
+      ...member.specialties.map((q) => ({ ...q, credential: null, specialty: q.code })),
+    ].map((q) => ({
+      memberId: member.memberId,
+      memberName: `${member.lastName}, ${member.firstName}`,
+      rank: member.rank,
+      credential: q.credential,
+      specialty: q.specialty,
+      status: q.status,
+      effectiveOn: q.effectiveOn,
+      expiresOn: q.expiresOn,
+      evidenceSource: q.evidenceSource ?? null,
+      evidenceReference: q.evidenceReference ?? null,
+      changedAt: q.changedAt === null ? null : new Date(q.changedAt).toISOString(),
+    })),
   );
+
   return c.json(
     classifyCertificationReadiness({
       asOf,
       expiringSoonDays,
       annualEvaluationOn: null,
-      rows: rows.map((row) => ({
-        memberId: row.member_id,
-        memberName: `${row.last_name}, ${row.first_name}`,
-        rank: row.rank,
-        credential: row.credential_name,
-        specialty: row.specialty_code,
-        status:
-          row.specialty_terminal_status === 'EXPIRED' || row.kind === 'CERTIFICATION_EXPIRED'
-            ? 'expired'
-            : row.specialty_terminal_status === 'REVOKED' || row.kind === 'CERTIFICATION_REVOKED'
-              ? 'revoked'
-              : row.specialty_terminal_status === 'REMOVED'
-                ? 'removed'
-                : 'active',
-        effectiveOn: row.effective_on,
-        expiresOn: row.expires_on,
-        evidenceSource: row.evidence_source,
-        evidenceReference: row.evidence_reference,
-        changedAt:
-          row.created_at === null ? null : new Date(row.created_at).toISOString().slice(0, 10),
-      })),
+      rows,
     }),
   );
 });

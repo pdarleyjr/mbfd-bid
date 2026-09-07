@@ -430,7 +430,7 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
   await expect(page.getByRole('status').filter({ hasText: 'Source review saved.' })).toBeVisible();
   expect(checkpointWrites).toHaveLength(2);
   expect(checkpointWrites[0]).toEqual(checkpointWrites[1]);
-  await page.getByRole('button', { name: /Stage 7 Rehearse and freeze/ }).click();
+  await page.getByRole('button', { name: /Stage 7 Practice and approve/ }).click();
   await page
     .getByRole('button', { name: 'Create Mock from reviewed configuration', exact: true })
     .click();
@@ -451,7 +451,7 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
     expected_source_revision: 4,
   });
   await expect(
-    page.getByRole('button', { name: 'Freeze reviewed annual plan', exact: true }),
+    page.getByRole('button', { name: 'Approve reviewed bid setup', exact: true }),
   ).toBeDisabled();
   for (const width of [390, 820, 1440]) {
     await page.setViewportSize({ width, height: 1000 });

@@ -1,4 +1,5 @@
 'use client';
+import { WorkingDraftPanel } from '@/components/admin/WorkingDraftPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -200,7 +201,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const formFingerprint = JSON.stringify({
+  const formState = {
     language,
     policyRevision,
     stages,
@@ -214,7 +215,8 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
     aDay,
     refs,
     reason,
-  });
+  };
+  const formFingerprint = JSON.stringify(formState);
   const [savedFingerprint, setSavedFingerprint] = useState(formFingerprint);
   useUnsavedChanges(savedFingerprint !== formFingerprint, 'annual operating policy');
   const sourceQuery = useQuery({
@@ -636,7 +638,9 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
         <span
           className={`rounded-full border px-3 py-1 text-xs font-bold ${ready ? 'border-success/40 text-success' : 'border-warning/40 text-warning'}`}
         >
-          {ready ? 'READY TO SAVE DRAFT' : 'NOT CONFIGURED — BLOCKING'}
+          {ready
+            ? 'READY TO SAVE DRAFT'
+            : 'EDITING FORM INCOMPLETE — saved policy history is shown below'}
         </span>
       </header>
       {loadError || sourceError ? (
@@ -645,6 +649,37 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
         </p>
       ) : null}
 
+      <WorkingDraftPanel
+        draftKey={`annual-policy:${year}`}
+        value={{ ...formState, source }}
+        dirty={savedFingerprint !== formFingerprint}
+        onRestore={(draft) => {
+          if (
+            !Array.isArray(draft.stages) ||
+            !Array.isArray(draft.specialties) ||
+            !draft.dispositions ||
+            !draft.permissions ||
+            !draft.aDay ||
+            !draft.refs ||
+            typeof draft.language !== 'string'
+          )
+            throw new Error('Invalid saved draft');
+          setLanguage(draft.language);
+          setPolicyRevision(draft.policyRevision);
+          setStages(draft.stages);
+          setPermissions(draft.permissions);
+          setDispositions(draft.dispositions);
+          setMinimumAttempts(draft.minimumAttempts);
+          setTimingMode(draft.timingMode);
+          setDurationSeconds(draft.durationSeconds);
+          setContactEvidenceRequired(draft.contactEvidenceRequired);
+          setSpecialties(draft.specialties);
+          setADay(draft.aDay);
+          setRefs(draft.refs);
+          setReason(draft.reason);
+          if (draft.source) setSource(draft.source);
+        }}
+      />
       <form className="space-y-6" onSubmit={saveDraft}>
         <section className="grid gap-4 rounded-lg border border-border bg-card p-5 lg:grid-cols-2">
           <Label>
@@ -849,7 +884,9 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
         </section>
 
         <section className="rounded-lg border border-border bg-card p-5">
-          <h2 className="font-heading text-xl text-foreground">Disposition rules</h2>
+          <h2 className="font-heading text-xl text-foreground">
+            What happens when a member does not select?
+          </h2>
           <p className="text-sm text-muted-foreground">
             Every row blocks readiness until Command Staff marks it configured.
           </p>
@@ -859,86 +896,94 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
               return (
                 <fieldset key={name} className="rounded border border-border p-3">
                   <legend className="px-2 font-mono text-sm text-foreground">{name}</legend>
-                  <div className="flex flex-wrap gap-4 text-sm text-foreground">
-                    <Label>
-                      <Input
-                        type="checkbox"
-                        checked={rule.configured}
-                        onChange={(event) =>
-                          setDispositions((current) => ({
-                            ...current,
-                            [name]: { ...rule, configured: event.target.checked },
-                          }))
-                        }
-                      />{' '}
-                      Configured
-                    </Label>
-                    {(
-                      [
-                        'advances',
-                        'returns',
-                        'retainsLaterSelectionRights',
-                        'terminal',
-                        'requiresReason',
-                        'requiresEvidence',
-                      ] as const
-                    ).map((field) => (
-                      <Label key={field}>
+                  <p className="my-3 text-sm">
+                    {!rule.configured
+                      ? 'Needs a reviewed decision.'
+                      : `${rule.advances ? 'Move to the next bidder.' : 'Keep the current turn.'} ${rule.returns ? `Return during ${stages.find((s) => s.id === rule.returnStageId)?.label || rule.returnStageId || 'a stage that must be selected'}.` : 'No scheduled return.'} ${rule.retainsLaterSelectionRights ? 'Later selection rights are retained.' : 'Later selection rights are not retained.'} ${rule.terminal ? 'Participation ends.' : ''} ${rule.requiresReason ? 'A reason is required.' : ''} ${rule.requiresEvidence ? 'Supporting evidence is required.' : ''}`}
+                  </p>
+                  <details>
+                    <summary>Edit the reviewed outcome and evidence requirements</summary>
+                    <div className="flex flex-wrap gap-4 text-sm text-foreground">
+                      <Label>
                         <Input
                           type="checkbox"
-                          checked={rule[field]}
+                          checked={rule.configured}
                           onChange={(event) =>
                             setDispositions((current) => ({
                               ...current,
-                              [name]: { ...rule, [field]: event.target.checked },
+                              [name]: { ...rule, configured: event.target.checked },
                             }))
                           }
                         />{' '}
-                        {
-                          {
-                            advances: 'Advance to the next bidder',
-                            returns: 'Return in another stage',
-                            retainsLaterSelectionRights: 'Keep later selection rights',
-                            terminal: 'End this member’s participation',
-                            requiresReason: 'Reason required',
-                            requiresEvidence: 'Evidence required',
-                          }[field]
-                        }
+                        Configured
                       </Label>
-                    ))}
-                  </div>
-                  {rule.returns ? (
-                    <NativeSelect
-                      aria-label={`${name} return stage`}
-                      value={rule.returnStageId}
+                      {(
+                        [
+                          'advances',
+                          'returns',
+                          'retainsLaterSelectionRights',
+                          'terminal',
+                          'requiresReason',
+                          'requiresEvidence',
+                        ] as const
+                      ).map((field) => (
+                        <Label key={field}>
+                          <Input
+                            type="checkbox"
+                            checked={rule[field]}
+                            onChange={(event) =>
+                              setDispositions((current) => ({
+                                ...current,
+                                [name]: { ...rule, [field]: event.target.checked },
+                              }))
+                            }
+                          />{' '}
+                          {
+                            {
+                              advances: 'Advance to the next bidder',
+                              returns: 'Return in another stage',
+                              retainsLaterSelectionRights: 'Keep later selection rights',
+                              terminal: 'End this member’s participation',
+                              requiresReason: 'Reason required',
+                              requiresEvidence: 'Evidence required',
+                            }[field]
+                          }
+                        </Label>
+                      ))}
+                    </div>
+                    {rule.returns ? (
+                      <NativeSelect
+                        aria-label={`${name} return stage`}
+                        value={rule.returnStageId}
+                        onChange={(event) =>
+                          setDispositions((current) => ({
+                            ...current,
+                            [name]: { ...rule, returnStageId: event.target.value },
+                          }))
+                        }
+                        className={inputClass}
+                      >
+                        <option value="">Select return stage</option>
+                        {stages.map((stage) => (
+                          <option key={stage.key} value={stage.id}>
+                            {stage.label || stage.id}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    ) : null}
+                    <Input
+                      aria-label={`${name} contact policy reference`}
+                      value={rule.contactPolicyReference}
                       onChange={(event) =>
                         setDispositions((current) => ({
                           ...current,
-                          [name]: { ...rule, returnStageId: event.target.value },
+                          [name]: { ...rule, contactPolicyReference: event.target.value },
                         }))
                       }
                       className={inputClass}
-                    >
-                      <option value="">Select return stage</option>
-                      {stages.map((stage) => (
-                        <option key={stage.key} value={stage.id}>
-                          {stage.label || stage.id}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  ) : null}
-                  <Input
-                    aria-label={`${name} contact policy reference`}
-                    value={rule.contactPolicyReference}
-                    onChange={(event) =>
-                      setDispositions((current) => ({
-                        ...current,
-                        [name]: { ...rule, contactPolicyReference: event.target.value },
-                      }))
-                    }
-                    className={inputClass}
-                    placeholder="Contact/evidence reference, if applicable"
-                  />
+                      placeholder="Contact/evidence reference, if applicable"
+                    />
+                  </details>
                 </fieldset>
               );
             })}
@@ -1352,7 +1397,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                         href={`/admin/annual-plan?year=${year}&stage=7` as Route}
                         className="inline-flex min-h-11 items-center text-info underline"
                       >
-                        Rehearse and freeze this annual plan
+                        Practice and approve this annual plan
                       </Link>
                     ) : (
                       <AnnualPolicyPublishGate

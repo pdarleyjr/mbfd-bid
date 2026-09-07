@@ -13,6 +13,8 @@ export interface Member {
   rankSeniority: number | undefined;
   isProbationary: boolean;
   credentials: Credential[];
+  memberId?: number;
+  scoringEvidence?: { evaluationOn: string; completedCredentialNames: string[] } | undefined;
   serviceCredits?: {
     serviceCode: string;
     verifiedMonths: number | null;
@@ -64,7 +66,20 @@ export interface PointsPreference {
 export interface ScoringGroup {
   id: string;
   cap: number | null;
-  items: { credential: string; alternatives: string[]; requiresAll: string[]; points: number }[];
+  items: {
+    credential: string;
+    alternatives: string[];
+    requiresAll: string[];
+    points: number;
+    completionCredit?:
+      | {
+          sourceRef: string;
+          effectiveFrom: string;
+          effectiveThrough: string;
+          memberIds?: number[] | undefined;
+        }
+      | undefined;
+  }[];
 }
 
 export type TieBreakKey = 'points' | 'so_points' | 'mo_points' | 'rsc_seniority' | 'rank_seniority';

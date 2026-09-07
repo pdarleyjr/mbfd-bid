@@ -24,7 +24,7 @@ export interface CatalogEntry {
 
 export const CATALOG_SELECT = `SELECT c.id, COALESCE(meta.display_name, c.name) AS name,
   c.name AS policyName, c.fy_points_default AS fyPointsDefault,
-  (SELECT count(*) FROM member_credentials mc WHERE mc.credential_id = c.id) AS holderCount,
+  (SELECT count(DISTINCT member_id) FROM (SELECT member_id,credential_id FROM member_credentials UNION SELECT member_id,credential_id FROM member_qualification_events WHERE credential_id IS NOT NULL) refs WHERE refs.credential_id=c.id) AS holderCount,
   COALESCE(meta.revision, 0) AS revision, meta.retired_on AS retiredOn
   FROM credentials c LEFT JOIN credential_catalog_metadata meta ON meta.credential_id = c.id`;
 

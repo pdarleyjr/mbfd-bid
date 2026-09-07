@@ -25,6 +25,12 @@ interface MemberRow {
 interface MemberDetailResponse {
   member: MemberRow;
   credentials?: Array<{ id: number; name: string }>;
+  qualifications?: Array<{
+    credentialId: number;
+    name: string;
+    status: string;
+    expiresOn: string | null;
+  }>;
 }
 
 const RANK_LABELS: Record<string, string> = {
@@ -68,7 +74,12 @@ export default async function MemberDetailPage({
 
   const { id } = await params;
   let member: MemberRow | null = null;
-  let memberCredentials: Array<{ id: number; name: string }> = [];
+  let memberCredentials: Array<{
+    credentialId: number;
+    name: string;
+    status: string;
+    expiresOn: string | null;
+  }> = [];
 
   try {
     const res = await serverWorkerFetch(`/api/admin/members/${id}`);
@@ -83,7 +94,7 @@ export default async function MemberDetailPage({
 
     const data = (await res.json()) as MemberDetailResponse;
     member = data.member;
-    memberCredentials = data.credentials ?? [];
+    memberCredentials = data.qualifications ?? [];
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error('Member fetch failed');
@@ -152,20 +163,24 @@ export default async function MemberDetailPage({
       </dl>
 
       <section className="mt-8">
-        <h2 className="font-heading text-lg text-foreground">Legacy credential references</h2>
+        <h2 className="font-heading text-lg text-foreground">Current qualifications</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          These references do not establish current qualification. Review the effective-dated
-          qualification lifecycle for status, expiration, evidence, and history.
+          Status reflects the current dated record. Open Update qualifications to inspect the
+          evidence, renew a certificate or correct a date. Approved bid results remain preserved.
         </p>
         {memberCredentials.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">
-            No legacy credential references on file.
+            No current qualification records are available. Review the member’s history or import
+            credentials.
           </p>
         ) : (
           <ul className="mt-3 flex flex-wrap gap-2">
             {memberCredentials.map((cred) => (
-              <li key={cred.id} className="rounded bg-card px-2 py-1 text-sm text-foreground">
-                {cred.name}
+              <li
+                key={cred.credentialId}
+                className="rounded bg-card px-2 py-1 text-sm text-foreground"
+              >
+                {cred.name} · {cred.status} · Expiration: {cred.expiresOn ?? 'not recorded'}
               </li>
             ))}
           </ul>

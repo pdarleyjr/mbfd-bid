@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 interface StepUpProviderProps {
   children: ReactNode;
@@ -23,6 +23,7 @@ function isAdminApiRequest(input: FetchInput): boolean {
 }
 
 export function StepUpProvider({ children }: StepUpProviderProps) {
+  const [draftSaveFailed, setDraftSaveFailed] = useState(false);
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
 
@@ -38,6 +39,16 @@ export function StepUpProvider({ children }: StepUpProviderProps) {
         .catch(() => null)) as { error?: string } | null;
       if (body?.error !== 'step_up_required') return response;
 
+      const pendingDrafts: Promise<unknown>[] = [];
+      window.dispatchEvent(new CustomEvent('mbfd-before-step-up', { detail: pendingDrafts }));
+      const outcome = await Promise.race([
+        Promise.allSettled(pendingDrafts),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+      ]);
+      if (outcome === null || outcome.some((result) => result.status === 'rejected')) {
+        setDraftSaveFailed(true);
+        return response;
+      }
       window.location.assign(
         stepUpAuthenticationPath(window.location.pathname, window.location.search),
       );
@@ -49,5 +60,23 @@ export function StepUpProvider({ children }: StepUpProviderProps) {
     };
   }, []);
 
-  return children;
+  return (
+    <>
+      {draftSaveFailed && (
+        <aside role="alert" className="m-4 rounded border border-warning p-4">
+          Your unfinished work could not be saved, so this page has been kept open.{' '}
+          <a
+            className="underline"
+            href="/api/auth/start?returnTo=%2Fadmin"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Sign in again in a new tab
+          </a>
+          , then return here and retry saving.
+        </aside>
+      )}
+      {children}
+    </>
+  );
 }

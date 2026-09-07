@@ -437,6 +437,7 @@ describe('admin credentials routes', () => {
     );
     expect(holders.status).toBe(200);
     expect(await holders.json()).toEqual({
+      asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       credential: { id: 41, name: 'Hazmat Technician', fyPointsDefault: 3 },
       holders: [
         {
@@ -446,10 +447,12 @@ describe('admin credentials routes', () => {
           lastName: 'Operator',
           historyHref: '/admin/personnel/qualifications?memberId=9',
           legacyReference: true,
+          status: 'active',
+          expiresOn: null,
         },
       ],
       lifecycleNotice:
-        'Legacy credential references do not establish current qualification status.',
+        'Status reflects current dated qualification evidence. Open history to inspect sources and renewals.',
     });
   });
 });

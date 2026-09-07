@@ -533,6 +533,7 @@ function OnboardingInput(props: {
  * reviewed onboarding; they are never retained by the server.
  */
 export function TeleStaffOperatorWorkspace() {
+  const [baselineYear, setBaselineYear] = useState(new Date().getFullYear());
   const refreshProjections = usePersonnelProjectionRefresh();
   const [file, setFile] = useState<File | null>(null);
   const [sourceKind, setSourceKind] = useState<TeleStaffSourceKind | ''>('');
@@ -941,7 +942,7 @@ export function TeleStaffOperatorWorkspace() {
     if (!baselineConfirmationRequired) {
       setBaselineConfirmationRequired(true);
       setNotice(
-        'Review the committed official import, then confirm the 2026 staffing baseline acceptance below.',
+        `Review the committed official import, then confirm the ${baselineYear} staffing baseline acceptance below.`,
       );
       return;
     }
@@ -959,12 +960,12 @@ export function TeleStaffOperatorWorkspace() {
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            'Idempotency-Key': `baseline-acceptance-2026-${detail.import.id}`,
+            'Idempotency-Key': `baseline-acceptance-${baselineYear}-${detail.import.id}`,
           },
           body: JSON.stringify({
-            bid_year: 2026,
+            bid_year: baselineYear,
             supersede_existing: true,
-            reason: 'Operator-designated 2026 staffing baseline after reviewed TeleStaff apply.',
+            reason: `Operator-designated ${baselineYear} staffing baseline after reviewed TeleStaff apply.`,
           }),
         },
       );
@@ -990,10 +991,10 @@ export function TeleStaffOperatorWorkspace() {
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice(
         result.idempotent
-          ? 'The existing 2026 staffing baseline acceptance was confirmed.'
+          ? `The existing ${baselineYear} staffing baseline acceptance was confirmed.`
           : result.supersededAcceptanceId === null
-            ? 'The 2026 staffing baseline was accepted with the server-calculated completeness result below.'
-            : 'The selected import is now the 2026 staffing baseline. The previous acceptance remains preserved as superseded history.',
+            ? `The ${baselineYear} staffing baseline was accepted with the server-calculated completeness result below.`
+            : `The selected import is now the ${baselineYear} staffing baseline. The previous acceptance remains preserved as superseded history.`,
       );
     } catch {
       setError('baseline_acceptance_unavailable');
@@ -1576,7 +1577,7 @@ export function TeleStaffOperatorWorkspace() {
           Annual baseline lifecycle
         </p>
         <h2 id="telestaff-baseline-heading" className="mt-1 font-heading text-xl text-foreground">
-          2026 staffing baseline
+          {baselineYear} staffing baseline
         </h2>
         <p className="mt-2 max-w-3xl text-sm text-foreground">
           A baseline can be accepted only from the selected committed official import. The server
@@ -1586,12 +1587,30 @@ export function TeleStaffOperatorWorkspace() {
         </p>
         {baselineConfirmationRequired ? (
           <p className="mt-3 rounded border border-warning/40 bg-warning-surface px-3 py-2 text-sm text-warning">
-            This writes an acceptance receipt to production D1 and supersedes the previous 2026
-            baseline if one exists. The previous receipt is retained for audit history, and no
+            This writes an acceptance receipt to production D1 and supersedes the previous baseline
+            for this year if one exists. The previous receipt is retained for audit history, and no
             TeleStaff writeback or Bid session is started.
           </p>
         ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Label>
+            Bid year
+            <Input
+              type="number"
+              min={2024}
+              max={2100}
+              value={baselineYear}
+              disabled={busy}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (Number.isInteger(value) && value >= 2024 && value <= 2100) {
+                  setBaselineYear(value);
+                  setBaselineConfirmationRequired(false);
+                  setBaselineAcceptance(null);
+                }
+              }}
+            />
+          </Label>
           <Button
             type="button"
             data-testid="telestaff-baseline-acceptance"
@@ -1600,8 +1619,8 @@ export function TeleStaffOperatorWorkspace() {
             className="min-h-11 rounded bg-warning px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {baselineConfirmationRequired
-              ? 'Confirm 2026 staffing baseline'
-              : 'Designate 2026 staffing baseline'}
+              ? `Confirm ${baselineYear} staffing baseline`
+              : `Designate ${baselineYear} staffing baseline`}
           </Button>
           {baselineAcceptance !== null && (
             <div

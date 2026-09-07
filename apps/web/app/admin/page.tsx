@@ -32,96 +32,42 @@ type ControlArea = {
 
 const CONTROL_AREAS: readonly ControlArea[] = [
   {
-    href: '/admin/staffing-structure',
-    title: 'Staffing Structure',
+    href: '/admin/members',
+    title: 'People',
+    description: 'Find a member, update qualifications and review service history.',
+    state: 'Year-round maintenance',
+    stateClassName: 'text-info bg-info-surface',
+  },
+  {
+    href: '/admin/targetsolutions',
+    title: 'Import credentials',
     description:
-      'Manage authorized seats, manning capacity, occupancy, and effective-dated retirement.',
-    state: 'Year-round control',
+      'Compare a TargetSolutions export and apply reviewed additions, renewals and date updates.',
+    state: 'Upload → Review → Apply',
     stateClassName: 'text-info bg-info-surface',
   },
   {
     href: '/admin/current-rosters',
-    title: 'Current Rosters',
-    description:
-      'Read the Bid-side staffing projection without treating vacancies as bid openings.',
-    state: 'Canonical projection',
-    stateClassName: 'text-info bg-info-surface',
-  },
-  {
-    href: '/admin/telestaff',
-    title: 'TeleStaff',
-    description: 'Review the controlled staffing-source intake and reconciliation boundary.',
-    state: 'Controlled reconciliation',
-    stateClassName: 'text-info bg-info-surface',
-  },
-  {
-    href: '/admin/members',
-    title: 'Members',
-    description: 'Review member and credential records separately from operational staffing.',
-    state: 'Administration',
-    stateClassName: 'text-info bg-info-surface',
-  },
-  {
-    href: '/admin/credentials',
-    title: 'Credentials & Specialty Points',
-    description:
-      'Maintain credential references and default informational points with lifecycle links.',
-    state: 'Catalog control',
-    stateClassName: 'text-info bg-info-surface',
-  },
-  {
-    href: '/admin/personnel',
-    title: 'Personnel Changes',
-    description:
-      'Record effective-dated hires, rank changes, transfers, separations, vacancies, and position changes.',
-    state: 'Effective-dated workflow',
-    stateClassName: 'text-info bg-info-surface',
-  },
-  {
-    href: '/admin/bid-setup',
-    title: 'Bid Setup',
-    description:
-      'Inspect rule books, positions, rules, and eligibility before a lifecycle decision.',
-    state: 'Configuration workspace',
-    stateClassName: 'text-info bg-info-surface',
-  },
-  {
-    href: '/admin/annual-policy',
-    title: 'Annual Policy',
-    description:
-      'Draft, review, publish, and supersede human-readable annual bid policy revisions.',
-    state: 'Versioned lifecycle',
-    stateClassName: 'text-info bg-info-surface',
-  },
-  {
-    href: '/admin/rehearsal',
-    title: 'Mock Bids',
-    description: 'Review rehearsal evidence without using mock activity as a staffing source.',
-    state: 'Isolated rehearsal',
-    stateClassName: 'text-info bg-info-surface',
-  },
-  {
-    href: '/admin/bid',
-    title: 'Live Bid & Advisory',
-    description:
-      'Open the guarded live-bid surface with deterministic explanations of authoritative state.',
-    state: 'Immediate read-only advisory',
+    title: 'Staffing',
+    description: 'Review assignments, maintain authorized positions and import TeleStaff changes.',
+    state: 'Positions and assignments',
     stateClassName: 'text-info bg-info-surface',
   },
   {
     href: '/admin/audit',
-    title: 'Results & Audit',
-    description: 'Review recorded outcomes, audit evidence, and existing exports.',
-    state: 'Review surface',
+    title: 'History & Reports',
+    description:
+      'Review recorded decisions, download results and apply reviewed final assignments.',
+    state: 'Preserved evidence',
     stateClassName: 'text-info bg-info-surface',
   },
   {
-    href: '/admin/system',
-    title: 'System/Integrations',
+    href: '/admin/docs',
+    title: 'Docs & Manual',
     description:
-      'See integration boundaries without changing infrastructure or publication settings.',
-    state: 'Read-only status',
-    stateClassName: 'text-warning bg-warning-surface',
+      'Search step-by-step instructions, explain a control or download the complete manual.',
+    state: 'Help for every work area',
+    stateClassName: 'text-info bg-info-surface',
   },
 ];
 
@@ -151,7 +97,7 @@ export default async function AdminDashboardPage() {
           id="admin-dashboard-heading"
           className="mt-2 font-heading text-3xl font-bold tracking-tight"
         >
-          Dashboard
+          Today
         </h1>
         <p className="mt-2 text-base text-muted-foreground">
           Manage your workforce, prepare the next annual bid, and review assignments. Welcome back,{' '}
@@ -165,11 +111,11 @@ export default async function AdminDashboardPage() {
               Annual preparation
             </p>
             <CardTitle className="text-2xl">
-              Prepare Next Bid <ArrowRight className="ml-2 inline h-5 w-5" aria-hidden="true" />
+              Annual Bid <ArrowRight className="ml-2 inline h-5 w-5" aria-hidden="true" />
             </CardTitle>
             <CardDescription className="max-w-lg text-sidebar-foreground">
               Start or resume your annual plan. Review seats, participants, qualifications and
-              policy, then rehearse and freeze the reviewed configuration.
+              policy, then practice and approve the setup.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -214,7 +160,7 @@ export default async function AdminDashboardPage() {
       <div>
         <div className="flex items-center gap-4">
           <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Control areas
+            Everyday tasks
           </h2>
           <span className="h-px flex-1 bg-border" />
         </div>

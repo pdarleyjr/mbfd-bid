@@ -779,7 +779,7 @@ describe('TeleStaffOperatorWorkspace', () => {
     await click(baselineButton);
     expect(baselineButton.textContent).toContain('Confirm 2026 staffing baseline');
     expect(container.textContent).toContain(
-      'This writes an acceptance receipt to production D1 and supersedes the previous 2026 baseline',
+      'This writes an acceptance receipt to production D1 and supersedes the previous baseline for this year',
     );
     expect(
       fetchMock.mock.calls.find(([input]) => String(input).endsWith('/baseline-acceptance')),
