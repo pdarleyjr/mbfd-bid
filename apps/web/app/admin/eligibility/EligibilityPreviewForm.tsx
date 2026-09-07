@@ -1,5 +1,8 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { type FormEvent, useState } from 'react';
 
 interface EligibilityReason {
@@ -90,13 +93,13 @@ export function EligibilityPreviewForm({
   return (
     <div className="mt-6">
       <form onSubmit={onSubmit} className="space-y-4">
-        <label className="block">
-          <span className="text-sm text-slate-300">Member</span>
-          <select
+        <Label className="block">
+          <span className="text-sm text-foreground">Member</span>
+          <NativeSelect
             value={memberId}
             onChange={(e) => setMemberId(e.target.value)}
             data-testid="eligibility-member-id"
-            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-white"
+            className="mt-1 block w-full rounded bg-card px-3 py-2 text-foreground"
             required
           >
             <option value="">Select a member</option>
@@ -105,15 +108,15 @@ export function EligibilityPreviewForm({
                 {member.lastName}, {member.firstName} — {member.rank}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-300">Position</span>
-          <select
+          </NativeSelect>
+        </Label>
+        <Label className="block">
+          <span className="text-sm text-foreground">Position</span>
+          <NativeSelect
             value={positionId}
             onChange={(e) => setPositionId(e.target.value)}
             data-testid="eligibility-position-id"
-            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-white"
+            className="mt-1 block w-full rounded bg-card px-3 py-2 text-foreground"
             required
           >
             <option value="">Select a configured position</option>
@@ -123,56 +126,58 @@ export function EligibilityPreviewForm({
                 {position.rankRequired})
               </option>
             ))}
-          </select>
-        </label>
-        <div className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
+          </NativeSelect>
+        </Label>
+        <div className="rounded border border-border bg-card px-3 py-2 text-sm text-foreground">
           <span className="font-medium">Selected annual configuration</span>
-          <span className="ml-2 text-slate-400">Rule book:</span>{' '}
-          <output data-testid="eligibility-rule-book-version" className="font-mono text-white">
+          <span className="ml-2 text-muted-foreground">Rule book:</span>{' '}
+          <output data-testid="eligibility-rule-book-version" className="font-mono text-foreground">
             {ruleBookVersion}
           </output>
-          <span className="ml-3 text-slate-400">Position template:</span>{' '}
-          <span className="font-mono text-white">{positionTemplateVersion}</span>
+          <span className="ml-3 text-muted-foreground">Position template:</span>{' '}
+          <span className="font-mono text-foreground">{positionTemplateVersion}</span>
         </div>
-        <button
+        <Button
           type="submit"
           disabled={loading}
-          className="rounded bg-red-700 px-4 py-2 text-white hover:bg-red-600 disabled:opacity-50"
+          className="rounded bg-destructive px-4 py-2 text-primary-foreground hover:bg-destructive disabled:opacity-50"
         >
           Evaluate
-        </button>
+        </Button>
       </form>
 
       {error !== null && (
-        <output aria-live="polite" className="mt-4 block text-sm text-red-400">
+        <output aria-live="polite" className="mt-4 block text-sm text-destructive">
           {error}
         </output>
       )}
 
       {result !== null && (
-        <div className="mt-6 rounded border border-slate-700 bg-slate-800 p-4">
+        <div className="mt-6 rounded border border-border bg-card p-4">
           <p className="text-sm">
-            <span className="text-slate-400">Eligible:</span>{' '}
+            <span className="text-muted-foreground">Eligible:</span>{' '}
             <span
-              className={`font-semibold ${result.eligible ? 'text-emerald-400' : 'text-red-400'}`}
+              className={`font-semibold ${result.eligible ? 'text-success' : 'text-destructive'}`}
             >
               {result.eligible ? 'YES' : 'NO'}
             </span>
           </p>
-          <p className="mt-1 text-sm text-slate-400">
-            Points: <span className="tabular-nums text-white">{result.points}</span>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Points: <span className="tabular-nums text-foreground">{result.points}</span>
           </p>
           <ul className="mt-3 space-y-1 text-sm">
             {result.reasons.map((r) => (
               <li key={r.code}>
                 <span
                   className={`mr-2 inline-block rounded px-1.5 py-0.5 text-xs ${
-                    r.satisfied ? 'bg-emerald-800 text-emerald-200' : 'bg-red-800 text-red-200'
+                    r.satisfied
+                      ? 'bg-success text-primary-foreground'
+                      : 'bg-destructive text-primary-foreground'
                   }`}
                 >
                   {r.code}
                 </span>
-                <span className="text-slate-200">{r.label}</span>
+                <span className="text-foreground">{r.label}</span>
               </li>
             ))}
           </ul>

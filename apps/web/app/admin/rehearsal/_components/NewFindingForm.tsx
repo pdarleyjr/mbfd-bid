@@ -1,5 +1,10 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import { type FormEvent, type ReactElement, useState } from 'react';
 
 interface Props {
@@ -48,15 +53,15 @@ export function NewFindingForm({ sessionIds }: Props): ReactElement {
     <form
       onSubmit={onSubmit}
       data-testid="new-finding-form"
-      className="space-y-3 rounded border border-stone-300 bg-white p-4"
+      className="space-y-3 rounded border border-border bg-card p-4"
     >
-      <h3 className="font-semibold text-stone-900">Submit Finding</h3>
-      <label className="block text-sm">
-        <span className="block text-stone-700">Session</span>
-        <select
+      <h3 className="font-semibold text-foreground">Submit Finding</h3>
+      <Label className="block text-sm">
+        <span className="block text-foreground">Session</span>
+        <NativeSelect
           value={bidSessionId}
           onChange={(e) => setBidSessionId(e.target.value)}
-          className="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1 font-mono text-sm text-stone-900"
+          className="mt-1 block w-full rounded border border-border bg-card px-2 py-1 font-mono text-sm text-foreground"
         >
           {sessionIds.length === 0 ? (
             <option value="">(no mock sessions)</option>
@@ -67,38 +72,38 @@ export function NewFindingForm({ sessionIds }: Props): ReactElement {
               </option>
             ))
           )}
-        </select>
-      </label>
-      <label className="block text-sm">
-        <span className="block text-stone-700">Note</span>
-        <textarea
+        </NativeSelect>
+      </Label>
+      <Label className="block text-sm">
+        <span className="block text-foreground">Note</span>
+        <Textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={4}
           maxLength={4000}
-          className="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1 text-sm text-stone-900 placeholder:text-stone-400"
+          className="mt-1 block w-full rounded border border-border bg-card px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground"
           placeholder="What did you observe?"
         />
-      </label>
-      <label className="block text-sm">
-        <span className="block text-stone-700">Screenshot R2 key (optional)</span>
-        <input
+      </Label>
+      <Label className="block text-sm">
+        <span className="block text-foreground">Screenshot R2 key (optional)</span>
+        <Input
           type="text"
           value={screenshotR2Key}
           onChange={(e) => setScreenshotR2Key(e.target.value)}
           maxLength={500}
-          className="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1 font-mono text-sm text-stone-900 placeholder:text-stone-400"
+          className="mt-1 block w-full rounded border border-border bg-card px-2 py-1 font-mono text-sm text-foreground placeholder:text-muted-foreground"
           placeholder="findings/2026/abc.png"
         />
-      </label>
-      <button
+      </Label>
+      <Button
         type="submit"
         disabled={busy || sessionIds.length === 0}
-        className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded bg-success px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
       >
         {busy ? 'Submitting…' : 'Submit Finding'}
-      </button>
-      {msg !== null ? <p className="text-sm text-stone-700">{msg}</p> : null}
+      </Button>
+      {msg !== null ? <p className="text-sm text-foreground">{msg}</p> : null}
     </form>
   );
 }

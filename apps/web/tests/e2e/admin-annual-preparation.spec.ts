@@ -239,12 +239,17 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
     }),
   ).toBeVisible({ timeout: 15_000 });
   await page
+    .getByRole('main')
     .getByLabel('Personnel and staffing effective date', { exact: true })
     .fill('2027-01-01');
-  await page.getByLabel('Credential evaluation date', { exact: true }).fill('2026-12-01');
-  await page.getByLabel('Turn timer (seconds)', { exact: true }).fill('90');
-  await page.getByLabel('Expected duration (days)', { exact: true }).fill('3');
   await page
+    .getByRole('main')
+    .getByLabel('Credential evaluation date', { exact: true })
+    .fill('2026-12-01');
+  await page.getByRole('main').getByLabel('Turn timer (seconds)', { exact: true }).fill('90');
+  await page.getByRole('main').getByLabel('Expected duration (days)', { exact: true }).fill('3');
+  await page
+    .getByRole('main')
     .getByLabel('Reason for adopting this draft', { exact: true })
     .fill('Synthetic reviewed adoption');
   await page
@@ -258,7 +263,7 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
     .click();
   await expect(page.getByRole('status').filter({ hasText: /fetch|network/i })).toBeVisible();
   await expect(
-    page.getByLabel('Personnel and staffing effective date', { exact: true }),
+    page.getByRole('main').getByLabel('Personnel and staffing effective date', { exact: true }),
   ).toHaveValue('2027-01-01');
   await page
     .getByRole('button', { name: 'Adopt reviewed draft into annual preparation', exact: true })
@@ -276,20 +281,26 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
     .getByRole('combobox', { name: 'Annual participation', exact: true })
     .selectOption('BIDDABLE');
   await page
+    .getByRole('main')
     .getByLabel('Reviewed source reference', { exact: true })
     .fill('Synthetic approved seat review');
-  await page.getByLabel('Reason', { exact: true }).fill('Synthetic annual participation review');
+  await page
+    .getByRole('main')
+    .getByLabel('Reason', { exact: true })
+    .fill('Synthetic annual participation review');
   await page.getByRole('button', { name: 'Save reviewed annual seat', exact: true }).click();
   await expect(
     page.getByRole('status').filter({ hasText: 'annual plan revision conflict' }),
   ).toBeVisible();
-  await expect(page.getByLabel('Reason', { exact: true })).toHaveValue(
+  await expect(page.getByRole('main').getByLabel('Reason', { exact: true })).toHaveValue(
     'Synthetic annual participation review',
   );
   await page
     .getByRole('button', { name: 'Review latest plan without discarding edits', exact: true })
     .click();
-  await expect(page.getByText('Refreshed rule revision 2;', { exact: false })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('Refreshed rule revision 2;', { exact: false }),
+  ).toBeVisible();
   expect(seatWrites).toHaveLength(1);
   for (const width of [390, 820, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -324,9 +335,13 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
   ]);
   await page.getByRole('button', { name: 'Remove from annual draft', exact: true }).click();
   await page
+    .getByRole('main')
     .getByLabel('Reviewed source reference', { exact: true })
     .fill('Synthetic authorized removal');
-  await page.getByLabel('Reason', { exact: true }).fill('Synthetic duplicate annual seat removal');
+  await page
+    .getByRole('main')
+    .getByLabel('Reason', { exact: true })
+    .fill('Synthetic duplicate annual seat removal');
   await page.getByRole('button', { name: 'Confirm reviewed removal', exact: true }).click();
   expect(removals).toHaveLength(0);
   await page
@@ -336,23 +351,26 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
     })
     .check();
   await page.getByRole('button', { name: 'Confirm reviewed removal', exact: true }).click();
-  await expect(page.getByText('No seats included yet.', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('No seats included yet.', { exact: true }),
+  ).toBeVisible();
   expect(removals[0]).toMatchObject({
     expected_source_revision: 3,
     confirm_remove: true,
     position_ids: ['annual-seat-1'],
   });
   await page.getByRole('button', { name: /Stage 6 Review and impact/ }).click();
-  await expect(page.getByText('Page 1 of 3', { exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByText('Page 1 of 3', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Next results', exact: true }).click();
   await page.getByRole('button', { name: 'Next results', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'synthetic-impact-seat-105 · Member 105', exact: true }),
   ).toBeVisible();
   await page
+    .getByRole('main')
     .getByLabel('Filter by position or member ID', { exact: true })
     .fill('synthetic-impact-seat-105');
-  await expect(page.getByText('Page 1 of 1', { exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByText('Page 1 of 1', { exact: true })).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export full review and impact', exact: true }).click();
   const download = await downloadPromise;
@@ -361,21 +379,32 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
   const exported = JSON.parse(await readFile(downloadPath, 'utf8'));
   expect(exported.review.impact.changed).toHaveLength(105);
   expect(exported.review.sourceRevision).toBe(4);
-  await page.getByLabel('Filter by position or member ID', { exact: true }).fill('');
+  await page
+    .getByRole('main')
+    .getByLabel('Filter by position or member ID', { exact: true })
+    .fill('');
   await page.getByRole('combobox', { name: 'Comparison', exact: true }).selectOption('evidence');
   await expect(
-    page.getByText('Upcoming evidence: Ineligible: Synthetic qualification expired', {
-      exact: true,
-    }),
+    page
+      .getByRole('main')
+      .getByText('Upcoming evidence: Ineligible: Synthetic qualification expired', {
+        exact: true,
+      }),
   ).toBeVisible();
   await page
     .getByRole('combobox', { name: 'Comparison baseline', exact: true })
     .selectOption('last_review');
-  await page.getByText('What changed (0 position changes)', { exact: true }).click();
+  await page
+    .getByRole('main')
+    .getByText('What changed (0 position changes)', { exact: true })
+    .click();
   await expect(
-    page.getByText('Compared with saved source revision 3.', { exact: true }),
+    page.getByRole('main').getByText('Compared with saved source revision 3.', { exact: true }),
   ).toBeVisible();
-  await page.getByLabel('Source review reason', { exact: true }).fill('Synthetic reviewed source');
+  await page
+    .getByRole('main')
+    .getByLabel('Source review reason', { exact: true })
+    .fill('Synthetic reviewed source');
   await page
     .getByRole('checkbox', {
       name: 'I reviewed the displayed source and configuration revisions.',
@@ -394,9 +423,9 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
   }
   await page.getByRole('button', { name: 'Save source review checkpoint', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: /fetch|network/i })).toBeVisible();
-  await expect(page.getByLabel('Source review reason', { exact: true })).toHaveValue(
-    'Synthetic reviewed source',
-  );
+  await expect(
+    page.getByRole('main').getByLabel('Source review reason', { exact: true }),
+  ).toHaveValue('Synthetic reviewed source');
   await page.getByRole('button', { name: 'Save source review checkpoint', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Source review saved.' })).toBeVisible();
   expect(checkpointWrites).toHaveLength(2);
@@ -411,7 +440,7 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
   ).toBeDisabled();
   await page.getByRole('button', { name: 'Retry same Mock creation request', exact: true }).click();
   await expect(
-    page.getByText('Created Mock: synthetic-mock-exact-retry.', { exact: false }),
+    page.getByRole('main').getByText('Created Mock: synthetic-mock-exact-retry.', { exact: false }),
   ).toBeVisible();
   expect(mocks).toHaveLength(2);
   expect(mocks[0]).toEqual(mocks[1]);

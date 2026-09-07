@@ -1,3 +1,13 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import { formatET } from '../../../lib/et-time';
 import { requireAdmin } from '../../../lib/require-admin';
 import { serverWorkerFetch } from '../../../lib/server-worker-fetch';
@@ -76,22 +86,22 @@ export default async function AuditPage({
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <h1 className="font-heading text-2xl text-white">Audit Log</h1>
+        <h1 className="font-heading text-2xl text-foreground">Audit Log</h1>
         <a
           href={`/api/admin/audit/export?${exportQs.toString()}`}
-          className="rounded border border-slate-600 px-3 py-1 text-sm text-slate-200 hover:border-slate-400"
+          className="rounded border border-border px-3 py-1 text-sm text-foreground hover:border-border"
         >
           Export CSV
         </a>
       </div>
 
       <form method="get" className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="block">
-          <span className="block text-xs text-slate-400">Action</span>
-          <select
+        <Label className="block">
+          <span className="block text-xs text-muted-foreground">Action</span>
+          <NativeSelect
             name="action"
             defaultValue={sp.action ?? ''}
-            className="mt-1 rounded bg-slate-800 px-3 py-1.5 text-sm text-white"
+            className="mt-1 rounded bg-card px-3 py-1.5 text-sm text-foreground"
           >
             <option value="">All</option>
             {AUDIT_ACTIONS.map((a) => (
@@ -99,80 +109,82 @@ export default async function AuditPage({
                 {a}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="block text-xs text-slate-400">From (ISO)</span>
-          <input
+          </NativeSelect>
+        </Label>
+        <Label className="block">
+          <span className="block text-xs text-muted-foreground">From (ISO)</span>
+          <Input
             type="datetime-local"
             name="from"
             defaultValue={sp.from ?? ''}
-            className="mt-1 rounded bg-slate-800 px-3 py-1.5 text-sm text-white"
+            className="mt-1 rounded bg-card px-3 py-1.5 text-sm text-foreground"
           />
-        </label>
-        <label className="block">
-          <span className="block text-xs text-slate-400">To (ISO)</span>
-          <input
+        </Label>
+        <Label className="block">
+          <span className="block text-xs text-muted-foreground">To (ISO)</span>
+          <Input
             type="datetime-local"
             name="to"
             defaultValue={sp.to ?? ''}
-            className="mt-1 rounded bg-slate-800 px-3 py-1.5 text-sm text-white"
+            className="mt-1 rounded bg-card px-3 py-1.5 text-sm text-foreground"
           />
-        </label>
-        <button
+        </Label>
+        <Button
           type="submit"
-          className="rounded bg-red-700 px-3 py-1.5 text-sm text-white hover:bg-red-600"
+          className="rounded bg-destructive px-3 py-1.5 text-sm text-primary-foreground hover:bg-destructive"
         >
           Filter
-        </button>
+        </Button>
       </form>
 
       {fetchError && (
-        <div className="mt-6 rounded-lg border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-200">
+        <div className="mt-6 rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
           Could not load audit log: {fetchError}.{' '}
-          <span className="text-amber-300">
+          <span className="text-warning">
             Check the Worker logs and JWT validity. The page is rendering with an empty list.
           </span>
         </div>
       )}
       {!fetchError && entries.length === 0 && (
-        <div className="mt-6 rounded-lg border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300">
+        <div className="mt-6 rounded-lg border border-border bg-card p-4 text-sm text-foreground">
           No audit entries match the current filter.
         </div>
       )}
-      <p className="mt-4 text-sm text-slate-400">
+      <p className="mt-4 text-sm text-muted-foreground">
         Showing {entries.length} of {total} matches.
       </p>
 
-      <table className="mt-4 w-full border border-slate-700 text-xs text-slate-200">
-        <thead className="bg-slate-800 text-left text-slate-300">
-          <tr>
-            <th className="p-2">When (ET)</th>
-            <th className="p-2">Seq</th>
-            <th className="p-2">Actor</th>
-            <th className="p-2">Action</th>
-            <th className="p-2">Target</th>
-            <th className="p-2">Reason</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="mt-4 w-full border border-border text-xs text-foreground">
+        <TableHeader className="bg-card text-left text-foreground">
+          <TableRow>
+            <TableHead className="p-2">When (ET)</TableHead>
+            <TableHead className="p-2">Seq</TableHead>
+            <TableHead className="p-2">Actor</TableHead>
+            <TableHead className="p-2">Action</TableHead>
+            <TableHead className="p-2">Target</TableHead>
+            <TableHead className="p-2">Reason</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {entries.map((e) => (
-            <tr key={e.id} className="border-t border-slate-700">
-              <td className="p-2 tabular-nums">{formatET(new Date(e.createdAt), 'datetime')}</td>
-              <td className="p-2 tabular-nums">{e.seq}</td>
-              <td className="p-2">
+            <TableRow key={e.id} className="border-t border-border">
+              <TableCell className="p-2 tabular-nums">
+                {formatET(new Date(e.createdAt), 'datetime')}
+              </TableCell>
+              <TableCell className="p-2 tabular-nums">{e.seq}</TableCell>
+              <TableCell className="p-2">
                 {e.actorType}
                 {e.actorId !== null ? ` #${e.actorId}` : ''}
-              </td>
-              <td className="p-2 font-mono">{e.action}</td>
-              <td className="p-2">
+              </TableCell>
+              <TableCell className="p-2 font-mono">{e.action}</TableCell>
+              <TableCell className="p-2">
                 {e.targetKind !== null ? `${e.targetKind}:${e.targetId ?? ''}` : '—'}
-              </td>
-              <td className="p-2">{e.reason ?? '—'}</td>
-            </tr>
+              </TableCell>
+              <TableCell className="p-2">{e.reason ?? '—'}</TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

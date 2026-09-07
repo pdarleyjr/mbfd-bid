@@ -1,7 +1,7 @@
 /**
  * Task 17 E2E: Admin members list + member detail.
  *
- * Worker API is mocked via page.route() — no live worker needed.
+ * Server fetches use the synthetic loopback Worker fixture — no live worker needed.
  */
 
 import { expect, test } from '@playwright/test';
@@ -31,48 +31,6 @@ async function makeAdminJwt() {
     .sign(key);
 }
 
-const MOCK_MEMBERS = [
-  {
-    id: 1,
-    employee_id: '10001',
-    first_name: 'Alice',
-    last_name: 'Smith',
-    rank: 'CPT',
-    bid_category: 'OFC',
-    rsc_seniority: 1,
-    hired_at: '2000-01-15',
-    is_probationary: false,
-    created_at: null,
-    updated_at: null,
-  },
-  {
-    id: 2,
-    employee_id: '10002',
-    first_name: 'Bob',
-    last_name: 'Jones',
-    rank: 'LT',
-    bid_category: 'OFC',
-    rsc_seniority: 5,
-    hired_at: '2005-03-20',
-    is_probationary: false,
-    created_at: null,
-    updated_at: null,
-  },
-  {
-    id: 3,
-    employee_id: '10003',
-    first_name: 'Carol',
-    last_name: 'Reyes',
-    rank: 'FF',
-    bid_category: 'FF',
-    rsc_seniority: 12,
-    hired_at: '2015-07-01',
-    is_probationary: true,
-    created_at: null,
-    updated_at: null,
-  },
-];
-
 test.describe('Admin members list', () => {
   test.skip(!!process.env.CI && !process.env.E2E_FULL, 'Skip in CI without E2E_FULL');
 
@@ -100,15 +58,6 @@ test.describe('Admin members list', () => {
         sameSite: 'Strict',
       },
     ]);
-
-    // Mock the worker API
-    await page.route('**/api/admin/members*', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ members: MOCK_MEMBERS, total: 3 }),
-      });
-    });
 
     await page.goto('/admin/members');
     await expect(page.getByRole('cell', { name: 'Smith' })).toBeVisible();
@@ -141,17 +90,9 @@ test.describe('Admin members list', () => {
       },
     ]);
 
-    await page.route('**/api/admin/members/1', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ member: MOCK_MEMBERS[0] }),
-      });
-    });
-
     await page.goto('/admin/members/1');
-    await expect(page.getByText('Smith')).toBeVisible();
-    await expect(page.getByText('10001')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Smith, Alice', exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('10001')).toBeVisible();
   });
 
   test('member detail 404 shows not found message', async ({ page }) => {
@@ -179,15 +120,7 @@ test.describe('Admin members list', () => {
       },
     ]);
 
-    await page.route('**/api/admin/members/9999', (route) => {
-      route.fulfill({
-        status: 404,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'not_found' }),
-      });
-    });
-
     await page.goto('/admin/members/9999');
-    await expect(page.getByText(/not found/i)).toBeVisible();
+    await expect(page.getByRole('main').getByText(/not found/i)).toBeVisible();
   });
 });

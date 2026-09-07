@@ -1,4 +1,7 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useQuery } from '@tanstack/react-query';
 export function QualificationAlternativesEditor({
   value,
@@ -26,24 +29,24 @@ export function QualificationAlternativesEditor({
     },
   });
   return (
-    <fieldset className="space-y-3 rounded border border-slate-600 p-4">
+    <fieldset className="space-y-3 rounded border border-border p-4">
       <legend className="px-1 font-semibold">Qualification alternatives</legend>
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-foreground">
         Each group is required. Holding one selected qualification within a group satisfies that
         group.
       </p>
       {catalog.isError && (
-        <p role="alert" className="text-amber-200">
+        <p role="alert" className="text-warning">
           The qualification catalog could not be refreshed. Existing selections are retained.
         </p>
       )}
       {value.map((group, index) => (
         <div className="flex items-end gap-2" key={JSON.stringify([index, group])}>
-          <label className="min-w-0 flex-1">
+          <Label className="min-w-0 flex-1">
             Required group {index + 1}
-            <select
+            <NativeSelect
               multiple
-              className="mt-1 min-h-28 w-full min-w-0 rounded border border-slate-600 bg-slate-950 p-2 text-white"
+              className="mt-1 min-h-28 w-full min-w-0 rounded border border-border bg-card p-2 text-foreground"
               value={group}
               onChange={(e) =>
                 onChange(
@@ -63,25 +66,25 @@ export function QualificationAlternativesEditor({
                   {c.retiredOn ? ' · Retired' : ''}
                 </option>
               ))}
-            </select>
-          </label>
-          <button
+            </NativeSelect>
+          </Label>
+          <Button
             type="button"
-            className="min-h-11 rounded border border-slate-600 px-3"
+            className="min-h-11 rounded border border-border px-3"
             onClick={() => onChange(value.filter((_, i) => i !== index))}
           >
             Remove group
-          </button>
+          </Button>
         </div>
       ))}
-      <button
+      <Button
         type="button"
         disabled={catalog.isPending || catalog.isError || value.length >= 50}
-        className="min-h-11 rounded border border-slate-600 px-3 disabled:opacity-50"
+        className="min-h-11 rounded border border-border px-3 disabled:opacity-50"
         onClick={() => onChange([...value, []])}
       >
         Add qualification group
-      </button>
+      </Button>
     </fieldset>
   );
 }

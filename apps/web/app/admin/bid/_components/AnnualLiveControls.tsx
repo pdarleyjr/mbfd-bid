@@ -1,5 +1,15 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
@@ -171,7 +181,7 @@ export function AnnualLiveControls(props: Props) {
   }
 
   return (
-    <section className="border-y border-stone-300 bg-white p-4" data-testid="annual-live-controls">
+    <section className="border-y border-border bg-white p-4" data-testid="annual-live-controls">
       {props.isMock ? (
         <p className="mb-4 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-900">
           MOCK REHEARSAL — canonical commands remain isolated from staffing and portal write-back.
@@ -182,32 +192,34 @@ export function AnnualLiveControls(props: Props) {
           <p className="text-xs font-bold uppercase tracking-wide text-red-700">
             Canonical annual operations
           </p>
-          <h2 className="font-heading text-lg text-stone-900">
+          <h2 className="font-heading text-lg text-foreground">
             Specialty, presentation, amendment, and order
           </h2>
         </div>
-        <label className="min-w-64 text-xs text-stone-600">
+        <Label className="min-w-64 text-xs text-muted-foreground">
           Operator reason
-          <input
+          <Input
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            className="mt-1 block w-full rounded border border-stone-400 px-3 py-2 text-sm text-stone-900"
+            className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
           />
-        </label>
-        <label className="min-w-64 text-xs text-stone-600">
+        </Label>
+        <Label className="min-w-64 text-xs text-muted-foreground">
           Evidence reference (when policy requires)
-          <input
+          <Input
             value={evidenceReference}
             onChange={(event) => setEvidenceReference(event.target.value)}
-            className="mt-1 block w-full rounded border border-stone-400 px-3 py-2 text-sm text-stone-900"
+            className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
           />
-        </label>
+        </Label>
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <article className="rounded border border-stone-300 p-3">
-          <h3 className="font-semibold text-stone-900">Department presentation</h3>
-          <p className="text-xs text-stone-600">Display controls never pause Bid execution.</p>
+        <article className="rounded border border-border p-3">
+          <h3 className="font-semibold text-foreground">Department presentation</h3>
+          <p className="text-xs text-muted-foreground">
+            Display controls never pause Bid execution.
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {[
               ['OFF', 'OFF'],
@@ -215,30 +227,30 @@ export function AnnualLiveControls(props: Props) {
               ['HOLD', 'HOLD DISPLAY'],
               ['LIVE', 'RESUME DISPLAY'],
             ].map(([mode, label]) => (
-              <button
+              <Button
                 key={label}
                 type="button"
                 disabled={busy}
                 onClick={() => void command('live.set_presentation_mode', { mode })}
-                className="rounded border border-stone-400 px-3 py-2 text-sm text-stone-800 disabled:opacity-40"
+                className="rounded border border-border px-3 py-2 text-sm text-foreground disabled:opacity-40"
               >
                 {label}
-              </button>
+              </Button>
             ))}
           </div>
         </article>
 
-        <article className="rounded border border-stone-300 p-3">
-          <h3 className="font-semibold text-stone-900">Start specialty review</h3>
+        <article className="rounded border border-border p-3">
+          <h3 className="font-semibold text-foreground">Start specialty review</h3>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <select
+            <NativeSelect
               aria-label="Specialty"
               value={specialtyId}
               onChange={(event) => {
                 setSpecialtyId(event.target.value);
                 setPositionId('');
               }}
-              className="rounded border border-stone-400 px-2 py-2 text-sm"
+              className="rounded border border-border px-2 py-2 text-sm"
             >
               <option value="">Select specialty</option>
               {state?.specialties.map((specialty) => (
@@ -246,12 +258,12 @@ export function AnnualLiveControls(props: Props) {
                   {specialty.label} · {specialty.mode}
                 </option>
               ))}
-            </select>
-            <select
+            </NativeSelect>
+            <NativeSelect
               aria-label="Requested specialty position"
               value={positionId}
               onChange={(event) => setPositionId(event.target.value)}
-              className="rounded border border-stone-400 px-2 py-2 text-sm"
+              className="rounded border border-border px-2 py-2 text-sm"
             >
               <option value="">Requested real position</option>
               {selectedSpecialty?.positions.map((position) => (
@@ -259,9 +271,9 @@ export function AnnualLiveControls(props: Props) {
                   {position.id} · {position.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
-          <button
+          <Button
             type="button"
             disabled={busy || !specialtyId || !positionId || state?.active !== null}
             onClick={() =>
@@ -270,7 +282,7 @@ export function AnnualLiveControls(props: Props) {
             className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
           >
             Suspend bidder and start
-          </button>
+          </Button>
         </article>
 
         {state?.active ? (
@@ -285,35 +297,35 @@ export function AnnualLiveControls(props: Props) {
               {state.active.resume.queue_cursor}.
             </p>
             <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr>
-                    <th>Candidate</th>
-                    <th>Points/rank</th>
-                    <th>Status</th>
-                    <th>Contact history</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="w-full text-left text-sm">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Candidate</TableHead>
+                    <TableHead>Points/rank</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Contact history</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {state.active.candidates.map((candidate) => (
-                    <tr key={candidate.member_id} className="border-t border-amber-200">
-                      <td className="py-2">{name(candidate)}</td>
-                      <td>
+                    <TableRow key={candidate.member_id} className="border-t border-amber-200">
+                      <TableCell className="py-2">{name(candidate)}</TableCell>
+                      <TableCell>
                         {candidate.points ?? 0} / {candidate.policy_rank ?? '—'}
-                      </td>
-                      <td>{candidate.status}</td>
-                      <td>
+                      </TableCell>
+                      <TableCell>{candidate.status}</TableCell>
+                      <TableCell>
                         {candidate.contact_history
                           ?.map(
                             (attempt) =>
                               `${attempt.method} ${new Date(attempt.at_ms).toLocaleTimeString()}`,
                           )
                           .join(' · ') || 'None'}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
             {currentCandidate ? (
               <div className="mt-3 flex flex-wrap gap-2">
@@ -322,7 +334,7 @@ export function AnnualLiveControls(props: Props) {
                   {state.active.remaining_candidate_ids.length}
                 </strong>
                 {(['PHONE', 'TEXT'] as const).map((method) => (
-                  <button
+                  <Button
                     key={method}
                     type="button"
                     disabled={busy}
@@ -335,10 +347,10 @@ export function AnnualLiveControls(props: Props) {
                     className="rounded border border-amber-600 px-3 py-2 text-sm"
                   >
                     Record {method}
-                  </button>
+                  </Button>
                 ))}
                 {(['ACCEPT', 'DECLINE', 'PASS', 'UNREACHABLE'] as const).map((outcome) => (
-                  <button
+                  <Button
                     key={outcome}
                     type="button"
                     disabled={busy}
@@ -351,23 +363,23 @@ export function AnnualLiveControls(props: Props) {
                     className="rounded bg-amber-800 px-3 py-2 text-sm text-white"
                   >
                     {outcome}
-                  </button>
+                  </Button>
                 ))}
               </div>
             ) : null}
           </article>
         ) : null}
 
-        <article className="rounded border border-stone-300 p-3">
-          <h3 className="font-semibold text-stone-900">Record current bidder selection</h3>
-          <p className="text-xs text-stone-600">
+        <article className="rounded border border-border p-3">
+          <h3 className="font-semibold text-foreground">Record current bidder selection</h3>
+          <p className="text-xs text-muted-foreground">
             Canonical selection for the active member; the frozen stage policy remains enforced.
           </p>
-          <select
+          <NativeSelect
             aria-label="Position selected by current bidder"
             value={selectionPositionId}
             onChange={(event) => setSelectionPositionId(event.target.value)}
-            className="mt-2 block w-full rounded border border-stone-400 px-2 py-2 text-sm"
+            className="mt-2 block w-full rounded border border-border px-2 py-2 text-sm"
           >
             <option value="">Open opportunity</option>
             {props.positions
@@ -381,8 +393,8 @@ export function AnnualLiveControls(props: Props) {
                   {position.id} · {position.positionName}
                 </option>
               ))}
-          </select>
-          <button
+          </NativeSelect>
+          <Button
             type="button"
             disabled={
               busy || state === null || state.current_bidder === null || !selectionPositionId
@@ -396,17 +408,19 @@ export function AnnualLiveControls(props: Props) {
             className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
           >
             Commit selection
-          </button>
+          </Button>
         </article>
 
-        <article className="rounded border border-stone-300 p-3">
-          <h3 className="font-semibold text-stone-900">Amend latest committed selection</h3>
-          <p className="text-xs text-stone-600">Same member only; sealed after the next commit.</p>
-          <select
+        <article className="rounded border border-border p-3">
+          <h3 className="font-semibold text-foreground">Amend latest committed selection</h3>
+          <p className="text-xs text-muted-foreground">
+            Same member only; sealed after the next commit.
+          </p>
+          <NativeSelect
             aria-label="Original filled opportunity"
             value={amendFrom}
             onChange={(event) => setAmendFrom(event.target.value)}
-            className="mt-2 block w-full rounded border border-stone-400 px-2 py-2 text-sm"
+            className="mt-2 block w-full rounded border border-border px-2 py-2 text-sm"
           >
             <option value="">Original filled opportunity</option>
             {filled.map(([id, memberId]) => (
@@ -414,12 +428,12 @@ export function AnnualLiveControls(props: Props) {
                 {id} · {props.members[String(memberId)]?.lastName ?? `Member ${memberId}`}
               </option>
             ))}
-          </select>
-          <select
+          </NativeSelect>
+          <NativeSelect
             aria-label="New open opportunity"
             value={amendTo}
             onChange={(event) => setAmendTo(event.target.value)}
-            className="mt-2 block w-full rounded border border-stone-400 px-2 py-2 text-sm"
+            className="mt-2 block w-full rounded border border-border px-2 py-2 text-sm"
           >
             <option value="">New open opportunity</option>
             {props.positions
@@ -433,8 +447,8 @@ export function AnnualLiveControls(props: Props) {
                   {position.id} · {position.positionName}
                 </option>
               ))}
-          </select>
-          <button
+          </NativeSelect>
+          <Button
             type="button"
             disabled={busy || !amendFrom || !amendTo}
             onClick={() =>
@@ -450,44 +464,44 @@ export function AnnualLiveControls(props: Props) {
             className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
           >
             Amend opportunity
-          </button>
+          </Button>
         </article>
 
-        <article className="rounded border border-stone-300 p-3">
-          <h3 className="font-semibold text-stone-900">Alter remaining order</h3>
+        <article className="rounded border border-border p-3">
+          <h3 className="font-semibold text-foreground">Alter remaining order</h3>
           <ol className="mt-2 space-y-1">
             {order.map((memberId, index) => (
               <li
                 key={memberId}
-                className="flex items-center gap-2 rounded bg-stone-100 px-2 py-1 text-sm"
+                className="flex items-center gap-2 rounded bg-muted px-2 py-1 text-sm"
               >
                 <span className="mr-auto">
                   {index + 1}. {props.members[String(memberId)]?.lastName ?? `Member ${memberId}`}
                 </span>
-                <button type="button" disabled={index === 0} onClick={() => move(index, -1)}>
+                <Button type="button" disabled={index === 0} onClick={() => move(index, -1)}>
                   ↑
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   disabled={index === order.length - 1}
                   onClick={() => move(index, 1)}
                 >
                   ↓
-                </button>
+                </Button>
               </li>
             ))}
           </ol>
-          <button
+          <Button
             type="button"
             disabled={busy || order.length === 0}
             onClick={() => void command('live.alter_order', { orderedRemainingMemberIds: order })}
             className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
           >
             Commit remaining order
-          </button>
+          </Button>
         </article>
       </div>
-      {notice ? <output className="mt-3 block text-sm text-stone-700">{notice}</output> : null}
+      {notice ? <output className="mt-3 block text-sm text-foreground">{notice}</output> : null}
     </section>
   );
 }

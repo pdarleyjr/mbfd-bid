@@ -18,9 +18,9 @@ export function OnDeckQueue({ onDeck, meMemberId }: Props) {
     <aside
       data-testid="on-deck-queue"
       aria-label="On-deck bidders"
-      className="border-y border-stone-200 bg-stone-50 px-6 py-3"
+      className="border-y border-border bg-background px-6 py-3"
     >
-      <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
+      <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         On deck — next {onDeck.length}
       </h2>
       <ol className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -32,7 +32,7 @@ export function OnDeckQueue({ onDeck, meMemberId }: Props) {
           >
             <span
               aria-hidden="true"
-              className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold tabular-nums text-stone-700"
+              className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold tabular-nums text-foreground"
             >
               {index + 1}
             </span>

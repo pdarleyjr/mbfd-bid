@@ -1,7 +1,7 @@
 import type { Member } from '@mbfd/eligibility';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_GROUP_CAPACITY } from '../../src/groups.js';
-import { applyPick, initADayState } from '../../src/state.js';
+import { applyPick, initADayState, isPhase2Complete, nextBidder } from '../../src/state.js';
 
 const ff = (id: number): Member => ({
   employeeId: String(id),
@@ -87,6 +87,74 @@ describe('initADayState', () => {
 });
 
 describe('applyPick', () => {
+  it('advances from pre-seeded head entries through the last bidder without mutating prior state', () => {
+    const initial = initADayState({
+      phase1Picks: [],
+      members: [ff(1), ff(2)],
+      bidOrder: [1, 2],
+      preSeededPicks: [
+        { memberId: 1, shift: 'A', aDay: 'G1', pickedAtMs: 0, forced: true, adminActorId: 9 },
+      ],
+      groupCaps: fullGroupCaps,
+      weekdayCaps: {},
+    });
+    expect(initial.cursor).toBe(1);
+    expect(nextBidder(initial)).toBe(2);
+    expect(isPhase2Complete(initial)).toBe(false);
+    const complete = applyPick(initial, {
+      memberId: 2,
+      shift: 'A',
+      aDay: 'G2',
+      pickedAtMs: 1,
+      forced: false,
+      adminActorId: null,
+    });
+    expect(nextBidder(complete)).toBeUndefined();
+    expect(isPhase2Complete(complete)).toBe(true);
+    expect(initial.picksByMember.has(2)).toBe(false);
+    expect(nextBidder(initial)).toBe(2);
+  });
+
+  it('does not advance across a missing bid-order entry', () => {
+    const order = Array<number>(2);
+    order[1] = 2;
+    const initial = initADayState({
+      phase1Picks: [],
+      members: [ff(2)],
+      bidOrder: order,
+      groupCaps: fullGroupCaps,
+      weekdayCaps: {},
+    });
+    expect(initial.cursor).toBe(0);
+    const next = applyPick(initial, {
+      memberId: 2,
+      shift: 'A',
+      aDay: 'G2',
+      pickedAtMs: 1,
+      forced: false,
+      adminActorId: null,
+    });
+    expect(next.cursor).toBe(0);
+    expect(nextBidder(next)).toBeUndefined();
+    expect(isPhase2Complete(next)).toBe(false);
+  });
+
+  it('recognizes an empty order and an entirely pre-seeded order as complete', () => {
+    for (const bidOrder of [[], [1]]) {
+      const state = initADayState({
+        phase1Picks: [],
+        members: [ff(1)],
+        bidOrder,
+        preSeededPicks: [
+          { memberId: 1, shift: 'A', aDay: 'G1', pickedAtMs: 0, forced: true, adminActorId: 9 },
+        ],
+        groupCaps: fullGroupCaps,
+        weekdayCaps: {},
+      });
+      expect(nextBidder(state)).toBeUndefined();
+      expect(isPhase2Complete(state)).toBe(true);
+    }
+  });
   it('returns new state with pick recorded and cursor advanced', () => {
     const initial = initADayState({
       phase1Picks: [

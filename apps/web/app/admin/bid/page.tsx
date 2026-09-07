@@ -85,9 +85,9 @@ export default async function AdminBidPage({
   const sessionId = sp.session_id ?? sp.bidSessionId ?? (await loadActiveSession());
   if (!sessionId) {
     return (
-      <div className="min-h-screen bg-stone-50 p-6">
+      <div className="min-h-screen bg-background p-6">
         <header className="mb-4">
-          <h1 className="font-display text-2xl text-stone-900">MBFD Annual Bid — Admin Console</h1>
+          <h1 className="font-heading text-2xl text-foreground">MBFD Annual Bid — Admin Console</h1>
         </header>
         <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
           No active bid session is available.
@@ -107,9 +107,9 @@ export default async function AdminBidPage({
 
   if (fetchError !== null || board === null || localMemberId === null) {
     return (
-      <div className="min-h-screen bg-stone-50 p-6">
+      <div className="min-h-screen bg-background p-6">
         <header className="mb-4">
-          <h1 className="font-display text-2xl text-stone-900">MBFD Annual Bid — Admin Console</h1>
+          <h1 className="font-heading text-2xl text-foreground">MBFD Annual Bid — Admin Console</h1>
         </header>
         <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
           Could not load the bid board:{' '}
@@ -125,7 +125,7 @@ export default async function AdminBidPage({
   }
 
   return (
-    <div data-testid="bid-board-header" className="min-h-screen bg-stone-50 text-stone-900">
+    <div data-testid="bid-board-header" className="min-h-screen bg-background text-foreground">
       <MockBanner isMock={board.isMock === true} sessionId={board.bidSessionId} />
       <AdminBidShell
         bidSessionId={board.bidSessionId}

@@ -1,4 +1,8 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
@@ -201,10 +205,10 @@ function reviewStateCopy(state: string): string {
 }
 
 function importStatusClass(status: ImportSummary['status']): string {
-  if (status === 'committed') return 'border-emerald-700 bg-emerald-950/40 text-emerald-100';
-  if (status === 'reviewed') return 'border-sky-700 bg-sky-950/40 text-sky-100';
-  if (status === 'rejected') return 'border-slate-600 bg-slate-900 text-slate-200';
-  return 'border-amber-700 bg-amber-950/40 text-amber-100';
+  if (status === 'committed') return 'border-success/40 bg-success-surface text-success';
+  if (status === 'reviewed') return 'border-info/40 bg-info-surface text-info';
+  if (status === 'rejected') return 'border-border bg-card text-foreground';
+  return 'border-warning/40 bg-warning-surface text-warning';
 }
 
 function sourceObservationTimeCopy(
@@ -371,8 +375,8 @@ export function UnknownEmployeeOnboardingPanel(props: {
       data-testid="telestaff-unknown-onboarding"
       className="mt-4 rounded-lg border border-violet-700 bg-violet-950/30 p-4"
     >
-      <h3 className="font-semibold text-white">Unknown employee onboarding</h3>
-      <p className="mt-2 text-sm text-slate-300">
+      <h3 className="font-semibold text-foreground">Unknown employee onboarding</h3>
+      <p className="mt-2 text-sm text-foreground">
         Source identity is held in reviewed browser memory only. Confirm canonical personnel data;
         rank, category, and seniority are never inferred from TeleStaff.
       </p>
@@ -381,8 +385,8 @@ export function UnknownEmployeeOnboardingPanel(props: {
           const draft = drafts[employee.rowId];
           if (draft === undefined) return null;
           return (
-            <fieldset key={employee.rowId} className="rounded border border-slate-700 p-3">
-              <legend className="px-1 text-sm font-semibold text-white">
+            <fieldset key={employee.rowId} className="rounded border border-border p-3">
+              <legend className="px-1 text-sm font-semibold text-foreground">
                 Source row {employee.sourceRowNumber}: {employee.sourceDisplayName} ·{' '}
                 {employee.sourceEmployeeId}
               </legend>
@@ -399,9 +403,9 @@ export function UnknownEmployeeOnboardingPanel(props: {
                   value={draft.lastName}
                   onChange={(value) => update(employee.rowId, { lastName: value })}
                 />
-                <label className="block text-sm text-slate-200">
+                <Label className="block text-sm text-foreground">
                   Rank
-                  <select
+                  <NativeSelect
                     name={`rank-${employee.rowId}`}
                     required
                     value={draft.rank}
@@ -418,7 +422,7 @@ export function UnknownEmployeeOnboardingPanel(props: {
                           : {}),
                       });
                     }}
-                    className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                   >
                     <option value="">Select rank</option>
                     <option value="CIVILIAN">Civilian / no fire rank</option>
@@ -427,11 +431,11 @@ export function UnknownEmployeeOnboardingPanel(props: {
                         {rank}
                       </option>
                     ))}
-                  </select>
-                </label>
-                <label className="block text-sm text-slate-200">
+                  </NativeSelect>
+                </Label>
+                <Label className="block text-sm text-foreground">
                   Bid category
-                  <select
+                  <NativeSelect
                     name={`bid_category-${employee.rowId}`}
                     required
                     value={draft.bidCategory}
@@ -440,14 +444,14 @@ export function UnknownEmployeeOnboardingPanel(props: {
                         bidCategory: event.target.value as UnknownEmployeeDraft['bidCategory'],
                       })
                     }
-                    className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                   >
                     <option value="">Select category</option>
                     <option value="FF">FF</option>
                     <option value="OFC">OFC</option>
                     <option value="EXCLUDED">EXCLUDED</option>
-                  </select>
-                </label>
+                  </NativeSelect>
+                </Label>
                 <OnboardingInput
                   name={`rsc_seniority-${employee.rowId}`}
                   label={
@@ -484,17 +488,17 @@ export function UnknownEmployeeOnboardingPanel(props: {
           );
         })}
       </div>
-      <button
+      <Button
         data-testid="telestaff-onboard-unknown-submit"
         type="button"
         disabled={props.busy || submitting}
         onClick={() => void submit()}
-        className="mt-4 min-h-11 rounded bg-violet-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-4 min-h-11 rounded bg-violet-600 px-4 text-sm font-semibold text-foreground disabled:opacity-50"
       >
         {submitting
           ? 'Creating reviewed personnel…'
           : `Create or link ${props.employees.length} reviewed employee(s)`}
-      </button>
+      </Button>
     </section>
   );
 }
@@ -508,18 +512,18 @@ function OnboardingInput(props: {
   required?: boolean;
 }) {
   return (
-    <label className="block text-sm text-slate-200">
+    <Label className="block text-sm text-foreground">
       {props.label}
-      <input
+      <Input
         name={props.name}
         type={props.type ?? 'text'}
         min={props.type === 'number' ? 0 : undefined}
         required={props.required ?? true}
         value={props.value}
         onChange={(event) => props.onChange(event.target.value)}
-        className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+        className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
       />
-    </label>
+    </Label>
   );
 }
 
@@ -1004,29 +1008,29 @@ export function TeleStaffOperatorWorkspace() {
   return (
     <div className="space-y-6">
       <section
-        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-xl border border-border bg-card p-5"
         aria-labelledby="telestaff-import-heading"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+            <p className="text-xs font-semibold uppercase tracking-wider text-info">
               Manual source review
             </p>
-            <h2 id="telestaff-import-heading" className="mt-1 font-heading text-xl text-white">
+            <h2 id="telestaff-import-heading" className="mt-1 font-heading text-xl text-foreground">
               Sanitized TeleStaff reconciliation
             </h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+            <p className="mt-2 max-w-3xl text-sm text-foreground">
               Select the declared source kind and an explicit source snapshot date. The snapshot
               date records when the source was observed; it is not a canonical assignment effective
               date.
             </p>
           </div>
-          <span className="rounded-full border border-slate-600 px-3 py-1 text-xs font-semibold text-slate-200">
+          <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">
             Manual upload only
           </span>
         </div>
 
-        <div className="mt-4 border-l-4 border-amber-500 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+        <div className="mt-4 border-l-4 border-warning/40 bg-warning-surface px-4 py-3 text-sm text-warning">
           No raw HTML, names, or employee IDs are retained. The server stores only sanitized,
           irreversible reconciliation evidence; it never contacts or writes back to TeleStaff.
         </div>
@@ -1034,11 +1038,11 @@ export function TeleStaffOperatorWorkspace() {
         <form
           onSubmit={previewSource}
           data-testid="telestaff-preview-form"
-          className="mt-5 grid gap-4 border-t border-slate-700 pt-5 lg:grid-cols-2"
+          className="mt-5 grid gap-4 border-t border-border pt-5 lg:grid-cols-2"
         >
-          <label className="block">
-            <span className="text-sm text-slate-200">Source kind declaration</span>
-            <select
+          <Label className="block">
+            <span className="text-sm text-foreground">Source kind declaration</span>
+            <NativeSelect
               name="source_kind"
               required
               value={sourceKind}
@@ -1052,22 +1056,25 @@ export function TeleStaffOperatorWorkspace() {
                 resetPreviewForNewInput();
               }}
               aria-describedby="telestaff-source-kind-help"
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             >
               <option value="" disabled>
                 Select the source declaration
               </option>
               <option value="official">Official TeleStaff source</option>
               <option value="synthetic_test">Synthetic test source — never canonical</option>
-            </select>
-            <span id="telestaff-source-kind-help" className="mt-1 block text-xs text-slate-400">
+            </NativeSelect>
+            <span
+              id="telestaff-source-kind-help"
+              className="mt-1 block text-xs text-muted-foreground"
+            >
               This declaration is retained with the sanitized import provenance. Only an official
               source can reach the separately controlled canonical-apply review.
             </span>
-          </label>
-          <label className="block">
-            <span className="text-sm text-slate-200">TeleStaff HTML export</span>
-            <input
+          </Label>
+          <Label className="block">
+            <span className="text-sm text-foreground">TeleStaff HTML export</span>
+            <Input
               type="file"
               accept="text/html,.html,.htm"
               required
@@ -1075,12 +1082,12 @@ export function TeleStaffOperatorWorkspace() {
                 setFile(event.target.files?.item(0) ?? null);
                 resetPreviewForNewInput();
               }}
-              className="mt-1 block min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-slate-200 file:mr-3 file:rounded file:border-0 file:bg-slate-700 file:px-3 file:py-1 file:text-slate-100"
+              className="mt-1 block min-h-11 w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground file:mr-3 file:rounded file:border-0 file:bg-muted file:px-3 file:py-1 file:text-foreground"
             />
-          </label>
-          <label className="block">
-            <span className="text-sm text-slate-200">Source snapshot as of</span>
-            <input
+          </Label>
+          <Label className="block">
+            <span className="text-sm text-foreground">Source snapshot as of</span>
+            <Input
               type="date"
               required
               value={sourceSnapshotAsOf}
@@ -1088,12 +1095,12 @@ export function TeleStaffOperatorWorkspace() {
                 setSourceSnapshotAsOf(event.target.value);
                 resetPreviewForNewInput();
               }}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             />
-          </label>
-          <label className="block">
-            <span className="text-sm text-slate-200">Source observation time basis</span>
-            <select
+          </Label>
+          <Label className="block">
+            <span className="text-sm text-foreground">Source observation time basis</span>
+            <NativeSelect
               name="source_observation_time_basis"
               value={sourceObservationTimeBasis}
               onChange={(event) => {
@@ -1102,18 +1109,18 @@ export function TeleStaffOperatorWorkspace() {
                 if (basis === 'date_only') setSourceObservedAt('');
                 resetPreviewForNewInput();
               }}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             >
               <option value="date_only">date_only — report has no exact time</option>
               <option value="source_metadata">source_metadata — supplied by the source</option>
               <option value="administrator_confirmed">
                 administrator_confirmed — verified by operator
               </option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-sm text-slate-200">Exact source observation time</span>
-            <input
+            </NativeSelect>
+          </Label>
+          <Label className="block">
+            <span className="text-sm text-foreground">Exact source observation time</span>
+            <Input
               name="source_observed_at"
               type="text"
               inputMode="text"
@@ -1126,22 +1133,25 @@ export function TeleStaffOperatorWorkspace() {
                 setSourceObservedAt(event.target.value);
                 resetPreviewForNewInput();
               }}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 font-mono text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <span id="telestaff-source-time-help" className="mt-1 block text-xs text-slate-400">
+            <span
+              id="telestaff-source-time-help"
+              className="mt-1 block text-xs text-muted-foreground"
+            >
               Optional only with source_metadata or administrator_confirmed. Enter strict RFC3339
               with a timezone; date-only evidence intentionally has no exact timestamp.
             </span>
-          </label>
+          </Label>
           <div className="flex flex-wrap gap-3 lg:col-span-2">
-            <button
+            <Button
               type="submit"
               disabled={busy || file === null || sourceKind === '' || sourceSnapshotAsOf === ''}
-              className="min-h-11 rounded bg-sky-600 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded bg-info px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? 'Previewing…' : 'Preview sanitized reconciliation'}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={() => void stageSource()}
               disabled={
@@ -1151,21 +1161,21 @@ export function TeleStaffOperatorWorkspace() {
                 sourceKind === '' ||
                 sourceSnapshotAsOf === ''
               }
-              className="min-h-11 rounded border border-slate-500 px-4 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded border border-border px-4 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               Stage for review
-            </button>
+            </Button>
           </div>
         </form>
 
         {preview !== null && (
           <section
-            className="mt-5 rounded-lg border border-slate-700 bg-slate-950/50 p-4"
+            className="mt-5 rounded-lg border border-border bg-card p-4"
             aria-label="Sanitized preview"
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="font-semibold text-white">Sanitized preview</h3>
-              <span className="font-mono text-xs text-slate-300">
+              <h3 className="font-semibold text-foreground">Sanitized preview</h3>
+              <span className="font-mono text-xs text-foreground">
                 {sourceKindLabel(preview.sourceKind)} · Snapshot {preview.sourceSnapshotAsOf}
               </span>
             </div>
@@ -1183,11 +1193,11 @@ export function TeleStaffOperatorWorkspace() {
                 tone="amber"
               />
             </dl>
-            <p className="mt-3 text-xs text-slate-400">
+            <p className="mt-3 text-xs text-muted-foreground">
               Parser {preview.parserVersion}; source format {preview.sourceFormat}. This is
               aggregate evidence only—review staging separately before any canonical action.
             </p>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               {sourceObservationTimeCopy(
                 preview.sourceObservedAt,
                 preview.sourceObservationTimeBasis,
@@ -1200,7 +1210,7 @@ export function TeleStaffOperatorWorkspace() {
       {error !== null && (
         <p
           role="alert"
-          className="rounded border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-100"
+          className="rounded border border-destructive/40 bg-destructive-surface px-4 py-3 text-sm text-destructive"
         >
           {teleStaffErrorCopy(error)}
         </p>
@@ -1208,25 +1218,23 @@ export function TeleStaffOperatorWorkspace() {
       {notice !== null && (
         <output
           aria-live="polite"
-          className="block rounded border border-sky-700 bg-sky-950/40 px-4 py-3 text-sm text-sky-100"
+          className="block rounded border border-info/40 bg-info-surface px-4 py-3 text-sm text-info"
         >
           {notice}
         </output>
       )}
 
       <section
-        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-xl border border-border bg-card p-5"
         aria-labelledby="telestaff-review-heading"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">
-              Review queue
-            </p>
-            <h2 id="telestaff-review-heading" className="mt-1 font-heading text-xl text-white">
+            <p className="text-xs font-semibold uppercase tracking-wider text-info">Review queue</p>
+            <h2 id="telestaff-review-heading" className="mt-1 font-heading text-xl text-foreground">
               Reconciliation decisions
             </h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+            <p className="mt-2 max-w-3xl text-sm text-foreground">
               Decisions are constrained by the server. Ambiguous and new topology rows never choose
               a canonical slot automatically, and an absent source row never deletes an assignment.
             </p>
@@ -1241,7 +1249,7 @@ export function TeleStaffOperatorWorkspace() {
         </div>
 
         {detail === null ? (
-          <p className="mt-5 rounded border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">
+          <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
             Stage a sanitized official export, or select a retained import below, to load its review
             queue.
           </p>
@@ -1265,7 +1273,7 @@ export function TeleStaffOperatorWorkspace() {
                 tone="amber"
               />
             </dl>
-            <p className="mt-3 text-xs text-slate-400">
+            <p className="mt-3 text-xs text-muted-foreground">
               Snapshot {detail.import.sourceSnapshotAsOf ?? 'unavailable'} ·{' '}
               {detail.pagination.totalRows} sanitized source row(s) in this import.{' '}
               {sourceObservationTimeCopy(
@@ -1277,27 +1285,27 @@ export function TeleStaffOperatorWorkspace() {
               data-testid="telestaff-reconciliation-export"
               href={`/api/admin/telestaff/imports/${encodeURIComponent(detail.import.id)}/reconciliation.csv`}
               download
-              className="mt-3 inline-flex min-h-10 items-center rounded border border-sky-600 px-3 text-sm font-semibold text-sky-100 hover:border-sky-400 hover:text-white"
+              className="mt-3 inline-flex min-h-10 items-center rounded border border-info/40 px-3 text-sm font-semibold text-info hover:border-info/40 hover:text-foreground"
             >
               Download sanitized reconciliation CSV
             </a>
-            <p className="mt-2 text-xs text-slate-400">
+            <p className="mt-2 text-xs text-muted-foreground">
               The download contains only aggregate evidence and safe review classifications; it
               omits raw HTML, source locators, mappings, names, employee IDs, and HMAC values.
             </p>
 
             <aside
               data-testid="telestaff-next-steps"
-              className="mt-4 rounded-lg border border-emerald-700 bg-emerald-950/30 p-4"
+              className="mt-4 rounded-lg border border-success/40 bg-success-surface p-4"
             >
-              <h3 className="font-semibold text-white">Recommended order</h3>
-              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-200">
+              <h3 className="font-semibold text-foreground">Recommended order</h3>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-foreground">
                 <li>Certify deterministic staffing positions.</li>
                 <li>Resolve safe exceptions that cannot select a canonical seat.</li>
                 <li>Accept all safe deterministic observations.</li>
                 <li>Confirm zero pending rows, choose the effective date, and apply.</li>
               </ol>
-              <p className="mt-2 text-xs text-emerald-100">
+              <p className="mt-2 text-xs text-success">
                 The bulk controls process the entire import. Use the row pages below only when an
                 individual exception needs review.
               </p>
@@ -1323,32 +1331,35 @@ export function TeleStaffOperatorWorkspace() {
             )}
 
             <section
-              className="mt-4 rounded-lg border border-sky-700 bg-sky-950/30 p-4"
+              className="mt-4 rounded-lg border border-info/40 bg-info-surface p-4"
               aria-labelledby="telestaff-certification-heading"
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+              <p className="text-xs font-semibold uppercase tracking-wider text-info">
                 Staging certification
               </p>
-              <h3 id="telestaff-certification-heading" className="mt-1 font-semibold text-white">
+              <h3
+                id="telestaff-certification-heading"
+                className="mt-1 font-semibold text-foreground"
+              >
                 Deterministic staffing positions
               </h3>
-              <p className="mt-2 text-sm text-slate-300">
+              <p className="mt-2 text-sm text-foreground">
                 The approved staging operation certifies every complete source topology that can be
                 resolved without inventing seat identity. Repeated or ambiguous observations remain
                 unresolved unless the source provides a safe seat discriminator. It uses the
                 authenticated staging API—never a direct D1 write or a production mutation.
               </p>
-              <button
+              <Button
                 data-testid="telestaff-certify-deterministic"
                 type="button"
                 onClick={() => void certifyDeterministicStaffing()}
                 disabled={
                   busy || (detail.import.status !== 'staged' && detail.import.status !== 'reviewed')
                 }
-                className="mt-3 min-h-11 rounded bg-sky-600 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-3 min-h-11 rounded bg-info px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Certify deterministic staffing positions
-              </button>
+              </Button>
 
               {certification !== null && (
                 <dl
@@ -1389,24 +1400,24 @@ export function TeleStaffOperatorWorkspace() {
               )}
             </section>
 
-            <section className="mt-4 rounded-lg border border-amber-700 bg-amber-950/30 p-4">
-              <h3 className="font-semibold text-white">Safe exception resolution</h3>
-              <p className="mt-2 text-sm text-slate-300">
+            <section className="mt-4 rounded-lg border border-warning/40 bg-warning-surface p-4">
+              <h3 className="font-semibold text-foreground">Safe exception resolution</h3>
+              <p className="mt-2 text-sm text-foreground">
                 Resolves only non-materializable evidence: defer repeated topology without a seat,
                 retain incomplete observations, and reject unknown-person or ambiguous source
                 observations. It cannot create canonical staffing.
               </p>
-              <button
+              <Button
                 data-testid="telestaff-resolve-safe-exceptions"
                 type="button"
                 onClick={() => void resolveSafeExceptions()}
                 disabled={busy || detail.import.reconciliation.pendingSourceRows === 0}
-                className="mt-3 min-h-11 rounded border border-amber-500 px-4 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-3 min-h-11 rounded border border-warning/40 px-4 text-sm font-semibold text-warning disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Resolve safe staging exceptions
-              </button>
+              </Button>
               {safeExceptionResolution !== null && (
-                <p className="mt-3 text-sm text-amber-100">
+                <p className="mt-3 text-sm text-warning">
                   Deferred topology: {safeExceptionResolution.deferredRepeatedTopology} · Retained
                   incomplete evidence: {safeExceptionResolution.retainedIncompleteTopology} ·
                   Rejected unknown-person observations:{' '}
@@ -1416,25 +1427,25 @@ export function TeleStaffOperatorWorkspace() {
               )}
             </section>
 
-            <section className="mt-4 rounded-lg border border-sky-700 bg-sky-950/30 p-4">
-              <h3 className="font-semibold text-white">Deterministic observation review</h3>
-              <p className="mt-2 text-sm text-slate-300">
+            <section className="mt-4 rounded-lg border border-info/40 bg-info-surface p-4">
+              <h3 className="font-semibold text-foreground">Deterministic observation review</h3>
+              <p className="mt-2 text-sm text-foreground">
                 Accept all currently safe mapped observations, including rows beyond the first
                 review page. Newer protected assignments and unresolved evidence are excluded.
               </p>
-              <button
+              <Button
                 type="button"
                 data-testid="telestaff-review-deterministic"
                 onClick={() => void reviewDeterministicObservations()}
                 disabled={busy || detail.import.reconciliation.pendingSourceRows === 0}
-                className="mt-3 min-h-11 rounded border border-sky-500 px-4 text-sm font-semibold text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-3 min-h-11 rounded border border-info/40 px-4 text-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Accept safe deterministic observations
-              </button>
+              </Button>
               {deterministicReview !== null && (
                 <p
                   data-testid="telestaff-deterministic-review-result"
-                  className="mt-3 text-sm text-sky-100"
+                  className="mt-3 text-sm text-info"
                 >
                   Accepted observations: {deterministicReview.acceptedObservations} ·{' '}
                   {deterministicReview.idempotent ? 'existing review confirmed' : 'review recorded'}
@@ -1444,31 +1455,28 @@ export function TeleStaffOperatorWorkspace() {
 
             <div className="mt-4 space-y-3">
               {detail.rows.map((row) => (
-                <article
-                  key={row.id}
-                  className="rounded-lg border border-slate-700 bg-slate-950/50 p-4"
-                >
+                <article key={row.id} className="rounded-lg border border-border bg-card p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-semibold text-white">
+                      <h3 className="font-semibold text-foreground">
                         Source row {row.sourceRowNumber}:{' '}
                         {row.reconciliationClassification ?? 'Unclassified'}
                       </h3>
-                      <p className="mt-1 text-sm text-slate-300">
+                      <p className="mt-1 text-sm text-foreground">
                         {reviewStateCopy(row.reviewState)}
                       </p>
-                      <p className="mt-1 text-xs text-slate-400">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         Identity resolved: {row.hasResolvedMember ? 'yes' : 'no'} · Approved mapping
                         context: {row.hasStaffingPositionSourceMapping ? 'yes' : 'no'} · A/R day:{' '}
                         {row.hasSourceARDay ? 'present' : 'missing'}
                       </p>
                     </div>
-                    <span className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200">
+                    <span className="rounded border border-border px-2 py-1 text-xs text-foreground">
                       {row.reviewStatus}
                     </span>
                   </div>
                   {row.reviewState === 'CURRENT_RECORD_NEWER_THAN_SOURCE_OBSERVATION' && (
-                    <p className="mt-3 border-l-2 border-amber-400 pl-3 text-xs text-amber-100">
+                    <p className="mt-3 border-l-2 border-warning/40 pl-3 text-xs text-warning">
                       A newer protected canonical record exists. This interface does not claim that
                       record is approved; approval provenance requires dedicated audit data.
                     </p>
@@ -1476,15 +1484,15 @@ export function TeleStaffOperatorWorkspace() {
                   {row.allowedReviewActions.length > 0 && row.reviewStatus === 'pending' && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {row.allowedReviewActions.map((action) => (
-                        <button
+                        <Button
                           key={action}
                           type="button"
                           disabled={busy}
                           onClick={() => void reviewRow(row, action)}
-                          className="min-h-10 rounded border border-slate-500 px-3 text-xs font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="min-h-10 rounded border border-border px-3 text-xs font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {reviewActionLabel(action)}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   )}
@@ -1493,112 +1501,112 @@ export function TeleStaffOperatorWorkspace() {
             </div>
             <nav
               aria-label="Reconciliation pages"
-              className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded border border-slate-700 bg-slate-950/50 px-3 py-2"
+              className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded border border-border bg-card px-3 py-2"
             >
-              <button
+              <Button
                 type="button"
                 data-testid="telestaff-previous-page"
                 disabled={busy || reviewOffset === 0}
                 onClick={() =>
                   void loadImport(detail.import.id, Math.max(0, reviewOffset - REVIEW_PAGE_SIZE))
                 }
-                className="min-h-10 rounded border border-slate-600 px-3 text-sm text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-10 rounded border border-border px-3 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Previous rows
-              </button>
-              <span data-testid="telestaff-page-status" className="text-sm text-slate-300">
+              </Button>
+              <span data-testid="telestaff-page-status" className="text-sm text-foreground">
                 Page {Math.floor(reviewOffset / REVIEW_PAGE_SIZE) + 1} of{' '}
                 {Math.max(1, Math.ceil(detail.pagination.totalRows / REVIEW_PAGE_SIZE))}
               </span>
-              <button
+              <Button
                 type="button"
                 data-testid="telestaff-next-page"
                 disabled={busy || reviewOffset + REVIEW_PAGE_SIZE >= detail.pagination.totalRows}
                 onClick={() => void loadImport(detail.import.id, reviewOffset + REVIEW_PAGE_SIZE)}
-                className="min-h-10 rounded border border-slate-600 px-3 text-sm text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-10 rounded border border-border px-3 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next rows
-              </button>
+              </Button>
             </nav>
           </>
         )}
       </section>
 
       <section
-        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-xl border border-border bg-card p-5"
         aria-labelledby="telestaff-apply-heading"
       >
-        <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+        <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
           Controlled canonical action
         </p>
-        <h2 id="telestaff-apply-heading" className="mt-1 font-heading text-xl text-white">
+        <h2 id="telestaff-apply-heading" className="mt-1 font-heading text-xl text-foreground">
           Apply reviewed observations
         </h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+        <p className="mt-2 max-w-3xl text-sm text-foreground">
           A canonical effective date is always chosen explicitly and is never inferred from the
           source snapshot. The server rechecks mappings, current assignments, terminal review state,
           and source type immediately before mutation.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
-          <label className="block">
-            <span className="text-sm text-slate-200">Canonical effective date</span>
-            <input
+          <Label className="block">
+            <span className="text-sm text-foreground">Canonical effective date</span>
+            <Input
               type="date"
               value={canonicalEffectiveOn}
               onChange={(event) => setCanonicalEffectiveOn(event.target.value)}
-              className="mt-1 min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 rounded border border-border bg-card px-3 text-foreground"
             />
-          </label>
-          <button
+          </Label>
+          <Button
             type="button"
             onClick={() => void applyCanonical()}
             disabled={!readyForApply}
-            className="min-h-11 rounded bg-red-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             Apply to canonical staffing
-          </button>
+          </Button>
         </div>
       </section>
 
       <section
-        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-xl border border-border bg-card p-5"
         aria-labelledby="telestaff-baseline-heading"
       >
-        <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+        <p className="text-xs font-semibold uppercase tracking-wider text-warning">
           Annual baseline lifecycle
         </p>
-        <h2 id="telestaff-baseline-heading" className="mt-1 font-heading text-xl text-white">
+        <h2 id="telestaff-baseline-heading" className="mt-1 font-heading text-xl text-foreground">
           2026 staffing baseline
         </h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+        <p className="mt-2 max-w-3xl text-sm text-foreground">
           A baseline can be accepted only from the selected committed official import. The server
           rechecks authoritative-source completeness and records an idempotent acceptance receipt.
           If an earlier baseline exists, the confirmation replaces it atomically while preserving
           the complete acceptance history.
         </p>
         {baselineConfirmationRequired ? (
-          <p className="mt-3 rounded border border-amber-500 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
+          <p className="mt-3 rounded border border-warning/40 bg-warning-surface px-3 py-2 text-sm text-warning">
             This writes an acceptance receipt to production D1 and supersedes the previous 2026
             baseline if one exists. The previous receipt is retained for audit history, and no
             TeleStaff writeback or Bid session is started.
           </p>
         ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
+          <Button
             type="button"
             data-testid="telestaff-baseline-acceptance"
             onClick={() => void designateStagingBaseline()}
             disabled={detail?.import.status !== 'committed' || busy}
-            className="min-h-11 rounded bg-amber-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 rounded bg-warning px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             {baselineConfirmationRequired
               ? 'Confirm 2026 staffing baseline'
               : 'Designate 2026 staffing baseline'}
-          </button>
+          </Button>
           {baselineAcceptance !== null && (
             <div
               data-testid="telestaff-baseline-result"
-              className="rounded border border-emerald-700 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-100"
+              className="rounded border border-success/40 bg-success-surface px-3 py-2 text-sm text-success"
             >
               Completeness: {baselineAcceptance.baseline.status} ·{' '}
               {baselineAcceptance.idempotent
@@ -1612,21 +1620,21 @@ export function TeleStaffOperatorWorkspace() {
       </section>
 
       <section
-        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-xl border border-border bg-card p-5"
         aria-labelledby="telestaff-history-heading"
       >
-        <h2 id="telestaff-history-heading" className="font-heading text-xl text-white">
+        <h2 id="telestaff-history-heading" className="font-heading text-xl text-foreground">
           Sanitized import history
         </h2>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           Select a retained import to inspect its metadata-only reconciliation state.
         </p>
         <div className="mt-4 space-y-2">
           {imports.length === 0 ? (
-            <p className="text-sm text-slate-400">No retained imports are available.</p>
+            <p className="text-sm text-muted-foreground">No retained imports are available.</p>
           ) : (
             imports.map((item) => (
-              <button
+              <Button
                 key={item.id}
                 type="button"
                 onClick={() => {
@@ -1635,9 +1643,9 @@ export function TeleStaffOperatorWorkspace() {
                   setUnknownEmployees([]);
                   void loadImport(item.id);
                 }}
-                className="flex w-full flex-wrap items-center justify-between gap-2 rounded border border-slate-700 bg-slate-950/50 px-3 py-3 text-left text-sm hover:border-slate-500"
+                className="flex w-full flex-wrap items-center justify-between gap-2 rounded border border-border bg-card px-3 py-3 text-left text-sm hover:border-border"
               >
-                <span className="text-slate-100">
+                <span className="text-foreground">
                   {sourceKindLabel(item.sourceKind)} · Snapshot{' '}
                   {item.sourceSnapshotAsOf ?? 'unavailable'} · {item.reconciliation.sourceRows}{' '}
                   row(s) ·{' '}
@@ -1651,7 +1659,7 @@ export function TeleStaffOperatorWorkspace() {
                 >
                   {item.status}
                 </span>
-              </button>
+              </Button>
             ))
           )}
         </div>
@@ -1670,10 +1678,10 @@ function PreviewMetric({
   tone?: 'slate' | 'amber' | 'red';
 }) {
   const valueClass =
-    tone === 'red' ? 'text-red-200' : tone === 'amber' ? 'text-amber-200' : 'text-white';
+    tone === 'red' ? 'text-destructive' : tone === 'amber' ? 'text-warning' : 'text-foreground';
   return (
-    <div className="rounded border border-slate-700 bg-slate-900/60 px-3 py-2">
-      <dt className="text-xs text-slate-400">{label}</dt>
+    <div className="rounded border border-border bg-card px-3 py-2">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className={`mt-1 text-lg font-semibold tabular-nums ${valueClass}`}>{value}</dd>
     </div>
   );

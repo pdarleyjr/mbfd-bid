@@ -1,3 +1,9 @@
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import type { ReactElement } from 'react';
 
 import { ManualRetryButton } from './ManualRetryButton';
@@ -16,33 +22,33 @@ export function PortalSyncStatus({ bids }: { bids: PortalBidRow[] }): ReactEleme
     return <p>All picks synced to portal.</p>;
   }
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Bid</th>
-          <th>Member</th>
-          <th>Position</th>
-          <th>Picked</th>
-          <th>Status</th>
-          <th>Attempts</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Bid</TableHead>
+          <TableHead>Member</TableHead>
+          <TableHead>Position</TableHead>
+          <TableHead>Picked</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Attempts</TableHead>
+          <TableHead>Action</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {bids.map((b) => (
-          <tr key={b.id} data-testid={`portal-row-${b.id}`}>
-            <td>{b.id}</td>
-            <td>{b.memberId}</td>
-            <td>{b.positionId}</td>
-            <td>{new Date(b.pickedAt).toLocaleString()}</td>
-            <td className={`status-${b.portalSyncStatus}`}>{b.portalSyncStatus}</td>
-            <td className="num">{b.portalSyncAttempts}</td>
-            <td>
+          <TableRow key={b.id} data-testid={`portal-row-${b.id}`}>
+            <TableCell>{b.id}</TableCell>
+            <TableCell>{b.memberId}</TableCell>
+            <TableCell>{b.positionId}</TableCell>
+            <TableCell>{new Date(b.pickedAt).toLocaleString()}</TableCell>
+            <TableCell className={`status-${b.portalSyncStatus}`}>{b.portalSyncStatus}</TableCell>
+            <TableCell className="num">{b.portalSyncAttempts}</TableCell>
+            <TableCell>
               <ManualRetryButton bidId={b.id} />
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }

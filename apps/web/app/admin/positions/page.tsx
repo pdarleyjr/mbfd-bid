@@ -38,8 +38,8 @@ export default async function AdminPositionsPage({
   if (binding.error !== null) {
     return (
       <div>
-        <h1 className="font-heading text-2xl text-white">Positions</h1>
-        <p className="mt-6 rounded-xl border border-amber-700/40 bg-amber-950/30 px-4 py-6 text-sm text-amber-100">
+        <h1 className="font-heading text-2xl text-foreground">Positions</h1>
+        <p className="mt-6 rounded-xl border border-warning/40 bg-warning-surface px-4 py-6 text-sm text-warning">
           {binding.error}{' '}
           <Link href="/admin/bid-setup" className="font-semibold underline">
             Return to Bid Setup
@@ -90,9 +90,9 @@ export default async function AdminPositionsPage({
     <div>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-2xl text-white">Positions</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Template: <span className="font-mono text-slate-300">{templateVersion}</span>
+          <h1 className="font-heading text-2xl text-foreground">Positions</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Template: <span className="font-mono text-foreground">{templateVersion}</span>
             {!fetchError && (
               <>
                 {' '}
@@ -100,13 +100,13 @@ export default async function AdminPositionsPage({
               </>
             )}
           </p>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             Annual configuration: year {binding.configuration.bidYear} &bull; rule book{' '}
-            <span className="font-mono text-slate-300">
+            <span className="font-mono text-foreground">
               {binding.configuration.ruleBookVersion}
             </span>{' '}
             &bull; template{' '}
-            <span className="font-mono text-slate-300">
+            <span className="font-mono text-foreground">
               {binding.configuration.positionTemplateVersion}
             </span>
           </p>
@@ -114,7 +114,7 @@ export default async function AdminPositionsPage({
       </div>
 
       {fetchError ? (
-        <p className="mt-6 rounded-xl border border-red-700/40 bg-red-900/20 px-4 py-6 text-center text-slate-300">
+        <p className="mt-6 rounded-xl border border-destructive/40 bg-destructive-surface px-4 py-6 text-center text-foreground">
           Could not load positions. Check worker connectivity.
         </p>
       ) : (
@@ -124,7 +124,7 @@ export default async function AdminPositionsPage({
             const stations = Array.from(byStation.keys()).sort();
             return (
               <section key={shift}>
-                <h2 className="font-heading text-lg text-white">Shift {shift}</h2>
+                <h2 className="font-heading text-lg text-foreground">Shift {shift}</h2>
                 {stations.map((station) => (
                   <PositionGroup
                     key={station}
@@ -138,7 +138,7 @@ export default async function AdminPositionsPage({
           })}
 
           {shifts.length === 0 && (
-            <p className="text-center text-slate-500">
+            <p className="text-center text-muted-foreground">
               No positions found for template {templateVersion}.
             </p>
           )}

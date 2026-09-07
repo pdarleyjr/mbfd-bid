@@ -113,15 +113,23 @@ test('specialty grouped scoring preserves alternatives, prerequisites and channe
     return route.fulfill({ json: { id: 'synthetic-saved-document', revision: 2, replayed: true } });
   });
   await page.goto('/admin/annual-policy?year=2088');
-  await expect(page.getByLabel('Configured rule book', { exact: true })).toHaveValue('2088.1');
-  await page.getByText('Revision 1 · DRAFT', { exact: true }).click();
+  await expect(
+    page.getByRole('main').getByLabel('Configured rule book', { exact: true }),
+  ).toHaveValue('2088.1');
+  await page.getByRole('main').getByText('Revision 1 · DRAFT', { exact: true }).click();
   await page.getByRole('button', { name: 'Load as new draft', exact: true }).click();
-  await page.getByLabel('Executable policy revision', { exact: true }).fill('synthetic-policy-2');
+  await page
+    .getByRole('main')
+    .getByLabel('Executable policy revision', { exact: true })
+    .fill('synthetic-policy-2');
   await page
     .getByRole('button', { name: 'Configure grouped specialty scoring', exact: true })
     .click();
-  await page.getByLabel('Group cap (blank means uncapped)', { exact: true }).fill('5');
-  await page.getByLabel('Points', { exact: true }).fill('4');
+  await page
+    .getByRole('main')
+    .getByLabel('Group cap (blank means uncapped)', { exact: true })
+    .fill('5');
+  await page.getByRole('main').getByLabel('Points', { exact: true }).fill('4');
   await page
     .getByRole('listbox', { name: 'Reviewed alternatives (any one qualifies)', exact: true })
     .selectOption('Synthetic Alternative');
@@ -138,11 +146,11 @@ test('specialty grouped scoring preserves alternatives, prerequisites and channe
   await page
     .getByRole('combobox', { name: 'Credential', exact: true })
     .selectOption('Synthetic Base');
-  await page.getByLabel('Points', { exact: true }).fill('3');
+  await page.getByRole('main').getByLabel('Points', { exact: true }).fill('3');
   await page
     .getByRole('combobox', { name: 'Specialty ranking channel', exact: true })
     .selectOption('total');
-  await expect(page.getByLabel('Points', { exact: true })).toHaveValue('4');
+  await expect(page.getByRole('main').getByLabel('Points', { exact: true })).toHaveValue('4');
   await expect(
     page.getByRole('listbox', { name: 'Reviewed alternatives (any one qualifies)', exact: true }),
   ).toHaveValues(['Synthetic Alternative']);
@@ -184,7 +192,7 @@ test('specialty grouped scoring preserves alternatives, prerequisites and channe
   await prompt.dismiss();
   await goingBack;
   await expect(page).toHaveURL(/review=synthetic/);
-  await expect(page.getByLabel('Points', { exact: true })).toHaveValue('4');
+  await expect(page.getByRole('main').getByLabel('Points', { exact: true })).toHaveValue('4');
   for (const width of [390, 820, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     await page
@@ -203,10 +211,16 @@ test('specialty grouped scoring preserves alternatives, prerequisites and channe
     );
   }
   await page
+    .getByRole('main')
     .getByLabel('Revision reason', { exact: true })
     .fill('Synthetic grouped scoring review');
   await page.getByRole('button', { name: 'Save new draft revision', exact: true }).click();
-  await expect(page.getByText(/fetch|network/i).last()).toBeVisible();
+  await expect(
+    page
+      .getByRole('main')
+      .getByText(/fetch|network/i)
+      .last(),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Save new draft revision', exact: true }).click();
   expect(writes).toHaveLength(2);
   expect(writes[0]).toEqual(writes[1]);

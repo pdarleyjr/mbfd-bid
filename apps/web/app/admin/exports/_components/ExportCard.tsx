@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { type ReactElement, useState } from 'react';
 
 interface Props {
@@ -11,19 +12,19 @@ export function ExportCard({ entry, sessionId }: Props): ReactElement {
   const [url, setUrl] = useState<string | null>(null);
   const fileName = entry.r2Key.split('/').pop() ?? entry.r2Key;
   return (
-    <div className="export-card">
-      <span className="kind">{entry.kind}</span>
-      <span className="key" title={entry.r2Key}>
+    <div className="export-card flex flex-wrap items-center gap-3 border-b border-border py-3 text-sm">
+      <span className="kind rounded-md bg-muted px-2 py-1 text-xs font-semibold">{entry.kind}</span>
+      <span className="key min-w-0 flex-1 break-all font-mono text-xs" title={entry.r2Key}>
         {fileName}
       </span>
       <span className="bytes">{Math.round(entry.bytes / 1024)} KB</span>
       <span className="when">{new Date(entry.uploadedAt).toLocaleString()}</span>
       {url ? (
-        <a href={url} download>
+        <a className="inline-flex min-h-11 items-center text-info underline" href={url} download>
           Download
         </a>
       ) : (
-        <button
+        <Button
           type="button"
           onClick={async () => {
             const path = `/api/admin/exports/${encodeURIComponent(
@@ -36,7 +37,7 @@ export function ExportCard({ entry, sessionId }: Props): ReactElement {
           }}
         >
           Get link
-        </button>
+        </Button>
       )}
     </div>
   );

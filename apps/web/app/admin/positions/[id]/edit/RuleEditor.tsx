@@ -1,4 +1,9 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
 import {
   RULE_CUSTOM_CRITERIA as CUSTOM_CRITERIA,
@@ -797,32 +802,32 @@ export function RuleEditor({
 
   return (
     <form onSubmit={onSubmit} className="mt-6 space-y-6">
-      <p className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-300">
-        Editing draft rule <span className="font-mono text-slate-100">#{initialRule.id}</span> for{' '}
-        <span className="font-mono text-slate-100">{positionId}</span> in configured rule book{' '}
-        <span className="font-mono text-slate-100">{ruleBookVersion}</span>.
+      <p className="rounded border border-border bg-card px-3 py-2 text-sm text-foreground">
+        Editing draft rule <span className="font-mono text-foreground">#{initialRule.id}</span> for{' '}
+        <span className="font-mono text-foreground">{positionId}</span> in configured rule book{' '}
+        <span className="font-mono text-foreground">{ruleBookVersion}</span>.
       </p>
 
       {ruleBookRevision != null && baseRevision != null && ruleBookRevision !== baseRevision && (
-        <div role="alert" className="rounded border border-amber-600 p-3 text-sm text-amber-100">
+        <div role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">
           <p>
             The rule book changed while this edit was open. Your values remain here; saving the
             stale revision will be rejected.
           </p>
-          <button
+          <Button
             type="button"
             onClick={discardUnsafeDraft}
-            className="mt-2 min-h-11 rounded border border-amber-600 px-3"
+            className="mt-2 min-h-11 rounded border border-warning/40 px-3"
           >
             Discard local edits and load current rule
-          </button>
+          </Button>
         </div>
       )}
 
       {blockingIssues.length > 0 && (
         <aside
           role="alert"
-          className="rounded border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-100"
+          className="rounded border border-warning/40 bg-warning-surface p-4 text-sm text-warning"
         >
           <p className="font-semibold">Rule requires review; saving is disabled.</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -832,23 +837,23 @@ export function RuleEditor({
           </ul>
           <p className="mt-2">No changes will be sent until this is resolved.</p>
           {draftIssues.length > 0 && (
-            <button
+            <Button
               type="button"
               onClick={discardUnsafeDraft}
-              className="mt-3 rounded border border-amber-300 px-3 py-1.5 text-sm text-amber-50 hover:bg-amber-900/40"
+              className="mt-3 rounded border border-warning/40 px-3 py-1.5 text-sm text-warning hover:bg-warning-surface"
             >
               Discard unsafe local draft
-            </button>
+            </Button>
           )}
         </aside>
       )}
 
-      <fieldset className="rounded border border-slate-700 p-4">
-        <legend className="px-1 text-sm font-semibold text-slate-100">Required ranks</legend>
+      <fieldset className="rounded border border-border p-4">
+        <legend className="px-1 text-sm font-semibold text-foreground">Required ranks</legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {RANKS.map((rank) => (
-            <label key={rank} className="flex items-center gap-2 text-sm text-slate-200">
-              <input
+            <Label key={rank} className="flex items-center gap-2 text-sm text-foreground">
+              <Input
                 type="checkbox"
                 checked={values.requiredRanks.includes(rank)}
                 onChange={(event) =>
@@ -859,26 +864,26 @@ export function RuleEditor({
                 }
               />
               {RANK_LABELS[rank]}
-            </label>
+            </Label>
           ))}
         </div>
       </fieldset>
 
-      <label className="block">
-        <span className="text-sm font-semibold text-slate-100">Required credential names</span>
-        <span className="mt-1 block text-sm text-slate-300">
+      <Label className="block">
+        <span className="text-sm font-semibold text-foreground">Required credential names</span>
+        <span className="mt-1 block text-sm text-foreground">
           Enter one exact credential name per line, exactly as they appear in credential records.
         </span>
-        <textarea
+        <Textarea
           data-testid="rule-required-credentials"
           value={values.requiredCredentials}
           onChange={(event) =>
             setValues((current) => ({ ...current, requiredCredentials: event.target.value }))
           }
           rows={4}
-          className="mt-2 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
+          className="mt-2 block w-full rounded bg-card px-3 py-2 text-sm text-foreground"
         />
-      </label>
+      </Label>
 
       <QualificationAlternativesEditor
         value={values.anyOfCredentials}
@@ -892,14 +897,14 @@ export function RuleEditor({
         value={values.postAward}
         onChange={(postAward) => setValues((current) => ({ ...current, postAward }))}
       />
-      <fieldset className="rounded border border-slate-700 p-4">
-        <legend className="px-1 text-sm font-semibold text-slate-100">
+      <fieldset className="rounded border border-border p-4">
+        <legend className="px-1 text-sm font-semibold text-foreground">
           Custom eligibility conditions
         </legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {CUSTOM_CRITERIA.map((criterion) => (
-            <label key={criterion} className="flex items-center gap-2 text-sm text-slate-200">
-              <input
+            <Label key={criterion} className="flex items-center gap-2 text-sm text-foreground">
+              <Input
                 type="checkbox"
                 checked={values.customCriteria.includes(criterion)}
                 onChange={(event) =>
@@ -914,13 +919,13 @@ export function RuleEditor({
                 }
               />
               {CUSTOM_CRITERIA_LABELS[criterion]}
-            </label>
+            </Label>
           ))}
         </div>
       </fieldset>
 
-      <label className="flex min-h-11 items-center gap-3 text-sm text-slate-200">
-        <input
+      <Label className="flex min-h-11 items-center gap-3 text-sm text-foreground">
+        <Input
           type="checkbox"
           checked={values.scoring !== null}
           onChange={(e) =>
@@ -931,7 +936,7 @@ export function RuleEditor({
           }
         />
         Use explicit Total, Special Operations, and Marine scoring for this draft rule
-      </label>
+      </Label>
       {values.scoring && (
         <ConfiguredScoringEditor
           value={values.scoring}
@@ -939,12 +944,14 @@ export function RuleEditor({
         />
       )}
       {!values.scoring && (
-        <fieldset className="rounded border border-slate-700 p-4">
-          <legend className="px-1 text-sm font-semibold text-slate-100">Credential points</legend>
-          <label className="mt-2 block max-w-xs">
-            <span className="text-sm text-slate-300">Maximum points</span>
-            <span className="mt-1 block text-xs text-slate-400">Use 0 for no points cap.</span>
-            <input
+        <fieldset className="rounded border border-border p-4">
+          <legend className="px-1 text-sm font-semibold text-foreground">Credential points</legend>
+          <Label className="mt-2 block max-w-xs">
+            <span className="text-sm text-foreground">Maximum points</span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Use 0 for no points cap.
+            </span>
+            <Input
               data-testid="rule-max-points"
               type="number"
               min="0"
@@ -953,19 +960,19 @@ export function RuleEditor({
               onChange={(event) =>
                 setValues((current) => ({ ...current, maxPoints: event.target.value }))
               }
-              className="mt-2 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
+              className="mt-2 block w-full rounded bg-card px-3 py-2 tabular-nums text-foreground"
             />
-          </label>
+          </Label>
 
           <div className="mt-4 space-y-3">
             {values.pointRows.map((row, index) => (
               <div
                 key={row.clientId}
-                className="grid gap-3 rounded border border-slate-700 p-3 md:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1fr)_auto]"
+                className="grid gap-3 rounded border border-border p-3 md:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1fr)_auto]"
               >
-                <label className="block">
-                  <span className="text-xs text-slate-300">Credential name</span>
-                  <input
+                <Label className="block">
+                  <span className="text-xs text-foreground">Credential name</span>
+                  <Input
                     data-testid={`rule-points-row-${index}-credential`}
                     type="text"
                     value={row.credential}
@@ -979,12 +986,12 @@ export function RuleEditor({
                         ),
                       }))
                     }
-                    className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
+                    className="mt-1 block w-full rounded bg-card px-3 py-2 text-sm text-foreground"
                   />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-slate-300">Points</span>
-                  <input
+                </Label>
+                <Label className="block">
+                  <span className="text-xs text-foreground">Points</span>
+                  <Input
                     data-testid={`rule-points-row-${index}-points`}
                     type="number"
                     min="0"
@@ -1000,12 +1007,12 @@ export function RuleEditor({
                         ),
                       }))
                     }
-                    className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
+                    className="mt-1 block w-full rounded bg-card px-3 py-2 tabular-nums text-foreground"
                   />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-slate-300">Operations gate (optional)</span>
-                  <select
+                </Label>
+                <Label className="block">
+                  <span className="text-xs text-foreground">Operations gate (optional)</span>
+                  <NativeSelect
                     data-testid={`rule-points-row-${index}-ops-gate`}
                     value={row.opsGate}
                     onChange={(event) =>
@@ -1018,7 +1025,7 @@ export function RuleEditor({
                         ),
                       }))
                     }
-                    className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
+                    className="mt-1 block w-full rounded bg-card px-3 py-2 text-sm text-foreground"
                   >
                     <option value="">No Operations gate</option>
                     {OPS_GATES.map((gate) => (
@@ -1026,9 +1033,9 @@ export function RuleEditor({
                         {OPS_GATE_LABELS[gate]}
                       </option>
                     ))}
-                  </select>
-                </label>
-                <button
+                  </NativeSelect>
+                </Label>
+                <Button
                   type="button"
                   onClick={() =>
                     setValues((current) => ({
@@ -1038,14 +1045,14 @@ export function RuleEditor({
                       ),
                     }))
                   }
-                  className="self-end rounded border border-slate-500 px-3 py-2 text-sm text-slate-100 hover:bg-slate-800"
+                  className="self-end rounded border border-border px-3 py-2 text-sm text-foreground hover:bg-card"
                 >
                   Remove
-                </button>
+                </Button>
               </div>
             ))}
           </div>
-          <button
+          <Button
             data-testid="rule-add-points-row"
             type="button"
             onClick={() =>
@@ -1054,26 +1061,26 @@ export function RuleEditor({
                 pointRows: [...current.pointRows, createNextPointRow(current.pointRows)],
               }))
             }
-            className="mt-4 rounded border border-slate-500 px-3 py-2 text-sm text-slate-100 hover:bg-slate-800"
+            className="mt-4 rounded border border-border px-3 py-2 text-sm text-foreground hover:bg-card"
           >
             Add credential points
-          </button>
+          </Button>
         </fieldset>
       )}
 
-      <fieldset className="rounded border border-slate-700 p-4">
-        <legend className="px-1 text-sm font-semibold text-slate-100">Tie-break order</legend>
-        <p className="mt-1 text-sm text-slate-300">Selections are evaluated in this order.</p>
+      <fieldset className="rounded border border-border p-4">
+        <legend className="px-1 text-sm font-semibold text-foreground">Tie-break order</legend>
+        <p className="mt-1 text-sm text-foreground">Selections are evaluated in this order.</p>
         <ol className="mt-3 space-y-2">
           {values.tieBreakChain.map((key, index) => (
             <li
               key={key}
               data-testid={`rule-tie-break-item-${key}`}
-              className="flex flex-wrap items-center gap-2 rounded bg-slate-800 px-3 py-2 text-sm text-slate-100"
+              className="flex flex-wrap items-center gap-2 rounded bg-card px-3 py-2 text-sm text-foreground"
             >
-              <span className="w-6 tabular-nums text-slate-400">{index + 1}.</span>
+              <span className="w-6 tabular-nums text-muted-foreground">{index + 1}.</span>
               <span className="min-w-40 flex-1">{TIE_BREAK_LABELS[key]}</span>
-              <button
+              <Button
                 type="button"
                 aria-label={`Move ${TIE_BREAK_LABELS[key]} earlier`}
                 disabled={index === 0}
@@ -1088,11 +1095,11 @@ export function RuleEditor({
                     return { ...current, tieBreakChain: next };
                   })
                 }
-                className="rounded border border-slate-500 px-2 py-1 disabled:opacity-50"
+                className="rounded border border-border px-2 py-1 disabled:opacity-50"
               >
                 Earlier
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 aria-label={`Move ${TIE_BREAK_LABELS[key]} later`}
                 disabled={index === values.tieBreakChain.length - 1}
@@ -1107,11 +1114,11 @@ export function RuleEditor({
                     return { ...current, tieBreakChain: next };
                   })
                 }
-                className="rounded border border-slate-500 px-2 py-1 disabled:opacity-50"
+                className="rounded border border-border px-2 py-1 disabled:opacity-50"
               >
                 Later
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 aria-label={`Remove ${TIE_BREAK_LABELS[key]} from tie-break order`}
                 onClick={() =>
@@ -1120,16 +1127,16 @@ export function RuleEditor({
                     tieBreakChain: current.tieBreakChain.filter((item) => item !== key),
                   }))
                 }
-                className="rounded border border-slate-500 px-2 py-1"
+                className="rounded border border-border px-2 py-1"
               >
                 Remove
-              </button>
+              </Button>
             </li>
           ))}
         </ol>
-        <label className="mt-4 block max-w-md">
-          <span className="text-sm text-slate-300">Add a tie-break selection</span>
-          <select
+        <Label className="mt-4 block max-w-md">
+          <span className="text-sm text-foreground">Add a tie-break selection</span>
+          <NativeSelect
             data-testid="rule-tie-break-add"
             value=""
             onChange={(event) => {
@@ -1140,7 +1147,7 @@ export function RuleEditor({
                 tieBreakChain: [...current.tieBreakChain, key],
               }));
             }}
-            className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
+            className="mt-1 block w-full rounded bg-card px-3 py-2 text-sm text-foreground"
           >
             <option value="">Choose a tie-break</option>
             {TIE_BREAK_KEYS.filter((key) => !values.tieBreakChain.includes(key)).map((key) => (
@@ -1148,46 +1155,46 @@ export function RuleEditor({
                 {TIE_BREAK_LABELS[key]}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
       </fieldset>
 
-      <label className="block">
-        <span className="text-sm text-slate-300">Reason (min 4 chars)</span>
-        <textarea
+      <Label className="block">
+        <span className="text-sm text-foreground">Reason (min 4 chars)</span>
+        <Textarea
           data-testid="rule-reason"
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           rows={2}
-          className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
+          className="mt-1 block w-full rounded bg-card px-3 py-2 text-sm text-foreground"
           required
         />
-      </label>
+      </Label>
 
       {blockingIssues.length === 0 && formIssues.length > 0 && (
-        <output aria-live="polite" className="block text-sm text-amber-300">
+        <output aria-live="polite" className="block text-sm text-warning">
           {formIssues[0]}
         </output>
       )}
       {error !== null && (
-        <output aria-live="polite" className="block text-sm text-red-400">
+        <output aria-live="polite" className="block text-sm text-destructive">
           {error}
         </output>
       )}
       {toast !== null && (
-        <output aria-live="polite" className="block text-sm text-emerald-400">
+        <output aria-live="polite" className="block text-sm text-success">
           {toast}
         </output>
       )}
 
-      <button
+      <Button
         data-testid="rule-save"
         type="submit"
         disabled={saveBlocked}
-        className="rounded bg-red-700 px-4 py-2 text-white hover:bg-red-600 disabled:opacity-50"
+        className="rounded bg-destructive px-4 py-2 text-primary-foreground hover:bg-destructive disabled:opacity-50"
       >
         Save rule
-      </button>
+      </Button>
     </form>
   );
 }

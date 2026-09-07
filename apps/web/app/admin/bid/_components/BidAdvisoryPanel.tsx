@@ -42,22 +42,22 @@ export function BidAdvisoryPanel({ advisory }: Props) {
     <aside
       aria-labelledby="bid-advisory-heading"
       data-testid="bid-advisory-panel"
-      className="border-b border-stone-200 bg-white px-4 py-4"
+      className="border-b border-border bg-white px-4 py-4"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-red-700">
             Deterministic explanation
           </p>
-          <h2 id="bid-advisory-heading" className="font-heading text-lg text-stone-950">
+          <h2 id="bid-advisory-heading" className="font-heading text-lg text-foreground">
             BID Advisory
           </h2>
         </div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {`Authoritative state · sequence ${advisory.sequence}`}
         </p>
       </header>
-      <p className="mt-1 max-w-4xl text-sm text-stone-600">
+      <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
         These explanations describe the current frozen BID result. They do not calculate a second
         outcome, make a selection, or change operational state.
       </p>

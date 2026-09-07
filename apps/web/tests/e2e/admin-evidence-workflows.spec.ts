@@ -109,24 +109,35 @@ test('dated tenure and post-award review preserve edits and exact retries at thr
   );
   await page.goto('/admin/personnel/tenure');
   await membersLoaded;
-  await page.getByLabel('Staffing date', { exact: true }).fill('2027-01-01');
+  await expect(page.getByRole('main').getByLabel('Staffing date', { exact: true })).toHaveCount(1);
+  await page.getByRole('main').getByLabel('Staffing date', { exact: true }).fill('2027-01-01');
   await expect(
     page.getByRole('combobox', { name: 'Authorized staffing seat', exact: true }),
   ).toBeEnabled({ timeout: 15000 });
   await page
     .getByRole('combobox', { name: 'Authorized staffing seat', exact: true })
     .selectOption('seat-1');
-  await page.getByLabel('Evidence effective date', { exact: true }).fill('2026-09-06');
+  await page
+    .getByRole('main')
+    .getByLabel('Evidence effective date', { exact: true })
+    .fill('2026-09-06');
   await page
     .getByRole('combobox', { name: 'Reviewed status', exact: true })
     .selectOption('PROTECTED');
   await page.getByRole('combobox', { name: 'Protected member', exact: true }).selectOption('101');
-  await page.getByLabel('Protected from', { exact: true }).fill('2026-01-01');
-  await page.getByLabel('Protected through (inclusive)', { exact: true }).fill('2028-12-31');
+  await page.getByRole('main').getByLabel('Protected from', { exact: true }).fill('2026-01-01');
   await page
+    .getByRole('main')
+    .getByLabel('Protected through (inclusive)', { exact: true })
+    .fill('2028-12-31');
+  await page
+    .getByRole('main')
     .getByLabel('Authoritative source reference', { exact: true })
     .fill('Synthetic reviewed tenure source');
-  await page.getByLabel('Review reason', { exact: true }).fill('Synthetic term evidence review');
+  await page
+    .getByRole('main')
+    .getByLabel('Review reason', { exact: true })
+    .fill('Synthetic term evidence review');
   for (const width of [390, 820, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.screenshot({ path: testInfo.outputPath(`tenure-${width}.png`), fullPage: true });
@@ -135,34 +146,49 @@ test('dated tenure and post-award review preserve edits and exact retries at thr
     );
   }
   await page.getByRole('button', { name: 'Record reviewed tenure', exact: true }).click();
-  await expect(page.getByText('synthetic transaction rolled back', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Protected through (inclusive)', { exact: true })).toHaveValue(
-    '2028-12-31',
-  );
+  await expect(
+    page.getByRole('main').getByText('synthetic transaction rolled back', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('main').getByLabel('Protected through (inclusive)', { exact: true }),
+  ).toHaveValue('2028-12-31');
   await page.getByRole('button', { name: 'Record reviewed tenure', exact: true }).click();
-  await expect(page.getByText(/Revision 1 · 2026-09-06 · PROTECTED/)).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText(/Revision 1 · 2026-09-06 · PROTECTED/),
+  ).toBeVisible();
   expect(tenureRequests).toHaveLength(2);
   expect(tenureRequests[0]).toEqual(tenureRequests[1]);
   expect(tenureRequests[0]?.key).not.toBe('');
-  await page.getByLabel('Evidence effective date', { exact: true }).fill('2027-01-01');
+  await page
+    .getByRole('main')
+    .getByLabel('Evidence effective date', { exact: true })
+    .fill('2027-01-01');
   await page
     .getByRole('combobox', { name: 'Reviewed status', exact: true })
     .selectOption('UNKNOWN');
   await page
+    .getByRole('main')
     .getByLabel('Authoritative source reference', { exact: true })
     .fill('Synthetic follow-up evidence');
-  await page.getByLabel('Review reason', { exact: true }).fill('Synthetic retained review reason');
+  await page
+    .getByRole('main')
+    .getByLabel('Review reason', { exact: true })
+    .fill('Synthetic retained review reason');
   await page.getByRole('button', { name: 'Record reviewed tenure', exact: true }).click();
-  await expect(page.getByText('tenure revision conflict', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('tenure revision conflict', { exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Refresh history and retain edits', exact: true }).click();
-  await expect(page.getByText('Tenure revision 2.', { exact: false })).toBeVisible();
-  await expect(page.getByLabel('Review reason', { exact: true })).toHaveValue(
+  await expect(
+    page.getByRole('main').getByText('Tenure revision 2.', { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole('main').getByLabel('Review reason', { exact: true })).toHaveValue(
     'Synthetic retained review reason',
   );
   expect(tenureRequests).toHaveLength(3);
   await page.getByRole('button', { name: 'Use reviewed evidence revision', exact: true }).click();
   await page.getByRole('button', { name: 'Record reviewed tenure', exact: true }).click();
-  await expect(page.getByText(/Revision 3 · 2027-01-01 · UNKNOWN/)).toBeVisible();
+  await expect(page.getByRole('main').getByText(/Revision 3 · 2027-01-01 · UNKNOWN/)).toBeVisible();
   expect(tenureRequests[2]?.body.expected_revision).toBe(1);
   expect(tenureRequests[3]?.body.expected_revision).toBe(2);
   expect(tenureRequests[2]?.key).not.toBe(tenureRequests[3]?.key);
@@ -209,20 +235,37 @@ test('dated tenure and post-award review preserve edits and exact retries at thr
   await page
     .getByRole('combobox', { name: 'Service category', exact: true })
     .selectOption('SYNTHETIC_SERVICE');
-  await page.getByLabel('Effective date of this evidence', { exact: true }).fill('2027-01-01');
-  await page.getByLabel('Verified cumulative completed months', { exact: true }).fill('36');
+  await expect(
+    page.getByRole('main').getByLabel('Effective date of this evidence', { exact: true }),
+  ).toHaveCount(1);
   await page
+    .getByRole('main')
+    .getByLabel('Effective date of this evidence', { exact: true })
+    .fill('2027-01-01');
+  await page
+    .getByRole('main')
+    .getByLabel('Verified cumulative completed months', { exact: true })
+    .fill('36');
+  await page
+    .getByRole('main')
     .getByLabel('Authoritative source reference', { exact: true })
     .fill('Synthetic service source');
-  await page.getByLabel('Review reason', { exact: true }).fill('Synthetic service reconciliation');
+  await page
+    .getByRole('main')
+    .getByLabel('Review reason', { exact: true })
+    .fill('Synthetic service reconciliation');
   await page.getByRole('button', { name: 'Record reviewed service evidence', exact: true }).click();
-  await expect(page.getByText('service revision conflict', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('service revision conflict', { exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Refresh history and retain edits', exact: true }).click();
-  await expect(page.getByText('Service revision 1.', { exact: false })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('Service revision 1.', { exact: false }),
+  ).toBeVisible();
   expect(serviceRequests).toHaveLength(1);
   await page.getByRole('button', { name: 'Use reviewed evidence revision', exact: true }).click();
   await expect(
-    page.getByLabel('Verified cumulative completed months', { exact: true }),
+    page.getByRole('main').getByLabel('Verified cumulative completed months', { exact: true }),
   ).toHaveValue('36');
   await page.getByRole('button', { name: 'Record reviewed service evidence', exact: true }).click();
   await expect(
@@ -291,22 +334,33 @@ test('dated tenure and post-award review preserve edits and exact retries at thr
   await page
     .getByRole('combobox', { name: 'Official completed bid', exact: true })
     .selectOption('synthetic-completed');
-  await page.getByLabel('Review as of', { exact: true }).fill('2027-04-20');
+  await expect(page.getByRole('main').getByLabel('Review as of', { exact: true })).toHaveCount(1);
+  await page.getByRole('main').getByLabel('Review as of', { exact: true }).fill('2027-04-20');
   await page.getByRole('button', { name: 'Review evidence', exact: true }).click();
   await expect(
-    page.getByText(
-      'Measured from approved bid start 2027-01-01; retained through award amendments.',
-    ),
+    page
+      .getByRole('main')
+      .getByText('Measured from approved bid start 2027-01-01; retained through award amendments.'),
   ).toBeVisible();
-  await page.getByLabel('Review effective date', { exact: true }).fill('2027-04-20');
+  await page
+    .getByRole('main')
+    .getByLabel('Review effective date', { exact: true })
+    .fill('2027-04-20');
   await page
     .getByRole('combobox', { name: 'Reviewed status', exact: true })
     .selectOption('COMPLETED');
-  await page.getByLabel('Verified completion date', { exact: true }).fill('2027-04-19');
   await page
+    .getByRole('main')
+    .getByLabel('Verified completion date', { exact: true })
+    .fill('2027-04-19');
+  await page
+    .getByRole('main')
     .getByLabel('Evidence reference', { exact: true })
     .fill('Synthetic verified completion source');
-  await page.getByLabel('Review reason', { exact: true }).fill('Synthetic completion review');
+  await page
+    .getByRole('main')
+    .getByLabel('Review reason', { exact: true })
+    .fill('Synthetic completion review');
   for (const width of [390, 820, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.screenshot({ path: testInfo.outputPath(`obligation-${width}.png`), fullPage: true });
@@ -315,12 +369,14 @@ test('dated tenure and post-award review preserve edits and exact retries at thr
     );
   }
   await page.getByRole('button', { name: 'Record review', exact: true }).click();
-  await expect(page.getByLabel('Verified completion date', { exact: true })).toHaveValue(
-    '2027-04-19',
-  );
+  await expect(
+    page.getByRole('main').getByLabel('Verified completion date', { exact: true }),
+  ).toHaveValue('2027-04-19');
   await expect(page.getByRole('status').filter({ hasText: /fetch|network/i })).toBeVisible();
   await page.getByRole('button', { name: 'Record review', exact: true }).click();
-  await expect(page.getByText('COMPLETED · AFTER DEADLINE', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('COMPLETED · AFTER DEADLINE', { exact: true }),
+  ).toBeVisible();
   expect(obligationRequests).toHaveLength(2);
   expect(obligationRequests[0]).toEqual(obligationRequests[1]);
   expect(errors).toEqual([]);

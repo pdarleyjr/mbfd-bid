@@ -33,7 +33,7 @@ const columns: ColumnDef<MemberRow, string>[] = [
     cell: (info) => (
       <Link
         href={`/admin/members/${info.row.original.id}`}
-        className="font-mono text-xs text-red-400 [font-variant-numeric:tabular-nums] hover:text-red-300"
+        className="font-mono text-xs text-destructive [font-variant-numeric:tabular-nums] hover:text-destructive"
       >
         {info.getValue()}
       </Link>
@@ -44,7 +44,7 @@ const columns: ColumnDef<MemberRow, string>[] = [
     cell: (info) => (
       <Link
         href={`/admin/members/${info.row.original.id}`}
-        className="font-medium text-white hover:text-red-300"
+        className="font-medium text-foreground hover:text-destructive"
       >
         {info.getValue()}
       </Link>
@@ -66,10 +66,10 @@ const columns: ColumnDef<MemberRow, string>[] = [
           className={[
             'inline-flex rounded px-2 py-0.5 text-xs font-medium',
             val === 'OFC'
-              ? 'bg-slate-700 text-slate-200'
+              ? 'bg-muted text-foreground'
               : val === 'FF'
-                ? 'bg-stone-700 text-stone-200'
-                : 'bg-red-900/40 text-red-300',
+                ? 'bg-muted text-foreground'
+                : 'bg-destructive-surface text-destructive',
           ].join(' ')}
         >
           {val}
@@ -90,7 +90,7 @@ const columns: ColumnDef<MemberRow, string>[] = [
     id: 'hired_at',
     header: 'Hired',
     cell: (info) => (
-      <span className="font-mono text-xs text-slate-400 [font-variant-numeric:tabular-nums]">
+      <span className="font-mono text-xs text-muted-foreground [font-variant-numeric:tabular-nums]">
         {info.getValue() || '—'}
       </span>
     ),

@@ -77,19 +77,28 @@ test('seat creation retains its generated identity through response loss and ref
   });
   await page.setViewportSize({ width: 390, height: 1000 });
   await page.goto('/admin/staffing-structure?as_of=2027-01-01');
-  await page.getByLabel('Station', { exact: true }).fill('7');
-  await page.getByLabel('Unit', { exact: true }).fill('Synthetic Engine 7');
-  await page.getByLabel('Position', { exact: true }).fill('Synthetic Firefighter');
-  await page.getByLabel('Reason', { exact: true }).fill('Synthetic approved Station 7 fixture');
+  await page.getByRole('main').getByLabel('Station', { exact: true }).fill('7');
+  await page.getByRole('main').getByLabel('Unit', { exact: true }).fill('Synthetic Engine 7');
+  await page
+    .getByRole('main')
+    .getByLabel('Position', { exact: true })
+    .fill('Synthetic Firefighter');
+  await page
+    .getByRole('main')
+    .getByLabel('Reason', { exact: true })
+    .fill('Synthetic approved Station 7 fixture');
   await page.getByRole('button', { name: 'Create authorized seat', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible();
-  await expect(page.getByLabel('Position', { exact: true })).toHaveValue('Synthetic Firefighter');
+  await expect(page.getByRole('main').getByLabel('Position', { exact: true })).toHaveValue(
+    'Synthetic Firefighter',
+  );
   await page.getByRole('button', { name: 'Create authorized seat', exact: true }).click();
   await expect(
-    page.getByText(
-      'Authorized staffing seat created. Effective-dated projections are refreshing.',
-      { exact: true },
-    ),
+    page
+      .getByRole('main')
+      .getByText('Authorized staffing seat created. Effective-dated projections are refreshing.', {
+        exact: true,
+      }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retire seat', exact: true })).toHaveCount(1);
   await expect(page.getByRole('cell').filter({ hasText: 'Synthetic Engine 7' })).toBeVisible();

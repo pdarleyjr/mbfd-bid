@@ -35,15 +35,15 @@ export default async function BidPinAdminPage() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="mb-2 font-display text-2xl text-slate-50">Bid Access PIN</h1>
-      <p className="mb-6 text-sm text-slate-300">
+      <h1 className="mb-2 font-heading text-2xl text-foreground">Bid Access PIN</h1>
+      <p className="mb-6 text-sm text-foreground">
         Members must enter an explicitly configured PIN before they can sign in to the bid site.
         Change it any time — the new value applies immediately to every device, and also reflects on
         the MBFD Hub admin&apos;s &ldquo;Bid Access PIN&rdquo; page.
       </p>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-amber-600 bg-amber-50/10 p-4 text-sm text-amber-200">
+        <div className="mb-4 rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
           Could not load the current PIN: {error}.
         </div>
       )}

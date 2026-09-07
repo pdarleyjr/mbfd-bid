@@ -1,4 +1,8 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
@@ -95,9 +99,9 @@ export function AnnualPlanReview({
   const currentPage = Math.min(page, pageCount - 1);
   return (
     <div className="space-y-5">
-      <label className="block max-w-lg">
+      <Label className="block max-w-lg">
         Comparison baseline
-        <select
+        <NativeSelect
           className={fieldClass}
           value={baseline}
           onChange={(e) => {
@@ -107,28 +111,28 @@ export function AnnualPlanReview({
         >
           <option value="official">Selected official completion</option>
           <option value="last_review">Last saved source review</option>
-        </select>
-      </label>
-      <button
+        </NativeSelect>
+      </Label>
+      <Button
         type="button"
         className={buttonClass}
         disabled={review.isFetching}
         onClick={() => void review.refetch()}
       >
         {review.isFetching ? 'Checking…' : 'Refresh readiness and impact'}
-      </button>
+      </Button>
       {review.isPending && (
         <p>Checking designated rules, source evidence and session preparation…</p>
       )}
       {review.isError && (
-        <p role="alert" className="text-amber-200">
+        <p role="alert" className="text-warning">
           {review.error.message}. {data ? 'The last successful review remains visible.' : ''}
         </p>
       )}
       {data && (
         <>
           <p
-            className={`rounded border p-4 ${data.ready ? 'border-emerald-600 text-emerald-200' : 'border-amber-700 text-amber-200'}`}
+            className={`rounded border p-4 ${data.ready ? 'border-success/40 text-success' : 'border-warning/40 text-warning'}`}
           >
             {data.ready
               ? 'Preparation checks passed for these revisions.'
@@ -139,9 +143,9 @@ export function AnnualPlanReview({
           {data.blockers.length > 0 && (
             <ul className="space-y-3">
               {data.blockers.map((b) => (
-                <li key={b.code} className="rounded border border-slate-700 p-3">
+                <li key={b.code} className="rounded border border-border p-3">
                   <h3 className="font-semibold">{b.code.replaceAll('_', ' ')}</h3>
-                  <p className="mt-1 text-sm text-slate-300">{b.detail}</p>
+                  <p className="mt-1 text-sm text-foreground">{b.detail}</p>
                 </li>
               ))}
             </ul>
@@ -152,11 +156,11 @@ export function AnnualPlanReview({
               excluded by the shared annual preparation rules.
             </p>
           )}
-          <details className="rounded border border-slate-700 p-4">
+          <details className="rounded border border-border p-4">
             <summary className="cursor-pointer font-semibold">
               What changed ({data.changes.length} position changes)
             </summary>
-            <p className="mt-3 text-sm text-slate-400">
+            <p className="mt-3 text-sm text-muted-foreground">
               {data.comparisonSource === 'last_review'
                 ? data.checkpoint
                   ? `Compared with saved source revision ${data.checkpoint.sourceRevision}.`
@@ -176,18 +180,18 @@ export function AnnualPlanReview({
           </details>
           <section className="space-y-3">
             <h3 className="font-heading text-lg">Eligibility impact</h3>
-            <p className="text-sm text-slate-400">{data.impact.scope}</p>
+            <p className="text-sm text-muted-foreground">{data.impact.scope}</p>
             {data.impact.available ? (
               <>
                 <p>
                   Each comparison measures member-position combinations. Added or removed members
                   and positions are outside the matching comparison and listed separately.
                 </p>
-                <p className="text-sm text-slate-400">{data.impact.priorityScope}</p>
+                <p className="text-sm text-muted-foreground">{data.impact.priorityScope}</p>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label>
+                  <Label>
                     Comparison
-                    <select
+                    <NativeSelect
                       className={fieldClass}
                       value={comparison}
                       onChange={(e) => {
@@ -197,11 +201,11 @@ export function AnnualPlanReview({
                     >
                       <option value="policy">Rule changes on current evidence</option>
                       <option value="evidence">Evidence changes under prior rules</option>
-                    </select>
-                  </label>
-                  <label>
+                    </NativeSelect>
+                  </Label>
+                  <Label>
                     Filter by position or member ID
-                    <input
+                    <Input
                       className={fieldClass}
                       value={filter}
                       onChange={(e) => {
@@ -209,9 +213,9 @@ export function AnnualPlanReview({
                         setPage(0);
                       }}
                     />
-                  </label>
+                  </Label>
                 </div>
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   {comparison === 'policy' ? data.impact.scope : data.impact.evidenceScope}
                 </p>
                 <p>
@@ -221,7 +225,7 @@ export function AnnualPlanReview({
                 <div className="grid gap-3 lg:grid-cols-2">
                   {filtered.slice(currentPage * 50, (currentPage + 1) * 50).map((change) => (
                     <article
-                      className="min-w-0 rounded border border-slate-700 p-3 text-sm"
+                      className="min-w-0 rounded border border-border p-3 text-sm"
                       key={`${change.positionId}:${change.memberId}`}
                     >
                       <h4 className="break-words font-semibold">
@@ -239,26 +243,26 @@ export function AnnualPlanReview({
                   ))}
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <button
+                  <Button
                     type="button"
                     className={buttonClass}
                     disabled={currentPage === 0}
                     onClick={() => setPage(currentPage - 1)}
                   >
                     Previous results
-                  </button>
+                  </Button>
                   <span>
                     Page {currentPage + 1} of {pageCount}
                   </span>
-                  <button
+                  <Button
                     type="button"
                     className={buttonClass}
                     disabled={currentPage + 1 >= pageCount}
                     onClick={() => setPage(currentPage + 1)}
                   >
                     Next results
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     className={buttonClass}
                     onClick={() => {
@@ -286,10 +290,10 @@ export function AnnualPlanReview({
                     }}
                   >
                     Export full review and impact
-                  </button>
+                  </Button>
                 </div>
                 {data.impact.incomparable && (
-                  <details className="rounded border border-slate-700 p-4">
+                  <details className="rounded border border-border p-4">
                     <summary className="cursor-pointer font-semibold">
                       Added, removed or incomparable evidence
                     </summary>
@@ -315,14 +319,14 @@ export function AnnualPlanReview({
                 )}
               </>
             ) : (
-              <p className="text-amber-200">
+              <p className="text-warning">
                 Impact requires accepted upcoming session preparation and comparable evidence from
                 the selected baseline. No missing baseline is replaced with current data.
               </p>
             )}
           </section>
           <form
-            className="space-y-3 rounded border border-slate-700 p-4"
+            className="space-y-3 rounded border border-border p-4"
             onChange={() => {
               if (!revision.current)
                 revision.current = {
@@ -365,13 +369,13 @@ export function AnnualPlanReview({
               className="space-y-3"
             >
               <h3 className="font-heading text-lg">Save reviewed source for comparison</h3>
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 Save the prepared evidence behind this review so future changes can be compared with
                 it. This records review evidence and does not publish rules or approve a freeze.
               </p>
-              <label className="block">
+              <Label className="block">
                 Source review reason
-                <input
+                <Input
                   required
                   minLength={4}
                   maxLength={500}
@@ -379,22 +383,22 @@ export function AnnualPlanReview({
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                 />
-              </label>
-              <label className="flex min-h-11 items-center gap-3">
-                <input
+              </Label>
+              <Label className="flex min-h-11 items-center gap-3">
+                <Input
                   type="checkbox"
                   required
                   checked={accepted}
                   onChange={(e) => setAccepted(e.target.checked)}
                 />
                 I reviewed the displayed source and configuration revisions.
-              </label>
+              </Label>
               <div className="flex flex-wrap gap-3">
-                <button type="submit" className={buttonClass}>
+                <Button type="submit" className={buttonClass}>
                   Save source review checkpoint
-                </button>
+                </Button>
                 {!!(reason || accepted) && (
-                  <button
+                  <Button
                     type="button"
                     className={buttonClass}
                     onClick={() => {
@@ -411,7 +415,7 @@ export function AnnualPlanReview({
                     }}
                   >
                     Use displayed revisions and retain reason
-                  </button>
+                  </Button>
                 )}
               </div>
             </fieldset>

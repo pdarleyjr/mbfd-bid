@@ -1,4 +1,8 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
@@ -159,7 +163,7 @@ export function AnnualPlanSeats({
   }
   return (
     <div className="space-y-5">
-      <p className="text-slate-300">
+      <p className="text-foreground">
         Maintain the organization and authorized seats as of {plan.effectiveOn}, then explicitly
         include reviewed seats in this annual plan.
       </p>
@@ -176,7 +180,7 @@ export function AnnualPlanSeats({
       </div>
       <section className="space-y-3">
         <h2 className="font-heading text-xl">Seats in this annual plan</h2>
-        <p className="text-sm text-slate-300">
+        <p className="text-sm text-foreground">
           Inherited labels and participation require a fresh review. Bind each retained seat to its
           reviewed authorized staffing seat; the selected dated organization supplies its current
           label and rank.
@@ -185,14 +189,14 @@ export function AnnualPlanSeats({
         {planned.data?.seats.length === 0 && <p>No seats included yet.</p>}
         <div className="grid gap-3 lg:grid-cols-2">
           {planned.data?.seats.map((row) => (
-            <article key={row.id} className="min-w-0 rounded border border-slate-600 p-4">
+            <article key={row.id} className="min-w-0 rounded border border-border p-4">
               <h3 className="break-words font-semibold">
                 {row.shift} · {row.station} · {row.unit} · {row.name}
               </h3>
               <p className="mt-1 text-sm">
                 {row.rank} · {row.participation.replaceAll('_', ' ')}
               </p>
-              <p className="mt-1 text-sm text-slate-300">
+              <p className="mt-1 text-sm text-foreground">
                 {row.bindingStatus === 'approved' &&
                 row.participationSource &&
                 !row.participationSource.startsWith('inherited-unreviewed:')
@@ -200,22 +204,22 @@ export function AnnualPlanSeats({
                   : 'Annual binding or participation requires review'}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
+                <Button
                   type="button"
                   className={buttonClass}
                   disabled={busy || plan.lifecycle !== 'DRAFT'}
                   onClick={() => selectTarget(row, false)}
                 >
                   Review seat
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className={buttonClass}
                   disabled={busy || plan.lifecycle !== 'DRAFT'}
                   onClick={() => selectTarget(row, true)}
                 >
                   Remove from annual draft
-                </button>
+                </Button>
               </div>
             </article>
           ))}
@@ -236,7 +240,7 @@ export function AnnualPlanSeats({
               : 'Add an authorized seat'}
           </h2>
           {target && (
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-foreground">
               Selected annual seat: {target.shift} · {target.station} · {target.unit} ·{' '}
               {target.name}.{' '}
               {remove
@@ -246,9 +250,9 @@ export function AnnualPlanSeats({
           )}
           {!remove && (
             <>
-              <label className="block">
+              <Label className="block">
                 Authorized seat
-                <select
+                <NativeSelect
                   required
                   className={fieldClass}
                   value={seat}
@@ -260,11 +264,11 @@ export function AnnualPlanSeats({
                       {p.stableSlotKey}
                     </option>
                   ))}
-                </select>
-              </label>
-              <label className="block">
+                </NativeSelect>
+              </Label>
+              <Label className="block">
                 Annual participation
-                <select
+                <NativeSelect
                   required
                   className={fieldClass}
                   value={participation}
@@ -276,17 +280,17 @@ export function AnnualPlanSeats({
                   <option value="ADMIN_ASSIGNED_NON_BIDDABLE">
                     Administratively assigned · Not biddable
                   </option>
-                </select>
-              </label>
+                </NativeSelect>
+              </Label>
               <div className="grid gap-4 sm:grid-cols-3">
                 {[
                   { label: 'Floating seat', value: floating, set: setFloating },
                   { label: 'Vacant by design', value: vacant, set: setVacant },
                   { label: 'Excluded from staffing count', value: excluded, set: setExcluded },
                 ].map((f) => (
-                  <label key={f.label}>
+                  <Label key={f.label}>
                     {f.label}
-                    <select
+                    <NativeSelect
                       required
                       className={fieldClass}
                       value={f.value}
@@ -295,15 +299,15 @@ export function AnnualPlanSeats({
                       <option value="">Choose</option>
                       <option value="yes">Yes</option>
                       <option value="no">No</option>
-                    </select>
-                  </label>
+                    </NativeSelect>
+                  </Label>
                 ))}
               </div>
             </>
           )}
-          <label className="block">
+          <Label className="block">
             Reviewed source reference
-            <input
+            <Input
               required
               minLength={4}
               maxLength={500}
@@ -311,10 +315,10 @@ export function AnnualPlanSeats({
               value={evidence}
               onChange={(e) => setEvidence(e.target.value)}
             />
-          </label>
-          <label className="block">
+          </Label>
+          <Label className="block">
             Reason
-            <input
+            <Input
               required
               minLength={4}
               maxLength={500}
@@ -322,20 +326,20 @@ export function AnnualPlanSeats({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
-          </label>
+          </Label>
           {remove && (
-            <label className="flex min-h-11 items-center gap-3">
-              <input
+            <Label className="flex min-h-11 items-center gap-3">
+              <Input
                 type="checkbox"
                 required
                 checked={confirmed}
                 onChange={(e) => setConfirmed(e.target.checked)}
               />
               I reviewed removal of this seat from the annual draft.
-            </label>
+            </Label>
           )}
           <div className="flex flex-wrap gap-3">
-            <button type="submit" className={buttonClass}>
+            <Button type="submit" className={buttonClass}>
               {busy
                 ? 'Saving…'
                 : remove
@@ -343,18 +347,18 @@ export function AnnualPlanSeats({
                   : target
                     ? 'Save reviewed annual seat'
                     : 'Add reviewed seat to annual plan'}
-            </button>
+            </Button>
             {dirty && (
-              <button type="button" className={buttonClass} onClick={clearDraft}>
+              <Button type="button" className={buttonClass} onClick={clearDraft}>
                 Discard seat edits
-              </button>
+              </Button>
             )}
           </div>
         </fieldset>
       </form>
       {dirty && (
         <section className="space-y-2">
-          <button
+          <Button
             type="button"
             disabled={busy}
             className={buttonClass}
@@ -372,15 +376,15 @@ export function AnnualPlanSeats({
             }}
           >
             Review latest plan without discarding edits
-          </button>
+          </Button>
           {reconciliation && (
-            <div className="rounded border border-amber-500 p-3 text-sm">
+            <div className="rounded border border-warning/40 p-3 text-sm">
               <p>
                 Refreshed rule revision {reconciliation.expected_rule_revision}; configuration
                 revision {reconciliation.expected_configuration_revision}; source revision{' '}
                 {reconciliation.expected_source_revision}.
               </p>
-              <button
+              <Button
                 type="button"
                 className={`${buttonClass} mt-2`}
                 onClick={() => {
@@ -393,13 +397,13 @@ export function AnnualPlanSeats({
                 }}
               >
                 Use reviewed revision and keep edits
-              </button>
+              </Button>
             </div>
           )}
         </section>
       )}
       {message && (
-        <output className="block whitespace-pre-wrap rounded border border-slate-600 p-3">
+        <output className="block whitespace-pre-wrap rounded border border-border p-3">
           {message}
         </output>
       )}

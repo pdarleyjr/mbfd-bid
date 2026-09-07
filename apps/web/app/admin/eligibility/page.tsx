@@ -72,8 +72,8 @@ export default async function EligibilityPreviewPage({
   if (binding.error !== null) {
     return (
       <div className="mx-auto max-w-3xl">
-        <h1 className="font-heading text-2xl text-white">Eligibility Preview</h1>
-        <p className="mt-6 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
+        <h1 className="font-heading text-2xl text-foreground">Eligibility Preview</h1>
+        <p className="mt-6 rounded border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
           {binding.error}{' '}
           <Link href="/admin/bid-setup" className="font-semibold underline">
             Return to Bid Setup
@@ -86,14 +86,14 @@ export default async function EligibilityPreviewPage({
   const selectors = await loadSelectorOptions(binding.configuration.positionTemplateVersion);
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="font-heading text-2xl text-white">Eligibility Preview</h1>
-      <p className="mt-2 text-sm text-slate-300">
+      <h1 className="font-heading text-2xl text-foreground">Eligibility Preview</h1>
+      <p className="mt-2 text-sm text-foreground">
         Review one configured member and position against the exact designated rule book. The
         selection remains bound to the Bid Setup revision and never infers a different annual rule
         book.
       </p>
       {selectors.error !== null ? (
-        <p className="mt-6 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
+        <p className="mt-6 rounded border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
           {selectors.error}
         </p>
       ) : (

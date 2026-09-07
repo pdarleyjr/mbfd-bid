@@ -11,9 +11,9 @@ interface Props {
 export function ADayCapacityMeter({ total, max, dataTestId }: Props) {
   if (max === undefined) {
     return (
-      <div className="text-stone-700 text-sm" data-testid={dataTestId}>
+      <div className="text-foreground text-sm" data-testid={dataTestId}>
         <span className="tabular-nums font-mono">{total}</span>{' '}
-        <span className="text-stone-500">(no cap)</span>
+        <span className="text-muted-foreground">(no cap)</span>
       </div>
     );
   }
@@ -22,11 +22,11 @@ export function ADayCapacityMeter({ total, max, dataTestId }: Props) {
   return (
     <div data-testid={dataTestId}>
       <div className="flex justify-between text-sm">
-        <span className="tabular-nums font-mono text-stone-800">
+        <span className="tabular-nums font-mono text-foreground">
           {total} / {max}
         </span>
       </div>
-      <div className="h-2 bg-stone-200 rounded mt-1 overflow-hidden">
+      <div className="h-2 bg-muted rounded mt-1 overflow-hidden">
         <div
           data-testid={dataTestId ? `${dataTestId}-bar` : undefined}
           className={full ? 'h-2 bg-red-700' : 'h-2 bg-red-500'}

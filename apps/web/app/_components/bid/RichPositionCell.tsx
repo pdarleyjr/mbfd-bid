@@ -1,4 +1,5 @@
 'use client';
+import { Button } from '@/components/ui/button';
 import type { StoreApi } from 'zustand';
 import { useStore } from 'zustand';
 import { useBidStoreContext } from '../../bid/_hooks/BidStoreContext';
@@ -52,18 +53,20 @@ function CellBody({ position, members, fill, pending, onClick }: CellBodyProps) 
       : state === 'pending-mine'
         ? 'border-amber-300 bg-amber-50'
         : isInteractive
-          ? 'border-stone-200 bg-white hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
-          : 'border-stone-200 bg-white hover:border-stone-300',
+          ? 'border-border bg-white hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+          : 'border-border bg-white hover:border-border',
   ].join(' ');
 
   const inner = (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-mono text-[11px] font-semibold text-stone-700">{position.id}</span>
-        <span className="text-[9px] uppercase tracking-wide text-stone-500">{position.unit}</span>
+        <span className="font-mono text-[11px] font-semibold text-foreground">{position.id}</span>
+        <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+          {position.unit}
+        </span>
       </div>
-      <div className="text-xs font-semibold text-stone-900">
-        <span className="text-stone-500">{shortRank(position.rankRequired)} · </span>
+      <div className="text-xs font-semibold text-foreground">
+        <span className="text-muted-foreground">{shortRank(position.rankRequired)} · </span>
         {position.positionName}
       </div>
       <div className="text-[11px]">
@@ -74,14 +77,14 @@ function CellBody({ position, members, fill, pending, onClick }: CellBodyProps) 
         ) : pending ? (
           <span className="italic text-amber-700">Submitting…</span>
         ) : (
-          <span className="text-stone-500">Open</span>
+          <span className="text-muted-foreground">Open</span>
         )}
       </div>
     </>
   );
 
   return isInteractive ? (
-    <button
+    <Button
       type="button"
       data-testid={`position-cell-${position.id}`}
       data-state={state}
@@ -89,7 +92,7 @@ function CellBody({ position, members, fill, pending, onClick }: CellBodyProps) 
       onClick={() => onClick(position.id)}
     >
       {inner}
-    </button>
+    </Button>
   ) : (
     <div data-testid={`position-cell-${position.id}`} data-state={state} className={baseClass}>
       {inner}

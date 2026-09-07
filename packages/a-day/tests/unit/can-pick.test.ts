@@ -183,6 +183,42 @@ describe('canPick — gate cases', () => {
 });
 
 describe('canPick — happy paths', () => {
+  it('projects the final available weekday seat as full and rejects the following pick', () => {
+    const s = buildState({
+      members: [ff(1), ff(2)],
+      phase1: [
+        [1, { positionId: 'D101', shift: 'D' }],
+        [2, { positionId: 'D102', shift: 'D' }],
+      ],
+      weekdayCaps: { FRI: { max: 1 } },
+    });
+    expect(canPick(s, 1, 'FRI')).toMatchObject({
+      ok: true,
+      projectedMeter: { total: 1, max: 1, isFull: true },
+    });
+    const filled = {
+      ...s,
+      picksByMember: new Map<number, ADayPick>([
+        [
+          1,
+          {
+            memberId: 1,
+            shift: 'D',
+            aDay: 'FRI',
+            pickedAtMs: 1,
+            forced: false,
+            adminActorId: null,
+          },
+        ],
+      ]),
+    };
+    expect(canPick(filled, 2, 'FRI')).toMatchObject({
+      ok: false,
+      reasonCode: 'WEEKDAY_FULL',
+      detail: { total: 1, max: 1 },
+    });
+    expect(s.picksByMember.size).toBe(0);
+  });
   it('FF on A-shift picks an empty group — ok with projectedMeter', () => {
     // Seed enough remaining officers so the look-ahead can satisfy 5/group.
     const remainingOfficerIds = Array.from({ length: 20 }, (_, i) => 200 + i);

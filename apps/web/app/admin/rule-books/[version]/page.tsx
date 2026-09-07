@@ -57,12 +57,12 @@ export default async function RuleBookDetailPage({
   if (fetchError !== null) {
     return (
       <div className="mx-auto max-w-3xl">
-        <h1 className="font-heading text-2xl text-white">
+        <h1 className="font-heading text-2xl text-foreground">
           Rule book <span className="font-mono">{version}</span>
         </h1>
-        <div className="mt-6 rounded-lg border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-200">
+        <div className="mt-6 rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
           Could not load rule books: {fetchError}.{' '}
-          <span className="text-amber-300">
+          <span className="text-warning">
             Check the Worker logs and JWT validity, then reload this page.
           </span>
         </div>
@@ -90,32 +90,32 @@ export default async function RuleBookDetailPage({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="font-heading text-2xl text-white">
+      <h1 className="font-heading text-2xl text-foreground">
         Rule book <span className="font-mono">{book.version}</span>
       </h1>
-      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-200">
-        <dt className="text-slate-400">Effective year</dt>
+      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-foreground">
+        <dt className="text-muted-foreground">Effective year</dt>
         <dd className="tabular-nums">{book.effectiveYear}</dd>
-        <dt className="text-slate-400">Status</dt>
+        <dt className="text-muted-foreground">Status</dt>
         <dd className="capitalize">{book.status}</dd>
-        <dt className="text-slate-400">Notes</dt>
+        <dt className="text-muted-foreground">Notes</dt>
         <dd>{book.notes ?? '—'}</dd>
       </dl>
 
       <section
         aria-labelledby="policy-coverage-heading"
-        className="mt-6 rounded-lg border border-slate-700 bg-slate-900/60 p-4"
+        className="mt-6 rounded-lg border border-border bg-card p-4"
       >
-        <h2 id="policy-coverage-heading" className="font-heading text-lg text-white">
+        <h2 id="policy-coverage-heading" className="font-heading text-lg text-foreground">
           Bid participation coverage
         </h2>
-        <p className="mt-1 text-sm text-slate-300">
+        <p className="mt-1 text-sm text-foreground">
           Read-only rule-book validation. Administrative staffing positions remain in staffing but
           outside ordinary Bid selection.
         </p>
 
         {coverageFetchError !== null && (
-          <p className="mt-3 text-sm text-amber-200">
+          <p className="mt-3 text-sm text-warning">
             Could not load coverage: {coverageFetchError}. Reload before relying on this review.
           </p>
         )}
@@ -124,51 +124,51 @@ export default async function RuleBookDetailPage({
           <>
             <p
               className={`mt-3 text-sm font-semibold ${
-                coverage.valid ? 'text-emerald-300' : 'text-amber-200'
+                coverage.valid ? 'text-success' : 'text-warning'
               }`}
             >
               {coverage.valid
                 ? 'Complete biddable-position coverage'
                 : 'Coverage requires correction'}
             </p>
-            <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm text-slate-200 sm:grid-cols-2">
-              <dt className="text-slate-400">Expected biddable positions</dt>
+            <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm text-foreground sm:grid-cols-2">
+              <dt className="text-muted-foreground">Expected biddable positions</dt>
               <dd className="tabular-nums">{coverage.expected_biddable_position_ids.length}</dd>
-              <dt className="text-slate-400">Valid bid rules</dt>
+              <dt className="text-muted-foreground">Valid bid rules</dt>
               <dd className="tabular-nums">{coverage.valid_rule_position_ids.length}</dd>
-              <dt className="text-slate-400">Rule rows</dt>
+              <dt className="text-muted-foreground">Rule rows</dt>
               <dd className="tabular-nums">{coverage.rule_count}</dd>
-              <dt className="text-slate-400">Administratively assigned outside Bid</dt>
+              <dt className="text-muted-foreground">Administratively assigned outside Bid</dt>
               <dd className="font-mono text-xs">
                 {displayPositionIds(coverage.administratively_assigned_position_ids)}
               </dd>
-              <dt className="text-slate-400">Missing biddable rules</dt>
+              <dt className="text-muted-foreground">Missing biddable rules</dt>
               <dd className="font-mono text-xs">
                 {displayPositionIds(coverage.missing_biddable_position_ids)}
               </dd>
-              <dt className="text-slate-400">Non-biddable rules present</dt>
+              <dt className="text-muted-foreground">Non-biddable rules present</dt>
               <dd className="font-mono text-xs">
                 {displayPositionIds(coverage.non_biddable_position_ids)}
               </dd>
-              <dt className="text-slate-400">Duplicate rule positions</dt>
+              <dt className="text-muted-foreground">Duplicate rule positions</dt>
               <dd className="font-mono text-xs">
                 {displayPositionIds(coverage.duplicate_position_ids)}
               </dd>
-              <dt className="text-slate-400">Invalid rule positions</dt>
+              <dt className="text-muted-foreground">Invalid rule positions</dt>
               <dd className="font-mono text-xs">
                 {displayPositionIds(coverage.invalid_position_ids)}
               </dd>
-              <dt className="text-slate-400">Unexpected rule positions</dt>
+              <dt className="text-muted-foreground">Unexpected rule positions</dt>
               <dd className="font-mono text-xs">
                 {displayPositionIds(coverage.unexpected_position_ids)}
               </dd>
-              <dt className="text-slate-400">Template issues</dt>
+              <dt className="text-muted-foreground">Template issues</dt>
               <dd className="font-mono text-xs">
                 {displayPositionIds(coverage.template_version_issues)}
               </dd>
             </dl>
             {coverage.legacy_excluded_position_ids.length > 0 && (
-              <p className="mt-3 text-xs text-slate-400">
+              <p className="mt-3 text-xs text-muted-foreground">
                 Separately tracked legacy exclusions:{' '}
                 <span className="font-mono">
                   {displayPositionIds(coverage.legacy_excluded_position_ids)}

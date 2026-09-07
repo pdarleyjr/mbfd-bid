@@ -1,5 +1,13 @@
 'use client';
 
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import { useMemo, useState } from 'react';
 
 export interface ReadinessItem {
@@ -47,7 +55,7 @@ export function ReadinessWorkspace({
   );
   return (
     <section className="space-y-4" aria-label="Certification readiness">
-      <div className="rounded-xl border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
+      <div className="rounded-xl border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
         <strong>
           Official annual determination:{' '}
           {annualDetermination === 'PENDING_CONFIGURATION' ? 'pending configuration' : 'configured'}
@@ -56,18 +64,18 @@ export function ReadinessWorkspace({
         This view does not infer an annual qualification date or alter Bid snapshots.
       </div>
       <div className="flex flex-wrap gap-3">
-        <input
+        <Input
           aria-label="Search readiness"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search member, rank, credential, specialty, provenance"
-          className="min-h-11 flex-1 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          className="min-h-11 flex-1 rounded border border-border bg-card px-3 text-foreground"
         />
-        <select
+        <NativeSelect
           aria-label="Readiness state"
           value={classification}
           onChange={(e) => setClassification(e.target.value)}
-          className="min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+          className="min-h-11 rounded border border-border bg-card px-3 text-foreground"
         >
           <option value="ALL">All states</option>
           {['EXPIRED', 'EXPIRING_SOON', 'VALID_NO_EXPIRATION', 'VALID', 'CONFLICT', 'MISSING'].map(
@@ -75,7 +83,7 @@ export function ReadinessWorkspace({
               <option key={value}>{value}</option>
             ),
           )}
-        </select>
+        </NativeSelect>
         {(
           [
             ['Rank', rank, setRank, 'rank'],
@@ -84,29 +92,29 @@ export function ReadinessWorkspace({
             ['Provenance', provenance, setProvenance, 'sourceProvenance'],
           ] as const
         ).map(([label, value, setValue, field]) => (
-          <select
+          <NativeSelect
             key={label}
             aria-label={`${label} filter`}
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            className="min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="min-h-11 rounded border border-border bg-card px-3 text-foreground"
           >
             <option value="ALL">All {label.toLowerCase()}s</option>
             {filterValues(field).map((option) => (
               <option key={option}>{option}</option>
             ))}
-          </select>
+          </NativeSelect>
         ))}
       </div>
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-foreground">
         {visible.length} evidence item(s). Current/future projections only; affected Bid
         opportunities remain explicitly undetermined until a centrally owned opportunity-impact
         interface is available.
       </p>
-      <div className="overflow-x-auto rounded-xl border border-slate-700">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-900 text-slate-200">
-            <tr>
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <Table className="min-w-full text-left text-sm">
+          <TableHeader className="bg-card text-foreground">
+            <TableRow>
               {[
                 'Member / rank',
                 'Credential / specialty',
@@ -115,39 +123,43 @@ export function ReadinessWorkspace({
                 'Source / provenance',
                 'Bid impact',
               ].map((label) => (
-                <th key={label} className="p-3">
+                <TableHead key={label} className="p-3">
                   {label}
-                </th>
+                </TableHead>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {visible.map((item, i) => (
-              <tr key={`${item.memberId}-${i}`} className="border-t border-slate-700">
-                <td className="p-3">
+              <TableRow key={`${item.memberId}-${i}`} className="border-t border-border">
+                <TableCell className="p-3">
                   {item.memberName}
-                  <div className="text-xs text-slate-400">{item.rank}</div>
-                </td>
-                <td className="p-3">
+                  <div className="text-xs text-muted-foreground">{item.rank}</div>
+                </TableCell>
+                <TableCell className="p-3">
                   {item.credential ?? '—'}
-                  <div className="text-xs text-slate-400">{item.specialty ?? '—'}</div>
-                </td>
-                <td className="p-3">
+                  <div className="text-xs text-muted-foreground">{item.specialty ?? '—'}</div>
+                </TableCell>
+                <TableCell className="p-3">
                   {item.classification}
                   {item.recentlyChanged ? (
-                    <div className="text-xs text-sky-300">Recently changed</div>
+                    <div className="text-xs text-info">Recently changed</div>
                   ) : null}
-                </td>
-                <td className="p-3">
+                </TableCell>
+                <TableCell className="p-3">
                   {item.effectiveOn ?? '—'}
-                  <div className="text-xs text-slate-400">{item.expiresOn ?? 'No expiration'}</div>
-                </td>
-                <td className="p-3">{item.sourceProvenance}</td>
-                <td className="p-3 text-xs text-slate-400">{item.affectedBidOpportunities}</td>
-              </tr>
+                  <div className="text-xs text-muted-foreground">
+                    {item.expiresOn ?? 'No expiration'}
+                  </div>
+                </TableCell>
+                <TableCell className="p-3">{item.sourceProvenance}</TableCell>
+                <TableCell className="p-3 text-xs text-muted-foreground">
+                  {item.affectedBidOpportunities}
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </section>
   );

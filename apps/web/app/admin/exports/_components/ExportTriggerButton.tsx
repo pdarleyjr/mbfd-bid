@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { type ReactElement, useState } from 'react';
 
 interface Props {
@@ -15,7 +16,7 @@ export function ExportTriggerButton({ kind, shift, sessionId }: Props): ReactEle
     kind === 'roster' ? `Generate ${shift ?? '?'} Shift Roster` : 'Generate Full Audit CSV';
   return (
     <div>
-      <button
+      <Button
         type="button"
         disabled={busy}
         onClick={async () => {
@@ -42,7 +43,7 @@ export function ExportTriggerButton({ kind, shift, sessionId }: Props): ReactEle
         }}
       >
         {busy ? 'Generating…' : label}
-      </button>
+      </Button>
       {msg ? <output>{msg}</output> : null}
     </div>
   );

@@ -1,4 +1,9 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
@@ -27,7 +32,7 @@ const blank = {
   reason: '',
 };
 const inputClass =
-  'mt-1 min-h-11 w-full min-w-0 rounded border border-slate-600 bg-slate-950 px-3 text-white';
+  'mt-1 min-h-11 w-full min-w-0 rounded border border-border bg-card px-3 text-foreground';
 
 export function OrganizationWorkspace() {
   const client = useQueryClient();
@@ -163,58 +168,58 @@ export function OrganizationWorkspace() {
     }
   }
   return (
-    <section className="mx-auto max-w-6xl space-y-6 text-slate-100">
+    <section className="mx-auto max-w-6xl space-y-6 text-foreground">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+        <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
           Year-round staffing structure
         </p>
         <h1 className="mt-1 font-heading text-3xl">Organization</h1>
-        <p className="mt-2 max-w-3xl text-slate-300">
+        <p className="mt-2 max-w-3xl text-foreground">
           Maintain stations, organizational groups, and apparatus independently of their authorized
           seats. Dated changes preserve each identity and its history.
         </p>
         <Link
           href="/admin/staffing-structure"
-          className="mt-3 inline-flex min-h-11 items-center text-red-300 underline"
+          className="mt-3 inline-flex min-h-11 items-center text-destructive underline"
         >
           Manage authorized seats
         </Link>
       </header>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="text-sm">
+        <Label className="text-sm">
           View organization as of
-          <input
+          <Input
             type="date"
             value={asOf || catalog.data?.asOf || ''}
             onChange={(e) => setAsOf(e.target.value)}
             className={inputClass}
           />
-        </label>
-        <label className="text-sm">
+        </Label>
+        <Label className="text-sm">
           Search organization
-          <input
+          <Input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className={inputClass}
           />
-        </label>
+        </Label>
       </div>
       {catalog.isError && (
-        <p role="alert" className="text-amber-200">
+        <p role="alert" className="text-warning">
           {catalog.error.message}.{catalog.data ? ' Showing the last successful view.' : ''}
         </p>
       )}
       <form
         onSubmit={save}
-        className="grid gap-4 rounded-xl border border-slate-700 bg-slate-800/50 p-5 md:grid-cols-2"
+        className="grid gap-4 rounded-xl border border-border bg-card p-5 md:grid-cols-2"
       >
         <h2 className="font-heading text-xl md:col-span-2">
           {editing ? `Edit ${editing.name}` : 'Add organization'}
         </h2>
-        <label className="text-sm">
+        <Label className="text-sm">
           Type
-          <select
+          <NativeSelect
             value={form.kind}
             disabled={!!editing}
             onChange={(e) => update('kind', e.target.value)}
@@ -223,21 +228,21 @@ export function OrganizationWorkspace() {
             <option value="STATION">Station</option>
             <option value="GROUP">Organizational group</option>
             <option value="APPARATUS">Apparatus</option>
-          </select>
-        </label>
-        <label className="text-sm">
+          </NativeSelect>
+        </Label>
+        <Label className="text-sm">
           Display name
-          <input
+          <Input
             required
             maxLength={160}
             value={form.display_name}
             onChange={(e) => update('display_name', e.target.value)}
             className={inputClass}
           />
-        </label>
-        <label className="text-sm">
+        </Label>
+        <Label className="text-sm">
           Parent
-          <select
+          <NativeSelect
             value={form.parent_id}
             onChange={(e) => update('parent_id', e.target.value)}
             className={inputClass}
@@ -259,14 +264,14 @@ export function OrganizationWorkspace() {
                   {u.name}
                 </option>
               ))}
-          </select>
-          <span className="mt-1 block text-xs text-slate-400">
+          </NativeSelect>
+          <span className="mt-1 block text-xs text-muted-foreground">
             Set the viewing date to review parents available on the effective date.
           </span>
-        </label>
-        <label className="text-sm">
+        </Label>
+        <Label className="text-sm">
           Effective on
-          <input
+          <Input
             required
             type="date"
             min={editing?.effectiveOn}
@@ -274,23 +279,23 @@ export function OrganizationWorkspace() {
             onChange={(e) => update('effective_on', e.target.value)}
             className={inputClass}
           />
-        </label>
+        </Label>
         {editing && (
-          <label className="text-sm">
+          <Label className="text-sm">
             Lifecycle
-            <select
+            <NativeSelect
               value={form.status}
               onChange={(e) => update('status', e.target.value)}
               className={inputClass}
             >
               <option value="active">Active</option>
               <option value="retired">Retired</option>
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
         )}
-        <label className="text-sm">
+        <Label className="text-sm">
           Authoritative source reference
-          <input
+          <Input
             required
             minLength={4}
             maxLength={500}
@@ -298,10 +303,10 @@ export function OrganizationWorkspace() {
             onChange={(e) => update('evidence_ref', e.target.value)}
             className={inputClass}
           />
-        </label>
-        <label className="text-sm md:col-span-2">
+        </Label>
+        <Label className="text-sm md:col-span-2">
           Reason
-          <textarea
+          <Textarea
             required
             minLength={4}
             maxLength={500}
@@ -309,9 +314,9 @@ export function OrganizationWorkspace() {
             onChange={(e) => update('reason', e.target.value)}
             className={`${inputClass} min-h-20 py-2`}
           />
-        </label>
+        </Label>
         {dependencies.data && (
-          <div className="text-sm text-slate-300 md:col-span-2">
+          <div className="text-sm text-foreground md:col-span-2">
             <p>
               {dependencies.data.retirementBlocked
                 ? 'Retirement requires review of the linked children or seats.'
@@ -328,37 +333,37 @@ export function OrganizationWorkspace() {
           </div>
         )}
         {dependencies.isError && (
-          <p role="alert" className="text-amber-200">
+          <p role="alert" className="text-warning">
             Dependencies could not be loaded.
           </p>
         )}
         <div className="flex flex-wrap gap-3 md:col-span-2">
-          <button
+          <Button
             disabled={busy}
             type="submit"
-            className="min-h-11 rounded bg-red-700 px-4 font-semibold disabled:opacity-50"
+            className="min-h-11 rounded bg-destructive px-4 font-semibold text-primary-foreground disabled:opacity-50"
           >
             {busy ? 'Saving…' : 'Save organization'}
-          </button>
+          </Button>
           {(editing || dirty) && (
-            <button
+            <Button
               type="button"
               disabled={busy}
               onClick={reset}
-              className="min-h-11 rounded border border-slate-600 px-4"
+              className="min-h-11 rounded border border-border px-4"
             >
               Cancel local edit
-            </button>
+            </Button>
           )}
         </div>
       </form>
       {error && (
-        <p role="alert" className="rounded border border-amber-600 p-3 text-amber-100">
+        <p role="alert" className="rounded border border-warning/40 p-3 text-warning">
           {error}
         </p>
       )}
       {notice && (
-        <output className="block rounded border border-emerald-700 p-3 text-emerald-100">
+        <output className="block rounded border border-success/40 p-3 text-success">
           {notice}
         </output>
       )}
@@ -366,35 +371,35 @@ export function OrganizationWorkspace() {
         {units
           .filter((u) => `${u.name} ${u.kind}`.toLowerCase().includes(search.toLowerCase()))
           .map((unit) => (
-            <li key={unit.id} className="min-w-0 rounded-lg border border-slate-700 p-4">
+            <li key={unit.id} className="min-w-0 rounded-lg border border-border p-4">
               <h2 className="break-words font-semibold">{unit.name}</h2>
-              <p className="mt-1 text-sm text-slate-300">
+              <p className="mt-1 text-sm text-foreground">
                 {unit.kind.toLowerCase()} · {unit.status} · Effective {unit.effectiveOn}
               </p>
-              <p className="mt-1 text-sm text-slate-400">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {unit.parentId
                   ? `Parent: ${units.find((u) => u.id === unit.parentId)?.name ?? 'Unavailable at viewing date'}`
                   : 'No parent'}
               </p>
               <div className="mt-3 flex flex-wrap gap-3">
-                <button
+                <Button
                   disabled={busy || dirty || unit.revision !== unit.latestRevision}
                   type="button"
                   onClick={() => begin(unit)}
-                  className="min-h-11 rounded border border-slate-600 px-3 disabled:opacity-50"
+                  className="min-h-11 rounded border border-border px-3 disabled:opacity-50"
                 >
                   Edit
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={() => void readHistory(unit.id)}
-                  className="min-h-11 rounded border border-slate-600 px-3"
+                  className="min-h-11 rounded border border-border px-3"
                 >
                   History
-                </button>
+                </Button>
               </div>
               {unit.revision !== unit.latestRevision && (
-                <p className="mt-2 text-sm text-amber-200">
+                <p className="mt-2 text-sm text-warning">
                   A later version exists. View its effective date before editing.
                 </p>
               )}
@@ -402,14 +407,14 @@ export function OrganizationWorkspace() {
           ))}
       </ul>
       {catalog.isSuccess && units.length === 0 && (
-        <p className="text-slate-300">
+        <p className="text-foreground">
           No organization entries exist for this date. A reviewed station may be created before it
           has seats.
         </p>
       )}
       {catalog.data && <OrganizationSeatLinks asOf={catalog.data.asOf} units={units} />}
       {history && (
-        <section className="rounded border border-slate-700 p-4">
+        <section className="rounded border border-border p-4">
           <h2 className="font-heading text-xl">Recorded history</h2>
           <ol className="mt-3 space-y-3">
             {history.map((row) => (

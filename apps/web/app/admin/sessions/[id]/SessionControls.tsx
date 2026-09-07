@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ForcePickSheet } from './ForcePickSheet';
@@ -35,15 +36,15 @@ export function SessionControls({ sessionId }: { sessionId: string }) {
   return (
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap gap-3">
-        <button
+        <Button
           type="button"
           disabled={busy}
           onClick={() => callLifecycle('start')}
-          className="rounded bg-emerald-700 px-3 py-2 text-white hover:bg-emerald-600 disabled:opacity-50"
+          className="rounded bg-success px-3 py-2 text-primary-foreground hover:bg-success disabled:opacity-50"
         >
           Start session
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           disabled={busy}
           onClick={() =>
@@ -52,38 +53,38 @@ export function SessionControls({ sessionId }: { sessionId: string }) {
               reason: 'Admin-initiated emergency pause.',
             })
           }
-          className="rounded bg-amber-700 px-3 py-2 text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded bg-warning px-3 py-2 text-primary-foreground hover:bg-warning disabled:opacity-50"
         >
           Pause
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           disabled={busy}
           onClick={() => callLifecycle('resume', {})}
-          className="rounded bg-sky-700 px-3 py-2 text-white hover:bg-sky-600 disabled:opacity-50"
+          className="rounded bg-info px-3 py-2 text-primary-foreground hover:bg-info disabled:opacity-50"
         >
           Resume
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           disabled={busy}
           onClick={() => callLifecycle('day-start', {})}
-          className="rounded border border-slate-600 px-3 py-2 text-slate-200 hover:border-slate-400"
+          className="rounded border border-border px-3 py-2 text-foreground hover:border-border"
         >
           Day Start
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           disabled={busy}
           onClick={() => setShowForce(true)}
-          className="rounded border border-red-500 px-3 py-2 text-red-300 hover:bg-red-500/10"
+          className="rounded border border-destructive/40 px-3 py-2 text-destructive hover:bg-destructive-surface"
         >
           Force pick
-        </button>
+        </Button>
       </div>
 
       {toast !== null && (
-        <output aria-live="polite" className="block text-sm text-slate-300">
+        <output aria-live="polite" className="block text-sm text-foreground">
           {toast}
         </output>
       )}

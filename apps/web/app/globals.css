@@ -14,21 +14,41 @@
 }
 
 @layer base {
-  :root {
-    /* Tint stones with brand hue (subtle) per .impeccable.md guidance */
-    --bg: 36 33% 97%; /* stone-50 */
-    --fg: 24 10% 14%; /* stone-800 */
-  }
-
   html {
     color-scheme: light;
-    background: hsl(var(--bg));
-    color: hsl(var(--fg));
+    background: rgb(var(--background));
+    color: rgb(var(--foreground));
   }
 
   body {
+    position: relative;
+    isolation: isolate;
     font-family: var(--font-body, "Source Sans 3 Variable"), system-ui, sans-serif;
     font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--ring));
+    outline-offset: 3px;
+  }
+
+  input,
+  select,
+  textarea {
+    color-scheme: light;
+  }
+  summary {
+    cursor: pointer;
+  }
+  .admin-content {
+    overflow-wrap: anywhere;
+  }
+  .admin-content > section {
+    min-width: 0;
+  }
+  [data-slot="table"] th,
+  [data-slot="table"] td {
+    overflow-wrap: normal;
   }
 
   h1,
@@ -57,6 +77,11 @@
     [type="button"] {
       min-height: 44px;
       min-width: 44px;
+    }
+    label:has(input[type="checkbox"]),
+    label:has(input[type="radio"]),
+    summary {
+      min-height: 44px;
     }
   }
 

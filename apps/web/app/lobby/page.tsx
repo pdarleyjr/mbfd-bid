@@ -29,14 +29,14 @@ export default async function LobbyPage() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-background">
       <BrandHeader
         subtitle={`Hi, ${payload.first_name} — ${RANK_LABELS[payload.rank]}`}
         action={<LogoutButton />}
       />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
-        <h2 className="font-heading text-2xl text-stone-800">Lobby</h2>
-        <p className="mt-2 text-stone-600">
+        <h2 className="font-heading text-2xl text-foreground">Lobby</h2>
+        <p className="mt-2 text-muted-foreground">
           Bid hasn't started yet. You'll see your turn information here once a session is live.
         </p>
         <dl className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -52,10 +52,10 @@ export default async function LobbyPage() {
 
 function Card({ label, value, numeric }: { label: string; value: string; numeric?: boolean }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm transition duration-base ease-out-quart hover:border-red-200">
-      <dt className="text-xs font-medium uppercase tracking-wide text-stone-500">{label}</dt>
+    <div className="rounded-2xl border border-border bg-white p-5 shadow-sm transition duration-base ease-out-quart hover:border-red-200">
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd
-        className={`mt-1 text-lg font-semibold text-stone-800 ${numeric ? 'font-mono [font-variant-numeric:tabular-nums]' : ''}`}
+        className={`mt-1 text-lg font-semibold text-foreground ${numeric ? 'font-mono [font-variant-numeric:tabular-nums]' : ''}`}
       >
         {value}
       </dd>

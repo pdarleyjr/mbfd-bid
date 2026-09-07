@@ -1,4 +1,15 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRetainedMutation } from '@/lib/use-retained-mutation';
@@ -367,9 +378,9 @@ function integrationUnavailableMessage(memberId: number, asOf: string): string {
 }
 
 function statusClass(status: QualificationStatus): string {
-  if (status === 'active') return 'border-emerald-700 bg-emerald-950/40 text-emerald-100';
-  if (status === 'expired') return 'border-amber-700 bg-amber-950/40 text-amber-100';
-  return 'border-red-700 bg-red-950/40 text-red-100';
+  if (status === 'active') return 'border-success/40 bg-success-surface text-success';
+  if (status === 'expired') return 'border-warning/40 bg-warning-surface text-warning';
+  return 'border-destructive/40 bg-destructive-surface text-destructive';
 }
 
 function statusLabel(status: QualificationStatus): string {
@@ -677,26 +688,26 @@ export function QualificationLifecycleWorkspace({
     <div className="space-y-6">
       <section
         aria-labelledby="qualification-lifecycle-heading"
-        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-xl border border-border bg-card p-5"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+            <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
               Effective-dated evidence control
             </p>
             <h2
               id="qualification-lifecycle-heading"
-              className="mt-1 font-heading text-xl text-white"
+              className="mt-1 font-heading text-xl text-foreground"
             >
               Qualification lifecycle
             </h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+            <p className="mt-2 max-w-3xl text-sm text-foreground">
               Record reviewed certification or specialty evidence with an effective date, optional
               expiration where allowed, source, evidence reference, and reason. No legacy direct
               credential toggle is available.
             </p>
           </div>
-          <span className="rounded-full border border-slate-600 px-3 py-1 text-xs font-semibold text-slate-200">
+          <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">
             As of {history?.asOf ?? asOf}
           </span>
         </div>
@@ -704,16 +715,16 @@ export function QualificationLifecycleWorkspace({
         <form
           data-testid="qualification-event-form"
           onSubmit={submitEvent}
-          className="mt-5 grid gap-4 border-t border-slate-700 pt-5 lg:grid-cols-2"
+          className="mt-5 grid gap-4 border-t border-border pt-5 lg:grid-cols-2"
         >
-          <p className="text-sm text-slate-300 lg:col-span-2">
+          <p className="text-sm text-foreground lg:col-span-2">
             Certification events require a certification credential. Specialty qualification code is
             a separate evidence target and is never sent with a credential ID.
           </p>
 
-          <label className="block">
-            <span className="text-sm text-slate-200">Member</span>
-            <select
+          <Label className="block">
+            <span className="text-sm text-foreground">Member</span>
+            <NativeSelect
               data-testid="qualification-member"
               required
               value={memberId}
@@ -722,7 +733,7 @@ export function QualificationLifecycleWorkspace({
                 setReceipt(null);
                 setNotice(null);
               }}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             >
               {members.length === 0 && <option value="">No members available</option>}
               {members.map((member) => (
@@ -730,36 +741,36 @@ export function QualificationLifecycleWorkspace({
                   {member.lastName}, {member.firstName} — {member.rank} ({member.employmentStatus})
                 </option>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
 
-          <label className="block">
-            <span className="text-sm text-slate-200">Lifecycle event</span>
-            <select
+          <Label className="block">
+            <span className="text-sm text-foreground">Lifecycle event</span>
+            <NativeSelect
               data-testid="qualification-kind"
               value={kind}
               onChange={(event) => {
                 if (isQualificationEventKind(event.target.value)) setKind(event.target.value);
               }}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             >
               {(Object.keys(EVENT_KIND_LABELS) as QualificationEventKind[]).map((option) => (
                 <option key={option} value={option}>
                   {EVENT_KIND_LABELS[option]}
                 </option>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
 
           {certificationEvent ? (
-            <label className="block">
-              <span className="text-sm text-slate-200">Certification credential</span>
-              <select
+            <Label className="block">
+              <span className="text-sm text-foreground">Certification credential</span>
+              <NativeSelect
                 data-testid="qualification-credential"
                 required
                 value={credentialId}
                 onChange={(event) => setCredentialId(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
               >
                 {credentials.length === 0 && <option value="">No credentials available</option>}
                 {credentials.map((credential) => (
@@ -770,38 +781,38 @@ export function QualificationLifecycleWorkspace({
                       : `(${credential.fyPointsDefault} points)`}
                   </option>
                 ))}
-              </select>
-            </label>
+              </NativeSelect>
+            </Label>
           ) : (
-            <label className="block">
-              <span className="text-sm text-slate-200">Specialty qualification code</span>
-              <input
+            <Label className="block">
+              <span className="text-sm text-foreground">Specialty qualification code</span>
+              <Input
                 data-testid="qualification-specialty-code"
                 required
                 maxLength={128}
                 value={specialtyCode}
                 onChange={(event) => setSpecialtyCode(event.target.value)}
                 placeholder="TECHNICAL_RESCUE"
-                className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
               />
-            </label>
+            </Label>
           )}
 
-          <label className="block">
-            <span className="text-sm text-slate-200">Effective date</span>
-            <input
+          <Label className="block">
+            <span className="text-sm text-foreground">Effective date</span>
+            <Input
               data-testid="qualification-effective-on"
               required
               type="date"
               value={effectiveOn}
               onChange={(event) => setEffectiveOn(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             />
-          </label>
+          </Label>
 
-          <label className="block">
-            <span className="text-sm text-slate-200">{expirationLabel}</span>
-            <input
+          <Label className="block">
+            <span className="text-sm text-foreground">{expirationLabel}</span>
+            <Input
               data-testid="qualification-expires-on"
               type="date"
               disabled={expirationDisabled}
@@ -811,48 +822,48 @@ export function QualificationLifecycleWorkspace({
                   : expiresOn
               }
               onChange={(event) => setExpiresOn(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             />
             {(kind === 'CERTIFICATION_REVOKED' || kind === 'SPECIALTY_REVOKED') && (
-              <span className="mt-1 block text-xs text-slate-400">
+              <span className="mt-1 block text-xs text-muted-foreground">
                 Revocation closes qualification validity; no expiration is sent.
               </span>
             )}
             {kind === 'SPECIALTY_REMOVED' && (
-              <span className="mt-1 block text-xs text-slate-400">
+              <span className="mt-1 block text-xs text-muted-foreground">
                 Removal closes specialty qualification validity; no expiration is sent.
               </span>
             )}
-          </label>
+          </Label>
 
-          <label className="block">
-            <span className="text-sm text-slate-200">Evidence source</span>
-            <input
+          <Label className="block">
+            <span className="text-sm text-foreground">Evidence source</span>
+            <Input
               data-testid="qualification-source"
               required
               maxLength={128}
               value={evidenceSource}
               onChange={(event) => setEvidenceSource(event.target.value)}
               placeholder="State registry, certification office, reviewed case file"
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
             />
-          </label>
+          </Label>
 
-          <label className="block">
-            <span className="text-sm text-slate-200">Evidence reference (optional)</span>
-            <input
+          <Label className="block">
+            <span className="text-sm text-foreground">Evidence reference (optional)</span>
+            <Input
               data-testid="qualification-evidence-reference"
               maxLength={512}
               value={evidenceReference}
               onChange={(event) => setEvidenceReference(event.target.value)}
               placeholder="Case, registry, document, or controlled-record reference"
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
             />
-          </label>
+          </Label>
 
-          <label className="block lg:col-span-2">
-            <span className="text-sm text-slate-200">Reason</span>
-            <textarea
+          <Label className="block lg:col-span-2">
+            <span className="text-sm text-foreground">Reason</span>
+            <Textarea
               data-testid="qualification-reason"
               required
               minLength={4}
@@ -860,24 +871,24 @@ export function QualificationLifecycleWorkspace({
               rows={3}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              className="mt-1 min-h-24 w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+              className="mt-1 min-h-24 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
             />
-          </label>
+          </Label>
 
           <div className="lg:col-span-2">
             {formIssues.length > 0 && (
-              <output aria-live="polite" className="block text-sm text-amber-200">
+              <output aria-live="polite" className="block text-sm text-warning">
                 {formIssues[0]}
               </output>
             )}
-            <button
+            <Button
               data-testid="qualification-submit"
               type="submit"
               disabled={submitDisabled}
-              className="mt-3 min-h-11 rounded bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-3 min-h-11 rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground hover:bg-destructive disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? 'Recording evidence…' : 'Record qualification evidence'}
-            </button>
+            </Button>
           </div>
         </form>
       </section>
@@ -885,11 +896,11 @@ export function QualificationLifecycleWorkspace({
       {backendUnavailable !== null && (
         <section
           aria-label="Qualification backend unavailable"
-          className="rounded-xl border border-amber-700 bg-amber-950/30 p-5 text-sm text-amber-100"
+          className="rounded-xl border border-warning/40 bg-warning-surface p-5 text-sm text-warning"
         >
           <h2 className="font-semibold">Qualification lifecycle backend unavailable</h2>
           <p className="mt-1">{backendUnavailable}</p>
-          <p className="mt-2 text-amber-100/90">
+          <p className="mt-2 text-warning">
             No qualification status or history was inferred. This fail-closed UI does not treat
             absent lifecycle data as qualification approval.
           </p>
@@ -899,7 +910,7 @@ export function QualificationLifecycleWorkspace({
       {error !== null && (
         <output
           aria-live="assertive"
-          className="block rounded border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-100"
+          className="block rounded border border-destructive/40 bg-destructive-surface px-4 py-3 text-sm text-destructive"
         >
           {error}
         </output>
@@ -908,7 +919,7 @@ export function QualificationLifecycleWorkspace({
       {notice !== null && (
         <output
           aria-live="polite"
-          className="block rounded border border-emerald-700 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-100"
+          className="block rounded border border-success/40 bg-success-surface px-4 py-3 text-sm text-success"
         >
           {notice}
         </output>
@@ -916,11 +927,11 @@ export function QualificationLifecycleWorkspace({
 
       {receipt !== null && (
         <section
-          className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-4"
+          className="rounded-xl border border-success/40 bg-success-surface p-4"
           aria-label="Qualification receipt"
         >
-          <h2 className="font-semibold text-emerald-50">Lifecycle receipt</h2>
-          <p className="mt-1 text-sm text-emerald-100">
+          <h2 className="font-semibold text-success">Lifecycle receipt</h2>
+          <p className="mt-1 text-sm text-success">
             Event <span className="font-mono">{receipt.eventId}</span>
             {receipt.replayed
               ? ' was replayed without a duplicate write.'
@@ -931,35 +942,38 @@ export function QualificationLifecycleWorkspace({
 
       <section
         aria-labelledby="qualification-status-heading"
-        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-xl border border-border bg-card p-5"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+            <p className="text-xs font-semibold uppercase tracking-wider text-info">
               Projected evidence
             </p>
-            <h2 id="qualification-status-heading" className="mt-1 font-heading text-xl text-white">
+            <h2
+              id="qualification-status-heading"
+              className="mt-1 font-heading text-xl text-foreground"
+            >
               Current status
             </h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+            <p className="mt-2 max-w-3xl text-sm text-foreground">
               Effective, expiration, and status values are displayed only from the Worker&apos;s
               effective-dated projection.
             </p>
           </div>
           {selectedMember !== null && (
-            <button
+            <Button
               type="button"
               onClick={() => void loadHistory(selectedMember.id)}
               disabled={loadingHistory}
-              className="min-h-11 rounded border border-slate-500 px-4 text-sm font-semibold text-slate-100 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded border border-border px-4 text-sm font-semibold text-foreground hover:border-border disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loadingHistory ? 'Loading…' : 'Refresh history'}
-            </button>
+            </Button>
           )}
         </div>
 
         {history === null && (
-          <p className="mt-5 rounded border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">
+          <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
             {loadingHistory
               ? 'Loading qualification history…'
               : 'No current qualification projection is available from the lifecycle backend.'}
@@ -969,107 +983,110 @@ export function QualificationLifecycleWorkspace({
         {history !== null && (
           <div className="mt-5 grid gap-5 xl:grid-cols-2">
             <section aria-labelledby="certification-status-heading">
-              <h3 id="certification-status-heading" className="font-semibold text-white">
+              <h3 id="certification-status-heading" className="font-semibold text-foreground">
                 Certification status
               </h3>
               {history.certifications.length === 0 ? (
-                <p className="mt-3 rounded border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">
+                <p className="mt-3 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
                   The lifecycle backend returned no certification projections for this member.
                 </p>
               ) : (
-                <div className="mt-3 overflow-x-auto rounded border border-slate-700">
-                  <table className="w-full border-collapse text-sm">
-                    <thead className="bg-slate-900 text-left text-xs uppercase tracking-wide text-slate-400">
-                      <tr>
-                        <th className="px-3 py-2">Credential</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Effective / expiration</th>
-                        <th className="px-3 py-2">Source / evidence</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="mt-3 overflow-x-auto rounded border border-border">
+                  <Table className="w-full border-collapse text-sm">
+                    <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <TableRow>
+                        <TableHead className="px-3 py-2">Credential</TableHead>
+                        <TableHead className="px-3 py-2">Status</TableHead>
+                        <TableHead className="px-3 py-2">Effective / expiration</TableHead>
+                        <TableHead className="px-3 py-2">Source / evidence</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {history.certifications.map((qualification) => (
-                        <tr key={qualification.credentialId} className="border-t border-slate-700">
-                          <td className="px-3 py-3 font-medium text-white">
+                        <TableRow
+                          key={qualification.credentialId}
+                          className="border-t border-border"
+                        >
+                          <TableCell className="px-3 py-3 font-medium text-foreground">
                             {qualification.credentialName ??
                               `Credential #${qualification.credentialId}`}
-                          </td>
-                          <td className="px-3 py-3">
+                          </TableCell>
+                          <TableCell className="px-3 py-3">
                             <span
                               className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusClass(qualification.status)}`}
                             >
                               {statusLabel(qualification.status)}
                             </span>
-                          </td>
-                          <td className="px-3 py-3 font-mono text-xs text-slate-200">
+                          </TableCell>
+                          <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
                             <div>{displayValue(qualification.effectiveOn)}</div>
-                            <div className="mt-1 text-slate-400">
+                            <div className="mt-1 text-muted-foreground">
                               expires {displayValue(qualification.expiresOn)}
                             </div>
-                          </td>
-                          <td className="px-3 py-3 text-slate-300">
+                          </TableCell>
+                          <TableCell className="px-3 py-3 text-foreground">
                             <div>{displayValue(qualification.evidenceSource)}</div>
-                            <div className="mt-1 break-all font-mono text-xs text-slate-400">
+                            <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
                               {displayValue(qualification.evidenceReference)}
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </section>
 
             <section aria-labelledby="specialty-status-heading">
-              <h3 id="specialty-status-heading" className="font-semibold text-white">
+              <h3 id="specialty-status-heading" className="font-semibold text-foreground">
                 Specialty qualification status
               </h3>
               {history.specialties.length === 0 ? (
-                <p className="mt-3 rounded border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">
+                <p className="mt-3 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
                   The lifecycle backend returned no specialty qualification projections for this
                   member.
                 </p>
               ) : (
-                <div className="mt-3 overflow-x-auto rounded border border-slate-700">
-                  <table className="w-full border-collapse text-sm">
-                    <thead className="bg-slate-900 text-left text-xs uppercase tracking-wide text-slate-400">
-                      <tr>
-                        <th className="px-3 py-2">Specialty code</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Effective / expiration</th>
-                        <th className="px-3 py-2">Source / evidence</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="mt-3 overflow-x-auto rounded border border-border">
+                  <Table className="w-full border-collapse text-sm">
+                    <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <TableRow>
+                        <TableHead className="px-3 py-2">Specialty code</TableHead>
+                        <TableHead className="px-3 py-2">Status</TableHead>
+                        <TableHead className="px-3 py-2">Effective / expiration</TableHead>
+                        <TableHead className="px-3 py-2">Source / evidence</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {history.specialties.map((specialty) => (
-                        <tr key={specialty.specialtyCode} className="border-t border-slate-700">
-                          <td className="px-3 py-3 font-mono text-xs font-semibold text-white">
+                        <TableRow key={specialty.specialtyCode} className="border-t border-border">
+                          <TableCell className="px-3 py-3 font-mono text-xs font-semibold text-foreground">
                             {specialty.specialtyCode}
-                          </td>
-                          <td className="px-3 py-3">
+                          </TableCell>
+                          <TableCell className="px-3 py-3">
                             <span
                               className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusClass(specialty.status)}`}
                             >
                               {statusLabel(specialty.status)}
                             </span>
-                          </td>
-                          <td className="px-3 py-3 font-mono text-xs text-slate-200">
+                          </TableCell>
+                          <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
                             <div>{specialty.effectiveOn}</div>
-                            <div className="mt-1 text-slate-400">
+                            <div className="mt-1 text-muted-foreground">
                               expires {displayValue(specialty.expiresOn)}
                             </div>
-                          </td>
-                          <td className="px-3 py-3 text-slate-300">
+                          </TableCell>
+                          <TableCell className="px-3 py-3 text-foreground">
                             <div>{specialty.evidenceSource}</div>
-                            <div className="mt-1 break-all font-mono text-xs text-slate-400">
+                            <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
                               {displayValue(specialty.evidenceReference)}
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </section>
@@ -1079,73 +1096,79 @@ export function QualificationLifecycleWorkspace({
 
       <section
         aria-labelledby="qualification-history-heading"
-        className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-xl border border-border bg-card p-5"
       >
-        <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+        <p className="text-xs font-semibold uppercase tracking-wider text-info">
           Immutable audit trail
         </p>
-        <h2 id="qualification-history-heading" className="mt-1 font-heading text-xl text-white">
+        <h2
+          id="qualification-history-heading"
+          className="mt-1 font-heading text-xl text-foreground"
+        >
           Qualification history
         </h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+        <p className="mt-2 max-w-3xl text-sm text-foreground">
           Each lifecycle event retains its effective date, expiration, source/evidence, reason,
           operator subject, and recorded time. Historical evidence is not edited in place.
         </p>
 
         {history === null ? (
-          <p className="mt-5 rounded border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">
+          <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
             No qualification history is displayed until the lifecycle backend returns an auditable
             response.
           </p>
         ) : history.events.length === 0 ? (
-          <p className="mt-5 rounded border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">
+          <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
             The lifecycle backend returned no qualification history for this member.
           </p>
         ) : (
-          <div className="mt-5 overflow-x-auto rounded border border-slate-700">
-            <table className="w-full border-collapse text-sm">
-              <thead className="bg-slate-900 text-left text-xs uppercase tracking-wide text-slate-400">
-                <tr>
-                  <th className="px-3 py-2">Effective</th>
-                  <th className="px-3 py-2">Event</th>
-                  <th className="px-3 py-2">Credential / specialty</th>
-                  <th className="px-3 py-2">Expiration</th>
-                  <th className="px-3 py-2">Source / evidence</th>
-                  <th className="px-3 py-2">Reason / audit</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="mt-5 overflow-x-auto rounded border border-border">
+            <Table className="w-full border-collapse text-sm">
+              <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <TableRow>
+                  <TableHead className="px-3 py-2">Effective</TableHead>
+                  <TableHead className="px-3 py-2">Event</TableHead>
+                  <TableHead className="px-3 py-2">Credential / specialty</TableHead>
+                  <TableHead className="px-3 py-2">Expiration</TableHead>
+                  <TableHead className="px-3 py-2">Source / evidence</TableHead>
+                  <TableHead className="px-3 py-2">Reason / audit</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {history.events.map((qualificationEvent) => (
-                  <tr key={qualificationEvent.id} className="border-t border-slate-700 align-top">
-                    <td className="px-3 py-3 font-mono text-xs text-slate-200">
+                  <TableRow
+                    key={qualificationEvent.id}
+                    className="border-t border-border align-top"
+                  >
+                    <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
                       {qualificationEvent.effectiveOn}
-                    </td>
-                    <td className="px-3 py-3 text-slate-100">
+                    </TableCell>
+                    <TableCell className="px-3 py-3 text-foreground">
                       {eventKindLabel(qualificationEvent.kind)}
-                    </td>
-                    <td className="px-3 py-3 font-medium text-white">
+                    </TableCell>
+                    <TableCell className="px-3 py-3 font-medium text-foreground">
                       {eventTargetLabel(qualificationEvent)}
-                    </td>
-                    <td className="px-3 py-3 font-mono text-xs text-slate-200">
+                    </TableCell>
+                    <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
                       {displayValue(qualificationEvent.expiresOn)}
-                    </td>
-                    <td className="px-3 py-3 text-slate-300">
+                    </TableCell>
+                    <TableCell className="px-3 py-3 text-foreground">
                       <div>{qualificationEvent.evidenceSource}</div>
-                      <div className="mt-1 break-all font-mono text-xs text-slate-400">
+                      <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
                         {displayValue(qualificationEvent.evidenceReference)}
                       </div>
-                    </td>
-                    <td className="px-3 py-3 text-slate-300">
+                    </TableCell>
+                    <TableCell className="px-3 py-3 text-foreground">
                       <div>{qualificationEvent.reason}</div>
-                      <div className="mt-1 break-all font-mono text-xs text-slate-400">
+                      <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
                         event {qualificationEvent.id} · {qualificationEvent.actorSubject} ·{' '}
                         {displayTimestamp(qualificationEvent.createdAt)}
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </section>

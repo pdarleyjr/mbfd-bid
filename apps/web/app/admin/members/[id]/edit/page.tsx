@@ -45,10 +45,10 @@ export default async function MemberEditPage({
   if (member === null) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="font-heading text-2xl text-white">Edit member</h1>
-        <div className="mt-6 rounded-lg border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-200">
+        <h1 className="font-heading text-2xl text-foreground">Edit member</h1>
+        <div className="mt-6 rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
           Could not load member #{id}: {fetchError ?? 'unknown error'}.{' '}
-          <span className="text-amber-300">
+          <span className="text-warning">
             Check the Worker logs and JWT validity, then reload this page.
           </span>
         </div>
@@ -58,10 +58,10 @@ export default async function MemberEditPage({
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="font-heading text-2xl text-white">
+      <h1 className="font-heading text-2xl text-foreground">
         Edit member {member.firstName} {member.lastName}
       </h1>
-      <p className="mt-1 text-sm text-slate-300">
+      <p className="mt-1 text-sm text-foreground">
         Employee ID: {member.employeeId} - Member ID #{member.id}
       </p>
       <EditForm member={member} />

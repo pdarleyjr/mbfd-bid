@@ -1,5 +1,10 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -219,19 +224,22 @@ export function BidSetupWorkspace({
     <div className="space-y-6">
       <section
         aria-labelledby="designated-configuration-heading"
-        className="rounded-lg border border-slate-700 bg-slate-800/60 p-5"
+        className="rounded-lg border border-border bg-card p-5"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
-            <h2 id="designated-configuration-heading" className="font-heading text-lg text-white">
+            <h2
+              id="designated-configuration-heading"
+              className="font-heading text-lg text-foreground"
+            >
               Designated annual configuration
             </h2>
-            <p className="mt-1 max-w-3xl text-sm text-slate-300">
+            <p className="mt-1 max-w-3xl text-sm text-foreground">
               This is the one configuration source for rehearsal and eventual live sessions. A
               designation neither publishes a rule book nor starts a bid.
             </p>
           </div>
-          <span className="rounded-full border border-slate-600 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-200">
+          <span className="rounded-full border border-border px-2 py-1 text-xs font-semibold uppercase tracking-wide text-foreground">
             Year {year}
           </span>
         </div>
@@ -241,34 +249,34 @@ export function BidSetupWorkspace({
             configuration.ruleBookVersion === '2026.2' &&
             configuration.positionTemplateVersion === '2026.2')) &&
           draftRuleBooks.some((ruleBook) => ruleBook.version === '2026.2') && (
-            <div className="mt-4 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
+            <div className="mt-4 rounded border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
               <p className="font-semibold">2026 staffing-source reconciliation required</p>
               <p className="mt-1">
                 The reviewed policy requires four Fire Boat roles and two Marine Float Pool roles
                 per A/B/C shift. This creates a new 2026.2 template and retargets only the 2026.2
                 draft; it does not publish a rule book or start a bid.
               </p>
-              <button
+              <Button
                 type="button"
                 onClick={reconcileStationSix}
                 disabled={reconcilingStationSix}
-                className="mt-3 min-h-11 rounded bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-3 min-h-11 rounded bg-warning px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-warning disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {reconcilingStationSix
                   ? 'Reconciling Station 6…'
                   : 'Reconcile 2026 Marine staffing'}
-              </button>
+              </Button>
             </div>
           )}
 
         {configuration === null ? (
-          <div className="mt-4 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
+          <div className="mt-4 rounded border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
             <h3 className="font-semibold">No configuration is available for this bid year</h3>
             <p className="mt-1">
               {configurationError ??
                 'The designated configuration endpoint returned no configuration record.'}
             </p>
-            <p className="mt-2 text-amber-100/90">
+            <p className="mt-2 text-warning">
               No draft can be designated here until the annual configuration record exists. This
               page does not create a substitute configuration or staffing baseline.
             </p>
@@ -277,74 +285,74 @@ export function BidSetupWorkspace({
           <>
             <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <dt className="text-slate-400">Lifecycle</dt>
-                <dd className="mt-0.5 font-semibold text-white">
+                <dt className="text-muted-foreground">Lifecycle</dt>
+                <dd className="mt-0.5 font-semibold text-foreground">
                   {lifecycleLabel(configuration.lifecycle)}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Configuration revision</dt>
-                <dd className="mt-0.5 font-mono text-white">
+                <dt className="text-muted-foreground">Configuration revision</dt>
+                <dd className="mt-0.5 font-mono text-foreground">
                   {configuration.configurationRevision}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Rule book</dt>
-                <dd className="mt-0.5 font-mono text-white">
+                <dt className="text-muted-foreground">Rule book</dt>
+                <dd className="mt-0.5 font-mono text-foreground">
                   {configuration.ruleBookVersion ?? 'Not designated'}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Rule-book revision</dt>
-                <dd className="mt-0.5 font-mono text-white">
+                <dt className="text-muted-foreground">Rule-book revision</dt>
+                <dd className="mt-0.5 font-mono text-foreground">
                   {configuration.ruleBookRevision ?? '—'}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Position template</dt>
-                <dd className="mt-0.5 font-mono text-white">
+                <dt className="text-muted-foreground">Position template</dt>
+                <dd className="mt-0.5 font-mono text-foreground">
                   {configuration.positionTemplateVersion ?? 'Not designated'}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Expected duration</dt>
-                <dd className="mt-0.5 text-white">
+                <dt className="text-muted-foreground">Expected duration</dt>
+                <dd className="mt-0.5 text-foreground">
                   {configuration.settings === null
                     ? 'Not designated'
                     : `${configuration.settings.expectedDurationDays} day(s)`}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Turn timer</dt>
-                <dd className="mt-0.5 text-white">
+                <dt className="text-muted-foreground">Turn timer</dt>
+                <dd className="mt-0.5 text-foreground">
                   {configuration.settings === null
                     ? 'Not designated'
                     : `${configuration.settings.turnTimerSeconds} seconds`}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Credential evaluation date</dt>
-                <dd className="mt-0.5 font-mono text-white">
+                <dt className="text-muted-foreground">Credential evaluation date</dt>
+                <dd className="mt-0.5 font-mono text-foreground">
                   {configuration.settings?.v === 2 || configuration.settings?.v === 3
                     ? configuration.settings.credentialEvaluationOn
                     : 'Required before a new session'}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Bid-year lifecycle</dt>
-                <dd className="mt-0.5 text-white">{configuration.bidYearStatus}</dd>
+                <dt className="text-muted-foreground">Bid-year lifecycle</dt>
+                <dd className="mt-0.5 text-foreground">{configuration.bidYearStatus}</dd>
               </div>
             </dl>
 
             {configuration.lifecycle === 'UNCONFIGURED' && (
-              <p className="mt-4 rounded border border-amber-700 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+              <p className="mt-4 rounded border border-warning/40 bg-warning-surface px-3 py-2 text-sm text-warning">
                 No designated draft is recorded. Select a draft candidate below; the server will
                 independently validate it before accepting the designation.
               </p>
             )}
 
             {configuration.lifecycle === 'FROZEN' && (
-              <p className="mt-4 rounded border border-amber-700 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+              <p className="mt-4 rounded border border-warning/40 bg-warning-surface px-3 py-2 text-sm text-warning">
                 The designated rule book remains frozen. A reviewed replacement draft can be
                 designated only while this bid year is configuring, and the server blocks the
                 replacement if any real session history exists. Replacing the designation clears the
@@ -353,14 +361,14 @@ export function BidSetupWorkspace({
             )}
 
             {configuration.lifecycle === 'INCONSISTENT' && (
-              <p className="mt-4 rounded border border-red-800 bg-red-950/30 px-3 py-2 text-sm text-red-100">
+              <p className="mt-4 rounded border border-destructive/40 bg-destructive-surface px-3 py-2 text-sm text-destructive">
                 This configuration is inconsistent and is read-only. Resolve the recorded policy
                 data through the approved lifecycle before attempting another designation.
               </p>
             )}
 
             {configuration.lifecycle === 'LEGACY_EVALUATION_DATE_REQUIRED' && (
-              <p className="mt-4 rounded border border-amber-700 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+              <p className="mt-4 rounded border border-warning/40 bg-warning-surface px-3 py-2 text-sm text-warning">
                 Legacy configuration settings are displayed for review, but they cannot create a new
                 mock or live session because no credential evaluation date was frozen. Select the
                 approved calendar date and save a new configuration revision before continuing.
@@ -368,48 +376,48 @@ export function BidSetupWorkspace({
             )}
 
             {configuration.bidYearStatus !== 'configuring' && (
-              <p className="mt-4 rounded border border-slate-600 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
+              <p className="mt-4 rounded border border-border bg-card px-3 py-2 text-sm text-foreground">
                 This bid year is {configuration.bidYearStatus}; configuration changes are not
                 available from this workspace.
               </p>
             )}
 
             {editable && draftRuleBooks.length === 0 && year !== 2026 && (
-              <p className="mt-4 rounded border border-amber-700 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+              <p className="mt-4 rounded border border-warning/40 bg-warning-surface px-3 py-2 text-sm text-warning">
                 No draft rule-book candidate is available for {year}. This page cannot infer or
                 create one.
               </p>
             )}
 
             {editable && draftRuleBooks.length === 0 && year === 2026 && (
-              <div className="mt-4 rounded border border-amber-700 bg-amber-950/30 p-4 text-sm text-amber-100">
+              <div className="mt-4 rounded border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
                 <p className="font-semibold">Reviewed source package is ready to initialize</p>
                 <p className="mt-1">
                   Create the traceable 2026.1 source snapshot and editable 2026.2 draft from the
                   supplied policy, staffing, assignment, credential, and workbook package. This does
                   not designate, publish, or start a Bid.
                 </p>
-                <button
+                <Button
                   data-testid="reviewed-2026-source-bootstrap"
                   type="button"
                   onClick={bootstrapReviewed2026Source}
                   disabled={bootstrappingReviewedSource}
-                  className="mt-3 min-h-11 rounded bg-amber-700 px-4 py-2 font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-3 min-h-11 rounded bg-warning px-4 py-2 font-semibold text-primary-foreground hover:bg-warning disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {bootstrappingReviewedSource
                     ? 'Initializing reviewed source…'
                     : 'Initialize reviewed 2026 source'}
-                </button>
+                </Button>
               </div>
             )}
 
             {editable && draftRuleBooks.length > 0 && (
               <form
                 onSubmit={saveConfiguration}
-                className="mt-5 space-y-4 border-t border-slate-700 pt-5"
+                className="mt-5 space-y-4 border-t border-border pt-5"
               >
                 <div>
-                  <h3 className="font-heading text-base text-white">
+                  <h3 className="font-heading text-base text-foreground">
                     {configuration.lifecycle === 'DRAFT'
                       ? 'Update designated draft configuration'
                       : configuration.lifecycle === 'FROZEN'
@@ -418,18 +426,18 @@ export function BidSetupWorkspace({
                           ? 'Upgrade legacy designated configuration'
                           : 'Designate draft configuration'}
                   </h3>
-                  <p className="mt-1 text-sm text-slate-300">
+                  <p className="mt-1 text-sm text-foreground">
                     Draft candidates come from the existing rule-book listing. The designated
                     configuration endpoint independently verifies draft status and coverage.
                   </p>
                 </div>
 
-                <label className="block max-w-lg">
-                  <span className="text-sm text-slate-200">Draft rule-book candidate</span>
-                  <select
+                <Label className="block max-w-lg">
+                  <span className="text-sm text-foreground">Draft rule-book candidate</span>
+                  <NativeSelect
                     value={selectedVersion}
                     onChange={(event) => setSelectedVersion(event.target.value)}
-                    className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 font-mono text-white"
+                    className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 font-mono text-foreground"
                   >
                     {(configuration.lifecycle === 'UNCONFIGURED' ||
                       configuration.lifecycle === 'FROZEN') && (
@@ -440,77 +448,77 @@ export function BidSetupWorkspace({
                         {ruleBook.version} (draft)
                       </option>
                     ))}
-                  </select>
-                </label>
+                  </NativeSelect>
+                </Label>
 
                 <div className="grid max-w-lg grid-cols-1 gap-4 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="text-sm text-slate-200">Expected duration (days)</span>
-                    <input
+                  <Label className="block">
+                    <span className="text-sm text-foreground">Expected duration (days)</span>
+                    <Input
                       type="number"
                       min={1}
                       max={7}
                       required
                       value={expectedDurationDays}
                       onChange={(event) => setExpectedDurationDays(Number(event.target.value))}
-                      className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+                      className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-foreground"
                     />
-                  </label>
-                  <label className="block">
-                    <span className="text-sm text-slate-200">Turn timer (seconds)</span>
-                    <input
+                  </Label>
+                  <Label className="block">
+                    <span className="text-sm text-foreground">Turn timer (seconds)</span>
+                    <Input
                       type="number"
                       min={30}
                       max={600}
                       required
                       value={turnTimerSeconds}
                       onChange={(event) => setTurnTimerSeconds(Number(event.target.value))}
-                      className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+                      className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-foreground"
                     />
-                  </label>
+                  </Label>
                 </div>
 
-                <label className="block max-w-lg">
-                  <span className="text-sm text-slate-200">Credential evaluation date</span>
-                  <input
+                <Label className="block max-w-lg">
+                  <span className="text-sm text-foreground">Credential evaluation date</span>
+                  <Input
                     data-testid="credential-evaluation-on"
                     type="date"
                     required
                     value={credentialEvaluationOn}
                     onChange={(event) => setCredentialEvaluationOn(event.target.value)}
-                    className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+                    className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-foreground"
                   />
-                  <span className="mt-1 block text-xs text-slate-400">
+                  <span className="mt-1 block text-xs text-muted-foreground">
                     Credential lifecycle evidence for new sessions is frozen as of this approved
                     date; it is not inferred from the session start time.
                   </span>
-                </label>
+                </Label>
 
-                <label className="block max-w-2xl">
-                  <span className="text-sm text-slate-200">Reason (4–500 characters)</span>
-                  <textarea
+                <Label className="block max-w-2xl">
+                  <span className="text-sm text-foreground">Reason (4–500 characters)</span>
+                  <Textarea
                     required
                     minLength={4}
                     maxLength={500}
                     value={reason}
                     onChange={(event) => setReason(event.target.value)}
                     rows={3}
-                    className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+                    className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-foreground"
                   />
-                </label>
+                </Label>
 
                 {error !== null && (
-                  <output aria-live="polite" className="block text-sm text-red-300">
+                  <output aria-live="polite" className="block text-sm text-destructive">
                     {error}
                   </output>
                 )}
                 {success !== null && (
-                  <output aria-live="polite" className="block text-sm text-emerald-300">
+                  <output aria-live="polite" className="block text-sm text-success">
                     {success}
                   </output>
                 )}
 
-                <button
+                <Button
                   type="submit"
                   data-testid="bid-configuration-save"
                   disabled={
@@ -519,67 +527,75 @@ export function BidSetupWorkspace({
                     !selectedVersion ||
                     !isIsoCalendarDate(credentialEvaluationOn)
                   }
-                  className="rounded bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded bg-destructive px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-destructive disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting ? 'Saving…' : 'Save designated configuration'}
-                </button>
+                </Button>
               </form>
             )}
           </>
         )}
 
         {ruleBooksError !== null && (
-          <p className="mt-4 rounded border border-amber-700 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+          <p className="mt-4 rounded border border-warning/40 bg-warning-surface px-3 py-2 text-sm text-warning">
             Rule-book candidates could not be loaded: {ruleBooksError}. No alternate configuration
             source is used.
           </p>
         )}
       </section>
 
-      <section className="rounded-lg border border-slate-700 bg-slate-800/40 p-5">
-        <h2 className="font-heading text-lg text-white">Existing setup tools</h2>
-        <p className="mt-1 max-w-3xl text-sm text-slate-300">
+      <section className="rounded-lg border border-border bg-card p-5">
+        <h2 className="font-heading text-lg text-foreground">Existing setup tools</h2>
+        <p className="mt-1 max-w-3xl text-sm text-foreground">
           These are secondary review and editing tools. They do not replace the designated annual
           configuration shown above, and none of them starts a session or publishes a rule book.
         </p>
         <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm">
-          <Link href={'/admin/rule-books' as Route} className="font-medium text-red-300 underline">
+          <Link
+            href={'/admin/rule-books' as Route}
+            className="font-medium text-destructive underline"
+          >
             Rule Books
           </Link>
           {positionsHref !== null ? (
-            <Link href={positionsHref as Route} className="font-medium text-red-300 underline">
+            <Link href={positionsHref as Route} className="font-medium text-destructive underline">
               Positions
             </Link>
           ) : (
-            <span className="text-slate-500">
+            <span className="text-muted-foreground">
               Positions (designate a complete configuration first)
             </span>
           )}
           {rulesHref !== null ? (
-            <Link href={rulesHref as Route} className="font-medium text-red-300 underline">
+            <Link href={rulesHref as Route} className="font-medium text-destructive underline">
               Rules
             </Link>
           ) : (
-            <span className="text-slate-500">Rules (designate a complete configuration first)</span>
+            <span className="text-muted-foreground">
+              Rules (designate a complete configuration first)
+            </span>
           )}
           {eligibilityHref !== null ? (
-            <Link href={eligibilityHref as Route} className="font-medium text-red-300 underline">
+            <Link
+              href={eligibilityHref as Route}
+              className="font-medium text-destructive underline"
+            >
               Eligibility Preview
             </Link>
           ) : (
-            <span className="text-slate-500">
+            <span className="text-muted-foreground">
               Eligibility Preview (designate a complete configuration first)
             </span>
           )}
           <Link
             href={'/admin/settings/bid-pin' as Route}
-            className="font-medium text-red-300 underline"
+            className="font-medium text-destructive underline"
           >
             Bid Access PIN
           </Link>
         </div>
         {!isBoundBidConfiguration(configuration) && (
-          <p className="mt-3 text-sm text-amber-200">
+          <p className="mt-3 text-sm text-warning">
             Positions, Rules, and Eligibility Preview remain unavailable until this bid year has a
             complete designated configuration. No tool will substitute a default version.
           </p>

@@ -41,8 +41,8 @@ export default async function PositionEditPage({
   if (binding.error !== null) {
     return (
       <div className="mx-auto max-w-3xl">
-        <h1 className="font-heading text-2xl text-white">Edit configured rule</h1>
-        <p className="mt-4 rounded border border-amber-600 bg-amber-950/30 p-3 text-sm text-amber-200">
+        <h1 className="font-heading text-2xl text-foreground">Edit configured rule</h1>
+        <p className="mt-4 rounded border border-warning/40 bg-warning-surface p-3 text-sm text-warning">
           {binding.error}{' '}
           <Link href="/admin/bid-setup" className="font-semibold underline">
             Return to Bid Setup
@@ -54,8 +54,8 @@ export default async function PositionEditPage({
   if (binding.configuration.lifecycle !== 'DRAFT') {
     return (
       <div className="mx-auto max-w-3xl">
-        <h1 className="font-heading text-2xl text-white">Edit configured rule</h1>
-        <p className="mt-4 rounded border border-slate-600 bg-slate-900/50 p-3 text-sm text-slate-200">
+        <h1 className="font-heading text-2xl text-foreground">Edit configured rule</h1>
+        <p className="mt-4 rounded border border-border bg-card p-3 text-sm text-foreground">
           The selected rule book is frozen and cannot be edited. Return to the configured position
           view to review it.
         </p>
@@ -67,15 +67,15 @@ export default async function PositionEditPage({
   const positionsHref = buildBoundToolHref('/admin/positions', binding.configuration);
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="font-heading text-2xl text-white">Edit Rule for Position {id}</h1>
-      <p className="mt-2 text-sm text-slate-300">
+      <h1 className="font-heading text-2xl text-foreground">Edit Rule for Position {id}</h1>
+      <p className="mt-2 text-sm text-foreground">
         Edits apply only to configured draft rule book{' '}
-        <span className="font-mono text-slate-100">{binding.configuration.ruleBookVersion}</span>.
+        <span className="font-mono text-foreground">{binding.configuration.ruleBookVersion}</span>.
         PATCH to the worker carries a step-up auth requirement; if the session is older than 5
         minutes you will be prompted to re-authenticate.
       </p>
       {rule === null && (
-        <p className="mt-4 rounded border border-amber-600 bg-amber-950/30 p-3 text-sm text-amber-200">
+        <p className="mt-4 rounded border border-warning/40 bg-warning-surface p-3 text-sm text-warning">
           No rule for this position exists in the configured draft. No raw rule-ID entry is offered;
           review the designated rule book before creating or cloning policy data.
         </p>
@@ -83,7 +83,7 @@ export default async function PositionEditPage({
       {positionsHref !== null && (
         <Link
           href={positionsHref as Route}
-          className="mt-4 inline-block text-sm text-red-300 underline"
+          className="mt-4 inline-block text-sm text-destructive underline"
         >
           Return to configured Positions
         </Link>

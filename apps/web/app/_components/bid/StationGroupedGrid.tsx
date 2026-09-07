@@ -144,11 +144,11 @@ export function StationGroupedGrid({
                 <article
                   key={stationName}
                   data-testid={`station-${stationName.replace(/\W+/g, '-').toLowerCase()}`}
-                  className="flex flex-col gap-1.5 rounded border border-stone-200 bg-stone-50 p-1.5"
+                  className="flex flex-col gap-1.5 rounded border border-border bg-background p-1.5"
                 >
-                  <header className="rounded bg-stone-200 px-2 py-1 text-center text-xs font-bold text-stone-900">
+                  <header className="rounded bg-muted px-2 py-1 text-center text-xs font-bold text-foreground">
                     {stationName}
-                    <span className="ml-2 text-[10px] font-normal text-stone-600">
+                    <span className="ml-2 text-[10px] font-normal text-muted-foreground">
                       {total} positions
                     </span>
                   </header>
@@ -159,9 +159,11 @@ export function StationGroupedGrid({
                         data-testid={`apparatus-${apparatus.replace(/\W+/g, '-').toLowerCase()}`}
                         className="flex flex-col gap-0.5"
                       >
-                        <h3 className="flex items-center justify-between rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-700">
+                        <h3 className="flex items-center justify-between rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
                           <span>{apparatus}</span>
-                          <span className="font-normal text-stone-500">{positions.length}</span>
+                          <span className="font-normal text-muted-foreground">
+                            {positions.length}
+                          </span>
                         </h3>
                         <div className="flex flex-col gap-0.5">
                           {positions.map((position) => (

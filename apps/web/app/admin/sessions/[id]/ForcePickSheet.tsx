@@ -1,5 +1,11 @@
 'use client';
+import { ConfirmationDialog } from '@/components/ui/dialog';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import { useState } from 'react';
 
 export function ForcePickSheet({
@@ -59,77 +65,74 @@ export function ForcePickSheet({
   }
 
   return (
-    <dialog
-      open
-      aria-labelledby="force-title"
-      className="fixed inset-0 z-50 flex bg-black/40 md:items-stretch md:justify-end"
-    >
-      <div className="ml-auto h-full w-full bg-slate-900 p-6 text-white shadow-xl md:max-w-md">
+    <ConfirmationDialog onClose={onClose} busy={busy} aria-labelledby="force-title">
+      <div className="w-full">
         <h2 id="force-title" className="font-heading text-lg">
           Force pick
         </h2>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           Eligibility is BYPASSED. The bid is recorded with forced=true and your admin id.
         </p>
-        <label className="mt-4 block">
-          <span className="text-sm text-slate-300">Member ID</span>
-          <input
+        <Label className="mt-4 block">
+          <span className="text-sm text-foreground">Member ID</span>
+          <Input
             type="number"
             value={memberId}
             onChange={(e) => setMemberId(e.target.value)}
-            className="mt-1 block w-full rounded bg-slate-800 p-2 tabular-nums"
+            className="mt-1 block w-full rounded bg-card p-2 tabular-nums"
           />
-        </label>
-        <label className="mt-3 block">
-          <span className="text-sm text-slate-300">Position ID</span>
-          <input
+        </Label>
+        <Label className="mt-3 block">
+          <span className="text-sm text-foreground">Position ID</span>
+          <Input
             value={positionId}
             onChange={(e) => setPositionId(e.target.value)}
             placeholder="A205"
-            className="mt-1 block w-full rounded bg-slate-800 p-2 font-mono uppercase"
+            className="mt-1 block w-full rounded bg-card p-2 font-mono uppercase"
           />
-        </label>
-        <label className="mt-3 block">
-          <span className="text-sm text-slate-300">Reason code</span>
-          <select
+        </Label>
+        <Label className="mt-3 block">
+          <span className="text-sm text-foreground">Reason code</span>
+          <NativeSelect
             value={code}
             onChange={(e) =>
               setCode(e.target.value as 'force.reverse_seniority' | 'force.cert_mandate')
             }
-            className="mt-1 block w-full rounded bg-slate-800 p-2"
+            className="mt-1 block w-full rounded bg-card p-2"
           >
             <option value="force.reverse_seniority">force.reverse_seniority</option>
             <option value="force.cert_mandate">force.cert_mandate</option>
-          </select>
-        </label>
-        <label className="mt-3 block">
-          <span className="text-sm text-slate-300">Reason (&gt;= 4 chars)</span>
-          <textarea
+          </NativeSelect>
+        </Label>
+        <Label className="mt-3 block">
+          <span className="text-sm text-foreground">Reason (&gt;= 4 chars)</span>
+          <Textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="mt-1 block w-full rounded bg-slate-800 p-2"
+            className="mt-1 block w-full rounded bg-card p-2"
             rows={3}
           />
-        </label>
-        {error !== null && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        </Label>
+        {error !== null && <p className="mt-3 text-sm text-destructive">{error}</p>}
         <div className="mt-4 flex justify-end gap-3">
-          <button
+          <Button
             type="button"
             onClick={onClose}
-            className="rounded border border-slate-600 px-4 py-2"
+            className="rounded border border-border px-4 py-2"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             disabled={busy}
             onClick={submit}
-            className="rounded bg-red-700 px-4 py-2 hover:bg-red-600 disabled:opacity-50"
+            variant="destructive"
+            className="rounded px-4 py-2 disabled:opacity-50"
           >
             Force pick
-          </button>
+          </Button>
         </div>
       </div>
-    </dialog>
+    </ConfirmationDialog>
   );
 }

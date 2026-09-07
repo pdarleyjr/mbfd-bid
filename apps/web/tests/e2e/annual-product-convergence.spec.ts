@@ -151,13 +151,15 @@ test('annual policy editor starts blocking and loads only real source members an
   });
 
   await page.goto('/admin/annual-policy?year=2027');
-  await expect(page.getByText('NOT CONFIGURED — BLOCKING')).toBeVisible();
-  await expect(page.locator('input[readonly]')).toHaveValue('2027-approved-candidate');
-  await page.getByRole('button', { name: 'Add stage' }).click();
-  await expect(page.getByRole('option', { name: /Firefighter, Avery.*RSC 100/ })).toBeVisible();
-  await expect(page.getByRole('option', { name: /A101.*Engine 1.*FF/ })).toBeVisible();
-  await expect(page.getByText('POLICY_STAGE_')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Save new draft revision' })).toBeDisabled();
+  const editor = page.getByRole('main');
+  await expect(editor.getByText('NOT CONFIGURED — BLOCKING')).toHaveCount(1);
+  await expect(editor.getByText('NOT CONFIGURED — BLOCKING')).toBeVisible();
+  await expect(editor.locator('input[readonly]')).toHaveValue('2027-approved-candidate');
+  await editor.getByRole('button', { name: 'Add stage' }).click();
+  await expect(editor.getByRole('option', { name: /Firefighter, Avery.*RSC 100/ })).toBeVisible();
+  await expect(editor.getByRole('option', { name: /A101.*Engine 1.*FF/ })).toBeVisible();
+  await expect(editor.getByText('POLICY_STAGE_')).toHaveCount(0);
+  await expect(editor.getByRole('button', { name: 'Save new draft revision' })).toBeDisabled();
 });
 
 test('specialty operator sees frozen ranking, contact state, resume state, and can dispatch', async ({
@@ -190,11 +192,11 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   });
 
   await page.goto('/admin/bid?session_id=annual-specialty-e2e');
-  const advisory = page.getByTestId('bid-advisory-panel');
+  const advisory = page.getByRole('main').getByTestId('bid-advisory-panel');
   await expect(advisory).toBeVisible();
   await expect(advisory).toContainText('Authoritative state');
   await expect(advisory.locator('button, input, textarea')).toHaveCount(0);
-  const controls = page.getByTestId('annual-live-controls');
+  const controls = page.getByRole('main').getByTestId('annual-live-controls');
   await expect(controls).toBeVisible();
   await expect(controls.getByText(/Original bidder: FF Alex Original/)).toContainText(
     '3 points · policy rank 2',

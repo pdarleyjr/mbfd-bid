@@ -20,9 +20,9 @@ export type AnnualPlan = {
   };
 };
 export const fieldClass =
-  'mt-1 min-h-11 w-full min-w-0 rounded border border-slate-600 bg-slate-950 px-3 py-2 text-white';
+  'mt-1 min-h-11 w-full min-w-0 rounded border border-border bg-card px-3 py-2 text-foreground';
 export const buttonClass =
-  'min-h-11 rounded border border-slate-500 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50';
+  'min-h-11 rounded border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-card disabled:cursor-not-allowed disabled:opacity-50';
 export async function annualGet<T>(path: string): Promise<T> {
   const r = await fetch(`/api/admin/${path}`, { credentials: 'include' });
   const body = (await r.json()) as T & { error?: string };

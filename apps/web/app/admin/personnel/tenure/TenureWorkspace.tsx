@@ -1,5 +1,9 @@
 'use client';
 import { RetainedEvidenceReview } from '@/components/admin/RetainedEvidenceReview';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -125,19 +129,19 @@ export function TenureWorkspace() {
     }
   }
   return (
-    <div className="mx-auto max-w-5xl space-y-5 text-slate-100">
+    <div className="mx-auto max-w-5xl space-y-5 text-foreground">
       <header>
         <h1 className="font-heading text-3xl">Tenure and Protection</h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           Record the reviewed member and exact inclusive term dates. An active protected term
           requires a non-biddable annual seat and a matching dated assignment. Unknown status
           requires review. Recording evidence does not change an assignment.
         </p>
       </header>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label>
+        <Label>
           Staffing date
-          <input
+          <Input
             type="date"
             className={fieldClass}
             value={asOf}
@@ -148,10 +152,10 @@ export function TenureWorkspace() {
               expected.current = null;
             }}
           />
-        </label>
-        <label>
+        </Label>
+        <Label>
           Authorized staffing seat
-          <select
+          <NativeSelect
             className={fieldClass}
             value={seat}
             disabled={!asOf || seats.isPending || seats.isError || dirty || busy}
@@ -166,11 +170,11 @@ export function TenureWorkspace() {
                 {s.stableSlotKey}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
       </div>
       {(seats.isError || history.isError || members.isError) && (
-        <p role="alert" className="text-amber-200">
+        <p role="alert" className="text-warning">
           Reference data could not be refreshed. Your edits remain in the form.
         </p>
       )}
@@ -187,9 +191,9 @@ export function TenureWorkspace() {
           className="space-y-4"
         >
           <div className="grid gap-4 sm:grid-cols-2">
-            <label>
+            <Label>
               Evidence effective date
-              <input
+              <Input
                 required
                 type="date"
                 className={fieldClass}
@@ -199,10 +203,10 @@ export function TenureWorkspace() {
                   setEffective(e.target.value);
                 }}
               />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Reviewed status
-              <select
+              <NativeSelect
                 required
                 className={fieldClass}
                 value={status}
@@ -215,14 +219,14 @@ export function TenureWorkspace() {
                 <option value="PROTECTED">Protected term</option>
                 <option value="UNPROTECTED">Reviewed — no protected term</option>
                 <option value="UNKNOWN">Unknown — requires review</option>
-              </select>
-            </label>
+              </NativeSelect>
+            </Label>
           </div>
           {status === 'PROTECTED' && (
             <div className="space-y-4">
-              <label className="block">
+              <Label className="block">
                 Protected member
-                <select
+                <NativeSelect
                   required
                   className={fieldClass}
                   value={member}
@@ -237,12 +241,12 @@ export function TenureWorkspace() {
                       {m.firstName} {m.lastName} · {m.employeeId}
                     </option>
                   ))}
-                </select>
-              </label>
+                </NativeSelect>
+              </Label>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label>
+                <Label>
                   Protected from
-                  <input
+                  <Input
                     required
                     type="date"
                     className={fieldClass}
@@ -252,10 +256,10 @@ export function TenureWorkspace() {
                       setFrom(e.target.value);
                     }}
                   />
-                </label>
-                <label>
+                </Label>
+                <Label>
                   Protected through (inclusive)
-                  <input
+                  <Input
                     required
                     type="date"
                     min={from || undefined}
@@ -266,13 +270,13 @@ export function TenureWorkspace() {
                       setThrough(e.target.value);
                     }}
                   />
-                </label>
+                </Label>
               </div>
             </div>
           )}
-          <label className="block">
+          <Label className="block">
             Authoritative source reference
-            <input
+            <Input
               required
               minLength={4}
               maxLength={500}
@@ -283,10 +287,10 @@ export function TenureWorkspace() {
                 setSource(e.target.value);
               }}
             />
-          </label>
-          <label className="block">
+          </Label>
+          <Label className="block">
             Review reason
-            <input
+            <Input
               required
               minLength={4}
               maxLength={500}
@@ -297,14 +301,14 @@ export function TenureWorkspace() {
                 setReason(e.target.value);
               }}
             />
-          </label>
+          </Label>
           <div className="flex flex-wrap gap-3">
-            <button className={buttonClass} type="submit">
+            <Button className={buttonClass} type="submit">
               {busy ? 'Saving…' : 'Record reviewed tenure'}
-            </button>
-            <button className={buttonClass} type="button" disabled={!dirty} onClick={clear}>
+            </Button>
+            <Button className={buttonClass} type="button" disabled={!dirty} onClick={clear}>
               Discard edits
-            </button>
+            </Button>
           </div>
         </fieldset>
       </form>
@@ -325,15 +329,15 @@ export function TenureWorkspace() {
           }}
         />
       )}
-      {message && <output className="block rounded border border-slate-600 p-3">{message}</output>}
+      {message && <output className="block rounded border border-border p-3">{message}</output>}
       <section className="space-y-3">
         <h2 className="font-heading text-xl">Evidence history</h2>
-        <p className="text-sm text-slate-300">
+        <p className="text-sm text-foreground">
           Corrections append a dated revision. A newer revision does not change existing frozen
           sessions.
         </p>
         {history.data?.records.map((r) => (
-          <article key={r.id} className="rounded border border-slate-700 bg-slate-900 p-4 text-sm">
+          <article key={r.id} className="rounded border border-border bg-card p-4 text-sm">
             <p className="font-semibold">
               Revision {r.revision} · {r.effectiveOn} · {r.status}
             </p>
@@ -344,7 +348,7 @@ export function TenureWorkspace() {
             )}
             <p className="mt-2 break-words">{r.sourceRef}</p>
             <p>{r.reason}</p>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-muted-foreground">
               Reviewed by {r.actorSubject} · {r.id}
             </p>
           </article>

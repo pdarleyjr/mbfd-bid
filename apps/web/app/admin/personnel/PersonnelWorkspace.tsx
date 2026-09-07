@@ -1,4 +1,15 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRetainedMutation } from '@/lib/use-retained-mutation';
@@ -75,12 +86,12 @@ function statusLabel(status: PersonnelMember['employmentStatus']): string {
 }
 
 function statusClass(status: PersonnelMember['employmentStatus']): string {
-  if (status === 'active') return 'border-emerald-700 bg-emerald-950/40 text-emerald-200';
-  if (status === 'unknown') return 'border-amber-700 bg-amber-950/40 text-amber-100';
+  if (status === 'active') return 'border-success/40 bg-success-surface text-success';
+  if (status === 'unknown') return 'border-warning/40 bg-warning-surface text-warning';
   if (status === 'retired' || status === 'separated') {
-    return 'border-slate-600 bg-slate-900/70 text-slate-300';
+    return 'border-border bg-card text-foreground';
   }
-  return 'border-sky-800 bg-sky-950/30 text-sky-200';
+  return 'border-info/40 bg-info-surface text-info';
 }
 
 function kindLabel(kind: string): string {
@@ -295,31 +306,31 @@ export function PersonnelWorkspace({
         />
       </section>
 
-      <section className="rounded-xl border border-slate-700 bg-slate-800/60 p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+            <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
               Year-round control
             </p>
-            <h2 className="mt-1 font-heading text-xl text-white">Personnel lifecycle</h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+            <h2 className="mt-1 font-heading text-xl text-foreground">Personnel lifecycle</h2>
+            <p className="mt-2 max-w-3xl text-sm text-foreground">
               Record reviewed changes with an effective date, operator reason, and immutable
               receipt. No historical member or assignment is deleted.
             </p>
-            <p className="mt-2 max-w-3xl text-xs text-slate-400">
+            <p className="mt-2 max-w-3xl text-xs text-muted-foreground">
               Civilian / no fire rank is supported as excluded personnel. Bid seniority is not
               required for excluded personnel; the effective date records this roster action and is
               not treated as a hire date.
             </p>
             {validMemberIdHint !== undefined && (
-              <p className="mt-2 text-xs text-sky-200" data-testid="personnel-link-context">
+              <p className="mt-2 text-xs text-info" data-testid="personnel-link-context">
                 Linked member #{validMemberIdHint}
                 {assignmentIdHint === undefined ? '' : ` · Linked assignment ${assignmentIdHint}`}
                 {' · '}history opens automatically below.
               </p>
             )}
           </div>
-          <span className="rounded-full border border-slate-600 px-3 py-1 text-xs font-semibold text-slate-200">
+          <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">
             As of {summary.asOf}
           </span>
         </div>
@@ -331,14 +342,14 @@ export function PersonnelWorkspace({
             setPreviewMessage(null);
           }}
           data-testid="personnel-change-form"
-          className="mt-5 grid gap-4 border-t border-slate-700 pt-5 lg:grid-cols-2"
+          className="mt-5 grid gap-4 border-t border-border pt-5 lg:grid-cols-2"
         >
-          <label className="block">
-            <span className="text-sm text-slate-200">Change type</span>
-            <select
+          <Label className="block">
+            <span className="text-sm text-foreground">Change type</span>
+            <NativeSelect
               value={kind}
               onChange={(event) => setKind(event.target.value as typeof kind)}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             >
               <optgroup label="Member changes">
                 {MEMBER_KINDS.map((option) => (
@@ -356,28 +367,28 @@ export function PersonnelWorkspace({
                   </option>
                 ))}
               </optgroup>
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
 
-          <label className="block">
-            <span className="text-sm text-slate-200">Effective date</span>
-            <input
+          <Label className="block">
+            <span className="text-sm text-foreground">Effective date</span>
+            <Input
               type="date"
               required
               value={effectiveOn}
               onChange={(event) => setEffectiveOn(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             />
-          </label>
+          </Label>
 
           {!isNewHire && !isPositionChange && (
-            <label className="block lg:col-span-2">
-              <span className="text-sm text-slate-200">Member</span>
-              <select
+            <Label className="block lg:col-span-2">
+              <span className="text-sm text-foreground">Member</span>
+              <NativeSelect
                 required
                 value={memberId}
                 onChange={(event) => setMemberId(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
               >
                 <option value="">Select a member</option>
                 {members.map((member) => (
@@ -387,137 +398,137 @@ export function PersonnelWorkspace({
                     {statusLabel(member.employmentStatus)})
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               {selectedMember?.employmentStatus === 'unknown' && (
-                <span className="mt-1 block text-xs text-amber-200">
+                <span className="mt-1 block text-xs text-warning">
                   This legacy member is unclassified. The server will fail closed until an explicit
                   Correction establishes its reviewed employment state; transfer, promotion, and
                   separation changes remain unavailable until then.
                 </span>
               )}
-            </label>
+            </Label>
           )}
 
           {isNewHire && (
             <>
-              <label className="block">
-                <span className="text-sm text-slate-200">Synthetic employee ID</span>
-                <input
+              <Label className="block">
+                <span className="text-sm text-foreground">Synthetic employee ID</span>
+                <Input
                   required
                   value={newEmployeeId}
                   onChange={(event) => setNewEmployeeId(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                 />
-              </label>
-              <label className="block">
-                <span className="text-sm text-slate-200">RSC seniority</span>
-                <input
+              </Label>
+              <Label className="block">
+                <span className="text-sm text-foreground">RSC seniority</span>
+                <Input
                   required={newBidCategory !== 'EXCLUDED'}
                   type="number"
                   min={0}
                   value={newRscSeniority}
                   onChange={(event) => setNewRscSeniority(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                 />
-              </label>
-              <label className="block">
-                <span className="text-sm text-slate-200">First name</span>
-                <input
+              </Label>
+              <Label className="block">
+                <span className="text-sm text-foreground">First name</span>
+                <Input
                   required
                   value={newFirstName}
                   onChange={(event) => setNewFirstName(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                 />
-              </label>
-              <label className="block">
-                <span className="text-sm text-slate-200">Last name</span>
-                <input
+              </Label>
+              <Label className="block">
+                <span className="text-sm text-foreground">Last name</span>
+                <Input
                   required
                   value={newLastName}
                   onChange={(event) => setNewLastName(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                 />
-              </label>
-              <label className="block">
-                <span className="text-sm text-slate-200">Bid category</span>
-                <select
+              </Label>
+              <Label className="block">
+                <span className="text-sm text-foreground">Bid category</span>
+                <NativeSelect
                   value={newBidCategory}
                   onChange={(event) => setNewBidCategory(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                 >
                   <option value="FF">Firefighter</option>
                   <option value="OFC">Officer</option>
                   <option value="EXCLUDED">Excluded</option>
-                </select>
-              </label>
+                </NativeSelect>
+              </Label>
             </>
           )}
 
           {isPositionChange && (
             <>
-              <label className="block">
-                <span className="text-sm text-slate-200">Staffing position ID</span>
-                <input
+              <Label className="block">
+                <span className="text-sm text-foreground">Staffing position ID</span>
+                <Input
                   required
                   value={staffingPositionId}
                   onChange={(event) => setStaffingPositionId(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                 />
-              </label>
+              </Label>
               {kind === 'POSITION_CREATE' && (
                 <>
-                  <label className="block">
-                    <span className="text-sm text-slate-200">Stable slot key</span>
-                    <input
+                  <Label className="block">
+                    <span className="text-sm text-foreground">Stable slot key</span>
+                    <Input
                       required
                       value={stableSlotKey}
                       onChange={(event) => setStableSlotKey(event.target.value)}
-                      className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                      className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                     />
-                  </label>
-                  <label className="block lg:col-span-2">
-                    <span className="text-sm text-slate-200">Position name</span>
-                    <input
+                  </Label>
+                  <Label className="block lg:col-span-2">
+                    <span className="text-sm text-foreground">Position name</span>
+                    <Input
                       value={positionName}
                       onChange={(event) => setPositionName(event.target.value)}
-                      className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                      className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                     />
-                  </label>
+                  </Label>
                 </>
               )}
             </>
           )}
 
           {!isPositionChange && !requiresSlot && (
-            <label className="block">
-              <span className="text-sm text-slate-200">
+            <Label className="block">
+              <span className="text-sm text-foreground">
                 Destination staffing position ID (optional)
               </span>
-              <input
+              <Input
                 value={staffingPositionId}
                 onChange={(event) => setStaffingPositionId(event.target.value)}
                 placeholder="Reviewed canonical slot ID"
-                className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
               />
-            </label>
+            </Label>
           )}
 
           {!isPositionChange && requiresSlot && (
-            <label className="block">
-              <span className="text-sm text-slate-200">Staffing position ID</span>
-              <input
+            <Label className="block">
+              <span className="text-sm text-foreground">Staffing position ID</span>
+              <Input
                 required
                 value={staffingPositionId}
                 onChange={(event) => setStaffingPositionId(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
               />
-            </label>
+            </Label>
           )}
 
           {(isNewHire || isRankChange) && (
-            <label className="block">
-              <span className="text-sm text-slate-200">Rank after change</span>
-              <select
+            <Label className="block">
+              <span className="text-sm text-foreground">Rank after change</span>
+              <NativeSelect
                 value={rankAfter}
                 onChange={(event) => {
                   const nextRank = event.target.value;
@@ -527,7 +538,7 @@ export function PersonnelWorkspace({
                     setNewRscSeniority('');
                   }
                 }}
-                className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
               >
                 {RANKS.map((rank) => (
                   <option key={rank} value={rank}>
@@ -535,77 +546,77 @@ export function PersonnelWorkspace({
                   </option>
                 ))}
                 {isNewHire && <option value="CIVILIAN">Civilian / no fire rank</option>}
-              </select>
-            </label>
+              </NativeSelect>
+            </Label>
           )}
 
           {isCorrection && (
-            <label className="block">
-              <span className="text-sm text-slate-200">Corrected employment state</span>
-              <select
+            <Label className="block">
+              <span className="text-sm text-foreground">Corrected employment state</span>
+              <NativeSelect
                 value={correctionStatus}
                 onChange={(event) => setCorrectionStatus(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="retired">Retired</option>
                 <option value="separated">Separated</option>
-              </select>
-              <span className="mt-1 block text-xs text-slate-400">
+              </NativeSelect>
+              <span className="mt-1 block text-xs text-muted-foreground">
                 Use this reviewed correction path to classify legacy / unknown members before
                 operational changes.
               </span>
-            </label>
+            </Label>
           )}
 
           {requiresSeparationType && (
-            <label className="block">
-              <span className="text-sm text-slate-200">Separation type</span>
-              <input
+            <Label className="block">
+              <span className="text-sm text-foreground">Separation type</span>
+              <Input
                 required
                 value={separationType}
                 onChange={(event) => setSeparationType(event.target.value)}
                 placeholder="e.g., RETIREMENT"
-                className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
               />
-            </label>
+            </Label>
           )}
 
-          <label className="block lg:col-span-2">
-            <span className="text-sm text-slate-200">Operator reason</span>
-            <textarea
+          <Label className="block lg:col-span-2">
+            <span className="text-sm text-foreground">Operator reason</span>
+            <Textarea
               required
               minLength={4}
               maxLength={500}
               rows={3}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              className="mt-1 w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+              className="mt-1 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
               placeholder="Explain the reviewed personnel or staffing change."
             />
-          </label>
+          </Label>
 
           <div className="lg:col-span-2">
             {error !== null && (
-              <output aria-live="polite" className="block text-sm text-red-300">
+              <output aria-live="polite" className="block text-sm text-destructive">
                 {error}
               </output>
             )}
             {success !== null && (
-              <output aria-live="polite" className="block text-sm text-emerald-300">
+              <output aria-live="polite" className="block text-sm text-success">
                 {success}
               </output>
             )}
             {previewMessage !== null && (
-              <output aria-live="polite" className="block text-sm text-sky-200">
+              <output aria-live="polite" className="block text-sm text-info">
                 {previewMessage}
               </output>
             )}
-            <button
+            <Button
               type="submit"
               disabled={busy || reason.trim().length < 4}
-              className="mt-2 min-h-11 rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-2 min-h-11 rounded bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-destructive disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy
                 ? pendingChange === null && canPreview
@@ -614,78 +625,78 @@ export function PersonnelWorkspace({
                 : pendingChange === null && canPreview
                   ? 'Preview before recording'
                   : 'Confirm and record change'}
-            </button>
+            </Button>
           </div>
         </form>
       </section>
 
       <TemporaryOverlayWorkspace members={members} asOf={summary.asOf} />
 
-      <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/40">
-        <div className="border-b border-slate-700 px-5 py-4">
-          <h2 className="font-heading text-lg text-white">Member projection and history</h2>
-          <p className="mt-1 text-sm text-slate-300">
+      <section className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="font-heading text-lg text-foreground">Member projection and history</h2>
+          <p className="mt-1 text-sm text-foreground">
             Select a synthetic member to inspect lifecycle and assignment evidence.
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-left text-sm">
-            <thead className="bg-slate-900/70 text-xs uppercase tracking-wide text-slate-400">
-              <tr>
-                <th className="px-5 py-3">Member</th>
-                <th className="px-4 py-3">Rank</th>
-                <th className="px-4 py-3">Employment</th>
-                <th className="px-4 py-3">Effective</th>
-                <th className="px-5 py-3">History</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
+          <Table className="w-full min-w-[700px] text-left text-sm">
+            <TableHeader className="bg-card text-xs uppercase tracking-wide text-muted-foreground">
+              <TableRow>
+                <TableHead className="px-5 py-3">Member</TableHead>
+                <TableHead className="px-4 py-3">Rank</TableHead>
+                <TableHead className="px-4 py-3">Employment</TableHead>
+                <TableHead className="px-4 py-3">Effective</TableHead>
+                <TableHead className="px-5 py-3">History</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-800">
               {members.map((member) => (
-                <tr key={member.id}>
-                  <td className="px-5 py-3 text-white">
+                <TableRow key={member.id}>
+                  <TableCell className="px-5 py-3 text-foreground">
                     <span className="font-medium">
                       {member.firstName} {member.lastName}
                     </span>
-                    <span className="ml-2 font-mono text-xs text-slate-500">
+                    <span className="ml-2 font-mono text-xs text-muted-foreground">
                       {member.employeeId}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-slate-200">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 font-mono text-foreground">
                     {member.rank ?? 'Civilian / no fire rank'}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <span
                       className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClass(member.employmentStatus)}`}
                     >
                       {statusLabel(member.employmentStatus)}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-foreground">
                     {member.employmentStatusEffectiveOn ?? 'Not established'}
-                  </td>
-                  <td className="px-5 py-3">
-                    <button
+                  </TableCell>
+                  <TableCell className="px-5 py-3">
+                    <Button
                       type="button"
                       onClick={() => loadHistory(member.id)}
-                      className="min-h-10 rounded border border-slate-600 px-3 text-xs font-semibold text-slate-100 hover:border-red-500 hover:text-white"
+                      className="min-h-10 rounded border border-border px-3 text-xs font-semibold text-foreground hover:border-destructive/40 hover:text-foreground"
                     >
                       View history
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
               {members.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-slate-400">
+                <TableRow>
+                  <TableCell colSpan={5} className="px-5 py-8 text-center text-muted-foreground">
                     No member projections are available.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
         {history !== null && historyMemberId !== null && (
-          <div className="grid gap-5 border-t border-slate-700 p-5 lg:grid-cols-2">
+          <div className="grid gap-5 border-t border-border p-5 lg:grid-cols-2">
             <HistoryList
               title="Lifecycle events"
               empty="No lifecycle events were returned."
@@ -867,13 +878,13 @@ function TemporaryOverlayWorkspace({
 
   return (
     <section
-      className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+      className="rounded-xl border border-border bg-card p-5"
       aria-labelledby="temporary-overlays-heading"
     >
-      <h2 id="temporary-overlays-heading" className="font-heading text-xl text-white">
+      <h2 id="temporary-overlays-heading" className="font-heading text-xl text-foreground">
         Temporary operational overlays
       </h2>
-      <p className="mt-2 text-sm text-slate-300">
+      <p className="mt-2 text-sm text-foreground">
         Special Assignment and Light Duty affect daily staffing only. Destination staffing remains
         policy pending; this does not create an annual Bid vacancy.
       </p>
@@ -882,77 +893,77 @@ function TemporaryOverlayWorkspace({
         data-testid="temporary-overlay-form"
         className="mt-5 grid gap-3 lg:grid-cols-2"
       >
-        <label className="block">
-          <span className="text-sm text-slate-200">Overlay type</span>
-          <select
+        <Label className="block">
+          <span className="text-sm text-foreground">Overlay type</span>
+          <NativeSelect
             value={kind}
             onChange={(event) => {
               setKind(event.target.value as typeof kind);
               setPending(null);
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           >
             <option value="SPECIAL_ASSIGNMENT">Special Assignment</option>
             <option value="LIGHT_DUTY">Light Duty</option>
-          </select>
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-200">Member</span>
-          <select
+          </NativeSelect>
+        </Label>
+        <Label className="block">
+          <span className="text-sm text-foreground">Member</span>
+          <NativeSelect
             required
             value={memberId}
             onChange={(event) => {
               setMemberId(event.target.value);
               setPending(null);
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           >
             {members.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.lastName}, {member.firstName}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-200">Underlying assignment ID</span>
-          <input
+          </NativeSelect>
+        </Label>
+        <Label className="block">
+          <span className="text-sm text-foreground">Underlying assignment ID</span>
+          <Input
             required
             value={underlyingAssignmentId}
             onChange={(event) => {
               setUnderlyingAssignmentId(event.target.value);
               setPending(null);
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-200">Underlying position ID</span>
-          <input
+        </Label>
+        <Label className="block">
+          <span className="text-sm text-foreground">Underlying position ID</span>
+          <Input
             required
             value={underlyingPositionId}
             onChange={(event) => {
               setUnderlyingPositionId(event.target.value);
               setPending(null);
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-200">Temporary operational position ID</span>
-          <input
+        </Label>
+        <Label className="block">
+          <span className="text-sm text-foreground">Temporary operational position ID</span>
+          <Input
             required
             value={temporaryPositionId}
             onChange={(event) => {
               setTemporaryPositionId(event.target.value);
               setPending(null);
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-200">Effective date</span>
-          <input
+        </Label>
+        <Label className="block">
+          <span className="text-sm text-foreground">Effective date</span>
+          <Input
             required
             type="date"
             value={effectiveOn}
@@ -960,77 +971,77 @@ function TemporaryOverlayWorkspace({
               setEffectiveOn(event.target.value);
               setPending(null);
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-200">Planned end (optional)</span>
-          <input
+        </Label>
+        <Label className="block">
+          <span className="text-sm text-foreground">Planned end (optional)</span>
+          <Input
             type="date"
             value={plannedEndOn}
             onChange={(event) => {
               setPlannedEndOn(event.target.value);
               setPending(null);
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label className="block">
-          <span className="text-sm text-slate-200">Source / provenance</span>
-          <input
+        </Label>
+        <Label className="block">
+          <span className="text-sm text-foreground">Source / provenance</span>
+          <Input
             required
             value={provenance}
             onChange={(event) => {
               setProvenance(event.target.value);
               setPending(null);
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
+        </Label>
         <div className="lg:col-span-2">
           {error !== null && (
-            <output aria-live="polite" className="block text-sm text-red-300">
+            <output aria-live="polite" className="block text-sm text-destructive">
               {error}
             </output>
           )}
           {message !== null && (
-            <output aria-live="polite" className="block text-sm text-sky-200">
+            <output aria-live="polite" className="block text-sm text-info">
               {message}
             </output>
           )}
-          <button
+          <Button
             type="submit"
             disabled={busy}
-            className="mt-2 min-h-11 rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600"
+            className="mt-2 min-h-11 rounded bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-destructive"
           >
             {pending === null ? 'Preview overlay' : 'Confirm and record overlay'}
-          </button>
+          </Button>
         </div>
       </form>
-      <div className="mt-5 border-t border-slate-700 pt-4">
-        <h3 className="font-semibold text-white">Recorded overlays</h3>
+      <div className="mt-5 border-t border-border pt-4">
+        <h3 className="font-semibold text-foreground">Recorded overlays</h3>
         {overlays.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-400">No temporary overlays are recorded.</p>
+          <p className="mt-2 text-sm text-muted-foreground">No temporary overlays are recorded.</p>
         ) : (
           <ul className="mt-2 space-y-2">
             {overlays.map((overlay) => (
               <li
                 key={overlay.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-700 p-3 text-sm text-slate-200"
+                className="flex flex-wrap items-center justify-between gap-3 rounded border border-border p-3 text-sm text-foreground"
               >
                 <span>
                   {overlay.kind} · member #{overlay.member_id} · {overlay.effective_on} ·{' '}
                   {overlay.status}
                 </span>
                 {overlay.status === 'active' && (
-                  <button
+                  <Button
                     type="button"
                     onClick={() => void endOverlay(overlay.id)}
                     disabled={busy}
-                    className="min-h-10 rounded border border-amber-700 px-3 text-xs font-semibold text-amber-100"
+                    className="min-h-10 rounded border border-warning/40 px-3 text-xs font-semibold text-warning"
                   >
                     End overlay
-                  </button>
+                  </Button>
                 )}
               </li>
             ))}
@@ -1049,15 +1060,15 @@ function Metric({
 }: { label: string; value: number; detail: string; tone?: 'slate' | 'amber' | 'sky' }) {
   const toneClasses =
     tone === 'amber'
-      ? 'border-amber-800 bg-amber-950/30'
+      ? 'border-warning/40 bg-warning-surface'
       : tone === 'sky'
-        ? 'border-sky-900 bg-sky-950/30'
-        : 'border-slate-700 bg-slate-800/50';
+        ? 'border-info/40 bg-info-surface'
+        : 'border-border bg-card';
   return (
     <div className={`rounded-xl border p-4 ${toneClasses}`}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-2 font-heading text-2xl text-white">{value}</p>
-      <p className="mt-1 text-xs text-slate-300">{detail}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-2 font-heading text-2xl text-foreground">{value}</p>
+      <p className="mt-1 text-xs text-foreground">{detail}</p>
     </div>
   );
 }
@@ -1075,18 +1086,18 @@ function HistoryList({
 }) {
   return (
     <div>
-      <h3 className="font-semibold text-white">{title}</h3>
+      <h3 className="font-semibold text-foreground">{title}</h3>
       {items.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-400">{empty}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{empty}</p>
       ) : (
-        <ol className="mt-2 space-y-2 text-sm text-slate-300">
+        <ol className="mt-2 space-y-2 text-sm text-foreground">
           {items.map((item) => (
             <li
               key={item}
-              className={`rounded border px-3 py-2 ${item === highlightedItem ? 'border-sky-500 bg-sky-950/40 text-sky-100' : 'border-slate-700 bg-slate-950/40'}`}
+              className={`rounded border px-3 py-2 ${item === highlightedItem ? 'border-info/40 bg-info-surface text-info' : 'border-border bg-card'}`}
             >
               {item === highlightedItem && (
-                <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-sky-300">
+                <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-info">
                   Linked assignment
                 </span>
               )}

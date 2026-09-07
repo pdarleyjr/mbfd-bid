@@ -1,5 +1,15 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -218,13 +228,16 @@ export function CredentialsCatalogWorkspace({
     <section className="mx-auto max-w-7xl space-y-6" aria-labelledby="credentials-catalog-heading">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+          <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
             Year-round personnel reference data
           </p>
-          <h1 id="credentials-catalog-heading" className="mt-1 font-heading text-3xl text-white">
+          <h1
+            id="credentials-catalog-heading"
+            className="mt-1 font-heading text-3xl text-foreground"
+          >
             Credentials &amp; Specialty Points
           </h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-300">
+          <p className="mt-2 max-w-3xl text-sm text-foreground">
             Manage the credential catalog and its default informational points. Current
             qualifications remain effective-dated evidence on each member; these defaults do not
             rewrite any frozen annual Bid score.
@@ -232,7 +245,7 @@ export function CredentialsCatalogWorkspace({
         </div>
         <Link
           href="/admin/personnel/qualifications"
-          className="inline-flex min-h-11 items-center rounded border border-red-600 bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-600"
+          className="inline-flex min-h-11 items-center rounded border border-destructive/40 bg-destructive px-4 text-sm font-semibold text-primary-foreground hover:bg-destructive"
         >
           Record qualification evidence
         </Link>
@@ -240,44 +253,44 @@ export function CredentialsCatalogWorkspace({
 
       <form
         onSubmit={(event) => void submit(event)}
-        className="grid gap-4 rounded-xl border border-slate-700 bg-slate-800/60 p-5 md:grid-cols-2"
+        className="grid gap-4 rounded-xl border border-border bg-card p-5 md:grid-cols-2"
       >
         <div className="md:col-span-2">
-          <h2 className="font-heading text-xl text-white">
+          <h2 className="font-heading text-xl text-foreground">
             {editing === null ? 'Add credential' : `Edit ${editing.name}`}
           </h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             Catalog changes require a current step-up session and create an audit receipt.
           </p>
         </div>
-        <label>
-          <span className="text-sm font-medium text-slate-200">Credential name</span>
-          <input
+        <Label>
+          <span className="text-sm font-medium text-foreground">Credential name</span>
+          <Input
             required
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
+        </Label>
         {editing !== null && (
-          <label>
-            <span className="text-sm font-medium text-stone-200">
+          <Label>
+            <span className="text-sm font-medium text-foreground">
               Retire from new annual preparation on
             </span>
-            <input
+            <Input
               type="date"
               value={retiredOn}
               onChange={(event) => setRetiredOn(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded border border-stone-600 bg-stone-950 px-3 text-white"
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             />
-            <span className="mt-1 block text-xs text-stone-300">
+            <span className="mt-1 block text-xs text-foreground">
               Leave blank to keep active. Retirement preserves qualification history and frozen
               bids.
             </span>
-          </label>
+          </Label>
         )}
         {dependencies !== null && editing !== null && (
-          <div className="rounded border border-stone-600 p-3 text-sm text-stone-200 md:col-span-2">
+          <div className="rounded border border-border p-3 text-sm text-foreground md:col-span-2">
             <p>
               {dependencies.retirementBlocked
                 ? 'An active policy references this credential. Retirement is blocked until a reviewed successor removes that dependency.'
@@ -315,38 +328,38 @@ export function CredentialsCatalogWorkspace({
             )}
           </div>
         )}
-        <label>
-          <span className="text-sm font-medium text-slate-200">Default points</span>
-          <input
+        <Label>
+          <span className="text-sm font-medium text-foreground">Default points</span>
+          <Input
             required
             min="0"
             step="1"
             type="number"
             value={points}
             onChange={(event) => setPoints(event.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label className="md:col-span-2">
-          <span className="text-sm font-medium text-slate-200">Reason</span>
-          <textarea
+        </Label>
+        <Label className="md:col-span-2">
+          <span className="text-sm font-medium text-foreground">Reason</span>
+          <Textarea
             required
             minLength={4}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            className="mt-1 min-h-24 w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+            className="mt-1 min-h-24 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
           />
-        </label>
+        </Label>
         <div className="flex flex-wrap gap-3 md:col-span-2">
-          <button
+          <Button
             type="submit"
             disabled={busy}
-            className="min-h-11 rounded bg-red-700 px-4 text-sm font-semibold text-white disabled:opacity-50"
+            className="min-h-11 rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
             {busy ? 'Saving…' : editing === null ? 'Create credential' : 'Save catalog change'}
-          </button>
+          </Button>
           {editing !== null && (
-            <button
+            <Button
               type="button"
               onClick={() => {
                 setEditingId(null);
@@ -357,10 +370,10 @@ export function CredentialsCatalogWorkspace({
                 setPoints('0');
                 setReason('');
               }}
-              className="min-h-11 rounded border border-slate-500 px-4 text-sm font-semibold text-slate-100"
+              className="min-h-11 rounded border border-border px-4 text-sm font-semibold text-foreground"
             >
               Cancel edit
-            </button>
+            </Button>
           )}
         </div>
       </form>
@@ -368,13 +381,13 @@ export function CredentialsCatalogWorkspace({
       {error !== null && (
         <p
           role="alert"
-          className="rounded border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-100"
+          className="rounded border border-destructive/40 bg-destructive-surface px-4 py-3 text-sm text-destructive"
         >
           {error}
         </p>
       )}
       {catalog.isError && (
-        <output className="text-sm text-amber-200">
+        <output className="text-sm text-warning">
           Refresh failed. Showing the last successful catalog; saved changes still require server
           validation.
         </output>
@@ -382,86 +395,88 @@ export function CredentialsCatalogWorkspace({
       {editing !== null &&
         (credentials.find((row) => row.id === editing.id)?.revision ?? 0) !==
           (editing.revision ?? 0) && (
-          <p role="alert" className="text-sm text-amber-200">
+          <p role="alert" className="text-sm text-warning">
             This credential changed since you opened it. Your unsaved values remain here. Cancel
             this edit and reopen the current record before saving.
           </p>
         )}
-      <label className="block text-sm text-stone-200">
+      <Label className="block text-sm text-foreground">
         Search credentials
-        <input
+        <Input
           type="search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="mt-1 min-h-11 w-full rounded border border-stone-600 bg-stone-950 px-3"
+          className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3"
         />
-      </label>
+      </Label>
       {notice !== null && (
-        <output className="block rounded border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100">
+        <output className="block rounded border border-success/40 bg-success-surface px-4 py-3 text-sm text-success">
           {notice}
         </output>
       )}
 
       <section
-        className="overflow-hidden rounded-xl border border-slate-700"
+        className="overflow-hidden rounded-xl border border-border"
         aria-label="Credential catalog"
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[48rem] text-left text-sm">
-            <thead className="bg-slate-800 text-xs uppercase tracking-wide text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Credential</th>
-                <th className="px-4 py-3">Default points</th>
-                <th className="px-4 py-3">Referenced members</th>
-                <th className="px-4 py-3">
+          <Table className="w-full min-w-[48rem] text-left text-sm">
+            <TableHeader className="bg-card text-xs uppercase tracking-wide text-muted-foreground">
+              <TableRow>
+                <TableHead className="px-4 py-3">Credential</TableHead>
+                <TableHead className="px-4 py-3">Default points</TableHead>
+                <TableHead className="px-4 py-3">Referenced members</TableHead>
+                <TableHead className="px-4 py-3">
                   <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800 bg-slate-900/70">
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-800 bg-card">
               {credentials
                 .filter((credential) =>
                   credential.name.toLowerCase().includes(search.toLowerCase()),
                 )
                 .map((credential) => (
-                  <tr key={credential.id}>
-                    <td className="px-4 py-3 font-medium text-slate-100">
+                  <TableRow key={credential.id}>
+                    <TableCell className="px-4 py-3 font-medium text-foreground">
                       {credential.name}
                       {credential.retiredOn && (
-                        <span className="block text-xs text-amber-200">
+                        <span className="block text-xs text-warning">
                           Retires {credential.retiredOn}
                         </span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-slate-200">
+                    </TableCell>
+                    <TableCell className="px-4 py-3 tabular-nums text-foreground">
                       {credential.fyPointsDefault}
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">{credential.holderCount}</td>
-                    <td className="px-4 py-3 text-right">
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-foreground">
+                      {credential.holderCount}
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-3">
-                        <button
+                        <Button
                           type="button"
                           disabled={busy || dirty}
                           onClick={() => beginEdit(credential)}
-                          className="text-sm font-medium text-sky-300 hover:text-sky-100"
+                          className="text-sm font-medium text-info hover:text-info"
                         >
                           Edit
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() => void openHolders(credential)}
-                          className="text-sm font-medium text-red-300 hover:text-red-100"
+                          className="text-sm font-medium text-destructive hover:text-destructive"
                         >
                           View members
-                        </button>
+                        </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-        <p className="border-t border-slate-800 px-4 py-3 text-xs text-slate-400">
+        <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
           Display-name changes preserve the stable credential identity used by existing policy and
           qualification evidence. Frozen sessions retain their original labels and scores.
         </p>
@@ -469,30 +484,32 @@ export function CredentialsCatalogWorkspace({
 
       {holders !== null && holderCredentialId !== null && (
         <section
-          className="rounded-xl border border-slate-700 bg-slate-800/60 p-5"
+          className="rounded-xl border border-border bg-card p-5"
           aria-label="Credential member references"
         >
-          <h2 className="font-heading text-xl text-white">Member references</h2>
-          <p className="mt-1 text-sm text-amber-100">
+          <h2 className="font-heading text-xl text-foreground">Member references</h2>
+          <p className="mt-1 text-sm text-warning">
             These are legacy credential references, not proof of current qualification. Open each
             member’s effective-dated history to verify active, expired, or revoked status.
           </p>
           <ul className="mt-4 divide-y divide-slate-700">
             {holders.length === 0 ? (
-              <li className="py-3 text-sm text-slate-300">No members reference this credential.</li>
+              <li className="py-3 text-sm text-foreground">
+                No members reference this credential.
+              </li>
             ) : (
               holders.map((holder) => (
                 <li
                   key={holder.memberId}
                   className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"
                 >
-                  <span className="text-slate-100">
+                  <span className="text-foreground">
                     {holder.firstName} {holder.lastName}{' '}
-                    <span className="text-slate-400">{holder.employeeId}</span>
+                    <span className="text-muted-foreground">{holder.employeeId}</span>
                   </span>
                   <Link
                     href={holder.historyHref as Route}
-                    className="font-medium text-red-300 hover:text-red-100"
+                    className="font-medium text-destructive hover:text-destructive"
                   >
                     Open qualification history
                   </Link>

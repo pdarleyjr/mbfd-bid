@@ -44,7 +44,8 @@ export function phase2BidOrder(input: Phase2BidOrderInput): number[] {
   }
 
   // by_shift_then_seniority
-  const withMeta = eligibleIds
+  const withMeta = input.phase1Order
+    .filter((id) => !preSeeded.has(id))
     .map((id) => {
       const phase1 = phase1ByMember.get(id);
       const member = memberById.get(id);

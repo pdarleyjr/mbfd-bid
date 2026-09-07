@@ -1,4 +1,14 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQueryClient } from '@tanstack/react-query';
@@ -111,19 +121,19 @@ export function CredentialImportWorkspace() {
     }
   }
   return (
-    <div className="mx-auto max-w-6xl space-y-5 text-slate-100">
+    <div className="mx-auto max-w-6xl space-y-5 text-foreground">
       <header>
         <h1 className="font-heading text-3xl">Import Qualification Catalog</h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           Review catalog labels and informational default points before applying an XLSX file. This
           flow does not grant qualifications to members or replace configured annual scoring.
         </p>
       </header>
       <form onSubmit={inspect}>
         <fieldset disabled={busy} className="space-y-4">
-          <label className="block">
+          <Label className="block">
             Catalog XLSX
-            <input
+            <Input
               required
               type="file"
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -133,11 +143,11 @@ export function CredentialImportWorkspace() {
                 resetPreview();
               }}
             />
-          </label>
+          </Label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label>
+            <Label>
               Import layout
-              <select
+              <NativeSelect
                 className={fieldClass}
                 value={mode}
                 onChange={(e) => {
@@ -147,12 +157,12 @@ export function CredentialImportWorkspace() {
               >
                 <option value="normalized">One qualification per row</option>
                 <option value="legacy_wide_matrix">Legacy qualifications as columns</option>
-              </select>
-            </label>
+              </NativeSelect>
+            </Label>
             {mode === 'legacy_wide_matrix' && (
-              <label>
+              <Label>
                 Leading metadata columns
-                <input
+                <Input
                   required
                   type="number"
                   min={0}
@@ -164,22 +174,22 @@ export function CredentialImportWorkspace() {
                     resetPreview();
                   }}
                 />
-              </label>
+              </Label>
             )}
           </div>
-          <p className="text-sm text-slate-300">
+          <p className="text-sm text-foreground">
             A normalized sheet uses name and fy_points_default columns. For a legacy matrix,
             explicitly count the leading employee metadata columns; only the remaining headers
             become catalog entries. Existing points are retained because a header-only matrix
             provides no points evidence.
           </p>
-          <button type="submit" className={buttonClass}>
+          <Button type="submit" className={buttonClass}>
             {busy
               ? 'Working…'
               : preview
                 ? 'Regenerate review with current catalog'
                 : 'Preview proposed changes'}
-          </button>
+          </Button>
         </fieldset>
       </form>
       {preview && (
@@ -190,9 +200,11 @@ export function CredentialImportWorkspace() {
             {preview.rows.filter((r) => r.operation === 'UPDATE').length} update ·{' '}
             {preview.rows.filter((r) => r.operation === 'UNCHANGED').length} unchanged
           </p>
-          <p className="break-all text-xs text-slate-400">Source SHA-256: {preview.sourceHash}</p>
+          <p className="break-all text-xs text-muted-foreground">
+            Source SHA-256: {preview.sourceHash}
+          </p>
           {preview.errors.length > 0 && (
-            <div role="alert" className="rounded border border-amber-500 p-4">
+            <div role="alert" className="rounded border border-warning/40 p-4">
               <p className="font-semibold">Resolve every import error before applying this file.</p>
               <ul className="mt-2 list-inside list-disc space-y-1">
                 {preview.errors.map((e, i) => (
@@ -204,34 +216,34 @@ export function CredentialImportWorkspace() {
               </ul>
             </div>
           )}
-          <div className="overflow-x-auto rounded border border-slate-700">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-800">
-                <tr>
-                  <th className="p-3">Qualification</th>
-                  <th className="p-3">Action</th>
-                  <th className="p-3">Current points</th>
-                  <th className="p-3">Proposed points</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="overflow-x-auto rounded border border-border">
+            <Table className="w-full text-left text-sm">
+              <TableHeader className="bg-card">
+                <TableRow>
+                  <TableHead className="p-3">Qualification</TableHead>
+                  <TableHead className="p-3">Action</TableHead>
+                  <TableHead className="p-3">Current points</TableHead>
+                  <TableHead className="p-3">Proposed points</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {preview.rows.map((row) => (
-                  <tr key={row.name} className="border-t border-slate-700">
-                    <td className="break-words p-3">{row.name}</td>
-                    <td className="p-3">{row.operation}</td>
-                    <td className="p-3">{row.previousPoints ?? 'New'}</td>
-                    <td className="p-3">{row.fyPointsDefault}</td>
-                  </tr>
+                  <TableRow key={row.name} className="border-t border-border">
+                    <TableCell className="break-words p-3">{row.name}</TableCell>
+                    <TableCell className="p-3">{row.operation}</TableCell>
+                    <TableCell className="p-3">{row.previousPoints ?? 'New'}</TableCell>
+                    <TableCell className="p-3">{row.fyPointsDefault}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
           {!committed && (
             <form onSubmit={commit}>
               <fieldset disabled={busy || !preview.ready} className="space-y-4">
-                <label className="block">
+                <Label className="block">
                   Authoritative source reference
-                  <input
+                  <Input
                     required
                     minLength={4}
                     maxLength={500}
@@ -239,10 +251,10 @@ export function CredentialImportWorkspace() {
                     value={source}
                     onChange={(e) => setSource(e.target.value)}
                   />
-                </label>
-                <label className="block">
+                </Label>
+                <Label className="block">
                   Review reason
-                  <input
+                  <Input
                     required
                     minLength={4}
                     maxLength={500}
@@ -250,25 +262,25 @@ export function CredentialImportWorkspace() {
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                   />
-                </label>
-                <label className="flex min-h-11 items-center gap-3">
-                  <input
+                </Label>
+                <Label className="flex min-h-11 items-center gap-3">
+                  <Input
                     type="checkbox"
                     required
                     checked={accepted}
                     onChange={(e) => setAccepted(e.target.checked)}
                   />
                   I reviewed every proposed catalog change.
-                </label>
-                <button type="submit" className={buttonClass} disabled={!accepted}>
+                </Label>
+                <Button type="submit" className={buttonClass} disabled={!accepted}>
                   Apply reviewed catalog import
-                </button>
+                </Button>
               </fieldset>
             </form>
           )}
         </section>
       )}
-      {message && <output className="block rounded border border-slate-600 p-3">{message}</output>}
+      {message && <output className="block rounded border border-border p-3">{message}</output>}
     </div>
   );
 }

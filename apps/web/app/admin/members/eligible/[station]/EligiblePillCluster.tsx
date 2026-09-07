@@ -31,7 +31,9 @@ export function EligiblePillCluster({ heldIds, credentials }: Props) {
             title={note ? `${cred.name} — ${note}` : cred.name}
             className={[
               'inline-flex max-w-[160px] truncate rounded px-2 py-0.5 text-[10px] font-medium',
-              held ? 'bg-red-700 text-white' : 'border border-slate-600 text-slate-300',
+              held
+                ? 'bg-destructive text-primary-foreground'
+                : 'border border-border text-foreground',
             ].join(' ')}
           >
             {cred.name}

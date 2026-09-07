@@ -32,19 +32,22 @@ export default async function QualificationReviewsPage() {
   return (
     <section className="mx-auto max-w-7xl space-y-6" aria-labelledby="qualification-review-heading">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+        <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
           Year-round personnel evidence
         </p>
-        <h1 id="qualification-review-heading" className="mt-1 font-heading text-3xl text-white">
+        <h1
+          id="qualification-review-heading"
+          className="mt-1 font-heading text-3xl text-foreground"
+        >
           Qualification review
         </h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+        <p className="mt-2 max-w-3xl text-sm text-foreground">
           Stage authoritative evidence, resolve exceptions, and explicitly apply accepted rows
           through the immutable qualification lifecycle.
         </p>
       </header>
       {error !== null ? (
-        <div className="rounded-xl border border-amber-700 bg-amber-950/30 p-5 text-sm text-amber-100">
+        <div className="rounded-xl border border-warning/40 bg-warning-surface p-5 text-sm text-warning">
           {error} No local fallback or inferred qualification state is shown.
         </div>
       ) : (

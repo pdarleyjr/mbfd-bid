@@ -91,17 +91,24 @@ test('catalog import requires error-free review and preserves exact retry after 
     return route.fulfill({ json: { inserted: 0, updated: 1, unchanged: 0, replayed: true } });
   });
   await page.goto('/admin/credentials/import');
-  await page.getByLabel('Catalog XLSX', { exact: true }).setInputFiles({
-    name: 'synthetic-catalog.xlsx',
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    // UI transport fixture only; actual XLSX parsing is covered by worker integration tests.
-    buffer: Buffer.from('synthetic mocked workbook transport'),
-  });
+  // React briefly retains a hidden streamed copy until it attaches the page.
+  await expect(page.getByRole('main').getByLabel('Catalog XLSX', { exact: true })).toHaveCount(1);
+  await page
+    .getByRole('main')
+    .getByLabel('Catalog XLSX', { exact: true })
+    .setInputFiles({
+      name: 'synthetic-catalog.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      // UI transport fixture only; actual XLSX parsing is covered by worker integration tests.
+      buffer: Buffer.from('synthetic mocked workbook transport'),
+    });
   await page.getByRole('button', { name: 'Preview proposed changes', exact: true }).click();
   await expect(
     page.getByRole('alert').filter({ hasText: 'Synthetic invalid row requires review' }),
   ).toBeVisible();
-  await expect(page.getByLabel('Authoritative source reference', { exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole('main').getByLabel('Authoritative source reference', { exact: true }),
+  ).toBeDisabled();
   expect(commits).toHaveLength(0);
   await page
     .getByRole('button', { name: 'Regenerate review with current catalog', exact: true })
@@ -110,9 +117,11 @@ test('catalog import requires error-free review and preserves exact retry after 
     page.getByRole('alert').filter({ hasText: 'Synthetic invalid row requires review' }),
   ).toHaveCount(0);
   await page
+    .getByRole('main')
     .getByLabel('Authoritative source reference', { exact: true })
     .fill('Synthetic approved catalog');
   await page
+    .getByRole('main')
     .getByLabel('Review reason', { exact: true })
     .fill('Synthetic reviewed point correction');
   await page.getByRole('checkbox').check();
@@ -128,7 +137,7 @@ test('catalog import requires error-free review and preserves exact retry after 
   }
   await page.getByRole('button', { name: 'Apply reviewed catalog import', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: /fetch|network/i })).toBeVisible();
-  await expect(page.getByLabel('Review reason', { exact: true })).toHaveValue(
+  await expect(page.getByRole('main').getByLabel('Review reason', { exact: true })).toHaveValue(
     'Synthetic reviewed point correction',
   );
   await page.getByRole('button', { name: 'Apply reviewed catalog import', exact: true }).click();

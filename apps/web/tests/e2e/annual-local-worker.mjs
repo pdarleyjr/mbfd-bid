@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { syntheticAdminRead } from './synthetic-admin-read-fixtures.mjs';
 import { syntheticPolicyDocument } from './synthetic-policy-document.mjs';
 
 const port = 31987;
@@ -26,6 +27,11 @@ function bidder(memberId, firstName, lastName, ordinal) {
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
+  const fixture = request.method === 'GET' ? syntheticAdminRead(url.pathname) : null;
+  if (fixture) {
+    json(response, fixture.status, fixture.body);
+    return;
+  }
   if (request.method === 'GET' && url.pathname === '/api/admin/current-roster') {
     json(response, 200, {
       asOf: url.searchParams.get('as_of') ?? '2027-01-01',

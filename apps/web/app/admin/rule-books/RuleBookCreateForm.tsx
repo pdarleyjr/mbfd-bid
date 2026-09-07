@@ -1,5 +1,10 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 
@@ -79,17 +84,17 @@ export function RuleBookCreateForm({ ruleBooks }: RuleBookCreateFormProps) {
 
   return (
     <section
-      className="mt-6 border-y border-slate-700 py-6"
+      className="mt-6 border-y border-border py-6"
       aria-labelledby="rule-book-create-heading"
     >
       <div className="max-w-3xl">
-        <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+        <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
           Draft workflow
         </p>
-        <h2 id="rule-book-create-heading" className="mt-1 font-heading text-xl text-white">
+        <h2 id="rule-book-create-heading" className="mt-1 font-heading text-xl text-foreground">
           Create draft rule book
         </h2>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           Start a fresh policy draft or clone an existing book for review. Creation never publishes
           a rule book.
         </p>
@@ -100,9 +105,9 @@ export function RuleBookCreateForm({ ruleBooks }: RuleBookCreateFormProps) {
         data-testid="rule-book-create-form"
         className="mt-5 grid max-w-3xl gap-4 md:grid-cols-2"
       >
-        <label className="block">
-          <span className="text-sm font-medium text-slate-100">Effective year</span>
-          <input
+        <Label className="block">
+          <span className="text-sm font-medium text-foreground">Effective year</span>
+          <Input
             required
             type="number"
             min={2024}
@@ -111,16 +116,16 @@ export function RuleBookCreateForm({ ruleBooks }: RuleBookCreateFormProps) {
             inputMode="numeric"
             value={effectiveYear}
             onChange={(event) => setEffectiveYear(event.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
+        </Label>
 
-        <label className="block">
-          <span className="text-sm font-medium text-slate-100">Clone source</span>
-          <select
+        <Label className="block">
+          <span className="text-sm font-medium text-foreground">Clone source</span>
+          <NativeSelect
             value={cloneFrom}
             onChange={(event) => setCloneFrom(event.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           >
             <option value="">Start without cloning</option>
             {ruleBooks.map((ruleBook) => (
@@ -128,49 +133,51 @@ export function RuleBookCreateForm({ ruleBooks }: RuleBookCreateFormProps) {
                 {ruleBook.version} — {ruleBook.effectiveYear} ({ruleBook.status})
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
 
-        <label className="block md:col-span-2">
-          <span className="text-sm font-medium text-slate-100">Notes (optional)</span>
-          <textarea
+        <Label className="block md:col-span-2">
+          <span className="text-sm font-medium text-foreground">Notes (optional)</span>
+          <Textarea
             maxLength={2000}
             rows={3}
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
-            className="mt-1 w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+            className="mt-1 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
             placeholder="Scope or review context for this draft."
           />
-        </label>
+        </Label>
 
-        <label className="block md:col-span-2">
-          <span className="text-sm font-medium text-slate-100">Reason for this change</span>
-          <textarea
+        <Label className="block md:col-span-2">
+          <span className="text-sm font-medium text-foreground">Reason for this change</span>
+          <Textarea
             required
             minLength={4}
             maxLength={500}
             rows={4}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            className="mt-1 w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+            className="mt-1 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
             placeholder="Record the reviewed operational reason for creating this draft."
           />
-          <span className="mt-1 block text-xs text-slate-400">Required · 4–500 characters</span>
-        </label>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            Required · 4–500 characters
+          </span>
+        </Label>
 
         <div className="md:col-span-2">
           {error !== null && (
-            <output aria-live="polite" className="block text-sm text-red-300">
+            <output aria-live="polite" className="block text-sm text-destructive">
               {error}
             </output>
           )}
-          <button
+          <Button
             type="submit"
             disabled={busy || effectiveYear.length === 0 || reason.trim().length < 4}
-            className="mt-2 min-h-11 rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-2 min-h-11 rounded bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-destructive disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? 'Creating draft…' : 'Create reviewed draft'}
-          </button>
+          </Button>
         </div>
       </form>
     </section>

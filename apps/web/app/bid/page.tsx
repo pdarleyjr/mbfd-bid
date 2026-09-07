@@ -70,7 +70,7 @@ async function loadLocalMemberId(): Promise<number | null> {
 
 function BidUnavailable({ message }: { message: string }) {
   return (
-    <main className="min-h-screen bg-stone-50 p-6">
+    <main className="min-h-screen bg-background p-6">
       <div className="rounded-lg border border-amber-600 bg-amber-50 p-4 text-sm text-amber-900">
         The bid board is not available yet: {message}. Check back when the bid session is active.
       </div>
@@ -100,7 +100,7 @@ export default async function BidPage({
   const eligiblePositionIds = await loadEligibility(board.bidSessionId);
 
   return (
-    <main className="min-h-screen bg-stone-50">
+    <main className="min-h-screen bg-background">
       <MockBanner isMock={board.isMock === true} sessionId={board.bidSessionId} />
       <BoardHeader
         currentBidderId={board.currentBidderId}

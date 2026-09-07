@@ -1,105 +1,22 @@
 'use client';
 
-import { type AdminBidBoard, AdminBidBoardSchema } from '@mbfd/shared';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { AdminBidBoardSchema } from '@mbfd/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
+import { BoardSeats } from './BoardSeats';
 
 const LABELS = { previous: 'Previous Bid', current: 'Current Staffing', upcoming: 'Upcoming Bid' };
-const title = (s: string | null) => (s === null || s === '' ? 'Unmapped / Review Required' : s);
 const POLL_MS = 60_000;
 
-/** Presentation only: no Live Bid store, socket, or command dependency. */
-export function BoardSeats({ board, search = '' }: { board: AdminBidBoard; search?: string }) {
-  const visible = board.seats.filter((seat) =>
-    [seat.station, seat.unit, seat.position].join(' ').toLowerCase().includes(search.toLowerCase()),
-  );
-  const stations = [...new Set(visible.map((seat) => seat.station))];
-  return (
-    <div className="space-y-6">
-      {stations.length === 0 && (
-        <p className="rounded border border-slate-600 p-5 text-slate-300">
-          No seats in this view and selection.
-        </p>
-      )}
-      {stations.map((station) => (
-        <section
-          key={station ?? 'unmapped'}
-          className="overflow-hidden rounded-lg border border-slate-600"
-        >
-          <h2 className="border-b border-slate-600 bg-slate-800 px-4 py-3 font-heading text-xl">
-            {station === null ? title(station) : `Station / group ${station}`}
-          </h2>
-          <div className="grid gap-px bg-slate-700 sm:grid-cols-2 xl:grid-cols-3">
-            {visible
-              .filter((seat) => seat.station === station)
-              .map((seat) => (
-                <article key={seat.id} className="min-w-0 bg-slate-900 p-4">
-                  <p className="text-sm text-slate-300">{title(seat.unit)}</p>
-                  <h3 className="mt-1 break-words font-semibold">{title(seat.position)}</h3>
-                  <p className="mt-1 text-sm text-slate-400">
-                    {seat.rank ?? 'Rank requires review'}
-                  </p>
-                  {'participation' in seat && (
-                    <>
-                      <p className="mt-3 text-sm">
-                        {seat.participation === 'BIDDABLE'
-                          ? 'Biddable'
-                          : seat.participation === 'RESERVED_NON_BIDDABLE'
-                            ? 'Reserved · Not biddable'
-                            : 'Administratively assigned · Not biddable'}
-                      </p>
-                      {seat.mapping === 'review_required' && (
-                        <p className="mt-1 text-sm text-amber-200">Unmapped / Review Required</p>
-                      )}
-                    </>
-                  )}
-                  {'occupant' in seat && (
-                    <>
-                      <p className="mt-3 text-sm">
-                        {seat.occupancy === 'unmapped'
-                          ? 'Unmapped / Review Required'
-                          : (seat.occupant?.name ??
-                            (seat.occupancy === 'vacant' ? 'Vacant' : 'Member name unavailable'))}
-                      </p>
-                      {seat.assignmentOrigin && (
-                        <p className="mt-1 text-xs text-slate-400">
-                          Assignment source: {seat.assignmentOrigin.replaceAll('_', ' ')}
-                        </p>
-                      )}
-                      {seat.temporaryContext.map((overlay) => (
-                        <p key={overlay.id} className="mt-2 text-sm text-amber-200">
-                          {overlay.kind === 'LIGHT_DUTY'
-                            ? 'Light duty'
-                            : 'Temporary special assignment'}{' '}
-                          from {overlay.effectiveOn}. Underlying assignment retained.
-                          {overlay.plannedEndOn ? ` Planned end ${overlay.plannedEndOn}.` : ''}
-                        </p>
-                      ))}
-                    </>
-                  )}
-                  {'award' in seat && (
-                    <>
-                      <p className="mt-3 text-sm">
-                        {seat.award
-                          ? (seat.award.name ??
-                            `Member reference ${seat.award.memberId} · Historical name unavailable`)
-                          : 'No final award'}
-                      </p>
-                      {seat.aDay && (
-                        <p className="mt-1 text-sm text-slate-300">A-Day {seat.aDay}</p>
-                      )}
-                    </>
-                  )}
-                </article>
-              ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
+export { BoardSeats } from './BoardSeats';
 
 export function BidBoardWorkspace() {
   const router = useRouter();
@@ -182,32 +99,35 @@ export function BidBoardWorkspace() {
   });
   const data = board.data;
   const inputClass =
-    'min-h-11 min-w-0 w-full rounded border border-slate-600 bg-slate-900 px-3 text-slate-100';
+    'min-h-11 min-w-0 w-full rounded border border-border bg-card px-3 text-foreground';
   return (
-    <section className="mx-auto max-w-[100rem] space-y-6 text-slate-100">
+    <section className="mx-auto max-w-[100rem] space-y-6 text-foreground">
       <header>
         <h1 className="font-heading text-3xl">Bid Board</h1>
-        <p className="mt-2 max-w-3xl text-slate-300">
+        <p className="mt-2 max-w-3xl text-foreground">
           Review completed awards, dated staffing, and the designated annual plan independently.
         </p>
       </header>
-      <nav aria-label="Board views" className="flex flex-wrap gap-2">
+      <nav
+        aria-label="Board views"
+        className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border bg-card p-1"
+      >
         {Object.entries(LABELS).map(([value, label]) => (
-          <button
+          <Button
             key={value}
             type="button"
             aria-current={view === value ? 'page' : undefined}
             onClick={() => select('view', value)}
-            className={`min-h-11 rounded px-4 font-semibold ${view === value ? 'bg-red-700 text-white' : 'border border-slate-600'}`}
+            className={`min-h-11 rounded px-4 font-semibold ${view === value ? 'bg-info text-primary-foreground border-info' : 'border-transparent bg-card text-foreground'}`}
           >
             {label}
-          </button>
+          </Button>
         ))}
       </nav>
       <div className="flex flex-wrap items-end gap-4">
-        <label className="grid gap-1 text-sm">
+        <Label className="grid gap-1 text-sm">
           Shift
-          <select
+          <NativeSelect
             value={shift}
             onChange={(e) => select('shift', e.target.value)}
             className={inputClass}
@@ -217,12 +137,12 @@ export function BidBoardWorkspace() {
                 {s === 'D' ? 'D / Days' : `${s} Shift`}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
         {view === 'upcoming' && (
-          <label className="grid gap-1 text-sm">
+          <Label className="grid gap-1 text-sm">
             Annual plan
-            <select
+            <NativeSelect
               value={year}
               onChange={(e) => select('year', e.target.value)}
               className={inputClass}
@@ -235,13 +155,13 @@ export function BidBoardWorkspace() {
                     {p.year}
                   </option>
                 ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
         )}
         {view === 'previous' && (
-          <label className="grid gap-1 text-sm">
+          <Label className="grid gap-1 text-sm">
             Completed official bid
-            <select
+            <NativeSelect
               value={session}
               onChange={(e) => select('session', e.target.value)}
               className={inputClass}
@@ -257,41 +177,42 @@ export function BidBoardWorkspace() {
                   {source.sessionId}
                 </option>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
         )}
         {view === 'current' && (
-          <label className="grid gap-1 text-sm">
+          <Label className="grid gap-1 text-sm">
             Staffing as of
-            <input
+            <Input
               type="date"
               value={asOf || data?.source.asOf || ''}
               onChange={(e) => select('as_of', e.target.value)}
               className={inputClass}
             />
-          </label>
+          </Label>
         )}
-        <label className="grid min-w-0 flex-1 basis-full gap-1 text-sm sm:basis-48">
+        <Label className="grid min-w-0 flex-1 basis-full gap-1 text-sm sm:basis-48">
           Search this view
-          <input
+          <Input
             type="search"
+            placeholder="Members, positions or stations…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className={inputClass}
           />
-        </label>
+        </Label>
       </div>
       {view === 'upcoming' && !year && <p>Select an annual plan to view its designated seats.</p>}
       {view === 'previous' && official.isFetching && (
-        <output className="block text-sm text-slate-300">Checking completed official bids…</output>
+        <output className="block text-sm text-foreground">Checking completed official bids…</output>
       )}
       {view === 'previous' && official.isError && (
-        <p role="alert" className="text-amber-200">
+        <Alert>
           {official.error.message}.{' '}
           {data
             ? 'Showing the last verified selection; a newer completion may be available.'
             : 'Try again when the connection returns.'}
-        </p>
+        </Alert>
       )}
       {view === 'previous' && official.isSuccess && !resolvedSession && (
         <p>
@@ -300,28 +221,41 @@ export function BidBoardWorkspace() {
         </p>
       )}
       {board.isFetching && (
-        <output className="block text-sm text-slate-300">Refreshing board…</output>
+        <output className="block text-sm text-foreground">Refreshing board…</output>
       )}
       {board.isError && (
-        <p role="alert" className="text-amber-200">
+        <Alert>
           {board.error.message}.
           {data
             ? ' Showing the last successful data for this selection.'
             : ' Review the selection or return to annual preparation.'}
-        </p>
+        </Alert>
       )}
       {data && (
         <>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 border-y border-slate-700 py-3 text-sm">
-            <strong>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 border-y border-border py-3 text-sm">
+            <strong className="flex items-center gap-2">
+              <Badge
+                className={
+                  shift === 'A'
+                    ? 'text-shift-a'
+                    : shift === 'B'
+                      ? 'text-shift-b'
+                      : shift === 'C'
+                        ? 'text-shift-c'
+                        : ''
+                }
+              >
+                {shift} Shift
+              </Badge>
               {LABELS[data.view]} · {data.lifecycle}
             </strong>
             <span className="tabular-nums">{data.seats.length} seats in this shift</span>
             <span>Updated {new Date(board.dataUpdatedAt).toLocaleTimeString()}</span>
           </div>
-          {data.notice && <p className="text-sm text-amber-200">{data.notice}</p>}
+          {data.notice && <p className="text-sm text-warning">{data.notice}</p>}
           <BoardSeats board={data} search={search} />
-          <details className="border-t border-slate-700 pt-4 text-sm text-slate-300">
+          <details className="border-t border-border pt-4 text-sm text-foreground">
             <summary className="min-h-11 cursor-pointer">Source and revision details</summary>
             <dl className="grid gap-2 sm:grid-cols-2">
               {Object.entries(data.source)

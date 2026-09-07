@@ -1,5 +1,9 @@
 'use client';
+import { ConfirmationDialog } from '@/components/ui/dialog';
 
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -43,59 +47,60 @@ export function PublishButton({ version }: { version: string }) {
 
   return (
     <div className="mt-6">
-      <button
+      <Button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded bg-red-700 px-4 py-2 text-white hover:bg-red-600"
+        className="rounded bg-destructive px-4 py-2 text-primary-foreground hover:bg-destructive"
       >
         Review publication gate
-      </button>
+      </Button>
 
       {open && (
-        <dialog
-          open
-          className="fixed inset-0 m-auto w-full max-w-md rounded border border-slate-700 bg-slate-900 p-6 text-slate-200"
+        <ConfirmationDialog
+          onClose={() => setOpen(false)}
+          busy={submitting}
+          aria-label="Publish rule book"
         >
-          <h2 className="font-heading text-lg text-white">
+          <h2 className="font-heading text-lg text-foreground">
             Publication gate for rule book {version}
           </h2>
-          <p className="mt-2 text-sm text-slate-300">
+          <p className="mt-2 text-sm text-foreground">
             This request does not guarantee publication. The server independently checks draft
             validation and designated annual-configuration state. This UI neither authorizes nor
             proves a promotion.
           </p>
-          <label className="mt-4 block">
-            <span className="text-sm text-slate-300">Reason (min 4 chars)</span>
-            <textarea
+          <Label className="mt-4 block">
+            <span className="text-sm text-foreground">Reason (min 4 chars)</span>
+            <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-white"
+              className="mt-1 block w-full rounded bg-card px-3 py-2 text-foreground"
               rows={3}
             />
-          </label>
+          </Label>
           {error !== null && (
-            <output aria-live="polite" className="mt-2 text-sm text-red-400">
+            <output aria-live="polite" className="mt-2 text-sm text-destructive">
               {error}
             </output>
           )}
           <div className="mt-4 flex justify-end gap-2">
-            <button
+            <Button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded border border-slate-600 px-3 py-1 text-slate-200"
+              className="rounded border border-border px-3 py-1 text-foreground"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={publish}
               disabled={submitting || reason.trim().length < 4}
-              className="rounded bg-red-700 px-3 py-1 text-white hover:bg-red-600 disabled:opacity-50"
+              className="rounded bg-destructive px-3 py-1 text-primary-foreground hover:bg-destructive disabled:opacity-50"
             >
               Request server-side publication review
-            </button>
+            </Button>
           </div>
-        </dialog>
+        </ConfirmationDialog>
       )}
     </div>
   );

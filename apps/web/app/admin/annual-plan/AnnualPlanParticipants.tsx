@@ -1,4 +1,6 @@
 'use client';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';
@@ -58,7 +60,7 @@ export function AnnualPlanParticipants({ plan }: { plan: AnnualPlan }) {
     ) ?? [];
   return (
     <div className="space-y-4">
-      <p className="text-slate-300">
+      <p className="text-foreground">
         Personnel as of {plan.effectiveOn}; qualifications as of{' '}
         {plan.settings.credentialEvaluationOn}. This evidence review does not grant annual
         participation. The operating policy and session preparation determine each pool.
@@ -74,34 +76,34 @@ export function AnnualPlanParticipants({ plan }: { plan: AnnualPlan }) {
           Review qualification evidence
         </Link>
       </div>
-      <label className="block max-w-md">
+      <Label className="block max-w-md">
         Search members
-        <input className={fieldClass} value={search} onChange={(e) => setSearch(e.target.value)} />
-      </label>
+        <Input className={fieldClass} value={search} onChange={(e) => setSearch(e.target.value)} />
+      </Label>
       {review.isPending && <p>Loading dated evidence…</p>}
       {review.isError && (
-        <p role="alert" className="text-amber-200">
+        <p role="alert" className="text-warning">
           {review.error.message}. {review.data ? 'Last successful evidence remains visible.' : ''}
         </p>
       )}
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-muted-foreground">
         {rows.length} members shown · Source revision {review.data?.sourceRevision ?? 'unavailable'}
       </p>
       <div className="grid gap-3 lg:grid-cols-2">
         {rows.map((m) => (
-          <article key={m.memberId} className="min-w-0 rounded border border-slate-700 p-4">
+          <article key={m.memberId} className="min-w-0 rounded border border-border p-4">
             <h3 className="font-semibold">
               {m.firstName} {m.lastName}
             </h3>
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-foreground">
               {m.rank} · {m.employmentStatus} · Category {m.bidCategory} ·{' '}
               {m.isProbationary ? 'Probationary' : 'Non-probationary'}
             </p>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-muted-foreground">
               RSC seniority {m.rscSeniority}; rank seniority {m.rankSeniority ?? 'Unknown'}
             </p>
             {m.serviceCredits?.map((credit) => (
-              <p key={credit.serviceCode} className="mt-2 text-sm text-slate-300">
+              <p key={credit.serviceCode} className="mt-2 text-sm text-foreground">
                 {credit.serviceCode.replaceAll('_', ' ')}:{' '}
                 {credit.verifiedMonths === null
                   ? 'Unknown'

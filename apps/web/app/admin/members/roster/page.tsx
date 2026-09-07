@@ -98,16 +98,16 @@ export default async function MasterRosterPage({
   return (
     <div>
       <div>
-        <h1 className="font-heading text-2xl text-white">Master Roster</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <h1 className="font-heading text-2xl text-foreground">Master Roster</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Computed bid order across both pools. Credentials are read-only evidence; official
           staffing reconciliation and effective-dated personnel changes use their controlled
           workflows.
         </p>
         {fetchError ? (
-          <p className="mt-2 text-sm text-red-400">{fetchError}</p>
+          <p className="mt-2 text-sm text-destructive">{fetchError}</p>
         ) : (
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-sm text-muted-foreground">
             {members.length} member{members.length !== 1 ? 's' : ''} ranked.
           </p>
         )}

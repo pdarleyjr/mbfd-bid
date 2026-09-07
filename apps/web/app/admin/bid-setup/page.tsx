@@ -1,3 +1,6 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import type { Route } from 'next';
@@ -76,11 +79,11 @@ export default async function BidSetupPage({
   return (
     <div className="mx-auto max-w-5xl">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           MBFD annual bid control center
         </p>
-        <h1 className="mt-1 font-heading text-2xl text-white">Bid Setup</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+        <h1 className="mt-1 font-heading text-2xl text-foreground">Bid Setup</h1>
+        <p className="mt-2 max-w-3xl text-sm text-foreground">
           Review and, when the server permits it, designate the one annual configuration used by
           mock and eventual live sessions. Staffing baselines remain outside this workspace.
         </p>
@@ -88,31 +91,31 @@ export default async function BidSetupPage({
 
       <Link
         href={`/admin/annual-plan?year=${year}&stage=1` as Route}
-        className="mt-5 inline-block rounded border border-amber-600 px-4 py-3 text-sm font-semibold text-amber-100"
+        className="mt-5 inline-block rounded border border-warning/40 px-4 py-3 text-sm font-semibold text-warning"
       >
         Prepare Next Bid
       </Link>
       <form method="get" className="mt-5 flex max-w-sm items-end gap-3">
-        <label className="block flex-1">
-          <span className="text-sm text-slate-300">Bid year</span>
-          <input
+        <Label className="block flex-1">
+          <span className="text-sm text-foreground">Bid year</span>
+          <Input
             name="year"
             type="number"
             min={2024}
             max={2100}
             defaultValue={year}
-            className="mt-1 block w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+            className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-foreground"
           />
-        </label>
-        <button
+        </Label>
+        <Button
           type="submit"
-          className="rounded border border-slate-500 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800"
+          className="rounded border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-card"
         >
           View year
-        </button>
+        </Button>
       </form>
 
-      <p className="mt-5 rounded border border-amber-700 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+      <p className="mt-5 rounded border border-warning/40 bg-warning-surface px-4 py-3 text-sm text-warning">
         Authoritative staffing/source baseline is not loaded. This workspace never starts a live
         bid, changes roster data, or enables portal write-back.
       </p>
