@@ -64,10 +64,28 @@ describe('isolated immutable historical archives', () => {
     h.env.JWT_SIGNING_KEY = KEY;
     h.env.R2_EXPORTS = {
       get: async (key: string) =>
-        objects.has(key) ? { json: async () => JSON.parse(objects.get(key) ?? '') } : null,
+        objects.has(key)
+          ? {
+              etag: createHash('sha256')
+                .update(objects.get(key) ?? '')
+                .digest('hex'),
+              json: async () => JSON.parse(objects.get(key) ?? ''),
+            }
+          : null,
       put: async (key: string, value: string, options: R2PutOptions) => {
-        expect((options.onlyIf as Headers).get('If-None-Match')).toBe('*');
-        if (objects.has(key)) return null;
+        if (options.onlyIf instanceof Headers) {
+          expect(options.onlyIf.get('If-None-Match')).toBe('*');
+          if (objects.has(key)) return null;
+        } else {
+          expect(options.onlyIf?.etagMatches).toBeTruthy();
+          if (
+            options.onlyIf?.etagMatches !==
+            createHash('sha256')
+              .update(objects.get(key) ?? '')
+              .digest('hex')
+          )
+            return null;
+        }
         objects.set(key, value);
         return { key };
       },
@@ -224,5 +242,78 @@ describe('isolated immutable historical archives', () => {
     expect((await request('GET', undefined, '/2025')).status).toBe(409);
     expect((await request('GET', undefined, '/2025/days-supplement')).status).toBe(409);
     expect((await request('POST', fixture())).status).toBe(409);
+  });
+  it('preserves the original receipt and database when publishing a reviewed amendment', async () => {
+    const originalResponse = await request('POST', fixture());
+    const original = (await originalResponse.json()) as { sha256: string };
+    const oldReceipt = objects.get('historical-bids/v1/2025.json');
+    const amended = fixture();
+    amended.seats = amended.seats.map((seat) => ({ ...seat, unit: 'Corrected documentary unit' }));
+    const payload = {
+      archive: amended,
+      expectedSha256: original.sha256,
+      reason: 'Correct unit against source image',
+    };
+    const before = createHash('sha256').update(new Uint8Array(h.sqlite.serialize())).digest('hex');
+    expect((await request('POST', payload, '/2025/amendments', 'invalid')).status).toBe(401);
+    expect((await request('POST', { ...payload, reason: ' ' }, '/2025/amendments')).status).toBe(
+      400,
+    );
+    expect(
+      (await request('POST', { ...payload, expectedSha256: 'f'.repeat(64) }, '/2025/amendments'))
+        .status,
+    ).toBe(409);
+    const published = await request('POST', payload, '/2025/amendments');
+    expect(published.status).toBe(201);
+    const result = (await published.json()) as { sha256: string; revisionId: string };
+    expect((await request('POST', payload, '/2025/amendments')).status).toBe(200);
+    expect(objects.get(`historical-bids/v1/revisions/2025/${original.sha256}.json`)).toBe(
+      oldReceipt,
+    );
+    expect(
+      await (await request('GET', undefined, `/2025/revisions/${original.sha256}`)).json(),
+    ).toEqual(JSON.parse(oldReceipt ?? 'null'));
+    const selected = (await (await request('GET', undefined, '/2025')).json()) as {
+      archive: HistoricalBid;
+      amendment: unknown;
+    };
+    expect(selected.archive).toEqual(amended);
+    expect(selected.amendment).toEqual({
+      supersedesRevisionId: original.sha256,
+      supersedesSha256: original.sha256,
+      reason: payload.reason,
+    });
+    expect((await request('GET', undefined, `/2025/revisions/${result.revisionId}`)).status).toBe(
+      200,
+    );
+    expect(createHash('sha256').update(new Uint8Array(h.sqlite.serialize())).digest('hex')).toBe(
+      before,
+    );
+    expect(await (await request()).json()).toEqual({ years: [2025] });
+  });
+  it('does not overwrite a competing amendment and retains the selected revision chain', async () => {
+    const { sha256 } = (await (await request('POST', fixture())).json()) as { sha256: string };
+    const results = await Promise.all(
+      ['one', 'two'].map((label) =>
+        request(
+          'POST',
+          {
+            archive: { ...fixture(), label },
+            expectedSha256: sha256,
+            reason: 'Synthetic concurrent correction',
+          },
+          '/2025/amendments',
+        ),
+      ),
+    );
+    expect(results.map((response) => response.status).sort()).toEqual([201, 409]);
+    const selected = (await (await request('GET', undefined, '/2025')).json()) as {
+      sha256: string;
+      revisionId: string;
+    };
+    expect((await request('GET', undefined, `/2025/revisions/${selected.revisionId}`)).status).toBe(
+      200,
+    );
+    expect((await request('GET', undefined, `/2025/revisions/${sha256}`)).status).toBe(200);
   });
 });
