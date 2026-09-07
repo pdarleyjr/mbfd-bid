@@ -3,9 +3,10 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { buildAdministratorManual } from '@/lib/admin-manual';
 import type { Route } from 'next';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   GUIDE_CATEGORIES,
   GUIDE_SECTIONS,
@@ -93,6 +94,23 @@ function GuideSectionPanel({
 }
 
 export function AdministratorGuideWorkspace() {
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (id && GUIDE_SECTIONS.some((s) => s.id === id)) {
+      setExpanded(id);
+      requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView());
+    }
+  }, []);
+  function downloadManual() {
+    const url = URL.createObjectURL(
+      new Blob([buildAdministratorManual()], { type: 'text/html;charset=utf-8' }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'MBFD-Bid-Complete-Administrator-Manual.html';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState(ALL_CATEGORIES);
   const [expanded, setExpanded] = useState<string | null>('getting-started');
@@ -110,6 +128,22 @@ export function AdministratorGuideWorkspace() {
       aria-labelledby="administrator-guide-heading"
       className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
     >
+      <div className="mb-5 flex flex-wrap items-center gap-4">
+        <a
+          href="/manual/MBFD-Bid-Administrator-Manual.pdf"
+          download
+          className="inline-flex min-h-11 items-center rounded border border-border px-4 py-2 font-semibold underline"
+        >
+          Download complete manual (PDF)
+        </a>
+        <Button type="button" onClick={downloadManual}>
+          Download complete manual (HTML)
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          Both downloads work offline. The PDF and this Docs page use the same complete
+          instructions.
+        </p>
+      </div>
       <header className="border-b border-border pb-6">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-destructive">
           MBFD Bid · Administrator Help Center
@@ -120,7 +154,7 @@ export function AdministratorGuideWorkspace() {
               id="administrator-guide-heading"
               className="font-heading text-3xl text-foreground sm:text-4xl"
             >
-              Administrator Guide
+              Docs & Administrator Manual
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-foreground">
               Find a page, understand its controls, and follow the safe operating path without

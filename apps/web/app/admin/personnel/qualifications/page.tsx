@@ -36,8 +36,8 @@ export default async function QualificationLifecyclePage({
 
   try {
     const [membersResponse, credentialsResponse] = await Promise.all([
-      serverWorkerFetch('/api/admin/personnel/members?limit=250'),
-      serverWorkerFetch('/api/admin/credentials?limit=200&offset=0'),
+      serverWorkerFetch('/api/admin/personnel/members?limit=500'),
+      serverWorkerFetch('/api/admin/credentials?limit=500&offset=0'),
     ]);
     if (!membersResponse.ok || !credentialsResponse.ok) {
       fetchError = `Qualification form inputs returned ${!membersResponse.ok ? membersResponse.status : credentialsResponse.status}.`;
@@ -60,9 +60,8 @@ export default async function QualificationLifecyclePage({
           Credential and specialty qualifications
         </h1>
         <p className="mt-2 max-w-3xl text-sm text-foreground">
-          Review the mounted effective-dated credential and specialty projection, then record
-          evidence events with an immutable audit history. This page does not restore the retired
-          direct credential-toggle path.
+          Choose a member, review their qualifications, then add, renew or correct a dated record.
+          Earlier records and approved bid results remain preserved.
         </p>
       </header>
 

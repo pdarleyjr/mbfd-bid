@@ -6,6 +6,9 @@ export interface FrozenSpecialtyCandidateFact {
   readonly rscSeniority: number;
   readonly rankSeniority: number | null;
   readonly credentialNames: readonly string[];
+  readonly scoringEvidence?:
+    | { evaluationOn: string; completedCredentialNames: string[] }
+    | undefined;
   readonly specialtyQualifications:
     | readonly {
         readonly specialtyCode: string;
@@ -75,7 +78,14 @@ export function rankFrozenSpecialtyCandidates(input: {
     const points =
       input.policy.scoring && input.policy.rankingChannel
         ? configuredChannel(
-            { credentials: [...credentials].map((name) => ({ name })) },
+            {
+              credentials: [...credentials].map((name) => ({ name })),
+              memberId: member.memberId,
+              scoringEvidence:
+                member.scoringEvidence?.evaluationOn === input.evaluationOn
+                  ? member.scoringEvidence
+                  : undefined,
+            },
             input.policy.scoring[input.policy.rankingChannel],
           ).total
         : [...credentials].reduce(

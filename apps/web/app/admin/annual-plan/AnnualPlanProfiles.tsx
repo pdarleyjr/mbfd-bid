@@ -2,6 +2,7 @@
 import { PostAwardObligationsEditor } from '@/components/admin/PostAwardObligationsEditor';
 import { QualificationAlternativesEditor } from '@/components/admin/QualificationAlternativesEditor';
 import { ServiceRequirementsEditor } from '@/components/admin/ServiceRequirementsEditor';
+import { WorkingDraftPanel } from '@/components/admin/WorkingDraftPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +17,7 @@ import {
 } from '@mbfd/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
+import type { CompiledAnnualRule } from '../../../../worker/src/lib/annual-rule-compiler';
 import { ConfiguredScoringEditor } from '../positions/[id]/edit/ConfiguredScoringEditor';
 import {
   type AnnualPlan,
@@ -27,7 +29,7 @@ import {
 } from './annual-plan-client';
 type Preview = {
   compiled: {
-    rule: { positionId: string };
+    rule: CompiledAnnualRule['rule'];
     provenance: {
       requirements: string[];
       scoring: string[];
@@ -175,6 +177,19 @@ export function AnnualPlanProfiles({
   }
   return (
     <div className="space-y-5">
+      <WorkingDraftPanel
+        draftKey={`annual-profiles:${plan.year}`}
+        value={{ profiles, reason, expected: revision.current ?? expectedPlan(plan) }}
+        dirty={dirty}
+        onRestore={(draft) => {
+          if (!Array.isArray(draft.profiles)) throw new Error('Invalid saved profiles');
+          setDraft(draft.profiles);
+          setReason(draft.reason);
+          revision.current = draft.expected;
+          setPreview(null);
+          onDirty(true);
+        }}
+      />
       <p className="text-sm text-foreground">
         Requirements accumulate across all matching profiles. Points and priorities use department →
         rank → station/shift → family → individual position precedence. The most specific whole
@@ -586,6 +601,51 @@ export function AnnualPlanProfiles({
           {preview.compiled.map((p) => (
             <details className="rounded border border-border p-3" key={p.rule.positionId}>
               <summary>{p.rule.positionId}</summary>
+              <dl className="mt-3 space-y-2 text-sm">
+                <dt className="font-semibold">Mandatory requirements</dt>
+                <dd>
+                  Ranks: {p.rule.requiredCriteria.rank.join(', ')}. Credentials:{' '}
+                  {p.rule.requiredCriteria.credentials.join(', ') || 'None'}.{' '}
+                  {p.rule.requiredCriteria.custom.join(', ')}
+                </dd>
+                {(p.rule.requiredCriteria.anyOfCredentials ?? []).map((group, i) => (
+                  <dd key={group.join('|')}>
+                    Alternative group {i + 1}: any of {group.join(' / ')}
+                  </dd>
+                ))}
+                {(p.rule.requiredCriteria.service ?? []).map((r) => (
+                  <dd key={r.serviceCode}>
+                    {r.minimumMonths} verified months of {r.serviceCode}
+                  </dd>
+                ))}
+                <dt className="font-semibold">Ranking order</dt>
+                <dd>{p.rule.tieBreakChain.join(' → ')}</dd>
+                <dt className="font-semibold">Points</dt>
+                <dd>Maximum total: {p.rule.pointsPreference.max}</dd>
+                {p.rule.pointsPreference.scoring
+                  ? (['total', 'so', 'mo'] as const).map((channel) => (
+                      <dd key={channel}>
+                        {channel}:{' '}
+                        {p.rule.pointsPreference.scoring?.[channel]
+                          .map(
+                            (g) =>
+                              `${g.items.map((i) => `${i.credential}: ${i.points} points${i.alternatives.length ? ` (or ${i.alternatives.join(', ')})` : ''}${i.requiresAll.length ? `; requires ${i.requiresAll.join(', ')}` : ''}${i.completionCredit ? `; completion exception: ${i.completionCredit.sourceRef}, ${i.completionCredit.effectiveFrom}–${i.completionCredit.effectiveThrough}` : ''}`).join('; ')}; group cap ${g.cap ?? 'none'}`,
+                          )
+                          .join(' | ') || 'No points'}
+                      </dd>
+                    ))
+                  : p.rule.pointsPreference.items.map((i) => (
+                      <dd key={i.credential}>
+                        {i.credential}: {i.points} points
+                      </dd>
+                    ))}
+                {(p.rule.requiredCriteria.postAward ?? []).map((o) => (
+                  <dd key={o.id}>
+                    After selection: {o.credential} within {o.deadline.count}{' '}
+                    {o.deadline.unit.toLowerCase().replaceAll('_', ' ')} — {o.sourceRef}
+                  </dd>
+                ))}
+              </dl>
               {(['requirements', 'scoring', 'priorities'] as const).map((field) => (
                 <p className="mt-2 text-sm" key={field}>
                   {field}:{' '}

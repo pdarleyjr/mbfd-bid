@@ -255,6 +255,19 @@ export function deriveMemberQualificationProjection(input: {
  * The V3 Bid snapshot retains credential display names separately from
  * specialty evidence. No specialty code is guessed as a credential.
  */
+export function completedCredentialNamesAsOf(input: {
+  memberId: number;
+  asOf: string;
+  legacyCredentials: LegacyCredentialBaseline[];
+  events: QualificationLifecycleEvent[];
+}): string[] {
+  return deriveMemberQualificationProjection(input)
+    .certifications.filter((c) => c.status === 'active' || c.status === 'expired')
+    .map((c) => c.credentialName)
+    .filter((name): name is string => name !== null)
+    .sort();
+}
+
 export function activeCredentialNamesByMemberAsOf(input: {
   asOf: string;
   legacyCredentials: readonly LegacyCredentialBaseline[];

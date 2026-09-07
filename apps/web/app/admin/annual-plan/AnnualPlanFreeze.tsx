@@ -103,7 +103,7 @@ export function AnnualPlanFreeze({
       setMessage('The designated rule book and annual policy are frozen.');
     } catch (e) {
       setMessage(
-        e instanceof Error ? e.message : 'Freeze failed. Retry retains the same request key.',
+        e instanceof Error ? e.message : 'Approval failed. Retry retains the same request key.',
       );
     } finally {
       setBusy(false);
@@ -213,7 +213,7 @@ export function AnnualPlanFreeze({
             plan.
           </Label>
           <Button type="submit" disabled={!accepted || !session || busy} className={buttonClass}>
-            {busy ? 'Verifying and freezing…' : 'Freeze reviewed annual plan'}
+            {busy ? 'Verifying and approving…' : 'Approve reviewed bid setup'}
           </Button>
         </fieldset>
       </form>

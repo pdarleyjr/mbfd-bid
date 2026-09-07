@@ -22,6 +22,8 @@ export type AuditAction =
   | 'session_complete'
   | 'members_import'
   | 'credentials_import'
+  | 'targetsolutions_mapping'
+  | 'targetsolutions_apply'
   | 'credential_create'
   | 'credential_update'
   | 'organization_change'

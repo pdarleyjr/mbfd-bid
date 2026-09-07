@@ -34,20 +34,13 @@ describe('MBFD identity and operator navigation', () => {
 
   it('uses the approved year-round bid control-center sections in operator navigation', () => {
     expect(ADMIN_NAV_LINKS.map(({ href, label }) => ({ href, label }))).toEqual([
-      { href: '/admin', label: 'Dashboard' },
-      { href: '/admin/bid-board', label: 'Bid Board' },
-      { href: '/admin/guide', label: 'Administrator Guide' },
-      { href: '/admin/current-rosters', label: 'Current Rosters' },
-      { href: '/admin/staffing-structure', label: 'Staffing Structure' },
-      { href: '/admin/telestaff', label: 'TeleStaff' },
-      { href: '/admin/members', label: 'Members' },
-      { href: '/admin/personnel', label: 'Personnel Changes' },
-      { href: '/admin/annual-plan', label: 'Prepare Next Bid' },
-      { href: '/admin/bid-setup', label: 'Bid Setup' },
-      { href: '/admin/rehearsal', label: 'Mock Bids' },
-      { href: '/admin/bid', label: 'Live Bid & Advisory' },
-      { href: '/admin/audit', label: 'Results & Audit' },
-      { href: '/admin/system', label: 'System/Integrations' },
+      { href: '/admin', label: 'Today' },
+      { href: '/admin/members', label: 'People' },
+      { href: '/admin/current-rosters', label: 'Staffing' },
+      { href: '/admin/annual-plan', label: 'Annual Bid' },
+      { href: '/admin/audit', label: 'History & Reports' },
+      { href: '/admin/docs', label: 'Docs & Manual' },
+      { href: '/admin/system', label: 'Settings' },
     ]);
   });
 
@@ -55,15 +48,15 @@ describe('MBFD identity and operator navigation', () => {
     const resultsAndAudit = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/audit');
     expect(resultsAndAudit?.subnav).toContainEqual({
       href: '/admin/award-transition',
-      label: 'Bid Award Transition',
+      label: 'Apply reviewed final assignments',
     });
   });
 
   it('makes the effective-dated qualification evidence workspace discoverable from Personnel Changes', () => {
-    const personnel = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/personnel');
+    const personnel = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/members');
     expect(personnel?.subnav).toContainEqual({
       href: '/admin/personnel/qualifications',
-      label: 'Qualification Evidence',
+      label: 'Update qualifications',
     });
   });
 
@@ -71,7 +64,7 @@ describe('MBFD identity and operator navigation', () => {
     const members = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/members');
     expect(members?.subnav).toContainEqual({
       href: '/admin/credentials',
-      label: 'Credentials & Specialty Points',
+      label: 'Qualification catalog',
     });
   });
 });

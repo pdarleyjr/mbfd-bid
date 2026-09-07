@@ -31,7 +31,7 @@ const stages = [
   'Requirements and priorities',
   'Operating policy',
   'Review and impact',
-  'Rehearse and freeze',
+  'Practice and approve',
 ];
 export function AnnualPlanWorkspace() {
   const params = useSearchParams();
@@ -39,9 +39,7 @@ export function AnnualPlanWorkspace() {
   const client = useQueryClient();
   const value = Number(params.get('year'));
   const year =
-    Number.isInteger(value) && value >= 2024 && value <= 2100
-      ? value
-      : new Date().getFullYear() + 1;
+    Number.isInteger(value) && value >= 2024 && value <= 2100 ? value : new Date().getFullYear();
   const rawStage = Number(params.get('stage'));
   const stage = rawStage >= 1 && rawStage <= 7 && Number.isInteger(rawStage) ? rawStage : 1;
   const [dirty, setDirty] = useState(false);
@@ -89,10 +87,10 @@ export function AnnualPlanWorkspace() {
         <p className="text-xs uppercase tracking-wider text-muted-foreground">
           MBFD annual preparation
         </p>
-        <h1 className="mt-1 font-heading text-3xl">Prepare Next Bid</h1>
+        <h1 className="mt-1 font-heading text-3xl">Annual Bid</h1>
         <p className="mt-2 max-w-3xl text-sm text-foreground">
-          Build and review the designated annual plan. Saved drafts resume here; rehearsal and
-          freezing remain subject to the existing bid safeguards.
+          Prepare the year, review the rules, practice, and approve the setup. Your saved work
+          resumes here.
         </p>
       </header>
       <div className="flex flex-wrap items-end gap-4">
@@ -370,7 +368,7 @@ function StartPlan({
           </NativeSelect>
         </Label>
       )}
-      {plan && !adopting ? (
+      {plan && plan.lifecycle !== 'UNCONFIGURED' && !adopting ? (
         <p>
           {plan.effectiveOn
             ? `The designated ${year} plan is saved. Continue to review its organization, participants and policy.`

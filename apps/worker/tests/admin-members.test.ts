@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { JwtPayload } from '@mbfd/shared';
@@ -60,35 +60,15 @@ function makeD1Adapter(sqlite: Database.Database): D1Database {
 
 /** Apply migration SQL files in order (strips drizzle-kit statement-break markers). */
 function applyMigrations(sqlite: Database.Database): void {
-  const files = [
-    '0001_init.sql',
-    '0002_members_certs.sql',
-    '0003_positions_rules.sql',
-    '0004_bid_audit_ai.sql',
-    '0005_audit_log_session_nullable.sql',
-    '0013_audit_chain_bookkeeping.sql',
-    '0018_members_prior_position.sql',
-    '0027_personnel_lifecycle.sql',
-  ];
-  for (const file of files) {
-    const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8');
-    // drizzle-kit adds `--> statement-breakpoint` markers; split on those + semicolons.
-    const statements = sql
-      // A migration can begin with documentation comments before its first
-      // statement. Remove only full-line SQL comments so that first DDL is not
-      // accidentally discarded by the legacy lightweight test runner.
-      .replace(/^--.*$/gm, '')
-      .split('--> statement-breakpoint')
-      .flatMap((chunk) => chunk.split(';'))
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    for (const stmt of statements) {
-      try {
-        sqlite.exec(`${stmt};`);
-      } catch {
-        // ignore already-exists errors for idempotency
-      }
-    }
+  for (const file of readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()) {
+    sqlite.exec(
+      readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8').replaceAll(
+        '--> statement-breakpoint',
+        '',
+      ),
+    );
   }
 }
 

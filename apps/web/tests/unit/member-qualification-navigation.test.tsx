@@ -19,8 +19,8 @@ describe('qualification lifecycle discovery from member views', () => {
 
     expect(source).toContain('/admin/personnel/qualifications?memberId=${member.id}');
     expect(source).toContain('Review qualification lifecycle');
-    expect(source).toContain('Legacy credential references');
-    expect(source).toMatch(/do not establish current\s+qualification/);
+    expect(source).toContain('qualifications');
+    expect(source).toContain('expiresOn');
   });
 
   it('gives every master-roster row a selected-member lifecycle link instead of treating credential references as current qualification', () => {

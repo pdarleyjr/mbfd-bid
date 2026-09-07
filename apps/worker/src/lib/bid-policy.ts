@@ -10,7 +10,7 @@ import {
   type FrozenBidPoolMember,
   FrozenLiveBidPolicySchema,
 } from '@mbfd/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
 import { serviceCreditsAsOf } from './service-evidence.js';
 import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence.js';
@@ -45,6 +45,7 @@ import { type DecodedPositionRule, decodeRuleBookRows } from './position-rule.js
 import {
   type QualificationLifecycleEvent,
   activeCredentialNamesByMemberAsOf,
+  completedCredentialNamesAsOf,
   normalizePersistedQualificationLifecycleEvent,
   specialtyQualificationsByMemberAsOf,
 } from './qualification-lifecycle.js';
@@ -367,6 +368,8 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
   rankSeniority: number | undefined;
   isProbationary: boolean;
   credentials: Array<{ name: string }>;
+  memberId: number;
+  scoringEvidence: FrozenBidEligibilityMember['scoringEvidence'];
   serviceCredits: NonNullable<FrozenBidEligibilityMember['serviceCredits']>;
 } {
   if (member.rank === 'CIVILIAN') {
@@ -381,6 +384,8 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
     rankSeniority: member.rankSeniority ?? undefined,
     isProbationary: member.isProbationary,
     credentials: member.credentialNames.map((name) => ({ name })),
+    memberId: member.memberId,
+    scoringEvidence: member.scoringEvidence,
     serviceCredits: member.serviceCredits ?? [],
   };
 }
@@ -774,6 +779,8 @@ export type BidSessionPolicySnapshotPreparation =
         | 'non_biddable_staffing_position_not_approved'
         | 'non_biddable_assignment_ambiguous'
         | 'qualification_lifecycle_data_invalid'
+        | 'credential_import_dispute_requires_review'
+        | 'policy_source_decision_required'
         | 'tenure_evidence_requires_review'
         | 'authoritative_staffing_baseline_required'
         | ConfiguredBidYearPolicyError;
@@ -1176,6 +1183,21 @@ export async function prepareBidSessionPolicySnapshot(
         rank: personnelState?.rank ?? member.rank,
         isProbationary: member.isProbationary,
         credentialNames: credentialNamesByMember.get(member.id) ?? [],
+        scoringEvidence: {
+          evaluationOn: credentialEvaluationOn,
+          completedCredentialNames: completedCredentialNamesAsOf({
+            memberId: member.id,
+            asOf: credentialEvaluationOn,
+            events: qualificationEvents,
+            legacyCredentials: credentialRows.map((c) => ({
+              memberId: c.memberId,
+              credentialId: c.credentialId,
+              credentialName: c.name,
+              startDate: c.startDate,
+              expirationDate: c.expirationDate,
+            })),
+          }),
+        },
         serviceCredits: serviceCreditsAsOf(serviceRows, member.id, capturedOn),
         specialtyQualifications: (specialtyQualificationsByMember.get(member.id) ?? []).map(
           (specialty) => ({
@@ -1244,6 +1266,31 @@ export async function prepareBidSessionPolicySnapshot(
       };
     })
     .sort((left, right) => left.memberId - right.memberId);
+  const unresolvedSources = await db.all<{ issueId: string }>(
+    sql`SELECT d.issue_id AS issueId FROM bid_source_decisions d WHERE d.bid_year=${bidYear} AND d.status='OPEN' AND d.revision=(SELECT MAX(r.revision) FROM bid_source_decisions r WHERE r.bid_year=d.bid_year AND r.issue_id=d.issue_id)`,
+  );
+  if (unresolvedSources.length) return { ok: false, code: 'policy_source_decision_required' };
+  const disputed = await db.all<{ memberId: number }>(sql`
+    SELECT DISTINCT r.member_id AS memberId FROM targetsolutions_rows r
+    JOIN targetsolutions_imports i ON i.id=r.import_id
+    JOIN credentials c ON c.id=r.credential_id
+    WHERE r.applied_at IS NULL AND r.classification IN ('CONFLICT','EXPIRATION_REVIEW','REVOCATION_REVIEW')
+      AND (i.observed_on <= ${credentialEvaluationOn} OR json_extract(r.source_json,'$.expiresOn') < ${credentialEvaluationOn})
+      AND (EXISTS (SELECT 1 FROM position_rules pr WHERE pr.rule_book_version=${policy.ruleBookVersion}
+        AND (EXISTS (SELECT 1 FROM json_tree(pr.required_criteria) WHERE value=c.name)
+          OR EXISTS (SELECT 1 FROM json_tree(pr.points_preference) WHERE value=c.name)))
+        OR EXISTS (SELECT 1 FROM annual_bid_policy_documents p WHERE p.id=${policy.annualPolicyDocument?.id ?? null}
+          AND EXISTS (SELECT 1 FROM json_tree(p.execution_policy_json) WHERE value=c.name)))
+  `);
+  if (
+    disputed.some((row) =>
+      frozenMembers.some(
+        (member) => member.memberId === row.memberId && member.pool !== 'EXCLUDED',
+      ),
+    )
+  ) {
+    return { ok: false, code: 'credential_import_dispute_requires_review' };
+  }
   const uniformedOperatorMemberIds = new Set(
     frozenMembers.filter((member) => member.rank !== 'CIVILIAN').map((member) => member.memberId),
   );

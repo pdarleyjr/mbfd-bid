@@ -35,9 +35,12 @@ import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
 import adminServiceEvidence from './routes/admin/service-evidence.js';
 import adminSettings from './routes/admin/settings.js';
+import sourceDecisionsRouter from './routes/admin/source-decisions.js';
 import adminSpecialtyAdjudication from './routes/admin/specialty-adjudication.js';
+import adminTargetSolutions from './routes/admin/targetsolutions.js';
 import adminTelestaff from './routes/admin/telestaff.js';
 import adminTenureEvidence from './routes/admin/tenure-evidence.js';
+import adminWorkingDrafts from './routes/admin/working-drafts.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
 import health from './routes/health.js';
@@ -67,6 +70,9 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/tenure-evidence', adminTenureEvidence)
   .route('/api/admin/post-award-obligations', adminPostAwardObligations)
   .route('/api/admin/credential-imports', adminCredentialImports)
+  .route('/api/admin/targetsolutions', adminTargetSolutions)
+  .route('/api/admin/source-decisions', sourceDecisionsRouter)
+  .route('/api/admin/working-drafts', adminWorkingDrafts)
   .route('/api/admin/telestaff', adminTelestaff)
   .route('/api/admin/positions', adminPositions)
   .route('/api/admin/rules', adminRules)

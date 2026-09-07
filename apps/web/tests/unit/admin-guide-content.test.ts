@@ -37,7 +37,7 @@ describe('Administrator Guide content contract', () => {
   it('documents the production effect and audit history of annual TeleStaff baseline replacement', () => {
     const teleStaff = GUIDE_SECTIONS.find((section) => section.id === 'telestaff');
 
-    expect(teleStaff?.controls).toContain('Designate 2026 staffing baseline');
+    expect(teleStaff?.controls).toContain('Designate selected-year staffing baseline');
     expect(teleStaff?.steps.join(' ')).toContain('supersede the prior acceptance receipt');
     expect(teleStaff?.important).toContain('production D1');
     expect(teleStaff?.important).toContain('does not start a Bid session');

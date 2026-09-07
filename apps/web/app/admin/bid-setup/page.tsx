@@ -116,8 +116,8 @@ export default async function BidSetupPage({
       </form>
 
       <p className="mt-5 rounded border border-warning/40 bg-warning-surface px-4 py-3 text-sm text-warning">
-        Authoritative staffing/source baseline is not loaded. This workspace never starts a live
-        bid, changes roster data, or enables portal write-back.
+        Check the staffing baseline and unresolved assignments in Staffing → Import TeleStaff
+        assignments. Approving setup preserves the rules and evidence used for this bid.
       </p>
 
       <div className="mt-6">

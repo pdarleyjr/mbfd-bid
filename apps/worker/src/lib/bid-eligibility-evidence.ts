@@ -112,6 +112,7 @@ export function projectAnnualMemberEvidence(
   if (events.some((event) => event === null))
     return { ok: false as const, error: 'qualification_lifecycle_data_invalid' };
   const validEvents = events.filter((event) => event !== null);
+  const eventCreatedAt = new Map(validEvents.map((event) => [event.id, event.createdAt]));
   const legacy = evidence.credentialRows.map((row) => ({
     memberId: row.memberId,
     credentialId: row.credentialId,
@@ -150,12 +151,18 @@ export function projectAnnualMemberEvidence(
         status: q.status,
         effectiveOn: q.effectiveOn,
         expiresOn: q.expiresOn,
+        evidenceSource: q.evidenceSource,
+        evidenceReference: q.evidenceReference,
+        changedAt: q.eventId ? (eventCreatedAt.get(q.eventId) ?? null) : null,
       })),
       specialties: qualifications.specialties.map((q) => ({
         code: q.specialtyCode,
         status: q.status,
         effectiveOn: q.effectiveOn,
         expiresOn: q.expiresOn,
+        evidenceSource: q.evidenceSource,
+        evidenceReference: q.evidenceReference,
+        changedAt: q.eventId ? (eventCreatedAt.get(q.eventId) ?? null) : null,
       })),
     };
   });

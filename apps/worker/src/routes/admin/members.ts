@@ -11,8 +11,13 @@ import {
   members,
 } from '../../db/schema.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
+import {
+  loadBidEligibilityEvidence,
+  projectAnnualMemberEvidence,
+} from '../../lib/bid-eligibility-evidence.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import { chunkedInArraySelect } from '../../lib/d1-batch.js';
+import { operationalDate } from '../../lib/operational-date.js';
 import {
   STATIONS,
   type Station,
@@ -162,7 +167,11 @@ router.get('/:id{\\d+}', async (c) => {
     .where(eq(memberCredentials.memberId, id))
     .all();
 
-  return c.json({ member, credentials: creds });
+  const asOf = operationalDate();
+  const projected = projectAnnualMemberEvidence(await loadBidEligibilityEvidence(db), asOf, asOf);
+  if (!projected.ok) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
+  const qualifications = projected.members.find((m) => m.memberId === id)?.certifications ?? [];
+  return c.json({ member, credentials: creds, qualifications, qualificationAsOf: asOf });
 });
 
 // PATCH /api/admin/members/:id is retained only as an explicit retirement response.

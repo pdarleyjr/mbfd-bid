@@ -430,6 +430,13 @@ export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend
   rank: z.enum(['CIVILIAN', 'CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF']),
   isProbationary: z.boolean(),
   credentialNames: z.array(z.string().trim().min(1)),
+  scoringEvidence: z
+    .object({
+      evaluationOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      completedCredentialNames: z.array(z.string().trim().min(1)),
+    })
+    .strict()
+    .optional(),
   serviceCredits: z.array(FrozenServiceCreditSchema).optional(),
   /**
    * Optional only for pre-bridge V3 recovery snapshots. Fresh snapshots
@@ -780,6 +787,18 @@ export const BidSessionPolicySnapshotSchema = z
 
     const credentialKeys = new Set<string>();
     for (const [memberIndex, member] of snapshot.members.entries()) {
+      if (
+        member.scoringEvidence &&
+        (member.scoringEvidence.evaluationOn !== snapshot.credentialEvaluationOn ||
+          new Set(member.scoringEvidence.completedCredentialNames).size !==
+            member.scoringEvidence.completedCredentialNames.length)
+      )
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['members', memberIndex, 'scoringEvidence'],
+          message:
+            'Completion evidence must match the approved qualification evaluation date and contain unique names',
+        });
       for (const [credentialIndex, credentialName] of member.credentialNames.entries()) {
         const normalized = credentialName.trim().toLocaleLowerCase();
         const key = `${member.memberId}:${normalized}`;

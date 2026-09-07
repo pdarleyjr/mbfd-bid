@@ -34,6 +34,8 @@ type Holder = {
   lastName: string;
   historyHref: string;
   legacyReference: boolean;
+  status?: string;
+  expiresOn?: string | null;
 };
 
 function nextKey(prefix: string) {
@@ -489,8 +491,8 @@ export function CredentialsCatalogWorkspace({
         >
           <h2 className="font-heading text-xl text-foreground">Member references</h2>
           <p className="mt-1 text-sm text-warning">
-            These are legacy credential references, not proof of current qualification. Open each
-            member’s effective-dated history to verify active, expired, or revoked status.
+            These members have dated qualification records. Current status and known expiration are
+            shown; open history to inspect the source and renewals.
           </p>
           <ul className="mt-4 divide-y divide-slate-700">
             {holders.length === 0 ? (
@@ -505,7 +507,10 @@ export function CredentialsCatalogWorkspace({
                 >
                   <span className="text-foreground">
                     {holder.firstName} {holder.lastName}{' '}
-                    <span className="text-muted-foreground">{holder.employeeId}</span>
+                    <span className="text-muted-foreground">
+                      {holder.employeeId} · {holder.status ?? 'Review history'} · Expiration:{' '}
+                      {holder.expiresOn ?? 'not recorded'}
+                    </span>
                   </span>
                   <Link
                     href={holder.historyHref as Route}

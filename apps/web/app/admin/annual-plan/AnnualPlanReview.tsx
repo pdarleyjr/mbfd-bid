@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import type { Route } from 'next';
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 import {
   type AnnualPlan,
@@ -146,6 +148,14 @@ export function AnnualPlanReview({
                 <li key={b.code} className="rounded border border-border p-3">
                   <h3 className="font-semibold">{b.code.replaceAll('_', ' ')}</h3>
                   <p className="mt-1 text-sm text-foreground">{b.detail}</p>
+                  <Link
+                    className="mt-2 inline-block underline"
+                    href={
+                      `${b.code.includes('credential_import') ? '/admin/targetsolutions' : b.code.includes('source_decision') ? '/admin/source-review' : b.code.includes('staffing') ? '/admin/telestaff' : '/admin/annual-plan'}?year=${plan.year}` as Route
+                    }
+                  >
+                    Open the relevant review
+                  </Link>
                 </li>
               ))}
             </ul>

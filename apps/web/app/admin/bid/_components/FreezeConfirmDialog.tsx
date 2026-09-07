@@ -42,9 +42,10 @@ export function FreezeConfirmDialog({ bidSessionId, onClose }: Props) {
   return (
     <ConfirmationDialog onClose={onClose} busy={submitting} aria-label="Freeze live bid session">
       <div className="w-full">
-        <h3 className="font-heading text-lg font-bold text-amber-900">Freeze session</h3>
+        <h3 className="font-heading text-lg font-bold text-amber-900">Pause bidding</h3>
         <p className="mt-2 text-sm text-foreground">
-          One-way operation. Freezing stops all member picks until an admin resumes the session.
+          Pausing stops member picks until an authorized operator resumes bidding. Recorded
+          selections remain preserved.
         </p>
         <div className="mt-4">
           <Label className="block text-sm">
@@ -74,7 +75,7 @@ export function FreezeConfirmDialog({ bidSessionId, onClose }: Props) {
             onClick={submit}
             className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
           >
-            {submitting ? 'Freezing…' : 'Freeze session'}
+            {submitting ? 'Pausing…' : 'Pause bidding'}
           </Button>
         </div>
       </div>

@@ -7,12 +7,17 @@ import { credentials, memberCredentials, members } from '../../db/schema.js';
 import { loadConfigurationReceipt } from '../../lib/admin-configuration-receipt.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import {
+  loadBidEligibilityEvidence,
+  projectAnnualMemberEvidence,
+} from '../../lib/bid-eligibility-evidence.js';
+import {
   CATALOG_SELECT,
   CatalogEditSchema,
   catalogDependencies,
   editCatalogEntry,
   loadCatalogEntry,
 } from '../../lib/credential-catalog.js';
+import { operationalDate } from '../../lib/operational-date.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -155,26 +160,32 @@ router.get('/:id{\\d+}/holders', async (c) => {
   const db = getDb(c.env.DB);
   const credential = await db.select().from(credentials).where(eq(credentials.id, id)).get();
   if (credential === undefined) return c.json({ error: 'not_found' }, 404);
-  const holders = await db
-    .select({
-      memberId: members.id,
-      employeeId: members.employeeId,
-      firstName: members.firstName,
-      lastName: members.lastName,
-    })
-    .from(memberCredentials)
-    .innerJoin(members, eq(members.id, memberCredentials.memberId))
-    .where(eq(memberCredentials.credentialId, id))
-    .orderBy(members.lastName, members.firstName, members.id)
-    .all();
+  const asOf = operationalDate();
+  const evidence = await loadBidEligibilityEvidence(db);
+  const projected = projectAnnualMemberEvidence(evidence, asOf, asOf);
+  if (!projected.ok) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
   return c.json({
     credential,
-    holders: holders.map((holder) => ({
-      ...holder,
-      historyHref: `/admin/personnel/qualifications?memberId=${holder.memberId}`,
-      legacyReference: true,
-    })),
-    lifecycleNotice: 'Legacy credential references do not establish current qualification status.',
+    asOf,
+    holders: projected.members.flatMap((member) => {
+      const qualification = member.certifications.find((q) => q.credentialId === id);
+      return qualification
+        ? [
+            {
+              memberId: member.memberId,
+              employeeId: evidence.memberRows.find((m) => m.id === member.memberId)?.employeeId,
+              firstName: member.firstName,
+              lastName: member.lastName,
+              status: qualification.status,
+              expiresOn: qualification.expiresOn,
+              legacyReference: !qualification.evidenceSource,
+              historyHref: `/admin/personnel/qualifications?memberId=${member.memberId}`,
+            },
+          ]
+        : [];
+    }),
+    lifecycleNotice:
+      'Status reflects current dated qualification evidence. Open history to inspect sources and renewals.',
   });
 });
 

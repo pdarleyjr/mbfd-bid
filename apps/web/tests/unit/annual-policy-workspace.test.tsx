@@ -14,10 +14,10 @@ describe('AnnualPolicyWorkspace', () => {
       </QueryClientProvider>,
     );
 
-    expect(html).toContain('NOT CONFIGURED — BLOCKING');
+    expect(html).toContain('EDITING FORM INCOMPLETE');
     expect(html).toContain('Bid stages and order');
     expect(html).toContain('Live action authority');
-    expect(html).toContain('Disposition rules');
+    expect(html).toContain('What happens when a member does not select?');
     expect(html).toContain('Contact policy');
     expect(html).toContain('Specialty policy');
     expect(html).toContain('A-Day deterministic limits');

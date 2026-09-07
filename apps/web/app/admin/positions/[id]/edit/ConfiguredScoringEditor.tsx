@@ -52,6 +52,29 @@ export function ConfiguredScoringEditor({
       return entries;
     },
   });
+  const people = useQuery({
+    queryKey: ['admin', 'scoring-members'],
+    enabled: [value.total, value.so, value.mo].some((groups) =>
+      groups.some((group) => group.items.some((item) => !!item.completionCredit)),
+    ),
+    queryFn: async () => {
+      const entries: { id: number; employeeId: string; firstName: string; lastName: string }[] = [];
+      let total = 1;
+      while (entries.length < total) {
+        const response = await fetch(`/api/admin/members?limit=500&offset=${entries.length}`, {
+          credentials: 'include',
+        });
+        if (!response.ok)
+          throw new Error('Member list unavailable. Existing selections are retained.');
+        const body = (await response.json()) as { members: typeof entries; total: number };
+        if (!body.members.length && entries.length < body.total)
+          throw new Error('Member list incomplete');
+        entries.push(...body.members);
+        total = body.total;
+      }
+      return entries;
+    },
+  });
   const updateGroup = (channel: Channel, index: number, update: Partial<Group>) =>
     onChange({
       ...value,
@@ -194,6 +217,127 @@ export function ConfiguredScoringEditor({
                       item.requiresAll,
                       (requiresAll) => updateItem(channel, gi, ii, { requiresAll }),
                     )}
+                    <details className="md:col-span-2 rounded border border-border p-3">
+                      <summary>Advanced: credit for completed training after expiration</summary>
+                      <p className="my-2 text-sm">
+                        Requires an approved policy reference and a date range. This changes only
+                        this scoring item. Mandatory qualifications and prerequisites must still be
+                        current; revoked credentials receive no completion credit.
+                      </p>
+                      <Label className="block">
+                        <input
+                          type="checkbox"
+                          checked={!!item.completionCredit}
+                          onChange={(e) =>
+                            updateItem(channel, gi, ii, {
+                              completionCredit: e.target.checked
+                                ? { sourceRef: '', effectiveFrom: '', effectiveThrough: '' }
+                                : undefined,
+                            })
+                          }
+                        />{' '}
+                        Allow approved completion credit
+                      </Label>
+                      {item.completionCredit && (
+                        <div className="grid gap-3 mt-3 md:grid-cols-2">
+                          <Label>
+                            Supporting approved decision
+                            <Input
+                              value={item.completionCredit.sourceRef}
+                              onChange={(e) =>
+                                updateItem(channel, gi, ii, {
+                                  completionCredit: {
+                                    ...(item.completionCredit ?? {
+                                      sourceRef: '',
+                                      effectiveFrom: '',
+                                      effectiveThrough: '',
+                                    }),
+                                    sourceRef: e.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          </Label>
+                          <Label>
+                            Applies from
+                            <Input
+                              type="date"
+                              value={item.completionCredit.effectiveFrom}
+                              onChange={(e) =>
+                                updateItem(channel, gi, ii, {
+                                  completionCredit: {
+                                    ...(item.completionCredit ?? {
+                                      sourceRef: '',
+                                      effectiveFrom: '',
+                                      effectiveThrough: '',
+                                    }),
+                                    effectiveFrom: e.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          </Label>
+                          <Label>
+                            Applies through
+                            <Input
+                              type="date"
+                              value={item.completionCredit.effectiveThrough}
+                              onChange={(e) =>
+                                updateItem(channel, gi, ii, {
+                                  completionCredit: {
+                                    ...(item.completionCredit ?? {
+                                      sourceRef: '',
+                                      effectiveFrom: '',
+                                      effectiveThrough: '',
+                                    }),
+                                    effectiveThrough: e.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          </Label>
+                          <fieldset className="space-y-2">
+                            <legend>Members covered by this exception</legend>
+                            <p className="text-sm text-muted-foreground">
+                              No selections means all members with documented completion. Select
+                              people to limit this exception.
+                            </p>
+                            {people.isError && <p role="alert">{people.error.message}</p>}
+                            {people.isLoading && <output>Loading members…</output>}
+                            <div className="max-h-52 overflow-auto rounded border p-2">
+                              {(people.data ?? []).map((person) => (
+                                <label
+                                  key={person.id}
+                                  className="flex min-h-11 items-center gap-2 text-sm"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      item.completionCredit?.memberIds?.includes(person.id) ?? false
+                                    }
+                                    onChange={(event) => {
+                                      if (!item.completionCredit) return;
+                                      const selected = item.completionCredit.memberIds ?? [];
+                                      const memberIds = event.target.checked
+                                        ? [...selected, person.id]
+                                        : selected.filter((id) => id !== person.id);
+                                      updateItem(channel, gi, ii, {
+                                        completionCredit: {
+                                          ...item.completionCredit,
+                                          memberIds: memberIds.length ? memberIds : undefined,
+                                        },
+                                      });
+                                    }}
+                                  />
+                                  {person.lastName}, {person.firstName} · Employee ID{' '}
+                                  {person.employeeId}
+                                </label>
+                              ))}
+                            </div>
+                          </fieldset>
+                        </div>
+                      )}
+                    </details>
                     <Button
                       type="button"
                       className="min-h-11 justify-self-start rounded border border-border px-3 text-sm"

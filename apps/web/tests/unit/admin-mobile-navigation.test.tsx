@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const route = vi.hoisted(() => ({ pathname: '/admin/personnel' }));
 vi.mock('next/navigation', () => ({
   usePathname: () => route.pathname,
+  useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
 }));
 
