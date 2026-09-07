@@ -360,3 +360,6 @@ Every page below inherits the shared foundation; direct workspaces/controls and 
 - scripts/d1-backup.ps1
 - scripts/test-d1-backup-preflight.ps1
 - scripts/test-d1-backup-recovery.ps1
+- apps/worker/tests/integration/d1-backup-restore.test.ts
+
+Hosted follow-up CI run 34147344224 passed artifact build and recovery/preflight checks, then found the old backup launcher-count assertion expected two CLI calls. The updated contract requires all four package-scoped calls, including the Time Travel read and both R2 uploads. The focused eight-test backup/restore suite passes; full local and new hosted reruns are required before merge.

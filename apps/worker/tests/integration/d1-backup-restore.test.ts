@@ -46,7 +46,10 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
 
   it('runs Wrangler from the Worker package where the CLI dependency is installed', () => {
     const src = readFileSync(BACKUP_SCRIPT, 'utf-8');
-    expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(2);
+    expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(4);
+    expect(src).toContain('wrangler d1 time-travel info $DbName --env $Env --json');
+    expect(src).toContain('wrangler d1 export $DbName --env $Env --remote --output $file');
+    expect(src.match(/pnpm --dir apps\/worker exec wrangler r2 object put/g)).toHaveLength(2);
     expect(src).not.toContain('& pnpm exec wrangler');
   });
 
