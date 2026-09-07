@@ -62,3 +62,5 @@ export type {
   ADayRejectMessage,
   ADayServerMessage,
 } from './schemas/a-day.js';
+export { HistoricalBidSchema, HistoricalBidReceiptSchema } from './schemas/historical-bid.js';
+export type { HistoricalBid, HistoricalBidReceipt } from './schemas/historical-bid.js';

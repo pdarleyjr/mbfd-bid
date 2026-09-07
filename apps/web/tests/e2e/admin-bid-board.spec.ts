@@ -59,6 +59,9 @@ test('independent board views preserve source boundaries at phone, tablet and de
   let previousReads = 0;
   let latestSession = 'synthetic-official-completion';
   let resolverReads = 0;
+  await page.route('**/api/admin/historical-bids', (route) =>
+    route.fulfill({ json: { years: [] } }),
+  );
   await page.route('**/api/admin/annual-plan/official-sources', (route) => {
     resolverReads += 1;
     return route.fulfill({
@@ -258,7 +261,7 @@ test('independent board views preserve source boundaries at phone, tablet and de
   ).toBeVisible();
   const completedReads = previousReads;
   await page
-    .getByRole('combobox', { name: 'Completed official bid', exact: true })
+    .getByRole('combobox', { name: 'Previous bid source', exact: true })
     .selectOption('synthetic-official-completion');
   await expect(
     page.getByRole('main').getByText('Historical Winner', { exact: true }),

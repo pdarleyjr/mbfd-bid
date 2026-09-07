@@ -12,6 +12,7 @@ import type { Route } from 'next';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { BoardSeats } from './BoardSeats';
+import { HistoricalBidImport, HistoricalBidPanel } from './HistoricalBidPanel';
 
 const LABELS = { previous: 'Previous Bid', current: 'Current Staffing', upcoming: 'Upcoming Bid' };
 const POLL_MS = 60_000;
@@ -31,6 +32,7 @@ export function BidBoardWorkspace() {
   const year = params.get('year') ?? '';
   const asOf = params.get('as_of') ?? '';
   const session = params.get('session') ?? '';
+  const historical = params.get('history') ?? '';
   const [search, setSearch] = useState('');
   const select = (field: string, value: string) => {
     const next = new URLSearchParams(params.toString());
@@ -65,6 +67,27 @@ export function BidBoardWorkspace() {
     },
   });
   const resolvedSession = session || official.data?.sources[0]?.sessionId || '';
+  const archives = useQuery({
+    queryKey: ['admin', 'historical-bids'],
+    enabled: view === 'previous',
+    staleTime: 30_000,
+    queryFn: async () => {
+      const response = await fetch('/api/admin/historical-bids', { credentials: 'include' });
+      if (!response.ok) throw new Error('Could not check historical archives');
+      return (await response.json()) as { years: number[] };
+    },
+  });
+  const defaultHistoricalYear =
+    (archives.data?.years[0] ?? 0) > (official.data?.sources[0]?.year ?? 0)
+      ? archives.data?.years[0]
+      : undefined;
+  const historicalYear =
+    historical && /^\d{4}$/.test(historical)
+      ? Number(historical)
+      : !session
+        ? defaultHistoricalYear
+        : undefined;
+  const showingHistory = view === 'previous' && historicalYear !== undefined;
   const board = useQuery({
     queryKey: [
       'admin',
@@ -77,7 +100,7 @@ export function BidBoardWorkspace() {
     ],
     enabled:
       (view !== 'upcoming' || /^\d{4}$/.test(year)) &&
-      (view !== 'previous' || Boolean(resolvedSession)),
+      (view !== 'previous' || (!showingHistory && Boolean(resolvedSession))),
     staleTime: view === 'previous' ? Number.POSITIVE_INFINITY : 30_000,
     refetchOnWindowFocus: view !== 'previous',
     refetchOnReconnect: view !== 'previous',
@@ -97,7 +120,7 @@ export function BidBoardWorkspace() {
       return AdminBidBoardSchema.parse(await response.json());
     },
   });
-  const data = board.data;
+  const data = showingHistory ? undefined : board.data;
   const inputClass =
     'min-h-11 min-w-0 w-full rounded border border-border bg-card px-3 text-foreground';
   return (
@@ -160,13 +183,26 @@ export function BidBoardWorkspace() {
         )}
         {view === 'previous' && (
           <Label className="grid gap-1 text-sm">
-            Completed official bid
+            Previous bid source
             <NativeSelect
-              value={session}
-              onChange={(e) => select('session', e.target.value)}
+              value={historicalYear ? `history:${historicalYear}` : session}
+              onChange={(e) => {
+                const next = new URLSearchParams(params.toString());
+                next.delete('session');
+                next.delete('history');
+                if (e.target.value.startsWith('history:'))
+                  next.set('history', e.target.value.slice(8));
+                else if (e.target.value) next.set('session', e.target.value);
+                router.push(`${pathname}?${next}` as Route);
+              }}
               className={inputClass}
             >
-              <option value="">Latest verified completion</option>
+              <option value="">Latest available previous bid</option>
+              {archives.data?.years.map((archiveYear) => (
+                <option key={archiveYear} value={`history:${archiveYear}`}>
+                  {archiveYear} · Historical source documents
+                </option>
+              ))}
               {session &&
                 !official.data?.sources.some((source) => source.sessionId === session) && (
                   <option value={session}>Selected completion · verification required</option>
@@ -214,12 +250,19 @@ export function BidBoardWorkspace() {
             : 'Try again when the connection returns.'}
         </Alert>
       )}
-      {view === 'previous' && official.isSuccess && !resolvedSession && (
-        <p>
-          No verified completed official Bid is available. Mock, incomplete and unverified sessions
-          are excluded.
-        </p>
-      )}
+      {view === 'previous' && archives.isError && <Alert>{archives.error.message}</Alert>}
+      {view === 'previous' &&
+        official.isSuccess &&
+        archives.isSuccess &&
+        !resolvedSession &&
+        !showingHistory && (
+          <p>
+            No verified completed official Bid is available. Mock, incomplete and unverified
+            sessions are excluded.
+          </p>
+        )}
+      {showingHistory && <HistoricalBidPanel year={historicalYear} shift={shift} search={search} />}
+      {view === 'previous' && <HistoricalBidImport />}
       {board.isFetching && (
         <output className="block text-sm text-foreground">Refreshing board…</output>
       )}
