@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -66,11 +67,12 @@ describe('configuration-bound position rule editor', () => {
       params: Promise<{ id: string }>;
       searchParams: Promise<typeof SEARCH>;
     }) => Promise<React.ReactElement>;
+    const element = await page({
+      params: Promise.resolve({ id: 'A205' }),
+      searchParams: Promise.resolve(SEARCH),
+    });
     const html = renderToStaticMarkup(
-      await page({
-        params: Promise.resolve({ id: 'A205' }),
-        searchParams: Promise.resolve(SEARCH),
-      }),
+      <QueryClientProvider client={new QueryClient()}>{element}</QueryClientProvider>,
     );
 
     expect(mocks.serverWorkerFetch).toHaveBeenCalledWith(

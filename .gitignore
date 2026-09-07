@@ -20,6 +20,7 @@ out/
 packages/eligibility/tests/fixtures/2025-members.json
 packages/eligibility/tests/fixtures/2025-actual-bid.json
 packages/eligibility/tests/fixtures/2025-rules.json
+packages/eligibility/tests/fixtures/2025-replay-manifest.json
 
 # Env files (never commit secrets)
 .env

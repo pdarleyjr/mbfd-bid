@@ -61,12 +61,15 @@ async function proxyAdminRequest(req: Request, context: RouteContext): Promise<R
 
   let upstream: Response;
   try {
-    const upstreamInit: RequestInit = {
+    const upstreamInit: RequestInit & { duplex?: 'half' } = {
       method: req.method,
       headers,
     };
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body !== null) {
       upstreamInit.body = req.body as unknown as BodyInit;
+      // Node's fetch requires this for a streamed body; Workers accepts the
+      // same request without buffering large reviewed uploads in memory.
+      upstreamInit.duplex = 'half';
     }
     upstream = await fetch(workerUrl.toString(), upstreamInit);
   } catch (err) {

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { ConfiguredScoringSchema } from './configured-scoring.js';
+import { FrozenServiceCreditSchema } from './service-evidence.js';
 
 /**
  * Controls whether a canonical staffing slot participates in ordinary Bid
@@ -54,6 +56,8 @@ export const FrozenAnnualSpecialtyPolicySchema = z
     opportunityPositionIds: z.array(z.string().trim().min(1).max(160)).min(1),
     requiredCredentialNames: z.array(z.string().trim().min(1).max(160)),
     requiredSpecialtyCodes: z.array(z.string().trim().min(1).max(128)),
+    scoring: ConfiguredScoringSchema.optional(),
+    rankingChannel: z.enum(['total', 'so', 'mo']).optional(),
     points: z
       .array(
         z
@@ -71,6 +75,18 @@ export const FrozenAnnualSpecialtyPolicySchema = z
   })
   .strict()
   .superRefine((specialty, ctx) => {
+    if ((specialty.scoring === undefined) !== (specialty.rankingChannel === undefined))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['scoring'],
+        message: 'Grouped specialty scoring and its ranking channel must be configured together',
+      });
+    if (specialty.scoring && specialty.points.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['points'],
+        message: 'Grouped specialty scoring replaces legacy flat points; both cannot be active',
+      });
     if (new Set(specialty.opportunityPositionIds).size !== specialty.opportunityPositionIds.length)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -414,6 +430,7 @@ export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend
   rank: z.enum(['CIVILIAN', 'CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF']),
   isProbationary: z.boolean(),
   credentialNames: z.array(z.string().trim().min(1)),
+  serviceCredits: z.array(FrozenServiceCreditSchema).optional(),
   /**
    * Optional only for pre-bridge V3 recovery snapshots. Fresh snapshots
    * always materialize the collection, including an empty collection; a
@@ -465,6 +482,10 @@ export const FrozenRuleBookPositionSchema = z
     unit: z.string().trim().min(1),
     rankRequired: z.enum(['FF', 'LT', 'CPT', 'DC']),
     positionName: z.string().trim().min(1),
+    /** Optional for older snapshots. Missing facts cannot be inferred when cloning. */
+    division: z.string().trim().min(1).optional(),
+    isFloating: z.boolean().optional(),
+    isVacantByDesign: z.boolean().optional(),
   })
   .strict();
 export type FrozenRuleBookPosition = z.infer<typeof FrozenRuleBookPositionSchema>;
@@ -516,6 +537,7 @@ export const BidConfigurationSettingsV2Schema = z
     expectedDurationDays: z.number().int().min(1).max(7),
     turnTimerSeconds: z.number().int().min(30).max(600),
     credentialEvaluationOn: CredentialEvaluationDateSchema,
+    personnelEvaluationOn: CredentialEvaluationDateSchema.optional(),
   })
   .strict();
 export type BidConfigurationSettingsV2 = z.infer<typeof BidConfigurationSettingsV2Schema>;
@@ -530,6 +552,7 @@ export const BidConfigurationSettingsV3Schema = z
     expectedDurationDays: z.number().int().min(1).max(7),
     turnTimerSeconds: z.number().int().min(30).max(600),
     credentialEvaluationOn: CredentialEvaluationDateSchema,
+    personnelEvaluationOn: CredentialEvaluationDateSchema.optional(),
     livePolicy: FrozenLiveBidPolicySchema,
   })
   .strict();
@@ -617,6 +640,22 @@ const BidSessionPolicySnapshotV2Schema = z
  * rule coverage and member eligibility inputs at creation; a later draft edit
  * therefore has no effect on an established mock (or live) session.
  */
+const FrozenTenureEvidenceSchema = z
+  .object({
+    id: z.string().min(1),
+    staffingPositionId: z.string().min(1),
+    revision: z.number().int().positive(),
+    effectiveOn: z.string(),
+    status: z.enum(['PROTECTED', 'UNPROTECTED', 'UNKNOWN']),
+    memberId: z.number().int().positive().nullable(),
+    protectedFrom: z.string().nullable(),
+    protectedThrough: z.string().nullable(),
+    sourceRef: z.string().min(4),
+    reason: z.string(),
+    actorSubject: z.string(),
+  })
+  .strict();
+
 const BidSessionPolicySnapshotV3Schema = z
   .object({
     v: z.literal(3),
@@ -636,6 +675,10 @@ const BidSessionPolicySnapshotV3Schema = z
     staffingBaseline: FrozenStaffingBaselineSchema.optional(),
     capturedAtMs: z.number().int().nonnegative(),
     members: z.array(FrozenBidEligibilityMemberSchema),
+    tenureEvidence: z.array(FrozenTenureEvidenceSchema).optional(),
+    /** Catalog identity is distinct from who holds a qualification. Old snapshots
+     * retain their original reference validation when this evidence is absent. */
+    authoringCredentialNames: z.array(z.string().trim().min(1).max(160)).optional(),
     /** Fresh snapshots materialize this; optional only for historical recovery. */
     operatorIdentityProjection: z.array(FrozenOperatorIdentitySchema).optional(),
     /** Optional only for pre-0044 recovery snapshots. Fresh annual V3 sessions materialize it. */

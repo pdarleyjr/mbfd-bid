@@ -344,6 +344,7 @@ export function reduceLiveBidCommand(
         eventType: 'live_command_applied',
         payload: {
           operation: 'resolve_specialty_candidate',
+          bidId,
           specialtyId: specialty.specialtyId,
           positionId: specialty.positionId,
           memberId: command.memberId,

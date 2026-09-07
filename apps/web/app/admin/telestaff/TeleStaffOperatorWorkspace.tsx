@@ -1,4 +1,5 @@
 'use client';
+import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
@@ -528,6 +529,7 @@ function OnboardingInput(props: {
  * reviewed onboarding; they are never retained by the server.
  */
 export function TeleStaffOperatorWorkspace() {
+  const refreshProjections = usePersonnelProjectionRefresh();
   const [file, setFile] = useState<File | null>(null);
   const [sourceKind, setSourceKind] = useState<TeleStaffSourceKind | ''>('');
   const [sourceSnapshotAsOf, setSourceSnapshotAsOf] = useState('');
@@ -751,6 +753,7 @@ export function TeleStaffOperatorWorkspace() {
       }
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice('Canonical staffing was updated only for reviewed, deterministic observations.');
+      await refreshProjections();
     } catch {
       setError('canonical_apply_unavailable');
     } finally {
@@ -978,6 +981,7 @@ export function TeleStaffOperatorWorkspace() {
         return;
       }
       setBaselineAcceptance(result);
+      await refreshProjections();
       setBaselineConfirmationRequired(false);
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice(
@@ -1309,6 +1313,7 @@ export function TeleStaffOperatorWorkspace() {
                 onError={(code) => setError(code)}
                 onComplete={async () => {
                   setUnknownEmployees([]);
+                  await refreshProjections();
                   await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
                   setNotice(
                     'Reviewed personnel records were created or linked by exact Employee ID, then reconciled once.',

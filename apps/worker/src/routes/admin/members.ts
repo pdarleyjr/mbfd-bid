@@ -371,6 +371,8 @@ router.get('/eligible-for/:station', async (c) => {
       station,
       rule: stationRuleText(station),
       title: stationTitle(station),
+      authority: 'NONAUTHORITATIVE_LEGACY_FILTER',
+      qualificationEvaluationDate: null,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -1,4 +1,5 @@
-import type { FrozenAnnualSpecialtyPolicy } from '@mbfd/shared';
+import { configuredChannel } from '@mbfd/eligibility';
+import { type FrozenAnnualSpecialtyPolicy, FrozenAnnualSpecialtyPolicySchema } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import {
   higherPriorityFrozenSpecialtyCandidates,
@@ -17,6 +18,81 @@ const policy: FrozenAnnualSpecialtyPolicy = {
 };
 
 describe('annual specialty policy', () => {
+  it('uses the same capped, alternative and prerequisite scoring as ordinary positions while preserving legacy semantics', () => {
+    const groups = [
+      {
+        id: 'reviewed',
+        cap: 5,
+        items: [
+          {
+            credential: 'Synthetic Technician',
+            alternatives: ['Synthetic Equivalent'],
+            requiresAll: ['Synthetic Operation'],
+            points: 4,
+          },
+          { credential: 'Marine', alternatives: [], requiresAll: [], points: 3 },
+        ],
+      },
+    ];
+    const configured = {
+      ...policy,
+      requiredSpecialtyCodes: [],
+      points: [],
+      rankingChannel: 'so' as const,
+      scoring: { v: 1 as const, total: [], so: groups, mo: [] },
+    };
+    const members = [
+      {
+        memberId: 1,
+        rscSeniority: 1,
+        rankSeniority: 1,
+        credentialNames: ['Marine', 'Synthetic Equivalent'],
+        specialtyQualifications: [],
+      },
+      {
+        memberId: 2,
+        rscSeniority: 2,
+        rankSeniority: 2,
+        credentialNames: ['Marine', 'Synthetic Equivalent', 'Synthetic Operation'],
+        specialtyQualifications: [],
+      },
+    ];
+    expect(FrozenAnnualSpecialtyPolicySchema.safeParse(configured).success).toBe(true);
+    const ranked = rankFrozenSpecialtyCandidates({
+      policy: configured,
+      evaluationOn: '2027-01-01',
+      members,
+    });
+    expect(ranked).toEqual([
+      { memberId: 2, points: 5 },
+      { memberId: 1, points: 3 },
+    ]);
+    for (const result of ranked) {
+      const member = members.find((m) => m.memberId === result.memberId);
+      if (!member) throw new Error('Synthetic candidate missing');
+      expect(result.points).toBe(
+        configuredChannel({ credentials: member.credentialNames.map((name) => ({ name })) }, groups)
+          .total,
+      );
+    }
+    expect(
+      rankFrozenSpecialtyCandidates({
+        policy: { ...policy, requiredSpecialtyCodes: [] },
+        evaluationOn: '2027-01-01',
+        members,
+      }),
+    ).toEqual([
+      { memberId: 1, points: 8 },
+      { memberId: 2, points: 8 },
+    ]);
+    expect(
+      FrozenAnnualSpecialtyPolicySchema.safeParse({ ...configured, points: policy.points }).success,
+    ).toBe(false);
+    expect(
+      FrozenAnnualSpecialtyPolicySchema.safeParse({ ...configured, rankingChannel: undefined })
+        .success,
+    ).toBe(false);
+  });
   it('derives deterministic candidate order from frozen facts and excludes expired evidence', () => {
     const result = rankFrozenSpecialtyCandidates({
       policy,

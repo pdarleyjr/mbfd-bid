@@ -1,15 +1,20 @@
 'use client';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type CatalogCredential = {
   id: number;
   name: string;
   fyPointsDefault: number;
   holderCount: number;
+  revision?: number;
+  policyName?: string;
+  retiredOn?: string | null;
 };
 
 type Holder = {
@@ -37,18 +42,76 @@ export function CredentialsCatalogWorkspace({
 }: {
   initialCredentials: CatalogCredential[];
 }) {
-  const [credentials, setCredentials] = useState(initialCredentials);
+  const queryClient = useQueryClient();
+  const catalog = useQuery({
+    queryKey: ['admin', 'credentials'],
+    initialData: initialCredentials,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    queryFn: async () => {
+      const rows: CatalogCredential[] = [];
+      let total = 1;
+      while (rows.length < total) {
+        const response = await fetch(`/api/admin/credentials?limit=500&offset=${rows.length}`, {
+          credentials: 'include',
+        });
+        if (!response.ok) throw new Error('Catalog refresh failed');
+        const body = (await response.json()) as { credentials: CatalogCredential[]; total: number };
+        total = body.total;
+        if (body.credentials.length === 0 && rows.length < total)
+          throw new Error('Incomplete catalog response');
+        rows.push(...body.credentials);
+      }
+      return rows;
+    },
+  });
+  const credentials = catalog.data;
   const [name, setName] = useState('');
   const [points, setPoints] = useState('0');
   const [reason, setReason] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editing, setEditing] = useState<CatalogCredential | null>(null);
+  const [retiredOn, setRetiredOn] = useState('');
+  const [search, setSearch] = useState('');
+  const [dependencies, setDependencies] = useState<{
+    retirementBlocked: boolean;
+    policyReferences: { version: string; status: string }[];
+    memberReferences?: number;
+    qualificationEventReferences?: number;
+    frozenSessionReferences?: { sessionId: string; year: number; isMock: number }[];
+  } | null>(null);
+  const pendingRequest = useRef<{ fingerprint: string; key: string } | null>(null);
   const [holders, setHolders] = useState<Holder[] | null>(null);
   const [holderCredentialId, setHolderCredentialId] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const editing = credentials.find((credential) => credential.id === editingId) ?? null;
+  const dirty =
+    name !== (editing?.name ?? '') ||
+    points !== String(editing?.fyPointsDefault ?? 0) ||
+    retiredOn !== (editing?.retiredOn ?? '') ||
+    reason !== '';
+  useUnsavedChanges(dirty, 'credential edits');
+
+  useEffect(() => {
+    if (!editing) return;
+    const controller = new AbortController();
+    void fetch(`/api/admin/credentials/${editing.id}/dependencies`, {
+      credentials: 'include',
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Dependency preview could not be loaded.');
+        const result = (await res.json()) as NonNullable<typeof dependencies>;
+        if (!controller.signal.aborted) setDependencies(result);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError('Dependency preview could not be loaded.');
+      });
+    return () => controller.abort();
+  }, [editing]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,7 +122,13 @@ export function CredentialsCatalogWorkspace({
       name,
       fy_points_default: Number(points),
       reason,
+      ...(editing === null
+        ? {}
+        : { expected_revision: editing.revision ?? 0, retired_on: retiredOn || null }),
     };
+    const fingerprint = JSON.stringify({ id: editingId, payload });
+    if (pendingRequest.current?.fingerprint !== fingerprint)
+      pendingRequest.current = { fingerprint, key: nextKey('credential') };
     const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
     try {
       const response = await csrfFetch(
@@ -69,9 +138,7 @@ export function CredentialsCatalogWorkspace({
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            'Idempotency-Key': nextKey(
-              editing === null ? 'credential-create' : 'credential-update',
-            ),
+            'Idempotency-Key': pendingRequest.current.key,
           },
           body: JSON.stringify(payload),
         },
@@ -81,7 +148,7 @@ export function CredentialsCatalogWorkspace({
         setError(readError(body));
         return;
       }
-      setCredentials((current) => {
+      queryClient.setQueryData<CatalogCredential[]>(['admin', 'credentials'], (current = []) => {
         const withoutChanged = current.filter(
           (credential) => credential.id !== body.credential?.id,
         );
@@ -89,12 +156,18 @@ export function CredentialsCatalogWorkspace({
           a.name.localeCompare(b.name),
         );
       });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'credentials'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'annual-plan'] });
       setNotice(
         editing === null
           ? 'Credential created with an audit receipt.'
           : 'Credential updated with an audit receipt.',
       );
       setEditingId(null);
+      setEditing(null);
+      setRetiredOn('');
+      setDependencies(null);
+      pendingRequest.current = null;
       setName('');
       setPoints('0');
       setReason('');
@@ -131,9 +204,12 @@ export function CredentialsCatalogWorkspace({
 
   function beginEdit(credential: CatalogCredential) {
     setEditingId(credential.id);
+    setEditing(credential);
+    setRetiredOn(credential.retiredOn ?? '');
+    setDependencies(null);
     setName(credential.name);
     setPoints(String(credential.fyPointsDefault));
-    setReason('Catalog metadata correction reviewed by an administrator.');
+    setReason('');
     setNotice(null);
     setError(null);
   }
@@ -183,6 +259,62 @@ export function CredentialsCatalogWorkspace({
             className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
           />
         </label>
+        {editing !== null && (
+          <label>
+            <span className="text-sm font-medium text-stone-200">
+              Retire from new annual preparation on
+            </span>
+            <input
+              type="date"
+              value={retiredOn}
+              onChange={(event) => setRetiredOn(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded border border-stone-600 bg-stone-950 px-3 text-white"
+            />
+            <span className="mt-1 block text-xs text-stone-300">
+              Leave blank to keep active. Retirement preserves qualification history and frozen
+              bids.
+            </span>
+          </label>
+        )}
+        {dependencies !== null && editing !== null && (
+          <div className="rounded border border-stone-600 p-3 text-sm text-stone-200 md:col-span-2">
+            <p>
+              {dependencies.retirementBlocked
+                ? 'An active policy references this credential. Retirement is blocked until a reviewed successor removes that dependency.'
+                : 'No active policy blocks retirement. Review draft dependencies before changing availability.'}
+            </p>
+            <p className="mt-2">
+              Referenced members: {dependencies.memberReferences ?? 'Unavailable'} · Qualification
+              history events: {dependencies.qualificationEventReferences ?? 'Unavailable'}.
+              Retirement preserves this evidence.
+            </p>
+            {dependencies.frozenSessionReferences && (
+              <details className="mt-2">
+                <summary className="min-h-11 cursor-pointer">
+                  Frozen snapshots containing this credential (
+                  {dependencies.frozenSessionReferences.length})
+                </summary>
+                <ul>
+                  {dependencies.frozenSessionReferences.map((source) => (
+                    <li key={source.sessionId} className="break-all">
+                      {source.year} · {source.isMock ? 'Mock' : 'Official session'} ·{' '}
+                      {source.sessionId}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            {dependencies.policyReferences.length > 0 && (
+              <ul className="mt-2">
+                {dependencies.policyReferences.map((ref) => (
+                  <li key={`${ref.version}-${ref.status}`}>
+                    Policy {ref.version}: {ref.status}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <label>
           <span className="text-sm font-medium text-slate-200">Default points</span>
           <input
@@ -218,6 +350,9 @@ export function CredentialsCatalogWorkspace({
               type="button"
               onClick={() => {
                 setEditingId(null);
+                setEditing(null);
+                setDependencies(null);
+                setRetiredOn('');
                 setName('');
                 setPoints('0');
                 setReason('');
@@ -238,6 +373,29 @@ export function CredentialsCatalogWorkspace({
           {error}
         </p>
       )}
+      {catalog.isError && (
+        <output className="text-sm text-amber-200">
+          Refresh failed. Showing the last successful catalog; saved changes still require server
+          validation.
+        </output>
+      )}
+      {editing !== null &&
+        (credentials.find((row) => row.id === editing.id)?.revision ?? 0) !==
+          (editing.revision ?? 0) && (
+          <p role="alert" className="text-sm text-amber-200">
+            This credential changed since you opened it. Your unsaved values remain here. Cancel
+            this edit and reopen the current record before saving.
+          </p>
+        )}
+      <label className="block text-sm text-stone-200">
+        Search credentials
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="mt-1 min-h-11 w-full rounded border border-stone-600 bg-stone-950 px-3"
+        />
+      </label>
       {notice !== null && (
         <output className="block rounded border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100">
           {notice}
@@ -261,39 +419,51 @@ export function CredentialsCatalogWorkspace({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 bg-slate-900/70">
-              {credentials.map((credential) => (
-                <tr key={credential.id}>
-                  <td className="px-4 py-3 font-medium text-slate-100">{credential.name}</td>
-                  <td className="px-4 py-3 tabular-nums text-slate-200">
-                    {credential.fyPointsDefault}
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">{credential.holderCount}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={() => beginEdit(credential)}
-                        className="text-sm font-medium text-sky-300 hover:text-sky-100"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void openHolders(credential)}
-                        className="text-sm font-medium text-red-300 hover:text-red-100"
-                      >
-                        View members
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {credentials
+                .filter((credential) =>
+                  credential.name.toLowerCase().includes(search.toLowerCase()),
+                )
+                .map((credential) => (
+                  <tr key={credential.id}>
+                    <td className="px-4 py-3 font-medium text-slate-100">
+                      {credential.name}
+                      {credential.retiredOn && (
+                        <span className="block text-xs text-amber-200">
+                          Retires {credential.retiredOn}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums text-slate-200">
+                      {credential.fyPointsDefault}
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">{credential.holderCount}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-3">
+                        <button
+                          type="button"
+                          disabled={busy || dirty}
+                          onClick={() => beginEdit(credential)}
+                          className="text-sm font-medium text-sky-300 hover:text-sky-100"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openHolders(credential)}
+                          className="text-sm font-medium text-red-300 hover:text-red-100"
+                        >
+                          View members
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
         <p className="border-t border-slate-800 px-4 py-3 text-xs text-slate-400">
-          The existing schema has no credential retirement state. This catalog therefore does not
-          pretend to deactivate or delete a credential; it preserves historical references instead.
+          Display-name changes preserve the stable credential identity used by existing policy and
+          qualification evidence. Frozen sessions retain their original labels and scores.
         </p>
       </section>
 

@@ -252,6 +252,7 @@ describe('POST /api/admin/bid-session/:id/force-a-day frozen V3 member material'
               rankSeniority: 5,
               isProbationary: false,
               credentials: [{ name: 'Synthetic credential' }],
+              serviceCredits: [],
             },
           ],
         }),

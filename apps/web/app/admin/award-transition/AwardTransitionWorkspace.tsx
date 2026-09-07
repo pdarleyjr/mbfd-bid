@@ -1,4 +1,5 @@
 'use client';
+import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 
 import { type FormEvent, useMemo, useState } from 'react';
 
@@ -316,6 +317,7 @@ export function AwardTransitionWorkspace({
   operatorContext: AwardTransitionOperatorContext | null;
   selectionError?: string | null;
 }) {
+  const refreshProjections = usePersonnelProjectionRefresh();
   const [effectiveOn, setEffectiveOn] = useState('');
   const [reason, setReason] = useState('');
   const [confirmed, setConfirmed] = useState(false);
@@ -441,6 +443,7 @@ export function AwardTransitionWorkspace({
       }
       setReceipt(nextReceipt);
       setConfirmed(false);
+      await refreshProjections();
     } catch (caught) {
       setError(
         caught instanceof Error

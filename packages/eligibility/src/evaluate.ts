@@ -3,6 +3,7 @@ import { driverEngineerSatisfied } from './criteria/driver-engineer.js';
 import { nonProbationarySatisfied } from './criteria/non-probationary.js';
 import { paramedicSatisfied } from './criteria/paramedic.js';
 import { rankSatisfied } from './criteria/rank.js';
+import { configuredChannel } from './points/configured.js';
 import { computeMoPoints } from './points/mo-pool.js';
 import { computeSoPoints } from './points/so-pool.js';
 import { computePoints } from './points/sum.js';
@@ -13,7 +14,28 @@ export function evaluateEligibility(member: Member, rule: PositionRule): Eligibi
 
   reasons.push(rankSatisfied(member, rule.requiredCriteria.rank));
   reasons.push(...requiredCredsSatisfied(member, rule.requiredCriteria.credentials));
+  const held = new Set(member.credentials.map((credential) => credential.name));
+  for (const [index, group] of (rule.requiredCriteria.anyOfCredentials ?? []).entries())
+    reasons.push({
+      code: `qualification_alternative_${index + 1}`,
+      label: `Requires one of: ${group.join(' or ')}`,
+      satisfied: group.length > 0 && group.some((name) => held.has(name)),
+    });
 
+  for (const requirement of rule.requiredCriteria.service ?? []) {
+    const credits =
+      member.serviceCredits?.filter((credit) => credit.serviceCode === requirement.serviceCode) ??
+      [];
+    const credit = credits.length === 1 ? credits[0] : undefined;
+    const known = credit?.verifiedMonths !== null && credit?.verifiedMonths !== undefined;
+    reasons.push({
+      code: known ? 'service_months' : 'service_evidence_unknown',
+      label: known
+        ? `${requirement.serviceCode}: ${credit?.verifiedMonths} reviewed cumulative months; ${requirement.minimumMonths} required`
+        : `${requirement.serviceCode}: cumulative service evidence requires review`,
+      satisfied: known && (credit?.verifiedMonths ?? -1) >= requirement.minimumMonths,
+    });
+  }
   for (const gate of rule.requiredCriteria.custom) {
     switch (gate) {
       case 'paramedic':
@@ -41,6 +63,25 @@ export function evaluateEligibility(member: Member, rule: PositionRule): Eligibi
     };
   }
 
+  const configured = rule.pointsPreference.scoring;
+  if (configured !== undefined) {
+    const total = configuredChannel(member, configured.total);
+    const so = configuredChannel(member, configured.so);
+    const mo = configuredChannel(member, configured.mo);
+    return {
+      eligible: true,
+      reasons,
+      points: total.total,
+      soPoints: so.total,
+      moPoints: mo.total,
+      breakdown: {
+        total: total.total,
+        soTotal: so.total,
+        moTotal: mo.total,
+        itemized: total.itemized,
+      },
+    };
+  }
   const breakdown = computePoints(member, rule);
   const soPoints = computeSoPoints(member);
   const moPoints = computeMoPoints(member);

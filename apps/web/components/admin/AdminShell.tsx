@@ -1,5 +1,21 @@
 'use client';
 
+import {
+  BookOpen,
+  Building2,
+  CalendarCheck,
+  ClipboardList,
+  FlaskConical,
+  Gavel,
+  LayoutDashboard,
+  ListChecks,
+  Network,
+  Radio,
+  Settings,
+  UserCog,
+  Users,
+  UsersRound,
+} from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -21,9 +37,19 @@ export type AdminNavLink = {
  */
 export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
   { href: '/admin', label: 'Dashboard', exact: true },
+  { href: '/admin/bid-board', label: 'Bid Board', exact: false },
   { href: '/admin/guide', label: 'Administrator Guide', exact: false },
   { href: '/admin/current-rosters', label: 'Current Rosters', exact: false },
-  { href: '/admin/staffing-structure', label: 'Staffing Structure', exact: false },
+  {
+    href: '/admin/staffing-structure',
+    label: 'Staffing Structure',
+    exact: false,
+    activePrefixes: ['/admin/organization'],
+    subnav: [
+      { href: '/admin/staffing-structure', label: 'Authorized seats' },
+      { href: '/admin/organization', label: 'Organization' },
+    ],
+  },
   { href: '/admin/telestaff', label: 'TeleStaff', exact: false },
   {
     href: '/admin/members',
@@ -44,7 +70,20 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
       { href: '/admin/personnel', label: 'Personnel lifecycle' },
       { href: '/admin/personnel/operations', label: 'Year-round operations' },
       { href: '/admin/personnel/qualifications', label: 'Qualification Evidence' },
+      { href: '/admin/personnel/service-evidence', label: 'Service Evidence' },
+      { href: '/admin/personnel/tenure', label: 'Tenure and Protection' },
+      { href: '/admin/personnel/obligations', label: 'Post-award Qualifications' },
       { href: '/admin/personnel/reviews', label: 'Qualification Review' },
+    ],
+  },
+  {
+    href: '/admin/annual-plan',
+    label: 'Prepare Next Bid',
+    exact: false,
+    activePrefixes: ['/admin/annual-policy'],
+    subnav: [
+      { href: '/admin/annual-plan', label: 'Annual preparation' },
+      { href: '/admin/annual-policy', label: 'Operating policy' },
     ],
   },
   {
@@ -61,6 +100,7 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
     ],
     subnav: [
       { href: '/admin/bid-setup', label: 'Bid Configuration' },
+      { href: '/admin/annual-plan', label: 'Prepare Next Bid' },
       { href: '/admin/rule-books', label: 'Rule Books' },
       { href: '/admin/positions', label: 'Positions' },
       { href: '/admin/rules', label: 'Rules' },
@@ -99,12 +139,36 @@ function isActive(link: AdminNavLink, pathname: string) {
   );
 }
 
-export function AdminSideNav() {
+const NAVIGATION_ICONS = {
+  '/admin': LayoutDashboard,
+  '/admin/bid-board': ClipboardList,
+  '/admin/guide': BookOpen,
+  '/admin/current-rosters': UsersRound,
+  '/admin/staffing-structure': Building2,
+  '/admin/telestaff': Network,
+  '/admin/members': Users,
+  '/admin/personnel': UserCog,
+  '/admin/annual-plan': CalendarCheck,
+  '/admin/bid-setup': ListChecks,
+  '/admin/rehearsal': FlaskConical,
+  '/admin/bid': Radio,
+  '/admin/audit': Gavel,
+  '/admin/system': Settings,
+} as const;
+
+function NavigationIcon({ href }: { href: string }) {
+  const Icon = NAVIGATION_ICONS[href as keyof typeof NAVIGATION_ICONS] ?? ClipboardList;
+  return <Icon aria-hidden="true" className="h-5 w-5 shrink-0" strokeWidth={1.6} />;
+}
+
+export function AdminSideNav({ compact = false }: { compact?: boolean }) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Admin navigation" className="flex flex-col gap-1 p-3">
-      <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+    <nav aria-label="Admin navigation" className={`flex flex-col gap-1 ${compact ? 'p-2' : 'p-3'}`}>
+      <p
+        className={`${compact ? 'sr-only' : 'mb-1 px-3'} text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400`}
+      >
         Control center
       </p>
 
@@ -116,20 +180,37 @@ export function AdminSideNav() {
             <Link
               href={link.href as Route}
               className={[
-                'flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-fast ease-out-quart',
+                'admin-navigation-link group relative flex min-h-[44px] items-center gap-3 rounded-md py-2 text-sm font-medium transition-colors duration-fast ease-out-quart focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
+                compact ? 'justify-center px-2' : 'px-3',
                 active
                   ? 'bg-red-700 text-white'
                   : 'text-slate-200 hover:bg-slate-700 hover:text-white',
               ].join(' ')}
               aria-current={active ? 'page' : undefined}
+              aria-label={compact ? link.label : undefined}
+              title={compact ? link.label : undefined}
             >
-              {link.label}
+              <NavigationIcon href={link.href} />
+              <span
+                className={
+                  compact
+                    ? 'admin-navigation-label pointer-events-none absolute left-full z-30 ml-3 hidden whitespace-nowrap rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-white shadow-lg'
+                    : ''
+                }
+              >
+                {link.label}
+              </span>
             </Link>
 
-            {active && link.subnav && (
+            {!compact && active && link.subnav && (
               <div className="mt-1 ml-3 flex flex-col gap-1 border-l border-slate-700 pl-2">
                 {link.subnav.map((sub) => {
-                  const subActive = matchesPath(pathname, sub.href);
+                  const subActive =
+                    matchesPath(pathname, sub.href) &&
+                    !link.subnav?.some(
+                      (other) =>
+                        other.href.length > sub.href.length && matchesPath(pathname, other.href),
+                    );
                   return (
                     <Link
                       key={sub.href}

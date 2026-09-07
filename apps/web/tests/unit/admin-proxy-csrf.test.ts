@@ -108,6 +108,7 @@ describe('cookie-authenticated admin mutation CSRF enforcement', () => {
       'https://api.staging.bid.mbfdhub.com/api/admin/bid/skip',
       expect.objectContaining({
         method: 'POST',
+        duplex: 'half',
         headers: expect.objectContaining({ get: expect.any(Function) }),
       }),
     );

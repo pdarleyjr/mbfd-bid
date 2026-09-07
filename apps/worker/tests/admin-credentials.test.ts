@@ -1,11 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { JwtPayload } from '@mbfd/shared';
 import Database from 'better-sqlite3';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
-import writeXlsxFile, { type SheetData } from 'write-excel-file/node';
 import { signJwt } from '../src/lib/jwt.js';
 import credentialsRouter from '../src/routes/admin/credentials.js';
 import type { WorkerEnv } from '../src/types/env';
@@ -82,28 +81,10 @@ function makeD1Adapter(sqlite: Database.Database): TestD1Database {
 
 /** Apply migration SQL files in order (strips drizzle-kit statement-break markers). */
 function applyMigrations(sqlite: Database.Database): void {
-  const files = [
-    '0001_init.sql',
-    '0002_members_certs.sql',
-    '0003_positions_rules.sql',
-    '0004_bid_audit_ai.sql',
-    '0005_audit_log_session_nullable.sql',
-    '0013_audit_chain_bookkeeping.sql',
-  ];
-  for (const file of files) {
-    const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .flatMap((chunk) => chunk.split(';'))
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !s.startsWith('--'));
-    for (const stmt of statements) {
-      try {
-        sqlite.exec(`${stmt};`);
-      } catch {
-        // ignore already-exists errors for idempotency
-      }
-    }
+  for (const file of readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()) {
+    sqlite.exec(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8'));
   }
 }
 
@@ -145,27 +126,121 @@ const BASE_PAYLOAD = {
   fresh_auth_at: Math.floor(Date.now() / 1000),
 };
 
-/** Build a normalized XLSX buffer with the given rows. */
-async function xlsxArrayBuffer(rows: SheetData): Promise<ArrayBuffer> {
-  const output = await writeXlsxFile(rows);
-  const bytes = await output.toBuffer();
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-async function buildNormalizedXlsx(rows: Record<string, unknown>[]): Promise<ArrayBuffer> {
-  const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
-  return xlsxArrayBuffer([
-    headers,
-    ...rows.map((row) => headers.map((header) => row[header] ?? '')),
-  ] as SheetData);
-}
-
-/** Build a legacy wide-matrix XLSX. First row is headers; subsequent rows are data. */
-function buildWideMatrixXlsx(headerRow: string[], dataRows: unknown[][]): Promise<ArrayBuffer> {
-  return xlsxArrayBuffer([headerRow, ...dataRows] as SheetData);
-}
-
 describe('admin credentials routes', () => {
+  it('allows one of two edits, replays the exact receipt, and rejects cross-target key reuse', async () => {
+    const { app, sqlite } = makeApp();
+    sqlite.exec(
+      "INSERT INTO credentials (id, name, fy_points_default) VALUES (901, 'Original', 0), (902, 'Other', 0)",
+    );
+    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+    const env = mkEnv(sqlite);
+    const edit = (key: string, name: string, revision = 0, id = 901) =>
+      app.request(
+        `/admin/credentials/${id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': key,
+          },
+          body: JSON.stringify({
+            name,
+            fy_points_default: 0,
+            expected_revision: revision,
+            reason: 'Reviewed display correction',
+          }),
+        },
+        env,
+      );
+    const responses = await Promise.all([edit('edit-a', 'First'), edit('edit-b', 'Second')]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    const winner = responses[0]?.status === 200 ? 'edit-a' : 'edit-b';
+    const name = winner === 'edit-a' ? 'First' : 'Second';
+    const accepted = await responses.find((r) => r.status === 200)?.json();
+    expect((await edit('edit-next', 'Later', 1)).status).toBe(200);
+    const replay = await edit(winner, name);
+    expect(await replay.json()).toMatchObject({ ...(accepted as object), replayed: true });
+    expect((await edit(winner, name, 0, 902)).status).toBe(409);
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 2 });
+  });
+
+  it('rolls back metadata and points when its receipt or audit fails', async () => {
+    for (const index of [2, 3]) {
+      const { app, sqlite } = makeApp();
+      sqlite.exec(
+        "INSERT INTO credentials (id, name, fy_points_default) VALUES (901, 'Original', 0)",
+      );
+      const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+      const env = mkEnv(sqlite);
+      env.DB.failNextBatchAt(index);
+      const response = await app.request(
+        '/admin/credentials/901',
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': 'failed-change',
+          },
+          body: JSON.stringify({
+            name: 'Changed',
+            fy_points_default: 5,
+            expected_revision: 0,
+            reason: 'Reviewed display correction',
+          }),
+        },
+        env,
+      );
+      expect(response.status).toBe(500);
+      expect(sqlite.prepare('SELECT * FROM credential_catalog_metadata').all()).toEqual([]);
+      expect(sqlite.prepare('SELECT * FROM credential_catalog_receipts').all()).toEqual([]);
+      expect(
+        sqlite.prepare('SELECT fy_points_default FROM credentials WHERE id = 901').get(),
+      ).toEqual({ fy_points_default: 0 });
+      expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 0 });
+    }
+  });
+
+  it('renames a display label without changing the credential identity used by existing rules', async () => {
+    const { app, sqlite } = makeApp();
+    sqlite
+      .prepare('INSERT INTO credentials (id, name, fy_points_default) VALUES (901, ?, 0)')
+      .run('Original Qualification');
+    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+    const response = await app.request(
+      '/admin/credentials/901',
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'rename-stable-901',
+        },
+        body: JSON.stringify({
+          name: 'Reviewed Display Label',
+          fy_points_default: 0,
+          reason: 'Correct the display label only',
+          expected_revision: 0,
+        }),
+      },
+      mkEnv(sqlite),
+    );
+    expect(response.status).toBe(200);
+    expect(sqlite.prepare('SELECT id, name FROM credentials WHERE id = 901').get()).toEqual({
+      id: 901,
+      name: 'Original Qualification',
+    });
+    expect(await response.json()).toMatchObject({
+      credential: {
+        id: 901,
+        name: 'Reviewed Display Label',
+        policyName: 'Original Qualification',
+        revision: 1,
+      },
+    });
+  });
+
   it('GET /admin/credentials returns 401 without auth', async () => {
     const { app, sqlite } = makeApp();
     const res = await app.request('/admin/credentials', {}, mkEnv(sqlite));
@@ -197,153 +272,20 @@ describe('admin credentials routes', () => {
     expect(body.total).toBe(0);
   });
 
-  it('POST /admin/credentials/import (normalized) upserts valid rows and reports errors', async () => {
+  it('retires unreviewed direct imports without mutating catalog or audit', async () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
-
-    const xlsxBytes = await buildNormalizedXlsx([
-      { name: 'Driver Engineer Qualified', fy_points_default: 4 },
-      { name: 'Hazmat Tech', fy_points_default: 6 },
-      { name: 'Acting Lt', fy_points_default: 0 },
-      { name: '', fy_points_default: 1 }, // invalid — empty name
-    ]);
-
-    const form = new FormData();
-    form.append(
-      'file',
-      new Blob([xlsxBytes], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }),
-      'creds.xlsx',
-    );
-
-    const res = await app.request(
-      '/admin/credentials/import',
-      { method: 'POST', body: form, headers: { Authorization: `Bearer ${jwt}` } },
-      mkEnv(sqlite),
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      inserted: number;
-      updated: number;
-      errors: { rowNumber: number }[];
-    };
-    expect(body.inserted).toBe(3);
-    expect(body.updated).toBe(0);
-    expect(body.errors).toHaveLength(1);
-    expect(body.errors[0]?.rowNumber).toBe(5); // row 1=header, 2-4=valid, 5=invalid
-
-    const auditCount = sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get() as { n: number };
-    expect(auditCount.n).toBe(1);
-  });
-
-  it('rolls back every credential row when the import audit receipt fails', async () => {
-    const { app, sqlite } = makeApp();
-    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
-    const xlsxBytes = await buildNormalizedXlsx([
-      { name: 'Driver Engineer Qualified', fy_points_default: 4 },
-      { name: 'Hazmat Tech', fy_points_default: 6 },
-    ]);
-    const form = new FormData();
-    form.append(
-      'file',
-      new Blob([xlsxBytes], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }),
-      'creds.xlsx',
-    );
-    const env = mkEnv(sqlite);
-    // Two upserts precede the mandatory third audit statement.
-    env.DB.failNextBatchAt(2);
-
-    const response = await app.request(
-      '/admin/credentials/import',
-      { method: 'POST', body: form, headers: { Authorization: `Bearer ${jwt}` } },
-      env,
-    );
-
-    expect(response.status).toBe(500);
+    for (const mode of ['normalized', 'legacy_wide_matrix']) {
+      const response = await app.request(
+        `/admin/credentials/import?mode=${mode}`,
+        { method: 'POST', headers: { Authorization: `Bearer ${jwt}` } },
+        mkEnv(sqlite),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: 'reviewed_catalog_import_required' });
+    }
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM credentials').get()).toEqual({ n: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 0 });
-  });
-
-  it('POST /admin/credentials/import is idempotent — re-running updates instead of inserting', async () => {
-    const { app, sqlite } = makeApp();
-    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
-
-    const xlsxBytes = await buildNormalizedXlsx([
-      { name: 'Driver Engineer Qualified', fy_points_default: 4 },
-      { name: 'Hazmat Tech', fy_points_default: 6 },
-      { name: 'Acting Lt', fy_points_default: 0 },
-      { name: '', fy_points_default: 1 }, // invalid
-    ]);
-
-    const makeForm = () => {
-      const form = new FormData();
-      form.append(
-        'file',
-        new Blob([xlsxBytes], {
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        }),
-        'creds.xlsx',
-      );
-      return form;
-    };
-
-    // First import
-    await app.request(
-      '/admin/credentials/import',
-      { method: 'POST', body: makeForm(), headers: { Authorization: `Bearer ${jwt}` } },
-      mkEnv(sqlite),
-    );
-
-    // Second import — same data
-    const res2 = await app.request(
-      '/admin/credentials/import',
-      { method: 'POST', body: makeForm(), headers: { Authorization: `Bearer ${jwt}` } },
-      mkEnv(sqlite),
-    );
-    expect(res2.status).toBe(200);
-    const body2 = (await res2.json()) as { inserted: number; updated: number; errors: unknown[] };
-    expect(body2.inserted).toBe(0);
-    expect(body2.updated).toBe(3);
-  });
-
-  it('POST /admin/credentials/import in legacy_wide_matrix mode inserts credential names from header row', async () => {
-    const { app, sqlite } = makeApp();
-    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
-
-    const xlsxBytes = await buildWideMatrixXlsx(
-      ['Employee Id', 'Last Name', 'First Name', 'Hazmat Tech', 'Swift Water Rescue', 'Acting Lt'],
-      [
-        ['14335', 'Sola', 'Jesus', 1, 0, 1],
-        ['20001', 'Smith', 'John', 0, 1, 0],
-      ],
-    );
-
-    const form = new FormData();
-    form.append(
-      'file',
-      new Blob([xlsxBytes], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }),
-      'matrix.xlsx',
-    );
-
-    const res = await app.request(
-      '/admin/credentials/import?mode=legacy_wide_matrix&metadata_columns=3',
-      { method: 'POST', body: form, headers: { Authorization: `Bearer ${jwt}` } },
-      mkEnv(sqlite),
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      inserted: number;
-      updated: number;
-      errors: unknown[];
-    };
-    expect(body.inserted).toBe(3); // Hazmat Tech, Swift Water Rescue, Acting Lt
-    expect(body.updated).toBe(0);
-    expect(body.errors).toHaveLength(0);
   });
 
   it('GET /admin/credentials/:id returns 404 when credential not found', async () => {
@@ -361,22 +303,7 @@ describe('admin credentials routes', () => {
     const { app, sqlite } = makeApp();
     const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
 
-    const xlsxBytes = await buildNormalizedXlsx([
-      { name: 'Hazmat Awareness', fy_points_default: 2 },
-    ]);
-    const form = new FormData();
-    form.append(
-      'file',
-      new Blob([xlsxBytes], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }),
-      'creds.xlsx',
-    );
-    await app.request(
-      '/admin/credentials/import',
-      { method: 'POST', body: form, headers: { Authorization: `Bearer ${jwt}` } },
-      mkEnv(sqlite),
-    );
+    sqlite.exec("INSERT INTO credentials (name,fy_points_default) VALUES ('Hazmat Awareness',2)");
 
     // Get the inserted credential's id from the list
     const listRes = await app.request(
@@ -458,6 +385,7 @@ describe('admin credentials routes', () => {
         body: JSON.stringify({
           name: 'Swift Water Rescue Technician',
           fy_points_default: 4,
+          expected_revision: 0,
           reason: 'Catalog title and default points corrected.',
         }),
       },

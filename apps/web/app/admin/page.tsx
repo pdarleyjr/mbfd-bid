@@ -118,17 +118,52 @@ export default async function AdminDashboardPage() {
           Dashboard
         </h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-300">
-          Year-round operator workspace for safe review, configuration, rehearsal, and audit.
-          Welcome back, {claims.first_name} {claims.last_name}.
+          Manage your workforce, prepare the next annual bid, and review assignments. Welcome back,{' '}
+          {claims.first_name} {claims.last_name}.
         </p>
       </header>
 
-      <div className="border-l-4 border-amber-500 bg-amber-950/30 px-4 py-4 text-sm text-amber-100">
-        <p className="font-semibold">Operational safeguards remain in effect</p>
-        <p className="mt-1 text-amber-100/90">
-          Roster and staffing screens reflect the configured environment's canonical data. Portal
-          write-back remains disabled, and no control on this dashboard starts a live bid.
-        </p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Link
+          href="/admin/annual-plan"
+          className="group rounded-xl border border-red-500/60 bg-gradient-to-br from-red-950 to-slate-900 p-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wider text-red-200">
+            Annual preparation
+          </p>
+          <h2 className="mt-2 font-heading text-2xl text-white">
+            Prepare Next Bid <span aria-hidden="true">→</span>
+          </h2>
+          <p className="mt-3 max-w-lg text-sm leading-6 text-slate-200">
+            Start or resume your annual plan. Review seats, participants, qualifications and policy,
+            then rehearse and freeze the reviewed configuration.
+          </p>
+          <p className="mt-5 text-sm font-semibold text-red-200 group-hover:text-white">
+            Open guided preparation
+          </p>
+        </Link>
+        <Link
+          href="/admin/bid-board"
+          className="group rounded-xl border border-slate-600 bg-slate-800 p-6 hover:border-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+            Assignments at a glance
+          </p>
+          <h2 className="mt-2 font-heading text-2xl text-white">
+            Bid Board <span aria-hidden="true">→</span>
+          </h2>
+          <p className="mt-3 max-w-lg text-sm leading-6 text-slate-200">
+            Compare the previous official bid, current staffing and the upcoming plan. Each view
+            keeps its own stations, seats and source dates.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2 text-xs font-medium text-slate-200">
+            {['Previous Bid', 'Current Staffing', 'Upcoming Bid'].map((label) => (
+              <span key={label} className="rounded border border-slate-600 px-2 py-1">
+                {label}
+              </span>
+            ))}
+          </div>
+        </Link>
       </div>
 
       <div>

@@ -4,6 +4,7 @@ import { type CatalogCredential, CredentialsCatalogWorkspace } from './Credentia
 
 interface CredentialsResponse {
   credentials: CatalogCredential[];
+  total: number;
 }
 
 export default async function AdminCredentialsPage() {
@@ -11,19 +12,26 @@ export default async function AdminCredentialsPage() {
 
   const client = await getServerRpc();
 
-  let credentials: CatalogCredential[] = [];
+  const credentials: CatalogCredential[] = [];
   let fetchError: string | null = null;
 
   try {
-    // biome-ignore lint/suspicious/noExplicitAny: WorkerClient is typed as any — see rpc-client.ts
-    const res = await (client as any).api.admin.credentials.$get({
-      query: { limit: '200', offset: '0' },
-    });
-    if (res.ok) {
+    let total = 1;
+    while (credentials.length < total) {
+      // biome-ignore lint/suspicious/noExplicitAny: WorkerClient is typed as any — see rpc-client.ts
+      const res = await (client as any).api.admin.credentials.$get({
+        query: { limit: '500', offset: String(credentials.length) },
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = (await res.json()) as CredentialsResponse;
-      credentials = data.credentials;
-    } else {
-      fetchError = `API error: ${res.status}`;
+      total = data.total;
+      if (
+        !Number.isSafeInteger(total) ||
+        total < 0 ||
+        (!data.credentials.length && credentials.length < total)
+      )
+        throw new Error('Incomplete credential catalog response');
+      credentials.push(...data.credentials);
     }
   } catch (err) {
     fetchError = err instanceof Error ? err.message : 'Failed to fetch credentials';

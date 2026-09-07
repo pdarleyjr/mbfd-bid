@@ -13,6 +13,14 @@ export interface Member {
   rankSeniority: number | undefined;
   isProbationary: boolean;
   credentials: Credential[];
+  serviceCredits?: {
+    serviceCode: string;
+    verifiedMonths: number | null;
+    effectiveOn: string;
+    recordId: string;
+    sourceRef: string;
+    actorSubject: string;
+  }[];
 }
 
 /**
@@ -31,12 +39,32 @@ export interface PointsItem {
 export interface RequiredCriteria {
   rank: Rank[];
   credentials: string[];
+  anyOfCredentials?: string[][];
+  service?: { serviceCode: string; minimumMonths: number }[];
+  /** Follow-up terms do not determine initial qualification or points. */
+  postAward?: {
+    id: string;
+    credential: string;
+    sourceRef: string;
+    deadline: {
+      unit: 'CALENDAR_DAYS' | 'CALENDAR_MONTHS';
+      count: number;
+      timeZone: 'America/New_York' | 'UTC';
+    } & ({ basis: 'FINAL_POSITION_AWARD' } | { basis: 'APPROVED_BID_START_DATE'; startOn: string });
+  }[];
   custom: Array<'paramedic' | 'driver_engineer' | 'non_probationary'>;
 }
 
 export interface PointsPreference {
   max: number;
   items: PointsItem[];
+  scoring?: { v: 1; total: ScoringGroup[]; so: ScoringGroup[]; mo: ScoringGroup[] };
+}
+
+export interface ScoringGroup {
+  id: string;
+  cap: number | null;
+  items: { credential: string; alternatives: string[]; requiresAll: string[]; points: number }[];
 }
 
 export type TieBreakKey = 'points' | 'so_points' | 'mo_points' | 'rsc_seniority' | 'rank_seniority';

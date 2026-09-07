@@ -26,6 +26,14 @@ export * from './schemas/audit-chunk.js';
 export * from './schemas/portal-payload.js';
 export * from './live-readiness.js';
 export * from './assignment-reconciliation.js';
+export * from './constants/rule-capabilities.js';
+export * from './schemas/configured-scoring.js';
+export * from './schemas/annual-rule-profile.js';
+export * from './schemas/qualification-alternatives.js';
+export * from './schemas/service-evidence.js';
+export * from './schemas/post-award-obligation.js';
+export * from './schemas/admin-bid-board.js';
+export * from './constants/legacy-roster-filters.js';
 
 // A-Day Phase 2 schemas. `Shift` is re-exported from constants/shifts.js — to avoid
 // a duplicate identifier, we export the Zod schema and the additional types directly.

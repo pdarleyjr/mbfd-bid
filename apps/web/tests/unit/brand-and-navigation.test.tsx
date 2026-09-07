@@ -35,12 +35,14 @@ describe('MBFD identity and operator navigation', () => {
   it('uses the approved year-round bid control-center sections in operator navigation', () => {
     expect(ADMIN_NAV_LINKS.map(({ href, label }) => ({ href, label }))).toEqual([
       { href: '/admin', label: 'Dashboard' },
+      { href: '/admin/bid-board', label: 'Bid Board' },
       { href: '/admin/guide', label: 'Administrator Guide' },
       { href: '/admin/current-rosters', label: 'Current Rosters' },
       { href: '/admin/staffing-structure', label: 'Staffing Structure' },
       { href: '/admin/telestaff', label: 'TeleStaff' },
       { href: '/admin/members', label: 'Members' },
       { href: '/admin/personnel', label: 'Personnel Changes' },
+      { href: '/admin/annual-plan', label: 'Prepare Next Bid' },
       { href: '/admin/bid-setup', label: 'Bid Setup' },
       { href: '/admin/rehearsal', label: 'Mock Bids' },
       { href: '/admin/bid', label: 'Live Bid & Advisory' },

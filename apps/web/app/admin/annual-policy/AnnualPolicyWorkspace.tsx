@@ -1,9 +1,15 @@
 'use client';
+import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
-import { FrozenLiveBidPolicySchema } from '@mbfd/shared';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
+import { type ConfiguredScoring, FrozenLiveBidPolicySchema } from '@mbfd/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Route } from 'next';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ConfiguredScoringEditor } from '../positions/[id]/edit/ConfiguredScoringEditor';
 import { AnnualPolicyPublishGate } from './AnnualPolicyPublishGate';
 
 export interface AnnualPolicyDocument {
@@ -48,6 +54,9 @@ type SourcePosition = {
 type EditorSource = {
   rule_book_version: string;
   configuration_revision: number;
+  rule_book_revision: number;
+  source_revision: number;
+  managed_annual_plan: boolean;
   credential_evaluation_on: string;
   members: SourceMember[];
   positions: SourcePosition[];
@@ -81,6 +90,8 @@ type Specialty = {
   credentials: string;
   qualifications: string;
   points: string;
+  scoring?: ConfiguredScoring;
+  rankingChannel?: 'total' | 'so' | 'mo' | undefined;
   tieBreak: string;
 };
 
@@ -146,9 +157,11 @@ const inputClass =
 
 export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
   const router = useRouter();
+  const client = useQueryClient();
+  const pendingWrite = useRef<{ fingerprint: string; key: string } | null>(null);
+  const pendingPublication = useRef<{ fingerprint: string; key: string } | null>(null);
   const csrfFetch = useMemo(() => createCsrfAwareFetch(fetch, () => window.location.origin), []);
   const [source, setSource] = useState<EditorSource | null>(null);
-  const [sourceError, setSourceError] = useState<string | null>(null);
   const [language, setLanguage] = useState('');
   const [policyRevision, setPolicyRevision] = useState('');
   const [stages, setStages] = useState<Stage[]>([]);
@@ -182,29 +195,47 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    void fetch(`/api/admin/annual-policy-documents/${year}/editor-data`, { credentials: 'include' })
-      .then(async (response) => {
-        const body: unknown = await response.json().catch(() => null);
-        if (!response.ok)
-          throw new Error(workerError(body, `Source service returned ${response.status}.`));
-        return body as EditorSource;
-      })
-      .then((body) => {
-        if (active) setSource(body);
-      })
-      .catch((error: unknown) => {
-        if (active)
-          setSourceError(
-            error instanceof Error ? error.message : 'Policy source could not be loaded.',
-          );
+  const formFingerprint = JSON.stringify({
+    language,
+    policyRevision,
+    stages,
+    permissions,
+    dispositions,
+    minimumAttempts,
+    timingMode,
+    durationSeconds,
+    contactEvidenceRequired,
+    specialties,
+    aDay,
+    refs,
+    reason,
+  });
+  const [savedFingerprint, setSavedFingerprint] = useState(formFingerprint);
+  useUnsavedChanges(savedFingerprint !== formFingerprint, 'annual operating policy');
+  const sourceQuery = useQuery({
+    queryKey: ['admin', 'annual-policy', year, 'editor-data'],
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/annual-policy-documents/${year}/editor-data`, {
+        credentials: 'include',
       });
-    return () => {
-      active = false;
-    };
-  }, [year]);
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok)
+        throw new Error(workerError(body, `Source service returned ${response.status}.`));
+      return body as EditorSource;
+    },
+  });
+  const sourceError = sourceQuery.error instanceof Error ? sourceQuery.error.message : null;
+  useEffect(() => {
+    if (sourceQuery.data) setSource((current) => current ?? sourceQuery.data ?? null);
+  }, [sourceQuery.data]);
+  const sourceChanged =
+    !!source &&
+    !!sourceQuery.data &&
+    (source.configuration_revision !== sourceQuery.data.configuration_revision ||
+      source.rule_book_revision !== sourceQuery.data.rule_book_revision ||
+      source.source_revision !== sourceQuery.data.source_revision);
 
   const allMembers = source?.members ?? [];
   const participants = allMembers.filter((member) => member.pool !== 'EXCLUDED');
@@ -356,6 +387,9 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
           .map((point) => `${point.credentialName}:${point.value}`)
           .join(', '),
         tieBreak: specialty.tieBreakChain.join(', '),
+        ...(specialty.scoring
+          ? { scoring: specialty.scoring, rankingChannel: specialty.rankingChannel }
+          : {}),
       })),
     );
     setADay({
@@ -425,11 +459,18 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
           opportunityPositionIds: specialty.positionIds,
           requiredCredentialNames: csv(specialty.credentials),
           requiredSpecialtyCodes: csv(specialty.qualifications),
-          points: csv(specialty.points).map((item) => {
-            const [credentialName = '', rawValue = ''] = item.split(':').map((part) => part.trim());
-            return { credentialName, value: Number(rawValue) };
-          }),
+          points: specialty.scoring
+            ? []
+            : csv(specialty.points).map((item) => {
+                const [credentialName = '', rawValue = ''] = item
+                  .split(':')
+                  .map((part) => part.trim());
+                return { credentialName, value: Number(rawValue) };
+              }),
           tieBreakChain: csv(specialty.tieBreak),
+          ...(specialty.scoring
+            ? { scoring: specialty.scoring, rankingChannel: specialty.rankingChannel }
+            : {}),
         })),
         contact: {
           minimumAttempts: Number(minimumAttempts),
@@ -464,22 +505,41 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
     }
     setBusy(true);
     setMessage(null);
+    const requestBody = {
+      rule_book_version: source.rule_book_version,
+      policy_text: language.trim(),
+      execution_policy: executionPolicy(),
+      reason: reason.trim(),
+      expected_configuration_revision: source.configuration_revision,
+      expected_rule_book_revision: source.rule_book_revision,
+      expected_source_revision: source.source_revision,
+    };
+    const fingerprint = JSON.stringify(requestBody);
+    if (pendingWrite.current?.fingerprint !== fingerprint)
+      pendingWrite.current = { fingerprint, key: crypto.randomUUID() };
     try {
       const response = await csrfFetch(`/api/admin/annual-policy-documents/${year}`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rule_book_version: source.rule_book_version,
-          policy_text: language.trim(),
-          execution_policy: executionPolicy(),
-          reason: reason.trim(),
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': pendingWrite.current.key,
+        },
+        body: fingerprint,
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok)
         throw new Error(workerError(body, `Draft creation failed (${response.status}).`));
       setMessage({ kind: 'success', text: 'Draft saved and bound for mock verification.' });
+      pendingWrite.current = null;
+      setSavedFingerprint(formFingerprint);
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['admin', 'annual-policy'] }),
+        client.invalidateQueries({ queryKey: ['admin', 'annual-plan'] }),
+        invalidateWorkingBidBoards(client, ['upcoming']),
+      ]);
+      const refreshed = await sourceQuery.refetch();
+      if (refreshed.data) setSource(refreshed.data);
       router.refresh();
     } catch (error) {
       setMessage({
@@ -492,22 +552,39 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
   }
 
   async function publish(document: AnnualPolicyDocument, publishReason: string): Promise<boolean> {
+    if (!source) return false;
     setBusy(true);
     setMessage(null);
+    const payload = {
+      reason: publishReason,
+      expected_configuration_revision: source.configuration_revision,
+      expected_document_revision: document.revision,
+    };
+    const fingerprint = JSON.stringify({ documentId: document.id, payload });
+    if (pendingPublication.current?.fingerprint !== fingerprint)
+      pendingPublication.current = { fingerprint, key: crypto.randomUUID() };
     try {
       const response = await csrfFetch(
         `/api/admin/annual-policy-documents/${year}/${document.id}/publish`,
         {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason: publishReason }),
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': pendingPublication.current.key,
+          },
+          body: JSON.stringify(payload),
         },
       );
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok)
         throw new Error(workerError(body, `Publication failed (${response.status}).`));
       setMessage({ kind: 'success', text: `Revision ${document.revision} published.` });
+      pendingPublication.current = null;
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['admin', 'annual-policy'] }),
+        client.invalidateQueries({ queryKey: ['admin', 'annual-plan'] }),
+      ]);
       router.refresh();
       return true;
     } catch (error) {
@@ -523,6 +600,24 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
 
   return (
     <main className="mx-auto max-w-7xl space-y-6" data-testid="annual-policy-editor">
+      {sourceChanged && (
+        <aside className="rounded border border-amber-500 p-4 text-amber-100">
+          <p>
+            Annual source data changed while this draft was open. Your policy edits are retained.
+            Review the refreshed members and seats before saving.
+          </p>
+          <button
+            type="button"
+            className="mt-3 min-h-11 rounded border px-3"
+            disabled={busy}
+            onClick={() => {
+              if (sourceQuery.data) setSource(sourceQuery.data);
+            }}
+          >
+            Review refreshed source
+          </button>
+        </aside>
+      )}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
@@ -797,7 +892,16 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                             }))
                           }
                         />{' '}
-                        {field}
+                        {
+                          {
+                            advances: 'Advance to the next bidder',
+                            returns: 'Return in another stage',
+                            retainsLaterSelectionRights: 'Keep later selection rights',
+                            terminal: 'End this member’s participation',
+                            requiresReason: 'Reason required',
+                            requiresEvidence: 'Evidence required',
+                          }[field]
+                        }
                       </label>
                     ))}
                   </div>
@@ -859,9 +963,9 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
               onChange={(event) => setTimingMode(event.target.value as TimingMode)}
               className={inputClass}
             >
-              <option>HARD_MINIMUM</option>
-              <option>TARGET</option>
-              <option>OPERATOR_DISCRETION</option>
+              <option value="HARD_MINIMUM">Required minimum time</option>
+              <option value="TARGET">Target time</option>
+              <option value="OPERATOR_DISCRETION">Operator discretion</option>
             </select>
           </label>
           <label>
@@ -962,8 +1066,8 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   }
                   className={inputClass}
                 >
-                  <option>INTERRUPTING</option>
-                  <option>PRIORITY_ONLY</option>
+                  <option value="INTERRUPTING">Interrupt the main bid order</option>
+                  <option value="PRIORITY_ONLY">Priority within the current stage</option>
                 </select>
                 <select
                   aria-label="Specialty positions"
@@ -1017,19 +1121,107 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   className={inputClass}
                   placeholder="Required specialty qualifications"
                 />
-                <input
-                  aria-label="Specialty points"
-                  value={specialty.points}
-                  onChange={(event) =>
-                    setSpecialties((current) =>
-                      current.map((item) =>
-                        item.key === specialty.key ? { ...item, points: event.target.value } : item,
-                      ),
-                    )
-                  }
-                  className={inputClass}
-                  placeholder="Credential:8, Other:3"
-                />
+                {!specialty.scoring && (
+                  <input
+                    aria-label="Specialty points"
+                    value={specialty.points}
+                    onChange={(event) =>
+                      setSpecialties((current) =>
+                        current.map((item) =>
+                          item.key === specialty.key
+                            ? { ...item, points: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    className={inputClass}
+                    placeholder="Credential:8, Other:3"
+                  />
+                )}
+                {!specialty.scoring ? (
+                  <button
+                    type="button"
+                    className="min-h-11 rounded border border-slate-500 px-3 text-sm"
+                    onClick={() =>
+                      setSpecialties((current) =>
+                        current.map((item) =>
+                          item.key !== specialty.key
+                            ? item
+                            : {
+                                ...item,
+                                rankingChannel: 'total',
+                                scoring: {
+                                  v: 1,
+                                  total: [
+                                    {
+                                      id: crypto.randomUUID(),
+                                      cap: null,
+                                      items: csv(item.points).map((point) => {
+                                        const [credential = '', raw = ''] = point
+                                          .split(':')
+                                          .map((s) => s.trim());
+                                        return {
+                                          credential,
+                                          points: Number(raw),
+                                          alternatives: [],
+                                          requiresAll: [],
+                                        };
+                                      }),
+                                    },
+                                  ],
+                                  so: [],
+                                  mo: [],
+                                },
+                              },
+                        ),
+                      )
+                    }
+                  >
+                    Configure grouped specialty scoring
+                  </button>
+                ) : (
+                  <section className="min-w-0 space-y-3 rounded border border-slate-600 p-3 md:col-span-2">
+                    <label className="block text-sm">
+                      Specialty ranking channel
+                      <select
+                        className={inputClass}
+                        value={specialty.rankingChannel}
+                        onChange={(e) =>
+                          setSpecialties((current) =>
+                            current.map((item) =>
+                              item.key === specialty.key
+                                ? {
+                                    ...item,
+                                    rankingChannel: e.target.value as 'total' | 'so' | 'mo',
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="total">Total points</option>
+                        <option value="so">Special Operations points</option>
+                        <option value="mo">Marine Operations points</option>
+                      </select>
+                    </label>
+                    <p className="text-sm text-slate-300">
+                      The POINTS priority uses this specialty's selected channel. Review the groups,
+                      approved alternatives, prerequisites and caps before saving. Position
+                      eligibility still applies.
+                    </p>
+                    <ConfiguredScoringEditor
+                      value={specialty.scoring}
+                      visibleChannels={[specialty.rankingChannel ?? 'total']}
+                      onChange={(scoring) =>
+                        setSpecialties((current) =>
+                          current.map((item) =>
+                            item.key === specialty.key ? { ...item, scoring } : item,
+                          ),
+                        )
+                      }
+                    />
+                  </section>
+                )}
                 <input
                   aria-label="Specialty tie break"
                   value={specialty.tieBreak}
@@ -1151,10 +1343,19 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                     Load as new draft
                   </button>
                   {document.status === 'DRAFT' ? (
-                    <AnnualPolicyPublishGate
-                      busy={busy}
-                      onConfirm={(publishReason) => publish(document, publishReason)}
-                    />
+                    source?.managed_annual_plan ? (
+                      <Link
+                        href={`/admin/annual-plan?year=${year}&stage=7` as Route}
+                        className="inline-flex min-h-11 items-center text-sky-300 underline"
+                      >
+                        Rehearse and freeze this annual plan
+                      </Link>
+                    ) : (
+                      <AnnualPolicyPublishGate
+                        busy={busy || !source}
+                        onConfirm={(publishReason) => publish(document, publishReason)}
+                      />
+                    )
                   ) : null}
                   <span className="text-xs text-slate-400">Document {document.id}</span>
                   {document.supersedes_document_id ? (

@@ -36,13 +36,17 @@ export async function parseCredentialsXlsx(
   if (!Array.isArray(header) || header.length === 0) return parseError('empty workbook');
 
   const headers = header.map(normalizedHeader);
+  const namedHeaders = headers.filter(Boolean);
+  if (!namedHeaders.includes('name')) return parseError('missing name column');
+  if (new Set(namedHeaders).size !== namedHeaders.length)
+    return parseError('duplicate normalized column header');
   const ok: CredentialImportRow[] = [];
   const errors: XlsxParseResult<CredentialImportRow>['errors'] = [];
   for (let index = 1; index < rows.length; index += 1) {
     const row = rows[index] ?? [];
     if (row.every((value) => value === null || value === undefined || value === '')) continue;
     const rawRow = Object.fromEntries(
-      headers.filter(Boolean).map((key, column) => [key, row[column] ?? '']),
+      headers.flatMap((key, column) => (key ? [[key, row[column] ?? '']] : [])),
     );
     const result = CredentialImportRowSchema.safeParse(rawRow);
     if (result.success) {
@@ -74,6 +78,10 @@ export async function parseLegacyWideMatrix(
   }
   const header = rows[0];
   if (!Array.isArray(header)) return parseError('missing header row');
+  if (!header.slice(opts.metadataColumns).some((value) => String(value ?? '').trim()))
+    return parseError(
+      'no qualification headers after metadata columns; verify the worksheet format',
+    );
 
   const seen = new Set<string>();
   const ok: CredentialImportRow[] = [];
@@ -82,7 +90,14 @@ export async function parseLegacyWideMatrix(
     const name = String(header[i] ?? '').trim();
     if (!name) continue;
     const key = name.toLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      errors.push({
+        rowNumber: 1,
+        raw: null,
+        message: `Duplicate qualification header at column ${i + 1}: ${name}`,
+      });
+      continue;
+    }
     seen.add(key);
     const parsed = CredentialImportRowSchema.safeParse({ name, fy_points_default: 0 });
     if (parsed.success) {

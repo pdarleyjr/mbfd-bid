@@ -2,6 +2,8 @@
 import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+const route = vi.hoisted(() => ({ pathname: '/admin/personnel' }));
+vi.mock('next/navigation', () => ({ usePathname: () => route.pathname }));
 
 vi.mock('@/components/admin/AdminShell', () => ({
   AdminSideNav: () => (
@@ -73,5 +75,22 @@ describe('AdminLayoutShell mobile navigation', () => {
     expect(mobileNavigation?.className).toContain('md:hidden');
     expect(mobileNavigation?.querySelector('nav[aria-label="Admin navigation"]')).not.toBeNull();
     expect(mobileNavigation?.textContent).toContain('Current Rosters');
+    expect(document.activeElement).toBe(mobileNavigation?.querySelector('a'));
+    await act(async () =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    );
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(toggle);
+    await click(toggle);
+    route.pathname = '/admin/current-rosters';
+    act(() =>
+      roots[0]?.render(
+        <AdminLayoutShell>
+          <h1>Current Rosters</h1>
+        </AdminLayoutShell>,
+      ),
+    );
+    expect(mobileNavigation?.hidden).toBe(true);
+    expect(document.activeElement).toBe(container.querySelector('main'));
   });
 });

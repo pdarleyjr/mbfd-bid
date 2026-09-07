@@ -1,4 +1,6 @@
 'use client';
+import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
+import { useRetainedMutation } from '@/lib/use-retained-mutation';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import Link from 'next/link';
@@ -32,6 +34,8 @@ function errorText(value: unknown) {
 }
 
 export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterResponse }) {
+  const refreshProjections = usePersonnelProjectionRefresh();
+  const mutation = useRetainedMutation<Record<string, unknown>>('staffing-position');
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({
     division: '',
@@ -75,19 +79,20 @@ export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterRe
     setForm((current) => ({ ...current, [name]: value }));
   }
 
-  async function command(payload: object, prefix: string) {
+  async function command(request: ReturnType<typeof mutation.prepare>) {
     const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
     const response = await csrfFetch('/api/admin/personnel/changes', {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        'Idempotency-Key': `${prefix}-${crypto.randomUUID()}`,
+        'Idempotency-Key': request.key,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(request.payload),
     });
     const body = (await response.json()) as { error?: string };
     if (!response.ok) throw new Error(errorText(body));
+    mutation.accepted(request.key);
   }
 
   async function createPosition(event: React.FormEvent<HTMLFormElement>) {
@@ -96,14 +101,13 @@ export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterRe
     setError(null);
     setNotice(null);
     try {
-      const id = `admin-${crypto.randomUUID()}`;
       await command(
-        {
+        mutation.prepare(JSON.stringify({ operation: 'create', form }), () => ({
           kind: 'POSITION_CREATE',
           effective_on: form.effective_on,
           reason: form.reason,
           staffing_position: {
-            id,
+            id: `admin-${crypto.randomUUID()}`,
             stable_slot_key: canonicalKey,
             division: form.division || null,
             shift: form.shift,
@@ -114,13 +118,11 @@ export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterRe
             active_from: form.effective_on,
             review_status: 'approved',
           },
-        },
-        'staffing-position-create',
+        })),
       );
-      setNotice(
-        'Authorized staffing seat created. Reload this page to view its effective-dated projection.',
-      );
+      setNotice('Authorized staffing seat created. Effective-dated projections are refreshing.');
       setForm((current) => ({ ...current, position_name: '', seat: '1', reason: '' }));
+      await refreshProjections();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The staffing seat was not created.');
     } finally {
@@ -137,18 +139,17 @@ export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterRe
     setError(null);
     setNotice(null);
     try {
-      await command(
-        {
-          kind: 'POSITION_RETIRE',
-          effective_on: form.effective_on,
-          reason,
-          staffing_position_id: position.id,
-        },
-        'staffing-position-retire',
-      );
+      const payload = {
+        kind: 'POSITION_RETIRE',
+        effective_on: form.effective_on,
+        reason,
+        staffing_position_id: position.id,
+      };
+      await command(mutation.prepare(JSON.stringify(payload), () => payload));
       setNotice(
-        'Position retired through the effective-dated lifecycle. Reload this page to view its historical projection.',
+        'Position retired through the effective-dated lifecycle. Updated projections are refreshing.',
       );
+      await refreshProjections();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The position was not retired.');
     } finally {

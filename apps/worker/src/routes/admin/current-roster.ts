@@ -69,6 +69,13 @@ interface CurrentRosterPosition {
   reviewStatus: 'draft' | 'approved' | 'retired';
   occupancy: 'occupied' | 'vacant';
   administrativeAssignment: boolean;
+  temporaryContext: Array<{
+    id: string;
+    kind: 'SPECIAL_ASSIGNMENT' | 'LIGHT_DUTY';
+    effectiveOn: string;
+    plannedEndOn: string | null;
+    actualEndOn: string | null;
+  }>;
   assignment: {
     id: string;
     memberId: number;
@@ -118,7 +125,7 @@ function isCalendarDate(value: string): boolean {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-function canonicalRosterShift(value: string | null): string | null {
+export function canonicalRosterShift(value: string | null): string | null {
   if (value === null) return null;
   const normalized = value.trim().toUpperCase();
   const match = /^([ABCD])(?: SHIFT(?:\s+.*)?)?$/.exec(normalized);
@@ -157,7 +164,7 @@ type RosterProjectionResult =
  * its CSV download. Keeping the query here prevents the export from drifting
  * into a different effective-date or policy interpretation than the screen.
  */
-async function loadCurrentRosterProjection(
+export async function loadCurrentRosterProjection(
   db: D1Database,
   requestedAsOf: string,
   filterInputs: ReadonlyArray<{ name: string; value: string | undefined }>,
@@ -352,6 +359,24 @@ async function loadCurrentRosterProjection(
     .all();
   const unassignedRows = unassignedResult.results as unknown as UnassignedMemberDbRow[];
 
+  // An overlay does not replace the member's canonical underlying assignment.
+  // A planned end is context, not evidence that the overlay actually ended.
+  const overlays = await db
+    .prepare(`SELECT id, underlying_assignment_id AS assignmentId, kind,
+    effective_on AS effectiveOn, planned_end_on AS plannedEndOn, actual_end_on AS actualEndOn
+    FROM temporary_operational_overlays WHERE status IN ('active', 'ended')
+      AND effective_on <= ? AND (actual_end_on IS NULL OR actual_end_on > ?)
+    ORDER BY effective_on, id`)
+    .bind(requestedAsOf, requestedAsOf)
+    .all<{
+      id: string;
+      assignmentId: string;
+      kind: 'SPECIAL_ASSIGNMENT' | 'LIGHT_DUTY';
+      effectiveOn: string;
+      plannedEndOn: string | null;
+      actualEndOn: string | null;
+    }>();
+
   const positions: CurrentRosterPosition[] = rosterRows.map((row) => ({
     id: row.id,
     stableSlotKey: row.stable_slot_key,
@@ -364,6 +389,9 @@ async function loadCurrentRosterProjection(
     reviewStatus: row.review_status,
     occupancy: row.assignment_id === null ? ('vacant' as const) : ('occupied' as const),
     administrativeAssignment: row.administrative_assignment === 1,
+    temporaryContext: overlays.results
+      .filter((overlay) => overlay.assignmentId === row.assignment_id)
+      .map(({ assignmentId: _assignment, ...overlay }) => overlay),
     assignment:
       row.assignment_id === null || row.assignment_member_id === null
         ? null
