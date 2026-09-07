@@ -19,9 +19,12 @@ export default defineConfig({
     {
       // Use plain `next dev` (no Turbopack) because Turbopack rejects
       // `experimental.typedRoutes` in next.config.mjs.
-      command: 'pnpm exec next dev --port 3000',
+      command:
+        process.env.E2E_USE_BUILT_WEB === '1'
+          ? 'pnpm exec next start --port 3000'
+          : 'pnpm exec next dev --port 3000',
       url: 'http://localhost:3000',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: process.env.E2E_USE_BUILT_WEB !== '1' && !process.env.CI,
       timeout: 120_000,
       env: {
         ...process.env,

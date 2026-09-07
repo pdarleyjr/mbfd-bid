@@ -200,7 +200,8 @@ test('independent board views preserve source boundaries at phone, tablet and de
   const beforeFocus = currentReads;
   // Control cache age only after real hydration and initial network reads.
   // Startup uses the real clock; these assertions exercise cache freshness.
-  await page.clock.setFixedTime(new Date(now * 1000 + 31_000));
+  const cacheClock = Date.now();
+  await page.clock.setFixedTime(new Date(cacheClock + 31_000));
   await page.evaluate(() => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
     window.dispatchEvent(new Event('visibilitychange'));
@@ -211,7 +212,7 @@ test('independent board views preserve source boundaries at phone, tablet and de
   expect(previousReads).toBe(immutableReads);
   fail = true;
   const before = currentReads;
-  await page.clock.setFixedTime(new Date(now * 1000 + 62_000));
+  await page.clock.setFixedTime(new Date(cacheClock + 62_000));
   await page.evaluate(() => {
     window.dispatchEvent(new Event('offline'));
     window.dispatchEvent(new Event('online'));
@@ -226,7 +227,7 @@ test('independent board views preserve source boundaries at phone, tablet and de
   await expect(page.getByText('Historical Winner', { exact: true })).toBeVisible();
   latestSession = 'synthetic-next-completion';
   const beforeResolution = resolverReads;
-  await page.clock.setFixedTime(new Date(now * 1000 + 93_000));
+  await page.clock.setFixedTime(new Date(cacheClock + 93_000));
   await page.evaluate(() => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
     window.dispatchEvent(new Event('visibilitychange'));
