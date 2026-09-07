@@ -1,4 +1,7 @@
 'use client';
+import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
+import { useRetainedMutation } from '@/lib/use-retained-mutation';
 
 import { type FormEvent, useState } from 'react';
 
@@ -31,12 +34,6 @@ interface BatchDetail {
   annualEligibility: 'PENDING_CONFIGURATION';
 }
 
-function idempotencyKey(prefix: string): string {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? `${prefix}-${crypto.randomUUID()}`
-    : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 async function responseDetail(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => null);
   return body !== null && typeof body === 'object' && 'error' in body
@@ -47,6 +44,9 @@ async function responseDetail(response: Response): Promise<string> {
 export function QualificationReviewWorkspace({
   initialBatches,
 }: { initialBatches: ReviewBatch[] }) {
+  const refreshProjections = usePersonnelProjectionRefresh();
+  const staging = useRetainedMutation<{ batch: string; row: string }>('qualification-stage');
+  const applying = useRetainedMutation<string>('qualification-apply');
   const [batches, setBatches] = useState(initialBatches);
   const [selected, setSelected] = useState<BatchDetail | null>(null);
   const [sourceSystem, setSourceSystem] = useState('');
@@ -77,45 +77,52 @@ export function QualificationReviewWorkspace({
   }
 
   async function createAndStage(event: FormEvent<HTMLFormElement>) {
+    const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
     event.preventDefault();
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const batchResponse = await fetch('/api/admin/qualification-lifecycle/reviews/batches', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey('qualification-batch'),
-        },
-        credentials: 'include',
-        body: JSON.stringify({
+      const payload = {
+        batch: JSON.stringify({
           source_system: sourceSystem.trim(),
           source_reference: sourceReference.trim(),
         }),
+        row: JSON.stringify({
+          source_member_reference: memberReference.trim(),
+          source_credential_reference: credentialReference.trim(),
+          source_status: 'active',
+          effective_on: effectiveOn || undefined,
+          expires_on: expiresOn || null,
+          provenance: provenance.trim(),
+        }),
+      };
+      const request = staging.prepare(JSON.stringify(payload), () => payload);
+      const batchResponse = await csrfFetch('/api/admin/qualification-lifecycle/reviews/batches', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `${request.key}-batch`,
+        },
+        credentials: 'include',
+        body: request.payload.batch,
       });
       if (!batchResponse.ok) throw new Error(await responseDetail(batchResponse));
       const batchBody = (await batchResponse.json()) as { batchId: string };
-      const stageResponse = await fetch(
+      const stageResponse = await csrfFetch(
         `/api/admin/qualification-lifecycle/reviews/batches/${batchBody.batchId}/rows`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Idempotency-Key': idempotencyKey('qualification-row'),
+            'Idempotency-Key': `${request.key}-row`,
           },
           credentials: 'include',
-          body: JSON.stringify({
-            source_member_reference: memberReference.trim(),
-            source_credential_reference: credentialReference.trim(),
-            source_status: 'active',
-            effective_on: effectiveOn || undefined,
-            expires_on: expiresOn || null,
-            provenance: provenance.trim(),
-          }),
+          body: request.payload.row,
         },
       );
       if (!stageResponse.ok) throw new Error(await responseDetail(stageResponse));
+      staging.accepted(request.key);
       setBatches((current) => [
         {
           id: batchBody.batchId,
@@ -145,10 +152,11 @@ export function QualificationReviewWorkspace({
   }
 
   async function decide(row: ReviewRow, decision: 'accepted' | 'rejected' | 'needs_review') {
+    const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(
+      const response = await csrfFetch(
         `/api/admin/qualification-lifecycle/reviews/rows/${row.id}/decision`,
         {
           method: 'POST',
@@ -167,22 +175,28 @@ export function QualificationReviewWorkspace({
   }
 
   async function apply(row: ReviewRow) {
+    const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(
+      const request = applying.prepare(row.id, () =>
+        JSON.stringify({ reason: `Operator applied accepted review row ${row.id}.` }),
+      );
+      const response = await csrfFetch(
         `/api/admin/qualification-lifecycle/reviews/rows/${row.id}/apply`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Idempotency-Key': idempotencyKey('qualification-apply'),
+            'Idempotency-Key': request.key,
           },
           credentials: 'include',
-          body: JSON.stringify({ reason: `Operator applied accepted review row ${row.id}.` }),
+          body: request.payload,
         },
       );
       if (!response.ok) throw new Error(await responseDetail(response));
+      applying.accepted(request.key);
+      await refreshProjections('qualification');
       if (selected !== null) await loadBatch(selected.batch.id);
       setNotice(
         'Accepted evidence was applied to the canonical qualification ledger. Annual Bid eligibility remains pending separate configuration.',

@@ -5,9 +5,9 @@ import { z } from 'zod';
 
 import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
-import { projectCanonicalAnnualCompletion } from '../../lib/annual-completion-result.js';
 import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
+import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
 import {
   type FutureRosterObservation,
   type TransitionRosterEntry,
@@ -76,39 +76,8 @@ interface TransitionRow {
   future_roster_json: string;
   reconciliation_json: string | null;
 }
-interface CanonicalStateMetadataRow {
-  current_seq: number;
-  last_command_id: string | null;
-}
-interface CompletionReceiptRow {
-  command_type: string;
-  outcome: string;
-  result_seq: number;
-}
-interface AmendmentRow {
-  original_bid_id: string;
-  replacement_bid_id: string;
-}
 
-export async function loadCanonicalAmendmentLinks(
-  db: D1Database,
-  sessionId: string,
-): Promise<AmendmentRow[]> {
-  return (
-    await db
-      .prepare(
-        `SELECT json_extract(event_json, '$.supersedesBidId') AS original_bid_id,
-                json_extract(event_json, '$.replacementBidId') AS replacement_bid_id
-           FROM bid_command_events
-          WHERE bid_session_id = ?
-            AND json_type(event_json, '$.supersedesBidId') = 'text'
-            AND json_type(event_json, '$.replacementBidId') = 'text'
-          ORDER BY seq, id`,
-      )
-      .bind(sessionId)
-      .all()
-  ).results as unknown as AmendmentRow[];
-}
+export { loadCanonicalAmendmentLinks } from '../../lib/official-annual-completion.js';
 
 function idempotency(c: { req: { header(name: string): string | undefined } }) {
   const key = c.req.header('Idempotency-Key');
@@ -153,71 +122,11 @@ async function roster(
   | { ok: true; rows: TransitionRosterEntry[]; completionAt: number; year: number }
   | { ok: false; error: string }
 > {
-  const session = await db
-    .prepare('SELECT bid_year, is_mock FROM bid_sessions WHERE id = ?')
-    .bind(sessionId)
-    .first<{ bid_year: number; is_mock: number }>();
-  if (session === null) return { ok: false, error: 'session_not_found' };
-  if (session.is_mock !== 0) return { ok: false, error: 'mock_session_not_transitionable' };
-  const canonical = await loadCanonicalBidSessionState(db, sessionId);
-  if (canonical === null) return { ok: false, error: 'annual_completion_required' };
-  const frozen = await loadFrozenSessionBidPolicy(getDb(db), sessionId);
-  if (!frozen.ok || frozen.snapshot.settings.v !== 3)
-    return { ok: false, error: 'frozen_policy_required' };
-  const metadata = await db
-    .prepare(
-      'SELECT current_seq, last_command_id FROM canonical_bid_session_state WHERE bid_session_id = ?',
-    )
-    .bind(sessionId)
-    .first<CanonicalStateMetadataRow>();
-  if (metadata === null || metadata.last_command_id === null)
-    return { ok: false, error: 'annual_completion_receipt_required' };
-  const receipt = await db
-    .prepare(
-      'SELECT command_type, outcome, result_seq FROM bid_command_receipts WHERE command_id = ? AND bid_session_id = ?',
-    )
-    .bind(metadata.last_command_id, sessionId)
-    .first<CompletionReceiptRow>();
-  if (
-    receipt === null ||
-    receipt.command_type !== 'live.complete_session' ||
-    receipt.outcome !== 'accepted' ||
-    receipt.result_seq !== metadata.current_seq
-  )
-    return { ok: false, error: 'annual_completion_receipt_required' };
-  const amendments = await loadCanonicalAmendmentLinks(db, sessionId);
-  const projected = projectCanonicalAnnualCompletion({
-    session: { id: sessionId, mode: 'REAL', bidYear: session.bid_year },
-    completion: {
-      commandId: metadata.last_command_id,
-      revision: metadata.current_seq,
-      completedAtMs: canonical.annual?.completion?.readyForFinalizationAtMs ?? 0,
-      receiptIntegrity: 'VERIFIED',
-    },
-    frozen: {
-      ruleBookVersion: frozen.snapshot.ruleBookVersion,
-      topologyReference: frozen.snapshot.positionTemplateVersion,
-      staffingReference: frozen.snapshot.staffingBaseline?.baselineAcceptanceId ?? null,
-      members: frozen.snapshot.members.map((member) => ({
-        memberId: member.memberId,
-        rank: member.rank,
-      })),
-      positions: frozen.snapshot.ruleBookMaterial.positions.map((position) => ({
-        id: position.id,
-        shift: position.shift,
-        station: position.station,
-        unit: position.unit,
-        position: position.positionName,
-        specialty: null,
-      })),
-    },
-    state: canonical,
-    amendmentLinks: amendments.map((amendment) => ({
-      originalBidId: amendment.original_bid_id,
-      replacementBidId: amendment.replacement_bid_id,
-    })),
-  });
-  if (!projected.ok) return { ok: false, error: projected.code };
+  const official = await loadOfficialAnnualCompletion(db, sessionId);
+  if (!official.ok) return official;
+  const frozen = { snapshot: official.snapshot, coverage: official.coverage };
+  const projected = { value: official.completion };
+  const session = { bid_year: official.completion.bidYear };
   const finalization = evaluateFinalization({
     annualCompletionAtMs: projected.value.completion.completedAtMs,
     expectedPositionIds: frozen.coverage.validRulePositionIds,

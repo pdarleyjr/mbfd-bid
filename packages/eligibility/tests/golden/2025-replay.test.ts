@@ -2,142 +2,59 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { evaluateEligibility } from '../../src/evaluate.js';
 import type { Member, PositionRule } from '../../src/types.js';
+import { type ReplayManifest, assertFixtureHashes, replayEvidence } from './replay-evidence.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FIX_DIR = path.resolve(__dirname, '../fixtures');
+const directory = process.env.GOLDEN_REPLAY_FIXTURE_DIR
+  ? path.resolve(process.env.GOLDEN_REPLAY_FIXTURE_DIR)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures');
+const enabled = process.env.RUN_GOLDEN_REPLAY === 'true';
+const files = ['2025-members.json', '2025-actual-bid.json', '2025-rules.json'];
 
-const REQUIRED_FIXTURES = ['2025-members.json', '2025-actual-bid.json', '2025-rules.json'];
-const FIXTURES_PRESENT = REQUIRED_FIXTURES.every((f) => fs.existsSync(path.join(FIX_DIR, f)));
-const OPT_IN = process.env.RUN_GOLDEN_REPLAY === 'true';
-const SHOULD_RUN = FIXTURES_PRESENT && OPT_IN;
-
-interface ReplayPick {
-  bidNumber: number;
-  employeeId: string;
-  positionId: string;
-  bidCategory: string;
-}
-
-const members: Member[] = SHOULD_RUN
-  ? (JSON.parse(fs.readFileSync(path.join(FIX_DIR, '2025-members.json'), 'utf8')) as Member[])
-  : [];
-const rules: PositionRule[] = SHOULD_RUN
-  ? (JSON.parse(fs.readFileSync(path.join(FIX_DIR, '2025-rules.json'), 'utf8')) as PositionRule[])
-  : [];
-const picks: ReplayPick[] = SHOULD_RUN
-  ? (JSON.parse(
-      fs.readFileSync(path.join(FIX_DIR, '2025-actual-bid.json'), 'utf8'),
-    ) as ReplayPick[])
-  : [];
-
-const memberByEmpId = new Map<string, Member>(members.map((m) => [m.employeeId, m]));
-const ruleByPositionId = new Map<string, PositionRule>(rules.map((r) => [r.positionId, r]));
-
-const SKIP_POSITION_PREFIXES = ['D5', 'D501', 'D502', 'D503', 'D504', 'D505'];
-const EXCLUDED_CATEGORY = 'EXCLUDED';
-
-function pickIsEligibilityCheckable(pick: ReplayPick): boolean {
-  if (pick.bidCategory === EXCLUDED_CATEGORY) {
-    return false;
-  }
-  if (SKIP_POSITION_PREFIXES.some((p) => pick.positionId.startsWith(p))) {
-    return false;
-  }
-  return true;
-}
-
-describe.skipIf(!SHOULD_RUN)('2025 bid replay — zero false negatives', () => {
-  it('engine has rules for every position that appears in the bid picks', () => {
-    const missingRules: string[] = [];
-    for (const pick of picks) {
-      if (!pickIsEligibilityCheckable(pick)) {
-        continue;
-      }
-      if (!ruleByPositionId.has(pick.positionId)) {
-        missingRules.push(pick.positionId);
-      }
-    }
-    if (missingRules.length > 0) {
-      console.warn(`Positions without rules: ${[...new Set(missingRules)].join(', ')}`);
-    }
-  });
-
-  it('for every pick, the engine reports eligible = true', () => {
-    const falseNegatives: Array<{
+// Explicitly requesting a replay fails when evidence is missing. An ordinary
+// run records a skip, never a successful "replay opt-in" placeholder test.
+describe.skipIf(!enabled)('2025 source-evidenced replay', () => {
+  it('accounts for every source pick and verifies approved expectations and observed outcomes', () => {
+    const raw = Object.fromEntries(
+      files.map((name) => [name, fs.readFileSync(path.join(directory, name), 'utf8')]),
+    );
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(directory, '2025-replay-manifest.json'), 'utf8'),
+    ) as ReplayManifest;
+    assertFixtureHashes(manifest, raw);
+    const members = JSON.parse(raw['2025-members.json'] ?? '') as Member[];
+    const rules = JSON.parse(raw['2025-rules.json'] ?? '') as PositionRule[];
+    const picks = JSON.parse(raw['2025-actual-bid.json'] ?? '') as Array<{
       bidNumber: number;
       employeeId: string;
       positionId: string;
-      reasons: string;
-    }> = [];
-
+    }>;
+    expect(picks.length).toBeGreaterThan(0);
+    const exclusions = new Map(manifest.exclusions.map((e) => [e.bidNumber, e]));
+    expect(exclusions.size).toBe(manifest.exclusions.length);
+    for (const exclusion of manifest.exclusions) {
+      expect(exclusion.reason.trim().length).toBeGreaterThan(0);
+      expect(exclusion.sourceLocation.trim().length).toBeGreaterThan(0);
+      expect(picks.some((p) => p.bidNumber === exclusion.bidNumber)).toBe(true);
+    }
     for (const pick of picks) {
-      if (!pickIsEligibilityCheckable(pick)) {
-        continue;
-      }
-      const member = memberByEmpId.get(pick.employeeId);
-      const rule = ruleByPositionId.get(pick.positionId);
-      if (member === undefined || rule === undefined) {
-        continue;
-      }
-
-      const result = evaluateEligibility(member, rule);
-      if (!result.eligible) {
-        falseNegatives.push({
-          bidNumber: pick.bidNumber,
-          employeeId: pick.employeeId,
-          positionId: pick.positionId,
-          reasons: result.reasons
-            .filter((r) => !r.satisfied)
-            .map((r) => r.label)
-            .join('; '),
-        });
-      }
+      if (exclusions.has(pick.bidNumber)) continue;
+      expect(
+        manifest.cases.some(
+          (c) => c.employeeId === pick.employeeId && c.positionId === pick.positionId,
+        ),
+        `Unaccounted source pick ${pick.bidNumber}`,
+      ).toBe(true);
     }
-
-    if (falseNegatives.length > 0) {
-      console.error('FALSE NEGATIVES (engine says ineligible for an actual 2025 pick):');
-      for (const fn of falseNegatives) {
-        console.error(
-          `  Bid #${fn.bidNumber}: emp=${fn.employeeId} pos=${fn.positionId} — ${fn.reasons}`,
-        );
-      }
-    }
-
-    expect(falseNegatives).toHaveLength(0);
-  });
-
-  it('engine runs in under 100ms for the full pick set', () => {
-    const start = performance.now();
-    for (const pick of picks) {
-      if (!pickIsEligibilityCheckable(pick)) {
-        continue;
-      }
-      const member = memberByEmpId.get(pick.employeeId);
-      const rule = ruleByPositionId.get(pick.positionId);
-      if (member === undefined || rule === undefined) {
-        continue;
-      }
-      evaluateEligibility(member, rule);
-    }
-    const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(100);
-  });
-});
-
-describe.skipIf(SHOULD_RUN)('2025 bid replay (skipped)', () => {
-  it('replay opt-in', () => {
-    const reasons: string[] = [];
-    if (!FIXTURES_PRESENT) {
-      reasons.push(
-        'Fixtures not present (run `pnpm dlx tsx packages/eligibility/scripts/export-fixtures.ts`)',
-      );
-    }
-    if (!OPT_IN) {
-      reasons.push('Opt-in env var not set (RUN_GOLDEN_REPLAY=true)');
-    }
-    console.warn(`2025 golden replay skipped: ${reasons.join('; ')}`);
-    expect(SHOULD_RUN).toBe(false);
+    const result = replayEvidence(members, rules, manifest);
+    expect(result.evaluated).toBeGreaterThan(0);
+    expect(result.negativeCases).toBeGreaterThan(0);
+    expect(result.evaluatedOrderings).toBeGreaterThan(0);
+    expect(result.failures).toEqual([]);
+    console.info('Historical replay coverage', {
+      sourcePicks: picks.length,
+      excluded: exclusions.size,
+      ...result,
+    });
   });
 });

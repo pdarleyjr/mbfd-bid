@@ -4,10 +4,20 @@ import { type Root, createRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AdminQueryProvider } from '../../app/admin/_components/AdminQueryProvider';
 import {
+  AwardTransitionWorkspace as AwardTransitionComponent,
   type AwardTransitionOperatorContext,
-  AwardTransitionWorkspace,
 } from '../../app/admin/award-transition/AwardTransitionWorkspace';
+const router = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => router }));
+function AwardTransitionWorkspace(props: React.ComponentProps<typeof AwardTransitionComponent>) {
+  return (
+    <AdminQueryProvider>
+      <AwardTransitionComponent {...props} />
+    </AdminQueryProvider>
+  );
+}
 
 const roots: Root[] = [];
 

@@ -1,4 +1,14 @@
 import type { PositionRule, Rank, TieBreakKey } from '@mbfd/eligibility';
+import {
+  ConfiguredScoringSchema,
+  PostAwardObligationsSchema,
+  QualificationAlternativesSchema,
+  RULE_CUSTOM_CRITERIA,
+  RULE_OPS_GATES,
+  RULE_RANKS,
+  RULE_TIE_BREAK_KEYS,
+  ServiceRequirementsSchema,
+} from '@mbfd/shared';
 
 type JsonColumn = 'requiredCriteriaJson' | 'pointsPreferenceJson' | 'tieBreakChainJson';
 
@@ -50,20 +60,12 @@ export interface RuleBookDecodeResult {
   duplicatePositionIds: readonly string[];
 }
 
-const RANKS = new Set<Rank>(['CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF']);
-const CUSTOM_CRITERIA = new Set<PositionRule['requiredCriteria']['custom'][number]>([
-  'paramedic',
-  'driver_engineer',
-  'non_probationary',
-]);
-const TIE_BREAK_KEYS = new Set<TieBreakKey>([
-  'points',
-  'so_points',
-  'mo_points',
-  'rsc_seniority',
-  'rank_seniority',
-]);
-const OPS_GATES = new Set<CanonicalOpsGate>(['paired_operation', 'all_operations']);
+const RANKS = new Set<Rank>(RULE_RANKS);
+const CUSTOM_CRITERIA = new Set<PositionRule['requiredCriteria']['custom'][number]>(
+  RULE_CUSTOM_CRITERIA,
+);
+const TIE_BREAK_KEYS = new Set<TieBreakKey>(RULE_TIE_BREAK_KEYS);
+const OPS_GATES = new Set<CanonicalOpsGate>(RULE_OPS_GATES);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -144,7 +146,7 @@ function decodeRequiredCriteria(
   }
   rejectUnknownFields(
     value,
-    new Set(['rank', 'credentials', 'custom']),
+    new Set(['rank', 'credentials', 'custom', 'anyOfCredentials', 'service', 'postAward']),
     'requiredCriteriaJson',
     issues,
   );
@@ -206,8 +208,41 @@ function decodeRequiredCriteria(
     }
   }
 
+  const alternatives =
+    value.anyOfCredentials === undefined
+      ? null
+      : QualificationAlternativesSchema.safeParse(value.anyOfCredentials);
+  const service =
+    value.service === undefined ? null : ServiceRequirementsSchema.safeParse(value.service);
+  const postAward =
+    value.postAward === undefined ? null : PostAwardObligationsSchema.safeParse(value.postAward);
+  if (postAward && !postAward.success)
+    addIssue(issues, {
+      column: 'requiredCriteriaJson',
+      code: 'invalid_shape',
+      message: 'Post-award obligations are invalid',
+    });
+  if (service && !service.success)
+    addIssue(issues, {
+      column: 'requiredCriteriaJson',
+      code: 'invalid_shape',
+      message: 'Service requirements are invalid',
+    });
+  if (alternatives && !alternatives.success)
+    addIssue(issues, {
+      column: 'requiredCriteriaJson',
+      code: 'invalid_credential',
+      message: 'Qualification alternatives contain invalid or empty groups',
+    });
   if (issues.length > issueCount || !credentials) return undefined;
-  return { rank, credentials, custom };
+  return {
+    rank,
+    credentials,
+    custom,
+    ...(alternatives?.success ? { anyOfCredentials: alternatives.data } : {}),
+    ...(service?.success ? { service: service.data } : {}),
+    ...(postAward?.success ? { postAward: postAward.data } : {}),
+  };
 }
 
 function decodeStringArray(
@@ -256,7 +291,7 @@ function decodePointsPreference(
     });
     return undefined;
   }
-  rejectUnknownFields(value, new Set(['max', 'items']), 'pointsPreferenceJson', issues);
+  rejectUnknownFields(value, new Set(['max', 'items', 'scoring']), 'pointsPreferenceJson', issues);
 
   const max = value.max;
   if (!isNonNegativeInteger(max)) {
@@ -283,6 +318,18 @@ function decodePointsPreference(
   }
 
   if (issues.length > issueCount || !isNonNegativeInteger(max)) return undefined;
+  if (hasOwn(value, 'scoring')) {
+    const parsed = ConfiguredScoringSchema.safeParse(value.scoring);
+    if (!parsed.success || max !== 0 || items.length !== 0) {
+      addIssue(issues, {
+        column: 'pointsPreferenceJson',
+        code: 'invalid_points',
+        message: 'Configured scoring must be valid, explicit, and cannot mix with legacy points',
+      });
+      return undefined;
+    }
+    return { max, items, scoring: parsed.data };
+  }
   return { max, items };
 }
 

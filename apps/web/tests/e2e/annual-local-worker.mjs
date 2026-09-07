@@ -1,8 +1,11 @@
 import { createServer } from 'node:http';
+import { syntheticPolicyDocument } from './synthetic-policy-document.mjs';
 
 const port = 31987;
 let sequence = 3;
 const contactHistory = [];
+const staffingReceipts = new Map();
+const staffingSeats = [];
 
 function json(response, status, body) {
   response.writeHead(status, { 'content-type': 'application/json' });
@@ -23,6 +26,85 @@ function bidder(memberId, firstName, lastName, ordinal) {
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
+  if (request.method === 'GET' && url.pathname === '/api/admin/current-roster') {
+    json(response, 200, {
+      asOf: url.searchParams.get('as_of') ?? '2027-01-01',
+      administrativeAssignmentPolicy: {
+        status: 'unconfigured',
+        bidYear: 2027,
+        ruleBookVersion: null,
+      },
+      positions: staffingSeats,
+      summary: {
+        totalPositions: staffingSeats.length,
+        occupiedPositions: 0,
+        vacantPositions: staffingSeats.length,
+        administrativelyAssignedNonBiddablePositions: 0,
+      },
+      unassignedMembers: [],
+    });
+    return;
+  }
+  if (request.method === 'POST' && url.pathname === '/api/admin/personnel/changes') {
+    let raw = '';
+    request.on('data', (chunk) => {
+      raw += chunk;
+    });
+    request.on('end', () => {
+      let body;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        json(response, 400, { error: 'invalid_fixture_json' });
+        return;
+      }
+      const seat = body.staffing_position;
+      if (
+        body.kind !== 'POSITION_CREATE' ||
+        seat?.station !== '7' ||
+        seat?.unit !== 'Synthetic Engine 7'
+      ) {
+        json(response, 400, { error: 'synthetic_staffing_fixture_only' });
+        return;
+      }
+      const key = request.headers['idempotency-key'];
+      if (!key) {
+        json(response, 400, { error: 'idempotency_key_required' });
+        return;
+      }
+      const prior = staffingReceipts.get(key);
+      if (prior && prior !== raw) {
+        json(response, 409, { error: 'idempotency_key_reused' });
+        return;
+      }
+      if (!prior) {
+        staffingReceipts.set(key, raw);
+        staffingSeats.push({
+          id: seat.id,
+          stableSlotKey: seat.stable_slot_key,
+          division: seat.division,
+          shift: seat.shift,
+          station: seat.station,
+          unit: seat.unit,
+          positionName: seat.position_name,
+          applicableRank: seat.applicable_rank,
+          occupancy: 'vacant',
+          administrativeAssignment: false,
+          assignment: null,
+          member: null,
+        });
+      }
+      json(response, prior ? 200 : 201, {
+        replayed: Boolean(prior),
+        event: { id: 'synthetic-seat-receipt', kind: body.kind },
+      });
+    });
+    return;
+  }
+  if (request.method === 'GET' && url.pathname === '/api/admin/annual-policy-documents/2088') {
+    json(response, 200, { documents: [syntheticPolicyDocument] });
+    return;
+  }
   if (request.method === 'GET' && url.pathname === '/health') {
     json(response, 200, { ok: true });
     return;

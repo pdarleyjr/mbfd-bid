@@ -79,7 +79,7 @@ export default async function EligibleStationPage({ params }: PageProps) {
       credentials = body.credentials;
     }
   } catch (err) {
-    fetchError = err instanceof Error ? err.message : 'Failed to load eligibility list.';
+    fetchError = err instanceof Error ? err.message : 'Failed to load legacy filter results.';
   }
 
   return (
@@ -98,13 +98,13 @@ export default async function EligibleStationPage({ params }: PageProps) {
         <p className="mt-2 text-sm text-red-400">{fetchError}</p>
       ) : (
         <p className="mt-2 text-sm text-slate-400">
-          {members.length} eligible member{members.length !== 1 ? 's' : ''}.
+          {members.length} matching member{members.length !== 1 ? 's' : ''}.
         </p>
       )}
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-slate-700">
         <table className="w-full border-collapse text-sm">
-          <caption className="sr-only">{stationTitle(station)} eligibility list</caption>
+          <caption className="sr-only">{stationTitle(station)} legacy filter results</caption>
           <thead className="bg-slate-900">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-300">#</th>

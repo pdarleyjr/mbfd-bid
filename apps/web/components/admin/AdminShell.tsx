@@ -21,9 +21,19 @@ export type AdminNavLink = {
  */
 export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
   { href: '/admin', label: 'Dashboard', exact: true },
+  { href: '/admin/bid-board', label: 'Bid Board', exact: false },
   { href: '/admin/guide', label: 'Administrator Guide', exact: false },
   { href: '/admin/current-rosters', label: 'Current Rosters', exact: false },
-  { href: '/admin/staffing-structure', label: 'Staffing Structure', exact: false },
+  {
+    href: '/admin/staffing-structure',
+    label: 'Staffing Structure',
+    exact: false,
+    activePrefixes: ['/admin/organization'],
+    subnav: [
+      { href: '/admin/staffing-structure', label: 'Authorized seats' },
+      { href: '/admin/organization', label: 'Organization' },
+    ],
+  },
   { href: '/admin/telestaff', label: 'TeleStaff', exact: false },
   {
     href: '/admin/members',
@@ -44,6 +54,9 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
       { href: '/admin/personnel', label: 'Personnel lifecycle' },
       { href: '/admin/personnel/operations', label: 'Year-round operations' },
       { href: '/admin/personnel/qualifications', label: 'Qualification Evidence' },
+      { href: '/admin/personnel/service-evidence', label: 'Service Evidence' },
+      { href: '/admin/personnel/tenure', label: 'Tenure and Protection' },
+      { href: '/admin/personnel/obligations', label: 'Post-award Qualifications' },
       { href: '/admin/personnel/reviews', label: 'Qualification Review' },
     ],
   },
@@ -53,6 +66,7 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
     exact: false,
     activePrefixes: [
       '/admin/rule-books',
+      '/admin/annual-plan',
       '/admin/positions',
       '/admin/rules',
       '/admin/eligibility',
@@ -61,6 +75,7 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
     ],
     subnav: [
       { href: '/admin/bid-setup', label: 'Bid Configuration' },
+      { href: '/admin/annual-plan', label: 'Prepare Next Bid' },
       { href: '/admin/rule-books', label: 'Rule Books' },
       { href: '/admin/positions', label: 'Positions' },
       { href: '/admin/rules', label: 'Rules' },
@@ -129,7 +144,12 @@ export function AdminSideNav() {
             {active && link.subnav && (
               <div className="mt-1 ml-3 flex flex-col gap-1 border-l border-slate-700 pl-2">
                 {link.subnav.map((sub) => {
-                  const subActive = matchesPath(pathname, sub.href);
+                  const subActive =
+                    matchesPath(pathname, sub.href) &&
+                    !link.subnav?.some(
+                      (other) =>
+                        other.href.length > sub.href.length && matchesPath(pathname, other.href),
+                    );
                   return (
                     <Link
                       key={sub.href}

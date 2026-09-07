@@ -18,6 +18,10 @@ import {
 import { getDb } from '../../db/index.js';
 import { bidOrder, bidSessions, bidYears } from '../../db/schema.js';
 import type { BidSessionState } from '../../durable/bid-session-state.js';
+import {
+  configurationReceiptStatement,
+  loadConfigurationReceipt,
+} from '../../lib/admin-configuration-receipt.js';
 import { initializeAnnualOperations } from '../../lib/annual-bid-operations.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
@@ -40,6 +44,9 @@ type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 const CreateSessionSchema = z
   .object({
     bid_year: z.number().int().min(2024).max(2100),
+    expected_rule_revision: z.number().int().nonnegative().optional(),
+    expected_configuration_revision: z.number().int().nonnegative().optional(),
+    expected_source_revision: z.number().int().nonnegative().optional(),
     // These legacy request fields are accepted only to return a typed mismatch.
     // Session settings themselves always come from the designated annual config.
     expected_duration_days: z.number().int().min(1).max(7).optional(),
@@ -192,6 +199,28 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
   const body = c.req.valid('json');
   const db = getDb(c.env.DB);
   const requestedMode = body.mode ?? (body.is_mock === true ? 'mock' : 'live');
+  const key = c.req.header('Idempotency-Key');
+  if (key !== undefined && (!key || key.trim() !== key || key.length > 256))
+    return c.json({ error: 'invalid_idempotency_key' }, 400);
+  const receiptInput = {
+    key: key ?? '',
+    actorSubject: String(c.get('claims').sub),
+    operation: `session.create:${requestedMode}`,
+    request: body,
+  };
+  if (key) {
+    const prior = await loadConfigurationReceipt(c.env.DB, receiptInput);
+    if (prior)
+      return prior.ok
+        ? c.json({ ...prior.response, replayed: true }, 201)
+        : c.json({ error: prior.error }, 409);
+    if (
+      body.expected_rule_revision === undefined ||
+      body.expected_configuration_revision === undefined ||
+      body.expected_source_revision === undefined
+    )
+      return c.json({ error: 'reviewed_configuration_revisions_required' }, 400);
+  }
   const year = await db.select().from(bidYears).where(eq(bidYears.year, body.bid_year)).get();
   if (year === undefined) {
     return c.json({ error: 'bid_year_not_found', bid_year: body.bid_year }, 400);
@@ -233,13 +262,36 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
   }
   const settings = policy.snapshot.settings;
   const configurationRevision = policy.snapshot.configurationRevision;
+  if (
+    (body.expected_rule_revision !== undefined &&
+      body.expected_rule_revision !== policy.snapshot.ruleBookRevision) ||
+    (body.expected_configuration_revision !== undefined &&
+      body.expected_configuration_revision !== configurationRevision)
+  )
+    return c.json({ error: 'bid_configuration_changed' }, 409);
+  const responseBody = {
+    id,
+    current_phase: 'config',
+    is_mock: requestedMode === 'mock',
+    rule_book_version: policy.snapshot.ruleBookVersion,
+    rule_book_revision: policy.snapshot.ruleBookRevision,
+    position_template_version: policy.snapshot.positionTemplateVersion,
+    configuration_revision: configurationRevision,
+    settings: {
+      expected_duration_days: settings.expectedDurationDays,
+      turn_timer_seconds: settings.turnTimerSeconds,
+    },
+    pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
+  };
 
   // D1 batch is the session-creation boundary: a newly visible session must
   // always carry the frozen policy input used to build its ordinary Bid pool.
   // No mutable-staffing fallback is allowed after this point.
-  const creation = await c.env.DB.batch([
-    c.env.DB.prepare(
-      `INSERT INTO bid_sessions (
+  let creation: D1Result[];
+  try {
+    creation = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO bid_sessions (
           id, bid_year, started_at, current_phase, turn_timer_seconds,
           expected_duration_days, day_count, is_mock
         )
@@ -261,63 +313,75 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
             AND rule_book_version = ?
             AND position_template_version = ?
             AND configuration_revision = ?
-        )`,
-    ).bind(
-      id,
-      body.bid_year,
-      now.getTime(),
-      settings.turnTimerSeconds,
-      settings.expectedDurationDays,
-      requestedMode === 'mock' ? 1 : 0,
-      policy.snapshot.ruleBookVersion,
-      policy.snapshot.ruleBookRevision,
-      requestedMode,
-      requestedMode,
-      body.bid_year,
-      policy.snapshot.ruleBookVersion,
-      policy.snapshot.positionTemplateVersion,
-      configurationRevision,
-    ),
-    c.env.DB.prepare(
-      `INSERT INTO bid_session_policy_snapshots (
+        ) AND (? IS NULL OR (SELECT revision FROM annual_source_revision WHERE id=1)=?)`,
+      ).bind(
+        id,
+        body.bid_year,
+        now.getTime(),
+        settings.turnTimerSeconds,
+        settings.expectedDurationDays,
+        requestedMode === 'mock' ? 1 : 0,
+        policy.snapshot.ruleBookVersion,
+        policy.snapshot.ruleBookRevision,
+        requestedMode,
+        requestedMode,
+        body.bid_year,
+        policy.snapshot.ruleBookVersion,
+        policy.snapshot.positionTemplateVersion,
+        configurationRevision,
+        body.expected_source_revision ?? null,
+        body.expected_source_revision ?? null,
+      ),
+      c.env.DB.prepare(
+        `INSERT INTO bid_session_policy_snapshots (
           bid_session_id, rule_book_version, position_template_version,
           rule_book_revision, snapshot_json, captured_at
         )
         SELECT ?, ?, ?, ?, ?, ?
         WHERE EXISTS (SELECT 1 FROM bid_sessions WHERE id = ?)`,
-    ).bind(
-      id,
-      policy.snapshot.ruleBookVersion,
-      policy.snapshot.positionTemplateVersion,
-      policy.snapshot.ruleBookRevision,
-      JSON.stringify(policy.snapshot),
-      now.getTime(),
-      id,
-    ),
-    auditInsertStatement(
-      c.env.DB,
-      {
-        bidSessionId: id,
-        actorType: 'admin',
-        actorId: actorIdFromClaims(c.get('claims')),
-        action: 'session_start',
-        targetKind: 'bid_session',
-        targetId: id,
-        afterState: {
-          bid_year: body.bid_year,
-          current_phase: 'config',
-          is_mock: requestedMode === 'mock',
-          rule_book_version: policy.snapshot.ruleBookVersion,
-          rule_book_revision: policy.snapshot.ruleBookRevision,
-          position_template_version: policy.snapshot.positionTemplateVersion,
-          configuration_revision: policy.snapshot.configurationRevision,
-          settings,
-          pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
+      ).bind(
+        id,
+        policy.snapshot.ruleBookVersion,
+        policy.snapshot.positionTemplateVersion,
+        policy.snapshot.ruleBookRevision,
+        JSON.stringify(policy.snapshot),
+        now.getTime(),
+        id,
+      ),
+      auditInsertStatement(
+        c.env.DB,
+        {
+          bidSessionId: id,
+          actorType: 'admin',
+          actorId: actorIdFromClaims(c.get('claims')),
+          action: 'session_start',
+          targetKind: 'bid_session',
+          targetId: id,
+          afterState: {
+            bid_year: body.bid_year,
+            current_phase: 'config',
+            is_mock: requestedMode === 'mock',
+            rule_book_version: policy.snapshot.ruleBookVersion,
+            rule_book_revision: policy.snapshot.ruleBookRevision,
+            position_template_version: policy.snapshot.positionTemplateVersion,
+            configuration_revision: policy.snapshot.configurationRevision,
+            settings,
+            pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
+          },
         },
-      },
-      now,
-    ),
-  ]);
+        now,
+        true,
+      ),
+      ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
+    ]);
+  } catch {
+    const prior = key ? await loadConfigurationReceipt(c.env.DB, receiptInput) : null;
+    if (prior)
+      return prior.ok
+        ? c.json({ ...prior.response, replayed: true }, 201)
+        : c.json({ error: prior.error }, 409);
+    return c.json({ error: 'bid_configuration_changed_or_creation_failed' }, 409);
+  }
   if (
     creation[0]?.meta.changes !== 1 ||
     creation[1]?.meta.changes !== 1 ||
@@ -325,23 +389,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
   ) {
     return c.json({ error: 'bid_configuration_changed' }, 409);
   }
-  return c.json(
-    {
-      id,
-      current_phase: 'config',
-      is_mock: requestedMode === 'mock',
-      rule_book_version: policy.snapshot.ruleBookVersion,
-      rule_book_revision: policy.snapshot.ruleBookRevision,
-      position_template_version: policy.snapshot.positionTemplateVersion,
-      configuration_revision: policy.snapshot.configurationRevision,
-      settings: {
-        expected_duration_days: settings.expectedDurationDays,
-        turn_timer_seconds: settings.turnTimerSeconds,
-      },
-      pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
-    },
-    201,
-  );
+  return c.json(responseBody, 201);
 });
 
 // GET /api/admin/bid-session/:id/policy-snapshot

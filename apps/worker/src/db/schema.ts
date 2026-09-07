@@ -47,6 +47,15 @@ export const credentials = sqliteTable('credentials', {
   fyPointsDefault: integer('fy_points_default').notNull().default(0),
 });
 
+export const credentialCatalogMetadata = sqliteTable('credential_catalog_metadata', {
+  credentialId: integer('credential_id')
+    .primaryKey()
+    .references(() => credentials.id, { onDelete: 'restrict' }),
+  displayName: text('display_name').notNull(),
+  revision: integer('revision').notNull(),
+  retiredOn: text('retired_on'),
+});
+
 export const memberCredentials = sqliteTable(
   'member_credentials',
   {
@@ -585,6 +594,7 @@ export const auditLog = sqliteTable(
         'credentials_import',
         'credential_create',
         'credential_update',
+        'organization_change',
         'positions_clone',
         'rule_book_clone',
         'bid_configuration_set',
@@ -1445,3 +1455,36 @@ export const assignmentImportMissingObservations = sqliteTable(
     ),
   }),
 );
+
+export const memberServiceEvidence = sqliteTable('member_service_evidence', {
+  id: text('id').primaryKey(),
+  memberId: integer('member_id')
+    .notNull()
+    .references(() => members.id),
+  serviceCode: text('service_code').notNull(),
+  revision: integer('revision').notNull(),
+  effectiveOn: text('effective_on').notNull(),
+  verifiedMonths: integer('verified_months'),
+  sourceRef: text('source_ref').notNull(),
+  actorSubject: text('actor_subject').notNull(),
+  reason: text('reason').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  requestJson: text('request_json').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const staffingTenureEvidence = sqliteTable('staffing_tenure_evidence', {
+  id: text('id').primaryKey().notNull(),
+  staffingPositionId: text('staffing_position_id')
+    .notNull()
+    .references(() => staffingPositions.id),
+  revision: integer('revision').notNull(),
+  effectiveOn: text('effective_on').notNull(),
+  status: text('status', { enum: ['PROTECTED', 'UNPROTECTED', 'UNKNOWN'] }).notNull(),
+  memberId: integer('member_id').references(() => members.id),
+  protectedFrom: text('protected_from'),
+  protectedThrough: text('protected_through'),
+  sourceRef: text('source_ref').notNull(),
+  reason: text('reason').notNull(),
+  actorSubject: text('actor_subject').notNull(),
+});

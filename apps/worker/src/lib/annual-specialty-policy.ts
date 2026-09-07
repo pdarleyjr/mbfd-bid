@@ -1,3 +1,4 @@
+import { configuredChannel } from '@mbfd/eligibility';
 import type { FrozenAnnualSpecialtyPolicy } from '@mbfd/shared';
 
 export interface FrozenSpecialtyCandidateFact {
@@ -42,6 +43,11 @@ export function rankFrozenSpecialtyCandidates(input: {
   readonly members: readonly FrozenSpecialtyCandidateFact[];
 }): readonly RankedFrozenSpecialtyCandidate[] {
   if (
+    (input.policy.scoring === undefined) !== (input.policy.rankingChannel === undefined) ||
+    (input.policy.scoring && input.policy.points.length)
+  )
+    throw new Error('SPECIALTY_SCORING_CONFIGURATION_INVALID');
+  if (
     input.policy.tieBreakChain.some(
       (entry) => !['POINTS', 'RSC_SENIORITY', 'RANK_SENIORITY'].includes(entry),
     )
@@ -66,10 +72,16 @@ export function rankFrozenSpecialtyCandidates(input: {
       )
     )
       return [];
-    const points = [...credentials].reduce(
-      (total, credential) => total + (pointsByCredential.get(credential) ?? 0),
-      0,
-    );
+    const points =
+      input.policy.scoring && input.policy.rankingChannel
+        ? configuredChannel(
+            { credentials: [...credentials].map((name) => ({ name })) },
+            input.policy.scoring[input.policy.rankingChannel],
+          ).total
+        : [...credentials].reduce(
+            (total, credential) => total + (pointsByCredential.get(credential) ?? 0),
+            0,
+          );
     return [{ member, points }];
   });
   return candidates

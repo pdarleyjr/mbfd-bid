@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,10 +72,17 @@ function renderEditor(initialRule: TestRule = KNOWN_RULE) {
   document.body.appendChild(container);
   const root = createRoot(container);
   roots.push(root);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(['admin', 'credentials'], []);
+  client.setQueryData(['admin', 'service-evidence', 'types'], {
+    types: [{ id: 'RESCUE_DIVISION', name: 'Cumulative Rescue Division service' }],
+  });
 
   act(() => {
     root.render(
-      <RuleEditor positionId="A205" ruleBookVersion="2027.2" initialRule={initialRule} />,
+      <QueryClientProvider client={client}>
+        <RuleEditor positionId="A205" ruleBookVersion="2027.2" initialRule={initialRule} />
+      </QueryClientProvider>,
     );
   });
 
@@ -146,11 +154,18 @@ describe('RuleEditor', () => {
 
   it('normalizes known legacy gates into the existing structured PATCH contract', async () => {
     const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
-      async () =>
-        new Response(JSON.stringify({ rule: {} }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
+      async (input) =>
+        new Response(
+          JSON.stringify(
+            String(input) === '/api/auth/csrf'
+              ? { token: 'csrf_11111111-1111-1111-1111-111111111111' }
+              : { rule: {} },
+          ),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
     );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -161,11 +176,17 @@ describe('RuleEditor', () => {
     );
     await submit(form);
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const request = fetchMock.mock.calls[0]?.[1];
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const request = fetchMock.mock.calls.find(
+      ([input]) => String(input) === '/api/admin/rules/41',
+    )?.[1];
     if (!request) throw new Error('Rule PATCH did not include request options.');
     expect(request.method).toBe('PATCH');
     expect(request.credentials).toBe('include');
+    expect(new Headers(request.headers).get('Idempotency-Key')).toBeTruthy();
+    expect(new Headers(request.headers).get('X-MBFD-CSRF')).toBe(
+      'csrf_11111111-1111-1111-1111-111111111111',
+    );
     expect(JSON.parse(String(request.body))).toEqual({
       required_criteria: {
         rank: ['LT', 'CPT'],

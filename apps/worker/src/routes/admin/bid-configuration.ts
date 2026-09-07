@@ -160,6 +160,9 @@ router.put(
     const db = getDb(c.env.DB);
     const year = await db.select().from(bidYears).where(eq(bidYears.year, parsedYear.data)).get();
     if (year === undefined) return c.json({ error: 'not_found' }, 404);
+    const previousSettings = parseBidConfigurationSettings(year.configJson);
+    if (previousSettings && previousSettings.v !== 1 && previousSettings.personnelEvaluationOn)
+      baseSettings.personnelEvaluationOn = previousSettings.personnelEvaluationOn;
     if (year.status !== 'configuring') {
       return c.json({ error: 'bid_configuration_not_configuring', status: year.status }, 409);
     }
@@ -245,6 +248,9 @@ router.put(
         expectedDurationDays: baseSettings.expectedDurationDays,
         turnTimerSeconds: baseSettings.turnTimerSeconds,
         credentialEvaluationOn: baseSettings.credentialEvaluationOn,
+        ...(baseSettings.personnelEvaluationOn
+          ? { personnelEvaluationOn: baseSettings.personnelEvaluationOn }
+          : {}),
         livePolicy: executionPolicy.data,
       });
     }

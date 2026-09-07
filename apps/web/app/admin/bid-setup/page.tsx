@@ -1,5 +1,7 @@
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
+import type { Route } from 'next';
+import Link from 'next/link';
 import {
   type BidConfiguration,
   BidSetupWorkspace,
@@ -84,6 +86,12 @@ export default async function BidSetupPage({
         </p>
       </header>
 
+      <Link
+        href={`/admin/annual-plan?year=${year}&stage=1` as Route}
+        className="mt-5 inline-block rounded border border-amber-600 px-4 py-3 text-sm font-semibold text-amber-100"
+      >
+        Prepare Next Bid
+      </Link>
       <form method="get" className="mt-5 flex max-w-sm items-end gap-3">
         <label className="block flex-1">
           <span className="text-sm text-slate-300">Bid year</span>

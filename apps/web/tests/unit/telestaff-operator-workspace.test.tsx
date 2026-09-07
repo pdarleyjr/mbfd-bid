@@ -4,11 +4,21 @@ import { type Root, createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AdminQueryProvider } from '../../app/admin/_components/AdminQueryProvider';
 import {
-  TeleStaffOperatorWorkspace,
+  TeleStaffOperatorWorkspace as TeleStaffComponent,
   UnknownEmployeeOnboardingPanel,
   teleStaffErrorCopy,
 } from '../../app/admin/telestaff/TeleStaffOperatorWorkspace';
+const router = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => router }));
+function TeleStaffOperatorWorkspace() {
+  return (
+    <AdminQueryProvider>
+      <TeleStaffComponent />
+    </AdminQueryProvider>
+  );
+}
 
 const roots: Root[] = [];
 

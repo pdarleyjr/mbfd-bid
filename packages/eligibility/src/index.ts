@@ -25,3 +25,4 @@ export {
 export { compare, sortByTieBreak, type ComparableResult } from './tie-break.js';
 
 export { evaluateEligibility } from './evaluate.js';
+export { configuredChannel } from './points/configured.js';

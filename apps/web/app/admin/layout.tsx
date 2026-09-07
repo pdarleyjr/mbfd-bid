@@ -7,12 +7,12 @@ import { StepUpProvider } from './_components/StepUpProvider';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Verifies JWT and redirects non-admins to /lobby or /login.
-  await requireAdmin();
+  const claims = await requireAdmin();
 
   return (
     <div className="min-h-screen bg-slate-850 text-slate-50">
       <BrandHeader subtitle="Admin Console" action={<LogoutButton />} />
-      <AdminQueryProvider>
+      <AdminQueryProvider key={`${claims.sub}:${claims.member_id}:${claims.security_version}`}>
         <StepUpProvider>
           <AdminLayoutShell>{children}</AdminLayoutShell>
         </StepUpProvider>

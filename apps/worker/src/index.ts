@@ -4,32 +4,39 @@ import { logger } from 'hono/logger';
 import { isExpectedPublicWebOrigin } from './lib/public-web-origin.js';
 import { redactRequestLog } from './lib/request-log.js';
 import { applySecurityHeaders } from './middleware/security-headers.js';
+import adminAnnualPlan from './routes/admin/annual-plan.js';
 import adminAnnualPolicyDocuments from './routes/admin/annual-policy-documents.js';
 import adminAudit from './routes/admin/audit.js';
 import adminBidAwardTransition from './routes/admin/bid-award-transition.js';
+import adminBidBoard from './routes/admin/bid-board.js';
 import adminBidConfiguration from './routes/admin/bid-configuration.js';
 import adminBidControls from './routes/admin/bid-controls.js';
 import adminBidSession from './routes/admin/bid-session.js';
 import adminBid from './routes/admin/bid.js';
+import adminCredentialImports from './routes/admin/credential-imports.js';
 import adminCredentials from './routes/admin/credentials.js';
 import adminCurrentRoster from './routes/admin/current-roster.js';
 import adminEligibilityPreview from './routes/admin/eligibility-preview.js';
 import adminExports from './routes/admin/exports.js';
 import adminForceADay from './routes/admin/force-a-day.js';
 import adminMembers from './routes/admin/members.js';
+import adminOrganization from './routes/admin/organization.js';
 import adminPersonnel from './routes/admin/personnel.js';
 import adminPlacements from './routes/admin/placements.js';
 import adminPortal from './routes/admin/portal.js';
 import adminPositions from './routes/admin/positions.js';
+import adminPostAwardObligations from './routes/admin/post-award-obligations.js';
 import adminPostBidTransition from './routes/admin/post-bid-transition.js';
 import adminQualificationLifecycle from './routes/admin/qualification-lifecycle.js';
 import adminReadiness from './routes/admin/readiness.js';
 import adminRehearsal from './routes/admin/rehearsal.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
+import adminServiceEvidence from './routes/admin/service-evidence.js';
 import adminSettings from './routes/admin/settings.js';
 import adminSpecialtyAdjudication from './routes/admin/specialty-adjudication.js';
 import adminTelestaff from './routes/admin/telestaff.js';
+import adminTenureEvidence from './routes/admin/tenure-evidence.js';
 import auth from './routes/auth.js';
 import bid from './routes/bid.js';
 import health from './routes/health.js';
@@ -46,11 +53,18 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api', bid)
   .route('/api/ws', ws)
   .route('/api/admin/annual-policy-documents', adminAnnualPolicyDocuments)
+  .route('/api/admin/annual-plan', adminAnnualPlan)
+  .route('/api/admin/bid-board', adminBidBoard)
   .route('/api/admin/members', adminMembers)
   .route('/api/admin/personnel', adminPersonnel)
   .route('/api/admin/qualification-lifecycle', adminQualificationLifecycle)
   .route('/api/admin/credentials', adminCredentials)
   .route('/api/admin/current-roster', adminCurrentRoster)
+  .route('/api/admin/organization', adminOrganization)
+  .route('/api/admin/service-evidence', adminServiceEvidence)
+  .route('/api/admin/tenure-evidence', adminTenureEvidence)
+  .route('/api/admin/post-award-obligations', adminPostAwardObligations)
+  .route('/api/admin/credential-imports', adminCredentialImports)
   .route('/api/admin/telestaff', adminTelestaff)
   .route('/api/admin/positions', adminPositions)
   .route('/api/admin/rules', adminRules)

@@ -4,11 +4,23 @@ import { type Root, createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AdminQueryProvider } from '../../app/admin/_components/AdminQueryProvider';
 import {
+  QualificationLifecycleWorkspace as QualificationComponent,
   type QualificationCredential,
-  QualificationLifecycleWorkspace,
   type QualificationMember,
 } from '../../app/admin/personnel/qualifications/QualificationLifecycleWorkspace';
+const router = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => router }));
+function QualificationLifecycleWorkspace(
+  props: React.ComponentProps<typeof QualificationComponent>,
+) {
+  return (
+    <AdminQueryProvider>
+      <QualificationComponent {...props} />
+    </AdminQueryProvider>
+  );
+}
 
 const members: QualificationMember[] = [
   {
@@ -82,6 +94,7 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
 });
 
 beforeEach(() => {
+  router.refresh.mockClear();
   vi.stubGlobal('crypto', { randomUUID: () => 'qualification-idempotency-key' });
 });
 
@@ -155,6 +168,10 @@ function lifecycleFetchMock(
 ): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url === '/api/auth/csrf')
+      return new Response(JSON.stringify({ token: 'csrf_11111111-1111-1111-1111-111111111111' }), {
+        status: 200,
+      });
     if (url === '/api/admin/qualification-lifecycle/members/7?as_of=2026-08-28') {
       return new Response(JSON.stringify(lifecycleHistory), { status: 200 });
     }
@@ -192,12 +209,14 @@ describe('QualificationLifecycleWorkspace', () => {
     expect(html).toContain('data-testid="qualification-event-form"');
   });
 
-  it('submits a certification lifecycle event to the mounted contract and displays its actual projection without a backend-unavailable state', async () => {
+  it('retries the same certification request after response loss and displays the accepted projection', async () => {
+    const attempts: RequestInit[] = [];
     const fetchMock = lifecycleFetchMock((init) => {
+      attempts.push(init ?? {});
       expect(init?.method).toBe('POST');
       expect(init?.credentials).toBe('include');
       expect(new Headers(init?.headers).get('Idempotency-Key')).toBe(
-        'qualification-idempotency-key',
+        'qualification-qualification-idempotency-key',
       );
       expect(JSON.parse(String(init?.body))).toEqual({
         member_id: 7,
@@ -209,6 +228,7 @@ describe('QualificationLifecycleWorkspace', () => {
         evidence_reference: 'case-123',
         reason: 'Renewal documentation reviewed',
       });
+      if (attempts.length === 1) throw new TypeError('Synthetic qualification response loss');
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -232,11 +252,20 @@ describe('QualificationLifecycleWorkspace', () => {
       'Renewal documentation reviewed',
     );
     await submit(requiredControl<HTMLFormElement>(container, 'qualification-event-form'));
+    expect(container.textContent).toContain('Synthetic qualification response loss');
+    expect(router.refresh).not.toHaveBeenCalled();
+    await submit(requiredControl<HTMLFormElement>(container, 'qualification-event-form'));
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]?.body).toBe(attempts[1]?.body);
+    expect(new Headers(attempts[0]?.headers).get('Idempotency-Key')).toBe(
+      new Headers(attempts[1]?.headers).get('Idempotency-Key'),
+    );
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/admin/qualification-lifecycle/events',
       expect.objectContaining({ method: 'POST' }),
     );
+    expect(router.refresh).toHaveBeenCalled();
     expect(container.textContent).toContain('qualification-event-1');
     expect(container.textContent).toContain('State Certified Paramedic');
     expect(container.textContent).toContain('TECHNICAL_RESCUE');

@@ -1,24 +1,6 @@
-// Members section — station eligibility rules for the admin Members UI.
-//
-// Each station defines a predicate over a member's rank + held credential
-// names + 2025 position prefix (for D-shift "days" detection). The rule set
-// is the literal text the chief gave us; if a future bid year changes the
-// gate, edit it here in one place.
-//
-// Cert-name aliasing: legacy spreadsheets reference "Certified Public Safety
-// Diver" but the canonical credentials table stores "Public Safety Diver".
-// Treat both as the same cert.
-
-export type Station = 'marine' | 'trt' | 'de' | 'air-tech' | 'captain-5' | 'days';
-
-export const STATIONS: ReadonlyArray<Station> = [
-  'marine',
-  'trt',
-  'de',
-  'air-tech',
-  'captain-5',
-  'days',
-];
+// Retained historical filters only. Never use these predicates as Bid authority.
+import type { Station } from '@mbfd/shared';
+export { STATIONS, stationTitle, stationRuleText, type Station } from '@mbfd/shared';
 
 export interface EligibilityCandidate {
   rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
@@ -102,42 +84,6 @@ export function isEligibleFor(station: Station, c: EligibilityCandidate): boolea
       // D_SHIFT_2025_EMPLOYEE_IDS) OR who are explicitly tagged via the
       // future `daysEligible` flag.
       return c.daysEligible === true || D_SHIFT_2025_EMPLOYEE_IDS.includes(c.employeeId);
-  }
-}
-
-/** Human-readable rule string for the station, displayed beneath the title. */
-export function stationRuleText(station: Station): string {
-  switch (station) {
-    case 'marine':
-      return 'Marine Station — eligible members hold MMC, IADRS Swim, Open Water Diver, and Public Safety Diver.';
-    case 'trt':
-      return 'TRT Station 2 — eligible members hold all six Operations certs (Hazmat, Rope, Confined Space, Structural Collapse, Trench, Vehicle & Machinery).';
-    case 'de':
-      return 'DE (Driver/Engineer) — eligible members hold Driver Engineer Qualified.';
-    case 'air-tech':
-      return 'Air Tech (810) — eligible members hold Cylinder Hazmat & FSO Compliance.';
-    case 'captain-5':
-      return 'Captain 5 — Captains who hold Firesafety Inspector I + (Firesafety Inspector II or Fire Investigator I) + (Instructor I or BLS Instructor).';
-    case 'days':
-      return 'Days — members assigned to a D-shift position in 2025 (or admin-tagged days-eligible).';
-  }
-}
-
-/** Display name for the station (used in page titles and breadcrumbs). */
-export function stationTitle(station: Station): string {
-  switch (station) {
-    case 'marine':
-      return 'Marine Station';
-    case 'trt':
-      return 'TRT Station 2';
-    case 'de':
-      return 'DE (Driver / Engineer)';
-    case 'air-tech':
-      return 'Air Tech (810)';
-    case 'captain-5':
-      return 'Captain 5';
-    case 'days':
-      return 'Days';
   }
 }
 

@@ -24,6 +24,7 @@ export type AuditAction =
   | 'credentials_import'
   | 'credential_create'
   | 'credential_update'
+  | 'organization_change'
   | 'positions_clone'
   | 'rule_book_clone'
   | 'bid_configuration_set'
@@ -69,6 +70,7 @@ export function auditInsertStatement(
   d1: D1Database,
   entry: AuditEntry,
   createdAt: Date = new Date(),
+  requirePreviousChange = false,
 ): D1PreparedStatement {
   const id = ulid();
   const sessionPredicate =
@@ -97,7 +99,7 @@ export function auditInsertStatement(
           target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at)
        SELECT ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
          FROM audit_log
-        WHERE ${sessionPredicate}`,
+        WHERE ${sessionPredicate}${requirePreviousChange ? ' HAVING changes() = 1' : ''}`,
     )
     .bind(...parameters);
 }

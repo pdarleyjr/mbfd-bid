@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/require-admin', () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock('@/lib/server-worker-fetch', () => ({ serverWorkerFetch: mocks.serverWorkerFetch }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
+import { AdminQueryProvider } from '../../app/admin/_components/AdminQueryProvider';
 import PersonnelPage from '../../app/admin/personnel/page';
 
 function response(body: unknown): Response {
@@ -55,7 +57,9 @@ beforeEach(() => {
 describe('PersonnelPage', () => {
   it('loads the complete supported roster so every member can use the audited lifecycle form', async () => {
     const html = renderToStaticMarkup(
-      await PersonnelPage({ searchParams: Promise.resolve({ memberId: '262' }) }),
+      <AdminQueryProvider>
+        {await PersonnelPage({ searchParams: Promise.resolve({ memberId: '262' }) })}
+      </AdminQueryProvider>,
     );
 
     expect(mocks.serverWorkerFetch).toHaveBeenCalledWith('/api/admin/personnel/members?limit=500');

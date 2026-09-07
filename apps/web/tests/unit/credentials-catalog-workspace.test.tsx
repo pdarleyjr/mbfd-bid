@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
@@ -6,11 +7,13 @@ import { CredentialsCatalogWorkspace } from '../../app/admin/credentials/Credent
 describe('CredentialsCatalogWorkspace', () => {
   it('separates editable catalog defaults from effective-dated qualification evidence', () => {
     const html = renderToStaticMarkup(
-      <CredentialsCatalogWorkspace
-        initialCredentials={[
-          { id: 13, name: 'Synthetic Credential', fyPointsDefault: 0, holderCount: 2 },
-        ]}
-      />,
+      <QueryClientProvider client={new QueryClient()}>
+        <CredentialsCatalogWorkspace
+          initialCredentials={[
+            { id: 13, name: 'Synthetic Credential', fyPointsDefault: 0, holderCount: 2 },
+          ]}
+        />
+      </QueryClientProvider>,
     );
 
     expect(html).toContain('Credentials &amp; Specialty Points');
@@ -19,6 +22,6 @@ describe('CredentialsCatalogWorkspace', () => {
     expect(html).toContain('Referenced members');
     expect(html).toContain('Record qualification evidence');
     expect(html).toContain('these defaults do not rewrite any frozen annual Bid score');
-    expect(html).toContain('no credential retirement state');
+    expect(html).toContain('Display-name changes preserve the stable credential identity');
   });
 });

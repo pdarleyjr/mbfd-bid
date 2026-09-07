@@ -11,6 +11,9 @@ import {
   FrozenLiveBidPolicySchema,
 } from '@mbfd/shared';
 import { and, eq } from 'drizzle-orm';
+import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
+import { serviceCreditsAsOf } from './service-evidence.js';
+import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence.js';
 
 import type { DB } from '../db/index.js';
 import {
@@ -18,6 +21,7 @@ import {
   assignmentObservations,
   bidSessionPolicySnapshots,
   bidYears,
+  credentialCatalogMetadata,
   credentials,
   memberAssignments,
   memberCredentials,
@@ -30,6 +34,7 @@ import {
   ruleBookPositionParticipation,
   ruleBooks,
   staffingPositions,
+  staffingTenureEvidence,
 } from '../db/schema.js';
 import {
   type AuthoritativeStaffingBaselineEvaluation,
@@ -362,6 +367,7 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
   rankSeniority: number | undefined;
   isProbationary: boolean;
   credentials: Array<{ name: string }>;
+  serviceCredits: NonNullable<FrozenBidEligibilityMember['serviceCredits']>;
 } {
   if (member.rank === 'CIVILIAN') {
     throw new Error('excluded civilian personnel cannot enter bid eligibility evaluation');
@@ -375,6 +381,7 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
     rankSeniority: member.rankSeniority ?? undefined,
     isProbationary: member.isProbationary,
     credentials: member.credentialNames.map((name) => ({ name })),
+    serviceCredits: member.serviceCredits ?? [],
   };
 }
 
@@ -537,7 +544,10 @@ export function validateAnnualPolicySourceReferences(
       )
     )
       errors.push('specialty_position_reference_invalid');
-    const credentialNames = new Set(snapshot.members.flatMap((member) => member.credentialNames));
+    const credentialNames = new Set(
+      snapshot.authoringCredentialNames ??
+        snapshot.members.flatMap((member) => member.credentialNames),
+    );
     const specialtyCodes = new Set(
       snapshot.members.flatMap((member) =>
         (member.specialtyQualifications ?? []).map((qualification) => qualification.specialtyCode),
@@ -547,7 +557,21 @@ export function validateAnnualPolicySourceReferences(
       annual.specialties?.some(
         (specialty) =>
           specialty.requiredCredentialNames.some((name) => !credentialNames.has(name)) ||
-          specialty.points.some((entry) => !credentialNames.has(entry.credentialName)),
+          specialty.points.some((entry) => !credentialNames.has(entry.credentialName)) ||
+          (specialty.scoring &&
+            Object.values({
+              total: specialty.scoring.total,
+              so: specialty.scoring.so,
+              mo: specialty.scoring.mo,
+            }).some((groups) =>
+              groups.some((group) =>
+                group.items.some((item) =>
+                  [item.credential, ...item.alternatives, ...item.requiresAll].some(
+                    (name) => !credentialNames.has(name),
+                  ),
+                ),
+              ),
+            )),
       )
     )
       errors.push('specialty_credential_reference_invalid');
@@ -750,9 +774,11 @@ export type BidSessionPolicySnapshotPreparation =
         | 'non_biddable_staffing_position_not_approved'
         | 'non_biddable_assignment_ambiguous'
         | 'qualification_lifecycle_data_invalid'
+        | 'tenure_evidence_requires_review'
         | 'authoritative_staffing_baseline_required'
         | ConfiguredBidYearPolicyError;
       positionIds?: readonly string[];
+      tenureIssues?: readonly { staffingPositionId: string; code: string; recordId: string }[];
     };
 
 export type ConfiguredRuleBookPublicationPreflight =
@@ -821,24 +847,22 @@ export async function prepareBidSessionPolicySnapshot(
   const { coverage } = policy;
   const templateVersion = policy.positionTemplateVersion;
   const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
-  // Staffing/personnel are evaluated at session capture. Credential evidence
-  // is separately evaluated at the annual policy date so a later session
-  // creation timestamp cannot silently redefine qualification eligibility.
-  const capturedOn = snapshotDate(capturedAtMs);
+  // Managed annual plans explicitly pin personnel and staffing to their reviewed
+  // effective date. Legacy configurations retain their original capture-date behavior.
+  const capturedOn = policy.settings.personnelEvaluationOn ?? snapshotDate(capturedAtMs);
   const credentialEvaluationOn = policy.settings.credentialEvaluationOn;
 
   const [
     bindings,
     staffingRows,
     assignmentRows,
-    memberRows,
-    personnelEventRows,
-    credentialRows,
-    qualificationEventRows,
+    tenureRows,
+    { memberRows, personnelEventRows, credentialRows, qualificationEventRows, serviceRows },
     snapshotRuleRows,
     snapshotPositions,
     snapshotParticipation,
     acceptedBaseline,
+    catalogRows,
   ] = await Promise.all([
     db
       .select({
@@ -876,71 +900,8 @@ export async function prepareBidSessionPolicySnapshot(
         eq(memberAssignments.sourceObservationId, assignmentObservations.id),
       )
       .all(),
-    db
-      .select({
-        id: members.id,
-        employeeId: members.employeeId,
-        firstName: members.firstName,
-        lastName: members.lastName,
-        bidCategory: members.bidCategory,
-        rank: members.rank,
-        rscSeniority: members.rscSeniority,
-        rankSeniority: members.rankSeniority,
-        isProbationary: members.isProbationary,
-        employmentStatus: members.employmentStatus,
-        employmentStatusEffectiveOn: members.employmentStatusEffectiveOn,
-        separationType: members.separationType,
-      })
-      .from(members)
-      .all(),
-    db
-      .select({
-        id: personnelLifecycleEvents.id,
-        memberId: personnelLifecycleEvents.memberId,
-        kind: personnelLifecycleEvents.kind,
-        effectiveOn: personnelLifecycleEvents.effectiveOn,
-        employmentStatusAfter: personnelLifecycleEvents.employmentStatusAfter,
-        rankAfter: personnelLifecycleEvents.rankAfter,
-        separationType: personnelLifecycleEvents.separationType,
-        beforeState: personnelLifecycleEvents.beforeState,
-        createdAt: personnelLifecycleEvents.createdAt,
-      })
-      .from(personnelLifecycleEvents)
-      .all(),
-    db
-      .select({
-        memberId: memberCredentials.memberId,
-        credentialId: memberCredentials.credentialId,
-        name: credentials.name,
-        startDate: memberCredentials.startDate,
-        expirationDate: memberCredentials.expirationDate,
-      })
-      .from(memberCredentials)
-      .innerJoin(credentials, eq(memberCredentials.credentialId, credentials.id))
-      .all(),
-    db
-      .select({
-        id: memberQualificationEvents.id,
-        memberId: memberQualificationEvents.memberId,
-        credentialId: memberQualificationEvents.credentialId,
-        credentialName: credentials.name,
-        specialtyCode: memberQualificationEvents.specialtyCode,
-        specialtyTerminalStatus: memberQualificationEvents.specialtyTerminalStatus,
-        kind: memberQualificationEvents.kind,
-        effectiveOn: memberQualificationEvents.effectiveOn,
-        expiresOn: memberQualificationEvents.expiresOn,
-        evidenceSource: memberQualificationEvents.evidenceSource,
-        evidenceReference: memberQualificationEvents.evidenceReference,
-        reason: memberQualificationEvents.reason,
-        actorSubject: memberQualificationEvents.actorSubject,
-        idempotencyKey: memberQualificationEvents.idempotencyKey,
-        beforeState: memberQualificationEvents.beforeState,
-        afterState: memberQualificationEvents.afterState,
-        createdAt: memberQualificationEvents.createdAt,
-      })
-      .from(memberQualificationEvents)
-      .leftJoin(credentials, eq(memberQualificationEvents.credentialId, credentials.id))
-      .all(),
+    db.select().from(staffingTenureEvidence).all(),
+    loadBidEligibilityEvidence(db),
     db
       .select({
         ruleBookVersion: positionRules.ruleBookVersion,
@@ -962,6 +923,9 @@ export async function prepareBidSessionPolicySnapshot(
         station: positions.station,
         unit: positions.unit,
         rankRequired: positions.rankRequired,
+        division: positions.division,
+        isFloating: positions.isFloating,
+        isVacantByDesign: positions.isVacantByDesign,
         positionName: positions.positionName,
       })
       .from(positions)
@@ -977,6 +941,14 @@ export async function prepareBidSessionPolicySnapshot(
       .where(eq(ruleBookPositionParticipation.ruleBookVersion, policy.ruleBookVersion))
       .all(),
     evaluateAuthoritativeStaffingBaseline(db, bidYear),
+    db
+      .select({ name: credentials.name, retiredOn: credentialCatalogMetadata.retiredOn })
+      .from(credentials)
+      .leftJoin(
+        credentialCatalogMetadata,
+        eq(credentialCatalogMetadata.credentialId, credentials.id),
+      )
+      .all(),
   ]);
 
   const bindingByPosition = new Map(bindings.map((binding) => [binding.positionId, binding]));
@@ -1035,6 +1007,16 @@ export async function prepareBidSessionPolicySnapshot(
           assignment.effectiveTo !== null)) &&
       effectiveOn(capturedOn, assignment.effectiveFrom, assignment.effectiveTo),
   );
+  const tenureEvidence = tenureEvidenceAsOf(tenureRows, capturedOn);
+  const tenureIssues = tenureParticipationIssues({
+    asOf: capturedOn,
+    records: tenureEvidence,
+    bindings,
+    nonBiddablePositionIds,
+    assignments: applicableAssignments,
+  });
+  if (tenureIssues.length)
+    return { ok: false, code: 'tenure_evidence_requires_review', tenureIssues };
   const assignmentsByPosition = new Map<string, typeof applicableAssignments>();
   const assignmentsByMember = new Map<number, typeof applicableAssignments>();
   for (const assignment of applicableAssignments) {
@@ -1194,6 +1176,7 @@ export async function prepareBidSessionPolicySnapshot(
         rank: personnelState?.rank ?? member.rank,
         isProbationary: member.isProbationary,
         credentialNames: credentialNamesByMember.get(member.id) ?? [],
+        serviceCredits: serviceCreditsAsOf(serviceRows, member.id, capturedOn),
         specialtyQualifications: (specialtyQualificationsByMember.get(member.id) ?? []).map(
           (specialty) => ({
             specialtyCode: specialty.specialtyCode,
@@ -1296,6 +1279,9 @@ export async function prepareBidSessionPolicySnapshot(
           unit: position.unit,
           rankRequired: position.rankRequired,
           positionName: position.positionName,
+          division: position.division,
+          isFloating: position.isFloating,
+          isVacantByDesign: position.isVacantByDesign,
         };
       })
       .sort((left, right) => left.id.localeCompare(right.id)),
@@ -1309,8 +1295,8 @@ export async function prepareBidSessionPolicySnapshot(
     configurationRevision: policy.configurationRevision,
     settings: policy.settings,
     credentialEvaluationOn: policy.settings.credentialEvaluationOn,
-    ...(mode === 'live' &&
-    acceptedBaseline.status === 'PASS' &&
+    // A completed Mock can justify annual freeze only for the staffing provenance it rehearsed.
+    ...(acceptedBaseline.status === 'PASS' &&
     acceptedBaseline.baselineAcceptanceId !== null &&
     acceptedBaseline.importId !== null &&
     acceptedBaseline.sourceHash !== null &&
@@ -1326,6 +1312,11 @@ export async function prepareBidSessionPolicySnapshot(
       : {}),
     capturedAtMs,
     members: frozenMembers,
+    tenureEvidence,
+    authoringCredentialNames: catalogRows
+      .filter((row) => row.retiredOn === null)
+      .map((row) => row.name)
+      .sort(),
     operatorIdentityProjection: memberRows
       .filter((member) => uniformedOperatorMemberIds.has(member.id))
       .map((member) => ({

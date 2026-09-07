@@ -1,4 +1,7 @@
 'use client';
+import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
+import { useRetainedMutation } from '@/lib/use-retained-mutation';
 
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -87,19 +90,14 @@ function kindLabel(kind: string): string {
     .join(' ');
 }
 
-function randomIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `personnel-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 export function PersonnelWorkspace({
   summary,
   members,
   memberIdHint,
   assignmentIdHint,
 }: PersonnelWorkspaceProps) {
+  const refreshProjections = usePersonnelProjectionRefresh();
+  const mutation = useRetainedMutation<Record<string, unknown>>('personnel');
   const validMemberIdHint =
     memberIdHint !== undefined && members.some((member) => member.id === memberIdHint)
       ? memberIdHint
@@ -167,6 +165,7 @@ export function PersonnelWorkspace({
 
   async function submitChange(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
     setBusy(true);
     setError(null);
     setSuccess(null);
@@ -208,8 +207,8 @@ export function PersonnelWorkspace({
         if (requiresSeparationType) payload.separation_type = separationType.trim();
       }
 
-      if (pendingChange === null && canPreview) {
-        const previewResponse = await fetch('/api/admin/personnel/changes/preview', {
+      if (canPreview && JSON.stringify(pendingChange) !== JSON.stringify(payload)) {
+        const previewResponse = await csrfFetch('/api/admin/personnel/changes/preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -230,14 +229,15 @@ export function PersonnelWorkspace({
         );
         return;
       }
-      const response = await fetch('/api/admin/personnel/changes', {
+      const request = mutation.prepare(JSON.stringify(payload), () => payload);
+      const response = await csrfFetch('/api/admin/personnel/changes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': randomIdempotencyKey(),
+          'Idempotency-Key': request.key,
         },
         credentials: 'include',
-        body: JSON.stringify(pendingChange ?? payload),
+        body: JSON.stringify(request.payload),
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
@@ -251,11 +251,14 @@ export function PersonnelWorkspace({
       setSuccess(
         response.status === 200
           ? 'The original lifecycle receipt was returned; no duplicate change was made.'
-          : 'The reviewed lifecycle change was recorded. Refresh the workspace to view the new projection.',
+          : 'The reviewed lifecycle change was recorded. Updated projections are refreshing.',
       );
+      mutation.accepted(request.key);
       setReason('');
       setPendingChange(null);
       setPreviewMessage(null);
+      await refreshProjections();
+      if (historyMemberId !== null) await loadHistory(historyMemberId);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : 'Personnel change could not be recorded.',
@@ -323,6 +326,10 @@ export function PersonnelWorkspace({
 
         <form
           onSubmit={submitChange}
+          onChange={() => {
+            setPendingChange(null);
+            setPreviewMessage(null);
+          }}
           data-testid="personnel-change-form"
           className="mt-5 grid gap-4 border-t border-slate-700 pt-5 lg:grid-cols-2"
         >
@@ -718,6 +725,10 @@ function TemporaryOverlayWorkspace({
   members: PersonnelMember[];
   asOf: string;
 }) {
+  const refreshProjections = usePersonnelProjectionRefresh();
+  const creation = useRetainedMutation<Record<string, unknown>>('temporary-overlay');
+  const ending = useRetainedMutation<{ actual_end_on: string; reason: string }>('end-overlay');
+  const [busy, setBusy] = useState(false);
   const [kind, setKind] = useState<'SPECIAL_ASSIGNMENT' | 'LIGHT_DUTY'>('SPECIAL_ASSIGNMENT');
   const [memberId, setMemberId] = useState(String(members[0]?.id ?? ''));
   const [underlyingAssignmentId, setUnderlyingAssignmentId] = useState('');
@@ -749,77 +760,109 @@ function TemporaryOverlayWorkspace({
     setOverlays(body.overlays ?? []);
   }, []);
   useEffect(() => {
-    void load();
+    void load().catch(() => setError('Recorded overlays could not be refreshed.'));
   }, [load]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
-    setMessage(null);
-    const payload = pending ?? {
-      kind,
-      member_id: Number(memberId),
-      underlying_assignment_id: underlyingAssignmentId.trim(),
-      underlying_position_id: underlyingPositionId.trim(),
-      temporary_position_id: temporaryPositionId.trim(),
-      effective_on: effectiveOn,
-      planned_end_on: plannedEndOn || null,
-      provenance: provenance.trim(),
-    };
-    const path =
-      pending === null
-        ? '/api/admin/personnel/temporary-overlays/preview'
-        : '/api/admin/personnel/temporary-overlays';
-    const response = await fetch(path, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(pending === null ? {} : { 'Idempotency-Key': randomIdempotencyKey() }),
-      },
-      body: JSON.stringify(payload),
-    });
-    const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      setError(
-        body !== null && typeof body === 'object' && 'error' in body
-          ? String((body as { error: unknown }).error)
-          : `Overlay request failed (${response.status}).`,
-      );
-      return;
-    }
-    if (pending === null) {
-      setPending(payload);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      setError(null);
+      setMessage(null);
+      const payload = pending ?? {
+        kind,
+        member_id: Number(memberId),
+        underlying_assignment_id: underlyingAssignmentId.trim(),
+        underlying_position_id: underlyingPositionId.trim(),
+        temporary_position_id: temporaryPositionId.trim(),
+        effective_on: effectiveOn,
+        planned_end_on: plannedEndOn || null,
+        provenance: provenance.trim(),
+      };
+      const path =
+        pending === null
+          ? '/api/admin/personnel/temporary-overlays/preview'
+          : '/api/admin/personnel/temporary-overlays';
+      const request =
+        pending === null ? null : creation.prepare(JSON.stringify(payload), () => payload);
+      const response = await csrfFetch(path, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(request === null ? {} : { 'Idempotency-Key': request.key }),
+        },
+        body: JSON.stringify(payload),
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(
+          body !== null && typeof body === 'object' && 'error' in body
+            ? String((body as { error: unknown }).error)
+            : `Overlay request failed (${response.status}).`,
+        );
+        return;
+      }
+      if (pending === null) {
+        setPending(payload);
+        setMessage(
+          'Preview confirms a daily-staffing-only impact. The underlying permanent and annual Bid assignments stay unchanged; confirm to record.',
+        );
+        return;
+      }
+      if (request) creation.accepted(request.key);
+      setPending(null);
       setMessage(
-        'Preview confirms a daily-staffing-only impact. The underlying permanent and annual Bid assignments stay unchanged; confirm to record.',
+        'Temporary overlay recorded. It can be ended explicitly below; no annual Bid vacancy was created.',
       );
-      return;
+      await load();
+      await refreshProjections();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Overlay request could not be confirmed. Retry the same request.',
+      );
+    } finally {
+      setBusy(false);
     }
-    setPending(null);
-    setMessage(
-      'Temporary overlay recorded. It can be ended explicitly below; no annual Bid vacancy was created.',
-    );
-    await load();
   }
 
   async function endOverlay(id: string) {
-    const response = await fetch(`/api/admin/personnel/temporary-overlays/${id}/end`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomIdempotencyKey() },
-      body: JSON.stringify({
-        actual_end_on: asOf,
-        reason: 'Command Staff ended the temporary overlay.',
-      }),
-    });
-    if (!response.ok) {
-      setError(`Overlay end failed (${response.status}).`);
-      return;
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      const payload = { actual_end_on: asOf, reason: 'Command Staff ended the temporary overlay.' };
+      const request = ending.prepare(JSON.stringify({ id, ...payload }), () => payload);
+      const response = await csrfFetch(`/api/admin/personnel/temporary-overlays/${id}/end`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': request.key },
+        body: JSON.stringify(request.payload),
+      });
+      if (!response.ok) {
+        setError(`Overlay end failed (${response.status}).`);
+        return;
+      }
+      ending.accepted(request.key);
+      setMessage(
+        'Overlay ended. The operational view returns to the underlying assignment; annual Bid assignment is unchanged.',
+      );
+      await load();
+      await refreshProjections();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Overlay end could not be confirmed. Retry the same request.',
+      );
+    } finally {
+      setBusy(false);
     }
-    setMessage(
-      'Overlay ended. The operational view returns to the underlying assignment; annual Bid assignment is unchanged.',
-    );
-    await load();
   }
 
   return (
@@ -957,6 +1000,7 @@ function TemporaryOverlayWorkspace({
           )}
           <button
             type="submit"
+            disabled={busy}
             className="mt-2 min-h-11 rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600"
           >
             {pending === null ? 'Preview overlay' : 'Confirm and record overlay'}
@@ -982,6 +1026,7 @@ function TemporaryOverlayWorkspace({
                   <button
                     type="button"
                     onClick={() => void endOverlay(overlay.id)}
+                    disabled={busy}
                     className="min-h-10 rounded border border-amber-700 px-3 text-xs font-semibold text-amber-100"
                   >
                     End overlay

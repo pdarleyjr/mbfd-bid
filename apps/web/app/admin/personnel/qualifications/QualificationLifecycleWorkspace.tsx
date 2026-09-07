@@ -1,4 +1,7 @@
 'use client';
+import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
+import { useRetainedMutation } from '@/lib/use-retained-mutation';
 
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -355,13 +358,6 @@ function isUnavailableEndpoint(response: Response, body: unknown): boolean {
   );
 }
 
-function randomIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `qualification-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 function lifecycleMemberUrl(memberId: number, asOf: string): string {
   return `/api/admin/qualification-lifecycle/members/${encodeURIComponent(String(memberId))}?as_of=${encodeURIComponent(asOf)}`;
 }
@@ -416,6 +412,8 @@ export function QualificationLifecycleWorkspace({
   credentials,
   memberIdHint,
 }: QualificationLifecycleWorkspaceProps) {
+  const refreshProjections = usePersonnelProjectionRefresh();
+  const mutation = useRetainedMutation<Record<string, number | string>>('qualification');
   const selectedHint =
     memberIdHint !== undefined && members.some((member) => member.id === memberIdHint)
       ? memberIdHint
@@ -607,14 +605,16 @@ export function QualificationLifecycleWorkspace({
 
     setBusy(true);
     try {
-      const response = await fetch('/api/admin/qualification-lifecycle/events', {
+      const request = mutation.prepare(JSON.stringify(payload), () => payload);
+      const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
+      const response = await csrfFetch('/api/admin/qualification-lifecycle/events', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': randomIdempotencyKey(),
+          'Idempotency-Key': request.key,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(request.payload),
       });
       const body: unknown = await response.json().catch(() => null);
       if (isUnavailableEndpoint(response, body)) {
@@ -635,12 +635,14 @@ export function QualificationLifecycleWorkspace({
         return;
       }
       setReceipt(parsedReceipt);
+      mutation.accepted(request.key);
       setNotice(
         parsedReceipt.replayed
           ? 'The original qualification lifecycle receipt was returned; no duplicate event was made.'
           : 'The qualification evidence event was accepted. History was reloaded from the lifecycle ledger.',
       );
       setReason('');
+      await refreshProjections('qualification');
       await loadHistory(selectedMember.id);
     } catch (caught) {
       setError(

@@ -35,6 +35,7 @@ describe('MBFD identity and operator navigation', () => {
   it('uses the approved year-round bid control-center sections in operator navigation', () => {
     expect(ADMIN_NAV_LINKS.map(({ href, label }) => ({ href, label }))).toEqual([
       { href: '/admin', label: 'Dashboard' },
+      { href: '/admin/bid-board', label: 'Bid Board' },
       { href: '/admin/guide', label: 'Administrator Guide' },
       { href: '/admin/current-rosters', label: 'Current Rosters' },
       { href: '/admin/staffing-structure', label: 'Staffing Structure' },

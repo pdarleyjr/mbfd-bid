@@ -1,23 +1,31 @@
 'use client';
+import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
+import {
+  RULE_CUSTOM_CRITERIA as CUSTOM_CRITERIA,
+  type ConfiguredScoring,
+  ConfiguredScoringSchema,
+  RULE_OPS_GATES as OPS_GATES,
+  type PostAwardObligation,
+  PostAwardObligationsSchema,
+  QualificationAlternativesSchema,
+  ANNUAL_POSITION_RANKS as RANKS,
+  ServiceRequirementsSchema,
+  RULE_TIE_BREAK_KEYS as TIE_BREAK_KEYS,
+} from '@mbfd/shared';
 
+import { PostAwardObligationsEditor } from '@/components/admin/PostAwardObligationsEditor';
+import { QualificationAlternativesEditor } from '@/components/admin/QualificationAlternativesEditor';
+import { ServiceRequirementsEditor } from '@/components/admin/ServiceRequirementsEditor';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { deleteDraft, loadDraft, saveDraft } from '../../../../../lib/draft-storage';
+import { ConfiguredScoringEditor } from './ConfiguredScoringEditor';
 
 const legacyRouteFor = (pid: string): string => `/admin/positions/${pid}/edit`;
 const routeFor = (pid: string, ruleBookVersion: string): string =>
   `${legacyRouteFor(pid)}?rule_book_version=${encodeURIComponent(ruleBookVersion)}`;
-
-const RANKS = ['FF', 'LT', 'CPT', 'DC'] as const;
-const CUSTOM_CRITERIA = ['paramedic', 'driver_engineer', 'non_probationary'] as const;
-const OPS_GATES = ['paired_operation', 'all_operations'] as const;
-const TIE_BREAK_KEYS = [
-  'points',
-  'so_points',
-  'mo_points',
-  'rsc_seniority',
-  'rank_seniority',
-] as const;
 
 type Rank = (typeof RANKS)[number];
 type CustomCriterion = (typeof CUSTOM_CRITERIA)[number];
@@ -68,14 +76,19 @@ interface EditorValues {
   ruleId: number | null;
   requiredRanks: Rank[];
   requiredCredentials: string;
+  anyOfCredentials: string[][];
+  service: { serviceCode: string; minimumMonths: number }[];
+  postAward: PostAwardObligation[];
   customCriteria: CustomCriterion[];
   maxPoints: string;
   pointRows: PointRow[];
+  scoring: ConfiguredScoring | null;
   tieBreakChain: TieBreakKey[];
 }
 
 interface TypedDraftValues extends EditorValues {
   version: 1;
+  baseRevision?: number | null;
 }
 
 interface DecodedEditorValues {
@@ -88,9 +101,13 @@ function emptyValues(ruleId: number | null = null): EditorValues {
     ruleId,
     requiredRanks: ['FF'],
     requiredCredentials: '',
+    anyOfCredentials: [],
+    service: [],
+    postAward: [],
     customCriteria: [],
     maxPoints: '0',
     pointRows: [],
+    scoring: null,
     tieBreakChain: ['points', 'rsc_seniority', 'rank_seniority'],
   };
 }
@@ -346,7 +363,7 @@ function decodeInitialRule(initialRule: InitialRule): DecodedEditorValues {
   } else {
     addUnexpectedFieldIssues(
       initialRule.requiredCriteria,
-      ['rank', 'credentials', 'custom'],
+      ['rank', 'credentials', 'custom', 'anyOfCredentials', 'service', 'postAward'],
       'Required criteria',
       issues,
     );
@@ -357,6 +374,19 @@ function decodeInitialRule(initialRule: InitialRule): DecodedEditorValues {
       'Required credential names',
     ).join('\n');
     values.customCriteria = decodeCustomCriteria(initialRule.requiredCriteria.custom, issues);
+    const alternatives = QualificationAlternativesSchema.safeParse(
+      initialRule.requiredCriteria.anyOfCredentials ?? [],
+    );
+    if (alternatives.success) values.anyOfCredentials = alternatives.data;
+    else issues.push('Saved qualification alternatives are invalid.');
+    const service = ServiceRequirementsSchema.safeParse(initialRule.requiredCriteria.service ?? []);
+    if (service.success) values.service = service.data;
+    else issues.push('Saved service requirements are invalid.');
+    const postAward = PostAwardObligationsSchema.safeParse(
+      initialRule.requiredCriteria.postAward ?? [],
+    );
+    if (postAward.success) values.postAward = postAward.data;
+    else issues.push('Saved post-award obligations are invalid.');
   }
 
   if (!isRecord(initialRule.pointsPreference)) {
@@ -364,7 +394,7 @@ function decodeInitialRule(initialRule: InitialRule): DecodedEditorValues {
   } else {
     addUnexpectedFieldIssues(
       initialRule.pointsPreference,
-      ['max', 'items'],
+      ['max', 'items', 'scoring'],
       'Points preference',
       issues,
     );
@@ -379,6 +409,11 @@ function decodeInitialRule(initialRule: InitialRule): DecodedEditorValues {
       values.maxPoints = String(initialRule.pointsPreference.max);
     }
     values.pointRows = decodePointRows(initialRule.pointsPreference.items, issues);
+    if (initialRule.pointsPreference.scoring !== undefined) {
+      const scoring = ConfiguredScoringSchema.safeParse(initialRule.pointsPreference.scoring);
+      if (scoring.success) values.scoring = scoring.data;
+      else issues.push('Explicit channel scoring requires review before editing.');
+    }
   }
 
   values.tieBreakChain = decodeTieBreakChain(initialRule.tieBreakChain, issues);
@@ -386,6 +421,7 @@ function decodeInitialRule(initialRule: InitialRule): DecodedEditorValues {
 }
 
 function validateEditorValues(values: EditorValues, requireRuleId: boolean): string[] {
+  const alternatives = QualificationAlternativesSchema.safeParse(values.anyOfCredentials);
   const issues: string[] = [];
   if (requireRuleId && (!Number.isSafeInteger(values.ruleId) || (values.ruleId ?? 0) <= 0)) {
     issues.push('Set a valid rule ID before saving.');
@@ -397,6 +433,12 @@ function validateEditorValues(values: EditorValues, requireRuleId: boolean): str
     issues.push('Custom eligibility conditions contains a duplicate condition.');
   }
 
+  if (!alternatives.success)
+    issues.push('Every qualification group must contain at least one distinct credential.');
+  if (!ServiceRequirementsSchema.safeParse(values.service).success)
+    issues.push('Review the service categories and minimum months.');
+  if (!PostAwardObligationsSchema.safeParse(values.postAward).success)
+    issues.push('Review post-award qualifications, deadlines and sources.');
   const credentials = lineValues(values.requiredCredentials);
   if (duplicateValue(credentials))
     issues.push('Required credential names contains a duplicate credential name.');
@@ -423,6 +465,13 @@ function validateEditorValues(values: EditorValues, requireRuleId: boolean): str
   if (duplicateValue(values.tieBreakChain)) {
     issues.push('Tie-break order contains a duplicate selection.');
   }
+  if (values.scoring !== null) {
+    const scoring = ConfiguredScoringSchema.safeParse(values.scoring);
+    if (!scoring.success)
+      issues.push(
+        ...scoring.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+      );
+  }
   return issues;
 }
 
@@ -442,9 +491,14 @@ function decodeDraftValues(value: unknown, expectedRuleId: number | null): Decod
       'ruleId',
       'requiredRanks',
       'requiredCredentials',
+      'anyOfCredentials',
+      'service',
+      'postAward',
       'customCriteria',
       'maxPoints',
       'pointRows',
+      'scoring',
+      'baseRevision',
       'tieBreakChain',
     ],
     'Saved local rule draft',
@@ -512,13 +566,25 @@ function decodeDraftValues(value: unknown, expectedRuleId: number | null): Decod
   }
 
   const tieBreakChain = decodeTieBreakChain(value.tieBreakChain, issues);
+  const scoring = value.scoring == null ? null : ConfiguredScoringSchema.safeParse(value.scoring);
+  if (scoring && !scoring.success) issues.push('Saved channel scoring is invalid.');
+  const alternatives = QualificationAlternativesSchema.safeParse(value.anyOfCredentials ?? []);
+  if (!alternatives.success) issues.push('Saved qualification alternatives are invalid.');
+  const service = ServiceRequirementsSchema.safeParse(value.service ?? []);
+  if (!service.success) issues.push('Saved service requirements are invalid.');
+  const postAward = PostAwardObligationsSchema.safeParse(value.postAward ?? []);
+  if (!postAward.success) issues.push('Saved post-award obligations are invalid.');
   const draftValues: EditorValues = {
     ruleId,
     requiredRanks,
     requiredCredentials,
+    anyOfCredentials: alternatives.success ? alternatives.data : [],
+    service: service.success ? service.data : [],
+    postAward: postAward.success ? postAward.data : [],
     customCriteria,
     maxPoints,
     pointRows,
+    scoring: scoring?.success ? scoring.data : null,
     tieBreakChain,
   };
   issues.push(...validateEditorValues(draftValues, true));
@@ -536,13 +602,17 @@ function updateList<T extends string>(values: readonly T[], value: T, selected: 
 export function RuleEditor({
   positionId,
   ruleBookVersion,
+  ruleBookRevision,
   initialRule,
 }: {
   positionId: string;
   ruleBookVersion: string;
+  ruleBookRevision?: number | null;
   initialRule: InitialRule;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const pendingSave = useRef<{ fingerprint: string; key: string } | null>(null);
   const initial = decodeInitialRule(initialRule);
   const [values, setValues] = useState<EditorValues>(initial.values);
   const [initialIssues, setInitialIssues] = useState<string[]>(initial.issues);
@@ -553,10 +623,12 @@ export function RuleEditor({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [baseRevision, setBaseRevision] = useState(ruleBookRevision);
 
   useEffect(() => {
     const nextInitial = decodeInitialRule(initialRule);
     const scopedRoute = routeFor(positionId, ruleBookVersion);
+    if (hydratedEditorKey === scopedRoute) return;
     const draft = loadDraft<unknown>(scopedRoute, 'rule');
     const legacyDraft =
       draft === null ? loadDraft<unknown>(legacyRouteFor(positionId), 'rule') : null;
@@ -567,6 +639,12 @@ export function RuleEditor({
       const decodedDraft = decodeDraftValues(draft.values, nextInitial.values.ruleId);
       if (decodedDraft.issues.length === 0 && nextInitial.issues.length === 0) {
         nextValues = decodedDraft.values;
+        const stored = isRecord(draft.values) ? draft.values.baseRevision : undefined;
+        if (ruleBookRevision != null && (!Number.isInteger(stored) || Number(stored) < 0)) {
+          nextDraftIssues.push(
+            'The saved draft has no reviewed source revision. Discard it and reopen the current rule before saving.',
+          );
+        }
       } else {
         nextDraftIssues = decodedDraft.issues;
       }
@@ -577,13 +655,18 @@ export function RuleEditor({
     }
 
     setValues(nextValues);
+    setBaseRevision(
+      draft && isRecord(draft.values) && typeof draft.values.baseRevision === 'number'
+        ? draft.values.baseRevision
+        : ruleBookRevision,
+    );
     setInitialIssues(nextInitial.issues);
     setDraftIssues(nextDraftIssues);
     setHasLegacyDraft(legacyDraft !== null);
     setError(null);
     setToast(null);
     setHydratedEditorKey(scopedRoute);
-  }, [initialRule, positionId, ruleBookVersion]);
+  }, [initialRule, positionId, ruleBookVersion, ruleBookRevision, hydratedEditorKey]);
 
   const blockingIssues = [...new Set([...initialIssues, ...draftIssues])];
   const formIssues = validateEditorValues(values, true);
@@ -595,16 +678,17 @@ export function RuleEditor({
   useEffect(() => {
     if (hydratedEditorKey !== scopedRoute || blockingIssues.length > 0) return;
     const timer = setTimeout(() => {
-      saveDraft(scopedRoute, 'rule', toDraftValues(values));
+      saveDraft(scopedRoute, 'rule', { ...toDraftValues(values), baseRevision });
     }, 500);
     return () => clearTimeout(timer);
-  }, [blockingIssues.length, hydratedEditorKey, scopedRoute, values]);
+  }, [blockingIssues.length, hydratedEditorKey, scopedRoute, values, baseRevision]);
 
   function discardUnsafeDraft() {
     deleteDraft(scopedRoute, 'rule');
     if (hasLegacyDraft) deleteDraft(legacyRouteFor(positionId), 'rule');
     const nextInitial = decodeInitialRule(initialRule);
     setValues(nextInitial.values);
+    setBaseRevision(ruleBookRevision);
     setInitialIssues(nextInitial.issues);
     setDraftIssues([]);
     setHasLegacyDraft(false);
@@ -632,30 +716,48 @@ export function RuleEditor({
     }
 
     setSubmitting(true);
+    const fingerprint = JSON.stringify({ values, baseRevision, reason: reason.trim() });
+    if (pendingSave.current?.fingerprint !== fingerprint)
+      pendingSave.current = { fingerprint, key: crypto.randomUUID() };
     try {
-      const response = await fetch(`/api/admin/rules/${values.ruleId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          required_criteria: {
-            rank: values.requiredRanks,
-            credentials: lineValues(values.requiredCredentials),
-            custom: values.customCriteria,
+      const response = await createCsrfAwareFetch(fetch, () => window.location.origin)(
+        `/api/admin/rules/${values.ruleId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': pendingSave.current.key,
           },
-          points_preference: {
-            max: Number(values.maxPoints),
-            items: values.pointRows.map((row) => ({
-              credential: row.credential.trim(),
-              points: Number(row.points),
-              ...(row.opsGate === '' ? {} : { opsGate: row.opsGate }),
-            })),
-          },
-          tie_break_chain: values.tieBreakChain,
-          reason_code: 'rule_override.fix_misconfig',
-          reason: reason.trim(),
-        }),
-      });
+          credentials: 'include',
+          body: JSON.stringify({
+            expected_rule_book_revision: baseRevision ?? undefined,
+            required_criteria: {
+              rank: values.requiredRanks,
+              credentials: lineValues(values.requiredCredentials),
+              ...(values.anyOfCredentials.length
+                ? { anyOfCredentials: values.anyOfCredentials }
+                : {}),
+              ...(values.service.length ? { service: values.service } : {}),
+              ...(values.postAward.length ? { postAward: values.postAward } : {}),
+              custom: values.customCriteria,
+            },
+            points_preference: {
+              max: values.scoring ? 0 : Number(values.maxPoints),
+              items: values.scoring
+                ? []
+                : values.pointRows.map((row) => ({
+                    credential: row.credential.trim(),
+                    points: Number(row.points),
+                    ...(row.opsGate === '' ? {} : { opsGate: row.opsGate }),
+                  })),
+              ...(values.scoring ? { scoring: values.scoring } : {}),
+            },
+            tie_break_chain: values.tieBreakChain,
+            reason_code: 'rule_override.fix_misconfig',
+            reason: reason.trim(),
+          }),
+        },
+      );
       if (response.status === 401) {
         const body = (await response.json().catch(() => ({}))) as { error?: string };
         setError(
@@ -671,8 +773,23 @@ export function RuleEditor({
         return;
       }
       deleteDraft(scopedRoute, 'rule');
+      const saved = (await response.json()) as { ruleBookRevision?: number };
+      if (saved.ruleBookRevision !== undefined) setBaseRevision(saved.ruleBookRevision);
+      setReason('');
       setToast('Rule saved');
+      pendingSave.current = null;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin', 'annual-plan'] }),
+        invalidateWorkingBidBoards(queryClient, ['upcoming']),
+        queryClient.invalidateQueries({ queryKey: ['admin', 'rules'] }),
+      ]);
       router.refresh();
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Save response unavailable. Your draft and retry key are retained.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -685,6 +802,22 @@ export function RuleEditor({
         <span className="font-mono text-slate-100">{positionId}</span> in configured rule book{' '}
         <span className="font-mono text-slate-100">{ruleBookVersion}</span>.
       </p>
+
+      {ruleBookRevision != null && baseRevision != null && ruleBookRevision !== baseRevision && (
+        <div role="alert" className="rounded border border-amber-600 p-3 text-sm text-amber-100">
+          <p>
+            The rule book changed while this edit was open. Your values remain here; saving the
+            stale revision will be rejected.
+          </p>
+          <button
+            type="button"
+            onClick={discardUnsafeDraft}
+            className="mt-2 min-h-11 rounded border border-amber-600 px-3"
+          >
+            Discard local edits and load current rule
+          </button>
+        </div>
+      )}
 
       {blockingIssues.length > 0 && (
         <aside
@@ -747,6 +880,18 @@ export function RuleEditor({
         />
       </label>
 
+      <QualificationAlternativesEditor
+        value={values.anyOfCredentials}
+        onChange={(anyOfCredentials) => setValues((current) => ({ ...current, anyOfCredentials }))}
+      />
+      <ServiceRequirementsEditor
+        value={values.service}
+        onChange={(service) => setValues((current) => ({ ...current, service }))}
+      />
+      <PostAwardObligationsEditor
+        value={values.postAward}
+        onChange={(postAward) => setValues((current) => ({ ...current, postAward }))}
+      />
       <fieldset className="rounded border border-slate-700 p-4">
         <legend className="px-1 text-sm font-semibold text-slate-100">
           Custom eligibility conditions
@@ -774,126 +919,147 @@ export function RuleEditor({
         </div>
       </fieldset>
 
-      <fieldset className="rounded border border-slate-700 p-4">
-        <legend className="px-1 text-sm font-semibold text-slate-100">Credential points</legend>
-        <label className="mt-2 block max-w-xs">
-          <span className="text-sm text-slate-300">Maximum points</span>
-          <span className="mt-1 block text-xs text-slate-400">Use 0 for no points cap.</span>
-          <input
-            data-testid="rule-max-points"
-            type="number"
-            min="0"
-            step="1"
-            value={values.maxPoints}
-            onChange={(event) =>
-              setValues((current) => ({ ...current, maxPoints: event.target.value }))
-            }
-            className="mt-2 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
-          />
-        </label>
-
-        <div className="mt-4 space-y-3">
-          {values.pointRows.map((row, index) => (
-            <div
-              key={row.clientId}
-              className="grid gap-3 rounded border border-slate-700 p-3 md:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1fr)_auto]"
-            >
-              <label className="block">
-                <span className="text-xs text-slate-300">Credential name</span>
-                <input
-                  data-testid={`rule-points-row-${index}-credential`}
-                  type="text"
-                  value={row.credential}
-                  onChange={(event) =>
-                    setValues((current) => ({
-                      ...current,
-                      pointRows: current.pointRows.map((currentRow, currentIndex) =>
-                        currentIndex === index
-                          ? { ...currentRow, credential: event.target.value }
-                          : currentRow,
-                      ),
-                    }))
-                  }
-                  className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs text-slate-300">Points</span>
-                <input
-                  data-testid={`rule-points-row-${index}-points`}
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={row.points}
-                  onChange={(event) =>
-                    setValues((current) => ({
-                      ...current,
-                      pointRows: current.pointRows.map((currentRow, currentIndex) =>
-                        currentIndex === index
-                          ? { ...currentRow, points: event.target.value }
-                          : currentRow,
-                      ),
-                    }))
-                  }
-                  className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs text-slate-300">Operations gate (optional)</span>
-                <select
-                  data-testid={`rule-points-row-${index}-ops-gate`}
-                  value={row.opsGate}
-                  onChange={(event) =>
-                    setValues((current) => ({
-                      ...current,
-                      pointRows: current.pointRows.map((currentRow, currentIndex) =>
-                        currentIndex === index
-                          ? { ...currentRow, opsGate: event.target.value as OpsGate | '' }
-                          : currentRow,
-                      ),
-                    }))
-                  }
-                  className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
-                >
-                  <option value="">No Operations gate</option>
-                  {OPS_GATES.map((gate) => (
-                    <option key={gate} value={gate}>
-                      {OPS_GATE_LABELS[gate]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={() =>
-                  setValues((current) => ({
-                    ...current,
-                    pointRows: current.pointRows.filter(
-                      (_, currentIndex) => currentIndex !== index,
-                    ),
-                  }))
-                }
-                className="self-end rounded border border-slate-500 px-3 py-2 text-sm text-slate-100 hover:bg-slate-800"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-        <button
-          data-testid="rule-add-points-row"
-          type="button"
-          onClick={() =>
+      <label className="flex min-h-11 items-center gap-3 text-sm text-slate-200">
+        <input
+          type="checkbox"
+          checked={values.scoring !== null}
+          onChange={(e) =>
             setValues((current) => ({
               ...current,
-              pointRows: [...current.pointRows, createNextPointRow(current.pointRows)],
+              scoring: e.target.checked ? { v: 1, total: [], so: [], mo: [] } : null,
             }))
           }
-          className="mt-4 rounded border border-slate-500 px-3 py-2 text-sm text-slate-100 hover:bg-slate-800"
-        >
-          Add credential points
-        </button>
-      </fieldset>
+        />
+        Use explicit Total, Special Operations, and Marine scoring for this draft rule
+      </label>
+      {values.scoring && (
+        <ConfiguredScoringEditor
+          value={values.scoring}
+          onChange={(scoring) => setValues((current) => ({ ...current, scoring }))}
+        />
+      )}
+      {!values.scoring && (
+        <fieldset className="rounded border border-slate-700 p-4">
+          <legend className="px-1 text-sm font-semibold text-slate-100">Credential points</legend>
+          <label className="mt-2 block max-w-xs">
+            <span className="text-sm text-slate-300">Maximum points</span>
+            <span className="mt-1 block text-xs text-slate-400">Use 0 for no points cap.</span>
+            <input
+              data-testid="rule-max-points"
+              type="number"
+              min="0"
+              step="1"
+              value={values.maxPoints}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, maxPoints: event.target.value }))
+              }
+              className="mt-2 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
+            />
+          </label>
+
+          <div className="mt-4 space-y-3">
+            {values.pointRows.map((row, index) => (
+              <div
+                key={row.clientId}
+                className="grid gap-3 rounded border border-slate-700 p-3 md:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1fr)_auto]"
+              >
+                <label className="block">
+                  <span className="text-xs text-slate-300">Credential name</span>
+                  <input
+                    data-testid={`rule-points-row-${index}-credential`}
+                    type="text"
+                    value={row.credential}
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        pointRows: current.pointRows.map((currentRow, currentIndex) =>
+                          currentIndex === index
+                            ? { ...currentRow, credential: event.target.value }
+                            : currentRow,
+                        ),
+                      }))
+                    }
+                    className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-slate-300">Points</span>
+                  <input
+                    data-testid={`rule-points-row-${index}-points`}
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={row.points}
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        pointRows: current.pointRows.map((currentRow, currentIndex) =>
+                          currentIndex === index
+                            ? { ...currentRow, points: event.target.value }
+                            : currentRow,
+                        ),
+                      }))
+                    }
+                    className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-slate-300">Operations gate (optional)</span>
+                  <select
+                    data-testid={`rule-points-row-${index}-ops-gate`}
+                    value={row.opsGate}
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        pointRows: current.pointRows.map((currentRow, currentIndex) =>
+                          currentIndex === index
+                            ? { ...currentRow, opsGate: event.target.value as OpsGate | '' }
+                            : currentRow,
+                        ),
+                      }))
+                    }
+                    className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="">No Operations gate</option>
+                    {OPS_GATES.map((gate) => (
+                      <option key={gate} value={gate}>
+                        {OPS_GATE_LABELS[gate]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setValues((current) => ({
+                      ...current,
+                      pointRows: current.pointRows.filter(
+                        (_, currentIndex) => currentIndex !== index,
+                      ),
+                    }))
+                  }
+                  className="self-end rounded border border-slate-500 px-3 py-2 text-sm text-slate-100 hover:bg-slate-800"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            data-testid="rule-add-points-row"
+            type="button"
+            onClick={() =>
+              setValues((current) => ({
+                ...current,
+                pointRows: [...current.pointRows, createNextPointRow(current.pointRows)],
+              }))
+            }
+            className="mt-4 rounded border border-slate-500 px-3 py-2 text-sm text-slate-100 hover:bg-slate-800"
+          >
+            Add credential points
+          </button>
+        </fieldset>
+      )}
 
       <fieldset className="rounded border border-slate-700 p-4">
         <legend className="px-1 text-sm font-semibold text-slate-100">Tie-break order</legend>

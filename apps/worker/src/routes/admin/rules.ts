@@ -1,9 +1,20 @@
-import { type JwtPayload, ReasonCodeSchema } from '@mbfd/shared';
+import {
+  ConfiguredScoringSchema,
+  type JwtPayload,
+  PostAwardObligationsSchema,
+  QualificationAlternativesSchema,
+  ReasonCodeSchema,
+  ServiceRequirementsSchema,
+} from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
 import { positionRules, ruleBooks } from '../../db/schema.js';
+import {
+  configurationReceiptStatement,
+  loadConfigurationReceipt,
+} from '../../lib/admin-configuration-receipt.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import { decodePositionRule } from '../../lib/position-rule.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
@@ -77,6 +88,9 @@ const RequiredCriteriaSchema = z
   .object({
     rank: z.array(RankSchema),
     credentials: z.array(z.string().min(1)),
+    anyOfCredentials: QualificationAlternativesSchema.optional(),
+    service: ServiceRequirementsSchema.optional(),
+    postAward: PostAwardObligationsSchema.optional(),
     custom: z.array(z.enum(['paramedic', 'driver_engineer', 'non_probationary'])),
   })
   .strict();
@@ -128,6 +142,7 @@ const PointsPreferenceSchema = z
   .object({
     max: z.number().int().nonnegative(),
     items: z.array(PointsPreferenceItemSchema),
+    scoring: ConfiguredScoringSchema.optional(),
   })
   .strict();
 
@@ -141,6 +156,7 @@ const RulePatchSchema = z
     points_preference: PointsPreferenceSchema.optional(),
     tie_break_chain: TieBreakChainSchema.optional(),
     notes: z.string().max(2000).nullable().optional(),
+    expected_rule_book_revision: z.number().int().nonnegative().optional(),
     reason_code: ReasonCodeSchema,
     reason: z.string().trim().min(4).max(500),
   })
@@ -156,6 +172,7 @@ const RulePatchSchema = z
 
 const RuleDeleteSchema = z
   .object({
+    expected_rule_book_revision: z.number().int().nonnegative().optional(),
     reason_code: ReasonCodeSchema,
     reason: z.string().trim().min(4).max(500),
   })
@@ -167,6 +184,36 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   const parsed = RulePatchSchema.safeParse(raw);
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
   const patch = parsed.data;
+  const key = c.req.header('Idempotency-Key');
+  if (key !== undefined && (!key || key !== key.trim() || key.length > 256))
+    return c.json({ error: 'invalid_idempotency_key' }, 400);
+  const receiptInput = {
+    key: key ?? '',
+    actorSubject: String(c.get('claims').sub),
+    operation: `rule.patch:${id}`,
+    request: patch,
+  };
+  if (key) {
+    const prior = await loadConfigurationReceipt(c.env.DB, receiptInput);
+    if (prior)
+      return prior.ok
+        ? c.json({ ...prior.response, replayed: true })
+        : c.json({ error: prior.error }, 409);
+    if (patch.expected_rule_book_revision === undefined)
+      return c.json({ error: 'expected_rule_book_revision_required' }, 400);
+  }
+
+  if (patch.required_criteria?.service?.length) {
+    const types = await c.env.DB.prepare('SELECT id FROM service_credit_types').all<{
+      id: string;
+    }>();
+    const known = new Set(types.results.map((t) => t.id));
+    const unknown = patch.required_criteria.service
+      .filter((r) => !known.has(r.serviceCode))
+      .map((r) => r.serviceCode);
+    if (unknown.length)
+      return c.json({ error: 'service_categories_require_review', codes: unknown }, 409);
+  }
 
   if (!isReasonValidForAction('override_rule', patch.reason_code)) {
     return c.json({ error: 'invalid_reason_for_action', reason_code: patch.reason_code }, 400);
@@ -186,6 +233,13 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   if (book.status !== 'draft') {
     return c.json({ error: 'rule_book_immutable', status: book.status }, 409);
   }
+  if (
+    patch.expected_rule_book_revision !== undefined &&
+    patch.expected_rule_book_revision !== book.revision
+  )
+    return c.json({ error: 'rule_book_revision_changed' }, 409);
+  if (patch.points_preference?.scoring && patch.expected_rule_book_revision === undefined)
+    return c.json({ error: 'expected_rule_book_revision_required' }, 400);
 
   const nextRequiredCriteriaJson =
     patch.required_criteria === undefined
@@ -207,6 +261,17 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   });
   if (!candidate.ok) {
     return c.json({ error: 'rule_invalid', issues: candidate.issues }, 400);
+  }
+  if (candidate.rule.requiredCriteria.postAward?.length) {
+    const catalog = await c.env.DB.prepare(
+      'SELECT c.name FROM credentials c LEFT JOIN credential_catalog_metadata m ON m.credential_id=c.id WHERE m.retired_on IS NULL',
+    ).all<{ name: string }>();
+    const active = new Set(catalog.results.map((c) => c.name));
+    const unknown = candidate.rule.requiredCriteria.postAward
+      .filter((o) => !active.has(o.credential))
+      .map((o) => o.credential);
+    if (unknown.length)
+      return c.json({ error: 'credential_tokens_require_review', tokens: unknown }, 409);
   }
 
   const assignments: string[] = [];
@@ -239,33 +304,50 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     tieBreakChainJson: nextTieBreakChainJson,
     notes: patch.notes ?? existing.notes,
   };
-  const results = await c.env.DB.batch([
-    c.env.DB.prepare(
-      `UPDATE position_rules
+  const responseBody = { rule: afterState, ruleBookRevision: book.revision + 1 };
+  let results: D1Result[];
+  try {
+    results = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE position_rules
             SET ${assignments.join(', ')}
           WHERE id = ?
             AND EXISTS (
               SELECT 1 FROM rule_books
                WHERE version = ? AND status = 'draft' AND revision = ?
             )`,
-    ).bind(...values, id, existing.ruleBookVersion, book.revision),
-    c.env.DB.prepare(
-      `UPDATE rule_books
+      ).bind(...values, id, existing.ruleBookVersion, book.revision),
+      c.env.DB.prepare(
+        `UPDATE rule_books
             SET revision = revision + 1
-          WHERE version = ? AND status = 'draft' AND revision = ?`,
-    ).bind(existing.ruleBookVersion, book.revision),
-    auditInsertStatement(c.env.DB, {
-      bidSessionId: null,
-      actorType: 'admin',
-      actorId: c.get('claims').member_id,
-      action: 'override_rule',
-      targetKind: 'position_rule',
-      targetId: String(id),
-      reason: patch.reason,
-      beforeState: existing,
-      afterState,
-    }),
-  ]);
+          WHERE version = ? AND status = 'draft' AND revision = ? AND changes() = 1`,
+      ).bind(existing.ruleBookVersion, book.revision),
+      auditInsertStatement(
+        c.env.DB,
+        {
+          bidSessionId: null,
+          actorType: 'admin',
+          actorId: c.get('claims').member_id,
+          action: 'override_rule',
+          targetKind: 'position_rule',
+          targetId: String(id),
+          reason: patch.reason,
+          beforeState: existing,
+          afterState,
+        },
+        new Date(),
+        true,
+      ),
+      ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
+    ]);
+  } catch {
+    const prior = key ? await loadConfigurationReceipt(c.env.DB, receiptInput) : null;
+    if (prior)
+      return prior.ok
+        ? c.json({ ...prior.response, replayed: true })
+        : c.json({ error: prior.error }, 409);
+    return c.json({ error: 'rule_book_changed_or_save_failed' }, 409);
+  }
   if (
     results[0]?.meta.changes !== 1 ||
     results[1]?.meta.changes !== 1 ||
@@ -284,7 +366,7 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     }
     return c.json({ error: 'rule_book_changed' }, 409);
   }
-  return c.json({ rule: afterState });
+  return c.json(responseBody);
 });
 
 // DELETE /api/admin/rules/:id
@@ -297,6 +379,24 @@ router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   const parsed = RuleDeleteSchema.safeParse(raw);
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
   const body = parsed.data;
+  const key = c.req.header('Idempotency-Key');
+  if (key !== undefined && (!key || key.trim() !== key || key.length > 256))
+    return c.json({ error: 'invalid_idempotency_key' }, 400);
+  const receiptInput = {
+    key: key ?? '',
+    actorSubject: String(c.get('claims').sub),
+    operation: `rule.delete:${id}`,
+    request: body,
+  };
+  if (key) {
+    const prior = await loadConfigurationReceipt(c.env.DB, receiptInput);
+    if (prior)
+      return prior.ok
+        ? c.json({ ...prior.response, replayed: true })
+        : c.json({ error: prior.error }, 409);
+    if (body.expected_rule_book_revision === undefined)
+      return c.json({ error: 'expected_rule_book_revision_required' }, 400);
+  }
 
   if (!isReasonValidForAction('override_rule', body.reason_code)) {
     return c.json({ error: 'invalid_reason_for_action', reason_code: body.reason_code }, 400);
@@ -315,36 +415,64 @@ router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     return c.json({ error: 'rule_book_immutable', status: book.status }, 409);
   }
 
-  const results = await c.env.DB.batch([
-    c.env.DB.prepare(
-      `DELETE FROM position_rules
+  if (
+    body.expected_rule_book_revision !== undefined &&
+    body.expected_rule_book_revision !== book.revision
+  )
+    return c.json({ error: 'rule_book_revision_changed' }, 409);
+  const responseBody = {
+    deleted: true,
+    id,
+    rule_book_version: existing.ruleBookVersion,
+    position_id: existing.positionId,
+    revision: book.revision + 1,
+  };
+  let results: D1Result[];
+  try {
+    results = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `DELETE FROM position_rules
         WHERE id = ?
           AND EXISTS (
             SELECT 1 FROM rule_books
              WHERE version = ? AND status = 'draft' AND revision = ?
           )`,
-    ).bind(id, existing.ruleBookVersion, book.revision),
-    c.env.DB.prepare(
-      `UPDATE rule_books
+      ).bind(id, existing.ruleBookVersion, book.revision),
+      c.env.DB.prepare(
+        `UPDATE rule_books
           SET revision = revision + 1
-        WHERE version = ? AND status = 'draft' AND revision = ?`,
-    ).bind(existing.ruleBookVersion, book.revision),
-    auditInsertStatement(c.env.DB, {
-      bidSessionId: null,
-      actorType: 'admin',
-      actorId: c.get('claims').member_id,
-      action: 'override_rule',
-      targetKind: 'position_rule',
-      targetId: String(id),
-      reason: body.reason,
-      beforeState: existing,
-      afterState: {
-        deleted: true,
-        rule_book_version: existing.ruleBookVersion,
-        position_id: existing.positionId,
-      },
-    }),
-  ]);
+        WHERE version = ? AND status = 'draft' AND revision = ? AND changes() = 1`,
+      ).bind(existing.ruleBookVersion, book.revision),
+      auditInsertStatement(
+        c.env.DB,
+        {
+          bidSessionId: null,
+          actorType: 'admin',
+          actorId: c.get('claims').member_id,
+          action: 'override_rule',
+          targetKind: 'position_rule',
+          targetId: String(id),
+          reason: body.reason,
+          beforeState: existing,
+          afterState: {
+            deleted: true,
+            rule_book_version: existing.ruleBookVersion,
+            position_id: existing.positionId,
+          },
+        },
+        new Date(),
+        true,
+      ),
+      ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
+    ]);
+  } catch {
+    const prior = key ? await loadConfigurationReceipt(c.env.DB, receiptInput) : null;
+    if (prior)
+      return prior.ok
+        ? c.json({ ...prior.response, replayed: true })
+        : c.json({ error: prior.error }, 409);
+    return c.json({ error: 'rule_book_changed_or_delete_failed' }, 409);
+  }
   if (
     results[0]?.meta.changes !== 1 ||
     results[1]?.meta.changes !== 1 ||
@@ -364,13 +492,7 @@ router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
     return c.json({ error: 'rule_book_changed' }, 409);
   }
 
-  return c.json({
-    deleted: true,
-    id,
-    rule_book_version: existing.ruleBookVersion,
-    position_id: existing.positionId,
-    revision: book.revision + 1,
-  });
+  return c.json(responseBody);
 });
 
 export default router;

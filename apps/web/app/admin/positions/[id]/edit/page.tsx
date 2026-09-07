@@ -92,6 +92,7 @@ export default async function PositionEditPage({
         <RuleEditor
           positionId={id}
           ruleBookVersion={binding.configuration.ruleBookVersion}
+          ruleBookRevision={binding.configuration.ruleBookRevision}
           initialRule={rule}
         />
       ) : null}

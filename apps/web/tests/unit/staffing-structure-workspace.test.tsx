@@ -1,7 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { StaffingStructureWorkspace } from '../../app/admin/staffing-structure/StaffingStructureWorkspace';
+import { AdminQueryProvider } from '../../app/admin/_components/AdminQueryProvider';
+import { StaffingStructureWorkspace as StaffingComponent } from '../../app/admin/staffing-structure/StaffingStructureWorkspace';
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+function StaffingStructureWorkspace(props: React.ComponentProps<typeof StaffingComponent>) {
+  return (
+    <AdminQueryProvider>
+      <StaffingComponent {...props} />
+    </AdminQueryProvider>
+  );
+}
 
 describe('StaffingStructureWorkspace', () => {
   it('gives an administrator an effective-dated authorized-seat workflow without confusing vacancy and Bid opportunity', () => {

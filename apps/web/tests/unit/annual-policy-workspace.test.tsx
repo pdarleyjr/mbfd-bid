@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -8,7 +9,9 @@ import { AnnualPolicyWorkspace } from '../../app/admin/annual-policy/AnnualPolic
 describe('AnnualPolicyWorkspace', () => {
   it('starts blocked and exposes real source-backed policy controls without generated authority', () => {
     const html = renderToString(
-      <AnnualPolicyWorkspace year={2027} documents={[]} loadError={null} />,
+      <QueryClientProvider client={new QueryClient()}>
+        <AnnualPolicyWorkspace year={2027} documents={[]} loadError={null} />
+      </QueryClientProvider>,
     );
 
     expect(html).toContain('NOT CONFIGURED — BLOCKING');

@@ -1,7 +1,8 @@
 'use client';
 
 import { AdminSideNav } from '@/components/admin/AdminShell';
-import { type ReactNode, useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'mbfd-admin-sidebar-collapsed';
 
@@ -12,9 +13,52 @@ const STORAGE_KEY = 'mbfd-admin-sidebar-collapsed';
  * survive page navigation. Persisted in localStorage so a reload keeps it.
  */
 export function AdminLayoutShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const previousPath = useRef(pathname);
+  const mobileToggle = useRef<HTMLButtonElement>(null);
+  const mobileNavigation = useRef<HTMLDivElement>(null);
+  const mainContent = useRef<HTMLElement>(null);
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (previousPath.current === pathname) return;
+    previousPath.current = pathname;
+    setMobileNavOpen(false);
+    if (mobileNavOpen) mainContent.current?.focus();
+  }, [pathname, mobileNavOpen]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    mobileNavigation.current?.querySelector<HTMLAnchorElement>('a[href]')?.focus();
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setMobileNavOpen(false);
+      mobileToggle.current?.focus();
+    };
+    const selected = (event: MouseEvent) => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (
+        !(link instanceof HTMLAnchorElement) ||
+        !mobileNavigation.current?.contains(link) ||
+        link.target === '_blank'
+      )
+        return;
+      // Unsaved-edit rejection stops propagation before this listener. Next
+      // Link prevents the default browser load even when navigation is accepted.
+      setMobileNavOpen(false);
+      mainContent.current?.focus();
+    };
+    document.addEventListener('keydown', dismissOnEscape);
+    document.addEventListener('click', selected);
+    return () => {
+      document.removeEventListener('keydown', dismissOnEscape);
+      document.removeEventListener('click', selected);
+    };
+  }, [mobileNavOpen]);
 
   // Read the persisted preference on mount. Two-phase render avoids the SSR
   // mismatch warning (server emits "expanded", client may have a stored
@@ -72,6 +116,7 @@ export function AdminLayoutShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             data-testid="admin-mobile-nav-toggle"
+            ref={mobileToggle}
             onClick={() => setMobileNavOpen((open) => !open)}
             aria-controls="admin-mobile-navigation"
             aria-expanded={mobileNavOpen}
@@ -83,12 +128,15 @@ export function AdminLayoutShell({ children }: { children: ReactNode }) {
         </div>
         <div
           id="admin-mobile-navigation"
+          ref={mobileNavigation}
           hidden={!mobileNavOpen}
           className="border-b border-slate-700 bg-slate-900 md:hidden"
         >
           <AdminSideNav />
         </div>
-        <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main ref={mainContent} tabIndex={-1} className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+          {children}
+        </main>
       </div>
     </div>
   );
