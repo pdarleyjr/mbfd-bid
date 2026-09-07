@@ -168,6 +168,27 @@ describe('TargetSolutions reviewed import', () => {
     expect(
       await h.env.DB.prepare('SELECT kind,effective_on FROM member_qualification_events').first(),
     ).toMatchObject({ kind: 'CERTIFICATION_EXPIRED', effective_on: '2026-08-02' });
+    const repeat = (await (
+      await request('/imports', {
+        csv: adverse.replace('Expired', 'expired'),
+        filename: 'later-export.csv',
+        observed_on: '2026-09-07',
+      })
+    ).json()) as { id: string };
+    await request(`/imports/${repeat.id}/review`, { accept: true });
+    const again = (await (await request(`/imports/${repeat.id}`)).json()) as {
+      counts: Record<string, number>;
+      rows: { before: { current: { expiresOn: string } } }[];
+    };
+    expect(again.counts.UNCHANGED).toBe(1);
+    expect(again.rows[0]?.before.current.expiresOn).toBe('2026-08-01');
+    await request(`/imports/${repeat.id}/apply`, {
+      safe: true,
+      reason: 'Same expiration in later export',
+    });
+    expect(
+      await h.env.DB.prepare('SELECT count(*) AS n FROM member_qualification_events').first(),
+    ).toEqual({ n: 1 });
   });
 
   it('rolls back a failed apply group without leaving a qualification or completed source row', async () => {

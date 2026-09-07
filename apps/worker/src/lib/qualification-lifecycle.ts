@@ -179,6 +179,34 @@ export function normalizePersistedQualificationLifecycleEvent(
   };
 }
 
+/** Keep the source's last valid day distinct from the ledger's first expired day. */
+function certificationExpiration(event: QualificationLifecycleEvent): string | null {
+  if (event.kind !== 'CERTIFICATION_EXPIRED' || event.evidenceSource !== 'TargetSolutions')
+    return event.expiresOn;
+  try {
+    const source = JSON.parse(event.afterState) as Record<string, unknown>;
+    if (
+      source.v !== 1 ||
+      source.kind !== event.kind ||
+      typeof source.importId !== 'string' ||
+      typeof source.rowId !== 'string'
+    )
+      return event.expiresOn;
+    if (source.sourceExpiresOn === null) return null;
+    if (
+      typeof source.sourceExpiresOn === 'string' &&
+      isQualificationCalendarDate(source.sourceExpiresOn) &&
+      new Date(Date.parse(`${source.sourceExpiresOn}T00:00:00Z`) + 86400000)
+        .toISOString()
+        .slice(0, 10) === event.effectiveOn
+    )
+      return source.sourceExpiresOn;
+  } catch {
+    /* Older or unrelated evidence retains its original meaning. */
+  }
+  return event.expiresOn;
+}
+
 /**
  * Resolves the evidence state that an operator or policy snapshot could have
  * known on `asOf`. Later evidence must not rewrite that historical view.
@@ -215,7 +243,7 @@ export function deriveMemberQualificationProjection(input: {
       credentialName,
       status: event.kind === 'CERTIFICATION_REVOKED' ? 'revoked' : 'expired',
       effectiveOn: event.effectiveOn,
-      expiresOn: event.expiresOn,
+      expiresOn: certificationExpiration(event),
       evidenceSource: event.evidenceSource,
       evidenceReference: event.evidenceReference,
       eventId: event.id,
