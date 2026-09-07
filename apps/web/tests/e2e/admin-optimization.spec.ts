@@ -9,7 +9,7 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
   if (!key) throw new Error('Local synthetic signing key required');
   const now = Math.floor(Date.now() / 1000);
   const jwt = await new SignJWT({
-    sub: '901',
+    sub: 901,
     hub_user_id: 901,
     member_id: 901,
     emp: 'synthetic-optimization',
