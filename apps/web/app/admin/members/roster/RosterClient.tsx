@@ -1,5 +1,14 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -133,16 +142,16 @@ export function RosterClient({
   return (
     <div className="mt-6">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm text-slate-300">
+        <Label className="text-sm text-foreground">
           <span className="sr-only">Search members</span>
-          <input
+          <Input
             type="search"
             value={searchValue}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search by name or employee ID"
-            className="min-h-10 w-72 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-white focus:border-red-700 focus:outline-none focus:ring-2 focus:ring-red-700"
+            className="min-h-10 w-72 rounded-md border border-border bg-card px-3 text-sm text-foreground focus:border-destructive/40 focus:outline-none focus:ring-2 focus:ring-ring"
           />
-        </label>
+        </Label>
 
         <fieldset className="flex gap-1">
           <legend className="sr-only">Filter by rank</legend>
@@ -150,17 +159,17 @@ export function RosterClient({
             const active = (searchParams.get('rank') ?? '') === f.value;
             const id = `rank-filter-${f.value || 'all'}`;
             return (
-              <label
+              <Label
                 key={f.value || 'all'}
                 htmlFor={id}
                 className={[
                   'flex min-h-10 cursor-pointer items-center rounded-md border px-3 text-sm font-medium transition-colors duration-fast ease-out-quart',
                   active
-                    ? 'border-red-700 bg-red-700 text-white'
-                    : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500',
+                    ? 'border-destructive/40 bg-destructive text-primary-foreground'
+                    : 'border-border bg-card text-foreground hover:border-border',
                 ].join(' ')}
               >
-                <input
+                <Input
                   id={id}
                   type="radio"
                   name="rank-filter"
@@ -169,7 +178,7 @@ export function RosterClient({
                   onChange={() => onRankChange(f.value)}
                 />
                 {f.label}
-              </label>
+              </Label>
             );
           })}
         </fieldset>
@@ -177,59 +186,67 @@ export function RosterClient({
         <div className="ml-auto flex flex-wrap gap-2">
           <Link
             href={'/admin/telestaff' as Route}
-            className="inline-flex min-h-10 items-center rounded-md bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-600"
+            className="inline-flex min-h-10 items-center rounded-md bg-destructive px-4 text-sm font-semibold text-primary-foreground hover:bg-destructive"
           >
             TeleStaff reconciliation
           </Link>
           <Link
             href={'/admin/personnel' as Route}
-            className="inline-flex min-h-10 items-center rounded-md border border-slate-600 px-4 text-sm font-semibold text-slate-100 hover:border-slate-400"
+            className="inline-flex min-h-10 items-center rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:border-border"
           >
             Personnel lifecycle
           </Link>
         </div>
       </div>
 
-      <p data-testid="bid-order-session-context" className="mt-3 text-sm text-slate-300">
+      <p data-testid="bid-order-session-context" className="mt-3 text-sm text-foreground">
         {bidOrderSession === null
           ? 'Manual bid-order reordering is unavailable because no active Bid session is verified.'
           : `Manual bid order applies to ${bidOrderSession.label}. The selected session remains attached automatically.`}
       </p>
 
       {toast !== null && (
-        <output aria-live="polite" className="mt-3 block text-sm text-emerald-400">
+        <output aria-live="polite" className="mt-3 block text-sm text-success">
           {toast}
         </output>
       )}
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-700">
-        <table className="w-full border-collapse text-sm">
+      <div className="mt-4 overflow-x-auto rounded-xl border border-border">
+        <Table className="w-full border-collapse text-sm">
           <caption className="sr-only">{LEGACY_CREDENTIAL_NOTICE}</caption>
-          <thead className="bg-slate-900">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">#</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Emp ID</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Name</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Rank</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">RSC</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Rank Sen.</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">
+          <TableHeader className="bg-card">
+            <TableRow>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">#</TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Emp ID
+              </TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Name
+              </TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Rank
+              </TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">RSC</TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Rank Sen.
+              </TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
                 Credential references
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {members.map((m, idx) => (
-              <tr
+              <TableRow
                 key={m.id}
-                className="border-slate-800 border-t transition-colors hover:bg-slate-900/40"
+                className="border-border border-t transition-colors hover:bg-card"
               >
-                <td className="px-3 py-2 align-top">
+                <TableCell className="px-3 py-2 align-top">
                   <div className="flex items-center gap-1">
-                    <span className="w-6 font-mono [font-variant-numeric:tabular-nums] text-slate-300">
+                    <span className="w-6 font-mono [font-variant-numeric:tabular-nums] text-foreground">
                       {m.ordinal}
                     </span>
-                    <button
+                    <Button
                       type="button"
                       aria-label={`Move ${m.last_name} up`}
                       onClick={() => moveMember(m.id, 'up')}
@@ -239,11 +256,11 @@ export function RosterClient({
                         bidOrderSession === null ||
                         m.bid_category === 'EXCLUDED'
                       }
-                      className="rounded border border-slate-700 px-1 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-30"
+                      className="rounded border border-border px-1 text-xs text-foreground hover:border-border disabled:opacity-30"
                     >
                       ↑
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
                       aria-label={`Move ${m.last_name} down`}
                       onClick={() => moveMember(m.id, 'down')}
@@ -253,25 +270,25 @@ export function RosterClient({
                         bidOrderSession === null ||
                         m.bid_category === 'EXCLUDED'
                       }
-                      className="rounded border border-slate-700 px-1 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-30"
+                      className="rounded border border-border px-1 text-xs text-foreground hover:border-border disabled:opacity-30"
                     >
                       ↓
-                    </button>
+                    </Button>
                   </div>
                   {m.manual_override_ordinal !== null && (
-                    <span className="ml-1 inline-block rounded bg-amber-700/50 px-1 text-[10px] text-amber-100">
+                    <span className="ml-1 inline-block rounded bg-warning-surface px-1 text-[10px] text-warning">
                       override
                     </span>
                   )}
-                </td>
-                <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top font-mono text-xs text-foreground [font-variant-numeric:tabular-nums]">
                   {m.employee_id}
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <span className="font-medium text-white">{m.last_name}</span>
-                  <span className="text-slate-400">, {m.first_name}</span>
-                </td>
-                <td className="px-3 py-2 align-top">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top">
+                  <span className="font-medium text-foreground">{m.last_name}</span>
+                  <span className="text-muted-foreground">, {m.first_name}</span>
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top">
                   <span
                     className={[
                       'inline-flex rounded px-2 py-0.5 text-xs font-semibold',
@@ -280,14 +297,14 @@ export function RosterClient({
                   >
                     {m.rank === 'CIVILIAN' ? 'Civilian' : m.rank}
                   </span>
-                </td>
-                <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top font-mono text-xs text-foreground [font-variant-numeric:tabular-nums]">
                   {m.rsc_seniority ?? 'Not applicable'}
-                </td>
-                <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top font-mono text-xs text-foreground [font-variant-numeric:tabular-nums]">
                   {m.rank_seniority ?? '—'}
-                </td>
-                <td className="px-3 py-2 align-top">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top">
                   <div className="flex flex-wrap gap-1">
                     {sortedCredentials
                       .filter((cred) => m.credential_ids.includes(cred.id))
@@ -297,40 +314,40 @@ export function RosterClient({
                           <span
                             key={cred.id}
                             title={note ? `${cred.name} — ${note}` : cred.name}
-                            className="inline-flex max-w-[160px] truncate rounded bg-slate-700 px-2 py-0.5 text-[10px] font-medium text-slate-100"
+                            className="inline-flex max-w-[160px] truncate rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground"
                           >
                             {cred.name}
                           </span>
                         );
                       })}
                     {m.credential_ids.length === 0 && (
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-muted-foreground">
                         No legacy credential references on file
                       </span>
                     )}
                   </div>
                   <Link
                     href={`/admin/personnel/qualifications?memberId=${m.id}` as Route}
-                    className="mt-2 inline-flex text-xs font-medium text-red-300 hover:text-red-200"
+                    className="mt-2 inline-flex text-xs font-medium text-destructive hover:text-destructive"
                   >
                     Review qualification lifecycle
                   </Link>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
             {members.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
-                  <p className="font-medium text-slate-200">No members in the bid roster.</p>
-                  <p className="mt-1 text-xs text-slate-400">
+              <TableRow>
+                <TableCell colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                  <p className="font-medium text-foreground">No members in the bid roster.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Bring an approved official staffing source through TeleStaff reconciliation; do
                     not bootstrap a current roster from a local credentials extract.
                   </p>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

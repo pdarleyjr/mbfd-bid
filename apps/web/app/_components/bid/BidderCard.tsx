@@ -43,7 +43,7 @@ export function BidderCard({ bidder, fallbackMemberId, isMe, compact }: Props) {
     return (
       <span
         data-testid="bidder-card-fallback"
-        className={isMe ? 'font-bold text-red-700' : 'tabular-nums text-stone-900'}
+        className={isMe ? 'font-bold text-red-700' : 'tabular-nums text-foreground'}
       >
         {fallbackMemberId ?? '—'}
         {isMe ? ' (you)' : null}
@@ -51,7 +51,7 @@ export function BidderCard({ bidder, fallbackMemberId, isMe, compact }: Props) {
     );
   }
 
-  const nameClass = isMe ? 'font-bold text-red-700' : 'font-semibold text-stone-900';
+  const nameClass = isMe ? 'font-bold text-red-700' : 'font-semibold text-foreground';
 
   return (
     <span
@@ -61,9 +61,9 @@ export function BidderCard({ bidder, fallbackMemberId, isMe, compact }: Props) {
       <span className={nameClass}>
         {rankLabel(bidder.rank)} {bidder.firstName} {bidder.lastName}
       </span>
-      <span className="text-xs tabular-nums text-stone-500">#{bidder.employeeId}</span>
+      <span className="text-xs tabular-nums text-muted-foreground">#{bidder.employeeId}</span>
       {!compact && (
-        <span className="text-xs uppercase tracking-wide text-stone-500">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">
           · {bidder.pool} · ord {bidder.ordinal}
         </span>
       )}

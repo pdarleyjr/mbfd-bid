@@ -1,4 +1,11 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import { useEffect, useMemo, useState } from 'react';
 import {
   FALLBACK_POSITION_METADATA,
@@ -93,19 +100,19 @@ export function BidRoster({
     <section
       data-testid="bid-roster"
       aria-label="Bid roster"
-      className="border-y border-stone-200 bg-white"
+      className="border-y border-border bg-white"
     >
       <header className="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
-        <button
+        <Button
           type="button"
           data-testid="bid-roster-toggle"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="rounded border border-stone-300 bg-white px-2 py-1 text-xs font-medium text-stone-700 hover:bg-stone-100"
+          className="rounded border border-border bg-white px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
         >
           {open ? '▾' : '▸'} Bid Roster
-        </button>
-        <span className="text-xs uppercase tracking-wide text-stone-500">
+        </Button>
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">
           {bidOrder.length} total · {remainingCount} remaining · {pickedIds.size} picked
         </span>
         {preview && (
@@ -119,7 +126,7 @@ export function BidRoster({
         {open && (
           <div className="ml-auto flex items-center gap-1 text-xs">
             {(['all', 'remaining', 'picked'] as const).map((opt) => (
-              <button
+              <Button
                 key={opt}
                 type="button"
                 onClick={() => setFilter(opt)}
@@ -128,11 +135,11 @@ export function BidRoster({
                   'rounded px-2 py-1 capitalize',
                   filter === opt
                     ? 'bg-red-700 text-white'
-                    : 'bg-stone-100 text-stone-700 hover:bg-stone-200',
+                    : 'bg-muted text-foreground hover:bg-muted',
                 ].join(' ')}
               >
                 {opt}
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -141,21 +148,21 @@ export function BidRoster({
       {open && (
         <div
           data-testid="bid-roster-list"
-          className="max-h-48 overflow-auto border-t border-stone-100"
+          className="max-h-48 overflow-auto border-t border-border"
         >
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
-              <tr>
-                <th className="px-3 py-1.5 text-left">#</th>
-                <th className="px-3 py-1.5 text-left">Pool</th>
-                <th className="px-3 py-1.5 text-left">Member</th>
-                <th className="px-3 py-1.5 text-left">Emp #</th>
-                <th className="px-3 py-1.5 text-left">Last year</th>
-                <th className="px-3 py-1.5 text-left">This year</th>
-                <th className="px-3 py-1.5 text-left">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
+          <Table className="w-full text-sm">
+            <TableHeader className="sticky top-0 bg-background text-xs uppercase tracking-wide text-muted-foreground">
+              <TableRow>
+                <TableHead className="px-3 py-1.5 text-left">#</TableHead>
+                <TableHead className="px-3 py-1.5 text-left">Pool</TableHead>
+                <TableHead className="px-3 py-1.5 text-left">Member</TableHead>
+                <TableHead className="px-3 py-1.5 text-left">Emp #</TableHead>
+                <TableHead className="px-3 py-1.5 text-left">Last year</TableHead>
+                <TableHead className="px-3 py-1.5 text-left">This year</TableHead>
+                <TableHead className="px-3 py-1.5 text-left">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-stone-100">
               {rows.map((entry) => {
                 const member = members[String(entry.memberId)];
                 const isCurrent = currentBidderId === entry.memberId;
@@ -169,7 +176,7 @@ export function BidRoster({
                 const baseRowClass = isCurrent
                   ? 'bg-red-50'
                   : isPicked
-                    ? 'bg-emerald-50/50 text-stone-500'
+                    ? 'bg-emerald-50/50 text-muted-foreground'
                     : 'bg-white';
                 const rowClass =
                   isSelected && pickMode
@@ -180,7 +187,7 @@ export function BidRoster({
                     ? 'bg-red-700 text-white'
                     : status === 'picked'
                       ? 'bg-emerald-200 text-emerald-900'
-                      : 'bg-stone-200 text-stone-700';
+                      : 'bg-muted text-foreground';
                 const onRowClick =
                   pickMode && !isPicked
                     ? () =>
@@ -205,7 +212,7 @@ export function BidRoster({
                     }
                   : {};
                 return (
-                  <tr
+                  <TableRow
                     key={entry.memberId}
                     data-testid={`bid-roster-row-${entry.ordinal}`}
                     data-status={status}
@@ -214,14 +221,16 @@ export function BidRoster({
                     }`}
                     {...interactiveProps}
                   >
-                    <td className="px-3 py-1 font-mono tabular-nums">{entry.ordinal}</td>
-                    <td className="px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+                    <TableCell className="px-3 py-1 font-mono tabular-nums">
+                      {entry.ordinal}
+                    </TableCell>
+                    <TableCell className="px-3 py-1 text-xs font-semibold uppercase tracking-wide">
                       {entry.pool}
-                    </td>
-                    <td className="px-3 py-1">
+                    </TableCell>
+                    <TableCell className="px-3 py-1">
                       {member ? (
                         <span>
-                          <span className="text-stone-500">{shortRank(member.rank)} </span>
+                          <span className="text-muted-foreground">{shortRank(member.rank)} </span>
                           {member.firstName} {member.lastName}
                         </span>
                       ) : (
@@ -229,10 +238,10 @@ export function BidRoster({
                           #{entry.memberId}
                         </span>
                       )}
-                    </td>
-                    <td className="px-3 py-1 font-mono text-xs text-stone-500">
+                    </TableCell>
+                    <TableCell className="px-3 py-1 font-mono text-xs text-muted-foreground">
                       {member?.employeeId ?? '—'}
-                    </td>
+                    </TableCell>
                     <PositionLabelCell
                       positionId={member?.priorPositionId ?? null}
                       positions={positions}
@@ -241,25 +250,28 @@ export function BidRoster({
                       positionId={positionByMember.get(entry.memberId) ?? null}
                       positions={positions}
                     />
-                    <td className="px-3 py-1">
+                    <TableCell className="px-3 py-1">
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadge}`}
                       >
                         {status === 'current' ? 'Up now' : status}
                       </span>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
               {rows.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-3 py-4 text-center text-sm text-stone-500">
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="px-3 py-4 text-center text-sm text-muted-foreground"
+                  >
                     No bidders match this filter.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </section>
@@ -279,18 +291,18 @@ function PositionLabelCell({
   positions: readonly PositionMeta[];
 }) {
   if (positionId === null || positionId.length === 0) {
-    return <td className="px-3 py-1 text-xs text-stone-400">—</td>;
+    return <TableCell className="px-3 py-1 text-xs text-stone-400">—</TableCell>;
   }
   const meta = getPositionMeta(positions, positionId);
   const full = formatPositionLabel(positions, positionId);
   return (
-    <td className="px-3 py-1 text-xs text-stone-900" title={full}>
-      <span className="font-mono font-semibold text-stone-700">{positionId}</span>
+    <TableCell className="px-3 py-1 text-xs text-foreground" title={full}>
+      <span className="font-mono font-semibold text-foreground">{positionId}</span>
       {meta && (
-        <span className="ml-2 text-stone-500">
+        <span className="ml-2 text-muted-foreground">
           {meta.unit} · {meta.positionName}
         </span>
       )}
-    </td>
+    </TableCell>
   );
 }

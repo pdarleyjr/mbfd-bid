@@ -1,5 +1,9 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import type { ConfiguredScoring } from '@mbfd/shared';
 import { useQuery } from '@tanstack/react-query';
 
@@ -12,7 +16,7 @@ const CHANNELS: { id: Channel; label: string }[] = [
   { id: 'mo', label: 'Marine Operations points' },
 ];
 const inputClass =
-  'mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-900 px-3 text-sm text-white';
+  'mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-sm text-foreground';
 
 export function ConfiguredScoringEditor({
   value,
@@ -67,9 +71,9 @@ export function ConfiguredScoringEditor({
   };
   const options = credentials.data ?? [];
   const multi = (label: string, selected: string[], change: (tokens: string[]) => void) => (
-    <label className="block text-sm text-slate-300">
+    <Label className="block text-sm text-foreground">
       {label}
-      <select
+      <NativeSelect
         multiple
         value={selected}
         onChange={(e) => change(Array.from(e.target.selectedOptions, (o) => o.value))}
@@ -88,32 +92,32 @@ export function ConfiguredScoringEditor({
             {c.retiredOn ? ` · Retires ${c.retiredOn}` : ''}
           </option>
         ))}
-      </select>
-    </label>
+      </NativeSelect>
+    </Label>
   );
   return (
     <div className="space-y-5">
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-foreground">
         Each channel is explicit. An empty channel awards zero points. Alternatives are approved
         equivalents for this item only; prerequisites require every selected credential. Groups
         award points in displayed order up to their cap.
       </p>
       {credentials.isError && (
-        <p role="alert" className="text-sm text-amber-200">
+        <p role="alert" className="text-sm text-warning">
           {credentials.error.message}. Stored selections remain visible.
         </p>
       )}
       {CHANNELS.filter((c) => !visibleChannels || visibleChannels.includes(c.id)).map(
         ({ id: channel, label }) => (
-          <fieldset key={channel} className="rounded border border-slate-600 p-4">
-            <legend className="px-1 font-semibold text-white">{label}</legend>
+          <fieldset key={channel} className="rounded border border-border p-4">
+            <legend className="px-1 font-semibold text-foreground">{label}</legend>
             {value[channel].map((group, gi) => (
-              <div key={group.id} className="mt-3 space-y-3 rounded border border-slate-700 p-3">
+              <div key={group.id} className="mt-3 space-y-3 rounded border border-border p-3">
                 <div className="flex flex-wrap items-end gap-3">
-                  <p className="flex-1 text-sm text-slate-300">Group {gi + 1}</p>
-                  <label className="text-sm text-slate-300">
+                  <p className="flex-1 text-sm text-foreground">Group {gi + 1}</p>
+                  <Label className="text-sm text-foreground">
                     Group cap (blank means uncapped)
-                    <input
+                    <Input
                       type="number"
                       min="0"
                       max="100000"
@@ -126,25 +130,25 @@ export function ConfiguredScoringEditor({
                       }
                       className={inputClass}
                     />
-                  </label>
-                  <button
+                  </Label>
+                  <Button
                     type="button"
-                    className="min-h-11 rounded border border-slate-500 px-3 text-sm"
+                    className="min-h-11 rounded border border-border px-3 text-sm"
                     onClick={() =>
                       onChange({ ...value, [channel]: value[channel].filter((_, i) => i !== gi) })
                     }
                   >
                     Remove group
-                  </button>
+                  </Button>
                 </div>
                 {group.items.map((item, ii) => (
                   <div
                     key={`${group.id}-${ii}`}
-                    className="grid gap-3 border-t border-slate-700 pt-3 md:grid-cols-2"
+                    className="grid gap-3 border-t border-border pt-3 md:grid-cols-2"
                   >
-                    <label className="text-sm text-slate-300">
+                    <Label className="text-sm text-foreground">
                       Credential
-                      <select
+                      <NativeSelect
                         value={item.credential}
                         onChange={(e) =>
                           updateItem(channel, gi, ii, { credential: e.target.value })
@@ -164,11 +168,11 @@ export function ConfiguredScoringEditor({
                             {c.retiredOn ? ` · Retires ${c.retiredOn}` : ''}
                           </option>
                         ))}
-                      </select>
-                    </label>
-                    <label className="text-sm text-slate-300">
+                      </NativeSelect>
+                    </Label>
+                    <Label className="text-sm text-foreground">
                       Points
-                      <input
+                      <Input
                         type="number"
                         min="0"
                         max="10000"
@@ -179,7 +183,7 @@ export function ConfiguredScoringEditor({
                         }
                         className={inputClass}
                       />
-                    </label>
+                    </Label>
                     {multi(
                       'Reviewed alternatives (any one qualifies)',
                       item.alternatives,
@@ -190,20 +194,20 @@ export function ConfiguredScoringEditor({
                       item.requiresAll,
                       (requiresAll) => updateItem(channel, gi, ii, { requiresAll }),
                     )}
-                    <button
+                    <Button
                       type="button"
-                      className="min-h-11 justify-self-start rounded border border-slate-500 px-3 text-sm"
+                      className="min-h-11 justify-self-start rounded border border-border px-3 text-sm"
                       onClick={() =>
                         updateGroup(channel, gi, { items: group.items.filter((_, i) => i !== ii) })
                       }
                     >
                       Remove item {ii + 1}
-                    </button>
+                    </Button>
                   </div>
                 ))}
-                <button
+                <Button
                   type="button"
-                  className="min-h-11 rounded border border-slate-500 px-3 text-sm"
+                  className="min-h-11 rounded border border-border px-3 text-sm"
                   onClick={() =>
                     updateGroup(channel, gi, {
                       items: [
@@ -214,12 +218,12 @@ export function ConfiguredScoringEditor({
                   }
                 >
                   Add scoring item
-                </button>
+                </Button>
               </div>
             ))}
-            <button
+            <Button
               type="button"
-              className="mt-3 min-h-11 rounded border border-slate-500 px-3 text-sm"
+              className="mt-3 min-h-11 rounded border border-border px-3 text-sm"
               onClick={() =>
                 onChange({
                   ...value,
@@ -228,7 +232,7 @@ export function ConfiguredScoringEditor({
               }
             >
               Add group for {label.toLowerCase()}
-            </button>
+            </Button>
           </fieldset>
         ),
       )}

@@ -49,18 +49,18 @@ export default async function AdminMembersPage() {
     <div>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-2xl text-white">Members</h1>
+          <h1 className="font-heading text-2xl text-foreground">Members</h1>
           {fetchError ? (
-            <p className="mt-1 text-sm text-red-400">{fetchError}</p>
+            <p className="mt-1 text-sm text-destructive">{fetchError}</p>
           ) : (
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {total} member{total !== 1 ? 's' : ''} on record
             </p>
           )}
         </div>
         <Link
           href={'/admin/telestaff' as const}
-          className="flex min-h-[44px] items-center rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white transition-colors duration-fast ease-out-quart hover:bg-red-600"
+          className="flex min-h-[44px] items-center rounded-md bg-destructive px-4 py-2 text-sm font-medium text-primary-foreground transition-colors duration-fast ease-out-quart hover:bg-destructive"
         >
           TeleStaff reconciliation
         </Link>
@@ -68,7 +68,7 @@ export default async function AdminMembersPage() {
 
       <div className="mt-6">
         {fetchError ? (
-          <p className="rounded-xl border border-red-700/40 bg-red-900/20 px-4 py-6 text-center text-slate-300">
+          <p className="rounded-xl border border-destructive/40 bg-destructive-surface px-4 py-6 text-center text-foreground">
             Could not load members. Check worker connectivity.
           </p>
         ) : (

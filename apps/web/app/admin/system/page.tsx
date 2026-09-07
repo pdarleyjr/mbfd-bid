@@ -10,13 +10,13 @@ export default async function SystemIntegrationsPage() {
   return (
     <section className="max-w-3xl space-y-6" aria-labelledby="system-integrations-heading">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Operational boundary
         </p>
-        <h1 id="system-integrations-heading" className="mt-1 font-heading text-2xl text-white">
+        <h1 id="system-integrations-heading" className="mt-1 font-heading text-2xl text-foreground">
           System/Integrations
         </h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           This area records the boundary between the Bid application and external operational
           systems.
         </p>
@@ -24,10 +24,10 @@ export default async function SystemIntegrationsPage() {
 
       <div
         data-testid="system-integrations-unavailable"
-        className="border-l-4 border-amber-500 bg-amber-950/30 px-4 py-4 text-sm text-amber-100"
+        className="border-l-4 border-warning/40 bg-warning-surface px-4 py-4 text-sm text-warning"
       >
         <p className="font-semibold">Integration configuration is not available here</p>
-        <p className="mt-1 text-amber-100/90">
+        <p className="mt-1 text-warning">
           This read-only landing does not configure TeleStaff, portal publication, portal
           write-back, infrastructure, or a live bid. Portal write-back remains disabled.
         </p>

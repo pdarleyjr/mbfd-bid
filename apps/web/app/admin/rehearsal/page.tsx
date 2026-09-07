@@ -71,14 +71,14 @@ export default async function RehearsalDashboardPage(): Promise<ReactElement> {
     <div>
       <header className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
         <div>
-          <h1 className="font-heading text-2xl text-white">Rehearsal Console</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="font-heading text-2xl text-foreground">Rehearsal Console</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Mock-draft sessions are excluded from portal write-back.
           </p>
         </div>
         <Link
           href={'/admin/specialty-adjudication' as Route}
-          className="min-h-11 rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-950/40"
+          className="min-h-11 rounded border border-warning/40 px-4 py-2 text-sm font-semibold text-warning hover:bg-warning-surface"
         >
           Specialty rehearsal
         </Link>
@@ -87,12 +87,12 @@ export default async function RehearsalDashboardPage(): Promise<ReactElement> {
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-6">
           <section>
-            <h2 className="mb-3 font-heading text-lg text-white">Active Mock Sessions</h2>
+            <h2 className="mb-3 font-heading text-lg text-foreground">Active Mock Sessions</h2>
             <MockSessionsTable sessions={sessions} />
           </section>
 
           <section>
-            <h2 className="mb-3 font-heading text-lg text-white">Recent Findings</h2>
+            <h2 className="mb-3 font-heading text-lg text-foreground">Recent Findings</h2>
             <FindingsList findings={findings} />
           </section>
         </div>

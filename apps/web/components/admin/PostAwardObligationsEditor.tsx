@@ -1,5 +1,9 @@
 'use client';
 import { buttonClass, fieldClass } from '@/app/admin/annual-plan/annual-plan-client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useCredentialCatalog } from '@/lib/use-credential-catalog';
 import type { PostAwardObligation } from '@mbfd/shared';
 export function PostAwardObligationsEditor({
@@ -10,19 +14,19 @@ export function PostAwardObligationsEditor({
   const update = (id: string, patch: Partial<PostAwardObligation>) =>
     onChange(value.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   return (
-    <fieldset className="space-y-4 rounded border border-slate-600 p-4">
+    <fieldset className="space-y-4 rounded border border-border p-4">
       <legend className="px-1 font-semibold">Post-award qualifications</legend>
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-foreground">
         These follow-up requirements do not affect initial eligibility or points. Choose whether the
         approved period starts at the final award or on an explicitly approved bid start date.
         Calendar-month deadlines use the last day of a shorter month. Cite the authority for the
         date, period and calendar zone.
       </p>
       {value.map((row) => (
-        <div className="space-y-3 rounded border border-slate-700 p-3" key={row.id}>
-          <label className="block">
+        <div className="space-y-3 rounded border border-border p-3" key={row.id}>
+          <Label className="block">
             Qualification
-            <select
+            <NativeSelect
               className={fieldClass}
               required
               value={row.credential}
@@ -43,11 +47,11 @@ export function PostAwardObligationsEditor({
                   {c.retiredOn ? ' · Retired' : ''}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="block">
+            </NativeSelect>
+          </Label>
+          <Label className="block">
             Deadline starts from
-            <select
+            <NativeSelect
               className={fieldClass}
               value={row.deadline.basis}
               onChange={(e) => {
@@ -66,12 +70,12 @@ export function PostAwardObligationsEditor({
             >
               <option value="FINAL_POSITION_AWARD">Final accepted position award</option>
               <option value="APPROVED_BID_START_DATE">Approved bid start date</option>
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
           {row.deadline.basis === 'APPROVED_BID_START_DATE' && (
-            <label className="block">
+            <Label className="block">
               Approved bid start date
-              <input
+              <Input
                 type="date"
                 required
                 className={fieldClass}
@@ -81,16 +85,16 @@ export function PostAwardObligationsEditor({
                     update(row.id, { deadline: { ...row.deadline, startOn: e.target.value } });
                 }}
               />
-              <span className="mt-1 block text-sm text-slate-400">
+              <span className="mt-1 block text-sm text-muted-foreground">
                 Use the date approved for this policy. Session creation, bidding day and assignment
                 start are not interchangeable. An amended award keeps this frozen date.
               </span>
-            </label>
+            </Label>
           )}
           <div className="grid gap-3 sm:grid-cols-3">
-            <label>
+            <Label>
               Period
-              <input
+              <Input
                 className={fieldClass}
                 type="number"
                 min={1}
@@ -101,10 +105,10 @@ export function PostAwardObligationsEditor({
                   update(row.id, { deadline: { ...row.deadline, count: Number(e.target.value) } })
                 }
               />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Calendar unit
-              <select
+              <NativeSelect
                 className={fieldClass}
                 value={row.deadline.unit}
                 onChange={(e) =>
@@ -118,11 +122,11 @@ export function PostAwardObligationsEditor({
               >
                 <option value="CALENDAR_DAYS">Calendar days</option>
                 <option value="CALENDAR_MONTHS">Calendar months</option>
-              </select>
-            </label>
-            <label>
+              </NativeSelect>
+            </Label>
+            <Label>
               Calendar zone
-              <select
+              <NativeSelect
                 className={fieldClass}
                 value={row.deadline.timeZone}
                 onChange={(e) =>
@@ -136,12 +140,12 @@ export function PostAwardObligationsEditor({
               >
                 <option value="America/New_York">Miami / New York</option>
                 <option value="UTC">UTC</option>
-              </select>
-            </label>
+              </NativeSelect>
+            </Label>
           </div>
-          <label className="block">
+          <Label className="block">
             Approved obligation source
-            <input
+            <Input
               className={fieldClass}
               required
               minLength={4}
@@ -149,17 +153,17 @@ export function PostAwardObligationsEditor({
               value={row.sourceRef}
               onChange={(e) => update(row.id, { sourceRef: e.target.value })}
             />
-          </label>
-          <button
+          </Label>
+          <Button
             type="button"
             className={buttonClass}
             onClick={() => onChange(value.filter((o) => o.id !== row.id))}
           >
             Remove obligation
-          </button>
+          </Button>
         </div>
       ))}
-      <button
+      <Button
         type="button"
         className={buttonClass}
         disabled={value.length >= 50}
@@ -181,7 +185,7 @@ export function PostAwardObligationsEditor({
         }
       >
         Add post-award qualification
-      </button>
+      </Button>
     </fieldset>
   );
 }

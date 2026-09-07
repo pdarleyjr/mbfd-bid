@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { type ReactElement, useState } from 'react';
 
@@ -24,7 +25,7 @@ export function CloseStaleMockButton({ sessionId }: Props): ReactElement {
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button
+      <Button
         type="button"
         disabled={busy}
         onClick={async () => {
@@ -60,11 +61,11 @@ export function CloseStaleMockButton({ sessionId }: Props): ReactElement {
             setBusy(false);
           }
         }}
-        className="rounded bg-amber-700 px-3 py-1 text-xs text-white disabled:opacity-50"
+        className="rounded bg-warning px-3 py-1 text-xs text-primary-foreground disabled:opacity-50"
       >
         {busy ? 'Closing…' : 'Close stale mock'}
-      </button>
-      {message !== null ? <output className="text-xs text-slate-700">{message}</output> : null}
+      </Button>
+      {message !== null ? <output className="text-xs text-foreground">{message}</output> : null}
     </span>
   );
 }

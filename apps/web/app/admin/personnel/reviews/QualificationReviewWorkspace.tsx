@@ -1,4 +1,13 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRetainedMutation } from '@/lib/use-retained-mutation';
@@ -212,15 +221,17 @@ export function QualificationReviewWorkspace({
 
   return (
     <div className="space-y-6">
-      <p className="rounded border border-amber-700 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+      <p className="rounded border border-warning/40 bg-warning-surface px-4 py-3 text-sm text-warning">
         Current qualification evidence is not frozen annual-Bid eligibility. Every applied row
         remains <strong>PENDING_CONFIGURATION</strong> for annual adjudication.
       </p>
       <form
         onSubmit={createAndStage}
-        className="grid gap-4 rounded-xl border border-slate-700 bg-slate-800/60 p-5 lg:grid-cols-2"
+        className="grid gap-4 rounded-xl border border-border bg-card p-5 lg:grid-cols-2"
       >
-        <h2 className="lg:col-span-2 font-heading text-xl text-white">Stage source evidence</h2>
+        <h2 className="lg:col-span-2 font-heading text-xl text-foreground">
+          Stage source evidence
+        </h2>
         <Field label="Source system" value={sourceSystem} onChange={setSourceSystem} required />
         <Field
           label="Source reference"
@@ -257,134 +268,134 @@ export function QualificationReviewWorkspace({
           <Field label="Provenance" value={provenance} onChange={setProvenance} required />
         </div>
         <div className="lg:col-span-2">
-          <button
+          <Button
             type="submit"
             disabled={busy}
-            className="min-h-11 rounded bg-red-700 px-4 text-sm font-semibold text-white disabled:opacity-50"
+            className="min-h-11 rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
             {busy ? 'Working…' : 'Stage for review'}
-          </button>
+          </Button>
         </div>
       </form>
       {error !== null && (
-        <output aria-live="assertive" className="block text-sm text-red-300">
+        <output aria-live="assertive" className="block text-sm text-destructive">
           {error}
         </output>
       )}
       {notice !== null && (
-        <output aria-live="polite" className="block text-sm text-emerald-300">
+        <output aria-live="polite" className="block text-sm text-success">
           {notice}
         </output>
       )}
-      <section className="rounded-xl border border-slate-700 bg-slate-800/40 p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-heading text-xl text-white">Review batches</h2>
-          <span className="text-xs text-slate-400">{batches.length} batch(es)</span>
+          <h2 className="font-heading text-xl text-foreground">Review batches</h2>
+          <span className="text-xs text-muted-foreground">{batches.length} batch(es)</span>
         </div>
         {batches.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-300">
+          <p className="mt-4 text-sm text-foreground">
             No staged qualification batches exist. Stage authoritative evidence above; no match is
             inferred without an authoritative member reference.
           </p>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-400">
-                <tr>
-                  <th className="pb-2">Source</th>
-                  <th className="pb-2">Status</th>
-                  <th className="pb-2">Exceptions</th>
-                  <th className="pb-2">Applied</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="w-full text-left text-sm">
+              <TableHeader className="text-xs uppercase text-muted-foreground">
+                <TableRow>
+                  <TableHead className="pb-2">Source</TableHead>
+                  <TableHead className="pb-2">Status</TableHead>
+                  <TableHead className="pb-2">Exceptions</TableHead>
+                  <TableHead className="pb-2">Applied</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {batches.map((batch) => (
-                  <tr key={batch.id} className="border-t border-slate-700">
-                    <td className="py-3 text-slate-100">
+                  <TableRow key={batch.id} className="border-t border-border">
+                    <TableCell className="py-3 text-foreground">
                       {batch.source_system}
-                      <div className="font-mono text-xs text-slate-400">
+                      <div className="font-mono text-xs text-muted-foreground">
                         {batch.source_reference}
                       </div>
-                    </td>
-                    <td>{batch.status}</td>
-                    <td>{batch.needsReview}</td>
-                    <td>
+                    </TableCell>
+                    <TableCell>{batch.status}</TableCell>
+                    <TableCell>{batch.needsReview}</TableCell>
+                    <TableCell>
                       {batch.applied}/{batch.total}
-                    </td>
-                    <td>
-                      <button
+                    </TableCell>
+                    <TableCell>
+                      <Button
                         type="button"
                         onClick={() => void loadBatch(batch.id)}
-                        className="text-sky-200 hover:text-sky-100"
+                        className="text-info hover:text-info"
                       >
                         Open
-                      </button>
-                    </td>
-                  </tr>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </section>
       {selected !== null && (
-        <section className="rounded-xl border border-slate-700 bg-slate-800/60 p-5">
-          <h2 className="font-heading text-xl text-white">Exception-first row review</h2>
-          <p className="mt-1 text-sm text-slate-300">
+        <section className="rounded-xl border border-border bg-card p-5">
+          <h2 className="font-heading text-xl text-foreground">Exception-first row review</h2>
+          <p className="mt-1 text-sm text-foreground">
             {selected.batch.source_system} · {selected.batch.source_reference}
           </p>
           <div className="mt-4 space-y-3">
             {selected.rows.map((row) => (
-              <article key={row.id} className="border-t border-slate-700 pt-3">
+              <article key={row.id} className="border-t border-border pt-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-medium text-white">
+                    <p className="font-medium text-foreground">
                       {row.sourceMemberReference} · {row.sourceCredentialReference}
                     </p>
-                    <p className="mt-1 font-mono text-xs text-slate-400">
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">
                       {row.classification} · {row.sourceStatus} ·{' '}
                       {row.effectiveOn ?? 'no effective date'} · {row.provenance}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {row.appliedEventId !== null ? (
-                      <span className="text-xs text-emerald-300">Applied</span>
+                      <span className="text-xs text-success">Applied</span>
                     ) : (
                       <>
-                        <button
+                        <Button
                           type="button"
                           disabled={busy}
                           onClick={() => void decide(row, 'needs_review')}
-                          className="text-xs text-amber-200"
+                          className="text-xs text-warning"
                         >
                           Needs review
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           disabled={busy}
                           onClick={() => void decide(row, 'rejected')}
-                          className="text-xs text-slate-300"
+                          className="text-xs text-foreground"
                         >
                           Reject
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           disabled={busy || row.decision === 'accepted'}
                           onClick={() => void decide(row, 'accepted')}
-                          className="text-xs text-sky-200"
+                          className="text-xs text-info"
                         >
                           Accept
-                        </button>
+                        </Button>
                         {row.decision === 'accepted' && (
-                          <button
+                          <Button
                             type="button"
                             disabled={busy}
                             onClick={() => void apply(row)}
-                            className="text-xs font-semibold text-emerald-200"
+                            className="text-xs font-semibold text-success"
                           >
                             Explicit apply
-                          </button>
+                          </Button>
                         )}
                       </>
                     )}
@@ -413,15 +424,15 @@ function Field({
   required?: boolean;
 }) {
   return (
-    <label className="block">
-      <span className="text-sm text-slate-200">{label}</span>
-      <input
+    <Label className="block">
+      <span className="text-sm text-foreground">{label}</span>
+      <Input
         required={required}
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+        className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
       />
-    </label>
+    </Label>
   );
 }

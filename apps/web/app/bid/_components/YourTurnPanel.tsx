@@ -52,7 +52,7 @@ export function YourTurnPanel({ store, send, connectionStatus, eligiblePositionI
 
   return (
     <section className="border-t border-red-700 bg-red-50 p-6">
-      <h2 className="font-display text-xl font-bold text-red-700">Your turn</h2>
+      <h2 className="font-heading text-xl font-bold text-red-700">Your turn</h2>
       {connectionMessage ? (
         <output className="mt-2 text-sm font-medium text-red-800">{connectionMessage}</output>
       ) : null}

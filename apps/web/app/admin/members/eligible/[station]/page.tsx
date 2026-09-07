@@ -1,3 +1,9 @@
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import Link from 'next/link';
@@ -36,13 +42,13 @@ interface CredentialsResponse {
 }
 
 const RANK_PILL_CLASS: Record<RosterMember['rank'], string> = {
-  CIVILIAN: 'bg-emerald-900 text-emerald-100',
-  FF: 'bg-stone-700 text-stone-100',
-  LT: 'bg-blue-700 text-blue-50',
-  CPT: 'bg-amber-700 text-amber-50',
+  CIVILIAN: 'bg-success-surface text-success',
+  FF: 'bg-muted text-foreground',
+  LT: 'bg-info-surface text-info',
+  CPT: 'bg-warning text-primary-foreground',
   DC: 'bg-purple-700 text-purple-50',
   DEP_CHIEF: 'bg-purple-800 text-purple-50',
-  CHIEF: 'bg-red-800 text-red-50',
+  CHIEF: 'bg-destructive text-primary-foreground',
 };
 
 export default async function EligibleStationPage({ params }: PageProps) {
@@ -84,55 +90,65 @@ export default async function EligibleStationPage({ params }: PageProps) {
 
   return (
     <div>
-      <nav className="mb-4 text-sm text-slate-400">
-        <Link href="/admin/members/roster" className="hover:text-red-400">
+      <nav className="mb-4 text-sm text-muted-foreground">
+        <Link href="/admin/members/roster" className="hover:text-destructive">
           Master Roster
         </Link>
         <span className="mx-2">/</span>
         <span>{stationTitle(station)}</span>
       </nav>
 
-      <h1 className="font-heading text-2xl text-white">{stationTitle(station)}</h1>
-      <p className="mt-1 text-sm text-slate-400">{stationRuleText(station)}</p>
+      <h1 className="font-heading text-2xl text-foreground">{stationTitle(station)}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{stationRuleText(station)}</p>
       {fetchError ? (
-        <p className="mt-2 text-sm text-red-400">{fetchError}</p>
+        <p className="mt-2 text-sm text-destructive">{fetchError}</p>
       ) : (
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-muted-foreground">
           {members.length} matching member{members.length !== 1 ? 's' : ''}.
         </p>
       )}
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-700">
-        <table className="w-full border-collapse text-sm">
+      <div className="mt-4 overflow-x-auto rounded-xl border border-border">
+        <Table className="w-full border-collapse text-sm">
           <caption className="sr-only">{stationTitle(station)} legacy filter results</caption>
-          <thead className="bg-slate-900">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">#</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Emp ID</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Name</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Rank</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">RSC</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Rank Sen.</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-300">Credentials</th>
-            </tr>
-          </thead>
-          <tbody>
+          <TableHeader className="bg-card">
+            <TableRow>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">#</TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Emp ID
+              </TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Name
+              </TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Rank
+              </TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">RSC</TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Rank Sen.
+              </TableHead>
+              <TableHead className="px-3 py-2 text-left font-medium text-foreground">
+                Credentials
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {members.map((m) => (
-              <tr
+              <TableRow
                 key={m.id}
-                className="border-slate-800 border-t transition-colors hover:bg-slate-900/40"
+                className="border-border border-t transition-colors hover:bg-card"
               >
-                <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
+                <TableCell className="px-3 py-2 align-top font-mono text-xs text-foreground [font-variant-numeric:tabular-nums]">
                   {m.ordinal}
-                </td>
-                <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top font-mono text-xs text-foreground [font-variant-numeric:tabular-nums]">
                   {m.employee_id}
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <span className="font-medium text-white">{m.last_name}</span>
-                  <span className="text-slate-400">, {m.first_name}</span>
-                </td>
-                <td className="px-3 py-2 align-top">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top">
+                  <span className="font-medium text-foreground">{m.last_name}</span>
+                  <span className="text-muted-foreground">, {m.first_name}</span>
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top">
                   <span
                     className={[
                       'inline-flex rounded px-2 py-0.5 text-xs font-semibold',
@@ -141,27 +157,27 @@ export default async function EligibleStationPage({ params }: PageProps) {
                   >
                     {m.rank}
                   </span>
-                </td>
-                <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top font-mono text-xs text-foreground [font-variant-numeric:tabular-nums]">
                   {m.rsc_seniority}
-                </td>
-                <td className="px-3 py-2 align-top font-mono text-xs text-slate-300 [font-variant-numeric:tabular-nums]">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top font-mono text-xs text-foreground [font-variant-numeric:tabular-nums]">
                   {m.rank_seniority ?? '—'}
-                </td>
-                <td className="px-3 py-2 align-top">
+                </TableCell>
+                <TableCell className="px-3 py-2 align-top">
                   <EligiblePillCluster heldIds={m.credential_ids} credentials={credentials} />
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
             {members.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
+              <TableRow>
+                <TableCell colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
                   No members currently meet this station&rsquo;s eligibility rule.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

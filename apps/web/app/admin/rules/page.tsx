@@ -33,8 +33,8 @@ export default async function AdminRulesPage({
   if (binding.error !== null) {
     return (
       <div>
-        <h1 className="font-heading text-2xl text-white">Rules</h1>
-        <p className="mt-6 rounded-xl border border-amber-700/40 bg-amber-950/30 px-4 py-6 text-sm text-amber-100">
+        <h1 className="font-heading text-2xl text-foreground">Rules</h1>
+        <p className="mt-6 rounded-xl border border-warning/40 bg-warning-surface px-4 py-6 text-sm text-warning">
           {binding.error}{' '}
           <Link href="/admin/bid-setup" className="font-semibold underline">
             Return to Bid Setup
@@ -81,9 +81,9 @@ export default async function AdminRulesPage({
     <div>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-2xl text-white">Rules</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Rule book: <span className="font-mono text-slate-300">{ruleBookVersion}</span>
+          <h1 className="font-heading text-2xl text-foreground">Rules</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Rule book: <span className="font-mono text-foreground">{ruleBookVersion}</span>
             {!fetchError && (
               <>
                 {' '}
@@ -91,9 +91,9 @@ export default async function AdminRulesPage({
               </>
             )}
           </p>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             Annual configuration: year {binding.configuration.bidYear} &bull; template{' '}
-            <span className="font-mono text-slate-300">
+            <span className="font-mono text-foreground">
               {binding.configuration.positionTemplateVersion}
             </span>{' '}
             &bull; revision {binding.configuration.configurationRevision}
@@ -102,21 +102,23 @@ export default async function AdminRulesPage({
       </div>
 
       {fetchError ? (
-        <p className="mt-6 rounded-xl border border-red-700/40 bg-red-900/20 px-4 py-6 text-center text-slate-300">
+        <p className="mt-6 rounded-xl border border-destructive/40 bg-destructive-surface px-4 py-6 text-center text-foreground">
           Could not load rules. Check worker connectivity.
         </p>
       ) : (
         <section className="mt-6">
-          <div className="rounded-xl border border-slate-700 bg-slate-850 p-4">
-            <h2 className="font-heading text-base font-semibold text-white">
-              <span className="font-mono text-red-400">{ruleBookVersion}</span>
-              <span className="ml-2 font-mono text-xs text-slate-500">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h2 className="font-heading text-base font-semibold text-foreground">
+              <span className="font-mono text-destructive">{ruleBookVersion}</span>
+              <span className="ml-2 font-mono text-xs text-muted-foreground">
                 ({positionIds.length} position{positionIds.length !== 1 ? 's' : ''})
               </span>
             </h2>
             <div className="mt-2">
               {positionIds.length === 0 ? (
-                <p className="text-sm text-slate-500">No rules found for this rule book version.</p>
+                <p className="text-sm text-muted-foreground">
+                  No rules found for this rule book version.
+                </p>
               ) : (
                 positionIds.map((positionId) => {
                   const posRules = byPosition.get(positionId) as ParsedRule[];

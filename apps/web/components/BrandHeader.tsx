@@ -7,7 +7,7 @@ export function BrandHeader({ subtitle, action }: { subtitle?: string; action?: 
   return (
     <header
       data-testid="brand-header"
-      className="flex items-center gap-3 border-b border-stone-200 bg-slate-850 px-4 py-3 text-white sm:px-6"
+      className="flex items-center gap-3 border-b border-border bg-sidebar px-4 py-3 text-white sm:px-6"
     >
       <img
         src={MBFD_MASTER_LOGO_PATH}

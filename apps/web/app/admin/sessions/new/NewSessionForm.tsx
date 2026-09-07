@@ -1,5 +1,8 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
@@ -75,67 +78,67 @@ export function NewSessionForm({ defaultMock = true }: { defaultMock?: boolean }
 
   return (
     <form onSubmit={onSubmit} className="mt-6 space-y-4">
-      <label className="block">
-        <span className="text-sm text-slate-300">Bid year</span>
-        <input
+      <Label className="block">
+        <span className="text-sm text-foreground">Bid year</span>
+        <Input
           type="number"
           value={bidYear}
           onChange={(e) => setBidYear(Number(e.target.value))}
-          className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 tabular-nums text-white"
+          className="mt-1 block w-full rounded bg-card px-3 py-2 tabular-nums text-foreground"
         />
-      </label>
-      <p className="rounded border border-slate-700 bg-slate-800/60 px-3 py-3 text-sm text-slate-300">
+      </Label>
+      <p className="rounded border border-border bg-card px-3 py-3 text-sm text-foreground">
         Duration and turn-timer settings are taken from the designated annual configuration. They
         cannot be overridden per session.
       </p>
-      <p className="rounded border border-blue-800 bg-blue-950/40 px-3 py-3 text-sm text-blue-100">
+      <p className="rounded border border-info/40 bg-info-surface px-3 py-3 text-sm text-info">
         Rehearsal/mock is selected by default. Clear it only when you deliberately need the
         separately guarded live-mode request; the server remains the authority for live readiness.
       </p>
-      <div className="rounded border border-slate-700 bg-slate-800/60 p-3">
-        <p className="text-sm text-slate-300">
+      <div className="rounded border border-border bg-card p-3">
+        <p className="text-sm text-foreground">
           This read-only dry run creates no session, order, audit event, or other runtime state.
         </p>
-        <button
+        <Button
           type="button"
           data-testid="live-readiness-preview"
           disabled={previewingReadiness}
           onClick={() => void previewLiveReadiness()}
-          className="mt-3 rounded border border-sky-600 px-4 py-2 text-sm font-semibold text-sky-100 disabled:opacity-50"
+          className="mt-3 rounded border border-info/40 px-4 py-2 text-sm font-semibold text-info disabled:opacity-50"
         >
           {previewingReadiness ? 'Checking live readiness…' : 'Run live-readiness dry run'}
-        </button>
+        </Button>
         {readinessPreview !== null ? (
-          <output className="mt-3 block text-sm text-slate-200">
+          <output className="mt-3 block text-sm text-foreground">
             Live readiness dry run:{' '}
             {readinessPreview.would_allow_start ? 'would allow start' : 'blocked'}
             {readinessPreview.error ? ` (${readinessPreview.error})` : ''}.
           </output>
         ) : null}
       </div>
-      <label className="flex items-center gap-2 text-sm text-slate-300">
-        <input
+      <Label className="flex items-center gap-2 text-sm text-foreground">
+        <Input
           type="checkbox"
           checked={isMock}
           onChange={(e) => setIsMock(e.target.checked)}
-          className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-red-700"
+          className="h-4 w-4 rounded border-border bg-card text-destructive"
         />
         Create as rehearsal/mock session (clear only to request live mode)
-      </label>
+      </Label>
 
       {error !== null && (
-        <output aria-live="polite" className="block text-sm text-red-400">
+        <output aria-live="polite" className="block text-sm text-destructive">
           {error}
         </output>
       )}
 
-      <button
+      <Button
         type="submit"
         disabled={submitting}
-        className="rounded bg-red-700 px-4 py-2 text-white hover:bg-red-600 disabled:opacity-50"
+        className="rounded bg-destructive px-4 py-2 text-primary-foreground hover:bg-destructive disabled:opacity-50"
       >
         Create session
-      </button>
+      </Button>
     </form>
   );
 }

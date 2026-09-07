@@ -22,18 +22,18 @@ export function AnnualOperationsStatus({ annual }: AnnualOperationsStatusProps) 
   return (
     <aside
       aria-label="Annual bid operations status"
-      className="grid gap-3 border-b border-stone-200 bg-white px-4 py-3 text-sm sm:grid-cols-4"
+      className="grid gap-3 border-b border-border bg-white px-4 py-3 text-sm sm:grid-cols-4"
     >
       <div>
-        <p className="font-semibold text-stone-900">Unresolved</p>
+        <p className="font-semibold text-foreground">Unresolved</p>
         <p>{annual.unresolvedMemberIds?.length ?? 0} member(s)</p>
       </div>
       <div>
-        <p className="font-semibold text-stone-900">Returned at current sequence</p>
+        <p className="font-semibold text-foreground">Returned at current sequence</p>
         <p>{annual.returnedAtCurrentSequence?.length ?? 0} member(s)</p>
       </div>
       <div>
-        <p className="font-semibold text-stone-900">Checkpoint</p>
+        <p className="font-semibold text-foreground">Checkpoint</p>
         <p>
           {annual.checkpoint
             ? `${annual.checkpoint.name} · seq ${annual.checkpoint.sequence}`
@@ -41,7 +41,7 @@ export function AnnualOperationsStatus({ annual }: AnnualOperationsStatusProps) 
         </p>
       </div>
       <div>
-        <p className="font-semibold text-stone-900">Finalization</p>
+        <p className="font-semibold text-foreground">Finalization</p>
         <p>{annual.completion ? 'Ready for Worker 4' : 'Not ready'}</p>
       </div>
     </aside>

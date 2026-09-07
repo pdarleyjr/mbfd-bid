@@ -1,4 +1,14 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 import { useRetainedMutation } from '@/lib/use-retained-mutation';
 
@@ -161,13 +171,16 @@ export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterRe
     <section className="mx-auto max-w-7xl space-y-6" aria-labelledby="staffing-structure-heading">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+          <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
             Authorized capacity
           </p>
-          <h1 id="staffing-structure-heading" className="mt-1 font-heading text-3xl text-white">
+          <h1
+            id="staffing-structure-heading"
+            className="mt-1 font-heading text-3xl text-foreground"
+          >
             Staffing Structure
           </h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-300">
+          <p className="mt-2 max-w-3xl text-sm text-foreground">
             Create effective-dated authorized seats, review capacity and occupancy, and retire
             vacant capacity without destroying historical assignments. A vacancy is never labelled a
             Bid opportunity.
@@ -175,7 +188,7 @@ export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterRe
         </div>
         <Link
           href="/admin/personnel"
-          className="inline-flex min-h-11 items-center rounded border border-red-600 bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-600"
+          className="inline-flex min-h-11 items-center rounded border border-destructive/40 bg-destructive px-4 text-sm font-semibold text-primary-foreground hover:bg-destructive"
         >
           Move or reassign a member
         </Link>
@@ -183,246 +196,246 @@ export function StaffingStructureWorkspace({ roster }: { roster: CurrentRosterRe
 
       <form
         onSubmit={(event) => void createPosition(event)}
-        className="grid gap-4 rounded-xl border border-slate-700 bg-slate-800/60 p-5 md:grid-cols-3"
+        className="grid gap-4 rounded-xl border border-border bg-card p-5 md:grid-cols-3"
       >
         <div className="md:col-span-3">
-          <h2 className="font-heading text-xl text-white">Add authorized staffing seat</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <h2 className="font-heading text-xl text-foreground">Add authorized staffing seat</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             The manager generates the canonical key from the reviewed operational fields; operators
             never enter an internal identifier.
           </p>
         </div>
-        <label>
-          <span className="text-sm text-slate-200">Shift</span>
-          <select
+        <Label>
+          <span className="text-sm text-foreground">Shift</span>
+          <NativeSelect
             value={form.shift}
             onChange={(e) => update('shift', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           >
             <option value="A">A Shift</option>
             <option value="B">B Shift</option>
             <option value="C">C Shift</option>
             <option value="D">D / Days</option>
-          </select>
-        </label>
-        <label>
-          <span className="text-sm text-slate-200">Station</span>
-          <input
+          </NativeSelect>
+        </Label>
+        <Label>
+          <span className="text-sm text-foreground">Station</span>
+          <Input
             required
             value={form.station}
             onChange={(e) => update('station', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label>
-          <span className="text-sm text-slate-200">Unit</span>
-          <input
+        </Label>
+        <Label>
+          <span className="text-sm text-foreground">Unit</span>
+          <Input
             required
             value={form.unit}
             onChange={(e) => update('unit', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label>
-          <span className="text-sm text-slate-200">Division</span>
-          <input
+        </Label>
+        <Label>
+          <span className="text-sm text-foreground">Division</span>
+          <Input
             value={form.division}
             onChange={(e) => update('division', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label>
-          <span className="text-sm text-slate-200">Position</span>
-          <input
+        </Label>
+        <Label>
+          <span className="text-sm text-foreground">Position</span>
+          <Input
             required
             value={form.position_name}
             onChange={(e) => update('position_name', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label>
-          <span className="text-sm text-slate-200">Applicable rank</span>
-          <select
+        </Label>
+        <Label>
+          <span className="text-sm text-foreground">Applicable rank</span>
+          <NativeSelect
             value={form.applicable_rank}
             onChange={(e) => update('applicable_rank', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           >
             {rankOptions.map((rank) => (
               <option key={rank}>{rank}</option>
             ))}
-          </select>
-        </label>
-        <label>
-          <span className="text-sm text-slate-200">Seat number</span>
-          <input
+          </NativeSelect>
+        </Label>
+        <Label>
+          <span className="text-sm text-foreground">Seat number</span>
+          <Input
             required
             value={form.seat}
             onChange={(e) => update('seat', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label>
-          <span className="text-sm text-slate-200">Effective date</span>
-          <input
+        </Label>
+        <Label>
+          <span className="text-sm text-foreground">Effective date</span>
+          <Input
             required
             type="date"
             value={form.effective_on}
             onChange={(e) => update('effective_on', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <label className="md:col-span-2">
-          <span className="text-sm text-slate-200">Reason</span>
-          <input
+        </Label>
+        <Label className="md:col-span-2">
+          <span className="text-sm text-foreground">Reason</span>
+          <Input
             required
             minLength={4}
             value={form.reason}
             onChange={(e) => update('reason', e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
           />
-        </label>
-        <p className="rounded border border-sky-800 bg-sky-950/40 px-3 py-2 text-xs text-sky-100 md:col-span-3">
+        </Label>
+        <p className="rounded border border-info/40 bg-info-surface px-3 py-2 text-xs text-info md:col-span-3">
           Reviewable canonical key:{' '}
           <span className="font-mono">{canonicalKey || 'Complete the operational fields'}</span>
         </p>
-        <button
+        <Button
           disabled={busy || canonicalKey.length === 0}
           type="submit"
-          className="min-h-11 w-fit rounded bg-red-700 px-4 text-sm font-semibold text-white disabled:opacity-50"
+          className="min-h-11 w-fit rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
         >
           {busy ? 'Recording…' : 'Create authorized seat'}
-        </button>
+        </Button>
       </form>
       {error !== null && (
         <p
           role="alert"
-          className="rounded border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-100"
+          className="rounded border border-destructive/40 bg-destructive-surface px-4 py-3 text-sm text-destructive"
         >
           {error}
         </p>
       )}
       {notice !== null && (
-        <output className="block rounded border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100">
+        <output className="block rounded border border-success/40 bg-success-surface px-4 py-3 text-sm text-success">
           {notice}
         </output>
       )}
-      <section className="rounded-xl border border-slate-700 bg-slate-800/60 p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="font-heading text-xl text-white">Capacity and occupancy</h2>
-            <p className="mt-1 text-sm text-slate-400">
+            <h2 className="font-heading text-xl text-foreground">Capacity and occupancy</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               As of {roster.asOf}: {roster.summary.totalPositions} seats,{' '}
               {roster.summary.occupiedPositions} occupied, {roster.summary.vacantPositions} vacant.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <form action="/admin/staffing-structure" method="get" className="flex items-end gap-2">
-              <label className="block">
-                <span className="text-sm text-slate-200">Projection date</span>
-                <input
+              <Label className="block">
+                <span className="text-sm text-foreground">Projection date</span>
+                <Input
                   type="date"
                   name="as_of"
                   defaultValue={roster.asOf}
-                  className="mt-1 min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                  className="mt-1 min-h-11 rounded border border-border bg-card px-3 text-foreground"
                 />
-              </label>
-              <button
+              </Label>
+              <Button
                 type="submit"
-                className="min-h-11 rounded border border-slate-600 px-3 text-sm text-slate-100 hover:bg-slate-700"
+                className="min-h-11 rounded border border-border px-3 text-sm text-foreground hover:bg-muted"
               >
                 View projection
-              </button>
+              </Button>
             </form>
-            <label className="block">
-              <span className="text-sm text-slate-200">Search position</span>
-              <input
+            <Label className="block">
+              <span className="text-sm text-foreground">Search position</span>
+              <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="mt-1 min-h-11 rounded border border-slate-600 bg-slate-950 px-3 text-white"
+                className="mt-1 min-h-11 rounded border border-border bg-card px-3 text-foreground"
               />
-            </label>
+            </Label>
           </div>
         </div>
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[54rem] text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-slate-400">
-              <tr>
-                <th className="px-3 py-2">Shift / station</th>
-                <th className="px-3 py-2">Unit / seat</th>
-                <th className="px-3 py-2">Occupant</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">
+          <Table className="w-full min-w-[54rem] text-left text-sm">
+            <TableHeader className="text-xs uppercase tracking-wide text-muted-foreground">
+              <TableRow>
+                <TableHead className="px-3 py-2">Shift / station</TableHead>
+                <TableHead className="px-3 py-2">Unit / seat</TableHead>
+                <TableHead className="px-3 py-2">Occupant</TableHead>
+                <TableHead className="px-3 py-2">Status</TableHead>
+                <TableHead className="px-3 py-2">
                   <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700">
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-700">
               {visible.map((position) => (
-                <tr key={position.id}>
-                  <td className="px-3 py-3 text-slate-200">
+                <TableRow key={position.id}>
+                  <TableCell className="px-3 py-3 text-foreground">
                     {position.shift ?? 'Unspecified'} · Station {position.station ?? 'Unspecified'}
-                    <p className="mt-1 font-mono text-xs text-slate-500">
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">
                       {position.stableSlotKey}
                     </p>
-                  </td>
-                  <td className="px-3 py-3 text-slate-100">
+                  </TableCell>
+                  <TableCell className="px-3 py-3 text-foreground">
                     {position.unit ?? 'Unspecified'}
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {position.positionName ?? 'Unspecified'} ·{' '}
                       {position.applicableRank ?? 'No rank'}
                     </p>
-                  </td>
-                  <td className="px-3 py-3 text-slate-200">
+                  </TableCell>
+                  <TableCell className="px-3 py-3 text-foreground">
                     {position.member === null
                       ? 'Vacant'
                       : `${position.member.firstName ?? ''} ${position.member.lastName ?? ''}`}{' '}
                     {position.member !== null && (
-                      <p className="mt-1 text-xs text-slate-400">{position.member.rank}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{position.member.rank}</p>
                     )}
-                  </td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
                     <span
                       className={
-                        position.occupancy === 'occupied' ? 'text-emerald-300' : 'text-amber-200'
+                        position.occupancy === 'occupied' ? 'text-success' : 'text-warning'
                       }
                     >
                       {position.occupancy}
                     </span>
                     {position.administrativeAssignment && (
-                      <p className="mt-1 text-xs text-sky-200">Administrative / non-biddable</p>
+                      <p className="mt-1 text-xs text-info">Administrative / non-biddable</p>
                     )}
-                  </td>
-                  <td className="px-3 py-3 text-right">
+                  </TableCell>
+                  <TableCell className="px-3 py-3 text-right">
                     {position.assignment !== null && (
                       <Link
                         href={`/admin/personnel?memberId=${position.assignment.memberId}&assignmentId=${position.assignment.id}`}
-                        className="mr-3 text-sm font-medium text-sky-300 hover:text-sky-100"
+                        className="mr-3 text-sm font-medium text-info hover:text-info"
                       >
                         History
                       </Link>
                     )}
                     {position.occupancy === 'vacant' ? (
-                      <button
+                      <Button
                         disabled={busy}
                         type="button"
                         onClick={() => void retirePosition(position)}
-                        className="text-sm font-medium text-red-300 hover:text-red-100 disabled:opacity-50"
+                        className="text-sm font-medium text-destructive hover:text-destructive disabled:opacity-50"
                       >
                         Retire seat
-                      </button>
+                      </Button>
                     ) : (
                       <Link
                         href="/admin/personnel"
-                        className="text-sm font-medium text-red-300 hover:text-red-100"
+                        className="text-sm font-medium text-destructive hover:text-destructive"
                       >
                         Reassign
                       </Link>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </section>
     </section>

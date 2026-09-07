@@ -43,11 +43,13 @@ function ProfileField({
   mono = false,
 }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-      <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">{label}</dt>
+    <div className="rounded-xl border border-border bg-card p-4">
+      <dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </dt>
       <dd
         className={[
-          'mt-1 text-base font-semibold text-white',
+          'mt-1 text-base font-semibold text-foreground',
           mono ? 'font-mono [font-variant-numeric:tabular-nums]' : '',
         ].join(' ')}
       >
@@ -94,36 +96,39 @@ export default async function MemberDetailPage({
   return (
     <div>
       <div className="mb-6 flex items-center gap-3">
-        <Link href={'/admin/members' as const} className="text-sm text-slate-400 hover:text-white">
+        <Link
+          href={'/admin/members' as const}
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
           Members
         </Link>
-        <span className="text-slate-600">/</span>
-        <span className="text-sm text-slate-200">
+        <span className="text-muted-foreground">/</span>
+        <span className="text-sm text-foreground">
           {member.lastName}, {member.firstName}
         </span>
         <div className="ml-auto flex flex-wrap justify-end gap-2">
           <Link
             href={`/admin/personnel/qualifications?memberId=${member.id}` as Route}
-            className="rounded border border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-100 hover:border-slate-400"
+            className="rounded border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:border-border"
           >
             Review qualification lifecycle
           </Link>
           <Link
             href={`/admin/personnel?memberId=${member.id}` as Route}
-            className="rounded bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600"
+            className="rounded bg-destructive px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-destructive"
           >
             Personnel change
           </Link>
         </div>
       </div>
 
-      <h1 className="font-heading text-2xl text-white">
+      <h1 className="font-heading text-2xl text-foreground">
         {member.lastName}, {member.firstName}
       </h1>
-      <p className="mt-1 text-sm text-slate-400">
+      <p className="mt-1 text-sm text-muted-foreground">
         {RANK_LABELS[member.rank] ?? member.rank} &bull; {member.bidCategory}
         {member.isProbationary && (
-          <span className="ml-2 inline-flex rounded bg-red-900/40 px-2 py-0.5 text-xs font-medium text-red-300">
+          <span className="ml-2 inline-flex rounded bg-destructive-surface px-2 py-0.5 text-xs font-medium text-destructive">
             Probationary
           </span>
         )}
@@ -147,17 +152,19 @@ export default async function MemberDetailPage({
       </dl>
 
       <section className="mt-8">
-        <h2 className="font-heading text-lg text-white">Legacy credential references</h2>
-        <p className="mt-2 text-sm text-slate-400">
+        <h2 className="font-heading text-lg text-foreground">Legacy credential references</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
           These references do not establish current qualification. Review the effective-dated
           qualification lifecycle for status, expiration, evidence, and history.
         </p>
         {memberCredentials.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-400">No legacy credential references on file.</p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            No legacy credential references on file.
+          </p>
         ) : (
           <ul className="mt-3 flex flex-wrap gap-2">
             {memberCredentials.map((cred) => (
-              <li key={cred.id} className="rounded bg-slate-800 px-2 py-1 text-sm text-slate-200">
+              <li key={cred.id} className="rounded bg-card px-2 py-1 text-sm text-foreground">
                 {cred.name}
               </li>
             ))}

@@ -1,5 +1,8 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -33,9 +36,9 @@ export function PinForm() {
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-4">
-      <label className="block">
-        <span className="block text-sm font-medium text-stone-700">Access PIN</span>
-        <input
+      <Label className="block">
+        <span className="block text-sm font-medium text-foreground">Access PIN</span>
+        <Input
           type="password"
           inputMode="numeric"
           autoComplete="off"
@@ -46,21 +49,21 @@ export function PinForm() {
           onChange={(e) => setPin(e.target.value)}
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={error ? 'pin-error' : undefined}
-          className="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-3 py-3 font-mono text-lg tracking-widest text-stone-800 shadow-sm outline-none transition duration-base ease-out-quart focus:border-red-700 focus:ring-2 focus:ring-red-700"
+          className="mt-1 block w-full rounded-lg border border-border bg-white px-3 py-3 font-mono text-lg tracking-widest text-foreground shadow-sm outline-none transition duration-base ease-out-quart focus:border-red-700 focus:ring-2 focus:ring-red-700"
         />
-      </label>
+      </Label>
       {error && (
         <p id="pin-error" role="alert" className="text-sm text-red-700">
           {error}
         </p>
       )}
-      <button
+      <Button
         type="submit"
         disabled={pending || pin.length < 4}
         className="inline-flex w-full items-center justify-center rounded-lg bg-red-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition duration-base ease-out-quart hover:bg-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? 'Verifying…' : 'Continue'}
-      </button>
+      </Button>
     </form>
   );
 }

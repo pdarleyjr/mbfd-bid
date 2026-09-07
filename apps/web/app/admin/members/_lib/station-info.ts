@@ -33,11 +33,11 @@ export interface CredentialRow {
 }
 
 export const RANK_PILL_CLASS: Record<RosterMember['rank'], string> = {
-  CIVILIAN: 'bg-emerald-900 text-emerald-100',
-  FF: 'bg-stone-700 text-stone-100',
-  LT: 'bg-blue-700 text-blue-50',
-  CPT: 'bg-amber-700 text-amber-50',
+  CIVILIAN: 'bg-success-surface text-success',
+  FF: 'bg-muted text-foreground',
+  LT: 'bg-info-surface text-info',
+  CPT: 'bg-warning text-primary-foreground',
   DC: 'bg-purple-700 text-purple-50',
   DEP_CHIEF: 'bg-purple-800 text-purple-50',
-  CHIEF: 'bg-red-800 text-red-50',
+  CHIEF: 'bg-destructive text-primary-foreground',
 };

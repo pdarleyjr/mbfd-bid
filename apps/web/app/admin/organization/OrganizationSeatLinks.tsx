@@ -1,4 +1,8 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
@@ -50,7 +54,7 @@ export function OrganizationSeatLinks({
   const [expectedRevision, setExpectedRevision] = useState<number | null>(null);
   const selected = links.data?.links.find((l) => l.staffingPositionId === seat);
   const input =
-    'mt-1 min-h-11 w-full min-w-0 rounded border border-slate-600 bg-slate-950 px-3 text-white';
+    'mt-1 min-h-11 w-full min-w-0 rounded border border-border bg-card px-3 text-foreground';
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (expectedRevision === null) return;
@@ -100,21 +104,21 @@ export function OrganizationSeatLinks({
     }
   }
   return (
-    <section className="rounded-xl border border-slate-700 p-5">
+    <section className="rounded-xl border border-border p-5">
       <h2 className="font-heading text-xl">Link a reviewed seat to organization</h2>
-      <p className="mt-2 text-sm text-slate-300">
+      <p className="mt-2 text-sm text-foreground">
         Use an explicit reviewed association effective on {asOf}. This links an existing seat; it
         does not create a seat or assign a member.
       </p>
       {(roster.isError || links.isError) && (
-        <p role="alert" className="mt-3 text-amber-200">
+        <p role="alert" className="mt-3 text-warning">
           Seat references could not be loaded.
         </p>
       )}
       <form onSubmit={save} className="mt-4 grid gap-4 md:grid-cols-2">
-        <label className="text-sm">
+        <Label className="text-sm">
           Authorized seat
-          <select
+          <NativeSelect
             required
             className={input}
             value={seat}
@@ -131,11 +135,11 @@ export function OrganizationSeatLinks({
                 {p.stableSlotKey}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="text-sm">
+          </NativeSelect>
+        </Label>
+        <Label className="text-sm">
           Organization association
-          <select value={unit} onChange={(e) => setUnit(e.target.value)} className={input}>
+          <NativeSelect value={unit} onChange={(e) => setUnit(e.target.value)} className={input}>
             <option value="">Remove association / Review required</option>
             {units
               .filter((u) => u.status === 'active')
@@ -144,44 +148,44 @@ export function OrganizationSeatLinks({
                   {u.name}
                 </option>
               ))}
-          </select>
-        </label>
-        <label className="text-sm">
+          </NativeSelect>
+        </Label>
+        <Label className="text-sm">
           Link evidence reference
-          <input
+          <Input
             required
             minLength={4}
             value={evidence}
             onChange={(e) => setEvidence(e.target.value)}
             className={input}
           />
-        </label>
-        <label className="text-sm">
+        </Label>
+        <Label className="text-sm">
           Link reason
-          <input
+          <Input
             required
             minLength={4}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             className={input}
           />
-        </label>
+        </Label>
         {selected && selected.latestRevision !== expectedRevision && (
-          <p role="alert" className="text-amber-200 md:col-span-2">
+          <p role="alert" className="text-warning md:col-span-2">
             This seat has a later link revision. Review its date before editing.
           </p>
         )}
-        <button
+        <Button
           disabled={
             busy || expectedRevision === null || selected?.latestRevision !== expectedRevision
           }
-          className="min-h-11 justify-self-start rounded bg-red-700 px-4 font-semibold disabled:opacity-50"
+          className="min-h-11 justify-self-start rounded bg-destructive px-4 font-semibold text-primary-foreground disabled:opacity-50"
           type="submit"
         >
           {busy ? 'Saving…' : 'Save reviewed link'}
-        </button>
+        </Button>
       </form>
-      {message && <output className="mt-3 block text-sm text-amber-100">{message}</output>}
+      {message && <output className="mt-3 block text-sm text-warning">{message}</output>}
     </section>
   );
 }

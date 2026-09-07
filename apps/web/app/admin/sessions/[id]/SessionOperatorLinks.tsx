@@ -15,13 +15,13 @@ export function SessionOperatorLinks({ sessionId }: { sessionId: string }) {
     <nav aria-label="Session evidence actions" className="mt-5 flex flex-wrap gap-3">
       <Link
         href={withSession('/admin/exports', sessionId)}
-        className="inline-flex min-h-11 items-center rounded border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-slate-300 hover:text-white"
+        className="inline-flex min-h-11 items-center rounded border border-border px-4 py-2 text-sm font-semibold text-foreground hover:border-border hover:text-foreground"
       >
         Open session exports
       </Link>
       <Link
         href={withSession('/admin/award-transition', sessionId)}
-        className="inline-flex min-h-11 items-center rounded border border-sky-700 bg-sky-950/30 px-4 py-2 text-sm font-semibold text-sky-100 hover:border-sky-400 hover:text-white"
+        className="inline-flex min-h-11 items-center rounded border border-info/40 bg-info-surface px-4 py-2 text-sm font-semibold text-info hover:border-info/40 hover:text-foreground"
       >
         Review current-to-new transition
       </Link>

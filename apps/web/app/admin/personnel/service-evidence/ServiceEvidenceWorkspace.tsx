@@ -1,5 +1,9 @@
 'use client';
 import { RetainedEvidenceReview } from '@/components/admin/RetainedEvidenceReview';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
@@ -108,18 +112,18 @@ export function ServiceEvidenceWorkspace() {
     }
   }
   return (
-    <div className="mx-auto max-w-5xl space-y-5 text-slate-100">
+    <div className="mx-auto max-w-5xl space-y-5 text-foreground">
       <header>
         <h1 className="font-heading text-3xl">Service Evidence</h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           Record verified cumulative completed months from an authoritative source. These are
           reviewed totals, not a calculation from current assignments. Use unknown when the evidence
           is unresolved.
         </p>
       </header>
-      <label className="block">
+      <Label className="block">
         Member
-        <select
+        <NativeSelect
           className={fieldClass}
           value={member}
           disabled={dirty || busy}
@@ -131,14 +135,14 @@ export function ServiceEvidenceWorkspace() {
               {m.firstName} {m.lastName} · {m.employeeId}
             </option>
           ))}
-        </select>
-      </label>
+        </NativeSelect>
+      </Label>
       {(members.isError || types.isError || records.isError) && (
-        <p role="alert" className="text-amber-200">
+        <p role="alert" className="text-warning">
           Reference data could not be refreshed. Your edits remain in the form.
         </p>
       )}
-      <details className="rounded border border-slate-700 p-4">
+      <details className="rounded border border-border p-4">
         <summary className="cursor-pointer font-semibold">Add a service category</summary>
         <ServiceTypeCreator />
       </details>
@@ -147,9 +151,9 @@ export function ServiceEvidenceWorkspace() {
           disabled={!member || records.isPending || records.isError || busy}
           className="space-y-4"
         >
-          <label className="block">
+          <Label className="block">
             Service category
-            <select
+            <NativeSelect
               required
               className={fieldClass}
               value={service}
@@ -171,22 +175,22 @@ export function ServiceEvidenceWorkspace() {
                   {t.name}
                 </option>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label>
+            <Label>
               Effective date of this evidence
-              <input
+              <Input
                 required
                 type="date"
                 className={fieldClass}
                 value={effective}
                 onChange={(e) => setEffective(e.target.value)}
               />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Verified cumulative completed months
-              <input
+              <Input
                 required={!unknown}
                 disabled={unknown}
                 type="number"
@@ -196,19 +200,19 @@ export function ServiceEvidenceWorkspace() {
                 value={months}
                 onChange={(e) => setMonths(e.target.value)}
               />
-            </label>
+            </Label>
           </div>
-          <label className="flex min-h-11 items-center gap-3">
-            <input
+          <Label className="flex min-h-11 items-center gap-3">
+            <Input
               type="checkbox"
               checked={unknown}
               onChange={(e) => setUnknown(e.target.checked)}
             />
             Cumulative service is unknown and requires review
-          </label>
-          <label className="block">
+          </Label>
+          <Label className="block">
             Authoritative source reference
-            <input
+            <Input
               required
               minLength={4}
               maxLength={500}
@@ -216,10 +220,10 @@ export function ServiceEvidenceWorkspace() {
               value={source}
               onChange={(e) => setSource(e.target.value)}
             />
-          </label>
-          <label className="block">
+          </Label>
+          <Label className="block">
             Review reason
-            <input
+            <Input
               required
               minLength={4}
               maxLength={500}
@@ -227,13 +231,13 @@ export function ServiceEvidenceWorkspace() {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
-          </label>
-          <button type="submit" className={buttonClass}>
+          </Label>
+          <Button type="submit" className={buttonClass}>
             {busy ? 'Saving…' : 'Record reviewed service evidence'}
-          </button>
-          <button type="button" className={`${buttonClass} ml-3`} disabled={!dirty} onClick={clear}>
+          </Button>
+          <Button type="button" className={`${buttonClass} ml-3`} disabled={!dirty} onClick={clear}>
             Discard edits
-          </button>
+          </Button>
         </fieldset>
       </form>
       {dirty && service && (
@@ -256,11 +260,11 @@ export function ServiceEvidenceWorkspace() {
           }}
         />
       )}
-      {message && <output className="block rounded border border-slate-600 p-3">{message}</output>}
+      {message && <output className="block rounded border border-border p-3">{message}</output>}
       <section className="space-y-3">
         <h2 className="font-heading text-xl">Evidence history</h2>
         {records.data?.records.map((r) => (
-          <article key={r.id} className="rounded border border-slate-700 p-4">
+          <article key={r.id} className="rounded border border-border p-4">
             <h3 className="font-semibold">
               {types.data?.types.find((t) => t.id === r.serviceCode)?.name ?? r.serviceCode} ·
               Revision {r.revision}
@@ -269,8 +273,8 @@ export function ServiceEvidenceWorkspace() {
               {r.verifiedMonths === null ? 'Unknown' : `${r.verifiedMonths} completed months`} ·
               Effective {r.effectiveOn}
             </p>
-            <p className="mt-2 break-words text-sm text-slate-300">Source: {r.sourceRef}</p>
-            <p className="text-sm text-slate-400">
+            <p className="mt-2 break-words text-sm text-foreground">Source: {r.sourceRef}</p>
+            <p className="text-sm text-muted-foreground">
               {r.reason} · Recorded by {r.actorSubject}
             </p>
           </article>
@@ -315,9 +319,9 @@ function ServiceTypeCreator() {
   }
   return (
     <form className="mt-4 space-y-3" onSubmit={save}>
-      <label className="block">
+      <Label className="block">
         Category name
-        <input
+        <Input
           required
           minLength={2}
           maxLength={160}
@@ -325,10 +329,10 @@ function ServiceTypeCreator() {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-      </label>
-      <label className="block">
+      </Label>
+      <Label className="block">
         Policy source reference
-        <input
+        <Input
           required
           minLength={4}
           maxLength={500}
@@ -336,10 +340,10 @@ function ServiceTypeCreator() {
           value={source}
           onChange={(e) => setSource(e.target.value)}
         />
-      </label>
-      <label className="block">
+      </Label>
+      <Label className="block">
         Reason
-        <input
+        <Input
           required
           minLength={4}
           maxLength={500}
@@ -347,10 +351,10 @@ function ServiceTypeCreator() {
           value={reason}
           onChange={(e) => setReason(e.target.value)}
         />
-      </label>
-      <button type="submit" className={buttonClass} disabled={busy}>
+      </Label>
+      <Button type="submit" className={buttonClass} disabled={busy}>
         Create service category
-      </button>
+      </Button>
       {message && <output className="block text-sm">{message}</output>}
     </form>
   );

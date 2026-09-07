@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -30,18 +31,13 @@ export function LogoutButton() {
   return (
     <div className="flex items-center gap-2">
       {error && (
-        <span role="alert" className="text-xs text-red-200">
+        <span role="alert" className="text-xs text-destructive">
           {error}
         </span>
       )}
-      <button
-        type="button"
-        onClick={signOut}
-        disabled={pending}
-        className="min-h-9 rounded border border-slate-500 px-3 text-sm font-semibold text-slate-100 hover:border-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <Button type="button" onClick={signOut} disabled={pending} className="min-h-11">
         {pending ? 'Signing out…' : 'Sign out'}
-      </button>
+      </Button>
     </div>
   );
 }

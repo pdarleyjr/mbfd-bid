@@ -1,5 +1,9 @@
 'use client';
 import { RetainedEvidenceReview } from '@/components/admin/RetainedEvidenceReview';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import type { PostAwardObligation } from '@mbfd/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -110,19 +114,19 @@ export function ObligationsWorkspace() {
     }
   }
   return (
-    <div className="mx-auto max-w-6xl space-y-5 text-slate-100">
+    <div className="mx-auto max-w-6xl space-y-5 text-foreground">
       <header>
         <h1 className="font-heading text-3xl">Post-award Qualifications</h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           Track follow-up requirements from a verified completed bid. Deadlines use that session’s
           frozen terms and the final accepted award event. A past-due label calls for review; it
           does not remove an assignment or impose discipline.
         </p>
       </header>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label>
+        <Label>
           Official completed bid
-          <select
+          <NativeSelect
             className={fieldClass}
             value={session}
             disabled={!!selected || busy}
@@ -134,22 +138,22 @@ export function ObligationsWorkspace() {
                 {s.year} · {s.sessionId}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
+          </NativeSelect>
+        </Label>
+        <Label>
           Review as of
-          <input
+          <Input
             type="date"
             className={fieldClass}
             value={asOf}
             disabled={!!selected || busy}
             onChange={(e) => setAsOf(e.target.value)}
           />
-        </label>
+        </Label>
       </div>
       {sources.data?.sources.length === 0 && <p>No verified official completion is available.</p>}
       {(sources.isError || projection.isError) && (
-        <p role="alert" className="text-amber-200">
+        <p role="alert" className="text-warning">
           {projection.error instanceof Error
             ? projection.error.message
             : 'Official source list could not be refreshed'}
@@ -157,32 +161,32 @@ export function ObligationsWorkspace() {
         </p>
       )}
       <Link
-        className="inline-flex min-h-11 items-center text-sky-300 underline"
+        className="inline-flex min-h-11 items-center text-info underline"
         href={'/admin/personnel/qualifications' as Route}
       >
         Qualification evidence
       </Link>
       {selected && (
-        <form onSubmit={save} className="rounded border border-sky-600 bg-slate-900 p-4">
+        <form onSubmit={save} className="rounded border border-info/40 bg-card p-4">
           <fieldset disabled={busy} className="space-y-4">
             <legend className="px-1 font-semibold">
               Review {selected.row.term.credential} ·{' '}
               {selected.row.memberName ?? `Member ${selected.row.memberId}`}
             </legend>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label>
+              <Label>
                 Review effective date
-                <input
+                <Input
                   required
                   type="date"
                   className={fieldClass}
                   value={effective}
                   onChange={(e) => setEffective(e.target.value)}
                 />
-              </label>
-              <label>
+              </Label>
+              <Label>
                 Reviewed status
-                <select
+                <NativeSelect
                   required
                   className={fieldClass}
                   value={status}
@@ -192,13 +196,13 @@ export function ObligationsWorkspace() {
                   <option value="COMPLETED">Completion verified</option>
                   <option value="PENDING">Pending</option>
                   <option value="UNKNOWN">Unknown — needs evidence</option>
-                </select>
-              </label>
+                </NativeSelect>
+              </Label>
             </div>
             {status === 'COMPLETED' && (
-              <label className="block">
+              <Label className="block">
                 Verified completion date
-                <input
+                <Input
                   required
                   type="date"
                   max={effective || undefined}
@@ -206,11 +210,11 @@ export function ObligationsWorkspace() {
                   value={completed}
                   onChange={(e) => setCompleted(e.target.value)}
                 />
-              </label>
+              </Label>
             )}
-            <label className="block">
+            <Label className="block">
               Evidence reference
-              <input
+              <Input
                 required
                 minLength={4}
                 maxLength={500}
@@ -218,10 +222,10 @@ export function ObligationsWorkspace() {
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
               />
-            </label>
-            <label className="block">
+            </Label>
+            <Label className="block">
               Review reason
-              <input
+              <Input
                 required
                 minLength={4}
                 maxLength={500}
@@ -229,14 +233,14 @@ export function ObligationsWorkspace() {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
-            </label>
+            </Label>
             <div className="flex flex-wrap gap-3">
-              <button type="submit" className={buttonClass}>
+              <Button type="submit" className={buttonClass}>
                 {busy ? 'Saving…' : 'Record review'}
-              </button>
-              <button type="button" className={buttonClass} onClick={clear}>
+              </Button>
+              <Button type="button" className={buttonClass} onClick={clear}>
                 Discard review edits
-              </button>
+              </Button>
             </div>
           </fieldset>
         </form>
@@ -271,17 +275,17 @@ export function ObligationsWorkspace() {
           }}
         />
       )}
-      {message && <output className="block rounded border border-slate-600 p-3">{message}</output>}
+      {message && <output className="block rounded border border-border p-3">{message}</output>}
       <div className="grid gap-4 lg:grid-cols-2">
         {projection.data?.obligations.map((row) => (
           <article
             key={`${row.finalBidId}:${row.term.id}`}
-            className="min-w-0 space-y-3 rounded border border-slate-700 bg-slate-900 p-4"
+            className="min-w-0 space-y-3 rounded border border-border bg-card p-4"
           >
             <h2 className="font-heading text-xl">
               {row.memberName ?? `Member ${row.memberId}`} · {row.term.credential}
             </h2>
-            <p className="break-words text-sm text-slate-300">
+            <p className="break-words text-sm text-foreground">
               Position {row.positionId} · Final award {row.finalBidId}
             </p>
             <p className="font-semibold">
@@ -293,18 +297,18 @@ export function ObligationsWorkspace() {
               {row.term.deadline.unit.toLowerCase().replaceAll('_', ' ')} ·{' '}
               {row.term.deadline.timeZone}
             </p>
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-foreground">
               {row.term.deadline.basis === 'APPROVED_BID_START_DATE'
                 ? `Measured from approved bid start ${row.term.deadline.startOn}; retained through award amendments.`
                 : 'Measured from the final accepted position award, including its replacement after an amendment.'}
             </p>
             <p className="break-words text-sm">Policy source: {row.term.sourceRef}</p>
             {row.award && (
-              <p className="break-words text-xs text-slate-400">
+              <p className="break-words text-xs text-muted-foreground">
                 Award event {row.award.eventId} · {new Date(row.award.awardedAtMs).toISOString()}
               </p>
             )}
-            <button
+            <Button
               className={buttonClass}
               type="button"
               disabled={!!selected || !row.award || projection.isError}
@@ -314,14 +318,14 @@ export function ObligationsWorkspace() {
               }}
             >
               Review evidence
-            </button>
+            </Button>
             <details>
               <summary className="cursor-pointer text-sm">
                 Review history ({row.history.length})
               </summary>
               <div className="mt-2 space-y-3">
                 {row.history.map((r) => (
-                  <div key={r.id} className="border-t border-slate-700 pt-2 text-sm">
+                  <div key={r.id} className="border-t border-border pt-2 text-sm">
                     <p>
                       Revision {r.revision} · {r.effectiveOn} · {r.status}
                       {r.completedOn ? ` · Completed ${r.completedOn}` : ''}

@@ -63,21 +63,21 @@ export default async function CurrentRostersPage({
   return (
     <section className="max-w-3xl space-y-6" aria-labelledby="current-rosters-heading">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Staffing projection
         </p>
-        <h1 id="current-rosters-heading" className="mt-1 font-heading text-2xl text-white">
+        <h1 id="current-rosters-heading" className="mt-1 font-heading text-2xl text-foreground">
           Current Rosters
         </h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-foreground">
           Review the Bid-side canonical staffing projection by shift, station, unit, rank, vacancy,
           assignment status, and history.
         </p>
       </header>
 
-      <div className="border-l-4 border-red-500 bg-red-950/30 px-4 py-4 text-sm text-red-100">
+      <div className="border-l-4 border-destructive/40 bg-destructive-surface px-4 py-4 text-sm text-destructive">
         <p className="font-semibold">Current roster data is temporarily unavailable</p>
-        <p className="mt-1 text-amber-100/90">
+        <p className="mt-1 text-warning">
           {error ??
             'Retry this screen after confirming the administrator session and Worker health.'}
         </p>

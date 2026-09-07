@@ -167,7 +167,7 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
   return (
     <nav aria-label="Admin navigation" className={`flex flex-col gap-1 ${compact ? 'p-2' : 'p-3'}`}>
       <p
-        className={`${compact ? 'sr-only' : 'mb-1 px-3'} text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400`}
+        className={`${compact ? 'sr-only' : 'mb-1 px-3'} text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-muted`}
       >
         Control center
       </p>
@@ -183,8 +183,8 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
                 'admin-navigation-link group relative flex min-h-[44px] items-center gap-3 rounded-md py-2 text-sm font-medium transition-colors duration-fast ease-out-quart focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
                 compact ? 'justify-center px-2' : 'px-3',
                 active
-                  ? 'bg-red-700 text-white'
-                  : 'text-slate-200 hover:bg-slate-700 hover:text-white',
+                  ? 'bg-sidebar-accent text-white'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-white',
               ].join(' ')}
               aria-current={active ? 'page' : undefined}
               aria-label={compact ? link.label : undefined}
@@ -194,7 +194,7 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
               <span
                 className={
                   compact
-                    ? 'admin-navigation-label pointer-events-none absolute left-full z-30 ml-3 hidden whitespace-nowrap rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-white shadow-lg'
+                    ? 'admin-navigation-label pointer-events-none absolute left-full z-30 ml-3 hidden whitespace-nowrap rounded-md border border-sidebar-border bg-sidebar px-3 py-2 text-white shadow-lg'
                     : ''
                 }
               >
@@ -203,7 +203,7 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
             </Link>
 
             {!compact && active && link.subnav && (
-              <div className="mt-1 ml-3 flex flex-col gap-1 border-l border-slate-700 pl-2">
+              <div className="mt-1 ml-3 flex flex-col gap-1 border-l border-sidebar-border pl-2">
                 {link.subnav.map((sub) => {
                   const subActive =
                     matchesPath(pathname, sub.href) &&
@@ -216,10 +216,10 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
                       key={sub.href}
                       href={sub.href as Route}
                       className={[
-                        'flex min-h-[36px] items-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-fast ease-out-quart',
+                        'flex min-h-11 items-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-fast ease-out-quart',
                         subActive
-                          ? 'bg-red-700 text-white'
-                          : 'text-slate-300 hover:bg-slate-700 hover:text-white',
+                          ? 'bg-sidebar-accent text-white'
+                          : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-white',
                       ].join(' ')}
                       aria-current={subActive ? 'page' : undefined}
                     >

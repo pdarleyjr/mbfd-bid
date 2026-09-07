@@ -36,10 +36,10 @@ describe('AnnualPolicyPublishGate', () => {
     );
     if (!openButton) throw new Error('Publish control did not render.');
 
-    expect(container.querySelector('dialog')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     act(() => openButton.click());
 
-    const dialog = container.querySelector('dialog');
+    const dialog = document.querySelector('[role="dialog"]');
     const reason = dialog?.querySelector('textarea');
     const confirmButton = [...(dialog?.querySelectorAll('button') ?? [])].find(
       (button) => button.textContent === 'Request server-side publication review',
@@ -72,6 +72,6 @@ describe('AnnualPolicyPublishGate', () => {
     });
 
     expect(onConfirm).toHaveBeenCalledWith('Owner-reviewed annual policy publication.');
-    expect(container.querySelector('dialog')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 });

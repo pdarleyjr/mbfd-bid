@@ -1,4 +1,8 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -80,19 +84,21 @@ export function AnnualPlanWorkspace() {
     await invalidateWorkingBidBoards(client, ['upcoming']);
   };
   return (
-    <div className="mx-auto max-w-7xl space-y-6 text-slate-100">
+    <div className="mx-auto max-w-7xl space-y-6 text-foreground">
       <header>
-        <p className="text-xs uppercase tracking-wider text-slate-400">MBFD annual preparation</p>
+        <p className="text-xs uppercase tracking-wider text-muted-foreground">
+          MBFD annual preparation
+        </p>
         <h1 className="mt-1 font-heading text-3xl">Prepare Next Bid</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+        <p className="mt-2 max-w-3xl text-sm text-foreground">
           Build and review the designated annual plan. Saved drafts resume here; rehearsal and
           freezing remain subject to the existing bid safeguards.
         </p>
       </header>
       <div className="flex flex-wrap items-end gap-4">
-        <label className="w-36">
+        <Label className="w-36">
           Bid year
-          <input
+          <Input
             aria-label="Preparation year"
             type="number"
             min={2024}
@@ -111,8 +117,8 @@ export function AnnualPlanWorkspace() {
                 navigate(selected, 1);
             }}
           />
-        </label>
-        <span className="rounded border border-slate-600 px-3 py-2">
+        </Label>
+        <span className="rounded border border-border px-3 py-2">
           {year} ·{' '}
           {plan?.lifecycle ??
             (unavailablePlan
@@ -122,7 +128,7 @@ export function AnnualPlanWorkspace() {
                 : 'Not started')}
         </span>
         {plan && (
-          <span className="text-sm text-slate-400">
+          <span className="text-sm text-muted-foreground">
             Rules revision {plan.ruleBookRevision} · Configuration revision{' '}
             {plan.configurationRevision}
           </span>
@@ -135,7 +141,7 @@ export function AnnualPlanWorkspace() {
         </Link>
       </div>
       {(plans.isError || detail.isError) && (
-        <p role="alert" className="rounded border border-amber-700 p-4 text-amber-200">
+        <p role="alert" className="rounded border border-warning/40 p-4 text-warning">
           {detail.error?.message ?? plans.error?.message}.{' '}
           {detail.data
             ? 'Showing the last successful response; saved changes still require revision checks.'
@@ -147,21 +153,21 @@ export function AnnualPlanWorkspace() {
         className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7"
       >
         {stages.map((label, index) => (
-          <button
+          <Button
             type="button"
             key={label}
             onClick={() => navigate(year, index + 1)}
             aria-current={stage === index + 1 ? 'step' : undefined}
-            className={`min-h-16 rounded border px-3 py-2 text-left text-sm ${stage === index + 1 ? 'border-amber-500 bg-amber-950/30 text-amber-100' : 'border-slate-600 bg-slate-900'}`}
+            className={`min-h-16 rounded border px-3 py-2 text-left text-sm ${stage === index + 1 ? 'border-warning/40 bg-warning-surface text-warning' : 'border-border bg-card'}`}
           >
-            <span className="block text-xs text-slate-400">Stage {index + 1}</span>
+            <span className="block text-xs text-muted-foreground">Stage {index + 1}</span>
             {label}
-          </button>
+          </Button>
         ))}
       </nav>
       <section
         key={`${year}:${stage}`}
-        className="rounded-lg border border-slate-700 bg-slate-900/50 p-4 sm:p-6"
+        className="rounded-lg border border-border bg-card p-4 sm:p-6"
       >
         <h2 className="mb-4 font-heading text-xl">
           {stage}. {stages[stage - 1]}
@@ -196,7 +202,7 @@ export function AnnualPlanWorkspace() {
         ) : (
           <>
             {plan.lifecycle !== 'DRAFT' && (
-              <p className="mb-4 text-amber-200">
+              <p className="mb-4 text-warning">
                 This plan is {plan.lifecycle.toLowerCase()}; preparation edits are unavailable.
               </p>
             )}
@@ -205,7 +211,7 @@ export function AnnualPlanWorkspace() {
             {stage === 4 && <AnnualPlanProfiles plan={plan} onDirty={setDirty} onSaved={changed} />}
             {stage === 5 && (
               <div className="space-y-4">
-                <p className="text-slate-300">
+                <p className="text-foreground">
                   Review stage order, specialty interruptions, A-Day allocation, contact and
                   preference rules, pause/resume behavior, timing, authority and amendment
                   permissions in the annual operating policy editor.
@@ -216,7 +222,7 @@ export function AnnualPlanWorkspace() {
                 >
                   Edit {year} operating policy
                 </Link>
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   Return to this plan after saving. The review checks the exact designated document
                   and configuration revision.
                 </p>
@@ -228,22 +234,22 @@ export function AnnualPlanWorkspace() {
         )}
       </section>
       <div className="flex justify-between">
-        <button
+        <Button
           type="button"
           className={buttonClass}
           disabled={stage === 1}
           onClick={() => navigate(year, stage - 1)}
         >
           Previous stage
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className={buttonClass}
           disabled={stage === 7}
           onClick={() => navigate(year, stage + 1)}
         >
           Next stage
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -346,9 +352,9 @@ function StartPlan({
   return (
     <div className="space-y-5">
       {plans.length > 0 && (
-        <label className="block max-w-sm">
+        <Label className="block max-w-sm">
           Resume a saved year
-          <select
+          <NativeSelect
             className={fieldClass}
             value={plan ? year : ''}
             onChange={(e) => {
@@ -361,8 +367,8 @@ function StartPlan({
                 {p.year} · {p.ruleBookStatus ?? 'Unconfigured'}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
       )}
       {plan && !adopting ? (
         <p>
@@ -382,29 +388,29 @@ function StartPlan({
         >
           <fieldset disabled={busy} className="space-y-4">
             {adopting ? (
-              <div className="space-y-2 rounded border border-amber-600 p-4">
+              <div className="space-y-2 rounded border border-warning/40 p-4">
                 <h3 className="font-semibold">Review existing draft for guided preparation</h3>
-                <p className="text-sm text-slate-300">
+                <p className="text-sm text-foreground">
                   Keep this year’s designated rules, positions and operating policy. Set the annual
                   evidence dates and timing explicitly. Every seat’s participation must be reviewed
                   again in stage 2. Shared templates, published configurations and years with a Real
                   session cannot be adopted here.
                 </p>
-                <label className="flex min-h-11 items-center gap-3">
-                  <input
+                <Label className="flex min-h-11 items-center gap-3">
+                  <Input
                     type="checkbox"
                     required
                     checked={accepted}
                     onChange={(e) => setAccepted(e.target.checked)}
                   />
                   I reviewed the existing designated draft and its annual preparation dates.
-                </label>
+                </Label>
               </div>
             ) : (
               <>
-                <label className="block">
+                <Label className="block">
                   Start from
-                  <select
+                  <NativeSelect
                     className={fieldClass}
                     value={source}
                     onChange={(e) => setSource(e.target.value)}
@@ -417,10 +423,10 @@ function StartPlan({
                           Verified official {s.year} completion · {s.sessionId}
                         </option>
                       ))}
-                  </select>
-                </label>
+                  </NativeSelect>
+                </Label>
                 {sources.data?.notice && (
-                  <p className="text-sm text-slate-400">{sources.data.notice}</p>
+                  <p className="text-sm text-muted-foreground">{sources.data.notice}</p>
                 )}
                 {sources.isError && (
                   <p role="alert">
@@ -430,9 +436,9 @@ function StartPlan({
               </>
             )}
             <div className="grid gap-4 sm:grid-cols-2">
-              <label>
+              <Label>
                 Personnel and staffing effective date
-                <input
+                <Input
                   required
                   type="date"
                   min={`${year}-01-01`}
@@ -441,20 +447,20 @@ function StartPlan({
                   onChange={(e) => setEffective(e.target.value)}
                   className={fieldClass}
                 />
-              </label>
-              <label>
+              </Label>
+              <Label>
                 Credential evaluation date
-                <input
+                <Input
                   required
                   type="date"
                   value={qualifications}
                   onChange={(e) => setQualifications(e.target.value)}
                   className={fieldClass}
                 />
-              </label>
-              <label>
+              </Label>
+              <Label>
                 Turn timer (seconds)
-                <input
+                <Input
                   required
                   type="number"
                   min={30}
@@ -463,10 +469,10 @@ function StartPlan({
                   onChange={(e) => setTimer(e.target.value)}
                   className={fieldClass}
                 />
-              </label>
-              <label>
+              </Label>
+              <Label>
                 Expected duration (days)
-                <input
+                <Input
                   required
                   type="number"
                   min={1}
@@ -475,11 +481,11 @@ function StartPlan({
                   onChange={(e) => setDuration(e.target.value)}
                   className={fieldClass}
                 />
-              </label>
+              </Label>
             </div>
-            <label className="block">
+            <Label className="block">
               {adopting ? 'Reason for adopting this draft' : 'Reason for starting this plan'}
-              <input
+              <Input
                 required
                 minLength={4}
                 maxLength={500}
@@ -487,22 +493,22 @@ function StartPlan({
                 onChange={(e) => setReason(e.target.value)}
                 className={fieldClass}
               />
-            </label>
-            <p className="text-sm text-slate-400">
+            </Label>
+            <p className="text-sm text-muted-foreground">
               Copied rules and topology require annual review. Participants, operational grants and
               annual assignments require their own current evidence.
             </p>
-            <button className={buttonClass} disabled={busy} type="submit">
+            <Button className={buttonClass} disabled={busy} type="submit">
               {busy
                 ? 'Saving…'
                 : adopting
                   ? 'Adopt reviewed draft into annual preparation'
                   : 'Start annual draft'}
-            </button>
+            </Button>
           </fieldset>
           {adopting && dirty && (
             <section className="space-y-3">
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 className={buttonClass}
@@ -521,15 +527,15 @@ function StartPlan({
                 }}
               >
                 Review latest configuration without discarding dates
-              </button>
+              </Button>
               {reconciliation && (
-                <div className="rounded border border-amber-600 p-3 text-sm">
+                <div className="rounded border border-warning/40 p-3 text-sm">
                   <p>
                     Rule revision {reconciliation.expected_rule_revision}; configuration revision{' '}
                     {reconciliation.expected_configuration_revision}; source revision{' '}
                     {reconciliation.expected_source_revision}.
                   </p>
-                  <button
+                  <Button
                     type="button"
                     className={`${buttonClass} mt-2`}
                     onClick={() => {
@@ -543,7 +549,7 @@ function StartPlan({
                     }}
                   >
                     Use reviewed revision and keep dates
-                  </button>
+                  </Button>
                 </div>
               )}
             </section>
@@ -551,7 +557,7 @@ function StartPlan({
         </form>
       )}
       {message && (
-        <output className="block whitespace-pre-wrap rounded border border-slate-600 p-3">
+        <output className="block whitespace-pre-wrap rounded border border-border p-3">
           {message}
         </output>
       )}

@@ -11,8 +11,8 @@ export default async function NewSessionPage({
   const defaultMock = !(sp.mock === '0' || sp.mock === 'false' || sp.mode === 'live');
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="font-heading text-2xl text-white">New Bid Session</h1>
-      <p className="mt-2 text-sm text-slate-300">
+      <h1 className="font-heading text-2xl text-foreground">New Bid Session</h1>
+      <p className="mt-2 text-sm text-foreground">
         Create a rehearsal session from the selected year&apos;s designated annual configuration.
         Rehearsal is selected by default; an explicit live-mode choice remains available but is
         independently server-gated. Session settings cannot diverge between mock and eventual live

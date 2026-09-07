@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { type ReactElement, useState } from 'react';
 
 interface Props {
@@ -12,7 +13,7 @@ export function VerifyAuditButton({ sessionId }: Props): ReactElement {
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button
+      <Button
         type="button"
         disabled={busy}
         onClick={async () => {
@@ -32,11 +33,11 @@ export function VerifyAuditButton({ sessionId }: Props): ReactElement {
             setBusy(false);
           }
         }}
-        className="rounded bg-stone-700 px-3 py-1 text-white text-xs disabled:opacity-50"
+        className="rounded bg-muted px-3 py-1 text-foreground text-xs disabled:opacity-50"
       >
         {busy ? 'Verifying…' : 'Verify Audit Chain'}
-      </button>
-      {msg !== null ? <output className="text-xs text-stone-700">{msg}</output> : null}
+      </Button>
+      {msg !== null ? <output className="text-xs text-foreground">{msg}</output> : null}
     </span>
   );
 }

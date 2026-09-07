@@ -135,7 +135,9 @@ test('independent board views preserve source boundaries at phone, tablet and de
   for (const width of [390, 820, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/admin/bid-board?view=previous&shift=A');
-    await expect(page.getByText('Historical Winner', { exact: true })).toBeVisible({
+    await expect(
+      page.getByRole('main').getByText('Historical Winner', { exact: true }),
+    ).toBeVisible({
       timeout: 15_000,
     });
     if (width === 390) {
@@ -150,21 +152,35 @@ test('independent board views preserve source boundaries at phone, tablet and de
         .getByRole('link', { name: 'Bid Board', exact: true })
         .click();
       await expect(page.locator('#admin-mobile-navigation')).toBeHidden();
-      await expect(page.getByText('Current Occupant', { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole('main').getByText('Current Occupant', { exact: true }),
+      ).toBeVisible();
       await page.getByRole('button', { name: 'Previous Bid', exact: true }).click();
-      await expect(page.getByText('Historical Winner', { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole('main').getByText('Historical Winner', { exact: true }),
+      ).toBeVisible();
     }
     await page.getByRole('button', { name: 'Current Staffing', exact: true }).click();
-    await expect(page.getByText('Current Occupant', { exact: true })).toBeVisible();
-    await expect(page.getByText('Historical Winner', { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByRole('main').getByText('Current Occupant', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('main').getByText('Historical Winner', { exact: true }),
+    ).toHaveCount(0);
     await page.getByRole('button', { name: 'Upcoming Bid', exact: true }).click();
     await page.getByRole('combobox', { name: 'Annual plan', exact: true }).selectOption('2027');
-    await expect(page.getByText('Biddable', { exact: true })).toBeVisible();
-    await expect(page.getByText('Current Occupant', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('Historical Winner', { exact: true })).toHaveCount(0);
-    await page.getByLabel('Search this view', { exact: true }).fill('absent');
-    await expect(page.getByText('No seats in this view and selection.')).toBeVisible();
-    await page.getByLabel('Search this view', { exact: true }).clear();
+    await expect(page.getByRole('main').getByText('Biddable', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Current Occupant', { exact: true })).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByRole('main').getByText('Historical Winner', { exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole('main').getByLabel('Search this view', { exact: true }).fill('absent');
+    await expect(
+      page.getByRole('main').getByText('No seats in this view and selection.'),
+    ).toBeVisible();
+    await page.getByRole('main').getByLabel('Search this view', { exact: true }).clear();
     await page.screenshot({ path: testInfo.outputPath(`upcoming-${width}.png`), fullPage: true });
     expect(
       await page.evaluate(() =>
@@ -195,7 +211,7 @@ test('independent board views preserve source boundaries at phone, tablet and de
   await page.screenshot({ path: testInfo.outputPath('compact-navigation.png'), fullPage: true });
   await page.getByRole('button', { name: 'Expand admin sidebar', exact: true }).click();
   await page.getByRole('button', { name: 'Current Staffing', exact: true }).click();
-  await expect(page.getByText('Current Occupant', { exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByText('Current Occupant', { exact: true })).toBeVisible();
   const immutableReads = previousReads;
   const beforeFocus = currentReads;
   // Control cache age only after real hydration and initial network reads.
@@ -221,10 +237,12 @@ test('independent board views preserve source boundaries at phone, tablet and de
   await expect(
     page.getByRole('alert').filter({ hasText: 'Showing the last successful data' }),
   ).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText('Current Occupant', { exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByText('Current Occupant', { exact: true })).toBeVisible();
   fail = false;
   await page.getByRole('button', { name: 'Previous Bid', exact: true }).click();
-  await expect(page.getByText('Historical Winner', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('Historical Winner', { exact: true }),
+  ).toBeVisible();
   latestSession = 'synthetic-next-completion';
   const beforeResolution = resolverReads;
   await page.clock.setFixedTime(new Date(cacheClock + 93_000));
@@ -235,12 +253,16 @@ test('independent board views preserve source boundaries at phone, tablet and de
     window.dispatchEvent(new Event('visibilitychange'));
   });
   await expect.poll(() => resolverReads).toBeGreaterThan(beforeResolution);
-  await expect(page.getByText('Newly Completed Winner', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('Newly Completed Winner', { exact: true }),
+  ).toBeVisible();
   const completedReads = previousReads;
   await page
     .getByRole('combobox', { name: 'Completed official bid', exact: true })
     .selectOption('synthetic-official-completion');
-  await expect(page.getByText('Historical Winner', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('Historical Winner', { exact: true }),
+  ).toBeVisible();
   expect(previousReads).toBe(completedReads);
   await page.goto('/admin');
   await expect(page.getByRole('heading', { name: /Prepare Next Bid/ })).toBeVisible({

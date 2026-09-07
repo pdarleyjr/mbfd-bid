@@ -3,7 +3,10 @@ import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const route = vi.hoisted(() => ({ pathname: '/admin/personnel' }));
-vi.mock('next/navigation', () => ({ usePathname: () => route.pathname }));
+vi.mock('next/navigation', () => ({
+  usePathname: () => route.pathname,
+  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
+}));
 
 vi.mock('@/components/admin/AdminShell', () => ({
   AdminSideNav: () => (
@@ -49,7 +52,7 @@ function renderShell(): HTMLElement {
 async function click(control: HTMLButtonElement): Promise<void> {
   await act(async () => {
     control.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
   });
 }
 
@@ -64,12 +67,12 @@ describe('AdminLayoutShell mobile navigation', () => {
     expect(toggle.getAttribute('aria-controls')).toBe('admin-mobile-navigation');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
 
-    const mobileNavigation = container.querySelector<HTMLElement>('#admin-mobile-navigation');
-    expect(mobileNavigation?.hidden).toBe(true);
-    expect(mobileNavigation?.className).toContain('md:hidden');
+    // A closed dialog must not eagerly insert a portal during page hydration.
+    expect(document.querySelector('#admin-mobile-navigation')).toBeNull();
 
     await click(toggle);
 
+    const mobileNavigation = document.querySelector<HTMLElement>('#admin-mobile-navigation');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(mobileNavigation?.hidden).toBe(false);
     expect(mobileNavigation?.className).toContain('md:hidden');
@@ -77,20 +80,23 @@ describe('AdminLayoutShell mobile navigation', () => {
     expect(mobileNavigation?.textContent).toContain('Current Rosters');
     expect(document.activeElement).toBe(mobileNavigation?.querySelector('a'));
     await act(async () =>
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      ),
     );
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(toggle);
     await click(toggle);
     route.pathname = '/admin/current-rosters';
-    act(() =>
+    await act(async () => {
       roots[0]?.render(
         <AdminLayoutShell>
           <h1>Current Rosters</h1>
         </AdminLayoutShell>,
-      ),
-    );
-    expect(mobileNavigation?.hidden).toBe(true);
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(document.querySelector('#admin-mobile-navigation')).toBeNull();
     expect(document.activeElement).toBe(container.querySelector('main'));
   });
 });

@@ -39,7 +39,7 @@ export default async function AdminCredentialsPage() {
 
   if (fetchError !== null) {
     return (
-      <p className="rounded-xl border border-red-700/40 bg-red-900/20 px-4 py-6 text-center text-slate-300">
+      <p className="rounded-xl border border-destructive/40 bg-destructive-surface px-4 py-6 text-center text-foreground">
         Could not load credentials: {fetchError}
       </p>
     );

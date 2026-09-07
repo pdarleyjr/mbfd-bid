@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 interface Props {
   positionIds: string[];
   onPick: (id: string) => void;
@@ -12,7 +13,7 @@ export function EligibleList({ positionIds, onPick, submitting, disabled = false
     <ul className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
       {positionIds.map((id) => (
         <li key={id}>
-          <button
+          <Button
             type="button"
             data-testid={`eligible-position-${id}`}
             disabled={disabled || submitting !== null}
@@ -21,7 +22,7 @@ export function EligibleList({ positionIds, onPick, submitting, disabled = false
           >
             {id}
             {submitting === id ? ' — submitting…' : null}
-          </button>
+          </Button>
         </li>
       ))}
     </ul>

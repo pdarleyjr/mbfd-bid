@@ -1,3 +1,9 @@
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { type BidConfiguration, buildBoundToolHref } from '../../lib/bid-configuration-selection';
@@ -31,65 +37,64 @@ interface PositionGroupProps {
 
 export function PositionGroup({ station, positions, configuration }: PositionGroupProps) {
   return (
-    <details open className="mt-4 rounded-lg border border-slate-700">
-      <summary className="flex cursor-pointer select-none items-center justify-between rounded-lg px-4 py-3 bg-slate-800 text-sm font-semibold text-slate-200 hover:bg-slate-750 transition-colors duration-fast ease-out-quart">
+    <details open className="mt-4 rounded-lg border border-border">
+      <summary className="flex cursor-pointer select-none items-center justify-between rounded-lg px-4 py-3 bg-card text-sm font-semibold text-foreground hover:bg-muted transition-colors duration-fast ease-out-quart">
         <span>{station}</span>
-        <span className="font-mono text-xs text-slate-500 [font-variant-numeric:tabular-nums]">
+        <span className="font-mono text-xs text-muted-foreground [font-variant-numeric:tabular-nums]">
           {positions.length} position{positions.length !== 1 ? 's' : ''}
         </span>
       </summary>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-slate-700 bg-slate-850">
-              <th
+        <Table className="w-full border-collapse text-sm">
+          <TableHeader>
+            <TableRow className="border-b border-border bg-card">
+              <TableHead
                 scope="col"
-                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
+                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 ID
-              </th>
-              <th
+              </TableHead>
+              <TableHead
                 scope="col"
-                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
+                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 Rank
-              </th>
-              <th
+              </TableHead>
+              <TableHead
                 scope="col"
-                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
+                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 Position
-              </th>
-              <th
+              </TableHead>
+              <TableHead
                 scope="col"
-                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
+                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 Unit
-              </th>
-              <th
+              </TableHead>
+              <TableHead
                 scope="col"
-                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
+                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 Division
-              </th>
-              <th
+              </TableHead>
+              <TableHead
                 scope="col"
-                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500"
+                className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 Flags
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {positions.map((pos, idx) => (
-              <tr
+              <TableRow
                 key={pos.id}
-                className={[
-                  'border-b border-slate-700',
-                  idx % 2 === 0 ? 'bg-slate-850' : 'bg-slate-800',
-                ].join(' ')}
+                className={['border-b border-border', idx % 2 === 0 ? 'bg-card' : 'bg-card'].join(
+                  ' ',
+                )}
               >
-                <td className="px-4 py-2 font-mono text-xs text-red-400 [font-variant-numeric:tabular-nums]">
+                <TableCell className="px-4 py-2 font-mono text-xs text-destructive [font-variant-numeric:tabular-nums]">
                   {configuration.lifecycle === 'DRAFT' ? (
                     <Link
                       href={
@@ -98,43 +103,43 @@ export function PositionGroup({ station, positions, configuration }: PositionGro
                           configuration,
                         ) as Route
                       }
-                      className="hover:text-red-300"
+                      className="hover:text-destructive"
                     >
                       {pos.id}
                     </Link>
                   ) : (
                     <span>{pos.id}</span>
                   )}
-                </td>
-                <td className="px-4 py-2 text-slate-300">
+                </TableCell>
+                <TableCell className="px-4 py-2 text-foreground">
                   {RANK_LABELS[pos.rankRequired] ?? pos.rankRequired}
-                </td>
-                <td className="px-4 py-2 text-slate-200">{pos.positionName}</td>
-                <td className="px-4 py-2 text-slate-400">{pos.unit}</td>
-                <td className="px-4 py-2 text-slate-400">{pos.division}</td>
-                <td className="px-4 py-2">
+                </TableCell>
+                <TableCell className="px-4 py-2 text-foreground">{pos.positionName}</TableCell>
+                <TableCell className="px-4 py-2 text-muted-foreground">{pos.unit}</TableCell>
+                <TableCell className="px-4 py-2 text-muted-foreground">{pos.division}</TableCell>
+                <TableCell className="px-4 py-2">
                   <span className="flex gap-1 flex-wrap">
                     {pos.isFloating && (
-                      <span className="rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300">
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
                         Float
                       </span>
                     )}
                     {pos.isVacantByDesign && (
-                      <span className="rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300">
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
                         Vacant
                       </span>
                     )}
                     {pos.isExcludedFromCount && (
-                      <span className="rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300">
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
                         Excl
                       </span>
                     )}
                   </span>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </details>
   );

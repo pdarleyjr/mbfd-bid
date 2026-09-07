@@ -22,10 +22,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   if (!error) redirect('/api/auth/start');
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-background">
       <BrandHeader subtitle="Authorized personnel only" />
       <main className="mx-auto max-w-md px-4 py-12 sm:py-16">
-        <h2 className="font-heading text-2xl text-stone-800">Hub sign-in required</h2>
+        <h2 className="font-heading text-2xl text-foreground">Hub sign-in required</h2>
         <p role="alert" className="mt-2 text-sm text-red-700">
           {error === 'access_denied'
             ? 'Your Hub account is not eligible for Bid.'

@@ -1,4 +1,5 @@
 'use client';
+import { Button } from '@/components/ui/button';
 import type { MemberLite } from '../../../_components/bid/types';
 import { shortRank } from '../../../_components/bid/types';
 import { useManualPick } from './ManualPickContext';
@@ -44,7 +45,7 @@ export function ManualPickBar({
             <span className="font-mono text-xs text-blue-700">#{member.employeeId}</span>
           </span>
           <span className="text-blue-700">Click an open position cell to assign.</span>
-          <button
+          <Button
             type="button"
             onClick={() => {
               setSelectedMemberId(null);
@@ -54,7 +55,7 @@ export function ManualPickBar({
             className="rounded border border-blue-400 bg-white px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
           >
             Clear selection
-          </button>
+          </Button>
         </>
       ) : (
         <span className="text-blue-800">
@@ -70,14 +71,14 @@ export function ManualPickBar({
             live — use Override
           </span>
         )}
-        <button
+        <Button
           type="button"
           onClick={reset}
           disabled={submitting}
           className="rounded border border-blue-400 bg-white px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
         >
           Exit pick mode
-        </button>
+        </Button>
       </span>
       {submitting && <span className="basis-full text-xs text-blue-700">Submitting pick…</span>}
       {lastError !== null && (

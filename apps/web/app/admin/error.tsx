@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 // Global error boundary for /admin/* pages. Catches uncaught Server Component
 // errors (and client-side errors that escape Suspense) and renders a useful
 // message instead of the framework's generic "Server Components render error".
@@ -19,37 +20,40 @@ export default function AdminError({
   }, [error]);
 
   return (
-    <div className="rounded-lg border border-red-700 bg-red-950/30 p-6 text-sm text-red-100">
-      <h2 className="font-heading text-lg text-white">Something went wrong on this page.</h2>
-      <p className="mt-2 text-red-200">
+    <div className="rounded-lg border border-destructive/40 bg-destructive-surface p-6 text-sm text-destructive">
+      <h2 className="font-heading text-lg text-foreground">Something went wrong on this page.</h2>
+      <p className="mt-2 text-destructive">
         The admin page failed to render. This is almost always a Worker fetch returning an
         unexpected status (401, 500) or a missing binding. Use the digest below to look up the
         request in{' '}
-        <code className="rounded bg-red-900 px-1">wrangler tail mbfd-bid-worker-staging</code>.
+        <code className="rounded bg-destructive-surface px-1">
+          wrangler tail mbfd-bid-worker-staging
+        </code>
+        .
       </p>
       <dl className="mt-4 space-y-1 font-mono text-xs">
         <div>
-          <dt className="inline text-red-300">message:</dt>{' '}
+          <dt className="inline text-destructive">message:</dt>{' '}
           <dd className="inline">{error.message || '(production build hides details)'}</dd>
         </div>
         {error.digest && (
           <div>
-            <dt className="inline text-red-300">digest:</dt>{' '}
+            <dt className="inline text-destructive">digest:</dt>{' '}
             <dd className="inline">{error.digest}</dd>
           </div>
         )}
       </dl>
       <div className="mt-4 flex gap-3">
-        <button
+        <Button
           type="button"
           onClick={reset}
-          className="rounded-md bg-red-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-600"
+          className="rounded-md bg-destructive px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-destructive"
         >
           Try again
-        </button>
+        </Button>
         <a
           href="/admin"
-          className="rounded-md border border-slate-600 px-3 py-1.5 text-sm font-semibold text-slate-200 hover:border-slate-500"
+          className="rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-foreground hover:border-border"
         >
           Back to dashboard
         </a>

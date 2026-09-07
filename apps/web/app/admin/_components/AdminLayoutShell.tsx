@@ -1,43 +1,72 @@
 'use client';
 
+import { MBFD_MASTER_LOGO_PATH } from '@/components/BrandHeader';
+import { LogoutButton } from '@/components/LogoutButton';
 import { AdminSideNav } from '@/components/admin/AdminShell';
+import { Button } from '@/components/ui/button';
+import { Dialog } from '@base-ui/react/dialog';
+import { Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'mbfd-admin-sidebar-collapsed';
 
-/**
- * Client wrapper around the admin sidebar + main content split. Owns the
- * collapsed state so the chief can pin the sidebar away on the live bid
- * console (where every extra px of grid matters) and have that choice
- * survive page navigation. Persisted in localStorage so a reload keeps it.
- */
-export function AdminLayoutShell({ children }: { children: ReactNode }) {
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      data-testid="brand-header"
+      className="flex min-h-20 items-center gap-3 border-b border-sidebar-border px-4 py-3 text-sidebar-foreground"
+    >
+      <img
+        src={MBFD_MASTER_LOGO_PATH}
+        alt="Miami Beach Fire Department"
+        width={44}
+        height={44}
+        className="h-11 w-11 shrink-0 object-contain"
+      />
+      {!compact && (
+        <div className="min-w-0">
+          <p className="font-heading text-sm font-bold">MBFD Annual Bid</p>
+          <p className="mt-1 text-xs text-sidebar-muted">Admin Console</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AdminLayoutShell({
+  children,
+  userName,
+}: { children: ReactNode; userName?: string }) {
   const pathname = usePathname();
   const previousPath = useRef(pathname);
   const mobileToggle = useRef<HTMLButtonElement>(null);
   const mobileNavigation = useRef<HTMLDivElement>(null);
   const mainContent = useRef<HTMLElement>(null);
-  const [collapsed, setCollapsed] = useState<boolean>(false);
+  const navigationAccepted = useRef(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     if (previousPath.current === pathname) return;
     previousPath.current = pathname;
-    setMobileNavOpen(false);
-    if (mobileNavOpen) mainContent.current?.focus();
+    if (mobileNavOpen) {
+      navigationAccepted.current = true;
+      setMobileNavOpen(false);
+    }
+    if (navigationAccepted.current) {
+      // Closing the sheet schedules another effect. Do not cancel this one-shot
+      // handoff during that state change; it belongs to the accepted new route.
+      requestAnimationFrame(() => {
+        mainContent.current?.focus();
+        navigationAccepted.current = false;
+      });
+    }
   }, [pathname, mobileNavOpen]);
 
   useEffect(() => {
     if (!mobileNavOpen) return;
-    mobileNavigation.current?.querySelector<HTMLAnchorElement>('a[href]')?.focus();
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      setMobileNavOpen(false);
-      mobileToggle.current?.focus();
-    };
     const selected = (event: MouseEvent) => {
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
       const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
@@ -47,96 +76,143 @@ export function AdminLayoutShell({ children }: { children: ReactNode }) {
         link.target === '_blank'
       )
         return;
-      // Unsaved-edit rejection stops propagation before this listener. Next
-      // Link prevents the default browser load even when navigation is accepted.
+      // Rejected unsaved-edit navigation stops propagation before this listener.
+      navigationAccepted.current = true;
       setMobileNavOpen(false);
-      mainContent.current?.focus();
     };
-    document.addEventListener('keydown', dismissOnEscape);
     document.addEventListener('click', selected);
-    return () => {
-      document.removeEventListener('keydown', dismissOnEscape);
-      document.removeEventListener('click', selected);
-    };
+    return () => document.removeEventListener('click', selected);
   }, [mobileNavOpen]);
 
-  // Read the persisted preference on mount. Two-phase render avoids the SSR
-  // mismatch warning (server emits "expanded", client may have a stored
-  // "collapsed" preference).
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored === '1') setCollapsed(true);
+      if (window.localStorage.getItem(STORAGE_KEY) === '1') setCollapsed(true);
     } catch {
-      // localStorage can throw under private-browsing; default to expanded.
+      /* Preference is optional. */
     }
     setHydrated(true);
   }, []);
 
   function toggle() {
-    setCollapsed((prev) => {
-      const next = !prev;
+    setCollapsed((previous) => {
+      const next = !previous;
       try {
         window.localStorage.setItem(STORAGE_KEY, next ? '1' : '0');
       } catch {
-        // ignore — preference simply won't persist
+        /* Preference is optional. */
       }
       return next;
     });
   }
-
+  const compact = collapsed && hydrated;
   return (
-    <div className="flex min-h-[calc(100vh-57px)] flex-col md:flex-row">
+    <div className="flex min-h-screen">
       <aside
         data-testid="admin-sidebar"
-        data-collapsed={hydrated ? collapsed : false}
-        className={[
-          'hidden shrink-0 border-r border-slate-700 transition-[width] duration-fast ease-out-quart md:block',
-          collapsed && hydrated ? 'w-16' : 'w-60',
-        ].join(' ')}
+        data-collapsed={compact}
+        className={`hidden shrink-0 border-r border-sidebar-border bg-sidebar md:block ${compact ? 'w-20' : 'w-64'}`}
       >
-        <div className="flex h-9 items-center justify-end border-b border-slate-700 px-1">
-          <button
-            type="button"
-            data-testid="admin-sidebar-toggle"
-            onClick={toggle}
-            aria-pressed={collapsed}
-            aria-label={collapsed ? 'Expand admin sidebar' : 'Collapse admin sidebar'}
-            className="rounded p-1 text-sm font-bold text-slate-300 hover:bg-slate-700 hover:text-white"
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? '›' : '‹'}
-          </button>
+        <div className="sticky top-0 flex max-h-screen flex-col">
+          <Brand compact={compact} />
+          <div className="flex justify-end px-3 py-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              data-testid="admin-sidebar-toggle"
+              onClick={toggle}
+              aria-pressed={collapsed}
+              aria-label={collapsed ? 'Expand admin sidebar' : 'Collapse admin sidebar'}
+              className="text-sidebar-muted hover:bg-sidebar-accent hover:text-white"
+            >
+              {compact ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </Button>
+          </div>
+          <div className={compact ? '' : 'min-h-0 overflow-y-auto'}>
+            <AdminSideNav compact={compact} />
+          </div>
+          {!compact && (
+            <footer className="mx-6 mb-6 mt-8 border-t border-sidebar-border pt-5 text-center text-[10px] uppercase tracking-[0.18em] text-sidebar-muted">
+              <span className="mx-auto mb-4 block h-px w-12 bg-brand-gold" />
+              Service · People · Community
+            </footer>
+          )}
         </div>
-        <AdminSideNav compact={collapsed && hydrated} />
       </aside>
-
       <div className="min-w-0 flex-1">
-        <div className="border-b border-slate-700 bg-slate-900 px-4 py-2 md:hidden">
-          <button
-            type="button"
-            data-testid="admin-mobile-nav-toggle"
-            ref={mobileToggle}
-            onClick={() => setMobileNavOpen((open) => !open)}
-            aria-controls="admin-mobile-navigation"
-            aria-expanded={mobileNavOpen}
-            aria-label={mobileNavOpen ? 'Close admin navigation' : 'Open admin navigation'}
-            className="inline-flex min-h-11 items-center rounded-md border border-slate-600 px-3 text-sm font-semibold text-slate-100 hover:border-slate-400 hover:bg-slate-800"
-          >
-            Navigation
-          </button>
-        </div>
-        <div
-          id="admin-mobile-navigation"
-          ref={mobileNavigation}
-          hidden={!mobileNavOpen}
-          className="border-b border-slate-700 bg-slate-900 md:hidden"
+        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              type="button"
+              ref={mobileToggle}
+              data-testid="admin-mobile-nav-toggle"
+              onClick={() => {
+                navigationAccepted.current = false;
+                setMobileNavOpen(true);
+              }}
+              aria-controls="admin-mobile-navigation"
+              aria-expanded={mobileNavOpen}
+              aria-label="Open admin navigation"
+              size="icon"
+              className="md:hidden"
+            >
+              <Menu size={20} />
+            </Button>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Miami Beach Fire Department
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">Annual Bid · Control Center</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            {userName && (
+              <p className="hidden text-right text-xs text-muted-foreground sm:block">
+                Signed in as
+                <br />
+                <span className="text-sm font-semibold text-foreground">{userName}</span>
+              </p>
+            )}
+            <LogoutButton />
+          </div>
+        </header>
+
+        <main
+          ref={mainContent}
+          tabIndex={-1}
+          className="admin-content min-w-0 px-4 py-6 outline-none sm:px-6 lg:px-8"
         >
-          <AdminSideNav />
-        </div>
-        <main ref={mainContent} tabIndex={-1} className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
-          {children}
+          <Suspense fallback={<p className="text-muted-foreground">Loading workspace…</p>}>
+            {children}
+          </Suspense>
         </main>
+        <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          <Dialog.Portal>
+            <Dialog.Backdrop className="fixed inset-0 z-40 bg-sidebar/50 data-[closed]:hidden md:hidden" />
+            <Dialog.Popup
+              id="admin-mobile-navigation"
+              ref={mobileNavigation}
+              hidden={!mobileNavOpen}
+              className="fixed inset-y-0 left-0 z-50 w-[min(20rem,calc(100%-3rem))] overflow-y-auto bg-sidebar text-sidebar-foreground outline-none md:hidden"
+              initialFocus={() =>
+                mobileNavigation.current?.querySelector<HTMLAnchorElement>('a[href]') ?? true
+              }
+              finalFocus={() =>
+                navigationAccepted.current ? mainContent.current : mobileToggle.current
+              }
+            >
+              <Dialog.Title className="sr-only">Admin navigation</Dialog.Title>
+              <Brand />
+              <Dialog.Close
+                aria-label="Close admin navigation"
+                className="ml-auto mr-3 mt-2 flex h-11 w-11 items-center justify-center rounded-md hover:bg-sidebar-accent"
+              >
+                <X size={20} />
+              </Dialog.Close>
+              <AdminSideNav />
+            </Dialog.Popup>
+          </Dialog.Portal>
+        </Dialog.Root>
       </div>
     </div>
   );

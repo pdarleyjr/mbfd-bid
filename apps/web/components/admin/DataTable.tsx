@@ -1,5 +1,12 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Table } from '@/components/ui/table';
+import { TableHeader } from '@/components/ui/table';
+import { TableRow } from '@/components/ui/table';
+import { TableHead } from '@/components/ui/table';
+import { TableBody } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import {
   type ColumnDef,
   type SortingState,
@@ -20,13 +27,13 @@ interface DataTableProps<TData> {
 function SortIcon({ direction }: { direction: 'asc' | 'desc' | false }) {
   if (!direction) {
     return (
-      <span aria-hidden className="ml-1 inline-block text-slate-500 text-xs">
+      <span aria-hidden className="ml-1 inline-block text-muted-foreground text-xs">
         &#8597;
       </span>
     );
   }
   return (
-    <span aria-hidden className="ml-1 inline-block text-red-400 text-xs">
+    <span aria-hidden className="ml-1 inline-block text-destructive text-xs">
       {direction === 'asc' ? '↑' : '↓'}
     </span>
   );
@@ -45,17 +52,17 @@ export function DataTable<TData>({ columns, data, caption }: DataTableProps<TDat
   });
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-700">
-      <table className="w-full border-collapse text-sm">
+    <div className="overflow-x-auto rounded-xl border border-border">
+      <Table className="w-full border-collapse text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
-        <thead>
+        <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id} className="border-b border-slate-700 bg-slate-800">
+            <TableRow key={headerGroup.id} className="border-b border-border bg-card">
               {headerGroup.headers.map((header) => (
-                <th
+                <TableHead
                   key={header.id}
                   scope="col"
-                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400"
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                   aria-sort={
                     header.column.getIsSorted() === 'asc'
                       ? 'ascending'
@@ -65,48 +72,51 @@ export function DataTable<TData>({ columns, data, caption }: DataTableProps<TDat
                   }
                 >
                   {header.isPlaceholder ? null : header.column.getCanSort() ? (
-                    <button
+                    <Button
                       type="button"
-                      className="inline-flex min-h-8 items-center text-left uppercase tracking-wider hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                      className="inline-flex min-h-8 items-center text-left uppercase tracking-wider hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={header.column.getToggleSortingHandler()}
                     >
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       <SortIcon direction={header.column.getIsSorted()} />
-                    </button>
+                    </Button>
                   ) : (
                     flexRender(header.column.columnDef.header, header.getContext())
                   )}
-                </th>
+                </TableHead>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </thead>
-        <tbody>
+        </TableHeader>
+        <TableBody>
           {table.getRowModel().rows.length === 0 ? (
-            <tr>
-              <td colSpan={columns.length} className="px-4 py-10 text-center text-slate-500">
+            <TableRow>
+              <TableCell
+                colSpan={columns.length}
+                className="px-4 py-10 text-center text-muted-foreground"
+              >
                 No records found.
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ) : (
             table.getRowModel().rows.map((row, idx) => (
-              <tr
+              <TableRow
                 key={row.id}
                 className={[
-                  'border-b border-slate-700 transition-colors duration-fast ease-out-quart hover:bg-slate-750',
-                  idx % 2 === 0 ? 'bg-slate-850' : 'bg-slate-800',
+                  'border-b border-border transition-colors duration-fast ease-out-quart hover:bg-muted',
+                  idx % 2 === 0 ? 'bg-card' : 'bg-card',
                 ].join(' ')}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-4 py-3 text-slate-200">
+                  <TableCell key={cell.id} className="px-4 py-3 text-foreground">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
+                  </TableCell>
                 ))}
-              </tr>
+              </TableRow>
             ))
           )}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

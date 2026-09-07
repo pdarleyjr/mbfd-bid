@@ -1,4 +1,5 @@
 'use client';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
 /** A refresh may reveal newer evidence; only a separate explicit action adopts
@@ -16,10 +17,10 @@ export function RetainedEvidenceReview<T>({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const button =
-    'min-h-11 rounded border border-slate-500 px-4 py-2 text-sm font-semibold disabled:opacity-50';
+    'min-h-11 rounded border border-border px-4 py-2 text-sm font-semibold disabled:opacity-50';
   return (
-    <section className="space-y-3 rounded border border-slate-600 p-4">
-      <button
+    <section className="space-y-3 rounded border border-border p-4">
+      <Button
         type="button"
         disabled={disabled || busy}
         className={button}
@@ -37,14 +38,14 @@ export function RetainedEvidenceReview<T>({
         }}
       >
         {busy ? 'Refreshing history…' : 'Refresh history and retain edits'}
-      </button>
+      </Button>
       {review && (
         <div className="space-y-2 text-sm">
           <p>
             {review.label}. Read the refreshed evidence history before applying your retained edits
             to this revision.
           </p>
-          <button
+          <Button
             type="button"
             disabled={disabled || busy}
             className={button}
@@ -57,7 +58,7 @@ export function RetainedEvidenceReview<T>({
             }}
           >
             Use reviewed evidence revision
-          </button>
+          </Button>
         </div>
       )}
       {message && <output className="block text-sm">{message}</output>}

@@ -1,4 +1,5 @@
 'use client';
+import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { BidderCard, type BidderContext } from '../../../_components/bid/BidderCard';
 import { FreezeConfirmDialog } from './FreezeConfirmDialog';
@@ -92,7 +93,7 @@ export function LiveCommandBar({
       ? 'text-red-600'
       : turnUrgency === 'warn'
         ? 'text-amber-600'
-        : 'text-stone-900';
+        : 'text-foreground';
 
   async function onSkip() {
     if (busy) return;
@@ -114,26 +115,26 @@ export function LiveCommandBar({
   }
 
   return (
-    <header data-testid="live-command-bar" className="border-b border-stone-200 bg-white">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 text-stone-900">
+    <header data-testid="live-command-bar" className="border-b border-border bg-white">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 text-foreground">
         <div className="flex items-baseline gap-2">
-          <h1 className="font-display text-lg font-bold">
+          <h1 className="font-heading text-lg font-bold">
             {isMock ? 'Mock rehearsal — MBFD Annual Bid' : 'MBFD Annual Bid'}
           </h1>
-          <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-stone-700">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-foreground">
             {currentPhase}
           </span>
         </div>
 
         <div className="flex items-center gap-4 text-sm">
           <span title="Session uptime">
-            <span className="text-stone-500">Session</span>{' '}
+            <span className="text-muted-foreground">Session</span>{' '}
             <span data-testid="session-uptime" className="font-mono tabular-nums">
               {sessionUptime}
             </span>
           </span>
           <span title="Turn timer">
-            <span className="text-stone-500">Turn</span>{' '}
+            <span className="text-muted-foreground">Turn</span>{' '}
             <span
               data-testid="turn-remaining"
               data-urgency={turnUrgency}
@@ -145,12 +146,12 @@ export function LiveCommandBar({
         </div>
 
         <div className="min-w-0 flex-1 text-sm">
-          <span className="mr-2 text-stone-500">Active:</span>
+          <span className="mr-2 text-muted-foreground">Active:</span>
           <BidderCard bidder={currentBidder} fallbackMemberId={currentBidderId} />
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
+          <Button
             type="button"
             data-testid="admin-action-pick-mode"
             onClick={() => setPickMode(!pickMode)}
@@ -162,41 +163,44 @@ export function LiveCommandBar({
             }
           >
             {pickMode ? 'Pick mode: ON' : 'Pick for member'}
-          </button>
+          </Button>
           {isMock ? (
             <>
               <MockFreezeButton bidSessionId={bidSessionId} expectedSeq={lastSeq} />
-              <span data-testid="mock-command-boundary" className="max-w-xs text-xs text-stone-600">
+              <span
+                data-testid="mock-command-boundary"
+                className="max-w-xs text-xs text-muted-foreground"
+              >
                 Skip and override are live-only. Use rehearsal controls for mock commands.
               </span>
             </>
           ) : (
             <>
-              <button
+              <Button
                 type="button"
                 data-testid="admin-action-skip"
                 disabled={busy}
                 onClick={onSkip}
-                className="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-900 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded border border-border bg-white px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Skip
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 data-testid="admin-action-override"
                 onClick={() => setOpen('override')}
                 className="rounded border border-red-700 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-100"
               >
                 Override
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 data-testid="admin-action-freeze"
                 onClick={() => setOpen('freeze')}
                 className="rounded border border-amber-600 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
               >
                 Freeze
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -205,14 +209,14 @@ export function LiveCommandBar({
       {onDeck.length > 0 && (
         <div
           data-testid="on-deck-strip"
-          className="flex items-center gap-3 overflow-x-auto border-t border-stone-100 bg-stone-50 px-4 py-1.5 text-sm"
+          className="flex items-center gap-3 overflow-x-auto border-t border-border bg-background px-4 py-1.5 text-sm"
         >
-          <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             On deck
           </span>
           {onDeck.map((b, i) => (
-            <span key={b.memberId} className="flex shrink-0 items-baseline gap-1 text-stone-800">
-              <span className="rounded-full bg-stone-200 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-stone-700">
+            <span key={b.memberId} className="flex shrink-0 items-baseline gap-1 text-foreground">
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-foreground">
                 {i + 1}
               </span>
               <BidderCard bidder={b} fallbackMemberId={b.memberId} compact />

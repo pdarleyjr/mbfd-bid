@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="en">
-      <body className="min-h-screen bg-stone-50 text-stone-800 antialiased">
+      <body className="min-h-screen bg-background text-foreground antialiased">
         <StagingBanner environment={environment} />
         <CsrfFetchBoundary>{children}</CsrfFetchBoundary>
       </body>

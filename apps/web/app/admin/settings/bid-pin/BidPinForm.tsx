@@ -1,5 +1,8 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -79,28 +82,25 @@ export function BidPinForm({ initial }: Props) {
   };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="space-y-4 rounded-lg border border-slate-700 bg-slate-800 p-6"
-    >
+    <form onSubmit={onSubmit} className="space-y-4 rounded-lg border border-border bg-card p-6">
       <div>
-        <div className="text-xs uppercase tracking-wide text-slate-400">Current PIN</div>
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">Current PIN</div>
         <div
           data-testid="current-bid-pin"
-          className="font-mono text-2xl tabular-nums text-slate-50"
+          className="font-mono text-2xl tabular-nums text-foreground"
         >
           {current?.configured ? current.pin : 'Not configured'}
         </div>
-        <div className="mt-1 text-xs text-slate-400">
+        <div className="mt-1 text-xs text-muted-foreground">
           {current?.configured
             ? `Last changed ${current.updatedAt ?? '—'} by ${current.updatedBy ?? 'unknown'}.`
             : 'No active PIN is configured. Enter a new PIN to initialize access.'}
         </div>
       </div>
 
-      <label className="block">
-        <span className="block text-sm font-medium text-slate-200">New PIN</span>
-        <input
+      <Label className="block">
+        <span className="block text-sm font-medium text-foreground">New PIN</span>
+        <Input
           type="text"
           inputMode="numeric"
           pattern="\d{4,8}"
@@ -108,13 +108,13 @@ export function BidPinForm({ initial }: Props) {
           maxLength={8}
           value={draft}
           onChange={(e) => setDraft(e.target.value.replace(/\D/g, '').slice(0, 8))}
-          className="mt-1 block w-40 rounded-lg border border-slate-600 bg-slate-900 px-3 py-3 font-mono text-lg tracking-widest text-slate-50 shadow-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500"
+          className="mt-1 block w-40 rounded-lg border border-border bg-card px-3 py-3 font-mono text-lg tracking-widest text-foreground shadow-sm outline-none focus:border-destructive/40 focus:ring-2 focus:ring-ring"
           data-testid="bid-pin-input"
         />
-      </label>
+      </Label>
 
       <div className="flex items-center gap-3">
-        <button
+        <Button
           type="submit"
           disabled={
             mutation.isPending ||
@@ -122,10 +122,10 @@ export function BidPinForm({ initial }: Props) {
             (current?.configured === true && draft === current.pin)
           }
           data-testid="save-bid-pin"
-          className="inline-flex items-center rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-destructive focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           {mutation.isPending ? 'Saving…' : 'Save PIN'}
-        </button>
+        </Button>
       </div>
 
       {statusMsg && (
@@ -133,8 +133,8 @@ export function BidPinForm({ initial }: Props) {
           data-testid="bid-pin-status"
           className={
             statusMsg.startsWith('Save failed')
-              ? 'text-sm text-red-400'
-              : 'text-sm text-emerald-400'
+              ? 'text-sm text-destructive'
+              : 'text-sm text-success'
           }
         >
           {statusMsg}

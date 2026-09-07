@@ -1,4 +1,9 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
@@ -106,12 +111,12 @@ export function AnnualPlanFreeze({
   }
   return (
     <div className="space-y-5">
-      <p className="text-slate-300">
+      <p className="text-foreground">
         Complete a Mock rehearsal against this exact configuration, resolve its findings, then
         review the results. Freezing publishes the designated rules and operating policy together.
       </p>
       <div className="flex flex-wrap gap-3">
-        <button
+        <Button
           type="button"
           className={buttonClass}
           disabled={
@@ -124,7 +129,7 @@ export function AnnualPlanFreeze({
             : createdMock
               ? 'Create another Mock from current plan'
               : 'Create Mock from reviewed configuration'}
-        </button>
+        </Button>
         <Link className={buttonClass} href={'/admin/rehearsal' as Route}>
           Rehearsal Console and findings
         </Link>
@@ -135,7 +140,7 @@ export function AnnualPlanFreeze({
         </p>
       )}
       {mockConflict && (
-        <button
+        <Button
           type="button"
           className={buttonClass}
           disabled={busy}
@@ -156,7 +161,7 @@ export function AnnualPlanFreeze({
           }}
         >
           Review latest configuration for a new Mock request
-        </button>
+        </Button>
       )}
       {sessions.isError && <p role="alert">Mock sessions could not be refreshed.</p>}
       <form onSubmit={freeze} onChange={edit} className="space-y-4">
@@ -164,9 +169,9 @@ export function AnnualPlanFreeze({
           disabled={busy || !!mockPending.current || plan.lifecycle !== 'DRAFT'}
           className="space-y-4"
         >
-          <label className="block">
+          <Label className="block">
             Completed Mock rehearsal
-            <select
+            <NativeSelect
               required
               className={fieldClass}
               value={session}
@@ -180,15 +185,15 @@ export function AnnualPlanFreeze({
                     {s.bidYear} · {s.id}
                   </option>
                 ))}
-            </select>
-          </label>
-          <p className="text-sm text-slate-400">
+            </NativeSelect>
+          </Label>
+          <p className="text-sm text-muted-foreground">
             The server verifies the completion receipt and compares the Mock’s frozen rules,
             participants, qualifications and operating policy with this plan.
           </p>
-          <label className="block">
+          <Label className="block">
             Review findings and reason for freezing
-            <textarea
+            <Textarea
               required
               minLength={4}
               maxLength={500}
@@ -196,9 +201,9 @@ export function AnnualPlanFreeze({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
-          </label>
-          <label className="flex min-h-11 items-center gap-3">
-            <input
+          </Label>
+          <Label className="flex min-h-11 items-center gap-3">
+            <Input
               type="checkbox"
               required
               checked={accepted}
@@ -206,14 +211,14 @@ export function AnnualPlanFreeze({
             />
             I reviewed the changes, eligibility impact and completed rehearsal findings for this
             plan.
-          </label>
-          <button type="submit" disabled={!accepted || !session || busy} className={buttonClass}>
+          </Label>
+          <Button type="submit" disabled={!accepted || !session || busy} className={buttonClass}>
             {busy ? 'Verifying and freezing…' : 'Freeze reviewed annual plan'}
-          </button>
+          </Button>
         </fieldset>
       </form>
       {message && (
-        <output className="block whitespace-pre-wrap rounded border border-slate-600 p-3">
+        <output className="block whitespace-pre-wrap rounded border border-border p-3">
           {message}
         </output>
       )}

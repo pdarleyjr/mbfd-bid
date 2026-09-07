@@ -21,9 +21,9 @@
     "deploy:production": "pnpm build:opennext:production && node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env production"
   },
   "dependencies": {
+    "@base-ui/react": "1.8.0",
     "@mbfd/shared": "workspace:*",
     "@noble/hashes": "^1.4",
-    "@radix-ui/react-slot": "1.1.0",
     "@tanstack/react-query": "5.59.16",
     "@tanstack/react-table": "^8.20.6",
     "class-variance-authority": "0.7.0",

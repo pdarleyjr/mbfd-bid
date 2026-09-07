@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { type ReactElement, useState } from 'react';
 
 export function ManualRetryButton({ bidId }: { bidId: string }): ReactElement {
@@ -8,7 +9,7 @@ export function ManualRetryButton({ bidId }: { bidId: string }): ReactElement {
   const [error, setError] = useState<string | null>(null);
   return (
     <div className="inline-flex flex-col items-start gap-1">
-      <button
+      <Button
         type="button"
         disabled={busy || done}
         onClick={async () => {
@@ -32,9 +33,9 @@ export function ManualRetryButton({ bidId }: { bidId: string }): ReactElement {
         }}
       >
         {done ? 'Queued' : busy ? 'Retrying…' : 'Retry'}
-      </button>
+      </Button>
       {error !== null && (
-        <output role="alert" aria-live="assertive" className="text-sm text-red-300">
+        <output role="alert" aria-live="assertive" className="text-sm text-destructive">
           {error}
         </output>
       )}

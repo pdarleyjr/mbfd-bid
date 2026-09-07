@@ -2,6 +2,10 @@
 import { PostAwardObligationsEditor } from '@/components/admin/PostAwardObligationsEditor';
 import { QualificationAlternativesEditor } from '@/components/admin/QualificationAlternativesEditor';
 import { ServiceRequirementsEditor } from '@/components/admin/ServiceRequirementsEditor';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import {
   type AnnualRuleProfile,
@@ -171,7 +175,7 @@ export function AnnualPlanProfiles({
   }
   return (
     <div className="space-y-5">
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-foreground">
         Requirements accumulate across all matching profiles. Points and priorities use department →
         rank → station/shift → family → individual position precedence. The most specific whole
         definition applies; conflicting definitions at equal specificity block saving.
@@ -180,21 +184,21 @@ export function AnnualPlanProfiles({
       {saved.data?.ruleRevision !== null &&
         saved.data?.ruleRevision !== undefined &&
         saved.data.ruleRevision !== plan.ruleBookRevision && (
-          <p className="text-amber-200">
+          <p className="text-warning">
             Rules changed after the last profile compilation. Review the individual edits before
             compiling these profiles again.
           </p>
         )}
       {stale && (
-        <p role="alert" className="text-amber-200">
+        <p role="alert" className="text-warning">
           The plan or source evidence changed while you were editing. Your draft is retained;
           discard and reload before applying it to a newer revision.
         </p>
       )}
       <div className="flex flex-wrap items-end gap-3">
-        <label className="min-w-0 flex-1">
+        <Label className="min-w-0 flex-1">
           Rule profile
-          <select
+          <NativeSelect
             className={fieldClass}
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
@@ -205,18 +209,18 @@ export function AnnualPlanProfiles({
                 {p.name || 'Unnamed profile'} · {p.scope.kind.replaceAll('_', ' ')}
               </option>
             ))}
-          </select>
-        </label>
-        <button
+          </NativeSelect>
+        </Label>
+        <Button
           type="button"
           className={buttonClass}
           disabled={busy || plan.lifecycle !== 'DRAFT' || saved.isPending || saved.isError}
           onClick={add}
         >
           Add profile
-        </button>
+        </Button>
         {dirty && (
-          <button
+          <Button
             type="button"
             className={buttonClass}
             onClick={() => {
@@ -229,35 +233,35 @@ export function AnnualPlanProfiles({
             }}
           >
             Discard edits
-          </button>
+          </Button>
         )}
       </div>
       {profile && (
         <fieldset
           disabled={busy || plan.lifecycle !== 'DRAFT'}
-          className="space-y-4 rounded border border-slate-600 p-4"
+          className="space-y-4 rounded border border-border p-4"
         >
           <div className="grid gap-4 sm:grid-cols-2">
-            <label>
+            <Label>
               Profile name
-              <input
+              <Input
                 className={fieldClass}
                 value={profile.name}
                 onChange={(e) => patch({ name: e.target.value })}
               />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Policy source reference
-              <input
+              <Input
                 className={fieldClass}
                 value={profile.sourceRef}
                 onChange={(e) => patch({ sourceRef: e.target.value })}
               />
-            </label>
+            </Label>
           </div>
-          <label className="block">
+          <Label className="block">
             Applies to
-            <select
+            <NativeSelect
               className={fieldClass}
               value={profile.scope.kind}
               onChange={(e) => {
@@ -281,12 +285,12 @@ export function AnnualPlanProfiles({
                   {kind.replaceAll('_', ' ')}
                 </option>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
           {profile.scope.kind === 'rank' && (
-            <label className="block">
+            <Label className="block">
               Rank
-              <select
+              <NativeSelect
                 className={fieldClass}
                 value={profile.scope.rank}
                 onChange={(e) =>
@@ -298,14 +302,14 @@ export function AnnualPlanProfiles({
                 {RULE_RANKS.map((rank) => (
                   <option key={rank}>{rank}</option>
                 ))}
-              </select>
-            </label>
+              </NativeSelect>
+            </Label>
           )}
           {profile.scope.kind === 'station_shift' && (
             <div className="grid gap-4 sm:grid-cols-2">
-              <label>
+              <Label>
                 Station or group
-                <select
+                <NativeSelect
                   className={fieldClass}
                   value={profile.scope.station}
                   onChange={(e) => {
@@ -317,11 +321,11 @@ export function AnnualPlanProfiles({
                   {[...new Set(board.data?.map((p) => p.station) ?? [])].map((s) => (
                     <option key={s}>{s}</option>
                   ))}
-                </select>
-              </label>
-              <label>
+                </NativeSelect>
+              </Label>
+              <Label>
                 Shift
-                <select
+                <NativeSelect
                   className={fieldClass}
                   value={profile.scope.shift}
                   onChange={(e) => {
@@ -334,14 +338,14 @@ export function AnnualPlanProfiles({
                   {['A', 'B', 'C', 'D'].map((s) => (
                     <option key={s}>{s}</option>
                   ))}
-                </select>
-              </label>
+                </NativeSelect>
+              </Label>
             </div>
           )}
           {profile.scope.kind === 'family' && (
-            <label className="block">
+            <Label className="block">
               Family or specialty name
-              <input
+              <Input
                 className={fieldClass}
                 value={profile.scope.name}
                 onChange={(e) => {
@@ -349,14 +353,14 @@ export function AnnualPlanProfiles({
                     patch({ scope: { ...profile.scope, name: e.target.value } });
                 }}
               />
-            </label>
+            </Label>
           )}
           {(profile.scope.kind === 'family' || profile.scope.kind === 'position') && (
-            <label className="block">
+            <Label className="block">
               {profile.scope.kind === 'family'
                 ? 'Explicit family positions'
                 : 'Individual position'}
-              <select
+              <NativeSelect
                 multiple={profile.scope.kind === 'family'}
                 className={`${fieldClass} ${profile.scope.kind === 'family' ? 'min-h-32' : ''}`}
                 value={
@@ -381,12 +385,12 @@ export function AnnualPlanProfiles({
                     {p.station} · {p.position} · {p.id}
                   </option>
                 ))}
-              </select>
-            </label>
+              </NativeSelect>
+            </Label>
           )}
-          <label className="block">
+          <Label className="block">
             Required qualifications (all selected)
-            <select
+            <NativeSelect
               multiple
               className={`${fieldClass} min-h-32`}
               value={profile.requirements.credentials}
@@ -406,8 +410,8 @@ export function AnnualPlanProfiles({
                     {c.name}
                   </option>
                 ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
           <QualificationAlternativesEditor
             value={profile.requirements.anyOfCredentials ?? []}
             onChange={(anyOfCredentials) =>
@@ -426,8 +430,8 @@ export function AnnualPlanProfiles({
           />
           <div className="flex flex-wrap gap-4">
             {RULE_CUSTOM_CRITERIA.map((gate) => (
-              <label key={gate} className="flex min-h-11 items-center gap-2">
-                <input
+              <Label key={gate} className="flex min-h-11 items-center gap-2">
+                <Input
                   type="checkbox"
                   checked={profile.requirements.custom.includes(gate)}
                   onChange={(e) =>
@@ -442,11 +446,11 @@ export function AnnualPlanProfiles({
                   }
                 />
                 {gate.replaceAll('_', ' ')}
-              </label>
+              </Label>
             ))}
           </div>
-          <label className="flex min-h-11 items-center gap-2">
-            <input
+          <Label className="flex min-h-11 items-center gap-2">
+            <Input
               type="checkbox"
               checked={profile.scoring !== undefined}
               onChange={(e) =>
@@ -456,28 +460,28 @@ export function AnnualPlanProfiles({
               }
             />
             Define all three points channels at this scope
-          </label>
+          </Label>
           {profile.scoring && (
             <ConfiguredScoringEditor
               value={profile.scoring}
               onChange={(scoring) => patch({ scoring })}
             />
           )}
-          <label className="flex min-h-11 items-center gap-2">
-            <input
+          <Label className="flex min-h-11 items-center gap-2">
+            <Input
               type="checkbox"
               checked={profile.tieBreakChain !== undefined}
               onChange={(e) => patch({ tieBreakChain: e.target.checked ? [] : undefined })}
             />
             Define ranking priority at this scope
-          </label>
+          </Label>
           {profile.tieBreakChain && (
             <div className="space-y-2">
               {profile.tieBreakChain.map((key, index) => (
                 <div className="flex items-end gap-2" key={`${index}:${key}`}>
-                  <label className="min-w-0 flex-1">
+                  <Label className="min-w-0 flex-1">
                     Priority {index + 1}
-                    <select
+                    <NativeSelect
                       className={fieldClass}
                       value={key}
                       onChange={(e) =>
@@ -495,9 +499,9 @@ export function AnnualPlanProfiles({
                           {k.replaceAll('_', ' ')}
                         </option>
                       ))}
-                    </select>
-                  </label>
-                  <button
+                    </NativeSelect>
+                  </Label>
+                  <Button
                     type="button"
                     className={buttonClass}
                     onClick={() =>
@@ -505,10 +509,10 @@ export function AnnualPlanProfiles({
                     }
                   >
                     Remove
-                  </button>
+                  </Button>
                 </div>
               ))}
-              <button
+              <Button
                 type="button"
                 className={buttonClass}
                 disabled={profile.tieBreakChain.length >= 5}
@@ -523,10 +527,10 @@ export function AnnualPlanProfiles({
                 }
               >
                 Add priority
-              </button>
+              </Button>
             </div>
           )}
-          <button
+          <Button
             type="button"
             className={buttonClass}
             onClick={() => {
@@ -537,12 +541,12 @@ export function AnnualPlanProfiles({
             }}
           >
             Remove profile
-          </button>
+          </Button>
         </fieldset>
       )}
-      <label className="block">
+      <Label className="block">
         Reason for this rule review
-        <input
+        <Input
           className={fieldClass}
           value={reason}
           onChange={(e) => {
@@ -552,27 +556,27 @@ export function AnnualPlanProfiles({
             setPreview(null);
           }}
         />
-      </label>
+      </Label>
       <div className="flex flex-wrap gap-3">
-        <button
+        <Button
           type="button"
           className={buttonClass}
           disabled={busy || stale || !profiles.length || plan.lifecycle !== 'DRAFT'}
           onClick={() => void submit(true)}
         >
           Preview resolved rules
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className={buttonClass}
           disabled={busy || stale || !preview || plan.lifecycle !== 'DRAFT'}
           onClick={() => void submit(false)}
         >
           Save reviewed rules
-        </button>
+        </Button>
       </div>
       {message && (
-        <output className="block whitespace-pre-wrap rounded border border-slate-600 p-3">
+        <output className="block whitespace-pre-wrap rounded border border-border p-3">
           {message}
         </output>
       )}
@@ -580,7 +584,7 @@ export function AnnualPlanProfiles({
         <div className="space-y-3">
           <h3 className="font-semibold">Resolved rules ({preview.compiled.length})</h3>
           {preview.compiled.map((p) => (
-            <details className="rounded border border-slate-700 p-3" key={p.rule.positionId}>
+            <details className="rounded border border-border p-3" key={p.rule.positionId}>
               <summary>{p.rule.positionId}</summary>
               {(['requirements', 'scoring', 'priorities'] as const).map((field) => (
                 <p className="mt-2 text-sm" key={field}>

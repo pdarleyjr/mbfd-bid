@@ -1,5 +1,9 @@
 'use client';
+import { ConfirmationDialog } from '@/components/ui/dialog';
 
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useState } from 'react';
 
 interface Props {
@@ -31,67 +35,70 @@ export function AnnualPolicyPublishGate({ busy, onConfirm }: Props) {
 
   return (
     <>
-      <button
+      <Button
         type="button"
         disabled={busy}
         onClick={() => setOpen(true)}
-        className="rounded border border-emerald-700 px-3 py-1 text-sm text-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded border border-success/40 px-3 py-1 text-sm text-success disabled:cursor-not-allowed disabled:opacity-50"
       >
         Publish revision
-      </button>
+      </Button>
 
       {open ? (
-        <dialog
-          open
+        <ConfirmationDialog
+          onClose={() => setOpen(false)}
+          busy={submitting}
           aria-labelledby="annual-policy-publication-heading"
-          className="fixed inset-0 m-auto w-full max-w-md rounded border border-slate-700 bg-slate-900 p-6 text-slate-200"
         >
-          <h2 id="annual-policy-publication-heading" className="font-heading text-lg text-white">
+          <h2
+            id="annual-policy-publication-heading"
+            className="font-heading text-lg text-foreground"
+          >
             Publication gate for annual policy
           </h2>
-          <p className="mt-2 text-sm text-slate-300">
+          <p className="mt-2 text-sm text-foreground">
             The server independently validates the draft, designated rule book, and complete member
             coverage before publication. This review does not start a Bid.
           </p>
-          <label className="mt-4 block">
-            <span className="text-sm text-slate-300">Publication reason (4–500 characters)</span>
-            <textarea
+          <Label className="mt-4 block">
+            <span className="text-sm text-foreground">Publication reason (4–500 characters)</span>
+            <Textarea
               required
               minLength={4}
               maxLength={500}
               rows={3}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              className="mt-1 block w-full rounded bg-slate-800 px-3 py-2 text-white"
+              className="mt-1 block w-full rounded bg-card px-3 py-2 text-foreground"
             />
-          </label>
+          </Label>
           {error !== null ? (
-            <output aria-live="polite" className="mt-2 block text-sm text-red-300">
+            <output aria-live="polite" className="mt-2 block text-sm text-destructive">
               {error}
             </output>
           ) : null}
           <div className="mt-4 flex justify-end gap-2">
-            <button
+            <Button
               type="button"
               disabled={submitting}
               onClick={() => {
                 setOpen(false);
                 setError(null);
               }}
-              className="rounded border border-slate-600 px-3 py-1 text-slate-200 disabled:opacity-50"
+              className="rounded border border-border px-3 py-1 text-foreground disabled:opacity-50"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               disabled={submitting || reason.trim().length < 4}
               onClick={() => void confirmPublication()}
-              className="rounded bg-red-700 px-3 py-1 text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded bg-destructive px-3 py-1 text-primary-foreground hover:bg-destructive disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? 'Reviewing publication…' : 'Request server-side publication review'}
-            </button>
+            </Button>
           </div>
-        </dialog>
+        </ConfirmationDialog>
       ) : null}
     </>
   );

@@ -34,9 +34,10 @@ describe('LiveCommandBar SSR', () => {
     expect(html).toContain('>Override<');
     expect(html).toContain('data-testid="admin-action-freeze"');
     expect(html).toContain('>Freeze<');
-    // Explicit text colors so the buttons never fall back to the admin
-    // layout's text-slate-50 and disappear against white backgrounds.
-    expect(html).toMatch(/admin-action-skip[\s\S]*?text-stone-900/);
+    // Explicit semantic text colors keep actions legible on light surfaces.
+    expect(html.match(/<button[^>]*data-testid="admin-action-skip"[^>]*>/)?.[0]).toContain(
+      'text-foreground',
+    );
   });
 
   it('renders the phase chip and session/turn timers without AI controls', () => {

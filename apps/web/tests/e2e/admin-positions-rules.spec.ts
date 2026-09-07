@@ -1,7 +1,7 @@
 /**
  * Task 18 E2E: Admin positions + rules viewers.
  *
- * Worker API is mocked via page.route() — no live worker needed.
+ * Server fetches use the synthetic loopback Worker fixture — no live worker needed.
  */
 
 import { expect, test } from '@playwright/test';
@@ -31,81 +31,6 @@ async function makeAdminJwt() {
     .sign(key);
 }
 
-const MOCK_POSITIONS = [
-  {
-    id: 'A-01-FF-1',
-    template_version: '2026.1',
-    shift: 'A',
-    station: 'Station 1',
-    division: 'Combat',
-    unit: 'E1',
-    rank_required: 'FF',
-    position_name: 'Engine Driver',
-    is_floating: false,
-    is_vacant_by_design: false,
-    is_excluded_from_count: false,
-  },
-  {
-    id: 'A-01-LT-1',
-    template_version: '2026.1',
-    shift: 'A',
-    station: 'Station 1',
-    division: 'Combat',
-    unit: 'E1',
-    rank_required: 'LT',
-    position_name: 'Company Officer',
-    is_floating: false,
-    is_vacant_by_design: false,
-    is_excluded_from_count: false,
-  },
-  {
-    id: 'B-02-FF-1',
-    template_version: '2026.1',
-    shift: 'B',
-    station: 'Station 2',
-    division: 'Combat',
-    unit: 'E2',
-    rank_required: 'FF',
-    position_name: 'Engine Driver',
-    is_floating: false,
-    is_vacant_by_design: false,
-    is_excluded_from_count: false,
-  },
-];
-
-const MOCK_RULES = [
-  {
-    id: 1,
-    ruleBookVersion: '2026.1',
-    positionId: 'A-01-FF-1',
-    templateVersion: '2026.1',
-    requiredCriteria: { certs: ['EMT'] },
-    pointsPreference: { weight: 'rsc_seniority' },
-    tieBreakChain: ['rsc_seniority', 'hired_at'],
-    notes: null,
-  },
-  {
-    id: 2,
-    ruleBookVersion: '2026.1',
-    positionId: 'A-01-LT-1',
-    templateVersion: '2026.1',
-    requiredCriteria: { certs: ['EMT', 'Paramedic'] },
-    pointsPreference: { weight: 'rsc_seniority' },
-    tieBreakChain: ['rsc_seniority'],
-    notes: 'Lieutenant rule',
-  },
-  {
-    id: 3,
-    ruleBookVersion: '2026.1',
-    positionId: 'B-02-FF-1',
-    templateVersion: '2026.1',
-    requiredCriteria: { certs: ['EMT'] },
-    pointsPreference: null,
-    tieBreakChain: ['rsc_seniority'],
-    notes: null,
-  },
-];
-
 test.describe('Admin positions viewer', () => {
   test.skip(!!process.env.CI && !process.env.E2E_FULL, 'Skip in CI without E2E_FULL');
 
@@ -134,23 +59,17 @@ test.describe('Admin positions viewer', () => {
       },
     ]);
 
-    await page.route('**/api/admin/positions*', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ positions: MOCK_POSITIONS, templateVersion: '2026.1', count: 3 }),
-      });
-    });
-
-    await page.goto('/admin/positions');
+    await page.goto(
+      '/admin/positions?year=2026&rule_book_version=2026.1&template_version=2026.1&configuration_revision=1',
+    );
     // Should show shift group headings
-    await expect(page.getByText('Shift A')).toBeVisible();
-    await expect(page.getByText('Shift B')).toBeVisible();
+    await expect(page.getByRole('main').getByText('Shift A')).toBeVisible();
+    await expect(page.getByRole('main').getByText('Shift B')).toBeVisible();
     // Station within shift
-    await expect(page.getByText('Station 1')).toBeVisible();
-    await expect(page.getByText('Station 2')).toBeVisible();
+    await expect(page.getByRole('main').getByText('Station 1')).toBeVisible();
+    await expect(page.getByRole('main').getByText('Station 2')).toBeVisible();
     // Position IDs shown
-    await expect(page.getByText('A-01-FF-1')).toBeVisible();
+    await expect(page.getByRole('main').getByText('A-01-FF-1')).toBeVisible();
   });
 });
 
@@ -182,19 +101,13 @@ test.describe('Admin rules viewer', () => {
       },
     ]);
 
-    await page.route('**/api/admin/rules*', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ rules: MOCK_RULES, ruleBookVersion: '2026.1', count: 3 }),
-      });
-    });
-
-    await page.goto('/admin/rules');
+    await page.goto(
+      '/admin/rules?year=2026&rule_book_version=2026.1&template_version=2026.1&configuration_revision=1',
+    );
     // Should show rule book version
-    await expect(page.getByText('2026.1')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^2026\.1\s*\(3 positions\)$/ })).toBeVisible();
     // Position IDs shown in tree
-    await expect(page.getByText('A-01-FF-1')).toBeVisible();
-    await expect(page.getByText('A-01-LT-1')).toBeVisible();
+    await expect(page.getByRole('main').getByText('A-01-FF-1')).toBeVisible();
+    await expect(page.getByRole('main').getByText('A-01-LT-1')).toBeVisible();
   });
 });

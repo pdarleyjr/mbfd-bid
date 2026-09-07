@@ -1,4 +1,9 @@
 'use client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
@@ -153,7 +158,7 @@ function csv(value: string): string[] {
 }
 
 const inputClass =
-  'mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white';
+  'mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground';
 
 export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
   const router = useRouter();
@@ -601,12 +606,12 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
   return (
     <main className="mx-auto max-w-7xl space-y-6" data-testid="annual-policy-editor">
       {sourceChanged && (
-        <aside className="rounded border border-amber-500 p-4 text-amber-100">
+        <aside className="rounded border border-warning/40 p-4 text-warning">
           <p>
             Annual source data changed while this draft was open. Your policy edits are retained.
             Review the refreshed members and seats before saving.
           </p>
-          <button
+          <Button
             type="button"
             className="mt-3 min-h-11 rounded border px-3"
             disabled={busy}
@@ -615,54 +620,54 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
             }}
           >
             Review refreshed source
-          </button>
+          </Button>
         </aside>
       )}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-red-300">
+          <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
             Annual policy authority
           </p>
-          <h1 className="mt-1 font-heading text-3xl text-white">Executable policy — {year}</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-300">
+          <h1 className="mt-1 font-heading text-3xl text-foreground">Executable policy — {year}</h1>
+          <p className="mt-2 max-w-3xl text-sm text-foreground">
             Select real frozen members and positions. Unapproved rules remain visibly blocking.
           </p>
         </div>
         <span
-          className={`rounded-full border px-3 py-1 text-xs font-bold ${ready ? 'border-emerald-600 text-emerald-200' : 'border-amber-600 text-amber-200'}`}
+          className={`rounded-full border px-3 py-1 text-xs font-bold ${ready ? 'border-success/40 text-success' : 'border-warning/40 text-warning'}`}
         >
           {ready ? 'READY TO SAVE DRAFT' : 'NOT CONFIGURED — BLOCKING'}
         </span>
       </header>
       {loadError || sourceError ? (
-        <p className="rounded border border-amber-700 bg-amber-950/30 p-3 text-sm text-amber-100">
+        <p className="rounded border border-warning/40 bg-warning-surface p-3 text-sm text-warning">
           {loadError ?? sourceError}
         </p>
       ) : null}
 
       <form className="space-y-6" onSubmit={saveDraft}>
-        <section className="grid gap-4 rounded-lg border border-slate-700 bg-slate-800/60 p-5 lg:grid-cols-2">
-          <label>
-            <span className="text-sm text-slate-200">Configured rule book</span>
-            <input
+        <section className="grid gap-4 rounded-lg border border-border bg-card p-5 lg:grid-cols-2">
+          <Label>
+            <span className="text-sm text-foreground">Configured rule book</span>
+            <Input
               readOnly
               value={source?.rule_book_version ?? 'Loading source…'}
               className={inputClass}
             />
-          </label>
-          <label>
-            <span className="text-sm text-slate-200">Executable policy revision</span>
-            <input
+          </Label>
+          <Label>
+            <span className="text-sm text-foreground">Executable policy revision</span>
+            <Input
               required
               value={policyRevision}
               onChange={(event) => setPolicyRevision(event.target.value)}
               className={inputClass}
               placeholder={`${year}.policy.1`}
             />
-          </label>
-          <label className="lg:col-span-2">
-            <span className="text-sm text-slate-200">Human-readable policy language</span>
-            <textarea
+          </Label>
+          <Label className="lg:col-span-2">
+            <span className="text-sm text-foreground">Human-readable policy language</span>
+            <Textarea
               required
               minLength={20}
               maxLength={100000}
@@ -671,18 +676,18 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
               onChange={(event) => setLanguage(event.target.value)}
               className={inputClass}
             />
-          </label>
+          </Label>
         </section>
 
-        <section className="rounded-lg border border-slate-700 bg-slate-800/60 p-5">
+        <section className="rounded-lg border border-border bg-card p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="font-heading text-xl text-white">Bid stages and order</h2>
-              <p className="text-sm text-slate-400">
+              <h2 className="font-heading text-xl text-foreground">Bid stages and order</h2>
+              <p className="text-sm text-muted-foreground">
                 All {participants.length} eligible members must appear exactly once.
               </p>
             </div>
-            <button
+            <Button
               type="button"
               onClick={() =>
                 setStages((current) => [
@@ -697,66 +702,63 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   },
                 ])
               }
-              className="rounded bg-red-700 px-3 py-2 text-sm text-white"
+              className="rounded bg-destructive px-3 py-2 text-sm text-primary-foreground"
             >
               Add stage
-            </button>
+            </Button>
           </div>
           <div className="mt-4 space-y-4">
             {stages.length === 0 ? (
-              <p className="rounded border border-amber-700 p-3 text-sm text-amber-200">
+              <p className="rounded border border-warning/40 p-3 text-sm text-warning">
                 No stage is configured.
               </p>
             ) : null}
             {stages.map((stage, index) => (
-              <article
-                key={stage.key}
-                className="rounded border border-slate-600 bg-slate-900/50 p-4"
-              >
+              <article key={stage.key} className="rounded border border-border bg-card p-4">
                 <div className="flex items-center gap-2">
-                  <strong className="mr-auto text-white">Stage {index + 1}</strong>
-                  <button
+                  <strong className="mr-auto text-foreground">Stage {index + 1}</strong>
+                  <Button
                     type="button"
                     disabled={index === 0}
                     onClick={() => moveStage(index, -1)}
-                    className="rounded border border-slate-600 px-2 py-1 text-xs text-white disabled:opacity-30"
+                    className="rounded border border-border px-2 py-1 text-xs text-foreground disabled:opacity-30"
                   >
                     Up
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     disabled={index === stages.length - 1}
                     onClick={() => moveStage(index, 1)}
-                    className="rounded border border-slate-600 px-2 py-1 text-xs text-white disabled:opacity-30"
+                    className="rounded border border-border px-2 py-1 text-xs text-foreground disabled:opacity-30"
                   >
                     Down
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     onClick={() =>
                       setStages((current) => current.filter((item) => item.key !== stage.key))
                     }
-                    className="rounded border border-red-700 px-2 py-1 text-xs text-red-200"
+                    className="rounded border border-destructive/40 px-2 py-1 text-xs text-destructive"
                   >
                     Remove
-                  </button>
+                  </Button>
                 </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  <input
+                  <Input
                     aria-label="Stable stage ID"
                     value={stage.id}
                     onChange={(event) => updateStage(stage.key, { id: event.target.value })}
                     className={inputClass}
                     placeholder="Stable stage ID"
                   />
-                  <input
+                  <Input
                     aria-label="Stage label"
                     value={stage.label}
                     onChange={(event) => updateStage(stage.key, { label: event.target.value })}
                     className={inputClass}
                     placeholder="Stage label"
                   />
-                  <select
+                  <NativeSelect
                     aria-label="Stage kind"
                     value={stage.kind}
                     onChange={(event) =>
@@ -767,12 +769,12 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                     {stageKinds.map((kind) => (
                       <option key={kind}>{kind}</option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  <label>
-                    <span className="text-xs text-slate-300">Real member population</span>
-                    <select
+                  <Label>
+                    <span className="text-xs text-foreground">Real member population</span>
+                    <NativeSelect
                       multiple
                       size={Math.min(10, Math.max(4, participants.length))}
                       value={stage.memberIds.map(String)}
@@ -787,11 +789,11 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                           RSC {member.rsc_seniority}
                         </option>
                       ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span className="text-xs text-slate-300">Real opportunity scope</span>
-                    <select
+                    </NativeSelect>
+                  </Label>
+                  <Label>
+                    <span className="text-xs text-foreground">Real opportunity scope</span>
+                    <NativeSelect
                       multiple
                       size={Math.min(10, Math.max(4, source?.positions.length ?? 0))}
                       value={stage.positionIds}
@@ -806,24 +808,24 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                           {position.unit} · {position.rank_required}
                         </option>
                       ))}
-                    </select>
-                  </label>
+                    </NativeSelect>
+                  </Label>
                 </div>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-700 bg-slate-800/60 p-5">
-          <h2 className="font-heading text-xl text-white">Live action authority</h2>
-          <p className="text-sm text-slate-400">
+        <section className="rounded-lg border border-border bg-card p-5">
+          <h2 className="font-heading text-xl text-foreground">Live action authority</h2>
+          <p className="text-sm text-muted-foreground">
             Hub Admin access does not grant operational authority.
           </p>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {actions.map((action) => (
-              <label key={action}>
-                <span className="font-mono text-xs text-slate-300">{action}</span>
-                <select
+              <Label key={action}>
+                <span className="font-mono text-xs text-foreground">{action}</span>
+                <NativeSelect
                   multiple
                   size={4}
                   value={permissions[action].map(String)}
@@ -840,26 +842,26 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                       {member.rank} · {member.last_name}, {member.first_name}
                     </option>
                   ))}
-                </select>
-              </label>
+                </NativeSelect>
+              </Label>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-700 bg-slate-800/60 p-5">
-          <h2 className="font-heading text-xl text-white">Disposition rules</h2>
-          <p className="text-sm text-slate-400">
+        <section className="rounded-lg border border-border bg-card p-5">
+          <h2 className="font-heading text-xl text-foreground">Disposition rules</h2>
+          <p className="text-sm text-muted-foreground">
             Every row blocks readiness until Command Staff marks it configured.
           </p>
           <div className="mt-4 space-y-3">
             {dispositionNames.map((name) => {
               const rule = dispositions[name];
               return (
-                <fieldset key={name} className="rounded border border-slate-600 p-3">
-                  <legend className="px-2 font-mono text-sm text-white">{name}</legend>
-                  <div className="flex flex-wrap gap-4 text-sm text-slate-200">
-                    <label>
-                      <input
+                <fieldset key={name} className="rounded border border-border p-3">
+                  <legend className="px-2 font-mono text-sm text-foreground">{name}</legend>
+                  <div className="flex flex-wrap gap-4 text-sm text-foreground">
+                    <Label>
+                      <Input
                         type="checkbox"
                         checked={rule.configured}
                         onChange={(event) =>
@@ -870,7 +872,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                         }
                       />{' '}
                       Configured
-                    </label>
+                    </Label>
                     {(
                       [
                         'advances',
@@ -881,8 +883,8 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                         'requiresEvidence',
                       ] as const
                     ).map((field) => (
-                      <label key={field}>
-                        <input
+                      <Label key={field}>
+                        <Input
                           type="checkbox"
                           checked={rule[field]}
                           onChange={(event) =>
@@ -902,11 +904,11 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                             requiresEvidence: 'Evidence required',
                           }[field]
                         }
-                      </label>
+                      </Label>
                     ))}
                   </div>
                   {rule.returns ? (
-                    <select
+                    <NativeSelect
                       aria-label={`${name} return stage`}
                       value={rule.returnStageId}
                       onChange={(event) =>
@@ -923,9 +925,9 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                           {stage.label || stage.id}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   ) : null}
-                  <input
+                  <Input
                     aria-label={`${name} contact policy reference`}
                     value={rule.contactPolicyReference}
                     onChange={(event) =>
@@ -943,11 +945,11 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
           </div>
         </section>
 
-        <section className="grid gap-4 rounded-lg border border-slate-700 bg-slate-800/60 p-5 md:grid-cols-4">
-          <h2 className="font-heading text-xl text-white md:col-span-4">Contact policy</h2>
-          <label>
-            <span className="text-xs text-slate-300">Minimum attempts</span>
-            <input
+        <section className="grid gap-4 rounded-lg border border-border bg-card p-5 md:grid-cols-4">
+          <h2 className="font-heading text-xl text-foreground md:col-span-4">Contact policy</h2>
+          <Label>
+            <span className="text-xs text-foreground">Minimum attempts</span>
+            <Input
               type="number"
               min="1"
               max="10"
@@ -955,10 +957,10 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
               onChange={(event) => setMinimumAttempts(event.target.value)}
               className={inputClass}
             />
-          </label>
-          <label>
-            <span className="text-xs text-slate-300">Timing mode</span>
-            <select
+          </Label>
+          <Label>
+            <span className="text-xs text-foreground">Timing mode</span>
+            <NativeSelect
               value={timingMode}
               onChange={(event) => setTimingMode(event.target.value as TimingMode)}
               className={inputClass}
@@ -966,11 +968,11 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
               <option value="HARD_MINIMUM">Required minimum time</option>
               <option value="TARGET">Target time</option>
               <option value="OPERATOR_DISCRETION">Operator discretion</option>
-            </select>
-          </label>
-          <label>
-            <span className="text-xs text-slate-300">Duration seconds</span>
-            <input
+            </NativeSelect>
+          </Label>
+          <Label>
+            <span className="text-xs text-foreground">Duration seconds</span>
+            <Input
               type="number"
               min="0"
               disabled={timingMode === 'OPERATOR_DISCRETION'}
@@ -978,26 +980,26 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
               onChange={(event) => setDurationSeconds(event.target.value)}
               className={inputClass}
             />
-          </label>
-          <label className="self-end pb-2 text-sm text-slate-200">
-            <input
+          </Label>
+          <Label className="self-end pb-2 text-sm text-foreground">
+            <Input
               type="checkbox"
               checked={contactEvidenceRequired}
               onChange={(event) => setContactEvidenceRequired(event.target.checked)}
             />{' '}
             Evidence required
-          </label>
+          </Label>
         </section>
 
-        <section className="rounded-lg border border-slate-700 bg-slate-800/60 p-5">
+        <section className="rounded-lg border border-border bg-card p-5">
           <div className="flex justify-between gap-3">
             <div>
-              <h2 className="font-heading text-xl text-white">Specialty policy</h2>
-              <p className="text-sm text-slate-400">
+              <h2 className="font-heading text-xl text-foreground">Specialty policy</h2>
+              <p className="text-sm text-muted-foreground">
                 Frozen evaluation date: {source?.credential_evaluation_on ?? 'unavailable'}
               </p>
             </div>
-            <button
+            <Button
               type="button"
               onClick={() =>
                 setSpecialties((current) => [
@@ -1015,18 +1017,18 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   },
                 ])
               }
-              className="rounded bg-red-700 px-3 py-2 text-sm text-white"
+              className="rounded bg-destructive px-3 py-2 text-sm text-primary-foreground"
             >
               Add specialty
-            </button>
+            </Button>
           </div>
           <div className="mt-4 space-y-3">
             {specialties.map((specialty) => (
               <article
                 key={specialty.key}
-                className="grid gap-3 rounded border border-slate-600 p-3 md:grid-cols-2"
+                className="grid gap-3 rounded border border-border p-3 md:grid-cols-2"
               >
-                <input
+                <Input
                   aria-label="Specialty ID"
                   value={specialty.id}
                   onChange={(event) =>
@@ -1039,7 +1041,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   className={inputClass}
                   placeholder="Specialty ID"
                 />
-                <input
+                <Input
                   aria-label="Specialty name"
                   value={specialty.label}
                   onChange={(event) =>
@@ -1052,7 +1054,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   className={inputClass}
                   placeholder="Specialty name"
                 />
-                <select
+                <NativeSelect
                   aria-label="Specialty mode"
                   value={specialty.mode}
                   onChange={(event) =>
@@ -1068,8 +1070,8 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                 >
                   <option value="INTERRUPTING">Interrupt the main bid order</option>
                   <option value="PRIORITY_ONLY">Priority within the current stage</option>
-                </select>
-                <select
+                </NativeSelect>
+                <NativeSelect
                   aria-label="Specialty positions"
                   multiple
                   size={4}
@@ -1090,8 +1092,8 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                       {position.id} · {position.position_name}
                     </option>
                   ))}
-                </select>
-                <input
+                </NativeSelect>
+                <Input
                   aria-label="Required credentials"
                   value={specialty.credentials}
                   onChange={(event) =>
@@ -1106,7 +1108,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   className={inputClass}
                   placeholder="Required credentials, comma separated"
                 />
-                <input
+                <Input
                   aria-label="Required specialty qualifications"
                   value={specialty.qualifications}
                   onChange={(event) =>
@@ -1122,7 +1124,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   placeholder="Required specialty qualifications"
                 />
                 {!specialty.scoring && (
-                  <input
+                  <Input
                     aria-label="Specialty points"
                     value={specialty.points}
                     onChange={(event) =>
@@ -1139,9 +1141,9 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   />
                 )}
                 {!specialty.scoring ? (
-                  <button
+                  <Button
                     type="button"
-                    className="min-h-11 rounded border border-slate-500 px-3 text-sm"
+                    className="min-h-11 rounded border border-border px-3 text-sm"
                     onClick={() =>
                       setSpecialties((current) =>
                         current.map((item) =>
@@ -1178,12 +1180,12 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                     }
                   >
                     Configure grouped specialty scoring
-                  </button>
+                  </Button>
                 ) : (
-                  <section className="min-w-0 space-y-3 rounded border border-slate-600 p-3 md:col-span-2">
-                    <label className="block text-sm">
+                  <section className="min-w-0 space-y-3 rounded border border-border p-3 md:col-span-2">
+                    <Label className="block text-sm">
                       Specialty ranking channel
-                      <select
+                      <NativeSelect
                         className={inputClass}
                         value={specialty.rankingChannel}
                         onChange={(e) =>
@@ -1202,9 +1204,9 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                         <option value="total">Total points</option>
                         <option value="so">Special Operations points</option>
                         <option value="mo">Marine Operations points</option>
-                      </select>
-                    </label>
-                    <p className="text-sm text-slate-300">
+                      </NativeSelect>
+                    </Label>
+                    <p className="text-sm text-foreground">
                       The POINTS priority uses this specialty's selected channel. Review the groups,
                       approved alternatives, prerequisites and caps before saving. Position
                       eligibility still applies.
@@ -1222,7 +1224,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                     />
                   </section>
                 )}
-                <input
+                <Input
                   aria-label="Specialty tie break"
                   value={specialty.tieBreak}
                   onChange={(event) =>
@@ -1236,32 +1238,32 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   }
                   className={inputClass}
                 />
-                <button
+                <Button
                   type="button"
                   onClick={() =>
                     setSpecialties((current) =>
                       current.filter((item) => item.key !== specialty.key),
                     )
                   }
-                  className="text-left text-sm text-red-300"
+                  className="text-left text-sm text-destructive"
                 >
                   Remove specialty
-                </button>
+                </Button>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-700 bg-slate-800/60 p-5">
-          <h2 className="font-heading text-xl text-white">A-Day deterministic limits</h2>
-          <p className="text-sm text-slate-400">
+        <section className="rounded-lg border border-border bg-card p-5">
+          <h2 className="font-heading text-xl text-foreground">A-Day deterministic limits</h2>
+          <p className="text-sm text-muted-foreground">
             Values are intentionally blank until Command Staff supplies approved policy.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {Object.entries(aDay).map(([key, value]) => (
-              <label key={key}>
-                <span className="text-xs text-slate-300">{key}</span>
-                <input
+              <Label key={key}>
+                <span className="text-xs text-foreground">{key}</span>
+                <Input
                   type="number"
                   min="0"
                   value={value}
@@ -1270,28 +1272,30 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                   }
                   className={inputClass}
                 />
-              </label>
+              </Label>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-700 bg-slate-800/60 p-5">
-          <h2 className="font-heading text-xl text-white">Policy references and revision reason</h2>
+        <section className="rounded-lg border border-border bg-card p-5">
+          <h2 className="font-heading text-xl text-foreground">
+            Policy references and revision reason
+          </h2>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             {Object.entries(refs).map(([key, value]) => (
-              <label key={key}>
-                <span className="text-xs capitalize text-slate-300">{key} policy reference</span>
-                <input
+              <Label key={key}>
+                <span className="text-xs capitalize text-foreground">{key} policy reference</span>
+                <Input
                   value={value}
                   onChange={(event) =>
                     setRefs((current) => ({ ...current, [key]: event.target.value }))
                   }
                   className={inputClass}
                 />
-              </label>
+              </Label>
             ))}
           </div>
-          <textarea
+          <Textarea
             aria-label="Revision reason"
             required
             minLength={4}
@@ -1304,49 +1308,49 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
           />
           {message ? (
             <output
-              className={`mt-3 block text-sm ${message.kind === 'error' ? 'text-red-300' : 'text-emerald-300'}`}
+              className={`mt-3 block text-sm ${message.kind === 'error' ? 'text-destructive' : 'text-success'}`}
             >
               {message.text}
             </output>
           ) : null}
-          <button
+          <Button
             type="submit"
             disabled={busy || !ready}
-            className="mt-4 rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-4 rounded bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? 'Saving…' : 'Save new draft revision'}
-          </button>
+          </Button>
         </section>
       </form>
 
-      <section className="rounded-lg border border-slate-700 bg-slate-800/40 p-5">
-        <h2 className="font-heading text-xl text-white">Preview and revision history</h2>
+      <section className="rounded-lg border border-border bg-card p-5">
+        <h2 className="font-heading text-xl text-foreground">Preview and revision history</h2>
         <div className="mt-3 space-y-3">
           {documents.length === 0 ? (
-            <p className="text-sm text-slate-300">No policy document is recorded for this year.</p>
+            <p className="text-sm text-foreground">No policy document is recorded for this year.</p>
           ) : (
             documents.map((document) => (
-              <details key={document.id} className="rounded border border-slate-700 p-3">
-                <summary className="cursor-pointer font-mono text-sm text-white">
+              <details key={document.id} className="rounded border border-border p-3">
+                <summary className="cursor-pointer font-mono text-sm text-foreground">
                   Revision {document.revision} · {document.status}
                 </summary>
-                <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300">
+                <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">
                   {document.policy_text}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-3">
-                  <button
+                  <Button
                     type="button"
                     disabled={busy}
                     onClick={() => loadRevision(document)}
-                    className="rounded border border-slate-500 px-3 py-1 text-sm text-slate-100"
+                    className="rounded border border-border px-3 py-1 text-sm text-foreground"
                   >
                     Load as new draft
-                  </button>
+                  </Button>
                   {document.status === 'DRAFT' ? (
                     source?.managed_annual_plan ? (
                       <Link
                         href={`/admin/annual-plan?year=${year}&stage=7` as Route}
-                        className="inline-flex min-h-11 items-center text-sky-300 underline"
+                        className="inline-flex min-h-11 items-center text-info underline"
                       >
                         Rehearse and freeze this annual plan
                       </Link>
@@ -1357,9 +1361,9 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
                       />
                     )
                   ) : null}
-                  <span className="text-xs text-slate-400">Document {document.id}</span>
+                  <span className="text-xs text-muted-foreground">Document {document.id}</span>
                   {document.supersedes_document_id ? (
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-muted-foreground">
                       Supersedes {document.supersedes_document_id}
                     </span>
                   ) : null}

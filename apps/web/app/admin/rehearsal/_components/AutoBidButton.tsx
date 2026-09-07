@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
@@ -91,7 +92,7 @@ export function AutoBidButton({
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button
+      <Button
         type="button"
         disabled={busy || knownRevision === null}
         onClick={async () => {
@@ -163,20 +164,20 @@ export function AutoBidButton({
             setBusy(false);
           }
         }}
-        className="rounded bg-blue-700 px-3 py-1 text-white text-xs disabled:opacity-50"
+        className="rounded bg-info px-3 py-1 text-primary-foreground text-xs disabled:opacity-50"
       >
         {busy ? 'Running…' : label}
-      </button>
+      </Button>
       {msg !== null ? (
         <output
           data-testid={`auto-bid-status-${strategy}`}
           data-tone={tone}
           className={
             tone === 'err'
-              ? 'text-xs text-red-700'
+              ? 'text-xs text-destructive'
               : tone === 'warn'
-                ? 'text-xs text-amber-700'
-                : 'text-xs text-emerald-700'
+                ? 'text-xs text-warning'
+                : 'text-xs text-success'
           }
         >
           {msg}

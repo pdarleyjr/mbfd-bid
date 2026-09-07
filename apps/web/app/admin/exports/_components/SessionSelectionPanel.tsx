@@ -29,19 +29,19 @@ export function SessionSelectionPanel({
 }) {
   if (activeSession !== null) {
     return (
-      <section className="mt-6 max-w-3xl rounded-xl border border-slate-700 bg-slate-800/40 p-5">
-        <h2 className="font-heading text-lg text-white">Select a session</h2>
-        <p className="mt-1 text-sm text-slate-300">
+      <section className="mt-6 max-w-3xl rounded-xl border border-border bg-card p-5">
+        <h2 className="font-heading text-lg text-foreground">Select a session</h2>
+        <p className="mt-1 text-sm text-foreground">
           Open the verified active session below. Historical and completed sessions are opened from
           their own session controls so no internal identifier needs to be copied.
         </p>
         <Link
           href={sessionHref(activeSession.id)}
-          className="mt-4 inline-flex min-h-11 items-center rounded border border-sky-700 bg-sky-950/30 px-4 py-2 text-sm font-semibold text-sky-100 hover:border-sky-400 hover:text-white"
+          className="mt-4 inline-flex min-h-11 items-center rounded border border-info/40 bg-info-surface px-4 py-2 text-sm font-semibold text-info hover:border-info/40 hover:text-foreground"
         >
           Open {sessionLabel(activeSession)}
         </Link>
-        <p className="mt-3 text-xs text-slate-400">
+        <p className="mt-3 text-xs text-muted-foreground">
           Current phase: {activeSession.currentPhase.replaceAll('_', ' ')}.
         </p>
       </section>
@@ -49,13 +49,13 @@ export function SessionSelectionPanel({
   }
 
   return (
-    <section className="mt-6 max-w-3xl rounded-xl border border-amber-700 bg-amber-950/30 p-5 text-sm text-amber-100">
+    <section className="mt-6 max-w-3xl rounded-xl border border-warning/40 bg-warning-surface p-5 text-sm text-warning">
       <h2 className="font-semibold">No active session is available</h2>
       <p className="mt-1">
         Open exports from a Bid session&apos;s session controls. This page will not accept a copied
         internal session identifier.
       </p>
-      {error !== null && <p className="mt-2 text-amber-100/90">{error}</p>}
+      {error !== null && <p className="mt-2 text-warning">{error}</p>}
     </section>
   );
 }

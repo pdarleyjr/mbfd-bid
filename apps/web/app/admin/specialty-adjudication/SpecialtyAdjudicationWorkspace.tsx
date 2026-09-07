@@ -1,5 +1,10 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import type { SyntheticSpecialtyStateSignal } from '@mbfd/shared';
 import { type FormEvent, useCallback, useMemo, useRef, useState } from 'react';
 import { useBidWebSocket } from '../../bid/_hooks/useBidWebSocket';
@@ -851,27 +856,30 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       className="mx-auto max-w-7xl space-y-6"
       aria-labelledby="specialty-adjudication-heading"
     >
-      <header className="border-b border-slate-800 pb-6">
-        <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+      <header className="border-b border-border pb-6">
+        <p className="text-xs font-semibold uppercase tracking-wider text-warning">
           Mock-bid interruption rehearsal
         </p>
-        <h1 id="specialty-adjudication-heading" className="mt-1 font-heading text-3xl text-white">
+        <h1
+          id="specialty-adjudication-heading"
+          className="mt-1 font-heading text-3xl text-foreground"
+        >
           Specialty adjudication rehearsal
         </h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
+        <p className="mt-2 max-w-3xl text-sm text-foreground">
           Inspect and exercise one labelled synthetic interruption against an existing frozen mock
           session. The Worker owns the ordered state machine and the idempotent receipts.
         </p>
       </header>
 
       <section
-        className="rounded-xl border border-amber-700 bg-amber-950/30 p-5 text-sm text-amber-100"
+        className="rounded-xl border border-warning/40 bg-warning-surface p-5 text-sm text-warning"
         aria-labelledby="specialty-boundary-heading"
       >
-        <h2 id="specialty-boundary-heading" className="font-semibold text-amber-50">
+        <h2 id="specialty-boundary-heading" className="font-semibold text-warning">
           Synthetic test only
         </h2>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-100/90">
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-warning">
           <li>
             This rehearsal does not commit a Bid, create a live award, or enqueue portal writeback.
           </li>
@@ -894,12 +902,12 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       <form
         data-testid="specialty-inspect-form"
         onSubmit={inspectState}
-        className="rounded-xl border border-slate-700 bg-slate-800/40 p-5"
+        className="rounded-xl border border-border bg-card p-5"
       >
         <div className="flex flex-wrap items-end gap-4">
-          <label className="block min-w-72 flex-1">
-            <span className="text-sm font-medium text-slate-200">Mock Bid session ID</span>
-            <input
+          <Label className="block min-w-72 flex-1">
+            <span className="text-sm font-medium text-foreground">Mock Bid session ID</span>
+            <Input
               name="session_id"
               required
               maxLength={160}
@@ -910,18 +918,18 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                 clearLoadedState();
               }}
               placeholder="Mock session identifier"
-              className="mt-1 block min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-500"
+              className="mt-1 block min-h-11 w-full rounded border border-border bg-card px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground"
             />
-          </label>
-          <button
+          </Label>
+          <Button
             type="submit"
             disabled={busy !== null || trimmedSessionId.length === 0}
-            className="min-h-11 rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 rounded bg-warning px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-warning disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === 'inspect' ? 'Inspecting…' : 'Inspect specialty state'}
-          </button>
+          </Button>
         </div>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-muted-foreground">
           Inspection is read-only. After a valid empty mock state loads, you can begin labelled
           synthetic scenario. A Worker rejection is shown verbatim below and never converted into an
           official-policy fallback.
@@ -931,7 +939,7 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       {error !== null && (
         <p
           role="alert"
-          className="rounded border border-red-800 bg-red-950/30 px-4 py-3 text-sm text-red-100"
+          className="rounded border border-destructive/40 bg-destructive-surface px-4 py-3 text-sm text-destructive"
         >
           {error}
         </p>
@@ -939,7 +947,7 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       {notice !== null && (
         <p
           aria-live="polite"
-          className="rounded border border-sky-800 bg-sky-950/30 px-4 py-3 text-sm text-sky-100"
+          className="rounded border border-info/40 bg-info-surface px-4 py-3 text-sm text-info"
         >
           {notice}
         </p>
@@ -948,7 +956,7 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
         <p
           data-testid="specialty-live-control-state"
           aria-live="polite"
-          className="rounded border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-200"
+          className="rounded border border-border bg-card px-4 py-3 text-sm text-foreground"
         >
           Live synthetic control signal: transport {specialtySocketStatus}; specialty revision{' '}
           {state?.revision ?? socketControlState.rehearsalRevision ?? 'unknown'}; normal bidder{' '}
@@ -961,68 +969,71 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       {stateLoaded && state !== null && (
         <>
           <section
-            className="rounded-xl border border-slate-700 bg-slate-800/40 p-5"
+            className="rounded-xl border border-border bg-card p-5"
             aria-labelledby="specialty-state-heading"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+                <p className="text-xs font-semibold uppercase tracking-wider text-info">
                   Worker-owned state
                 </p>
-                <h2 id="specialty-state-heading" className="mt-1 font-heading text-xl text-white">
+                <h2
+                  id="specialty-state-heading"
+                  className="mt-1 font-heading text-xl text-foreground"
+                >
                   Specialty interruption state
                 </h2>
               </div>
-              <span className="rounded-full border border-slate-600 px-3 py-1 font-mono text-xs font-semibold text-slate-200">
+              <span className="rounded-full border border-border px-3 py-1 font-mono text-xs font-semibold text-foreground">
                 Revision {state.revision}
               </span>
             </div>
             <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <div>
-                <dt className="text-slate-400">Mode</dt>
-                <dd className="mt-1 font-medium text-white">Synthetic test only</dd>
+                <dt className="text-muted-foreground">Mode</dt>
+                <dd className="mt-1 font-medium text-foreground">Synthetic test only</dd>
               </div>
               <div>
-                <dt className="text-slate-400">Bid commit</dt>
-                <dd className="mt-1 font-medium text-white">Not committed</dd>
+                <dt className="text-muted-foreground">Bid commit</dt>
+                <dd className="mt-1 font-medium text-foreground">Not committed</dd>
               </div>
               <div>
-                <dt className="text-slate-400">Database audit</dt>
-                <dd className="mt-1 font-medium text-white">
+                <dt className="text-muted-foreground">Database audit</dt>
+                <dd className="mt-1 font-medium text-foreground">
                   {status?.databaseAuditLog ?? 'Not reported'}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Active interruption</dt>
-                <dd className="mt-1 font-medium text-white">
+                <dt className="text-muted-foreground">Active interruption</dt>
+                <dd className="mt-1 font-medium text-foreground">
                   {active === null ? 'None' : active.phase.replaceAll('_', ' ')}
                 </dd>
               </div>
             </dl>
 
             {active !== null && (
-              <div className="mt-5 rounded-lg border border-amber-800/80 bg-amber-950/20 p-4 text-sm text-amber-50">
+              <div className="mt-5 rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
                 <p className="font-semibold">Synthetic interruption is active</p>
                 <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <dt className="text-amber-200/80">Request</dt>
+                    <dt className="text-warning">Request</dt>
                     <dd className="mt-1 break-all font-mono text-xs">{active.requestId}</dd>
                   </div>
                   <div>
-                    <dt className="text-amber-200/80">Position</dt>
+                    <dt className="text-warning">Position</dt>
                     <dd className="mt-1 font-mono text-xs">{active.positionId}</dd>
                   </div>
                   <div>
-                    <dt className="text-amber-200/80">Original bidder</dt>
+                    <dt className="text-warning">Original bidder</dt>
                     <dd className="mt-1 font-medium">Member {active.originalBidderId}</dd>
                   </div>
                   <div>
-                    <dt className="text-amber-200/80">Policy label</dt>
+                    <dt className="text-warning">Policy label</dt>
                     <dd className="mt-1 break-all font-mono text-xs">{active.policyReference}</dd>
                   </div>
                 </dl>
                 {nextCandidate !== null && (
-                  <p className="mt-3 text-amber-100">
+                  <p className="mt-3 text-warning">
                     Next eligible synthetic candidate: member {nextCandidate.memberId}, priority{' '}
                     {nextCandidate.priorityRank}.
                   </p>
@@ -1030,7 +1041,7 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
               </div>
             )}
             {active === null && receipts.some((receipt) => receipt.operation === 'resume') && (
-              <p className="mt-4 rounded border border-emerald-800 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-100">
+              <p className="mt-4 rounded border border-success/40 bg-success-surface px-3 py-2 text-sm text-success">
                 Normal Bid turn resumed in synthetic state. Confirm actual Bid/operator acceptance
                 separately; this receipt is not a live-Bid completion claim.
               </p>
@@ -1041,16 +1052,16 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
             <form
               data-testid="specialty-begin-form"
               onSubmit={beginScenario}
-              className="rounded-xl border border-slate-700 bg-slate-800/40 p-5"
+              className="rounded-xl border border-border bg-card p-5"
             >
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+                <p className="text-xs font-semibold uppercase tracking-wider text-warning">
                   Controlled fixture
                 </p>
-                <h2 className="mt-1 font-heading text-xl text-white">
+                <h2 className="mt-1 font-heading text-xl text-foreground">
                   Begin labelled synthetic scenario
                 </h2>
-                <p className="mt-1 max-w-3xl text-sm text-slate-300">
+                <p className="mt-1 max-w-3xl text-sm text-foreground">
                   Enter synthetic explicit-priority scores only. The Worker independently derives
                   general eligibility and specialty qualifications from the frozen mock snapshot,
                   preserves the actual normal bidder, and requires this list to exactly cover its
@@ -1058,9 +1069,9 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                 </p>
               </div>
               <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-200">Biddable position ID</span>
-                  <input
+                <Label className="block">
+                  <span className="text-sm font-medium text-foreground">Biddable position ID</span>
+                  <Input
                     name="position_id"
                     required
                     maxLength={160}
@@ -1069,14 +1080,14 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                       setPositionId(event.target.value);
                       resetBeginKey();
                     }}
-                    className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white"
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 font-mono text-sm text-foreground"
                   />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-200">
+                </Label>
+                <Label className="block">
+                  <span className="text-sm font-medium text-foreground">
                     Synthetic scenario reference
                   </span>
-                  <input
+                  <Input
                     name="policy_reference"
                     required
                     maxLength={160}
@@ -1085,34 +1096,34 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                       setPolicyReference(event.target.value);
                       resetBeginKey();
                     }}
-                    className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white"
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 font-mono text-sm text-foreground"
                   />
-                  <span className="mt-1 block text-xs text-slate-400">
+                  <span className="mt-1 block text-xs text-muted-foreground">
                     Must start with synthetic-. It binds the mock-only route contract and is not an
                     approved policy reference.
                   </span>
-                </label>
-                <fieldset className="rounded-lg border border-amber-800/80 bg-amber-950/20 p-4 lg:col-span-2">
-                  <legend className="px-1 text-sm font-semibold text-amber-100">
+                </Label>
+                <fieldset className="rounded-lg border border-warning/40 bg-warning-surface p-4 lg:col-span-2">
+                  <legend className="px-1 text-sm font-semibold text-warning">
                     Typed synthetic test-policy envelope
                   </legend>
-                  <p className="mt-1 max-w-3xl text-sm text-amber-100/90">
+                  <p className="mt-1 max-w-3xl text-sm text-warning">
                     This complete envelope is sent only to the mock specialty route. It is
                     explicitly versioned and never substitutes for approved MBFD specialty policy.
                   </p>
                   <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                    <label className="block lg:col-span-2">
-                      <span className="text-sm font-medium text-slate-100">Test policy label</span>
-                      <input
+                    <Label className="block lg:col-span-2">
+                      <span className="text-sm font-medium text-foreground">Test policy label</span>
+                      <Input
                         name="test_policy_label"
                         readOnly
                         value={SPECIALTY_TEST_POLICY_LABEL}
-                        className="mt-1 min-h-11 w-full rounded border border-amber-700 bg-slate-950 px-3 font-mono text-sm text-amber-100"
+                        className="mt-1 min-h-11 w-full rounded border border-warning/40 bg-card px-3 font-mono text-sm text-warning"
                       />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-100">Policy version</span>
-                      <input
+                    </Label>
+                    <Label className="block">
+                      <span className="text-sm font-medium text-foreground">Policy version</span>
+                      <Input
                         name="test_policy_version"
                         required
                         maxLength={160}
@@ -1121,12 +1132,12 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                           setTestPolicyVersion(event.target.value);
                           resetBeginKey();
                         }}
-                        className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white"
+                        className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 font-mono text-sm text-foreground"
                       />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-100">Specialty pool ID</span>
-                      <input
+                    </Label>
+                    <Label className="block">
+                      <span className="text-sm font-medium text-foreground">Specialty pool ID</span>
+                      <Input
                         name="test_policy_pool_id"
                         required
                         maxLength={160}
@@ -1135,14 +1146,14 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                           setTestPolicyPoolId(event.target.value);
                           resetBeginKey();
                         }}
-                        className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white"
+                        className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 font-mono text-sm text-foreground"
                       />
-                    </label>
-                    <label className="block lg:col-span-2">
-                      <span className="text-sm font-medium text-slate-100">
+                    </Label>
+                    <Label className="block lg:col-span-2">
+                      <span className="text-sm font-medium text-foreground">
                         Specialty pool label
                       </span>
-                      <input
+                      <Input
                         name="test_policy_pool_label"
                         required
                         maxLength={200}
@@ -1151,14 +1162,14 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                           setTestPolicyPoolLabel(event.target.value);
                           resetBeginKey();
                         }}
-                        className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-sm text-white"
+                        className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-sm text-foreground"
                       />
-                    </label>
-                    <label className="block lg:col-span-2">
-                      <span className="text-sm font-medium text-slate-100">
+                    </Label>
+                    <Label className="block lg:col-span-2">
+                      <span className="text-sm font-medium text-foreground">
                         Required credential names
                       </span>
-                      <textarea
+                      <Textarea
                         name="test_policy_credential_requirements"
                         rows={3}
                         maxLength={5000}
@@ -1167,19 +1178,19 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                           setTestPolicyCredentialRequirements(event.target.value);
                           resetBeginKey();
                         }}
-                        className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                        className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground"
                       />
-                      <span className="mt-1 block text-xs text-slate-400">
+                      <span className="mt-1 block text-xs text-muted-foreground">
                         One synthetic credential name per line. The Worker checks only frozen
                         evaluation-date evidence; this form cannot assert a credential or
                         eligibility result.
                       </span>
-                    </label>
-                    <label className="block lg:col-span-2">
-                      <span className="text-sm font-medium text-slate-100">
+                    </Label>
+                    <Label className="block lg:col-span-2">
+                      <span className="text-sm font-medium text-foreground">
                         Required specialty qualification codes
                       </span>
-                      <textarea
+                      <Textarea
                         name="test_policy_specialty_requirements"
                         rows={3}
                         maxLength={5000}
@@ -1188,30 +1199,30 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                           setTestPolicySpecialtyRequirements(event.target.value);
                           resetBeginKey();
                         }}
-                        className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                        className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground"
                       />
-                      <span className="mt-1 block text-xs text-slate-400">
+                      <span className="mt-1 block text-xs text-muted-foreground">
                         One synthetic specialty code per line. A code requires source-safe frozen
                         lifecycle evidence at the configured evaluation date; pre-bridge snapshots
                         are rejected rather than treated as qualified.
                       </span>
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-100">
+                    </Label>
+                    <Label className="block">
+                      <span className="text-sm font-medium text-foreground">
                         Explicit test ranking source
                       </span>
-                      <input
+                      <Input
                         name="test_policy_ranking_source"
                         readOnly
                         value={TEST_POLICY_RANKING_SOURCE}
-                        className="mt-1 min-h-11 w-full rounded border border-amber-700 bg-slate-950 px-3 font-mono text-sm text-amber-100"
+                        className="mt-1 min-h-11 w-full rounded border border-warning/40 bg-card px-3 font-mono text-sm text-warning"
                       />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-100">
+                    </Label>
+                    <Label className="block">
+                      <span className="text-sm font-medium text-foreground">
                         Explicit test ranking reference
                       </span>
-                      <input
+                      <Input
                         name="test_policy_ranking_reference"
                         required
                         maxLength={160}
@@ -1220,69 +1231,69 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                           setTestPolicyRankingReference(event.target.value);
                           resetBeginKey();
                         }}
-                        className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white"
+                        className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 font-mono text-sm text-foreground"
                       />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-100">Scoring direction</span>
-                      <input
+                    </Label>
+                    <Label className="block">
+                      <span className="text-sm font-medium text-foreground">Scoring direction</span>
+                      <Input
                         name="test_policy_scoring_direction"
                         readOnly
                         value={TEST_POLICY_SCORING_DIRECTION}
-                        className="mt-1 min-h-11 w-full rounded border border-amber-700 bg-slate-950 px-3 font-mono text-sm text-amber-100"
+                        className="mt-1 min-h-11 w-full rounded border border-warning/40 bg-card px-3 font-mono text-sm text-warning"
                       />
-                      <span className="mt-1 block text-xs text-slate-400">
+                      <span className="mt-1 block text-xs text-muted-foreground">
                         Lower score wins; configured tie-breaks resolve equal scores.
                       </span>
-                    </label>
-                    <fieldset className="rounded border border-slate-700 p-3 lg:col-span-2">
-                      <legend className="px-1 text-sm font-medium text-slate-100">
+                    </Label>
+                    <fieldset className="rounded border border-border p-3 lg:col-span-2">
+                      <legend className="px-1 text-sm font-medium text-foreground">
                         Tie-break chain
                       </legend>
-                      <p className="mt-1 text-xs text-slate-400">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         Configure two or three unique synthetic tie-breaks in order, ending with
                         Member ID.
                       </p>
                       <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                        <label className="block">
-                          <span className="text-xs text-slate-300">First</span>
-                          <select
+                        <Label className="block">
+                          <span className="text-xs text-foreground">First</span>
+                          <NativeSelect
                             name="test_policy_tie_break_1"
                             value={testPolicyTieBreakOne}
                             onChange={(event) => {
                               setTestPolicyTieBreakOne(event.target.value as TestPolicyTieBreak);
                               resetBeginKey();
                             }}
-                            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-sm text-white"
+                            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-sm text-foreground"
                           >
                             {TEST_POLICY_TIE_BREAKS.map((tieBreak) => (
                               <option key={tieBreak} value={tieBreak}>
                                 {TEST_POLICY_TIE_BREAK_LABELS[tieBreak]}
                               </option>
                             ))}
-                          </select>
-                        </label>
-                        <label className="block">
-                          <span className="text-xs text-slate-300">Second</span>
-                          <select
+                          </NativeSelect>
+                        </Label>
+                        <Label className="block">
+                          <span className="text-xs text-foreground">Second</span>
+                          <NativeSelect
                             name="test_policy_tie_break_2"
                             value={testPolicyTieBreakTwo}
                             onChange={(event) => {
                               setTestPolicyTieBreakTwo(event.target.value as TestPolicyTieBreak);
                               resetBeginKey();
                             }}
-                            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-sm text-white"
+                            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-sm text-foreground"
                           >
                             {TEST_POLICY_TIE_BREAKS.map((tieBreak) => (
                               <option key={tieBreak} value={tieBreak}>
                                 {TEST_POLICY_TIE_BREAK_LABELS[tieBreak]}
                               </option>
                             ))}
-                          </select>
-                        </label>
-                        <label className="block">
-                          <span className="text-xs text-slate-300">Third (optional)</span>
-                          <select
+                          </NativeSelect>
+                        </Label>
+                        <Label className="block">
+                          <span className="text-xs text-foreground">Third (optional)</span>
+                          <NativeSelect
                             name="test_policy_tie_break_3"
                             value={testPolicyTieBreakThree}
                             onChange={(event) => {
@@ -1291,7 +1302,7 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                               );
                               resetBeginKey();
                             }}
-                            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-sm text-white"
+                            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-sm text-foreground"
                           >
                             <option value="">No third tie-break</option>
                             {TEST_POLICY_TIE_BREAKS.map((tieBreak) => (
@@ -1299,57 +1310,57 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                                 {TEST_POLICY_TIE_BREAK_LABELS[tieBreak]}
                               </option>
                             ))}
-                          </select>
-                        </label>
+                          </NativeSelect>
+                        </Label>
                       </div>
                     </fieldset>
-                    <dl className="grid gap-3 rounded border border-slate-700 bg-slate-950/40 p-3 text-sm lg:col-span-2 sm:grid-cols-4">
+                    <dl className="grid gap-3 rounded border border-border bg-card p-3 text-sm lg:col-span-2 sm:grid-cols-4">
                       <div>
-                        <dt className="text-slate-400">Normal Bid interruption</dt>
-                        <dd className="mt-1 font-mono text-xs text-amber-100">
+                        <dt className="text-muted-foreground">Normal Bid interruption</dt>
+                        <dd className="mt-1 font-mono text-xs text-warning">
                           {TEST_POLICY_NORMAL_BID_INTERRUPTION}
                         </dd>
-                        <dd className="mt-1 text-xs text-slate-300">
+                        <dd className="mt-1 text-xs text-foreground">
                           Suspend exact normal Bid turn
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-400">Allowed candidate outcomes</dt>
-                        <dd className="mt-1 font-mono text-xs text-amber-100">
+                        <dt className="text-muted-foreground">Allowed candidate outcomes</dt>
+                        <dd className="mt-1 font-mono text-xs text-warning">
                           {TEST_POLICY_CANDIDATE_OUTCOMES.join(' · ')}
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-400">Scoring</dt>
-                        <dd className="mt-1 font-mono text-xs text-amber-100">
+                        <dt className="text-muted-foreground">Scoring</dt>
+                        <dd className="mt-1 font-mono text-xs text-warning">
                           {TEST_POLICY_SCORING_DIRECTION}
                         </dd>
-                        <dd className="mt-1 text-xs text-slate-300">Lower score wins</dd>
+                        <dd className="mt-1 text-xs text-foreground">Lower score wins</dd>
                       </div>
                       <div>
-                        <dt className="text-slate-400">Original-bidder resumption</dt>
-                        <dd className="mt-1 font-mono text-xs text-emerald-100">
+                        <dt className="text-muted-foreground">Original-bidder resumption</dt>
+                        <dd className="mt-1 font-mono text-xs text-success">
                           {TEST_POLICY_ORIGINAL_BIDDER_RESUME}
                         </dd>
-                        <dd className="mt-1 text-xs text-slate-300">
+                        <dd className="mt-1 text-xs text-foreground">
                           Resume exact original Bid turn
                         </dd>
                       </div>
                     </dl>
                   </div>
                 </fieldset>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-200">
+                <Label className="block">
+                  <span className="text-sm font-medium text-foreground">
                     Released-candidate behavior
                   </span>
-                  <select
+                  <NativeSelect
                     name="release_policy"
                     value={releasePolicy}
                     onChange={(event) => {
                       setReleasePolicy(event.target.value as typeof releasePolicy);
                       resetBeginKey();
                     }}
-                    className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-sm text-white"
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-sm text-foreground"
                   >
                     <option value="continue_to_next_higher_priority">
                       Continue to next higher-priority synthetic candidate
@@ -1357,11 +1368,11 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                     <option value="return_to_original_bidder">
                       Return to original synthetic bidder
                     </option>
-                  </select>
-                </label>
-                <label className="block lg:col-span-2">
-                  <span className="text-sm font-medium text-slate-200">Synthetic candidates</span>
-                  <textarea
+                  </NativeSelect>
+                </Label>
+                <Label className="block lg:col-span-2">
+                  <span className="text-sm font-medium text-foreground">Synthetic candidates</span>
+                  <Textarea
                     name="candidate_rows"
                     required
                     rows={4}
@@ -1373,17 +1384,17 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                     placeholder={
                       'One candidate per line: member ID, explicit priority score\n11, 1\n17, 1'
                     }
-                    className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-sm text-white placeholder:text-slate-500"
+                    className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground"
                   />
-                  <span className="mt-1 block text-xs text-slate-400">
+                  <span className="mt-1 block text-xs text-muted-foreground">
                     Equal scores are resolved by the configured tie-break chain. Include every
                     non-excluded frozen mock-pool member exactly once; eligibility is evaluated by
                     the Worker, never asserted by this form.
                   </span>
-                </label>
-                <label className="block lg:col-span-2">
-                  <span className="text-sm font-medium text-slate-200">Operator reason</span>
-                  <textarea
+                </Label>
+                <Label className="block lg:col-span-2">
+                  <span className="text-sm font-medium text-foreground">Operator reason</span>
+                  <Textarea
                     name="begin_reason"
                     required
                     minLength={4}
@@ -1395,19 +1406,19 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                       resetBeginKey();
                     }}
                     placeholder="Record why this synthetic specialty fixture is being rehearsed."
-                    className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+                    className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
                   />
-                </label>
+                </Label>
               </div>
               <div className="mt-5 flex flex-wrap items-center gap-3">
-                <button
+                <Button
                   type="submit"
                   disabled={busy !== null}
-                  className="min-h-11 rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-11 rounded bg-warning px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-warning disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busy === 'begin' ? 'Beginning synthetic scenario…' : 'Begin synthetic scenario'}
-                </button>
-                <span className="max-w-xl text-xs text-slate-400">
+                </Button>
+                <span className="max-w-xl text-xs text-muted-foreground">
                   Idempotency key:{' '}
                   <span className="font-mono">{commandKeyLabel(commandIds.begin ?? null)}</span>
                 </span>
@@ -1419,15 +1430,15 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
             <form
               data-testid="specialty-candidate-form"
               onSubmit={resolveCandidate}
-              className="rounded-xl border border-slate-700 bg-slate-800/40 p-5"
+              className="rounded-xl border border-border bg-card p-5"
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+              <p className="text-xs font-semibold uppercase tracking-wider text-warning">
                 Ordered candidate resolution
               </p>
-              <h2 className="mt-1 font-heading text-xl text-white">
+              <h2 className="mt-1 font-heading text-xl text-foreground">
                 Resolve next synthetic candidate
               </h2>
-              <p className="mt-1 text-sm text-slate-300">
+              <p className="mt-1 text-sm text-foreground">
                 Only member {nextCandidate.memberId} at priority {nextCandidate.priorityRank} is
                 currently accepted by the Worker.
               </p>
@@ -1459,15 +1470,15 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
             <form
               data-testid="specialty-original-form"
               onSubmit={resolveOriginal}
-              className="rounded-xl border border-slate-700 bg-slate-800/40 p-5"
+              className="rounded-xl border border-border bg-card p-5"
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+              <p className="text-xs font-semibold uppercase tracking-wider text-warning">
                 Original bidder resolution
               </p>
-              <h2 className="mt-1 font-heading text-xl text-white">
+              <h2 className="mt-1 font-heading text-xl text-foreground">
                 Resolve original synthetic bidder
               </h2>
-              <p className="mt-1 text-sm text-slate-300">
+              <p className="mt-1 text-sm text-foreground">
                 Member {active.originalBidderId} is now the only Worker-accepted synthetic
                 resolution target.
               </p>
@@ -1499,15 +1510,15 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
             <form
               data-testid="specialty-resume-form"
               onSubmit={resumeNormalTurn}
-              className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-5"
+              className="rounded-xl border border-success/40 bg-success-surface p-5"
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
+              <p className="text-xs font-semibold uppercase tracking-wider text-success">
                 Synthetic continuation
               </p>
-              <h2 className="mt-1 font-heading text-xl text-white">
+              <h2 className="mt-1 font-heading text-xl text-foreground">
                 Resume normal Bid turn in synthetic state
               </h2>
-              <p className="mt-1 text-sm text-emerald-100/90">
+              <p className="mt-1 text-sm text-success">
                 The Worker rechecks the captured normal turn before resuming. This does not resume
                 an official or live Bid.
               </p>
@@ -1528,16 +1539,19 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
 
           {receipts.length > 0 && (
             <section
-              className="rounded-xl border border-slate-700 bg-slate-800/40 p-5"
+              className="rounded-xl border border-border bg-card p-5"
               aria-labelledby="specialty-receipts-heading"
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+              <p className="text-xs font-semibold uppercase tracking-wider text-info">
                 Rehearsal evidence
               </p>
-              <h2 id="specialty-receipts-heading" className="mt-1 font-heading text-xl text-white">
+              <h2
+                id="specialty-receipts-heading"
+                className="mt-1 font-heading text-xl text-foreground"
+              >
                 Synthetic command receipts
               </h2>
-              <p className="mt-1 text-sm text-slate-300">
+              <p className="mt-1 text-sm text-foreground">
                 These are the exact Worker receipt payloads returned in this browser session; they
                 are not a canonical audit export.
               </p>
@@ -1545,39 +1559,39 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                 {receipts.map((receipt) => (
                   <details
                     key={receiptKey(receipt)}
-                    className="rounded border border-slate-700 bg-slate-950/40 p-3"
+                    className="rounded border border-border bg-card p-3"
                   >
-                    <summary className="cursor-pointer text-sm font-semibold text-slate-100">
+                    <summary className="cursor-pointer text-sm font-semibold text-foreground">
                       {receiptTitle(receipt)}
                     </summary>
                     <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                       <div>
-                        <dt className="text-slate-400">Command ID</dt>
-                        <dd className="mt-1 break-all font-mono text-xs text-slate-100">
+                        <dt className="text-muted-foreground">Command ID</dt>
+                        <dd className="mt-1 break-all font-mono text-xs text-foreground">
                           {receipt.commandId ?? 'Not returned'}
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-400">Origin</dt>
-                        <dd className="mt-1 font-mono text-xs text-slate-100">
+                        <dt className="text-muted-foreground">Origin</dt>
+                        <dd className="mt-1 font-mono text-xs text-foreground">
                           {receipt.origin ?? 'Not returned'}
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-400">Operation</dt>
-                        <dd className="mt-1 text-slate-100">
+                        <dt className="text-muted-foreground">Operation</dt>
+                        <dd className="mt-1 text-foreground">
                           {receipt.operation ?? 'Not returned'}
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-400">Replay</dt>
-                        <dd className="mt-1 text-slate-100">{receipt.replayed ? 'Yes' : 'No'}</dd>
+                        <dt className="text-muted-foreground">Replay</dt>
+                        <dd className="mt-1 text-foreground">{receipt.replayed ? 'Yes' : 'No'}</dd>
                       </div>
                     </dl>
                     {receipt.reason !== null && (
-                      <p className="mt-3 text-sm text-slate-300">Reason: {receipt.reason}</p>
+                      <p className="mt-3 text-sm text-foreground">Reason: {receipt.reason}</p>
                     )}
-                    <pre className="mt-3 overflow-x-auto rounded bg-slate-950 p-3 text-xs leading-5 text-slate-300">
+                    <pre className="mt-3 overflow-x-auto rounded bg-card p-3 text-xs leading-5 text-foreground">
                       {JSON.stringify(receipt.raw, null, 2)}
                     </pre>
                   </details>
@@ -1614,25 +1628,25 @@ function OutcomeFields({
 }: OutcomeFieldsProps) {
   return (
     <div className="mt-5 grid gap-4 sm:grid-cols-2">
-      <label className="block">
-        <span className="text-sm font-medium text-slate-200">Synthetic outcome</span>
-        <select
+      <Label className="block">
+        <span className="text-sm font-medium text-foreground">Synthetic outcome</span>
+        <NativeSelect
           name={`${prefix}_outcome_kind`}
           value={outcome}
           onChange={(event) => {
             setOutcome(event.target.value as 'award' | 'release');
             resetKey();
           }}
-          className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-sm text-white"
+          className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-sm text-foreground"
         >
           <option value="release">Release candidate</option>
           <option value="award">Award candidate</option>
-        </select>
-      </label>
+        </NativeSelect>
+      </Label>
       {outcome === 'award' ? (
-        <label className="block">
-          <span className="text-sm font-medium text-slate-200">Synthetic award reference</span>
-          <input
+        <Label className="block">
+          <span className="text-sm font-medium text-foreground">Synthetic award reference</span>
+          <Input
             name={`${prefix}_award_reference`}
             required
             maxLength={160}
@@ -1642,27 +1656,27 @@ function OutcomeFields({
               resetKey();
             }}
             placeholder="synthetic-award-reference"
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 font-mono text-sm text-white placeholder:text-slate-500"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 font-mono text-sm text-foreground placeholder:text-muted-foreground"
           />
-        </label>
+        </Label>
       ) : (
-        <label className="block">
-          <span className="text-sm font-medium text-slate-200">Synthetic release reason</span>
-          <select
+        <Label className="block">
+          <span className="text-sm font-medium text-foreground">Synthetic release reason</span>
+          <NativeSelect
             name={`${prefix}_release_reason`}
             value={releaseReason}
             onChange={(event) => {
               setReleaseReason(event.target.value as ReleaseReason);
               resetKey();
             }}
-            className="mt-1 min-h-11 w-full rounded border border-slate-600 bg-slate-950 px-3 text-sm text-white"
+            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-sm text-foreground"
           >
             <option value="declined">Declined</option>
             <option value="unreachable">Unreachable</option>
             <option value="withdrawn">Withdrawn</option>
             <option value="ineligible_on_recheck">Ineligible on recheck</option>
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
       )}
     </div>
   );
@@ -1688,12 +1702,12 @@ function ReasonAndSubmit({
   tone = 'amber',
 }: ReasonAndSubmitProps) {
   const buttonClass =
-    tone === 'emerald' ? 'bg-emerald-700 hover:bg-emerald-600' : 'bg-amber-600 hover:bg-amber-500';
+    tone === 'emerald' ? 'bg-success hover:bg-success' : 'bg-warning hover:bg-warning';
   return (
     <div className="mt-5">
-      <label className="block">
-        <span className="text-sm font-medium text-slate-200">Operator reason</span>
-        <textarea
+      <Label className="block">
+        <span className="text-sm font-medium text-foreground">Operator reason</span>
+        <Textarea
           name={name}
           required
           minLength={4}
@@ -1702,18 +1716,18 @@ function ReasonAndSubmit({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder="Record the observed synthetic outcome and why it is being recorded."
-          className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+          className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
         />
-      </label>
+      </Label>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button
+        <Button
           type="submit"
           disabled={busy}
-          className={`min-h-11 rounded px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${buttonClass}`}
+          className={`min-h-11 rounded px-4 py-2 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50 ${buttonClass}`}
         >
           {busy ? 'Submitting synthetic command…' : label}
-        </button>
-        <span className="max-w-xl text-xs text-slate-400">
+        </Button>
+        <span className="max-w-xl text-xs text-muted-foreground">
           Idempotency key: <span className="font-mono">{commandKeyLabel(commandId)}</span>
         </span>
       </div>

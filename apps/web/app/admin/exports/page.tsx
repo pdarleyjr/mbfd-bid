@@ -112,8 +112,8 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
   if (sid === null) {
     const active = await fetchActiveSession();
     return (
-      <main className="admin-exports">
-        <h1>Exports &amp; Portal Sync</h1>
+      <main className="admin-exports mx-auto max-w-6xl space-y-6">
+        <h1 className="font-heading text-3xl font-bold">Exports &amp; Portal Sync</h1>
         <p>Select the Bid session whose progress, awards, roster, and audit evidence you need.</p>
         <SessionSelectionPanel
           activeSession={active.session}
@@ -132,15 +132,15 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
   ]);
 
   return (
-    <main className="admin-exports">
-      <h1>Exports &amp; Portal Sync</h1>
+    <main className="admin-exports mx-auto max-w-6xl space-y-6">
+      <h1 className="font-heading text-3xl font-bold">Exports &amp; Portal Sync</h1>
       <p>Session evidence selected from the Bid session controls.</p>
 
       <DirectCsvExports sessionId={sid} />
 
       <section>
-        <h2>Generate</h2>
-        <div className="grid">
+        <h2 className="mb-3 font-heading text-lg font-semibold">Generate</h2>
+        <div className="flex flex-wrap gap-3">
           {(['A', 'B', 'C', 'D'] as const).map((sh) => (
             <ExportTriggerButton key={sh} kind="roster" shift={sh} sessionId={sid} />
           ))}
@@ -149,17 +149,11 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
       </section>
 
       <section>
-        <h2>Available exports</h2>
+        <h2 className="mb-3 font-heading text-lg font-semibold">Available exports</h2>
         {exportsResult.fetchError !== null && (
           <div
-            style={{
-              border: '1px solid #b45309',
-              background: 'rgba(120, 53, 15, 0.2)',
-              color: '#fde68a',
-              padding: '0.75rem 1rem',
-              borderRadius: '0.5rem',
-              fontSize: '0.875rem',
-            }}
+            role="alert"
+            className="rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning"
           >
             Could not load exports: {exportsResult.fetchError}. Check the Worker logs and JWT
             validity.
@@ -173,17 +167,11 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
       </section>
 
       <section>
-        <h2>Portal sync status</h2>
+        <h2 className="mb-3 font-heading text-lg font-semibold">Portal sync status</h2>
         {portalResult.fetchError !== null && (
           <div
-            style={{
-              border: '1px solid #b45309',
-              background: 'rgba(120, 53, 15, 0.2)',
-              color: '#fde68a',
-              padding: '0.75rem 1rem',
-              borderRadius: '0.5rem',
-              fontSize: '0.875rem',
-            }}
+            role="alert"
+            className="rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning"
           >
             Could not load portal sync status: {portalResult.fetchError}. Check the Worker logs and
             JWT validity.

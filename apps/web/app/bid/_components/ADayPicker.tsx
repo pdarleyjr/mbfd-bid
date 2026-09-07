@@ -5,6 +5,7 @@
 
 'use client';
 
+import { Button } from '@/components/ui/button';
 import type { ADayValue } from '@mbfd/shared';
 import { useCallback, useState } from 'react';
 import {
@@ -56,10 +57,12 @@ export function ADayPicker({ bidSessionId, state, onPicked }: Props) {
   );
 
   if (state.currentPhase !== 'a_day_bid') {
-    return <p className="text-stone-600 text-sm">Phase 2 (A-Day) is not active.</p>;
+    return <p className="text-muted-foreground text-sm">Phase 2 (A-Day) is not active.</p>;
   }
   if (!state.isMyTurn) {
-    return <p className="text-stone-600 text-sm">Waiting for your turn to pick your A-Day.</p>;
+    return (
+      <p className="text-muted-foreground text-sm">Waiting for your turn to pick your A-Day.</p>
+    );
   }
   if (state.shift === null) {
     return (
@@ -72,7 +75,7 @@ export function ADayPicker({ bidSessionId, state, onPicked }: Props) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-stone-900">
+      <h2 className="text-lg font-semibold text-foreground">
         Pick your A-Day ({state.shift}-shift)
       </h2>
       {error !== null && (
@@ -99,19 +102,19 @@ export function ADayPicker({ bidSessionId, state, onPicked }: Props) {
           const meter = meterEntry?.meter;
           const isSelecting = selecting === aDay;
           return (
-            <button
+            <Button
               key={aDay}
               type="button"
               disabled={!isEligible || submitting}
               onClick={() => setSelecting(aDay)}
-              className={`text-left border rounded p-3 ${
+              className={`block text-left border rounded p-3 ${
                 isEligible
-                  ? 'border-stone-300 hover:border-red-700 bg-white'
-                  : 'border-stone-200 bg-stone-50 text-stone-400 cursor-not-allowed'
+                  ? 'border-border hover:border-red-700 bg-white'
+                  : 'border-border bg-background text-stone-400 cursor-not-allowed'
               } ${isSelecting ? 'ring-2 ring-red-700' : ''}`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-stone-900">{aDay}</span>
+                <span className="font-bold text-foreground">{aDay}</span>
                 {meter && state.shift !== 'D' && (
                   <ADayInvariantBadge officers={meter.officers} required={meter.officersRequired} />
                 )}
@@ -123,30 +126,30 @@ export function ADayPicker({ bidSessionId, state, onPicked }: Props) {
                   dataTestId={`meter-${aDay}`}
                 />
               )}
-            </button>
+            </Button>
           );
         })}
       </div>
       {selecting !== null && (
-        <div className="flex gap-2 items-center border-t border-stone-200 pt-3">
-          <span className="text-sm text-stone-800">
+        <div className="flex gap-2 items-center border-t border-border pt-3">
+          <span className="text-sm text-foreground">
             Confirm pick: <strong>{selecting}</strong>
           </span>
-          <button
+          <Button
             type="button"
             disabled={submitting}
             onClick={() => onPick(selecting)}
             className="bg-red-700 text-white px-3 py-1 rounded text-sm hover:bg-red-800 disabled:opacity-50"
           >
             {submitting ? 'Submitting…' : 'Confirm'}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={() => setSelecting(null)}
-            className="text-stone-700 underline text-sm"
+            className="text-foreground underline text-sm"
           >
             Cancel
-          </button>
+          </Button>
         </div>
       )}
     </div>
