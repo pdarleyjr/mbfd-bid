@@ -7,7 +7,7 @@ Verified on 2026-09-06 against fetched `origin/main`, production deployment [340
 
 Implementation branch: `codex/configurable-annual-bid-20260906`. This document records ongoing work, not release acceptance.
 
-Local source copies were located in Downloads. Their filename suffixes differ from the specification; confirmation of equivalence is requested. Neither raw documents nor personnel fixtures belong in this repository. Full local archive inventory and hashes are retained outside Git.
+The user supplied the Downloads files directly and asked that they answer the outstanding questions. Their hashes match the previously reviewed copies. Neither raw documents nor personnel fixtures belong in this repository. Full local archive inventory and hashes are retained outside Git.
 
 | Evidence | SHA-256 | Applicable use |
 | --- | --- | --- |
@@ -47,15 +47,15 @@ S = SOURCE-SUPPORTED, A = ARCHITECTURALLY REQUIRED. Mandatory items remain requi
 | Controlled migration/release | A; specification 17, 19 | ordinary production workflow is D1 read-only | Fresh/upgrade compatibility, backup, controlled migration procedure, immutable deployment |
 | Administrator Guide | A; specification 20 | task-oriented in-app guide exists | Update only after actual workflows are available and verified |
 
-## Unresolved policy decisions
+## Source answers and remaining activation evidence
 
 | Topic | Conflict / missing evidence | Required decision and activation consequence |
 | --- | --- | --- |
-| Technician credit | Paragraphs 83–89 and 107 describe two points plus an extra point after all Operations; older workbook formulas differ | Approved total versus incremental scoring and reviewed credential mapping; block affected new rules until recorded |
-| Marine | Paragraphs 119–163 distinguish required Metal Craft roles, HazMat Awareness and preferred diver; 168 sets a three-month obligation; old helper requires diver immediately | Applicable approved prerequisites, credential IDs and post-award obligations; no inferred equivalences |
-| Captain 5 | Paragraph 70 requires paramedic and 36 cumulative Rescue Division months; old helper requires inspector/instructor | Approved applicability and complete dated service evidence; unknown evidence cannot pass |
+| Technician credit | Policy page 4 section 7 and workbook `Rules!P22:P26`, `Rules & Points!B164:C167`, `Points!CG5:CI5` support one Operations point plus one Technician increment, two total per discipline, with all six Operations required for Technician increments | The earlier blanket scoring conflict is resolved. Six Operations, six Technician increments and Part 107 total thirteen for this SO component; this is not a universal specialty cap. Keep credential mappings explicit |
+| Marine | Policy pages 5–6 section 8 specifies Six Pack MMC, IADRS, Open Water, HazMat Awareness and role-specific Metal Craft; Pilot/Engineer also require Driver Engineer. DRI/PADI Public Safety Diver is preferred at entry; Open Water entrants must obtain DRI PSD within three months of bid start | Basic entry versus follow-up rules are explicit. Record the actual bid start, exact credential mapping, member evidence and any applicable external Chief determination or boat-delivery condition; do not infer unspecified preference weights |
+| Captain 5 | Policy page 3 section 6(b) explicitly requires Captain rank, Florida Paramedic and 36 cumulative months assigned to Rescue Division 1220; instructor courses are preferences | No further clarification of this basic rule is needed. Complete dated member service evidence is still required; unknown evidence cannot pass |
 | Staffing conflict | Supplied sources disagree for the specification's identified employee | Authorized reviewed reconciliation; never infer a canonical seat or silently overwrite occupancy |
-| Specialty timeline and separation SOG | Policy paragraphs 200 and 215 reference absent documents | Supply applicable approved constraints before their activation; no personal relationship inference |
+| Specialty timeline and separation SOG | Policy section 16 already requires non-platonic relationships to bid separate shifts. The separate SOG and specialty Timeline are absent from both archives; the A-Day calendar is not the Timeline | Missing material affects additional definitions, procedures, exceptions and specialty timing only. Do not infer personal relationships |
 | Historical normative replay | Observed awards do not prove every normative eligibility/scoring outcome | Reviewed fixture manifest distinguishes observations from expectations and documents exclusions |
 
 ## Additional local implementation evidence
@@ -78,6 +78,8 @@ S = SOURCE-SUPPORTED, A = ARCHITECTURALLY REQUIRED. Mandatory items remain requi
 - Linux frozen install, root build and OpenNext staging build passed from the 22:43 source copy, using the same fixed staging API base as CI. All 959 source-file hashes were verified in Linux, and the copy matched the local implementation checkpoint before commit. Native Windows bundling previously failed on Sharp's native module. The artifact was not deployed; later parser, harness and documentation changes require a refreshed exact-source artifact.
 - Replay evidence accepts an explicit private fixture directory, checks expected priority groups without inventing tie-breaks and selects explicit rule versions for before/after amendment cases. Observed differences and approved-expectation failures are reported separately. An enabled historical run requires approved negative, ordering and amendment coverage. The updated eligibility suite passed 91 tests with historical replay explicitly skipped; harness tests are synthetic. No private historical fixture manifest has been accepted or replayed.
 - Actual-source import format verification and the credential-import integration suite passed thirteen tests after the parser began explicitly rejecting sheets with no qualification headers. The pinned 2025 workbook is a narrative rule sheet with a separate vertical catalog; rejection is negative import coverage, not positive historical extraction or replay.
-- [Workbook findings](annual-workbook-source-findings.md) record concrete table/formula conflicts and cache failures. Full substantive source reconciliation and meaningful historical replay remain incomplete.
+- [Workbook findings](annual-workbook-source-findings.md) record concrete table/formula conflicts, cache failures and the corrected Technician interpretation. The supplied files answer the basic Technician, Captain 5 and Marine questions; missing member evidence and explicit mappings remain plan-specific activation requirements. Meaningful normative historical replay remains unclaimed.
+- The September 7 production-copy migration rehearsal applied all eleven pending migrations to an actual private production export. It preserved the original columns and all 8,934 rows across 49 existing tables, with clean foreign keys after every migration. The existing production backup workflow completed successfully, and its downloaded R2 SQL has the same SHA-256 as the independent private export. Recovery evidence and raw data remain outside Git.
+- The dashboard now exposes Prepare Next Bid and the three-view Bid Board directly. Prepare Next Bid is a top-level navigation destination, and collapsed desktop navigation retains accessible links with focus/hover labels. Phone and tablet navigation retains the existing focus, Escape and route-close behavior.
 
 Production has not been mutated by this implementation. No release, meaningful historical replay, or production UI acceptance is claimed by this ongoing record. Required source and release work remains outstanding.

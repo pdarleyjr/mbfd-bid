@@ -1064,6 +1064,7 @@ export const ADMIN_GUIDE_COVERAGE: Readonly<Record<string, readonly string[]>> =
   '/admin/telestaff': ['telestaff'],
   '/admin/members': ['members', 'credentials'],
   '/admin/personnel': ['personnel', 'qualification-evidence'],
+  '/admin/annual-plan': ['annual-plan', 'annual-policy'],
   '/admin/bid-setup': [
     'bid-setup',
     'rule-books',

@@ -7,7 +7,6 @@ test('independent board views preserve source boundaries at phone, tablet and de
   const key = process.env.JWT_SIGNING_KEY;
   expect(key, 'An explicit local test signing key is required').toBeTruthy();
   const now = Math.floor(Date.now() / 1000);
-  await page.clock.setFixedTime(new Date(now * 1000));
   await page.route('**/*', (route) => {
     const host = new URL(route.request().url()).hostname;
     return ['localhost', '127.0.0.1'].includes(host) ? route.continue() : route.abort();
@@ -183,10 +182,24 @@ test('independent board views preserve source boundaries at phone, tablet and de
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
   }
+  const sidebar = page.getByTestId('admin-sidebar');
+  await page.getByRole('button', { name: 'Collapse admin sidebar', exact: true }).click();
+  await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
+  await expect(sidebar.getByRole('link', { name: 'Prepare Next Bid', exact: true })).toBeVisible();
+  await sidebar.getByRole('link', { name: 'Prepare Next Bid', exact: true }).focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(
+    sidebar.getByRole('link', { name: 'Prepare Next Bid', exact: true }).locator('span'),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('compact-navigation.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Expand admin sidebar', exact: true }).click();
   await page.getByRole('button', { name: 'Current Staffing', exact: true }).click();
   await expect(page.getByText('Current Occupant', { exact: true })).toBeVisible();
   const immutableReads = previousReads;
   const beforeFocus = currentReads;
+  // Control cache age only after real hydration and initial network reads.
+  // Startup uses the real clock; these assertions exercise cache freshness.
   await page.clock.setFixedTime(new Date(now * 1000 + 31_000));
   await page.evaluate(() => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
@@ -228,5 +241,17 @@ test('independent board views preserve source boundaries at phone, tablet and de
     .selectOption('synthetic-official-completion');
   await expect(page.getByText('Historical Winner', { exact: true })).toBeVisible();
   expect(previousReads).toBe(completedReads);
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: /Prepare Next Bid/ })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByRole('heading', { name: /Bid Board/ })).toBeVisible();
+  for (const width of [390, 820, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`dashboard-${width}.png`), fullPage: true });
+  }
   expect(errors).toEqual([]);
 });

@@ -7,6 +7,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Compact navigation labels must also be available to keyboard users. */
+.admin-navigation-link:hover > .admin-navigation-label,
+.admin-navigation-link:focus > .admin-navigation-label {
+  display: block;
+}
+
 @layer base {
   :root {
     /* Tint stones with brand hue (subtle) per .impeccable.md guidance */

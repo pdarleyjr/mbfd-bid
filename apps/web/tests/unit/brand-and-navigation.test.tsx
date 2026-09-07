@@ -42,6 +42,7 @@ describe('MBFD identity and operator navigation', () => {
       { href: '/admin/telestaff', label: 'TeleStaff' },
       { href: '/admin/members', label: 'Members' },
       { href: '/admin/personnel', label: 'Personnel Changes' },
+      { href: '/admin/annual-plan', label: 'Prepare Next Bid' },
       { href: '/admin/bid-setup', label: 'Bid Setup' },
       { href: '/admin/rehearsal', label: 'Mock Bids' },
       { href: '/admin/bid', label: 'Live Bid & Advisory' },

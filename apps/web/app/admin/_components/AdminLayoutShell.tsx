@@ -92,7 +92,7 @@ export function AdminLayoutShell({ children }: { children: ReactNode }) {
         data-collapsed={hydrated ? collapsed : false}
         className={[
           'hidden shrink-0 border-r border-slate-700 transition-[width] duration-fast ease-out-quart md:block',
-          collapsed && hydrated ? 'w-10' : 'w-52',
+          collapsed && hydrated ? 'w-16' : 'w-60',
         ].join(' ')}
       >
         <div className="flex h-9 items-center justify-end border-b border-slate-700 px-1">
@@ -108,7 +108,7 @@ export function AdminLayoutShell({ children }: { children: ReactNode }) {
             {collapsed ? '›' : '‹'}
           </button>
         </div>
-        {!collapsed && <AdminSideNav />}
+        <AdminSideNav compact={collapsed && hydrated} />
       </aside>
 
       <div className="min-w-0 flex-1">
