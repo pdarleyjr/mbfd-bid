@@ -32,6 +32,14 @@ export async function previewQualificationImpact(
   const results = [];
   const events = [...input.events, input.proposed];
   for (const { year } of years.results) {
+    if (input.proposed.specialtyCode !== null) {
+      results.push({
+        year,
+        available: false,
+        reason: 'specialty_procedure_changes_require_annual_review_and_practice',
+      });
+      continue;
+    }
     const prepared = await prepareBidSessionPolicySnapshot(
       getDb(database),
       year,

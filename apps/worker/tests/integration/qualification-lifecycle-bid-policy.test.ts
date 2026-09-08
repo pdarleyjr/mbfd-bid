@@ -364,6 +364,44 @@ describe('qualification evidence in frozen Bid policy', () => {
     expect(h.sqlite.prepare('SELECT count(*) AS count FROM audit_log').get()).toEqual({ count: 0 });
   });
 
+  it('does not mistake a specialty procedure change for zero credential impact', async () => {
+    await h.db.run("UPDATE bid_years SET status='configuring' WHERE year=2026");
+    const before = h.sqlite.prepare('SELECT * FROM member_qualification_events ORDER BY id').all();
+    const response = await app.fetch(
+      new Request('http://x/api/admin/qualification-lifecycle/events/preview', {
+        method: 'POST',
+        headers: {
+          Authorization: await freshAdminAuthorization(),
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'preview-specialty',
+        },
+        body: JSON.stringify({
+          kind: 'SPECIALTY_QUALIFIED',
+          member_id: 1,
+          specialty_code: 'MARINE',
+          effective_on: '2026-08-31',
+          evidence_source: 'Synthetic specialty evidence',
+          reason: 'Preview specialty procedure evidence',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: JWT_KEY },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      results: [
+        {
+          year: 2026,
+          available: false,
+          reason: 'specialty_procedure_changes_require_annual_review_and_practice',
+        },
+      ],
+    });
+    expect(h.sqlite.prepare('SELECT * FROM member_qualification_events ORDER BY id').all()).toEqual(
+      before,
+    );
+  });
+
   it('uses the configured immutable credential evaluation date instead of a later capture timestamp and leaves an established snapshot unchanged', async () => {
     const db = getDb(h.env.DB);
     const beforeExpiry = await prepareBidSessionPolicySnapshot(
