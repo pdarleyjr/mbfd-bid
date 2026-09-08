@@ -12,7 +12,7 @@ afterEach(() => {
 });
 it('retains entries and reveals the first invalid section without jumping to later errors', async () => {
   const container = document.createElement('div');
-  document.body.append(container);
+  document.body.appendChild(container);
   root = createRoot(container);
   act(() =>
     root.render(

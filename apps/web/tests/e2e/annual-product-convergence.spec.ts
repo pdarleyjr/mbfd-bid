@@ -202,6 +202,7 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   await expect(advisory).toBeVisible();
   await expect(advisory).toContainText('Authoritative state');
   await expect(advisory.locator('button, input, textarea')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Specialty and contact', exact: true }).click();
   const controls = page.getByRole('dialog');
   await expect(controls).toBeVisible();
   await expect(controls.getByText(/Original bidder: FF Alex Original/)).toContainText(

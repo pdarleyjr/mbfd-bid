@@ -69,10 +69,6 @@ export function AnnualLiveControls(props: Props) {
   const [panel, setPanel] = useState<
     'selection' | 'specialty' | 'presentation' | 'amendment' | 'order' | null
   >(null);
-  const activeSpecialty = state?.active?.specialty_id;
-  useEffect(() => {
-    if (activeSpecialty) setPanel('specialty');
-  }, [activeSpecialty]);
   const pendingCommand = useRef<{
     fingerprint: string;
     commandId: string;
@@ -209,6 +205,11 @@ export function AnnualLiveControls(props: Props) {
 
   return (
     <section className="border-y border-border bg-card p-3" data-testid="annual-live-controls">
+      {state?.active && (
+        <output className="mb-3 block text-sm font-semibold text-amber-800">
+          {state.active.specialty_label} review is active. Open Specialty and contact to continue.
+        </output>
+      )}
       {props.isMock ? (
         <p className="mb-4 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-900">
           MOCK REHEARSAL — canonical commands remain isolated from staffing and portal write-back.

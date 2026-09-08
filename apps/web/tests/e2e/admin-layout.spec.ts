@@ -127,23 +127,29 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     const jwt = await makeJwt('admin');
     await setAuthCookies(page, jwt);
     await page.goto('/admin');
-    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Current Rosters', exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: 'Administrator Guide', exact: true }),
-    ).toBeVisible();
-    await expect(page.getByRole('link', { name: 'TeleStaff', exact: true })).toBeVisible();
-    await expect(page.locator('a[href="/admin/members"]')).toBeVisible();
-    await expect(page.locator('a[href="/admin/credentials"]')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Bid Setup', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Mock Bids', exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: 'Live Bid & Advisory', exact: true }).first(),
-    ).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Results & Audit', exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: 'System/Integrations', exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+    const mobile = page.getByRole('button', { name: 'Open admin navigation' });
+    if (await mobile.isVisible()) await mobile.click();
+    const nav = page
+      .getByRole('navigation', { name: 'Admin navigation', exact: true })
+      .locator('visible=true');
+    for (const name of [
+      'Today',
+      'People',
+      'Staffing',
+      'Annual Bid',
+      'History & Reports',
+      'Docs & Manual',
+      'Settings',
+    ]) {
+      await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
+    }
+    await nav.getByRole('button', { name: 'Expand Staffing menu' }).click();
+    await expect(nav.getByRole('link', { name: 'Current assignments', exact: true })).toBeVisible();
+    await nav.getByRole('button', { name: 'Collapse Staffing menu' }).click();
+    await expect(nav.getByRole('link', { name: 'Current assignments', exact: true })).toHaveCount(
+      0,
+    );
   });
 
   test('an admin can open the searchable Administrator Guide', async ({ page }) => {
@@ -155,7 +161,7 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await setAuthCookies(page, jwt);
     await page.goto('/admin/guide');
     await expect(
-      page.getByRole('heading', { name: 'Administrator Guide', exact: true }),
+      page.getByRole('heading', { name: 'Docs & Administrator Manual', exact: true }),
     ).toBeVisible();
     const search = page.getByRole('searchbox', { name: 'Search the Administrator Guide' });
     await search.fill('hold presentation');
@@ -179,7 +185,7 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await page.goto('/admin');
 
     const mobileNavigation = page.locator('#admin-mobile-navigation');
-    const toggle = page.getByRole('button', { name: /admin navigation$/ });
+    const toggle = page.locator('button[aria-controls="admin-mobile-navigation"]');
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(mobileNavigation).toBeHidden();
@@ -190,7 +196,7 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(mobileNavigation).toBeVisible();
     await expect(
-      mobileNavigation.getByRole('link', { name: 'Current Rosters', exact: true }),
+      mobileNavigation.getByRole('link', { name: 'Staffing', exact: true }),
     ).toBeVisible();
   });
 });

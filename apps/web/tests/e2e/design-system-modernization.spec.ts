@@ -115,20 +115,18 @@ test('dense dynamic Board preserves all assignments, search, disclosure and resp
     }),
   );
   await page.goto('/admin/bid-board');
+  await page.getByRole('combobox', { name: 'Station or pool' }).selectOption('all');
   await expect(page.getByTestId('station-roster-card')).toHaveCount(6);
   await expect(page.getByText('46 seats in this shift')).toBeVisible();
   const station = page
     .getByTestId('station-roster-card')
     .filter({ has: page.getByRole('heading', { name: 'Station 7', exact: true }) });
-  const expand = station.getByRole('button', { name: 'View 4 more positions' });
-  await expand.focus();
+  const next = station.getByRole('button', { name: 'Next', exact: true });
+  await next.focus();
   await page.keyboard.press('Enter');
   await expect(station.getByText('Synthetic Member 21', { exact: true })).toBeVisible();
-  await expect(station.getByRole('button', { name: 'Show fewer positions' })).toHaveAttribute(
-    'aria-expanded',
-    'true',
-  );
-  await station.getByRole('button', { name: 'Show fewer positions' }).click();
+  await station.getByRole('button', { name: 'Previous', exact: true }).click();
+  await expect(station.getByText('Synthetic Member 21', { exact: true })).toHaveCount(0);
   await page.getByLabel('Search this view').fill('Synthetic Member 44');
   await expect(page.getByText('Synthetic Member 44', { exact: true })).toBeVisible();
   await expect(page.getByText(/Light duty from/)).toBeVisible();
@@ -151,8 +149,8 @@ test('dense dynamic Board preserves all assignments, search, disclosure and resp
   await page.keyboard.press('Escape');
   await expect(open).toBeFocused();
   await open.click();
-  await sheet.getByRole('link', { name: 'Dashboard', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible({
+  await sheet.getByRole('link', { name: 'Today', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible({
     timeout: 30000,
   });
   await expect(page.locator('main')).toBeFocused();
