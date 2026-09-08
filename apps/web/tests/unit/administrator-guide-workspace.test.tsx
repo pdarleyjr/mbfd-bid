@@ -49,7 +49,7 @@ describe('Administrator Guide workspace', () => {
     expect(html).toContain('Administrator Guide');
     expect(html).toContain('Browse by task');
     expect(html).toContain('Search the Administrator Guide');
-    expect(html).toContain('href="/admin/telestaff"');
+    expect(html).toContain('href="#telestaff"');
   });
 
   it('filters guide topics and expands the selected procedure from keyboard-friendly controls', async () => {

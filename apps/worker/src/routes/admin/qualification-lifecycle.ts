@@ -1,5 +1,5 @@
 import type { JwtPayload } from '@mbfd/shared';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
@@ -10,6 +10,7 @@ import {
 
 import { classifyCertificationReadiness } from '../../lib/certification-readiness.js';
 import { operationalDate } from '../../lib/operational-date.js';
+import { previewQualificationImpact } from '../../lib/qualification-impact.js';
 import {
   type LegacyCredentialBaseline,
   type QualificationLifecycleEvent,
@@ -765,7 +766,12 @@ router.post('/reviews/rows/:rowId/apply', requireStepUpAuth(), async (c) => {
   );
 });
 
-router.post('/events', requireStepUpAuth(), async (c) => {
+const qualificationEventHandler = async (c: Context<AdminEnv>) => {
+  const previewSource = c.req.path.endsWith('/preview')
+    ? await c.env.DB.prepare('SELECT revision FROM annual_source_revision WHERE id=1').first<{
+        revision: number;
+      }>()
+    : null;
   const raw = await c.req.json().catch(() => null);
   const parsed = EventInputSchema.safeParse(raw);
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
@@ -818,7 +824,7 @@ router.post('/events', requireStepUpAuth(), async (c) => {
       WHERE event.idempotency_key = ?`,
     idempotencyKey,
   );
-  if (existing !== undefined) {
+  if (existing !== undefined && !c.req.path.endsWith('/preview')) {
     const receipt = mapEvent(existing);
     if (receipt === null) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
     if (sameReceipt(receipt, input, actorSubject))
@@ -894,6 +900,45 @@ router.post('/events', requireStepUpAuth(), async (c) => {
   const actorId = c.get('claims').member_id;
   const terminalStatus = specialtyTerminalStatus(input.kind);
   const persistedKind = terminalStatus === null ? input.kind : 'SPECIALTY_QUALIFIED';
+
+  if (c.req.path.endsWith('/preview')) {
+    const credential =
+      input.credential_id === undefined
+        ? null
+        : await first<{ name: string }>(
+            c.env.DB,
+            'SELECT name FROM credentials WHERE id=?',
+            input.credential_id,
+          );
+    const proposed = normalizePersistedQualificationLifecycleEvent({
+      id: eventId,
+      memberId: input.member_id,
+      credentialId: input.credential_id ?? null,
+      credentialName: credential?.name ?? null,
+      specialtyCode: input.specialty_code ?? null,
+      specialtyTerminalStatus: terminalStatus,
+      kind: persistedKind,
+      effectiveOn: input.effective_on,
+      expiresOn: input.expires_on ?? null,
+      evidenceSource: input.evidence_source,
+      evidenceReference: input.evidence_reference ?? null,
+      reason: input.reason,
+      actorSubject,
+      idempotencyKey,
+      beforeState: JSON.stringify(beforeState),
+      afterState: JSON.stringify(afterState),
+      createdAt: now,
+    });
+    if (!proposed) return c.json({ error: 'invalid_proposed_evidence' }, 422);
+    const preview = await previewQualificationImpact(c.env.DB, {
+      expectedSourceRevision: previewSource?.revision ?? -1,
+      memberId: input.member_id,
+      legacyCredentials,
+      events: loadedEvents.events,
+      proposed,
+    });
+    return preview.ok ? c.json(preview) : c.json({ error: preview.error }, 409);
+  }
 
   try {
     const results = await c.env.DB.batch([
@@ -980,6 +1025,8 @@ router.post('/events', requireStepUpAuth(), async (c) => {
   const event = mapEvent(saved);
   if (event === null) return c.json({ error: 'qualification_lifecycle_data_invalid' }, 409);
   return c.json({ replayed: false, event: presentEvent(event) }, 201);
-});
+};
+router.post('/events', requireStepUpAuth(), qualificationEventHandler);
+router.post('/events/preview', requireStepUpAuth(), qualificationEventHandler);
 
 export default router;

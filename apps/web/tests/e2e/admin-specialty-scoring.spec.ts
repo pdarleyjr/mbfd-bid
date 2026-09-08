@@ -122,6 +122,7 @@ test('specialty grouped scoring preserves alternatives, prerequisites and channe
     .getByRole('main')
     .getByLabel('Executable policy revision', { exact: true })
     .fill('synthetic-policy-2');
+  await page.getByRole('combobox', { name: 'Edit policy section' }).selectOption('5');
   await page
     .getByRole('button', { name: 'Configure grouped specialty scoring', exact: true })
     .click();
@@ -210,6 +211,7 @@ test('specialty grouped scoring preserves alternatives, prerequisites and channe
       true,
     );
   }
+  await page.getByRole('combobox', { name: 'Edit policy section' }).selectOption('7');
   await page
     .getByRole('main')
     .getByLabel('Revision reason', { exact: true })

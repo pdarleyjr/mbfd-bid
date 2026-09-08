@@ -95,11 +95,19 @@ function GuideSectionPanel({
 
 export function AdministratorGuideWorkspace() {
   useEffect(() => {
-    const id = window.location.hash.slice(1);
-    if (id && GUIDE_SECTIONS.some((s) => s.id === id)) {
-      setExpanded(id);
-      requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView());
-    }
+    const followHash = () => {
+      const id = window.location.hash.slice(1);
+      if (id && GUIDE_SECTIONS.some((s) => s.id === id)) {
+        setQuery('');
+        setCategory(ALL_CATEGORIES);
+        setSelectedTopic(id);
+        setExpanded(id);
+        requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView());
+      }
+    };
+    followHash();
+    window.addEventListener('hashchange', followHash);
+    return () => window.removeEventListener('hashchange', followHash);
   }, []);
   function downloadManual() {
     const url = URL.createObjectURL(
@@ -114,6 +122,7 @@ export function AdministratorGuideWorkspace() {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState(ALL_CATEGORIES);
   const [expanded, setExpanded] = useState<string | null>('getting-started');
+  const [selectedTopic, setSelectedTopic] = useState('getting-started');
   const matches = useMemo(() => filterGuideSections(query), [query]);
   const visible =
     category === ALL_CATEGORIES ? matches : matches.filter((item) => item.category === category);
@@ -124,10 +133,7 @@ export function AdministratorGuideWorkspace() {
   }
 
   return (
-    <main
-      aria-labelledby="administrator-guide-heading"
-      className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
-    >
+    <main aria-labelledby="administrator-guide-heading" className="mx-auto max-w-7xl">
       <div className="mb-5 flex flex-wrap items-center gap-4">
         <a
           href="/manual/MBFD-Bid-Administrator-Manual.pdf"
@@ -222,12 +228,22 @@ export function AdministratorGuideWorkspace() {
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             In this guide
           </p>
-          <ul className="mt-2 flex max-h-48 gap-2 overflow-x-auto pb-1 lg:max-h-[calc(100vh-8rem)] lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden">
+          <ul className="mt-2 flex max-h-48 flex-col gap-1 overflow-y-auto pb-1 lg:max-h-[50dvh]">
             {visible.map((section) => (
               <li key={section.id} className="shrink-0">
                 <a
                   href={`#${section.id}`}
-                  onClick={() => setExpanded(section.id)}
+                  onClick={() => {
+                    setSelectedTopic(section.id);
+                    setExpanded(section.id);
+                  }}
+                  aria-current={
+                    (visible.some((s) => s.id === selectedTopic)
+                      ? selectedTopic
+                      : visible[0]?.id) === section.id
+                      ? 'page'
+                      : undefined
+                  }
                   className="inline-flex min-h-11 items-center rounded-md px-3 text-sm text-foreground hover:bg-card hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring lg:flex"
                 >
                   {section.title}
@@ -237,18 +253,27 @@ export function AdministratorGuideWorkspace() {
           </ul>
         </nav>
 
-        <section aria-label="Administrator Guide topics">
+        <section
+          aria-label="Administrator Guide topics"
+          className="min-w-0 max-h-[60dvh] overflow-y-auto overscroll-contain"
+        >
           {visible.length > 0 ? (
-            visible.map((section) => (
-              <GuideSectionPanel
-                key={section.id}
-                section={section}
-                expanded={expanded === section.id}
-                onToggle={() =>
-                  setExpanded((current) => (current === section.id ? null : section.id))
-                }
-              />
-            ))
+            visible
+              .filter(
+                (section) =>
+                  section.id ===
+                  (visible.some((s) => s.id === selectedTopic) ? selectedTopic : visible[0]?.id),
+              )
+              .map((section) => (
+                <GuideSectionPanel
+                  key={section.id}
+                  section={section}
+                  expanded={expanded === section.id}
+                  onToggle={() =>
+                    setExpanded((current) => (current === section.id ? null : section.id))
+                  }
+                />
+              ))
           ) : (
             <div className="rounded-md border border-border bg-card p-5">
               <h2 className="font-heading text-xl text-foreground">No guide topic found</h2>

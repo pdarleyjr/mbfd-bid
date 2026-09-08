@@ -116,6 +116,18 @@ const rules = [
 ];
 
 export function syntheticAdminRead(pathname) {
+  if (pathname === '/api/admin/credentials') {
+    const credentials = Array.from({ length: 17 }, (_, i) => ({
+      id: i + 1,
+      name: `Synthetic certification ${String(i + 1).padStart(2, '0')}`,
+      policyName: `Synthetic certification ${String(i + 1).padStart(2, '0')}`,
+      fyPointsDefault: 0,
+      holderCount: 19,
+      revision: 0,
+      retiredOn: null,
+    }));
+    return { status: 200, body: { credentials, total: credentials.length } };
+  }
   if (pathname === '/api/admin/members')
     return { status: 200, body: { members, total: members.length } };
   if (/^\/api\/admin\/members\/\d+$/.test(pathname)) {

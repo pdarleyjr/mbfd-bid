@@ -1,3 +1,5 @@
+'use client';
+import { ListPagination, useListPage } from '@/components/admin/ListPagination';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +12,7 @@ import { TableBody } from '@/components/ui/table';
 import { TableCell } from '@/components/ui/table';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { useState } from 'react';
 
 export interface CurrentRosterPosition {
   id: string;
@@ -84,85 +87,95 @@ function rowsForShift(positions: readonly CurrentRosterPosition[], shift: string
 }
 
 function RosterTable({ positions }: { positions: readonly CurrentRosterPosition[] }) {
+  const page = useListPage([...positions], positions.map((p) => p.id).join(':'), 6);
   return (
-    <div className="overflow-x-auto">
-      <Table className="w-full min-w-[44rem] border-separate border-spacing-0 text-left text-sm">
-        <TableHeader className="text-xs uppercase tracking-wide text-muted-foreground">
-          <TableRow>
-            <TableHead className="border-b border-border px-3 py-3 font-semibold">
-              Location
-            </TableHead>
-            <TableHead className="border-b border-border px-3 py-3 font-semibold">Seat</TableHead>
-            <TableHead className="border-b border-border px-3 py-3 font-semibold">Member</TableHead>
-            <TableHead className="border-b border-border px-3 py-3 font-semibold">Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody className="divide-y divide-slate-800">
-          {positions.map((position) => (
-            <TableRow key={position.id} className="align-top text-foreground">
-              <TableCell className="px-3 py-3">
-                <p className="font-medium text-foreground">Station {display(position.station)}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {display(position.unit)} · {display(position.division)}
-                </p>
-              </TableCell>
-              <TableCell className="px-3 py-3">
-                <p className="font-medium text-foreground">{display(position.positionName)}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Required rank: {display(position.applicableRank)}
-                </p>
-              </TableCell>
-              <TableCell className="px-3 py-3">
-                <p
-                  className={position.member === null ? 'font-medium text-warning' : 'font-medium'}
-                >
-                  {memberName(position)}
-                </p>
-                {position.member !== null && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {display(position.member.rank)}
-                  </p>
-                )}
-              </TableCell>
-              <TableCell className="px-3 py-3">
-                <span
-                  className={
-                    position.occupancy === 'occupied'
-                      ? 'inline-flex rounded-full bg-success-surface px-2 py-1 text-xs font-semibold text-success'
-                      : 'inline-flex rounded-full bg-warning-surface px-2 py-1 text-xs font-semibold text-warning'
-                  }
-                >
-                  {position.occupancy === 'occupied' ? 'Occupied' : 'Vacant'}
-                </span>
-                {position.administrativeAssignment && (
-                  <p className="mt-1 max-w-44 text-xs font-medium text-info">
-                    Administratively assigned · non-biddable
-                  </p>
-                )}
-                {position.assignment !== null && (
-                  <div className="mt-1 max-w-52 text-xs text-muted-foreground">
-                    <p>
-                      {position.assignment.status ?? 'assignment'} · effective{' '}
-                      {position.assignment.effectiveFrom ?? 'unspecified'}
-                      {position.assignment.effectiveTo === null
-                        ? ' onward'
-                        : ` through ${position.assignment.effectiveTo}`}
-                    </p>
-                    <Link
-                      href={
-                        `/admin/personnel?memberId=${position.assignment.memberId}&assignmentId=${position.assignment.id}` as Route
-                      }
-                      className="mt-1 inline-flex min-h-8 items-center font-medium text-destructive hover:text-destructive"
-                    >
-                      Assignment history
-                    </Link>
-                  </div>
-                )}
-              </TableCell>
+    <div>
+      <div className="max-h-[50dvh] overflow-auto overscroll-contain">
+        <Table className="w-full table-fixed border-separate border-spacing-0 text-left text-sm [&_td]:break-words">
+          <TableHeader className="text-xs uppercase tracking-wide text-muted-foreground">
+            <TableRow>
+              <TableHead className="border-b border-border px-3 py-3 font-semibold">
+                Location
+              </TableHead>
+              <TableHead className="border-b border-border px-3 py-3 font-semibold">Seat</TableHead>
+              <TableHead className="border-b border-border px-3 py-3 font-semibold">
+                Member
+              </TableHead>
+              <TableHead className="border-b border-border px-3 py-3 font-semibold">
+                Status
+              </TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody className="divide-y divide-slate-800">
+            {page.rows.map((position) => (
+              <TableRow key={position.id} className="align-top text-foreground">
+                <TableCell className="px-3 py-3">
+                  <p className="font-medium text-foreground">Station {display(position.station)}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {display(position.unit)} · {display(position.division)}
+                  </p>
+                </TableCell>
+                <TableCell className="px-3 py-3">
+                  <p className="font-medium text-foreground">{display(position.positionName)}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Required rank: {display(position.applicableRank)}
+                  </p>
+                </TableCell>
+                <TableCell className="px-3 py-3">
+                  <p
+                    className={
+                      position.member === null ? 'font-medium text-warning' : 'font-medium'
+                    }
+                  >
+                    {memberName(position)}
+                  </p>
+                  {position.member !== null && (
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {display(position.member.rank)}
+                    </p>
+                  )}
+                </TableCell>
+                <TableCell className="px-3 py-3">
+                  <span
+                    className={
+                      position.occupancy === 'occupied'
+                        ? 'inline-flex rounded-full bg-success-surface px-2 py-1 text-xs font-semibold text-success'
+                        : 'inline-flex rounded-full bg-warning-surface px-2 py-1 text-xs font-semibold text-warning'
+                    }
+                  >
+                    {position.occupancy === 'occupied' ? 'Occupied' : 'Vacant'}
+                  </span>
+                  {position.administrativeAssignment && (
+                    <p className="mt-1 max-w-44 text-xs font-medium text-info">
+                      Administratively assigned · non-biddable
+                    </p>
+                  )}
+                  {position.assignment !== null && (
+                    <div className="mt-1 max-w-52 text-xs text-muted-foreground">
+                      <p>
+                        {position.assignment.status ?? 'assignment'} · effective{' '}
+                        {position.assignment.effectiveFrom ?? 'unspecified'}
+                        {position.assignment.effectiveTo === null
+                          ? ' onward'
+                          : ` through ${position.assignment.effectiveTo}`}
+                      </p>
+                      <Link
+                        href={
+                          `/admin/personnel?memberId=${position.assignment.memberId}&assignmentId=${position.assignment.id}` as Route
+                        }
+                        className="mt-1 inline-flex min-h-8 items-center font-medium text-destructive hover:text-destructive"
+                      >
+                        Assignment history
+                      </Link>
+                    </div>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <ListPagination {...page} label="positions" />
     </div>
   );
 }
@@ -175,6 +188,12 @@ export function CurrentRostersWorkspace({
   filters?: Record<string, string>;
 }) {
   const hasProjectedRoster = roster.positions.length > 0;
+  const [selectedShift, setSelectedShift] = useState(filters.shift || 'A');
+  const availableShifts = ['A', 'B', 'C', 'D'].filter((shift) =>
+    roster.positions.some((p) => p.shift === shift),
+  );
+  const activeShift = availableShifts.includes(selectedShift) ? selectedShift : availableShifts[0];
+  const unassignedPage = useListPage(roster.unassignedMembers, roster.asOf, 12);
   const query = new URLSearchParams({ as_of: roster.asOf, ...filters }).toString();
 
   return (
@@ -324,34 +343,52 @@ export function CurrentRostersWorkspace({
           </p>
         </section>
       ) : (
-        <div className="space-y-8">
-          {(['A', 'B', 'C', 'D'] as const).map((shift) => {
-            const positions = rowsForShift(roster.positions, shift);
-            if (positions.length === 0) return null;
-            return (
-              <section key={shift} aria-labelledby={`roster-${shift}-heading`}>
-                <div className="flex items-baseline justify-between gap-4 border-b border-border pb-2">
-                  <h2
-                    id={`roster-${shift}-heading`}
-                    className="font-heading text-lg text-foreground"
-                  >
-                    {SHIFT_LABELS[shift]}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {positions.length} authorized seat{positions.length === 1 ? '' : 's'}
-                  </p>
-                </div>
-                <RosterTable positions={positions} />
-              </section>
-            );
-          })}
+        <div className="space-y-3">
+          <nav aria-label="Roster shifts" className="flex flex-wrap gap-2">
+            {availableShifts.map((shift) => (
+              <Button
+                key={shift}
+                type="button"
+                variant={activeShift === shift ? 'primary' : 'secondary'}
+                aria-pressed={activeShift === shift}
+                onClick={() => setSelectedShift(shift)}
+              >
+                {SHIFT_LABELS[shift]} ({rowsForShift(roster.positions, shift).length})
+              </Button>
+            ))}
+          </nav>
+          {availableShifts
+            .filter((shift) => shift === activeShift)
+            .map((shift) => {
+              const positions = rowsForShift(roster.positions, shift);
+              if (positions.length === 0) return null;
+              return (
+                <section key={shift} aria-labelledby={`roster-${shift}-heading`}>
+                  <div className="flex items-baseline justify-between gap-4 border-b border-border pb-2">
+                    <h2
+                      id={`roster-${shift}-heading`}
+                      className="font-heading text-lg text-foreground"
+                    >
+                      {SHIFT_LABELS[shift]}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {positions.length} authorized seat{positions.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <RosterTable positions={positions} />
+                </section>
+              );
+            })}
         </div>
       )}
 
-      <section aria-labelledby="unassigned-heading" className="border-t border-border pt-6">
-        <h2 id="unassigned-heading" className="font-heading text-lg text-foreground">
-          Unassigned members
-        </h2>
+      <details className="border-t border-border pt-3">
+        <summary
+          id="unassigned-heading"
+          className="cursor-pointer font-heading text-lg text-foreground"
+        >
+          Unassigned members ({roster.unassignedMembers.length})
+        </summary>
         <p className="mt-1 text-sm text-muted-foreground">
           Members shown here are not currently placed in an authorized active or planned seat.
         </p>
@@ -361,7 +398,7 @@ export function CurrentRostersWorkspace({
           </p>
         ) : (
           <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {roster.unassignedMembers.map((member) => (
+            {unassignedPage.rows.map((member) => (
               <li key={member.id} className="border-l border-border pl-3 text-sm text-foreground">
                 <span className="font-medium text-foreground">
                   {member.firstName} {member.lastName}
@@ -371,7 +408,8 @@ export function CurrentRostersWorkspace({
             ))}
           </ul>
         )}
-      </section>
+        <ListPagination {...unassignedPage} label="unassigned members" />
+      </details>
 
       {roster.administrativeAssignmentPolicy.status === 'unconfigured' && (
         <p className="border-l-2 border-warning/40 pl-3 text-sm text-warning">

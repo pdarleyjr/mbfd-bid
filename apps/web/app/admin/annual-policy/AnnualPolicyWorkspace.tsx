@@ -1,4 +1,5 @@
 'use client';
+import { FormSteps } from '@/components/admin/FormSteps';
 import { WorkingDraftPanel } from '@/components/admin/WorkingDraftPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -681,691 +682,706 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
         }}
       />
       <form className="space-y-6" onSubmit={saveDraft}>
-        <section className="grid gap-4 rounded-lg border border-border bg-card p-5 lg:grid-cols-2">
-          <Label>
-            <span className="text-sm text-foreground">Configured rule book</span>
-            <Input
-              readOnly
-              value={source?.rule_book_version ?? 'Loading source…'}
-              className={inputClass}
-            />
-          </Label>
-          <Label>
-            <span className="text-sm text-foreground">Executable policy revision</span>
-            <Input
-              required
-              value={policyRevision}
-              onChange={(event) => setPolicyRevision(event.target.value)}
-              className={inputClass}
-              placeholder={`${year}.policy.1`}
-            />
-          </Label>
-          <Label className="lg:col-span-2">
-            <span className="text-sm text-foreground">Human-readable policy language</span>
-            <Textarea
-              required
-              minLength={20}
-              maxLength={100000}
-              rows={8}
-              value={language}
-              onChange={(event) => setLanguage(event.target.value)}
-              className={inputClass}
-            />
-          </Label>
-        </section>
+        <FormSteps
+          labels={[
+            'Policy language',
+            'Stages and order',
+            'Operator authority',
+            'Member outcomes',
+            'Contact procedure',
+            'Specialty procedure',
+            'A-Day limits',
+            'Sources and save',
+          ]}
+        >
+          <section className="grid gap-4 rounded-lg border border-border bg-card p-5 lg:grid-cols-2">
+            <Label>
+              <span className="text-sm text-foreground">Configured rule book</span>
+              <Input
+                readOnly
+                value={source?.rule_book_version ?? 'Loading source…'}
+                className={inputClass}
+              />
+            </Label>
+            <Label>
+              <span className="text-sm text-foreground">Executable policy revision</span>
+              <Input
+                required
+                value={policyRevision}
+                onChange={(event) => setPolicyRevision(event.target.value)}
+                className={inputClass}
+                placeholder={`${year}.policy.1`}
+              />
+            </Label>
+            <Label className="lg:col-span-2">
+              <span className="text-sm text-foreground">Human-readable policy language</span>
+              <Textarea
+                required
+                minLength={20}
+                maxLength={100000}
+                rows={8}
+                value={language}
+                onChange={(event) => setLanguage(event.target.value)}
+                className={inputClass}
+              />
+            </Label>
+          </section>
 
-        <section className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="font-heading text-xl text-foreground">Bid stages and order</h2>
-              <p className="text-sm text-muted-foreground">
-                All {participants.length} eligible members must appear exactly once.
-              </p>
+          <section className="rounded-lg border border-border bg-card p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-heading text-xl text-foreground">Bid stages and order</h2>
+                <p className="text-sm text-muted-foreground">
+                  All {participants.length} eligible members must appear exactly once.
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={() =>
+                  setStages((current) => [
+                    ...current,
+                    {
+                      key: crypto.randomUUID(),
+                      id: '',
+                      label: '',
+                      kind: 'MIXED',
+                      memberIds: [],
+                      positionIds: [],
+                    },
+                  ])
+                }
+                className="rounded bg-destructive px-3 py-2 text-sm text-primary-foreground"
+              >
+                Add stage
+              </Button>
             </div>
-            <Button
-              type="button"
-              onClick={() =>
-                setStages((current) => [
-                  ...current,
-                  {
-                    key: crypto.randomUUID(),
-                    id: '',
-                    label: '',
-                    kind: 'MIXED',
-                    memberIds: [],
-                    positionIds: [],
-                  },
-                ])
-              }
-              className="rounded bg-destructive px-3 py-2 text-sm text-primary-foreground"
-            >
-              Add stage
-            </Button>
-          </div>
-          <div className="mt-4 space-y-4">
-            {stages.length === 0 ? (
-              <p className="rounded border border-warning/40 p-3 text-sm text-warning">
-                No stage is configured.
-              </p>
-            ) : null}
-            {stages.map((stage, index) => (
-              <article key={stage.key} className="rounded border border-border bg-card p-4">
-                <div className="flex items-center gap-2">
-                  <strong className="mr-auto text-foreground">Stage {index + 1}</strong>
-                  <Button
-                    type="button"
-                    disabled={index === 0}
-                    onClick={() => moveStage(index, -1)}
-                    className="rounded border border-border px-2 py-1 text-xs text-foreground disabled:opacity-30"
-                  >
-                    Up
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={index === stages.length - 1}
-                    onClick={() => moveStage(index, 1)}
-                    className="rounded border border-border px-2 py-1 text-xs text-foreground disabled:opacity-30"
-                  >
-                    Down
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() =>
-                      setStages((current) => current.filter((item) => item.key !== stage.key))
-                    }
-                    className="rounded border border-destructive/40 px-2 py-1 text-xs text-destructive"
-                  >
-                    Remove
-                  </Button>
-                </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  <Input
-                    aria-label="Stable stage ID"
-                    value={stage.id}
-                    onChange={(event) => updateStage(stage.key, { id: event.target.value })}
-                    className={inputClass}
-                    placeholder="Stable stage ID"
-                  />
-                  <Input
-                    aria-label="Stage label"
-                    value={stage.label}
-                    onChange={(event) => updateStage(stage.key, { label: event.target.value })}
-                    className={inputClass}
-                    placeholder="Stage label"
-                  />
-                  <NativeSelect
-                    aria-label="Stage kind"
-                    value={stage.kind}
-                    onChange={(event) =>
-                      updateStage(stage.key, { kind: event.target.value as StageKind })
-                    }
-                    className={inputClass}
-                  >
-                    {stageKinds.map((kind) => (
-                      <option key={kind}>{kind}</option>
-                    ))}
-                  </NativeSelect>
-                </div>
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  <Label>
-                    <span className="text-xs text-foreground">Real member population</span>
+            <div className="mt-4 space-y-4">
+              {stages.length === 0 ? (
+                <p className="rounded border border-warning/40 p-3 text-sm text-warning">
+                  No stage is configured.
+                </p>
+              ) : null}
+              {stages.map((stage, index) => (
+                <article key={stage.key} className="rounded border border-border bg-card p-4">
+                  <div className="flex items-center gap-2">
+                    <strong className="mr-auto text-foreground">Stage {index + 1}</strong>
+                    <Button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => moveStage(index, -1)}
+                      className="rounded border border-border px-2 py-1 text-xs text-foreground disabled:opacity-30"
+                    >
+                      Up
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={index === stages.length - 1}
+                      onClick={() => moveStage(index, 1)}
+                      className="rounded border border-border px-2 py-1 text-xs text-foreground disabled:opacity-30"
+                    >
+                      Down
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        setStages((current) => current.filter((item) => item.key !== stage.key))
+                      }
+                      className="rounded border border-destructive/40 px-2 py-1 text-xs text-destructive"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <Input
+                      aria-label="Stable stage ID"
+                      value={stage.id}
+                      onChange={(event) => updateStage(stage.key, { id: event.target.value })}
+                      className={inputClass}
+                      placeholder="Stable stage ID"
+                    />
+                    <Input
+                      aria-label="Stage label"
+                      value={stage.label}
+                      onChange={(event) => updateStage(stage.key, { label: event.target.value })}
+                      className={inputClass}
+                      placeholder="Stage label"
+                    />
                     <NativeSelect
-                      multiple
-                      size={Math.min(10, Math.max(4, participants.length))}
-                      value={stage.memberIds.map(String)}
+                      aria-label="Stage kind"
+                      value={stage.kind}
                       onChange={(event) =>
-                        updateStage(stage.key, { memberIds: selected(event.target).map(Number) })
+                        updateStage(stage.key, { kind: event.target.value as StageKind })
                       }
                       className={inputClass}
                     >
-                      {participants.map((member) => (
-                        <option key={member.member_id} value={member.member_id}>
-                          {member.rank} · {member.last_name}, {member.first_name} · {member.pool} ·
-                          RSC {member.rsc_seniority}
-                        </option>
+                      {stageKinds.map((kind) => (
+                        <option key={kind}>{kind}</option>
                       ))}
                     </NativeSelect>
-                  </Label>
-                  <Label>
-                    <span className="text-xs text-foreground">Real opportunity scope</span>
-                    <NativeSelect
-                      multiple
-                      size={Math.min(10, Math.max(4, source?.positions.length ?? 0))}
-                      value={stage.positionIds}
-                      onChange={(event) =>
-                        updateStage(stage.key, { positionIds: selected(event.target) })
-                      }
-                      className={inputClass}
-                    >
-                      {source?.positions.map((position) => (
-                        <option key={position.id} value={position.id}>
-                          {position.id} · {position.shift} · Sta {position.station} ·{' '}
-                          {position.unit} · {position.rank_required}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  </Label>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-border bg-card p-5">
-          <h2 className="font-heading text-xl text-foreground">Live action authority</h2>
-          <p className="text-sm text-muted-foreground">
-            Hub Admin access does not grant operational authority.
-          </p>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {actions.map((action) => (
-              <Label key={action}>
-                <span className="font-mono text-xs text-foreground">{action}</span>
-                <NativeSelect
-                  multiple
-                  size={4}
-                  value={permissions[action].map(String)}
-                  onChange={(event) =>
-                    setPermissions((current) => ({
-                      ...current,
-                      [action]: selected(event.target).map(Number),
-                    }))
-                  }
-                  className={inputClass}
-                >
-                  {allMembers.map((member) => (
-                    <option key={member.member_id} value={member.member_id}>
-                      {member.rank} · {member.last_name}, {member.first_name}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </Label>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-border bg-card p-5">
-          <h2 className="font-heading text-xl text-foreground">
-            What happens when a member does not select?
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Every row blocks readiness until Command Staff marks it configured.
-          </p>
-          <div className="mt-4 space-y-3">
-            {dispositionNames.map((name) => {
-              const rule = dispositions[name];
-              return (
-                <fieldset key={name} className="rounded border border-border p-3">
-                  <legend className="px-2 font-mono text-sm text-foreground">{name}</legend>
-                  <p className="my-3 text-sm">
-                    {!rule.configured
-                      ? 'Needs a reviewed decision.'
-                      : `${rule.advances ? 'Move to the next bidder.' : 'Keep the current turn.'} ${rule.returns ? `Return during ${stages.find((s) => s.id === rule.returnStageId)?.label || rule.returnStageId || 'a stage that must be selected'}.` : 'No scheduled return.'} ${rule.retainsLaterSelectionRights ? 'Later selection rights are retained.' : 'Later selection rights are not retained.'} ${rule.terminal ? 'Participation ends.' : ''} ${rule.requiresReason ? 'A reason is required.' : ''} ${rule.requiresEvidence ? 'Supporting evidence is required.' : ''}`}
-                  </p>
-                  <details>
-                    <summary>Edit the reviewed outcome and evidence requirements</summary>
-                    <div className="flex flex-wrap gap-4 text-sm text-foreground">
-                      <Label>
-                        <Input
-                          type="checkbox"
-                          checked={rule.configured}
-                          onChange={(event) =>
-                            setDispositions((current) => ({
-                              ...current,
-                              [name]: { ...rule, configured: event.target.checked },
-                            }))
-                          }
-                        />{' '}
-                        Configured
-                      </Label>
-                      {(
-                        [
-                          'advances',
-                          'returns',
-                          'retainsLaterSelectionRights',
-                          'terminal',
-                          'requiresReason',
-                          'requiresEvidence',
-                        ] as const
-                      ).map((field) => (
-                        <Label key={field}>
-                          <Input
-                            type="checkbox"
-                            checked={rule[field]}
-                            onChange={(event) =>
-                              setDispositions((current) => ({
-                                ...current,
-                                [name]: { ...rule, [field]: event.target.checked },
-                              }))
-                            }
-                          />{' '}
-                          {
-                            {
-                              advances: 'Advance to the next bidder',
-                              returns: 'Return in another stage',
-                              retainsLaterSelectionRights: 'Keep later selection rights',
-                              terminal: 'End this member’s participation',
-                              requiresReason: 'Reason required',
-                              requiresEvidence: 'Evidence required',
-                            }[field]
-                          }
-                        </Label>
-                      ))}
-                    </div>
-                    {rule.returns ? (
+                  </div>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <Label>
+                      <span className="text-xs text-foreground">Real member population</span>
                       <NativeSelect
-                        aria-label={`${name} return stage`}
-                        value={rule.returnStageId}
+                        multiple
+                        size={Math.min(10, Math.max(4, participants.length))}
+                        value={stage.memberIds.map(String)}
                         onChange={(event) =>
-                          setDispositions((current) => ({
-                            ...current,
-                            [name]: { ...rule, returnStageId: event.target.value },
-                          }))
+                          updateStage(stage.key, { memberIds: selected(event.target).map(Number) })
                         }
                         className={inputClass}
                       >
-                        <option value="">Select return stage</option>
-                        {stages.map((stage) => (
-                          <option key={stage.key} value={stage.id}>
-                            {stage.label || stage.id}
+                        {participants.map((member) => (
+                          <option key={member.member_id} value={member.member_id}>
+                            {member.rank} · {member.last_name}, {member.first_name} · {member.pool}{' '}
+                            · RSC {member.rsc_seniority}
                           </option>
                         ))}
                       </NativeSelect>
-                    ) : null}
-                    <Input
-                      aria-label={`${name} contact policy reference`}
-                      value={rule.contactPolicyReference}
-                      onChange={(event) =>
-                        setDispositions((current) => ({
-                          ...current,
-                          [name]: { ...rule, contactPolicyReference: event.target.value },
-                        }))
-                      }
-                      className={inputClass}
-                      placeholder="Contact/evidence reference, if applicable"
-                    />
-                  </details>
-                </fieldset>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="grid gap-4 rounded-lg border border-border bg-card p-5 md:grid-cols-4">
-          <h2 className="font-heading text-xl text-foreground md:col-span-4">Contact policy</h2>
-          <Label>
-            <span className="text-xs text-foreground">Minimum attempts</span>
-            <Input
-              type="number"
-              min="1"
-              max="10"
-              value={minimumAttempts}
-              onChange={(event) => setMinimumAttempts(event.target.value)}
-              className={inputClass}
-            />
-          </Label>
-          <Label>
-            <span className="text-xs text-foreground">Timing mode</span>
-            <NativeSelect
-              value={timingMode}
-              onChange={(event) => setTimingMode(event.target.value as TimingMode)}
-              className={inputClass}
-            >
-              <option value="HARD_MINIMUM">Required minimum time</option>
-              <option value="TARGET">Target time</option>
-              <option value="OPERATOR_DISCRETION">Operator discretion</option>
-            </NativeSelect>
-          </Label>
-          <Label>
-            <span className="text-xs text-foreground">Duration seconds</span>
-            <Input
-              type="number"
-              min="0"
-              disabled={timingMode === 'OPERATOR_DISCRETION'}
-              value={durationSeconds}
-              onChange={(event) => setDurationSeconds(event.target.value)}
-              className={inputClass}
-            />
-          </Label>
-          <Label className="self-end pb-2 text-sm text-foreground">
-            <Input
-              type="checkbox"
-              checked={contactEvidenceRequired}
-              onChange={(event) => setContactEvidenceRequired(event.target.checked)}
-            />{' '}
-            Evidence required
-          </Label>
-        </section>
-
-        <section className="rounded-lg border border-border bg-card p-5">
-          <div className="flex justify-between gap-3">
-            <div>
-              <h2 className="font-heading text-xl text-foreground">Specialty policy</h2>
-              <p className="text-sm text-muted-foreground">
-                Frozen evaluation date: {source?.credential_evaluation_on ?? 'unavailable'}
-              </p>
+                    </Label>
+                    <Label>
+                      <span className="text-xs text-foreground">Real opportunity scope</span>
+                      <NativeSelect
+                        multiple
+                        size={Math.min(10, Math.max(4, source?.positions.length ?? 0))}
+                        value={stage.positionIds}
+                        onChange={(event) =>
+                          updateStage(stage.key, { positionIds: selected(event.target) })
+                        }
+                        className={inputClass}
+                      >
+                        {source?.positions.map((position) => (
+                          <option key={position.id} value={position.id}>
+                            {position.id} · {position.shift} · Sta {position.station} ·{' '}
+                            {position.unit} · {position.rank_required}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </Label>
+                  </div>
+                </article>
+              ))}
             </div>
-            <Button
-              type="button"
-              onClick={() =>
-                setSpecialties((current) => [
-                  ...current,
-                  {
-                    key: crypto.randomUUID(),
-                    id: '',
-                    label: '',
-                    mode: 'INTERRUPTING',
-                    positionIds: [],
-                    credentials: '',
-                    qualifications: '',
-                    points: '',
-                    tieBreak: 'POINTS, RSC_SENIORITY',
-                  },
-                ])
-              }
-              className="rounded bg-destructive px-3 py-2 text-sm text-primary-foreground"
-            >
-              Add specialty
-            </Button>
-          </div>
-          <div className="mt-4 space-y-3">
-            {specialties.map((specialty) => (
-              <article
-                key={specialty.key}
-                className="grid gap-3 rounded border border-border p-3 md:grid-cols-2"
+          </section>
+
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-xl text-foreground">Live action authority</h2>
+            <p className="text-sm text-muted-foreground">
+              Hub Admin access does not grant operational authority.
+            </p>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {actions.map((action) => (
+                <Label key={action}>
+                  <span className="font-mono text-xs text-foreground">{action}</span>
+                  <NativeSelect
+                    multiple
+                    size={4}
+                    value={permissions[action].map(String)}
+                    onChange={(event) =>
+                      setPermissions((current) => ({
+                        ...current,
+                        [action]: selected(event.target).map(Number),
+                      }))
+                    }
+                    className={inputClass}
+                  >
+                    {allMembers.map((member) => (
+                      <option key={member.member_id} value={member.member_id}>
+                        {member.rank} · {member.last_name}, {member.first_name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Label>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-xl text-foreground">
+              What happens when a member does not select?
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Every row blocks readiness until Command Staff marks it configured.
+            </p>
+            <div className="mt-4 space-y-3">
+              {dispositionNames.map((name) => {
+                const rule = dispositions[name];
+                return (
+                  <fieldset key={name} className="rounded border border-border p-3">
+                    <legend className="px-2 font-mono text-sm text-foreground">{name}</legend>
+                    <p className="my-3 text-sm">
+                      {!rule.configured
+                        ? 'Needs a reviewed decision.'
+                        : `${rule.advances ? 'Move to the next bidder.' : 'Keep the current turn.'} ${rule.returns ? `Return during ${stages.find((s) => s.id === rule.returnStageId)?.label || rule.returnStageId || 'a stage that must be selected'}.` : 'No scheduled return.'} ${rule.retainsLaterSelectionRights ? 'Later selection rights are retained.' : 'Later selection rights are not retained.'} ${rule.terminal ? 'Participation ends.' : ''} ${rule.requiresReason ? 'A reason is required.' : ''} ${rule.requiresEvidence ? 'Supporting evidence is required.' : ''}`}
+                    </p>
+                    <details>
+                      <summary>Edit the reviewed outcome and evidence requirements</summary>
+                      <div className="flex flex-wrap gap-4 text-sm text-foreground">
+                        <Label>
+                          <Input
+                            type="checkbox"
+                            checked={rule.configured}
+                            onChange={(event) =>
+                              setDispositions((current) => ({
+                                ...current,
+                                [name]: { ...rule, configured: event.target.checked },
+                              }))
+                            }
+                          />{' '}
+                          Configured
+                        </Label>
+                        {(
+                          [
+                            'advances',
+                            'returns',
+                            'retainsLaterSelectionRights',
+                            'terminal',
+                            'requiresReason',
+                            'requiresEvidence',
+                          ] as const
+                        ).map((field) => (
+                          <Label key={field}>
+                            <Input
+                              type="checkbox"
+                              checked={rule[field]}
+                              onChange={(event) =>
+                                setDispositions((current) => ({
+                                  ...current,
+                                  [name]: { ...rule, [field]: event.target.checked },
+                                }))
+                              }
+                            />{' '}
+                            {
+                              {
+                                advances: 'Advance to the next bidder',
+                                returns: 'Return in another stage',
+                                retainsLaterSelectionRights: 'Keep later selection rights',
+                                terminal: 'End this member’s participation',
+                                requiresReason: 'Reason required',
+                                requiresEvidence: 'Evidence required',
+                              }[field]
+                            }
+                          </Label>
+                        ))}
+                      </div>
+                      {rule.returns ? (
+                        <NativeSelect
+                          aria-label={`${name} return stage`}
+                          value={rule.returnStageId}
+                          onChange={(event) =>
+                            setDispositions((current) => ({
+                              ...current,
+                              [name]: { ...rule, returnStageId: event.target.value },
+                            }))
+                          }
+                          className={inputClass}
+                        >
+                          <option value="">Select return stage</option>
+                          {stages.map((stage) => (
+                            <option key={stage.key} value={stage.id}>
+                              {stage.label || stage.id}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                      ) : null}
+                      <Input
+                        aria-label={`${name} contact policy reference`}
+                        value={rule.contactPolicyReference}
+                        onChange={(event) =>
+                          setDispositions((current) => ({
+                            ...current,
+                            [name]: { ...rule, contactPolicyReference: event.target.value },
+                          }))
+                        }
+                        className={inputClass}
+                        placeholder="Contact/evidence reference, if applicable"
+                      />
+                    </details>
+                  </fieldset>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="grid gap-4 rounded-lg border border-border bg-card p-5 md:grid-cols-4">
+            <h2 className="font-heading text-xl text-foreground md:col-span-4">Contact policy</h2>
+            <Label>
+              <span className="text-xs text-foreground">Minimum attempts</span>
+              <Input
+                type="number"
+                min="1"
+                max="10"
+                value={minimumAttempts}
+                onChange={(event) => setMinimumAttempts(event.target.value)}
+                className={inputClass}
+              />
+            </Label>
+            <Label>
+              <span className="text-xs text-foreground">Timing mode</span>
+              <NativeSelect
+                value={timingMode}
+                onChange={(event) => setTimingMode(event.target.value as TimingMode)}
+                className={inputClass}
               >
-                <Input
-                  aria-label="Specialty ID"
-                  value={specialty.id}
-                  onChange={(event) =>
-                    setSpecialties((current) =>
-                      current.map((item) =>
-                        item.key === specialty.key ? { ...item, id: event.target.value } : item,
-                      ),
-                    )
-                  }
-                  className={inputClass}
-                  placeholder="Specialty ID"
-                />
-                <Input
-                  aria-label="Specialty name"
-                  value={specialty.label}
-                  onChange={(event) =>
-                    setSpecialties((current) =>
-                      current.map((item) =>
-                        item.key === specialty.key ? { ...item, label: event.target.value } : item,
-                      ),
-                    )
-                  }
-                  className={inputClass}
-                  placeholder="Specialty name"
-                />
-                <NativeSelect
-                  aria-label="Specialty mode"
-                  value={specialty.mode}
-                  onChange={(event) =>
-                    setSpecialties((current) =>
-                      current.map((item) =>
-                        item.key === specialty.key
-                          ? { ...item, mode: event.target.value as Specialty['mode'] }
-                          : item,
-                      ),
-                    )
-                  }
-                  className={inputClass}
+                <option value="HARD_MINIMUM">Required minimum time</option>
+                <option value="TARGET">Target time</option>
+                <option value="OPERATOR_DISCRETION">Operator discretion</option>
+              </NativeSelect>
+            </Label>
+            <Label>
+              <span className="text-xs text-foreground">Duration seconds</span>
+              <Input
+                type="number"
+                min="0"
+                disabled={timingMode === 'OPERATOR_DISCRETION'}
+                value={durationSeconds}
+                onChange={(event) => setDurationSeconds(event.target.value)}
+                className={inputClass}
+              />
+            </Label>
+            <Label className="self-end pb-2 text-sm text-foreground">
+              <Input
+                type="checkbox"
+                checked={contactEvidenceRequired}
+                onChange={(event) => setContactEvidenceRequired(event.target.checked)}
+              />{' '}
+              Evidence required
+            </Label>
+          </section>
+
+          <section className="rounded-lg border border-border bg-card p-5">
+            <div className="flex justify-between gap-3">
+              <div>
+                <h2 className="font-heading text-xl text-foreground">Specialty policy</h2>
+                <p className="text-sm text-muted-foreground">
+                  Frozen evaluation date: {source?.credential_evaluation_on ?? 'unavailable'}
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={() =>
+                  setSpecialties((current) => [
+                    ...current,
+                    {
+                      key: crypto.randomUUID(),
+                      id: '',
+                      label: '',
+                      mode: 'INTERRUPTING',
+                      positionIds: [],
+                      credentials: '',
+                      qualifications: '',
+                      points: '',
+                      tieBreak: 'POINTS, RSC_SENIORITY',
+                    },
+                  ])
+                }
+                className="rounded bg-destructive px-3 py-2 text-sm text-primary-foreground"
+              >
+                Add specialty
+              </Button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {specialties.map((specialty) => (
+                <article
+                  key={specialty.key}
+                  className="grid gap-3 rounded border border-border p-3 md:grid-cols-2"
                 >
-                  <option value="INTERRUPTING">Interrupt the main bid order</option>
-                  <option value="PRIORITY_ONLY">Priority within the current stage</option>
-                </NativeSelect>
-                <NativeSelect
-                  aria-label="Specialty positions"
-                  multiple
-                  size={4}
-                  value={specialty.positionIds}
-                  onChange={(event) =>
-                    setSpecialties((current) =>
-                      current.map((item) =>
-                        item.key === specialty.key
-                          ? { ...item, positionIds: selected(event.target) }
-                          : item,
-                      ),
-                    )
-                  }
-                  className={inputClass}
-                >
-                  {source?.positions.map((position) => (
-                    <option key={position.id} value={position.id}>
-                      {position.id} · {position.position_name}
-                    </option>
-                  ))}
-                </NativeSelect>
-                <Input
-                  aria-label="Required credentials"
-                  value={specialty.credentials}
-                  onChange={(event) =>
-                    setSpecialties((current) =>
-                      current.map((item) =>
-                        item.key === specialty.key
-                          ? { ...item, credentials: event.target.value }
-                          : item,
-                      ),
-                    )
-                  }
-                  className={inputClass}
-                  placeholder="Required credentials, comma separated"
-                />
-                <Input
-                  aria-label="Required specialty qualifications"
-                  value={specialty.qualifications}
-                  onChange={(event) =>
-                    setSpecialties((current) =>
-                      current.map((item) =>
-                        item.key === specialty.key
-                          ? { ...item, qualifications: event.target.value }
-                          : item,
-                      ),
-                    )
-                  }
-                  className={inputClass}
-                  placeholder="Required specialty qualifications"
-                />
-                {!specialty.scoring && (
                   <Input
-                    aria-label="Specialty points"
-                    value={specialty.points}
+                    aria-label="Specialty ID"
+                    value={specialty.id}
+                    onChange={(event) =>
+                      setSpecialties((current) =>
+                        current.map((item) =>
+                          item.key === specialty.key ? { ...item, id: event.target.value } : item,
+                        ),
+                      )
+                    }
+                    className={inputClass}
+                    placeholder="Specialty ID"
+                  />
+                  <Input
+                    aria-label="Specialty name"
+                    value={specialty.label}
                     onChange={(event) =>
                       setSpecialties((current) =>
                         current.map((item) =>
                           item.key === specialty.key
-                            ? { ...item, points: event.target.value }
+                            ? { ...item, label: event.target.value }
                             : item,
                         ),
                       )
                     }
                     className={inputClass}
-                    placeholder="Credential:8, Other:3"
+                    placeholder="Specialty name"
                   />
-                )}
-                {!specialty.scoring ? (
-                  <Button
-                    type="button"
-                    className="min-h-11 rounded border border-border px-3 text-sm"
-                    onClick={() =>
+                  <NativeSelect
+                    aria-label="Specialty mode"
+                    value={specialty.mode}
+                    onChange={(event) =>
                       setSpecialties((current) =>
                         current.map((item) =>
-                          item.key !== specialty.key
-                            ? item
-                            : {
-                                ...item,
-                                rankingChannel: 'total',
-                                scoring: {
-                                  v: 1,
-                                  total: [
-                                    {
-                                      id: crypto.randomUUID(),
-                                      cap: null,
-                                      items: csv(item.points).map((point) => {
-                                        const [credential = '', raw = ''] = point
-                                          .split(':')
-                                          .map((s) => s.trim());
-                                        return {
-                                          credential,
-                                          points: Number(raw),
-                                          alternatives: [],
-                                          requiresAll: [],
-                                        };
-                                      }),
-                                    },
-                                  ],
-                                  so: [],
-                                  mo: [],
-                                },
-                              },
+                          item.key === specialty.key
+                            ? { ...item, mode: event.target.value as Specialty['mode'] }
+                            : item,
                         ),
                       )
                     }
+                    className={inputClass}
                   >
-                    Configure grouped specialty scoring
-                  </Button>
-                ) : (
-                  <section className="min-w-0 space-y-3 rounded border border-border p-3 md:col-span-2">
-                    <Label className="block text-sm">
-                      Specialty ranking channel
-                      <NativeSelect
-                        className={inputClass}
-                        value={specialty.rankingChannel}
-                        onChange={(e) =>
-                          setSpecialties((current) =>
-                            current.map((item) =>
-                              item.key === specialty.key
-                                ? {
-                                    ...item,
-                                    rankingChannel: e.target.value as 'total' | 'so' | 'mo',
-                                  }
-                                : item,
-                            ),
-                          )
-                        }
-                      >
-                        <option value="total">Total points</option>
-                        <option value="so">Special Operations points</option>
-                        <option value="mo">Marine Operations points</option>
-                      </NativeSelect>
-                    </Label>
-                    <p className="text-sm text-foreground">
-                      The POINTS priority uses this specialty's selected channel. Review the groups,
-                      approved alternatives, prerequisites and caps before saving. Position
-                      eligibility still applies.
-                    </p>
-                    <ConfiguredScoringEditor
-                      value={specialty.scoring}
-                      visibleChannels={[specialty.rankingChannel ?? 'total']}
-                      onChange={(scoring) =>
+                    <option value="INTERRUPTING">Interrupt the main bid order</option>
+                    <option value="PRIORITY_ONLY">Priority within the current stage</option>
+                  </NativeSelect>
+                  <NativeSelect
+                    aria-label="Specialty positions"
+                    multiple
+                    size={4}
+                    value={specialty.positionIds}
+                    onChange={(event) =>
+                      setSpecialties((current) =>
+                        current.map((item) =>
+                          item.key === specialty.key
+                            ? { ...item, positionIds: selected(event.target) }
+                            : item,
+                        ),
+                      )
+                    }
+                    className={inputClass}
+                  >
+                    {source?.positions.map((position) => (
+                      <option key={position.id} value={position.id}>
+                        {position.id} · {position.position_name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <Input
+                    aria-label="Required credentials"
+                    value={specialty.credentials}
+                    onChange={(event) =>
+                      setSpecialties((current) =>
+                        current.map((item) =>
+                          item.key === specialty.key
+                            ? { ...item, credentials: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    className={inputClass}
+                    placeholder="Required credentials, comma separated"
+                  />
+                  <Input
+                    aria-label="Required specialty qualifications"
+                    value={specialty.qualifications}
+                    onChange={(event) =>
+                      setSpecialties((current) =>
+                        current.map((item) =>
+                          item.key === specialty.key
+                            ? { ...item, qualifications: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    className={inputClass}
+                    placeholder="Required specialty qualifications"
+                  />
+                  {!specialty.scoring && (
+                    <Input
+                      aria-label="Specialty points"
+                      value={specialty.points}
+                      onChange={(event) =>
                         setSpecialties((current) =>
                           current.map((item) =>
-                            item.key === specialty.key ? { ...item, scoring } : item,
+                            item.key === specialty.key
+                              ? { ...item, points: event.target.value }
+                              : item,
                           ),
                         )
                       }
+                      className={inputClass}
+                      placeholder="Credential:8, Other:3"
                     />
-                  </section>
-                )}
-                <Input
-                  aria-label="Specialty tie break"
-                  value={specialty.tieBreak}
-                  onChange={(event) =>
-                    setSpecialties((current) =>
-                      current.map((item) =>
-                        item.key === specialty.key
-                          ? { ...item, tieBreak: event.target.value }
-                          : item,
-                      ),
-                    )
-                  }
-                  className={inputClass}
-                />
-                <Button
-                  type="button"
-                  onClick={() =>
-                    setSpecialties((current) =>
-                      current.filter((item) => item.key !== specialty.key),
-                    )
-                  }
-                  className="text-left text-sm text-destructive"
-                >
-                  Remove specialty
-                </Button>
-              </article>
-            ))}
-          </div>
-        </section>
+                  )}
+                  {!specialty.scoring ? (
+                    <Button
+                      type="button"
+                      className="min-h-11 rounded border border-border px-3 text-sm"
+                      onClick={() =>
+                        setSpecialties((current) =>
+                          current.map((item) =>
+                            item.key !== specialty.key
+                              ? item
+                              : {
+                                  ...item,
+                                  rankingChannel: 'total',
+                                  scoring: {
+                                    v: 1,
+                                    total: [
+                                      {
+                                        id: crypto.randomUUID(),
+                                        cap: null,
+                                        items: csv(item.points).map((point) => {
+                                          const [credential = '', raw = ''] = point
+                                            .split(':')
+                                            .map((s) => s.trim());
+                                          return {
+                                            credential,
+                                            points: Number(raw),
+                                            alternatives: [],
+                                            requiresAll: [],
+                                          };
+                                        }),
+                                      },
+                                    ],
+                                    so: [],
+                                    mo: [],
+                                  },
+                                },
+                          ),
+                        )
+                      }
+                    >
+                      Configure grouped specialty scoring
+                    </Button>
+                  ) : (
+                    <section className="min-w-0 space-y-3 rounded border border-border p-3 md:col-span-2">
+                      <Label className="block text-sm">
+                        Specialty ranking channel
+                        <NativeSelect
+                          className={inputClass}
+                          value={specialty.rankingChannel}
+                          onChange={(e) =>
+                            setSpecialties((current) =>
+                              current.map((item) =>
+                                item.key === specialty.key
+                                  ? {
+                                      ...item,
+                                      rankingChannel: e.target.value as 'total' | 'so' | 'mo',
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                        >
+                          <option value="total">Total points</option>
+                          <option value="so">Special Operations points</option>
+                          <option value="mo">Marine Operations points</option>
+                        </NativeSelect>
+                      </Label>
+                      <p className="text-sm text-foreground">
+                        The POINTS priority uses this specialty's selected channel. Review the
+                        groups, approved alternatives, prerequisites and caps before saving.
+                        Position eligibility still applies.
+                      </p>
+                      <ConfiguredScoringEditor
+                        value={specialty.scoring}
+                        visibleChannels={[specialty.rankingChannel ?? 'total']}
+                        onChange={(scoring) =>
+                          setSpecialties((current) =>
+                            current.map((item) =>
+                              item.key === specialty.key ? { ...item, scoring } : item,
+                            ),
+                          )
+                        }
+                      />
+                    </section>
+                  )}
+                  <Input
+                    aria-label="Specialty tie break"
+                    value={specialty.tieBreak}
+                    onChange={(event) =>
+                      setSpecialties((current) =>
+                        current.map((item) =>
+                          item.key === specialty.key
+                            ? { ...item, tieBreak: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    className={inputClass}
+                  />
+                  <Button
+                    type="button"
+                    onClick={() =>
+                      setSpecialties((current) =>
+                        current.filter((item) => item.key !== specialty.key),
+                      )
+                    }
+                    className="text-left text-sm text-destructive"
+                  >
+                    Remove specialty
+                  </Button>
+                </article>
+              ))}
+            </div>
+          </section>
 
-        <section className="rounded-lg border border-border bg-card p-5">
-          <h2 className="font-heading text-xl text-foreground">A-Day deterministic limits</h2>
-          <p className="text-sm text-muted-foreground">
-            Values are intentionally blank until Command Staff supplies approved policy.
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(aDay).map(([key, value]) => (
-              <Label key={key}>
-                <span className="text-xs text-foreground">{key}</span>
-                <Input
-                  type="number"
-                  min="0"
-                  value={value}
-                  onChange={(event) =>
-                    setADay((current) => ({ ...current, [key]: event.target.value }))
-                  }
-                  className={inputClass}
-                />
-              </Label>
-            ))}
-          </div>
-        </section>
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-xl text-foreground">A-Day deterministic limits</h2>
+            <p className="text-sm text-muted-foreground">
+              Values are intentionally blank until Command Staff supplies approved policy.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {Object.entries(aDay).map(([key, value]) => (
+                <Label key={key}>
+                  <span className="text-xs text-foreground">{key}</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={value}
+                    onChange={(event) =>
+                      setADay((current) => ({ ...current, [key]: event.target.value }))
+                    }
+                    className={inputClass}
+                  />
+                </Label>
+              ))}
+            </div>
+          </section>
 
-        <section className="rounded-lg border border-border bg-card p-5">
-          <h2 className="font-heading text-xl text-foreground">
-            Policy references and revision reason
-          </h2>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            {Object.entries(refs).map(([key, value]) => (
-              <Label key={key}>
-                <span className="text-xs capitalize text-foreground">{key} policy reference</span>
-                <Input
-                  value={value}
-                  onChange={(event) =>
-                    setRefs((current) => ({ ...current, [key]: event.target.value }))
-                  }
-                  className={inputClass}
-                />
-              </Label>
-            ))}
-          </div>
-          <Textarea
-            aria-label="Revision reason"
-            required
-            minLength={4}
-            maxLength={500}
-            rows={2}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            className={inputClass}
-            placeholder="Revision reason"
-          />
-          {message ? (
-            <output
-              className={`mt-3 block text-sm ${message.kind === 'error' ? 'text-destructive' : 'text-success'}`}
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-xl text-foreground">
+              Policy references and revision reason
+            </h2>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              {Object.entries(refs).map(([key, value]) => (
+                <Label key={key}>
+                  <span className="text-xs capitalize text-foreground">{key} policy reference</span>
+                  <Input
+                    value={value}
+                    onChange={(event) =>
+                      setRefs((current) => ({ ...current, [key]: event.target.value }))
+                    }
+                    className={inputClass}
+                  />
+                </Label>
+              ))}
+            </div>
+            <Textarea
+              aria-label="Revision reason"
+              required
+              minLength={4}
+              maxLength={500}
+              rows={2}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              className={inputClass}
+              placeholder="Revision reason"
+            />
+            {message ? (
+              <output
+                className={`mt-3 block text-sm ${message.kind === 'error' ? 'text-destructive' : 'text-success'}`}
+              >
+                {message.text}
+              </output>
+            ) : null}
+            <Button
+              type="submit"
+              disabled={busy || !ready}
+              className="mt-4 rounded bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {message.text}
-            </output>
-          ) : null}
-          <Button
-            type="submit"
-            disabled={busy || !ready}
-            className="mt-4 rounded bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {busy ? 'Saving…' : 'Save new draft revision'}
-          </Button>
-        </section>
+              {busy ? 'Saving…' : 'Save new draft revision'}
+            </Button>
+          </section>
+        </FormSteps>
       </form>
 
       <section className="rounded-lg border border-border bg-card p-5">

@@ -1,11 +1,13 @@
 'use client';
 
+import { ListPagination, useListPage } from '@/components/admin/ListPagination';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import {
   Table,
   TableBody,
@@ -28,12 +30,20 @@ export function HistoricalSeats({
   shift,
   search,
 }: { archive: HistoricalBid; shift: string; search: string }) {
+  const [stationSelection, setStationSelection] = useState('all');
   const seats = archive.seats.filter((seat) => seat.shift === shift);
   const visible = seats.filter((seat) =>
     [seat.id, seat.station, seat.unit, seat.position, seat.name]
       .join(' ')
       .toLowerCase()
       .includes(search.trim().toLowerCase()),
+  );
+  const stations = [...new Set(seats.map((seat) => seat.station))];
+  const activeStation = stations.includes(stationSelection) ? stationSelection : 'all';
+  const page = useListPage(
+    visible.filter((seat) => activeStation === 'all' || seat.station === activeStation),
+    `${archive.year}:${shift}:${search}:${activeStation}`,
+    6,
   );
   return (
     <div className="space-y-4">
@@ -46,13 +56,30 @@ export function HistoricalSeats({
           {seats.filter((seat) => seat.status === 'WITHDRAWN').length} withdrawn positions
         </span>
       </div>
-      {archive.notes.map((note) => (
-        <p key={note} className="text-sm text-muted-foreground">
-          {note}
-        </p>
-      ))}
-      <div className="grid items-start gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-        {[...new Set(visible.map((seat) => seat.station))].map((station) => (
+      <details>
+        <summary className="cursor-pointer text-sm">Source notes ({archive.notes.length})</summary>
+        {archive.notes.map((note) => (
+          <p key={note} className="text-sm text-muted-foreground">
+            {note}
+          </p>
+        ))}
+      </details>
+      <Label className="flex flex-wrap items-center gap-3 text-sm">
+        Station or pool
+        <NativeSelect
+          value={activeStation}
+          onChange={(event) => setStationSelection(event.target.value)}
+        >
+          <option value="all">All stations</option>
+          {stations.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </NativeSelect>
+      </Label>
+      <div className="grid max-h-[50dvh] items-start gap-4 overflow-y-auto overscroll-contain xl:grid-cols-2">
+        {[...new Set(page.rows.map((seat) => seat.station))].map((station) => (
           <Card key={station} className="min-w-0 overflow-hidden">
             <h2 className="border-b border-border bg-station-header px-3 py-3 font-heading font-bold">
               {station}
@@ -65,7 +92,7 @@ export function HistoricalSeats({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visible
+                {page.rows
                   .filter((seat) => seat.station === station)
                   .map((seat) => (
                     <TableRow key={seat.id}>
@@ -104,6 +131,7 @@ export function HistoricalSeats({
         ))}
         {visible.length === 0 && <p>No historical positions match this selection.</p>}
       </div>
+      <ListPagination {...page} label="historical positions" />
     </div>
   );
 }

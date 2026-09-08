@@ -64,7 +64,12 @@ it('refreshes stale catalog data on focus and reconnect without replacing unsave
       </AdminQueryProvider>,
     ),
   );
-  const name = [...container.querySelectorAll('label')]
+  await settle(() =>
+    [...container.querySelectorAll('button')]
+      .find((b) => b.textContent === 'Add credential')
+      ?.click(),
+  );
+  const name = [...document.querySelectorAll('label')]
     .find((label) => label.textContent?.includes('Credential name'))
     ?.querySelector('input');
   if (!name) throw new Error('Credential name input missing');

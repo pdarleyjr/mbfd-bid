@@ -4,6 +4,7 @@ import { CompactSign } from 'jose';
 test('independent board views preserve source boundaries at phone, tablet and desktop widths', async ({
   page,
 }, testInfo) => {
+  test.setTimeout(120000);
   const key = process.env.JWT_SIGNING_KEY;
   expect(key, 'An explicit local test signing key is required').toBeTruthy();
   const now = Math.floor(Date.now() / 1000);
@@ -59,6 +60,7 @@ test('independent board views preserve source boundaries at phone, tablet and de
   let previousReads = 0;
   let latestSession = 'synthetic-official-completion';
   let resolverReads = 0;
+  let largeRoster = false;
   await page.route('**/api/admin/historical-bids', (route) =>
     route.fulfill({ json: { years: [] } }),
   );
@@ -131,7 +133,15 @@ test('independent board views preserve source boundaries at phone, tablet and de
         generatedAt: new Date().toISOString(),
         source,
         notice: null,
-        seats: [{ ...seat, ...details }],
+        seats: largeRoster
+          ? Array.from({ length: 25 }, (_, index) => ({
+              ...seat,
+              ...details,
+              id: `synthetic-seat-${index + 1}`,
+              station: index < 20 ? '7' : '8',
+              position: `Firefighter position ${index + 1}`,
+            }))
+          : [{ ...seat, ...details }],
       },
     });
   });
@@ -152,7 +162,7 @@ test('independent board views preserve source boundaries at phone, tablet and de
       await toggle.click();
       await page
         .locator('#admin-mobile-navigation')
-        .getByRole('link', { name: 'Bid Board', exact: true })
+        .getByRole('link', { name: 'Bid board', exact: true })
         .click();
       await expect(page.locator('#admin-mobile-navigation')).toBeHidden();
       await expect(
@@ -204,12 +214,12 @@ test('independent board views preserve source boundaries at phone, tablet and de
   const sidebar = page.getByTestId('admin-sidebar');
   await page.getByRole('button', { name: 'Collapse admin sidebar', exact: true }).click();
   await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
-  await expect(sidebar.getByRole('link', { name: 'Prepare Next Bid', exact: true })).toBeVisible();
-  await sidebar.getByRole('link', { name: 'Prepare Next Bid', exact: true }).focus();
+  await expect(sidebar.getByRole('link', { name: 'Annual Bid', exact: true })).toBeVisible();
+  await sidebar.getByRole('link', { name: 'Annual Bid', exact: true }).focus();
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Tab');
   await expect(
-    sidebar.getByRole('link', { name: 'Prepare Next Bid', exact: true }).locator('span'),
+    sidebar.getByRole('link', { name: 'Annual Bid', exact: true }).locator('span'),
   ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('compact-navigation.png'), fullPage: true });
   await page.getByRole('button', { name: 'Expand admin sidebar', exact: true }).click();
@@ -267,8 +277,28 @@ test('independent board views preserve source boundaries at phone, tablet and de
     page.getByRole('main').getByText('Historical Winner', { exact: true }),
   ).toBeVisible();
   expect(previousReads).toBe(completedReads);
+  largeRoster = true;
+  await page.goto('/admin/bid-board?view=current&shift=B');
+  const station = page.getByRole('combobox', { name: 'Station or pool' });
+  await expect(page.getByText('Firefighter position 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Firefighter position 7', { exact: true })).toHaveCount(0);
+  await page
+    .getByRole('navigation', { name: 'positions pages' })
+    .getByRole('button', { name: 'Next' })
+    .click();
+  await expect(page.getByText('Firefighter position 7', { exact: true })).toBeVisible();
+  await station.selectOption('8');
+  await expect(page.getByText('Firefighter position 25', { exact: true })).toBeVisible();
+  await page.getByLabel('Search this view', { exact: true }).fill('synthetic-seat-20');
+  await expect(page.getByText('Firefighter position 20', { exact: true })).toBeVisible();
+  await page.getByLabel('Search this view', { exact: true }).clear();
+  await station.selectOption('all');
+  await expect(page.getByTestId('station-roster-card')).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(
+    true,
+  );
   await page.goto('/admin');
-  await expect(page.getByRole('heading', { name: /Prepare Next Bid/ })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Annual Bid', exact: true })).toBeVisible({
     timeout: 15_000,
   });
   await expect(page.getByRole('heading', { name: /Bid Board/ })).toBeVisible();

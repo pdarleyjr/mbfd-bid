@@ -152,13 +152,19 @@ test('annual policy editor starts blocking and loads only real source members an
 
   await page.goto('/admin/annual-policy?year=2027');
   const editor = page.getByRole('main');
-  await expect(editor.getByText('NOT CONFIGURED — BLOCKING')).toHaveCount(1);
-  await expect(editor.getByText('NOT CONFIGURED — BLOCKING')).toBeVisible();
+  await expect(
+    editor.getByText('EDITING FORM INCOMPLETE — saved policy history is shown below'),
+  ).toHaveCount(1);
+  await expect(
+    editor.getByText('EDITING FORM INCOMPLETE — saved policy history is shown below'),
+  ).toBeVisible();
   await expect(editor.locator('input[readonly]')).toHaveValue('2027-approved-candidate');
+  await editor.getByRole('combobox', { name: 'Edit policy section' }).selectOption('1');
   await editor.getByRole('button', { name: 'Add stage' }).click();
   await expect(editor.getByRole('option', { name: /Firefighter, Avery.*RSC 100/ })).toBeVisible();
   await expect(editor.getByRole('option', { name: /A101.*Engine 1.*FF/ })).toBeVisible();
   await expect(editor.getByText('POLICY_STAGE_')).toHaveCount(0);
+  await editor.getByRole('combobox', { name: 'Edit policy section' }).selectOption('7');
   await expect(editor.getByRole('button', { name: 'Save new draft revision' })).toBeDisabled();
 });
 
@@ -196,7 +202,8 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   await expect(advisory).toBeVisible();
   await expect(advisory).toContainText('Authoritative state');
   await expect(advisory.locator('button, input, textarea')).toHaveCount(0);
-  const controls = page.getByRole('main').getByTestId('annual-live-controls');
+  await page.getByRole('button', { name: 'Specialty and contact', exact: true }).click();
+  const controls = page.getByRole('dialog');
   await expect(controls).toBeVisible();
   await expect(controls.getByText(/Original bidder: FF Alex Original/)).toContainText(
     '3 points · policy rank 2',
@@ -212,15 +219,20 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   await controls.getByLabel('Operator reason').fill('Record the frozen priority contact attempt.');
   await controls.getByLabel('Evidence reference (when policy requires)').fill('contact-log-e2e');
   await controls.getByRole('button', { name: 'Record PHONE' }).click();
-  await expect(controls.getByText('Canonical live command accepted.')).toBeVisible();
+  await expect(controls.getByText('Action recorded.')).toBeVisible();
   await expect.poll(() => dispatched.length).toBe(1);
   expect(dispatched[0]).toMatchObject({
     body: { type: 'live.record_contact_attempt', memberId: 2, method: 'PHONE' },
     csrf: csrfToken,
   });
 
+  await controls.getByRole('button', { name: 'Close panel' }).click();
+  await page
+    .getByTestId('annual-live-controls')
+    .getByRole('button', { name: 'Presentation', exact: true })
+    .click();
   await controls.getByRole('button', { name: 'HOLD DISPLAY' }).click();
-  await expect(controls.getByText('Canonical live command accepted.')).toBeVisible();
+  await expect(controls.getByText('Action recorded.')).toBeVisible();
   await expect.poll(() => dispatched.length).toBe(2);
   expect(dispatched[1]).toMatchObject({
     body: { type: 'live.set_presentation_mode', mode: 'HOLD' },

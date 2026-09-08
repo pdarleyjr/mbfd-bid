@@ -16,6 +16,7 @@ import {
   replayAnnualPlanMutation,
 } from '../../lib/annual-plan-mutation.js';
 import { loadAnnualPlanReview } from '../../lib/annual-plan-review.js';
+import { createAnnualPlanSuccessor } from '../../lib/annual-plan-successor.js';
 import { type AnnualRulePosition, compileAnnualRules } from '../../lib/annual-rule-compiler.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import {
@@ -1020,6 +1021,51 @@ router.post('/:year/profiles', requireStepUpAuth(), async (c) => {
     : c.json({ error: saved.error }, 409);
 });
 
+router.post('/:year/successor', requireStepUpAuth(), async (c) => {
+  const year = Number(c.req.param('year'));
+  if (!Number.isInteger(year) || year < 2024 || year > 2100)
+    return c.json({ error: 'invalid_year' }, 400);
+  const parsed = StartSchema.omit({ year: true, source_session_id: true })
+    .merge(AnnualPlanExpectedSchema)
+    .extend({ accept_successor: z.literal(true) })
+    .strict()
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  if (Number(parsed.data.effective_on.slice(0, 4)) !== year)
+    return c.json({ error: 'effective_year_mismatch' }, 400);
+  const key = c.req.header('Idempotency-Key');
+  if (!key || key !== key.trim() || key.length > 256)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const result = await createAnnualPlanSuccessor(c.env.DB, {
+    year,
+    key,
+    body: parsed.data,
+    actorSubject: String(c.get('claims').sub),
+    actorId: c.get('claims').member_id,
+  });
+  return result.ok
+    ? c.json({ ...result.response, replayed: result.replayed })
+    : c.json({ error: result.error }, 409);
+});
+
+router.get('/:year/successors', async (c) => {
+  const year = Number(c.req.param('year'));
+  if (!Number.isInteger(year) || year < 2024 || year > 2100)
+    return c.json({ error: 'invalid_year' }, 400);
+  const rows =
+    await c.env.DB.prepare(`SELECT request_json,response_json,created_at FROM annual_plan_receipts
+    WHERE json_extract(request_json,'$.year')=? AND json_extract(request_json,'$.operation')='create-successor-setup' ORDER BY created_at DESC`)
+      .bind(year)
+      .all<{ request_json: string; response_json: string; created_at: number }>();
+  return c.json({
+    successors: rows.results.map((r) => ({
+      ...JSON.parse(r.response_json),
+      reason: JSON.parse(r.request_json).body.reason,
+      createdAt: r.created_at,
+    })),
+  });
+});
+
 router.get('/:year', async (c) => {
   const year = Number(c.req.param('year'));
   if (!Number.isInteger(year) || year < 2024 || year > 2100)
@@ -1054,11 +1100,25 @@ router.get('/:year', async (c) => {
     ? await loadRuleBookCoverage(getDb(c.env.DB), row.ruleBookVersion)
     : null;
   const { configJson: _raw, ...plan } = row;
+  const [baseline, sessions] = await Promise.all([
+    c.env.DB.prepare(
+      "SELECT id,accepted_at AS acceptedAt FROM bid_year_staffing_baselines WHERE bid_year=? AND status='accepted'",
+    )
+      .bind(year)
+      .first(),
+    c.env.DB.prepare(
+      'SELECT id,is_mock AS isMock,current_phase AS currentPhase,started_at AS startedAt FROM bid_sessions WHERE bid_year=? ORDER BY started_at DESC,id DESC',
+    )
+      .bind(year)
+      .all(),
+  ]);
   return c.json({
     plan: {
       ...plan,
       sourceRevision: source?.revision ?? null,
       settings,
+      baseline,
+      sessions: sessions.results,
       lifecycle: !row.ruleBookVersion
         ? 'UNCONFIGURED'
         : row.ruleBookStatus === 'draft'

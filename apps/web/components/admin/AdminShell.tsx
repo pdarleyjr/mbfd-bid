@@ -4,6 +4,7 @@ import {
   BookOpen,
   Building2,
   CalendarCheck,
+  ChevronDown,
   ClipboardList,
   FlaskConical,
   Gavel,
@@ -19,6 +20,7 @@ import {
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 type AdminSubNavLink = { href: string; label: string };
 
@@ -159,6 +161,13 @@ function NavigationIcon({ href }: { href: string }) {
 
 export function AdminSideNav({ compact = false }: { compact?: boolean }) {
   const pathname = usePathname();
+  const activeGroup = ADMIN_NAV_LINKS.find((link) => isActive(link, pathname))?.href;
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() =>
+    activeGroup ? { [activeGroup]: true } : {},
+  );
+  useEffect(() => {
+    if (activeGroup) setExpanded((current) => ({ ...current, [activeGroup]: true }));
+  }, [activeGroup]);
 
   return (
     <nav aria-label="Admin navigation" className={`flex flex-col gap-1 ${compact ? 'p-2' : 'p-3'}`}>
@@ -173,33 +182,56 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
 
         return (
           <div key={link.href}>
-            <Link
-              href={link.href as Route}
-              className={[
-                'admin-navigation-link group relative flex min-h-[44px] items-center gap-3 rounded-md py-2 text-sm font-medium transition-colors duration-fast ease-out-quart focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
-                compact ? 'justify-center px-2' : 'px-3',
-                active
-                  ? 'bg-sidebar-accent text-white'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-white',
-              ].join(' ')}
-              aria-current={active ? 'page' : undefined}
-              aria-label={compact ? link.label : undefined}
-              title={compact ? link.label : undefined}
-            >
-              <NavigationIcon href={link.href} />
-              <span
-                className={
-                  compact
-                    ? 'admin-navigation-label pointer-events-none absolute left-full z-30 ml-3 hidden whitespace-nowrap rounded-md border border-sidebar-border bg-sidebar px-3 py-2 text-white shadow-lg'
-                    : ''
-                }
+            <div className="flex items-center">
+              <Link
+                href={link.href as Route}
+                className={[
+                  'admin-navigation-link group relative flex min-h-[44px] min-w-0 flex-1 items-center gap-3 rounded-md py-2 text-sm font-medium transition-colors duration-fast ease-out-quart focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
+                  compact ? 'justify-center px-2' : 'px-3',
+                  active
+                    ? 'bg-sidebar-accent text-white'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-white',
+                ].join(' ')}
+                aria-current={active ? 'page' : undefined}
+                aria-label={compact ? link.label : undefined}
+                title={compact ? link.label : undefined}
               >
-                {link.label}
-              </span>
-            </Link>
+                <NavigationIcon href={link.href} />
+                <span
+                  className={
+                    compact
+                      ? 'admin-navigation-label pointer-events-none absolute left-full z-30 ml-3 hidden whitespace-nowrap rounded-md border border-sidebar-border bg-sidebar px-3 py-2 text-white shadow-lg'
+                      : ''
+                  }
+                >
+                  {link.label}
+                </span>
+              </Link>
+              {!compact && link.subnav && (
+                <button
+                  type="button"
+                  aria-label={`${expanded[link.href] ? 'Collapse' : 'Expand'} ${link.label} menu`}
+                  aria-expanded={Boolean(expanded[link.href])}
+                  aria-controls={`menu-${link.label.replaceAll(' ', '-')}`}
+                  onClick={() =>
+                    setExpanded((current) => ({ ...current, [link.href]: !current[link.href] }))
+                  }
+                  className="flex size-11 shrink-0 items-center justify-center rounded-md text-sidebar-muted hover:bg-sidebar-accent hover:text-white"
+                >
+                  <ChevronDown
+                    size={17}
+                    aria-hidden="true"
+                    className={expanded[link.href] ? 'rotate-180' : ''}
+                  />
+                </button>
+              )}
+            </div>
 
-            {!compact && active && link.subnav && (
-              <div className="mt-1 ml-3 flex flex-col gap-1 border-l border-sidebar-border pl-2">
+            {!compact && expanded[link.href] && link.subnav && (
+              <div
+                id={`menu-${link.label.replaceAll(' ', '-')}`}
+                className="mt-1 ml-3 flex flex-col gap-1 border-l border-sidebar-border pl-2"
+              >
                 {link.subnav.map((sub) => {
                   const subActive =
                     matchesPath(pathname, sub.href) &&

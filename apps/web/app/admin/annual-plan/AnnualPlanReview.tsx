@@ -25,6 +25,7 @@ type Score = {
 };
 type ImpactChange = { positionId: string; memberId: number; before: Score; after: Score };
 type Review = {
+  dependencies?: { available: boolean; changed: string[] };
   ready: boolean;
   ruleRevision: number;
   configurationRevision: number;
@@ -130,6 +131,27 @@ export function AnnualPlanReview({
         <p role="alert" className="text-warning">
           {review.error.message}. {data ? 'The last successful review remains visible.' : ''}
         </p>
+      )}
+      {data?.dependencies?.available && (
+        <aside className="rounded border border-border p-3 text-sm">
+          <h3 className="font-semibold">What needs another review?</h3>
+          {data.dependencies.changed.length ? (
+            <>
+              <p>Changed since your last recorded review:</p>
+              <ul className="list-disc pl-5">
+                {data.dependencies.changed.map((group) => (
+                  <li key={group}>{group}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>
+              The saved review’s bid inputs are unchanged. A database update alone does not require
+              repeating an otherwise matching completed practice. Approval still checks the current
+              source and all readiness requirements.
+            </p>
+          )}
+        </aside>
       )}
       {data && (
         <>

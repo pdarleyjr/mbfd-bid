@@ -1,6 +1,7 @@
 import { BidSessionPolicySnapshotSchema } from '@mbfd/shared';
 import { getDb } from '../db/index.js';
 import { annualEligibilityImpact } from './annual-eligibility-impact.js';
+import { changedAnnualDependencies } from './annual-review-dependencies.js';
 import { evaluateAuthoritativeStaffingBaseline } from './authoritative-staffing-baseline.js';
 import {
   eligibilityMemberFromFrozen,
@@ -80,7 +81,7 @@ export async function loadAnnualPlanReview(
     ReturnType<typeof BidSessionPolicySnapshotSchema.parse>,
     { v: 3 }
   > | null = null;
-  if (baselineSource === 'last_review' && checkpoint) {
+  if (checkpoint) {
     try {
       const parsed = BidSessionPolicySnapshotSchema.safeParse(JSON.parse(checkpoint.snapshot_json));
       if (parsed.success && parsed.data.v === 3) reviewedSnapshot = parsed.data;
@@ -208,6 +209,13 @@ export async function loadAnnualPlanReview(
     sourceRevision: plan.sourceRevision,
     reviewRevision: plan.reviewRevision,
     ready: blockers.length === 0,
+    dependencies:
+      prepared.ok && reviewedSnapshot
+        ? {
+            available: true,
+            changed: changedAnnualDependencies(reviewedSnapshot, prepared.snapshot),
+          }
+        : { available: false, changed: [] },
     blockers,
     coverage: {
       valid: coverage.valid,

@@ -8,7 +8,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const claims = await requireAdmin();
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground print:block">
       <AdminQueryProvider key={`${claims.sub}:${claims.member_id}:${claims.security_version}`}>
         <StepUpProvider>
           <AdminLayoutShell userName={`${claims.first_name} ${claims.last_name}`}>

@@ -1,6 +1,8 @@
 'use client';
+import { FormSteps } from '@/components/admin/FormSteps';
 import { PostAwardObligationsEditor } from '@/components/admin/PostAwardObligationsEditor';
 import { QualificationAlternativesEditor } from '@/components/admin/QualificationAlternativesEditor';
+import { QualificationPicker } from '@/components/admin/QualificationPicker';
 import { ServiceRequirementsEditor } from '@/components/admin/ServiceRequirementsEditor';
 import { WorkingDraftPanel } from '@/components/admin/WorkingDraftPanel';
 import { Button } from '@/components/ui/button';
@@ -256,307 +258,319 @@ export function AnnualPlanProfiles({
           disabled={busy || plan.lifecycle !== 'DRAFT'}
           className="space-y-4 rounded border border-border p-4"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Label>
-              Profile name
-              <Input
-                className={fieldClass}
-                value={profile.name}
-                onChange={(e) => patch({ name: e.target.value })}
-              />
-            </Label>
-            <Label>
-              Policy source reference
-              <Input
-                className={fieldClass}
-                value={profile.sourceRef}
-                onChange={(e) => patch({ sourceRef: e.target.value })}
-              />
-            </Label>
-          </div>
-          <Label className="block">
-            Applies to
-            <NativeSelect
-              className={fieldClass}
-              value={profile.scope.kind}
-              onChange={(e) => {
-                const kind = e.target.value;
-                patch({
-                  scope:
-                    kind === 'department'
-                      ? { kind }
-                      : kind === 'rank'
-                        ? { kind, rank: 'FF' }
-                        : kind === 'station_shift'
-                          ? { kind, station: '', shift: 'A' }
-                          : kind === 'family'
-                            ? { kind, name: '', positionIds: [] }
-                            : { kind: 'position', positionId: '' },
-                });
-              }}
-            >
-              {['department', 'rank', 'station_shift', 'family', 'position'].map((kind) => (
-                <option key={kind} value={kind}>
-                  {kind.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </NativeSelect>
-          </Label>
-          {profile.scope.kind === 'rank' && (
-            <Label className="block">
-              Rank
-              <NativeSelect
-                className={fieldClass}
-                value={profile.scope.rank}
-                onChange={(e) =>
-                  patch({
-                    scope: { kind: 'rank', rank: e.target.value as (typeof RULE_RANKS)[number] },
-                  })
-                }
-              >
-                {RULE_RANKS.map((rank) => (
-                  <option key={rank}>{rank}</option>
-                ))}
-              </NativeSelect>
-            </Label>
-          )}
-          {profile.scope.kind === 'station_shift' && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Label>
-                Station or group
+          <FormSteps
+            labels={[
+              'Who does this rule apply to?',
+              'Which qualifications are required?',
+              'Service and training obligations',
+              'Points and ranking',
+            ]}
+          >
+            <section className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Label>
+                  Profile name
+                  <Input
+                    className={fieldClass}
+                    value={profile.name}
+                    onChange={(e) => patch({ name: e.target.value })}
+                  />
+                </Label>
+                <Label>
+                  Policy source reference
+                  <Input
+                    className={fieldClass}
+                    value={profile.sourceRef}
+                    onChange={(e) => patch({ sourceRef: e.target.value })}
+                  />
+                </Label>
+              </div>
+              <Label className="block">
+                Applies to
                 <NativeSelect
                   className={fieldClass}
-                  value={profile.scope.station}
+                  value={profile.scope.kind}
                   onChange={(e) => {
-                    if (profile.scope.kind === 'station_shift')
-                      patch({ scope: { ...profile.scope, station: e.target.value } });
-                  }}
-                >
-                  <option value="">Choose a station</option>
-                  {[...new Set(board.data?.map((p) => p.station) ?? [])].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </NativeSelect>
-              </Label>
-              <Label>
-                Shift
-                <NativeSelect
-                  className={fieldClass}
-                  value={profile.scope.shift}
-                  onChange={(e) => {
-                    if (profile.scope.kind === 'station_shift')
-                      patch({
-                        scope: { ...profile.scope, shift: e.target.value as 'A' | 'B' | 'C' | 'D' },
-                      });
-                  }}
-                >
-                  {['A', 'B', 'C', 'D'].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </NativeSelect>
-              </Label>
-            </div>
-          )}
-          {profile.scope.kind === 'family' && (
-            <Label className="block">
-              Family or specialty name
-              <Input
-                className={fieldClass}
-                value={profile.scope.name}
-                onChange={(e) => {
-                  if (profile.scope.kind === 'family')
-                    patch({ scope: { ...profile.scope, name: e.target.value } });
-                }}
-              />
-            </Label>
-          )}
-          {(profile.scope.kind === 'family' || profile.scope.kind === 'position') && (
-            <Label className="block">
-              {profile.scope.kind === 'family'
-                ? 'Explicit family positions'
-                : 'Individual position'}
-              <NativeSelect
-                multiple={profile.scope.kind === 'family'}
-                className={`${fieldClass} ${profile.scope.kind === 'family' ? 'min-h-32' : ''}`}
-                value={
-                  profile.scope.kind === 'family'
-                    ? profile.scope.positionIds
-                    : profile.scope.positionId
-                }
-                onChange={(e) => {
-                  if (profile.scope.kind === 'family')
+                    const kind = e.target.value;
                     patch({
-                      scope: {
-                        ...profile.scope,
-                        positionIds: Array.from(e.target.selectedOptions, (o) => o.value),
-                      },
+                      scope:
+                        kind === 'department'
+                          ? { kind }
+                          : kind === 'rank'
+                            ? { kind, rank: 'FF' }
+                            : kind === 'station_shift'
+                              ? { kind, station: '', shift: 'A' }
+                              : kind === 'family'
+                                ? { kind, name: '', positionIds: [] }
+                                : { kind: 'position', positionId: '' },
                     });
-                  else patch({ scope: { kind: 'position', positionId: e.target.value } });
-                }}
-              >
-                {profile.scope.kind === 'position' && <option value="">Choose position</option>}
-                {board.data?.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.station} · {p.position} · {p.id}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Label>
-          )}
-          <Label className="block">
-            Required qualifications (all selected)
-            <NativeSelect
-              multiple
-              className={`${fieldClass} min-h-32`}
-              value={profile.requirements.credentials}
-              onChange={(e) =>
-                patch({
-                  requirements: {
-                    ...profile.requirements,
-                    credentials: Array.from(e.target.selectedOptions, (o) => o.value),
-                  },
-                })
-              }
-            >
-              {catalog.data
-                ?.filter((c) => !c.retiredOn)
-                .map((c) => (
-                  <option key={c.id} value={c.policyName ?? c.name}>
-                    {c.name}
-                  </option>
-                ))}
-            </NativeSelect>
-          </Label>
-          <QualificationAlternativesEditor
-            value={profile.requirements.anyOfCredentials ?? []}
-            onChange={(anyOfCredentials) =>
-              patch({ requirements: { ...profile.requirements, anyOfCredentials } })
-            }
-          />
-          <ServiceRequirementsEditor
-            value={profile.requirements.service ?? []}
-            onChange={(service) => patch({ requirements: { ...profile.requirements, service } })}
-          />
-          <PostAwardObligationsEditor
-            value={profile.requirements.postAward ?? []}
-            onChange={(postAward) =>
-              patch({ requirements: { ...profile.requirements, postAward } })
-            }
-          />
-          <div className="flex flex-wrap gap-4">
-            {RULE_CUSTOM_CRITERIA.map((gate) => (
-              <Label key={gate} className="flex min-h-11 items-center gap-2">
-                <Input
-                  type="checkbox"
-                  checked={profile.requirements.custom.includes(gate)}
-                  onChange={(e) =>
-                    patch({
-                      requirements: {
-                        ...profile.requirements,
-                        custom: e.target.checked
-                          ? [...profile.requirements.custom, gate]
-                          : profile.requirements.custom.filter((g) => g !== gate),
-                      },
-                    })
-                  }
-                />
-                {gate.replaceAll('_', ' ')}
+                  }}
+                >
+                  {['department', 'rank', 'station_shift', 'family', 'position'].map((kind) => (
+                    <option key={kind} value={kind}>
+                      {kind.replaceAll('_', ' ')}
+                    </option>
+                  ))}
+                </NativeSelect>
               </Label>
-            ))}
-          </div>
-          <Label className="flex min-h-11 items-center gap-2">
-            <Input
-              type="checkbox"
-              checked={profile.scoring !== undefined}
-              onChange={(e) =>
-                patch({
-                  scoring: e.target.checked ? { v: 1, total: [], so: [], mo: [] } : undefined,
-                })
-              }
-            />
-            Define all three points channels at this scope
-          </Label>
-          {profile.scoring && (
-            <ConfiguredScoringEditor
-              value={profile.scoring}
-              onChange={(scoring) => patch({ scoring })}
-            />
-          )}
-          <Label className="flex min-h-11 items-center gap-2">
-            <Input
-              type="checkbox"
-              checked={profile.tieBreakChain !== undefined}
-              onChange={(e) => patch({ tieBreakChain: e.target.checked ? [] : undefined })}
-            />
-            Define ranking priority at this scope
-          </Label>
-          {profile.tieBreakChain && (
-            <div className="space-y-2">
-              {profile.tieBreakChain.map((key, index) => (
-                <div className="flex items-end gap-2" key={`${index}:${key}`}>
-                  <Label className="min-w-0 flex-1">
-                    Priority {index + 1}
+              {profile.scope.kind === 'rank' && (
+                <Label className="block">
+                  Rank
+                  <NativeSelect
+                    className={fieldClass}
+                    value={profile.scope.rank}
+                    onChange={(e) =>
+                      patch({
+                        scope: {
+                          kind: 'rank',
+                          rank: e.target.value as (typeof RULE_RANKS)[number],
+                        },
+                      })
+                    }
+                  >
+                    {RULE_RANKS.map((rank) => (
+                      <option key={rank}>{rank}</option>
+                    ))}
+                  </NativeSelect>
+                </Label>
+              )}
+              {profile.scope.kind === 'station_shift' && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Label>
+                    Station or group
                     <NativeSelect
                       className={fieldClass}
-                      value={key}
-                      onChange={(e) =>
-                        patch({
-                          tieBreakChain: profile.tieBreakChain?.map((v, i) =>
-                            i === index
-                              ? (e.target.value as (typeof RULE_TIE_BREAK_KEYS)[number])
-                              : v,
-                          ),
-                        })
-                      }
+                      value={profile.scope.station}
+                      onChange={(e) => {
+                        if (profile.scope.kind === 'station_shift')
+                          patch({ scope: { ...profile.scope, station: e.target.value } });
+                      }}
                     >
-                      {RULE_TIE_BREAK_KEYS.map((k) => (
-                        <option key={k} value={k}>
-                          {k.replaceAll('_', ' ')}
-                        </option>
+                      <option value="">Choose a station</option>
+                      {[...new Set(board.data?.map((p) => p.station) ?? [])].map((s) => (
+                        <option key={s}>{s}</option>
                       ))}
                     </NativeSelect>
                   </Label>
+                  <Label>
+                    Shift
+                    <NativeSelect
+                      className={fieldClass}
+                      value={profile.scope.shift}
+                      onChange={(e) => {
+                        if (profile.scope.kind === 'station_shift')
+                          patch({
+                            scope: {
+                              ...profile.scope,
+                              shift: e.target.value as 'A' | 'B' | 'C' | 'D',
+                            },
+                          });
+                      }}
+                    >
+                      {['A', 'B', 'C', 'D'].map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </NativeSelect>
+                  </Label>
+                </div>
+              )}
+              {profile.scope.kind === 'family' && (
+                <Label className="block">
+                  Family or specialty name
+                  <Input
+                    className={fieldClass}
+                    value={profile.scope.name}
+                    onChange={(e) => {
+                      if (profile.scope.kind === 'family')
+                        patch({ scope: { ...profile.scope, name: e.target.value } });
+                    }}
+                  />
+                </Label>
+              )}
+              {(profile.scope.kind === 'family' || profile.scope.kind === 'position') && (
+                <Label className="block">
+                  {profile.scope.kind === 'family'
+                    ? 'Explicit family positions'
+                    : 'Individual position'}
+                  <NativeSelect
+                    multiple={profile.scope.kind === 'family'}
+                    className={`${fieldClass} ${profile.scope.kind === 'family' ? 'min-h-32' : ''}`}
+                    value={
+                      profile.scope.kind === 'family'
+                        ? profile.scope.positionIds
+                        : profile.scope.positionId
+                    }
+                    onChange={(e) => {
+                      if (profile.scope.kind === 'family')
+                        patch({
+                          scope: {
+                            ...profile.scope,
+                            positionIds: Array.from(e.target.selectedOptions, (o) => o.value),
+                          },
+                        });
+                      else patch({ scope: { kind: 'position', positionId: e.target.value } });
+                    }}
+                  >
+                    {profile.scope.kind === 'position' && <option value="">Choose position</option>}
+                    {board.data?.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.station} · {p.position} · {p.id}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Label>
+              )}
+            </section>
+            <section className="space-y-4">
+              <QualificationPicker
+                values={profile.requirements.credentials}
+                options={(catalog.data ?? [])
+                  .filter((c) => !c.retiredOn)
+                  .map((c) => ({ value: c.policyName ?? c.name, label: c.name }))}
+                onChange={(credentials) =>
+                  patch({ requirements: { ...profile.requirements, credentials } })
+                }
+              />
+              <QualificationAlternativesEditor
+                value={profile.requirements.anyOfCredentials ?? []}
+                onChange={(anyOfCredentials) =>
+                  patch({ requirements: { ...profile.requirements, anyOfCredentials } })
+                }
+              />
+            </section>
+            <section className="space-y-4">
+              <ServiceRequirementsEditor
+                value={profile.requirements.service ?? []}
+                onChange={(service) =>
+                  patch({ requirements: { ...profile.requirements, service } })
+                }
+              />
+              <PostAwardObligationsEditor
+                value={profile.requirements.postAward ?? []}
+                onChange={(postAward) =>
+                  patch({ requirements: { ...profile.requirements, postAward } })
+                }
+              />
+              <div className="flex flex-wrap gap-4">
+                {RULE_CUSTOM_CRITERIA.map((gate) => (
+                  <Label key={gate} className="flex min-h-11 items-center gap-2">
+                    <Input
+                      type="checkbox"
+                      checked={profile.requirements.custom.includes(gate)}
+                      onChange={(e) =>
+                        patch({
+                          requirements: {
+                            ...profile.requirements,
+                            custom: e.target.checked
+                              ? [...profile.requirements.custom, gate]
+                              : profile.requirements.custom.filter((g) => g !== gate),
+                          },
+                        })
+                      }
+                    />
+                    {gate.replaceAll('_', ' ')}
+                  </Label>
+                ))}
+              </div>
+            </section>
+            <section className="space-y-4">
+              <Label className="flex min-h-11 items-center gap-2">
+                <Input
+                  type="checkbox"
+                  checked={profile.scoring !== undefined}
+                  onChange={(e) =>
+                    patch({
+                      scoring: e.target.checked ? { v: 1, total: [], so: [], mo: [] } : undefined,
+                    })
+                  }
+                />
+                Set points for this group (overrides broader points rules)
+              </Label>
+              {profile.scoring && (
+                <ConfiguredScoringEditor
+                  value={profile.scoring}
+                  onChange={(scoring) => patch({ scoring })}
+                />
+              )}
+              <Label className="flex min-h-11 items-center gap-2">
+                <Input
+                  type="checkbox"
+                  checked={profile.tieBreakChain !== undefined}
+                  onChange={(e) => patch({ tieBreakChain: e.target.checked ? [] : undefined })}
+                />
+                Set ranking order for this group (overrides broader ranking rules)
+              </Label>
+              {profile.tieBreakChain && (
+                <div className="space-y-2">
+                  {profile.tieBreakChain.map((key, index) => (
+                    <div className="flex items-end gap-2" key={`${index}:${key}`}>
+                      <Label className="min-w-0 flex-1">
+                        Priority {index + 1}
+                        <NativeSelect
+                          className={fieldClass}
+                          value={key}
+                          onChange={(e) =>
+                            patch({
+                              tieBreakChain: profile.tieBreakChain?.map((v, i) =>
+                                i === index
+                                  ? (e.target.value as (typeof RULE_TIE_BREAK_KEYS)[number])
+                                  : v,
+                              ),
+                            })
+                          }
+                        >
+                          {RULE_TIE_BREAK_KEYS.map((k) => (
+                            <option key={k} value={k}>
+                              {k.replaceAll('_', ' ')}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                      </Label>
+                      <Button
+                        type="button"
+                        className={buttonClass}
+                        onClick={() =>
+                          patch({
+                            tieBreakChain: profile.tieBreakChain?.filter((_, i) => i !== index),
+                          })
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
                   <Button
                     type="button"
                     className={buttonClass}
+                    disabled={profile.tieBreakChain.length >= 5}
                     onClick={() =>
-                      patch({ tieBreakChain: profile.tieBreakChain?.filter((_, i) => i !== index) })
+                      patch({
+                        tieBreakChain: [
+                          ...(profile.tieBreakChain ?? []),
+                          RULE_TIE_BREAK_KEYS.find((k) => !profile.tieBreakChain?.includes(k)) ??
+                            'rsc_seniority',
+                        ],
+                      })
                     }
                   >
-                    Remove
+                    Add priority
                   </Button>
                 </div>
-              ))}
+              )}
               <Button
                 type="button"
                 className={buttonClass}
-                disabled={profile.tieBreakChain.length >= 5}
-                onClick={() =>
-                  patch({
-                    tieBreakChain: [
-                      ...(profile.tieBreakChain ?? []),
-                      RULE_TIE_BREAK_KEYS.find((k) => !profile.tieBreakChain?.includes(k)) ??
-                        'rsc_seniority',
-                    ],
-                  })
-                }
+                onClick={() => {
+                  if (window.confirm('Remove this profile from the draft?')) {
+                    change(profiles.filter((p) => p.id !== profile.id));
+                    setSelected('');
+                  }
+                }}
               >
-                Add priority
+                Remove profile
               </Button>
-            </div>
-          )}
-          <Button
-            type="button"
-            className={buttonClass}
-            onClick={() => {
-              if (window.confirm('Remove this profile from the draft?')) {
-                change(profiles.filter((p) => p.id !== profile.id));
-                setSelected('');
-              }
-            }}
-          >
-            Remove profile
-          </Button>
+            </section>
+          </FormSteps>
         </fieldset>
       )}
       <Label className="block">

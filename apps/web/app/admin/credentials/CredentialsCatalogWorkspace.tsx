@@ -1,5 +1,7 @@
 'use client';
 
+import { ListPagination, useListPage } from '@/components/admin/ListPagination';
+import { TaskPanel } from '@/components/admin/TaskPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -94,8 +96,36 @@ export function CredentialsCatalogWorkspace({
     frozenSessionReferences?: { sessionId: string; year: number; isMock: number }[];
   } | null>(null);
   const pendingRequest = useRef<{ fingerprint: string; key: string } | null>(null);
-  const [holders, setHolders] = useState<Holder[] | null>(null);
   const [holderCredentialId, setHolderCredentialId] = useState<number | null>(null);
+  const [holderSearch, setHolderSearch] = useState('');
+  const [editorOpen, setEditorOpen] = useState(false);
+  const holderQuery = useQuery({
+    queryKey: ['admin', 'credential-holders', holderCredentialId],
+    enabled: holderCredentialId !== null,
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/admin/credentials/${holderCredentialId}/holders`, {
+        credentials: 'include',
+        signal,
+      });
+      const body = (await response.json()) as { holders?: Holder[]; error?: string };
+      if (!response.ok || !Array.isArray(body.holders)) throw new Error(readError(body));
+      return body.holders;
+    },
+  });
+  const holderPage = useListPage(
+    (holderQuery.data ?? []).filter((holder) =>
+      `${holder.firstName} ${holder.lastName} ${holder.employeeId} ${holder.status ?? ''}`
+        .toLowerCase()
+        .includes(holderSearch.toLowerCase()),
+    ),
+    `${holderCredentialId}:${holderSearch}`,
+  );
+  const catalogPage = useListPage(
+    credentials.filter((credential) =>
+      credential.name.toLowerCase().includes(search.toLowerCase()),
+    ),
+    search,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -183,6 +213,7 @@ export function CredentialsCatalogWorkspace({
       setName('');
       setPoints('0');
       setReason('');
+      setEditorOpen(false);
     } catch {
       setError(
         'The credentials catalog service could not be reached. No local change was assumed.',
@@ -192,29 +223,13 @@ export function CredentialsCatalogWorkspace({
     }
   }
 
-  async function openHolders(credential: CatalogCredential) {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const response = await fetch(`/api/admin/credentials/${credential.id}/holders`, {
-        credentials: 'include',
-      });
-      const body = (await response.json()) as { holders?: Holder[]; error?: string };
-      if (!response.ok || body.holders === undefined) {
-        setError(readError(body));
-        return;
-      }
-      setHolderCredentialId(credential.id);
-      setHolders(body.holders);
-    } catch {
-      setError('Credential holders could not be loaded.');
-    } finally {
-      setBusy(false);
-    }
+  function openHolders(credential: CatalogCredential) {
+    setHolderSearch('');
+    setHolderCredentialId(credential.id);
   }
 
   function beginEdit(credential: CatalogCredential) {
+    setEditorOpen(true);
     setEditingId(credential.id);
     setEditing(credential);
     setRetiredOn(credential.retiredOn ?? '');
@@ -253,132 +268,152 @@ export function CredentialsCatalogWorkspace({
         </Link>
       </header>
 
-      <form
-        onSubmit={(event) => void submit(event)}
-        className="grid gap-4 rounded-xl border border-border bg-card p-5 md:grid-cols-2"
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" onClick={() => setEditorOpen(true)}>
+          {dirty || editing ? 'Resume catalog edit' : 'Add credential'}
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          Select View members to see holders without leaving the catalog.
+        </p>
+      </div>
+      <TaskPanel
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        title={editing ? `Edit ${editing.name}` : 'Add credential'}
+        description="Closing keeps your unsaved work on this page. Existing qualification history is preserved."
       >
-        <div className="md:col-span-2">
-          <h2 className="font-heading text-xl text-foreground">
-            {editing === null ? 'Add credential' : `Edit ${editing.name}`}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Catalog changes require a current step-up session and create an audit receipt.
-          </p>
-        </div>
-        <Label>
-          <span className="text-sm font-medium text-foreground">Credential name</span>
-          <Input
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-          />
-        </Label>
-        {editing !== null && (
+        <form
+          onSubmit={(event) => void submit(event)}
+          className="grid gap-4 rounded-xl border border-border bg-card p-5 md:grid-cols-2"
+        >
+          <div className="md:col-span-2">
+            <h2 className="font-heading text-xl text-foreground">
+              {editing === null ? 'Add credential' : `Edit ${editing.name}`}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Catalog changes require a current step-up session and create an audit receipt.
+            </p>
+          </div>
           <Label>
-            <span className="text-sm font-medium text-foreground">
-              Retire from new annual preparation on
-            </span>
+            <span className="text-sm font-medium text-foreground">Credential name</span>
             <Input
-              type="date"
-              value={retiredOn}
-              onChange={(event) => setRetiredOn(event.target.value)}
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
               className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             />
-            <span className="mt-1 block text-xs text-foreground">
-              Leave blank to keep active. Retirement preserves qualification history and frozen
-              bids.
-            </span>
           </Label>
-        )}
-        {dependencies !== null && editing !== null && (
-          <div className="rounded border border-border p-3 text-sm text-foreground md:col-span-2">
-            <p>
-              {dependencies.retirementBlocked
-                ? 'An active policy references this credential. Retirement is blocked until a reviewed successor removes that dependency.'
-                : 'No active policy blocks retirement. Review draft dependencies before changing availability.'}
-            </p>
-            <p className="mt-2">
-              Referenced members: {dependencies.memberReferences ?? 'Unavailable'} · Qualification
-              history events: {dependencies.qualificationEventReferences ?? 'Unavailable'}.
-              Retirement preserves this evidence.
-            </p>
-            {dependencies.frozenSessionReferences && (
-              <details className="mt-2">
-                <summary className="min-h-11 cursor-pointer">
-                  Frozen snapshots containing this credential (
-                  {dependencies.frozenSessionReferences.length})
-                </summary>
-                <ul>
-                  {dependencies.frozenSessionReferences.map((source) => (
-                    <li key={source.sessionId} className="break-all">
-                      {source.year} · {source.isMock ? 'Mock' : 'Official session'} ·{' '}
-                      {source.sessionId}
+          {editing !== null && (
+            <Label>
+              <span className="text-sm font-medium text-foreground">
+                Retire from new annual preparation on
+              </span>
+              <Input
+                type="date"
+                value={retiredOn}
+                onChange={(event) => setRetiredOn(event.target.value)}
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+              />
+              <span className="mt-1 block text-xs text-foreground">
+                Leave blank to keep active. Retirement preserves qualification history and frozen
+                bids.
+              </span>
+            </Label>
+          )}
+          {dependencies !== null && editing !== null && (
+            <div className="rounded border border-border p-3 text-sm text-foreground md:col-span-2">
+              <p>
+                {dependencies.retirementBlocked
+                  ? 'An active policy references this credential. Retirement is blocked until a reviewed successor removes that dependency.'
+                  : 'No active policy blocks retirement. Review draft dependencies before changing availability.'}
+              </p>
+              <p className="mt-2">
+                Referenced members: {dependencies.memberReferences ?? 'Unavailable'} · Qualification
+                history events: {dependencies.qualificationEventReferences ?? 'Unavailable'}.
+                Retirement preserves this evidence.
+              </p>
+              {dependencies.frozenSessionReferences && (
+                <details className="mt-2">
+                  <summary className="min-h-11 cursor-pointer">
+                    Frozen snapshots containing this credential (
+                    {dependencies.frozenSessionReferences.length})
+                  </summary>
+                  <ul>
+                    {dependencies.frozenSessionReferences.map((source) => (
+                      <li key={source.sessionId} className="break-all">
+                        {source.year} · {source.isMock ? 'Mock' : 'Official session'} ·{' '}
+                        {source.sessionId}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {dependencies.policyReferences.length > 0 && (
+                <ul className="mt-2">
+                  {dependencies.policyReferences.map((ref) => (
+                    <li key={`${ref.version}-${ref.status}`}>
+                      Policy {ref.version}: {ref.status}
                     </li>
                   ))}
                 </ul>
-              </details>
-            )}
-            {dependencies.policyReferences.length > 0 && (
-              <ul className="mt-2">
-                {dependencies.policyReferences.map((ref) => (
-                  <li key={`${ref.version}-${ref.status}`}>
-                    Policy {ref.version}: {ref.status}
-                  </li>
-                ))}
-              </ul>
+              )}
+            </div>
+          )}
+          <Label>
+            <span className="text-sm font-medium text-foreground">Default points</span>
+            <Input
+              required
+              min="0"
+              step="1"
+              type="number"
+              value={points}
+              onChange={(event) => setPoints(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+            />
+          </Label>
+          <Label className="md:col-span-2">
+            <span className="text-sm font-medium text-foreground">Reason</span>
+            <Textarea
+              required
+              minLength={4}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              className="mt-1 min-h-24 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
+            />
+          </Label>
+          <div className="flex flex-wrap gap-3 md:col-span-2">
+            <Button
+              type="submit"
+              disabled={busy}
+              className="min-h-11 rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+            >
+              {busy ? 'Saving…' : editing === null ? 'Create credential' : 'Save catalog change'}
+            </Button>
+            {editing !== null && (
+              <Button
+                type="button"
+                onClick={() => {
+                  setEditingId(null);
+                  setEditing(null);
+                  setDependencies(null);
+                  setRetiredOn('');
+                  setName('');
+                  setPoints('0');
+                  setReason('');
+                }}
+                className="min-h-11 rounded border border-border px-4 text-sm font-semibold text-foreground"
+              >
+                Cancel edit
+              </Button>
             )}
           </div>
+        </form>
+        {error && (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {error}
+          </p>
         )}
-        <Label>
-          <span className="text-sm font-medium text-foreground">Default points</span>
-          <Input
-            required
-            min="0"
-            step="1"
-            type="number"
-            value={points}
-            onChange={(event) => setPoints(event.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-          />
-        </Label>
-        <Label className="md:col-span-2">
-          <span className="text-sm font-medium text-foreground">Reason</span>
-          <Textarea
-            required
-            minLength={4}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            className="mt-1 min-h-24 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
-          />
-        </Label>
-        <div className="flex flex-wrap gap-3 md:col-span-2">
-          <Button
-            type="submit"
-            disabled={busy}
-            className="min-h-11 rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-          >
-            {busy ? 'Saving…' : editing === null ? 'Create credential' : 'Save catalog change'}
-          </Button>
-          {editing !== null && (
-            <Button
-              type="button"
-              onClick={() => {
-                setEditingId(null);
-                setEditing(null);
-                setDependencies(null);
-                setRetiredOn('');
-                setName('');
-                setPoints('0');
-                setReason('');
-              }}
-              className="min-h-11 rounded border border-border px-4 text-sm font-semibold text-foreground"
-            >
-              Cancel edit
-            </Button>
-          )}
-        </div>
-      </form>
+      </TaskPanel>
 
       {error !== null && (
         <p
@@ -422,59 +457,62 @@ export function CredentialsCatalogWorkspace({
         aria-label="Credential catalog"
       >
         <div className="overflow-x-auto">
-          <Table className="w-full min-w-[48rem] text-left text-sm">
+          <Table className="w-full table-fixed text-left text-sm">
             <TableHeader className="bg-card text-xs uppercase tracking-wide text-muted-foreground">
               <TableRow>
-                <TableHead className="px-4 py-3">Credential</TableHead>
-                <TableHead className="px-4 py-3">Default points</TableHead>
-                <TableHead className="px-4 py-3">Referenced members</TableHead>
-                <TableHead className="px-4 py-3">
+                <TableHead className="px-3 py-2">Credential</TableHead>
+                <TableHead className="hidden w-20 px-2 py-2 sm:table-cell">
+                  Default points
+                </TableHead>
+                <TableHead className="hidden w-20 px-2 py-2 sm:table-cell">
+                  Referenced members
+                </TableHead>
+                <TableHead className="w-28 px-2 py-2 sm:w-44">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="divide-y divide-slate-800 bg-card">
-              {credentials
-                .filter((credential) =>
-                  credential.name.toLowerCase().includes(search.toLowerCase()),
-                )
-                .map((credential) => (
-                  <TableRow key={credential.id}>
-                    <TableCell className="px-4 py-3 font-medium text-foreground">
-                      {credential.name}
-                      {credential.retiredOn && (
-                        <span className="block text-xs text-warning">
-                          Retires {credential.retiredOn}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 tabular-nums text-foreground">
-                      {credential.fyPointsDefault}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-foreground">
-                      {credential.holderCount}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-3">
-                        <Button
-                          type="button"
-                          disabled={busy || dirty}
-                          onClick={() => beginEdit(credential)}
-                          className="text-sm font-medium text-info hover:text-info"
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          type="button"
-                          onClick={() => void openHolders(credential)}
-                          className="text-sm font-medium text-destructive hover:text-destructive"
-                        >
-                          View members
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+              {catalogPage.rows.map((credential) => (
+                <TableRow key={credential.id}>
+                  <TableCell className="break-words px-3 py-2 font-medium text-foreground">
+                    {credential.name}
+                    <span className="mt-1 block text-xs font-normal text-muted-foreground sm:hidden">
+                      {credential.holderCount} members · {credential.fyPointsDefault} default points
+                    </span>
+                    {credential.retiredOn && (
+                      <span className="block text-xs text-warning">
+                        Retires {credential.retiredOn}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="hidden px-4 py-3 tabular-nums text-foreground sm:table-cell">
+                    {credential.fyPointsDefault}
+                  </TableCell>
+                  <TableCell className="hidden px-4 py-3 text-foreground sm:table-cell">
+                    {credential.holderCount}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-right">
+                    <div className="flex flex-wrap justify-end gap-1">
+                      <Button
+                        type="button"
+                        disabled={busy || dirty}
+                        onClick={() => beginEdit(credential)}
+                        className="text-sm font-medium text-info hover:text-info"
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => void openHolders(credential)}
+                        className="text-sm font-medium text-destructive hover:text-destructive"
+                      >
+                        View members
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </div>
@@ -483,24 +521,45 @@ export function CredentialsCatalogWorkspace({
           qualification evidence. Frozen sessions retain their original labels and scores.
         </p>
       </section>
+      <ListPagination {...catalogPage} label="credentials" />
 
-      {holders !== null && holderCredentialId !== null && (
-        <section
-          className="rounded-xl border border-border bg-card p-5"
-          aria-label="Credential member references"
-        >
-          <h2 className="font-heading text-xl text-foreground">Member references</h2>
-          <p className="mt-1 text-sm text-warning">
-            These members have dated qualification records. Current status and known expiration are
-            shown; open history to inspect the source and renewals.
-          </p>
+      <TaskPanel
+        open={holderCredentialId !== null}
+        onClose={() => setHolderCredentialId(null)}
+        title={
+          credentials.find((row) => row.id === holderCredentialId)?.name ?? 'Credential members'
+        }
+        description="Current status and known expiration are shown. Open qualification history for evidence and renewals."
+      >
+        <section aria-label="Credential member references">
+          <Label className="block text-sm">
+            Search members
+            <Input
+              type="search"
+              value={holderSearch}
+              onChange={(event) => setHolderSearch(event.target.value)}
+            />
+          </Label>
+          {holderQuery.isPending && (
+            <output className="block py-5">Loading credential members…</output>
+          )}
+          {holderQuery.isError && (
+            <div role="alert" className="py-4">
+              <p>Members could not be loaded. {holderQuery.error.message}</p>
+              <Button type="button" onClick={() => void holderQuery.refetch()}>
+                Retry loading members
+              </Button>
+            </div>
+          )}
           <ul className="mt-4 divide-y divide-slate-700">
-            {holders.length === 0 ? (
+            {!holderQuery.isPending && !holderQuery.isError && holderPage.total === 0 ? (
               <li className="py-3 text-sm text-foreground">
-                No members reference this credential.
+                {holderSearch
+                  ? 'No members match this search.'
+                  : 'No members reference this credential.'}
               </li>
             ) : (
-              holders.map((holder) => (
+              holderPage.rows.map((holder) => (
                 <li
                   key={holder.memberId}
                   className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"
@@ -522,8 +581,11 @@ export function CredentialsCatalogWorkspace({
               ))
             )}
           </ul>
+          {!holderQuery.isPending && !holderQuery.isError && (
+            <ListPagination {...holderPage} label="members" />
+          )}
         </section>
-      )}
+      </TaskPanel>
     </section>
   );
 }

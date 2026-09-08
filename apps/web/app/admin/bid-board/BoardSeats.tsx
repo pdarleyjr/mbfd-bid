@@ -1,9 +1,12 @@
 'use client';
 
+import { ListPagination, useListPage } from '@/components/admin/ListPagination';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import {
   Table,
   TableBody,
@@ -117,15 +120,8 @@ function GroupRows({ seats }: { seats: Seat[] }) {
     </>
   );
 }
-function StationRosterCard({
-  station,
-  seats,
-  searching,
-}: { station: string | null; seats: Seat[]; searching: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const limit = 8;
-  const first = searching ? seats : seats.slice(0, limit);
-  const remaining = searching ? [] : seats.slice(limit);
+function StationRosterCard({ station, seats }: { station: string | null; seats: Seat[] }) {
+  const page = useListPage(seats, seats.map((seat) => seat.id).join(':'), 6);
   return (
     <Card className="min-w-0 overflow-hidden self-start" data-testid="station-roster-card">
       <header className="flex items-center gap-2 border-b border-border bg-station-header px-3 py-3">
@@ -141,28 +137,20 @@ function StationRosterCard({
           {seats.length} {seats.length === 1 ? 'position' : 'positions'}
         </Badge>
       </header>
-      <GroupRows seats={first} />
-      {remaining.length > 0 && (
-        <Collapsible open={expanded} onOpenChange={setExpanded}>
-          <CollapsibleContent>
-            <GroupRows seats={remaining} />
-          </CollapsibleContent>
-          <CollapsibleTrigger
-            className={`${buttonVariants({ variant: 'ghost', size: 'sm' })} w-full rounded-none border-t border-border text-info`}
-          >
-            {expanded ? 'Show fewer positions' : `View ${remaining.length} more positions`}
-            <ChevronDown size={15} className={expanded ? 'rotate-180' : ''} aria-hidden="true" />
-          </CollapsibleTrigger>
-        </Collapsible>
-      )}
+      <GroupRows seats={page.rows} />
+      <div className="px-3">
+        <ListPagination {...page} label="positions" />
+      </div>
     </Card>
   );
 }
 /** All grouping, counts and identity are derived from the selected response only. */
 export function BoardSeats({ board, search = '' }: { board: AdminBidBoard; search?: string }) {
+  const [stationSelection, setStationSelection] = useState('');
   const needle = search.trim().toLowerCase();
   const visible = board.seats.filter((seat) =>
     [
+      seat.id,
       seat.station,
       seat.unit,
       seat.position,
@@ -175,24 +163,51 @@ export function BoardSeats({ board, search = '' }: { board: AdminBidBoard; searc
       .includes(needle),
   );
   const stations = [...new Set(visible.map((seat) => seat.station))];
+  const selected =
+    stationSelection === 'all' || needle
+      ? 'all'
+      : stations.some((s) => title(s) === stationSelection)
+        ? stationSelection
+        : title(stations[0] ?? null);
   return (
-    <div
-      className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-      data-testid="board-stations"
-    >
-      {stations.length === 0 && (
-        <p className="col-span-full rounded-lg border border-border bg-card p-5 text-muted-foreground">
-          No seats in this view and selection.
-        </p>
-      )}
-      {stations.map((station) => (
-        <StationRosterCard
-          key={`${board.view}:${station ?? 'unmapped'}`}
-          station={station}
-          seats={visible.filter((seat) => seat.station === station)}
-          searching={Boolean(needle)}
-        />
-      ))}
-    </div>
+    <section className="space-y-3">
+      <Label className="flex flex-wrap items-center gap-3 text-sm">
+        Station or pool
+        <NativeSelect
+          value={selected}
+          onChange={(event) => setStationSelection(event.target.value)}
+          disabled={Boolean(needle)}
+          className="max-w-full"
+        >
+          <option value="all">Compare all stations ({visible.length} positions)</option>
+          {stations.map((station) => (
+            <option key={title(station)} value={title(station)}>
+              {title(station)} · {visible.filter((seat) => seat.station === station).length}{' '}
+              positions
+            </option>
+          ))}
+        </NativeSelect>
+        {needle && <span className="text-muted-foreground">Search includes all stations.</span>}
+      </Label>
+      <div
+        className={`grid max-h-[55dvh] items-start gap-4 overflow-y-auto overscroll-contain ${selected === 'all' ? 'lg:grid-cols-2 xl:grid-cols-3' : ''}`}
+        data-testid="board-stations"
+      >
+        {stations.length === 0 && (
+          <p className="col-span-full rounded-lg border border-border bg-card p-5 text-muted-foreground">
+            No seats in this view and selection.
+          </p>
+        )}
+        {stations
+          .filter((station) => selected === 'all' || title(station) === selected)
+          .map((station) => (
+            <StationRosterCard
+              key={`${board.view}:${station ?? 'unmapped'}`}
+              station={station}
+              seats={visible.filter((seat) => seat.station === station)}
+            />
+          ))}
+      </div>
+    </section>
   );
 }
