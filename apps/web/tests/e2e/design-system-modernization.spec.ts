@@ -131,9 +131,12 @@ test('dense dynamic Board preserves all assignments, search, disclosure and resp
   await expect(page.getByText('Synthetic Member 44', { exact: true })).toBeVisible();
   await expect(page.getByText(/Light duty from/)).toBeVisible();
   await page.getByLabel('Search this view').clear();
-  for (const width of [390, 820, 1024, 1440, 1920]) {
-    await page.setViewportSize({ width, height: 1000 });
+  for (const width of [390, 646, 820, 1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: width === 646 ? 698 : 1000 });
     await noOverflow(page);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1),
+    ).toBe(true);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: info.outputPath(`dense-board-${width}.png`), fullPage: true });
   }

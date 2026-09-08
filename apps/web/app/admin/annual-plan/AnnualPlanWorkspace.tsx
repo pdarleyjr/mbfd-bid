@@ -119,7 +119,13 @@ export function AnnualPlanWorkspace() {
         </Label>
         <span className="rounded border border-border px-3 py-2">
           {year} ·{' '}
-          {plan?.lifecycle ??
+          {(plan
+            ? plan.lifecycle === 'FROZEN'
+              ? 'Setup approved'
+              : plan.lifecycle === 'DRAFT'
+                ? 'Preparing'
+                : 'Not started'
+            : null) ??
             (unavailablePlan
               ? 'Unavailable'
               : loadingPlan
@@ -127,10 +133,11 @@ export function AnnualPlanWorkspace() {
                 : 'Not started')}
         </span>
         {plan && (
-          <span className="text-sm text-muted-foreground">
+          <details className="text-sm text-muted-foreground">
+            <summary className="cursor-pointer">Setup revision details</summary>
             Rules revision {plan.ruleBookRevision} · Configuration revision{' '}
             {plan.configurationRevision}
-          </span>
+          </details>
         )}
         <Link
           className={`${buttonClass} ml-auto`}
@@ -216,7 +223,11 @@ export function AnnualPlanWorkspace() {
           <>
             {plan.lifecycle !== 'DRAFT' && (
               <p className="mb-4 text-warning">
-                This plan is {plan.lifecycle.toLowerCase()}; preparation edits are unavailable.
+                This setup is approved. To prepare an authorized change, return to{' '}
+                <button type="button" className="underline" onClick={() => navigate(year, 1)}>
+                  Start or resume
+                </button>{' '}
+                and choose “Prepare changes to this approved setup.”
               </p>
             )}
             {stage === 2 && <AnnualPlanSeats plan={plan} onDirty={setDirty} onSaved={changed} />}
@@ -377,7 +388,14 @@ function StartPlan({
             <option value="">Choose a year</option>
             {plans.map((p) => (
               <option key={p.year} value={p.year}>
-                {p.year} · {p.ruleBookStatus ?? 'Unconfigured'}
+                {p.year} ·{' '}
+                {p.ruleBookStatus === 'active'
+                  ? 'Setup approved'
+                  : p.ruleBookStatus === 'draft'
+                    ? 'Preparing'
+                    : p.ruleBookStatus === 'archived'
+                      ? 'Archived'
+                      : 'Not started'}
               </option>
             ))}
           </NativeSelect>
@@ -385,9 +403,11 @@ function StartPlan({
       )}
       {plan && plan.lifecycle !== 'UNCONFIGURED' && !adopting ? (
         <p>
-          {plan.effectiveOn
-            ? `The designated ${year} plan is saved. Continue to review its organization, participants and policy.`
-            : `The designated ${year} configuration is ${plan.lifecycle.toLowerCase()}. Guided adoption requires an unpublished draft with no Real session.`}
+          {plan.lifecycle === 'FROZEN'
+            ? 'This setup is approved. Use “Prepare changes to this approved setup” above to create an editable draft while keeping the previous approval and history.'
+            : plan.effectiveOn
+              ? `The designated ${year} plan is saved. Continue to review its organization, participants and policy.`
+              : 'Choose the effective dates and reviewed source to begin preparing this year.'}
         </p>
       ) : (
         <form
