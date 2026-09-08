@@ -1,4 +1,5 @@
 'use client';
+import { TaskPanel } from '@/components/admin/TaskPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -424,6 +425,33 @@ export function QualificationLifecycleWorkspace({
   memberIdHint,
 }: QualificationLifecycleWorkspaceProps) {
   const refreshProjections = usePersonnelProjectionRefresh();
+  const [impact, setImpact] = useState<{
+    scope: string;
+    results: {
+      year: number;
+      available: boolean;
+      reason?: string;
+      evaluationOn?: string;
+      otherPriorityChanges?: number;
+      changes?: {
+        positionId: string;
+        before: {
+          eligible: boolean;
+          points: number;
+          soPoints: number;
+          moPoints: number;
+          priority: number | null;
+        };
+        after: {
+          eligible: boolean;
+          points: number;
+          soPoints: number;
+          moPoints: number;
+          priority: number | null;
+        };
+      }[];
+    }[];
+  } | null>(null);
   const mutation = useRetainedMutation<Record<string, number | string>>('qualification');
   const selectedHint =
     memberIdHint !== undefined && members.some((member) => member.id === memberIdHint)
@@ -576,6 +604,8 @@ export function QualificationLifecycleWorkspace({
 
   async function submitEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const previewOnly =
+      (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'preview';
     setError(null);
     setNotice(null);
     setReceipt(null);
@@ -618,15 +648,18 @@ export function QualificationLifecycleWorkspace({
     try {
       const request = mutation.prepare(JSON.stringify(payload), () => payload);
       const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
-      const response = await csrfFetch('/api/admin/qualification-lifecycle/events', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': request.key,
+      const response = await csrfFetch(
+        `/api/admin/qualification-lifecycle/events${previewOnly ? '/preview' : ''}`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': previewOnly ? `preview-${request.key}` : request.key,
+          },
+          body: JSON.stringify(request.payload),
         },
-        body: JSON.stringify(request.payload),
-      });
+      );
       const body: unknown = await response.json().catch(() => null);
       if (isUnavailableEndpoint(response, body)) {
         setBackendUnavailable(
@@ -638,6 +671,10 @@ export function QualificationLifecycleWorkspace({
         setError(
           `Qualification event was not recorded: ${responseError(body, `status_${response.status}`)}.`,
         );
+        return;
+      }
+      if (previewOnly) {
+        setImpact(body as NonNullable<typeof impact>);
         return;
       }
       const parsedReceipt = parseReceipt(body);
@@ -881,6 +918,9 @@ export function QualificationLifecycleWorkspace({
                 {formIssues[0]}
               </output>
             )}
+            <Button type="submit" value="preview" disabled={submitDisabled} className="mt-3 mr-3">
+              Preview bid impact
+            </Button>
             <Button
               data-testid="qualification-submit"
               type="submit"
@@ -893,6 +933,54 @@ export function QualificationLifecycleWorkspace({
         </form>
       </section>
 
+      <TaskPanel
+        open={impact !== null}
+        onClose={() => setImpact(null)}
+        title="Qualification impact preview"
+        description="Read-only calculation for the qualification change you entered. Close this panel to adjust the form or record the evidence."
+      >
+        {impact && (
+          <div className="space-y-4 text-sm">
+            <p>{impact.scope}</p>
+            {!impact.results.length && (
+              <p>No configured upcoming years are available to evaluate.</p>
+            )}
+            {impact.results.map((item) => (
+              <section key={item.year} className="rounded border border-border p-3">
+                <h3 className="font-semibold">
+                  {item.year} · {item.evaluationOn ?? 'Evaluation unavailable'}
+                </h3>
+                {!item.available ? (
+                  <p>
+                    {item.reason?.replaceAll('_', ' ')}. Review this year’s preparation before
+                    relying on an impact estimate.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      {item.changes?.length ?? 0} affected positions for this member.{' '}
+                      {item.otherPriorityChanges ?? 0} other member/position priorities change.
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {item.changes?.map((change) => (
+                        <li key={change.positionId}>
+                          <strong>{change.positionId}</strong>:{' '}
+                          {change.before.eligible ? 'Eligible' : 'Ineligible'} →{' '}
+                          {change.after.eligible ? 'Eligible' : 'Ineligible'}; points{' '}
+                          {change.before.points} → {change.after.points}; SO{' '}
+                          {change.before.soPoints} → {change.after.soPoints}; Marine{' '}
+                          {change.before.moPoints} → {change.after.moPoints}; priority{' '}
+                          {change.before.priority ?? '—'} → {change.after.priority ?? '—'}.
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
+      </TaskPanel>
       {backendUnavailable !== null && (
         <section
           aria-label="Qualification backend unavailable"

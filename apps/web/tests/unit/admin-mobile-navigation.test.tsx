@@ -2,6 +2,7 @@
 import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+vi.mock('@/components/admin/BidYearContext', () => ({ BidYearContext: () => null }));
 const route = vi.hoisted(() => ({ pathname: '/admin/personnel' }));
 vi.mock('next/navigation', () => ({
   usePathname: () => route.pathname,

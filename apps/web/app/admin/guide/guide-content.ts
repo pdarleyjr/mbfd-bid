@@ -20,6 +20,44 @@ const section = (value: GuideSection) => value;
  */
 export const GUIDE_SECTIONS: readonly GuideSection[] = [
   section({
+    id: 'compact-workspaces',
+    category: 'Getting started',
+    title: 'Navigate focused workspaces',
+    route: '/admin',
+    routeLabel: 'Today',
+    summary:
+      'Work within the browser frame while keeping complete records and advanced controls available.',
+    controls: [
+      'Expand or collapse menu',
+      'Close panel',
+      'Previous / Next',
+      'Station or pool',
+      'Preparation step',
+      'How to use this page',
+    ],
+    steps: [
+      'Use Today, People, Staffing, Annual Bid and History & Reports as the main starting points. The arrow beside each menu opens and closes its links independently of navigation. The full sidebar can also collapse. On a phone, open the navigation menu and close it with X or Escape.',
+      'Member lists, catalog editors and bid-day actions open in focused panels. The title and close control remain visible; long details scroll inside the panel. Closing a panel does not cancel an action that was already submitted. Wait for its receipt before retrying.',
+      'The Bid Board starts with one station or pool. Select another station, or Compare all stations for the overview. Use global search across stations and Previous or Next within a station to reach every seat. Current rosters switch by shift and page through positions; full exports and print views remain available.',
+      'Annual Bid remembers the selected year across its linked workspaces. Expand Setup, staffing and sessions for the actual designated rules, staffing source, dates and session links. Each session is marked Practice or Real bid.',
+      'Use the preparation step selector on smaller screens. Long rule and operating-policy forms show one section at a time; switching sections retains all fields. Show all sections remains available for a full review.',
+      'On bid day, choose Record selection, Specialty and contact, Presentation, Correct selection or Remaining order. Active specialty review opens its contact panel and can be collapsed and reopened. Presentation controls remain distinct from pausing bidding; all actions retain the session policy and operator checks.',
+      'Use How to use this page for task instructions. Docs shows one selected topic, with search and a collapsible detail view. Download the complete PDF or offline HTML manual when you need all topics together.',
+    ],
+    important:
+      'Readable text and complete information take priority over forcing every record onto one screen. Long records remain available through search, paging, internal scrolling and full exports.',
+    keywords: [
+      'navigation',
+      'panel',
+      'collapse',
+      'scroll',
+      'search',
+      'pagination',
+      'year',
+      'mobile',
+    ],
+  }),
+  section({
     id: 'source-decisions',
     category: 'Annual preparation',
     title: 'Review source conflicts and record amendments',
@@ -67,6 +105,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Carry an approved staffing or policy change through dated evidence, configuration, impact review and practice while preserving prior decisions.',
     controls: [
       'Bid year',
+      'Prepare changes to this approved setup',
       'Organization and seats',
       'Requirements and priorities',
       'Operating policy',
@@ -74,12 +113,12 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Practice and approve',
     ],
     steps: [
-      'Confirm the affected bid year and the approved decision, its scope and effective date. Current assignments, future bid opportunities, qualification cutoff and assignment start are separate facts.',
+      'Confirm the affected bid year and approved decision, scope and dates. If setup is approved and no Real session exists, choose Prepare changes to this approved setup in step 1. Review the personnel and qualification dates, cite the authorized change, and create an editable successor. The prior book, policy and approval evidence remain preserved; copied positions and staffing links require review. This does not start bidding.',
       'For a new, altered or retired authorized position, use Staffing to record the dated structural change. Then use Annual Bid — Organization and seats to include the reviewed opportunity in an editable annual plan. A vacancy is not automatically a bid opening.',
-      'For shared qualification, service, points or priority changes, use Requirements and priorities. A narrower position exception must explain which inherited requirement it changes. Preview resolved rules to see the final requirements, alternatives, points, caps, ranking and source profiles together.',
-      'For contact, sequencing, A-Day or specialty procedures, use Operating policy. The outcome summary describes what each disposition actually does. Expand its edit controls only when the approved decision changes that behavior.',
+      'For shared qualification, service, points or priority changes, use Requirements and priorities. Follow the sections for scope, qualifications, service and training, then points and ranking. Qualification checkboxes can be searched and selected without keyboard shortcuts. A narrower position exception must explain which inherited requirement it changes. Preview resolved rules to see the final requirements, alternatives, points, caps, ranking and source profiles together.',
+      'For contact, sequencing, A-Day or specialty procedures, use Operating policy. Choose one policy section at a time or Show all sections; Show one section collapses them again. All fields retain their values when switching sections. The outcome summary describes what each disposition actually does. Expand its edit controls only when the approved decision changes that behavior.',
       'Save unfinished work to preserve a private editor draft. Restore saved work after returning or signing in again, then recheck the source revision and regenerate the preview. A private draft does not approve or publish a rule.',
-      'Use Review and impact to inspect added/removed opportunities, eligibility and ranking changes, preference references and capacity effects. Refresh the review when relevant source evidence changes; the current shared source check remains deliberately conservative.',
+      'Use Review and impact to inspect added/removed opportunities, eligibility and ranking changes, preference references and capacity effects. What needs another review identifies changed input groups since the last saved review. Unchanged bid inputs can reuse an otherwise matching completed practice; current revision and readiness checks still apply.',
       'Run the practice scenarios linked to the current plan and approve only the setup that was reviewed. An approved setup with Real-session history cannot be reopened by editing a form. Use a permitted correction workflow or prepare a future-year draft; never rewrite prior awards or invent a successor authorization.',
     ],
     important:
@@ -714,8 +753,8 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Credential import workflow',
     ],
     steps: [
-      'Review the credential catalog and holder count.',
-      'Choose Edit to change a display name, informational points, or retirement date. Supply a reason for the audited change.',
+      'Search the credential catalog and use Previous or Next to browse. Select View members to open a focused panel immediately. Search within that panel, page through every member, or open qualification history. Close with the X or Escape. A loading error offers Retry loading members.',
+      'Choose Add credential or Edit to open the catalog editor in a panel. A closed unfinished edit can be resumed. Change the display name, informational points or retirement date and supply a reason for the audited change.',
       'Review active and draft policies, referenced members, qualification history events, and frozen snapshots before retirement. Historical evidence remains unchanged. If another administrator changes the record, preserve your notes, cancel the stale edit, and reopen the current record.',
       'Open the related member record to inspect qualification context.',
       'For a catalog spreadsheet, open Import Qualification Catalog and choose the layout. A normalized XLSX has name and fy_points_default columns. For a legacy matrix, explicitly enter the number of leading employee metadata columns; existing default points are preserved.',
@@ -779,11 +818,12 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Evidence fields',
       'Qualification Review',
       'Readiness view',
+      'Preview bid impact',
     ],
     steps: [
       'Open Qualification Evidence for the relevant member and qualification.',
-      'Record the lifecycle event and supporting evidence.',
-      'Use Qualification Review to identify items needing review.',
+      'Choose Add, renew or correct certification, or the appropriate expiration, revocation or specialty action. Enter the applicable dates, source and reason. Preview bid impact before recording the evidence: the preview calculates eligibility, points and candidate priority at each configured annual cutoff without saving anything. A blocked year is identified explicitly. It does not simulate choices, capacity or awards.',
+      'Close the impact panel, adjust the form if needed, and select Record qualification evidence. Check the receipt and refreshed history. Approved session snapshots and historical awards remain unchanged. Use Qualification Review for unresolved source discrepancies.',
       'Check readiness before relying on a qualification for eligibility.',
     ],
     important:
@@ -1250,7 +1290,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Update staffing: Current Rosters → Staffing Structure or Personnel Changes.',
       'Process TeleStaff: TeleStaff → upload → preview → stage → reconcile → review → apply.',
       'Add or promote a member: Personnel Changes → effective date → preview/history → record.',
-      'Prepare a Bid: Bid Setup → Rule Books/Positions/Policy → Eligibility Preview → controlled session.',
+      'Prepare a Bid: Annual Bid → follow the preparation steps → Review and impact → Practice and approve → controlled session.',
       'Run a rehearsal: Mock Bids → findings → verify audit.',
       'Export safely: Results & Audit → Exports → verify package scope.',
     ],

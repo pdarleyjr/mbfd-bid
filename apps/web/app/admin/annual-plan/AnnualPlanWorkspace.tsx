@@ -15,6 +15,7 @@ import { AnnualPlanParticipants } from './AnnualPlanParticipants';
 import { AnnualPlanProfiles } from './AnnualPlanProfiles';
 import { AnnualPlanReview } from './AnnualPlanReview';
 import { AnnualPlanSeats } from './AnnualPlanSeats';
+import { AnnualPlanSuccessor } from './AnnualPlanSuccessor';
 import {
   type AnnualPlan,
   annualGet,
@@ -82,7 +83,7 @@ export function AnnualPlanWorkspace() {
     await invalidateWorkingBidBoards(client, ['upcoming']);
   };
   return (
-    <div className="mx-auto max-w-7xl space-y-6 text-foreground">
+    <div className="mx-auto max-w-7xl space-y-4 text-foreground">
       <header>
         <p className="text-xs uppercase tracking-wider text-muted-foreground">
           MBFD annual preparation
@@ -146,10 +147,21 @@ export function AnnualPlanWorkspace() {
             : ''}
         </p>
       )}
-      <nav
-        aria-label="Annual preparation stages"
-        className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7"
-      >
+      <Label className="block xl:hidden">
+        Preparation step
+        <NativeSelect
+          value={stage}
+          onChange={(e) => navigate(year, Number(e.target.value))}
+          className="mt-1"
+        >
+          {stages.map((label, index) => (
+            <option key={label} value={index + 1}>
+              {index + 1}. {label}
+            </option>
+          ))}
+        </NativeSelect>
+      </Label>
+      <nav aria-label="Annual preparation stages" className="hidden gap-2 xl:grid xl:grid-cols-7">
         {stages.map((label, index) => (
           <Button
             type="button"
@@ -170,6 +182,9 @@ export function AnnualPlanWorkspace() {
         <h2 className="mb-4 font-heading text-xl">
           {stage}. {stages[stage - 1]}
         </h2>
+        {plan && stage === 1 && (
+          <AnnualPlanSuccessor plan={plan} onDirty={setDirty} onSaved={changed} />
+        )}
         {unavailablePlan ? (
           <p>
             Saved preparation could not be verified. Restore the connection before starting or

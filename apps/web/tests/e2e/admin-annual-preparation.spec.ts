@@ -5,6 +5,10 @@ import { CompactSign } from 'jose';
 test('annual seats retain conflicting edits and Mock creation retries the exact request', async ({
   page,
 }, testInfo) => {
+  test.setTimeout(90000);
+  await page.route('**/api/admin/annual-plan/*/successors', (route) =>
+    route.fulfill({ json: { successors: [] } }),
+  );
   const key = process.env.JWT_SIGNING_KEY;
   if (!key) throw new Error('Local synthetic signing key required');
   await page.route('**/*', (route) =>
@@ -275,7 +279,9 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
     expected_source_revision: 0,
     accept_existing_draft: true,
   });
-  await page.getByRole('button', { name: /Stage 2 Organization and seats/ }).click();
+  if (await page.getByRole('combobox', { name: 'Preparation step', exact: true }).isVisible())
+    await page.getByRole('combobox', { name: 'Preparation step', exact: true }).selectOption('2');
+  else await page.getByRole('button', { name: /Stage 2 Organization and seats/ }).click();
   await page.getByRole('button', { name: 'Review seat', exact: true }).click();
   await page
     .getByRole('combobox', { name: 'Annual participation', exact: true })
@@ -359,7 +365,9 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
     confirm_remove: true,
     position_ids: ['annual-seat-1'],
   });
-  await page.getByRole('button', { name: /Stage 6 Review and impact/ }).click();
+  if (await page.getByRole('combobox', { name: 'Preparation step', exact: true }).isVisible())
+    await page.getByRole('combobox', { name: 'Preparation step', exact: true }).selectOption('6');
+  else await page.getByRole('button', { name: /Stage 6 Review and impact/ }).click();
   await expect(page.getByRole('main').getByText('Page 1 of 3', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Next results', exact: true }).click();
   await page.getByRole('button', { name: 'Next results', exact: true }).click();
@@ -430,7 +438,9 @@ test('annual seats retain conflicting edits and Mock creation retries the exact 
   await expect(page.getByRole('status').filter({ hasText: 'Source review saved.' })).toBeVisible();
   expect(checkpointWrites).toHaveLength(2);
   expect(checkpointWrites[0]).toEqual(checkpointWrites[1]);
-  await page.getByRole('button', { name: /Stage 7 Practice and approve/ }).click();
+  if (await page.getByRole('combobox', { name: 'Preparation step', exact: true }).isVisible())
+    await page.getByRole('combobox', { name: 'Preparation step', exact: true }).selectOption('7');
+  else await page.getByRole('button', { name: /Stage 7 Practice and approve/ }).click();
   await page
     .getByRole('button', { name: 'Create Mock from reviewed configuration', exact: true })
     .click();

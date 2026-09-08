@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getDb } from '../../src/db/index.js';
+import { app } from '../../src/index.js';
 import {
   loadFrozenSessionBidPolicy,
   prepareBidSessionPolicySnapshot,
@@ -320,6 +321,47 @@ describe('qualification evidence in frozen Bid policy', () => {
 
   afterEach(async () => {
     await teardownTestD1(h);
+  });
+
+  it('previews a dated expiration with the real evaluator and leaves all evidence unchanged', async () => {
+    await h.db.run("UPDATE bid_years SET status='configuring' WHERE year=2026");
+    const before = h.sqlite.prepare('SELECT * FROM member_qualification_events ORDER BY id').all();
+    const response = await app.fetch(
+      new Request('http://x/api/admin/qualification-lifecycle/events/preview', {
+        method: 'POST',
+        headers: {
+          Authorization: await freshAdminAuthorization(),
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'preview-expiration',
+        },
+        body: JSON.stringify({
+          kind: 'CERTIFICATION_EXPIRED',
+          member_id: 1,
+          credential_id: 10,
+          effective_on: '2026-08-31',
+          expires_on: '2026-08-31',
+          evidence_source: 'Synthetic adopted evidence',
+          reason: 'Preview dated expiration at the qualification cutoff',
+        }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: JWT_KEY },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      results: [
+        {
+          year: 2026,
+          available: true,
+          evaluationOn: '2026-09-01',
+          changes: [{ positionId: 'A101', before: { eligible: true }, after: { eligible: false } }],
+        },
+      ],
+    });
+    expect(h.sqlite.prepare('SELECT * FROM member_qualification_events ORDER BY id').all()).toEqual(
+      before,
+    );
+    expect(h.sqlite.prepare('SELECT count(*) AS count FROM audit_log').get()).toEqual({ count: 0 });
   });
 
   it('uses the configured immutable credential evaluation date instead of a later capture timestamp and leaves an established snapshot unchanged', async () => {

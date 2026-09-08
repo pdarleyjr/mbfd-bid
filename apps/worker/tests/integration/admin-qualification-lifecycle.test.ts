@@ -66,6 +66,34 @@ describe('admin qualification lifecycle', () => {
     await teardownTestD1(h);
   });
 
+  it('validates a preview through the event rules without recording evidence or audit rows', async () => {
+    const payload = {
+      kind: 'CERTIFICATION_GAINED',
+      member_id: 1,
+      credential_id: 10,
+      effective_on: '2026-08-01',
+      evidence_source: 'synthetic registry',
+      reason: 'Preview a reviewed renewal',
+    };
+    const preview = await request(h, '/api/admin/qualification-lifecycle/events/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'preview-only' },
+      body: JSON.stringify(payload),
+    });
+    expect(preview.status).toBe(200);
+    expect(await preview.json()).toMatchObject({ ok: true, results: [] });
+    expect(
+      h.sqlite.prepare('SELECT COUNT(*) AS count FROM member_qualification_events').get(),
+    ).toEqual({ count: 0 });
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_log').get()).toEqual({ count: 0 });
+    const invalid = await request(h, '/api/admin/qualification-lifecycle/events/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'preview-invalid' },
+      body: JSON.stringify({ ...payload, expires_on: '2026-01-01' }),
+    });
+    expect(invalid.status).toBe(422);
+  });
+
   it('records gained, expiration, and specialty evidence as an idempotent immutable admin-audited history', async () => {
     const gained = {
       kind: 'CERTIFICATION_GAINED',

@@ -165,7 +165,7 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
   await page.goto('/admin/targetsolutions');
   await page.getByText('How to use this page', { exact: true }).click();
   await expect(page.getByText('Controls on this page:', { exact: true })).toBeVisible();
-  await page.getByText('How to use this page', { exact: true }).click();
+  await page.getByRole('button', { name: 'Close panel', exact: true }).click();
   await page.locator('input[type=file]').setInputFiles({
     name: 'synthetic.csv',
     mimeType: 'text/csv',

@@ -29,6 +29,8 @@ it.each(['saved draft', 'unavailable source'])(
           return new Promise<Response>((resolve) => {
             resolveDetail = resolve;
           });
+        if (String(input).endsWith('/successors'))
+          return Promise.resolve(Response.json({ successors: [] }));
         return Promise.resolve(Response.json({ sources: [] }));
       }),
     );

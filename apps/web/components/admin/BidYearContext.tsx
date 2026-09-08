@@ -1,5 +1,8 @@
 'use client';
+import { annualGet } from '@/app/admin/annual-plan/annual-plan-client';
+import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -19,6 +22,23 @@ export function BidYearContext() {
   const params = useSearchParams();
   const router = useRouter();
   const selected = Number(params.get('year'));
+  const context = useQuery({
+    queryKey: ['admin', 'annual-plan', selected, 'context'],
+    enabled: YEAR_ROUTES.includes(path) && valid(selected),
+    staleTime: 30_000,
+    queryFn: () =>
+      annualGet<{
+        plan: {
+          lifecycle: string;
+          ruleBookVersion: string | null;
+          configurationRevision: number;
+          effectiveOn: string | null;
+          settings: { credentialEvaluationOn?: string } | null;
+          baseline: { id: string; acceptedAt: number } | null;
+          sessions: { id: string; isMock: number; currentPhase: string }[];
+        };
+      }>(`annual-plan/${selected}`),
+  });
   useEffect(() => {
     try {
       if (valid(selected)) window.localStorage.setItem(KEY, String(selected));
@@ -33,11 +53,73 @@ export function BidYearContext() {
     }
   }, [path, params, selected, router]);
   if (!YEAR_ROUTES.includes(path)) return null;
+  const plan = context.data?.plan;
+  const status = plan
+    ? ({ DRAFT: 'Preparing', FROZEN: 'Setup approved', UNCONFIGURED: 'Not started' }[
+        plan.lifecycle
+      ] ?? 'Needs review')
+    : context.isError
+      ? 'Unavailable'
+      : 'Loading…';
   return (
-    <p className="mb-3 text-sm text-muted-foreground">
-      Annual Bid context: <strong>{valid(selected) ? selected : 'Loading selected year…'}</strong>.
-      Qualification cutoff and assignment effective dates are reviewed separately in the annual
-      setup.
-    </p>
+    <aside
+      aria-label="Selected annual bid"
+      className="mb-3 rounded-md border border-border bg-card px-3 py-2 text-sm"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link
+          href={
+            `/admin/annual-plan?year=${valid(selected) ? selected : new Date().getFullYear()}` as Route
+          }
+          className="font-semibold underline underline-offset-4"
+        >
+          {valid(selected) ? selected : 'Selected year'} Annual Bid · {status}
+        </Link>
+        {plan && (
+          <span className="text-muted-foreground">
+            Qualifications: {plan.settings?.credentialEvaluationOn ?? 'Date needs review'}
+          </span>
+        )}
+      </div>
+      {context.isError && (
+        <button
+          type="button"
+          className="mt-1 min-h-11 underline"
+          onClick={() => void context.refetch()}
+        >
+          Retry annual context
+        </button>
+      )}
+      {plan && (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            Setup, staffing and sessions
+          </summary>
+          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs">
+            <span>
+              Rules: {plan.ruleBookVersion ?? 'Not designated'} · Revision{' '}
+              {plan.configurationRevision}
+            </span>
+            <span>Personnel date: {plan.effectiveOn ?? 'Needs review'}</span>
+            <Link className="underline" href={`/admin/source-review?year=${selected}` as Route}>
+              Staffing baseline: {plan.baseline ? 'Accepted source' : 'Review required'}
+            </Link>
+            {(plan.sessions ?? []).length ? (
+              plan.sessions.map((s) => (
+                <Link
+                  key={s.id}
+                  className="underline"
+                  href={`/admin/sessions/${encodeURIComponent(s.id)}` as Route}
+                >
+                  {s.isMock ? 'Practice' : 'Real bid'} · {s.currentPhase.replaceAll('_', ' ')}
+                </Link>
+              ))
+            ) : (
+              <span>No sessions created</span>
+            )}
+          </div>
+        </details>
+      )}
+    </aside>
   );
 }

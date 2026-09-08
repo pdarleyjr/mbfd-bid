@@ -8,11 +8,9 @@ vi.mock('@/lib/rpc-server', () => ({
 }));
 import AdminCredentialsPage from '../../app/admin/credentials/page';
 beforeEach(() => vi.clearAllMocks());
-async function html() {
+async function html(client = new QueryClient()) {
   return renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
-      {await AdminCredentialsPage()}
-    </QueryClientProvider>,
+    <QueryClientProvider client={client}>{await AdminCredentialsPage()}</QueryClientProvider>,
   );
 }
 describe('complete initial credential catalog', () => {
@@ -31,7 +29,12 @@ describe('complete initial credential catalog', () => {
         }),
       )
       .mockResolvedValueOnce(Response.json({ credentials: [credential(501)], total: 501 }));
-    expect(await html()).toContain('Synthetic credential 501');
+    const client = new QueryClient();
+    expect(await html(client)).toContain('1–8 of 501 credentials');
+    expect(client.getQueryData(['admin', 'credentials'])).toHaveLength(501);
+    expect((client.getQueryData(['admin', 'credentials']) as { name: string }[]).at(-1)?.name).toBe(
+      'Synthetic credential 501',
+    );
     expect(mocks.get).toHaveBeenNthCalledWith(2, { query: { limit: '500', offset: '500' } });
   });
   it('does not present a truncated catalog as complete after a missing page', async () => {

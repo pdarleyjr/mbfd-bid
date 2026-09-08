@@ -7,6 +7,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Include environment banners in the frame instead of adding them to 100vh. */
+body:has(.admin-frame) {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+@media print {
+  body:has(.admin-frame) {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+}
+
 /* Compact navigation labels must also be available to keyboard users. */
 .admin-navigation-link:hover > .admin-navigation-label,
 .admin-navigation-link:focus > .admin-navigation-label {

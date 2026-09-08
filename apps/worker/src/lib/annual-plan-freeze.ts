@@ -4,6 +4,7 @@ import { getDb } from '../db/index.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
 import { mutateAnnualPlan, replayAnnualPlanMutation } from './annual-plan-mutation.js';
 import { loadAnnualPlanReview } from './annual-plan-review.js';
+import { changedAnnualDependencies } from './annual-review-dependencies.js';
 import { auditInsertStatement } from './audit.js';
 import { prepareBidSessionPolicySnapshot } from './bid-policy.js';
 
@@ -126,21 +127,13 @@ export async function freezeAnnualPlan(database: D1Database, input: FreezeAnnual
     return { ok: false as const, error: 'mock_snapshot_invalid' };
   if (!validRehearsalCompletion(canonical, frozen.data, mock.current_seq))
     return { ok: false as const, error: 'mock_completion_material_invalid' };
-  const material = (s: typeof prepared.snapshot) => ({
-    book: s.ruleBookVersion,
-    revision: s.ruleBookRevision,
-    template: s.positionTemplateVersion,
-    configuration: s.configurationRevision,
-    staffingBaseline: s.staffingBaseline,
-    settings: s.settings,
-    members: s.members,
-    tenureEvidence: s.tenureEvidence,
-    authoringCredentialNames: s.authoringCredentialNames,
-    rules: s.ruleBookMaterial,
-    annualPolicy: s.annualPolicyEvidence,
-  });
-  if (JSON.stringify(material(frozen.data)) !== JSON.stringify(material(prepared.snapshot)))
-    return { ok: false as const, error: 'mock_configuration_or_evidence_changed' };
+  const changed = changedAnnualDependencies(frozen.data, prepared.snapshot);
+  if (changed.length)
+    return {
+      ok: false as const,
+      error: 'mock_configuration_or_evidence_changed',
+      changedDependencies: changed,
+    };
   const documentId = prepared.snapshot.annualPolicyEvidence?.documentId;
   if (!documentId) return { ok: false as const, error: 'annual_policy_document_required' };
   const now = Date.now();

@@ -53,6 +53,7 @@ export function AdminLayoutShell({
   useEffect(() => {
     if (previousPath.current === pathname) return;
     previousPath.current = pathname;
+    if (mainContent.current) mainContent.current.scrollTop = 0;
     if (mobileNavOpen) {
       navigationAccepted.current = true;
       setMobileNavOpen(false);
@@ -107,7 +108,7 @@ export function AdminLayoutShell({
   }
   const compact = collapsed && hydrated;
   return (
-    <div className="flex min-h-screen">
+    <div className="admin-frame flex min-h-0 flex-1 overflow-hidden print:h-auto print:overflow-visible">
       <aside
         data-testid="admin-sidebar"
         data-collapsed={compact}
@@ -140,8 +141,8 @@ export function AdminLayoutShell({
           )}
         </div>
       </aside>
-      <div className="min-w-0 flex-1">
-        <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6 lg:px-8">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-2 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button
               type="button"
@@ -181,7 +182,7 @@ export function AdminLayoutShell({
         <main
           ref={mainContent}
           tabIndex={-1}
-          className="admin-content min-w-0 px-4 py-6 outline-none sm:px-6 lg:px-8"
+          className="admin-content min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 outline-none sm:px-6 print:overflow-visible"
         >
           <Suspense fallback={<p className="text-muted-foreground">Loading workspace…</p>}>
             <BidYearContext />
