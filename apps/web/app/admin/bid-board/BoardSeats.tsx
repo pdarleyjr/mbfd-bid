@@ -90,7 +90,7 @@ function GroupRows({ seats }: { seats: Seat[] }) {
           <h3 className="bg-muted/50 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
             {title(unit)}
           </h3>
-          <Table className="table-fixed text-xs">
+          <Table className="relative table-fixed text-xs">
             <TableHeader className="sr-only">
               <TableRow>
                 <TableHead>Position</TableHead>
