@@ -1,6 +1,7 @@
 'use client';
 
 import { ListPagination, useListPage } from '@/components/admin/ListPagination';
+import { rosterTone, unitTone } from '@/components/admin/RosterIdentity';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/table';
 import type { AdminBidBoard } from '@mbfd/shared';
 import { Building2, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 type Seat = AdminBidBoard['seats'][number];
 const title = (s: string | null) => (s === null || s === '' ? 'Unmapped / Review Required' : s);
@@ -87,7 +88,9 @@ function GroupRows({ seats }: { seats: Seat[] }) {
     <>
       {groups.map((unit) => (
         <div key={unit ?? 'unmapped'} className="border-t border-border first:border-t-0">
-          <h3 className="bg-muted/50 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+          <h3
+            className={`border-b px-3 py-1.5 text-xs font-semibold ${rosterTone({ tone: unitTone(unit) })}`}
+          >
             {title(unit)}
           </h3>
           <Table className="relative table-fixed text-xs">
@@ -124,8 +127,8 @@ function StationRosterCard({ station, seats }: { station: string | null; seats: 
   const page = useListPage(seats, seats.map((seat) => seat.id).join(':'), 6);
   return (
     <Card className="min-w-0 overflow-hidden self-start" data-testid="station-roster-card">
-      <header className="flex items-center gap-2 border-b border-border bg-station-header px-3 py-3">
-        <Building2 size={18} className="shrink-0 text-warning" aria-hidden="true" />
+      <header className="flex items-center gap-2 border-b border-border bg-station-header px-3 py-2">
+        <Building2 size={18} className="shrink-0 text-muted-foreground" aria-hidden="true" />
         <h2 className="min-w-0 flex-1 font-heading text-sm font-bold">
           {station === null
             ? title(station)
@@ -145,7 +148,11 @@ function StationRosterCard({ station, seats }: { station: string | null; seats: 
   );
 }
 /** All grouping, counts and identity are derived from the selected response only. */
-export function BoardSeats({ board, search = '' }: { board: AdminBidBoard; search?: string }) {
+export function BoardSeats({
+  board,
+  search = '',
+  summary,
+}: { board: AdminBidBoard; search?: string; summary?: ReactNode }) {
   const [stationSelection, setStationSelection] = useState('');
   const needle = search.trim().toLowerCase();
   const visible = board.seats.filter((seat) =>
@@ -171,24 +178,27 @@ export function BoardSeats({ board, search = '' }: { board: AdminBidBoard; searc
         : title(stations[0] ?? null);
   return (
     <section className="space-y-3">
-      <Label className="flex flex-wrap items-center gap-3 text-sm">
-        Station or pool
-        <NativeSelect
-          value={selected}
-          onChange={(event) => setStationSelection(event.target.value)}
-          disabled={Boolean(needle)}
-          className="max-w-full"
-        >
-          <option value="all">Compare all stations ({visible.length} positions)</option>
-          {stations.map((station) => (
-            <option key={title(station)} value={title(station)}>
-              {title(station)} · {visible.filter((seat) => seat.station === station).length}{' '}
-              positions
-            </option>
-          ))}
-        </NativeSelect>
-        {needle && <span className="text-muted-foreground">Search includes all stations.</span>}
-      </Label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {summary}
+        <Label className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          Station or pool
+          <NativeSelect
+            value={selected}
+            onChange={(event) => setStationSelection(event.target.value)}
+            disabled={Boolean(needle)}
+            className="w-full max-w-full sm:w-auto sm:min-w-64"
+          >
+            <option value="all">Compare all stations ({visible.length} positions)</option>
+            {stations.map((station) => (
+              <option key={title(station)} value={title(station)}>
+                {title(station)} · {visible.filter((seat) => seat.station === station).length}{' '}
+                positions
+              </option>
+            ))}
+          </NativeSelect>
+          {needle && <span className="text-muted-foreground">Search includes all stations.</span>}
+        </Label>
+      </div>
       <div
         className={`grid max-h-[55dvh] items-start gap-4 overflow-y-auto overscroll-contain ${selected === 'all' ? 'lg:grid-cols-2 xl:grid-cols-3' : ''}`}
         data-testid="board-stations"

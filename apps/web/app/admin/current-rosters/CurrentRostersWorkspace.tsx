@@ -1,5 +1,6 @@
 'use client';
 import { ListPagination, useListPage } from '@/components/admin/ListPagination';
+import { UnitBadge, rosterTone, shiftTone } from '@/components/admin/RosterIdentity';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -112,7 +113,7 @@ function RosterTable({ positions }: { positions: readonly CurrentRosterPosition[
                 <TableCell className="px-3 py-3">
                   <p className="font-medium text-foreground">Station {display(position.station)}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {display(position.unit)} · {display(position.division)}
+                    <UnitBadge unit={position.unit} /> · {display(position.division)}
                   </p>
                 </TableCell>
                 <TableCell className="px-3 py-3">
@@ -349,7 +350,8 @@ export function CurrentRostersWorkspace({
               <Button
                 key={shift}
                 type="button"
-                variant={activeShift === shift ? 'primary' : 'secondary'}
+                variant="secondary"
+                className={`${rosterTone({ tone: shiftTone(shift) })} ${activeShift === shift ? 'ring-2 ring-ring ring-offset-2' : ''}`}
                 aria-pressed={activeShift === shift}
                 onClick={() => setSelectedShift(shift)}
               >
@@ -364,11 +366,10 @@ export function CurrentRostersWorkspace({
               if (positions.length === 0) return null;
               return (
                 <section key={shift} aria-labelledby={`roster-${shift}-heading`}>
-                  <div className="flex items-baseline justify-between gap-4 border-b border-border pb-2">
-                    <h2
-                      id={`roster-${shift}-heading`}
-                      className="font-heading text-lg text-foreground"
-                    >
+                  <div
+                    className={`flex items-baseline justify-between gap-4 rounded-md border px-3 py-2 ${rosterTone({ tone: shiftTone(shift) })}`}
+                  >
+                    <h2 id={`roster-${shift}-heading`} className="font-heading text-lg">
                       {SHIFT_LABELS[shift]}
                     </h2>
                     <p className="text-sm text-muted-foreground">

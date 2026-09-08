@@ -1,7 +1,7 @@
 'use client';
 
+import { ShiftBadge, rosterTone, shiftTone } from '@/components/admin/RosterIdentity';
 import { Alert } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -124,30 +124,32 @@ export function BidBoardWorkspace() {
   const inputClass =
     'min-h-11 min-w-0 w-full rounded border border-border bg-card px-3 text-foreground';
   return (
-    <section className="mx-auto max-w-[100rem] space-y-6 text-foreground">
-      <header>
-        <h1 className="font-heading text-3xl">Bid Board</h1>
-        <p className="mt-2 max-w-3xl text-foreground">
-          Review completed awards, dated staffing, and the designated annual plan independently.
-        </p>
+    <section className="mx-auto max-w-[100rem] space-y-3 text-foreground">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold">Bid Board</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Review completed awards, dated staffing, and the designated annual plan independently.
+          </p>
+        </div>
+        <nav
+          aria-label="Board views"
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border bg-card p-1"
+        >
+          {Object.entries(LABELS).map(([value, label]) => (
+            <Button
+              key={value}
+              type="button"
+              aria-current={view === value ? 'page' : undefined}
+              onClick={() => select('view', value)}
+              className={`min-h-11 rounded px-2 font-semibold sm:px-4 ${view === value ? 'bg-info text-primary-foreground border-info' : 'border-transparent bg-card text-foreground'}`}
+            >
+              {label}
+            </Button>
+          ))}
+        </nav>
       </header>
-      <nav
-        aria-label="Board views"
-        className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border bg-card p-1"
-      >
-        {Object.entries(LABELS).map(([value, label]) => (
-          <Button
-            key={value}
-            type="button"
-            aria-current={view === value ? 'page' : undefined}
-            onClick={() => select('view', value)}
-            className={`min-h-11 rounded px-4 font-semibold ${view === value ? 'bg-info text-primary-foreground border-info' : 'border-transparent bg-card text-foreground'}`}
-          >
-            {label}
-          </Button>
-        ))}
-      </nav>
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-wrap items-end gap-3">
         <Label className="grid gap-1 text-sm">
           Shift
           <NativeSelect
@@ -276,29 +278,24 @@ export function BidBoardWorkspace() {
       )}
       {data && (
         <>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 border-y border-border py-3 text-sm">
-            <strong className="flex items-center gap-2">
-              <Badge
-                className={
-                  shift === 'A'
-                    ? 'text-shift-a'
-                    : shift === 'B'
-                      ? 'text-shift-b'
-                      : shift === 'C'
-                        ? 'text-shift-c'
-                        : ''
-                }
-              >
-                {shift} Shift
-              </Badge>
-              {LABELS[data.view]} · {data.lifecycle}
-            </strong>
-            <span className="tabular-nums">{data.seats.length} seats in this shift</span>
-            <span>Updated {new Date(board.dataUpdatedAt).toLocaleTimeString()}</span>
-          </div>
           {data.notice && <p className="text-sm text-warning">{data.notice}</p>}
-          <BoardSeats board={data} search={search} />
-          <details className="border-t border-border pt-4 text-sm text-foreground">
+          <BoardSeats
+            board={data}
+            search={search}
+            summary={
+              <div
+                className={`flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md border px-3 py-2 text-sm ${rosterTone({ tone: shiftTone(shift) })}`}
+              >
+                <strong className="flex items-center gap-2">
+                  <ShiftBadge shift={shift} />
+                  {LABELS[data.view]} · {data.lifecycle}
+                </strong>
+                <span className="tabular-nums">{data.seats.length} seats in this shift</span>
+                <span>Updated {new Date(board.dataUpdatedAt).toLocaleTimeString()}</span>
+              </div>
+            }
+          />
+          <details className="border-t border-border pt-1 text-sm text-foreground">
             <summary className="min-h-11 cursor-pointer">Source and revision details</summary>
             <dl className="grid gap-2 sm:grid-cols-2">
               {Object.entries(data.source)

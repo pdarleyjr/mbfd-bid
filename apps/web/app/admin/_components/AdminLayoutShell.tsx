@@ -160,7 +160,8 @@ export function AdminLayoutShell({
             >
               <Menu size={20} />
             </Button>
-            <div>
+            <p className="font-heading text-sm font-bold sm:hidden">MBFD Annual Bid</p>
+            <div className="hidden sm:block">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Miami Beach Fire Department
               </p>
@@ -168,6 +169,7 @@ export function AdminLayoutShell({
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <FeatureHelp />
             {userName && (
               <p className="hidden text-right text-xs text-muted-foreground sm:block">
                 Signed in as
@@ -186,7 +188,6 @@ export function AdminLayoutShell({
         >
           <Suspense fallback={<p className="text-muted-foreground">Loading workspace…</p>}>
             <BidYearContext />
-            <FeatureHelp />
             {children}
           </Suspense>
         </main>

@@ -1,6 +1,7 @@
 'use client';
 
 import { ListPagination, useListPage } from '@/components/admin/ListPagination';
+import { ShiftBadge, UnitBadge, rosterTone, shiftTone } from '@/components/admin/RosterIdentity';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,9 +48,11 @@ export function HistoricalSeats({
   );
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-3 border-y border-border py-3 text-sm">
+      <div
+        className={`flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm ${rosterTone({ tone: shiftTone(shift) })}`}
+      >
         <strong>
-          {archive.year} Previous Bid · {shift === 'D' ? 'D / Days' : `${shift} Shift`}
+          {archive.year} Previous Bid · <ShiftBadge shift={shift} />
         </strong>
         <span>{seats.filter((seat) => seat.status === 'AWARDED').length} documented awards</span>
         <span>
@@ -68,6 +71,7 @@ export function HistoricalSeats({
         Station or pool
         <NativeSelect
           value={activeStation}
+          className="w-full sm:w-auto sm:min-w-64"
           onChange={(event) => setStationSelection(event.target.value)}
         >
           <option value="all">All stations</option>
@@ -81,7 +85,7 @@ export function HistoricalSeats({
       <div className="grid max-h-[50dvh] items-start gap-4 overflow-y-auto overscroll-contain xl:grid-cols-2">
         {[...new Set(page.rows.map((seat) => seat.station))].map((station) => (
           <Card key={station} className="min-w-0 overflow-hidden">
-            <h2 className="border-b border-border bg-station-header px-3 py-3 font-heading font-bold">
+            <h2 className="border-b border-border bg-station-header px-3 py-2 font-heading font-bold">
               {station}
             </h2>
             <Table className="table-fixed text-xs">
@@ -100,7 +104,9 @@ export function HistoricalSeats({
                         <strong>
                           {seat.id} · {seat.position ?? 'Role not printed in source'}
                         </strong>
-                        <p className="mt-1 text-muted-foreground">{seat.unit}</p>
+                        <p className="mt-1">
+                          <UnitBadge unit={seat.unit} />
+                        </p>
                       </TableCell>
                       <TableCell className="break-words align-top">
                         <p>
