@@ -32,6 +32,16 @@ export async function annualGet<T>(path: string): Promise<T> {
 // Keep the authenticated bootstrap for this page lifetime. A fresh wrapper for
 // every command needlessly hits the authentication endpoint during bulk work.
 let annualMutationFetch: typeof fetch | undefined;
+export class AnnualRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'AnnualRequestError';
+  }
+}
 export async function annualPost<T>(path: string, body: unknown, key: string): Promise<T> {
   annualMutationFetch ??= createCsrfAwareFetch(fetch, () => window.location.origin);
   const r = await annualMutationFetch(`/api/admin/${path}`, {
@@ -45,7 +55,9 @@ export async function annualPost<T>(path: string, body: unknown, key: string): P
     conflicts?: { positionId: string; field: string; reason: string }[];
   };
   if (!r.ok)
-    throw new Error(
+    throw new AnnualRequestError(
+      r.status,
+      result.error ?? 'request_failed',
       [
         result.error?.replaceAll('_', ' ') ?? `Request failed (${r.status})`,
         ...(result.conflicts ?? []).map((c) => `${c.positionId}: ${c.field} — ${c.reason}`),

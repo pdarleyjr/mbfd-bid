@@ -62,6 +62,7 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
   let uploaded = false;
   let applied = false;
   let applyCalls = 0;
+  const applyKeys: (string | null)[] = [];
   const detail = () => ({
     id: 'synthetic-import',
     filename: 'synthetic.csv',
@@ -133,6 +134,9 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
     if (path.endsWith('/review')) return route.fulfill({ json: { reviewed: 2 } });
     if (path.endsWith('/apply')) {
       applyCalls++;
+      applyKeys.push(route.request().headers()['idempotency-key'] ?? null);
+      if (applyCalls === 1)
+        return route.fulfill({ status: 503, json: { error: 'authorization_unavailable' } });
       applied = true;
       return route.fulfill({ json: { processed: 1, eventsAdded: 1, remainingSafe: 0 } });
     }
@@ -177,7 +181,12 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
     .getByPlaceholder('Source reviewed and reason for the updates')
     .fill('Reviewed synthetic source; unresolved ID stays pending');
   await page.getByRole('button', { name: /Apply reviewed/ }).click();
-  await expect.poll(() => applyCalls).toBe(1);
+  await expect(page.getByRole('status').filter({ hasText: 'Hub authorization' })).toContainText(
+    'Retrying this group',
+  );
+  await expect.poll(() => applyCalls, { timeout: 15000 }).toBe(2);
+  expect(applyKeys[0]).toBeTruthy();
+  expect(applyKeys[1]).toBe(applyKeys[0]);
   await expect(page.getByText('Unmatched Employee IDs', { exact: false }).first()).toBeVisible();
   const width = await page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,

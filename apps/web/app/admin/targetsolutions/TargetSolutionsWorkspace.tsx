@@ -7,8 +7,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { annualGet, annualPost } from '../annual-plan/annual-plan-client';
+import { retryImportGroup } from './import-retry';
 
 type Row = {
   id: string;
@@ -80,6 +81,14 @@ export function TargetSolutionsWorkspace() {
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
   const stop = useRef(false);
+  const retryController = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      stop.current = true;
+      retryController.current?.abort();
+    },
+    [],
+  );
   const list = useQuery({
     queryKey: ['targetsolutions', 'list'],
     queryFn: () =>
@@ -126,6 +135,7 @@ export function TargetSolutionsWorkspace() {
       await work();
       await refresh();
     } catch (e) {
+      await refresh();
       setFailed(true);
       setMessage(
         e instanceof Error
@@ -159,19 +169,33 @@ export function TargetSolutionsWorkspace() {
   }
   async function applySafe() {
     stop.current = false;
+    const controller = new AbortController();
+    retryController.current = controller;
     await action(async () => {
       let processed = 0;
       let remaining = 1;
       while (remaining > 0 && !stop.current) {
-        const result = await annualPost<{ processed: number; remainingSafe: number }>(
-          `targetsolutions/imports/${id}/apply`,
-          { safe: true, reason },
-          crypto.randomUUID(),
+        const key = crypto.randomUUID();
+        const result = await retryImportGroup(
+          () =>
+            annualPost<{ processed: number; remainingSafe: number }>(
+              `targetsolutions/imports/${id}/apply`,
+              { safe: true, reason },
+              key,
+            ),
+          controller.signal,
+          (seconds) =>
+            setMessage(
+              `Hub authorization is temporarily unavailable or busy. Completed groups are saved. Retrying this group in ${seconds} seconds; you can stop at any time.`,
+            ),
         );
+        if (result === null) break;
         processed += result.processed;
         remaining = result.remainingSafe;
         setMessage(`Reconciled ${processed} records this run. ${remaining} ready records remain.`);
-        await refresh();
+        // Keep progress live without reloading four protected views after each
+        // twenty-row command. Each actual mutation still revalidates with Hub.
+        if (processed % 200 === 0 || remaining === 0) await refresh();
         if (!result.processed) break;
       }
       setMessage(
@@ -519,6 +543,7 @@ export function TargetSolutionsWorkspace() {
                   variant="secondary"
                   onClick={() => {
                     stop.current = true;
+                    retryController.current?.abort();
                   }}
                 >
                   Stop after current group
