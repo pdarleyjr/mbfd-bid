@@ -15,17 +15,18 @@ export function FeatureHelp() {
   if (path === '/admin/docs' || path === '/admin/guide') return null;
   const topics = helpForPath(path);
   return (
-    <div className="mb-2 flex justify-end print:hidden">
+    <div className="flex shrink-0 print:hidden">
       <Button
         type="button"
         variant="ghost"
         size="sm"
         aria-expanded={openPath === path}
+        aria-label="How to use this page"
         onClick={() => setOpenPath(path)}
         className="gap-2"
       >
         <CircleHelp size={18} aria-hidden="true" />
-        How to use this page
+        <span className="hidden lg:inline">How to use this page</span>
       </Button>
       <TaskPanel
         open={openPath === path}

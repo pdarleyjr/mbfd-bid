@@ -32,6 +32,22 @@ describe('MBFD semantic palette accessibility', () => {
     ['sidebar-muted', 'sidebar'],
     ['sidebar-foreground', 'sidebar-accent'],
     ['brand-gold', 'sidebar'],
+    ...(
+      [
+        'shift-a',
+        'shift-b',
+        'shift-c',
+        'shift-d',
+        'unit-engine',
+        'unit-ladder',
+        'unit-rescue',
+        'unit-float',
+        'unit-marine',
+        'unit-command',
+      ] as const
+    ).map((key): [keyof typeof palette, keyof typeof palette] => [key, `${key}-surface`]),
+    ['shift-d', 'card'],
+    ['primary-foreground', 'shift-d'],
     ['shift-a', 'card'],
     ['shift-b', 'card'],
     ['shift-c', 'card'],

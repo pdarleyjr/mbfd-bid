@@ -64,9 +64,9 @@ export function BidYearContext() {
   return (
     <aside
       aria-label="Selected annual bid"
-      className="mb-3 rounded-md border border-border bg-card px-3 py-2 text-sm"
+      className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border pb-2 text-sm"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-1">
         <Link
           href={
             `/admin/annual-plan?year=${valid(selected) ? selected : new Date().getFullYear()}` as Route
@@ -91,9 +91,13 @@ export function BidYearContext() {
         </button>
       )}
       {plan && (
-        <details className="mt-1">
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            Setup, staffing and sessions
+        <details className="group open:basis-full">
+          <summary
+            aria-label="Setup, staffing and sessions"
+            className="min-h-11 content-center cursor-pointer text-xs text-muted-foreground"
+          >
+            <span className="sm:hidden">Setup details</span>
+            <span className="hidden sm:inline">Setup, staffing and sessions</span>
           </summary>
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs">
             <span>

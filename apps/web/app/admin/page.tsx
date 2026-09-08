@@ -88,29 +88,23 @@ const AREA_ICONS = [
 export default async function AdminDashboardPage() {
   const claims = await requireAdmin();
   return (
-    <section className="mx-auto max-w-[100rem] space-y-7" aria-labelledby="admin-dashboard-heading">
+    <section className="mx-auto max-w-[100rem] space-y-4" aria-labelledby="admin-dashboard-heading">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          MBFD annual bid control center
-        </p>
-        <h1
-          id="admin-dashboard-heading"
-          className="mt-2 font-heading text-3xl font-bold tracking-tight"
-        >
+        <h1 id="admin-dashboard-heading" className="font-heading text-2xl font-bold tracking-tight">
           Today
         </h1>
-        <p className="mt-2 text-base text-muted-foreground">
+        <p className="mt-1 text-sm text-muted-foreground">
           Manage your workforce, prepare the next annual bid, and review assignments. Welcome back,{' '}
           {claims.first_name} {claims.last_name}.
         </p>
       </header>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="border-sidebar bg-sidebar text-sidebar-foreground">
-          <CardHeader>
+          <CardHeader className="space-y-2 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-gold">
               Annual preparation
             </p>
-            <CardTitle className="text-2xl">
+            <CardTitle className="text-xl">
               Annual Bid <ArrowRight className="ml-2 inline h-5 w-5" aria-hidden="true" />
             </CardTitle>
             <CardDescription className="max-w-lg text-sidebar-foreground">
@@ -118,18 +112,18 @@ export default async function AdminDashboardPage() {
               policy, then practice and approve the setup.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 pt-0">
             <Link href="/admin/annual-plan" className={buttonVariants({ variant: 'primary' })}>
               Open guided preparation <ArrowRight size={16} aria-hidden="true" />
             </Link>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader>
+          <CardHeader className="space-y-2 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Assignments at a glance
             </p>
-            <CardTitle className="text-2xl">
+            <CardTitle className="text-xl">
               <Link href="/admin/bid-board" className="hover:text-info">
                 Bid Board <ArrowRight className="ml-2 inline h-5 w-5" aria-hidden="true" />
               </Link>
@@ -139,7 +133,7 @@ export default async function AdminDashboardPage() {
               keeps its own stations, seats and source dates.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
+          <CardContent className="flex flex-wrap gap-2 p-4 pt-0">
             {[
               { view: 'previous', label: 'Previous Bid', Icon: ClipboardList },
               { view: 'current', label: 'Current Staffing', Icon: UsersRound },

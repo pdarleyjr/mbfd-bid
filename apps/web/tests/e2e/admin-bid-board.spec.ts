@@ -53,6 +53,21 @@ test('independent board views preserve source boundaries at phone, tablet and de
       sameSite: 'Strict',
     },
   ]);
+  await page.route('**/api/admin/annual-plan/2027', (route) =>
+    route.fulfill({
+      json: {
+        plan: {
+          lifecycle: 'FROZEN',
+          ruleBookVersion: '2027.1',
+          configurationRevision: 1,
+          effectiveOn: '2026-09-08',
+          settings: { credentialEvaluationOn: '2026-09-03' },
+          baseline: null,
+          sessions: [],
+        },
+      },
+    }),
+  );
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   let fail = false;
@@ -139,6 +154,14 @@ test('independent board views preserve source boundaries at phone, tablet and de
               ...details,
               id: `synthetic-seat-${index + 1}`,
               station: index < 20 ? '7' : '8',
+              unit: [
+                'Engine 1',
+                'Ladder 1',
+                'Rescue 1',
+                'Combat Float',
+                'Marine 4',
+                'Division Chief 300',
+              ][index % 6],
               position: `Firefighter position ${index + 1}`,
             }))
           : [{ ...seat, ...details }],
@@ -297,13 +320,54 @@ test('independent board views preserve source boundaries at phone, tablet and de
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(
     true,
   );
+  // The user supplied a 1857px screenshot at desktop zoom. Also cover its
+  // effective CSS width, the in-app window, and a phone without clipping.
+  for (const [width, height] of [
+    [1857, 970],
+    [1486, 776],
+    [646, 698],
+    [390, 844],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto('/admin/bid-board?view=current&shift=A&year=2027');
+    await expect(page.getByText('Firefighter position 1', { exact: true })).toBeVisible();
+    const first = await page.getByTestId('station-roster-card').first().boundingBox();
+    expect(first).not.toBeNull();
+    if (width >= 1486) {
+      const main = await page.getByRole('main').boundingBox();
+      if (!first || !main) throw new Error('Missing layout bounds');
+      expect(first.y - main.y).toBeLessThan(300);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await page.screenshot({ path: testInfo.outputPath(`compact-board-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1486, height: 776 });
+  for (const nextShift of ['A', 'B', 'C', 'D']) {
+    await page.goto(`/admin/bid-board?view=current&shift=${nextShift}&year=2027`);
+    await expect(page.getByText('Firefighter position 1', { exact: true })).toBeVisible();
+    const label = nextShift === 'D' ? 'D / Days' : `${nextShift} Shift`;
+    await expect(
+      page.locator('[data-slot="badge"]').filter({ hasText: label }).first(),
+    ).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`roster-colors-${nextShift}.png`) });
+  }
   await page.goto('/admin');
   await expect(page.getByRole('heading', { name: 'Annual Bid', exact: true })).toBeVisible({
     timeout: 15_000,
   });
   await expect(page.getByRole('heading', { name: /Bid Board/ })).toBeVisible();
-  for (const width of [390, 820, 1440]) {
-    await page.setViewportSize({ width, height: 1000 });
+  for (const width of [390, 646, 1486, 1857]) {
+    await page.setViewportSize({ width, height: 970 });
+    if (width >= 1486) {
+      const card = await page
+        .getByRole('heading', { name: 'Annual Bid', exact: true })
+        .boundingBox();
+      const main = await page.getByRole('main').boundingBox();
+      if (!card || !main) throw new Error('Missing dashboard bounds');
+      expect(card.y - main.y).toBeLessThan(170);
+    }
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
