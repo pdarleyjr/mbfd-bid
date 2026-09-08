@@ -365,8 +365,8 @@ function StartPlan({
       pending.current = null;
       setReconciliation(null);
       onDirty(false);
-      await onSaved();
       setMessage('Annual draft saved. Continue to organization and seats.');
+      await onSaved();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Start failed');
     } finally {
