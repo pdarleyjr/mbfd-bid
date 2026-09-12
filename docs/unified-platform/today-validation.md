@@ -38,6 +38,16 @@ Independent review found that roster filters rejected organization names longer 
 
 Current Bid characterization pins the executable configuration and committed seed behavior. Synthetic fixtures and executable regression parity are **not** represented as an approved normative policy replay or production acceptance. The repository's private historical golden replay remains separately gated.
 
+The native Windows OpenNext attempt compiled Next successfully but failed at Sharp `.node` packaging. This is a failed local packaging gate. A hash-verified Linux candidate build is required separately before release.
+
+## Browser review captures
+
+These captures use deliberately synthetic local fixtures; their names and counts are not production data. The desktop capture shows explicit paging. The phone capture shows the initial portion of the normally scrolling roster.
+
+![Today desktop with synthetic records](images/today-desktop-synthetic.png)
+
+![Today phone with synthetic records](images/today-phone-synthetic.png)
+
 ## Release evidence boundaries
 
 This candidate introduces no database migration. The worktree uses the exact recorded main base in the implementation contract, preserves the original shared checkout, and contains no production test data or private credentials. Hosted CI, CodeQL, exact release identity and live browser acceptance must be recorded for the committed candidate separately. A responding health endpoint is not source-SHA evidence.
