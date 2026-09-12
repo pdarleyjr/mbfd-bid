@@ -38,14 +38,14 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     steps: [
       'Use Today, People, Staffing, Annual Bid and History & Reports as the main starting points. The arrow beside each menu opens and closes its links independently of navigation. The full sidebar can also collapse. On a phone, open the navigation menu and close it with X or Escape.',
       'Member lists, catalog editors and bid-day actions open in focused panels. The title and close control remain visible; long details scroll inside the panel. Closing a panel does not cancel an action that was already submitted. Wait for its receipt before retrying.',
-      'The Bid Board starts with one station or pool. Select another station, or Compare all stations for the overview. Use global search across stations and Previous or Next within a station to reach every seat. Current rosters switch by shift and page through positions; full exports and print views remain available.',
+      'Today opens the current Department staffing picture. Choose a date and shift; use Previous roster page and Next roster page to reach every position on desktop. The Bid Board separately shows Bid opportunities and results. Current roster exports and print views remain available under Staffing.',
       'Annual Bid remembers the selected year across its linked workspaces. Expand Setup, staffing and sessions for the actual designated rules, staffing source, dates and session links. Each session is marked Practice or Real bid.',
       'Use the preparation step selector on smaller screens. Long rule and operating-policy forms show one section at a time; switching sections retains all fields. Show all sections remains available for a full review.',
       'On bid day, choose Record selection, Specialty and contact, Presentation, Correct selection or Remaining order. Active specialty review opens its contact panel and can be collapsed and reopened. Presentation controls remain distinct from pausing bidding; all actions retain the session policy and operator checks.',
       'Use How to use this page for task instructions. Docs shows one selected topic, with search and a collapsible detail view. Download the complete PDF or offline HTML manual when you need all topics together.',
     ],
     important:
-      'Readable text and complete information take priority over forcing every record onto one screen. Long records remain available through search, paging, internal scrolling and full exports.',
+      'Today uses explicit roster pages on desktop without nested roster scrolling. Phone and tablet views scroll normally. Other workspaces retain focused detail panels, search, paging and full exports.',
     keywords: [
       'navigation',
       'panel',
@@ -555,7 +555,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     category: 'Start here',
     title: 'Getting started',
     route: '/admin',
-    routeLabel: 'Dashboard',
+    routeLabel: 'Today',
     summary:
       'Use Bid through your authorized MBFD Hub sign-in. The Admin Console is for year-round staffing administration and controlled Bid operations.',
     controls: ['Admin navigation', 'Navigation button on mobile', 'Sidebar links'],
@@ -571,20 +571,32 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   section({
     id: 'dashboard',
     category: 'Start here',
-    title: 'Dashboard',
+    title: 'Today: current Department staffing',
     route: '/admin',
-    routeLabel: 'Dashboard',
+    routeLabel: 'Today',
     summary:
-      'The dashboard is the control-center landing page. Read its status cards and use its shortcuts to move into the area that needs attention.',
-    controls: ['Status cards', 'Operational shortcuts', 'Admin navigation'],
+      'Today shows effective-dated Department positions, occupants and vacancies. It uses year-round staffing records and does not require an annual Bid Rule Book.',
+    controls: ['Date', 'Shift', 'Previous roster page', 'Next roster page', 'Refresh staffing'],
     steps: [
-      'Review the status shown before making a change.',
-      'Use a shortcut to open the related workspace.',
-      'Follow blocked or unavailable notices instead of working around them.',
+      'Choose the effective date and shift you want to view. Shift options come from recorded staffing rather than a fixed list.',
+      'Read the station and unit groups, member names, position names and vacancies. An empty staffing position is not automatically an available Bid opportunity.',
+      'On desktop, use Previous roster page and Next roster page when the selected shift needs more than one page. Every record remains reachable and names wrap instead of being silently cut off. On a phone or tablet, scroll through the roster.',
+      'Check the recorded update time and use Refresh staffing after a change. Today also refreshes periodically and when you return to the window. A failed refresh is shown explicitly; the last loaded roster is identified when retained.',
+      'Use the staffing and member workspaces to maintain assignments and effective-dated personnel history. Approved organization links control dated station and unit names; unmapped legacy positions retain their recorded labels.',
     ],
     important:
-      'A dashboard status is an operational signal, not authorization to start a live Bid or change controlled records.',
-    keywords: ['status', 'cards', 'shortcuts', 'attention'],
+      'Today is read-only. Viewing dates, switching shifts, paging and refreshing do not change Department records, create Bid versions or advance Mock or Live runs.',
+    keywords: [
+      'today',
+      'staffing',
+      'shift',
+      'date',
+      'vacant',
+      'roster',
+      'pagination',
+      'refresh',
+      'department',
+    ],
   }),
   section({
     id: 'current-rosters',
