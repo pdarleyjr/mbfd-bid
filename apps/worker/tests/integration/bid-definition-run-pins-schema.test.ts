@@ -521,12 +521,17 @@ describe('Bid run pin storage migration', () => {
     (location) => {
       const row = pinned(owned);
       const json = row.snapshot_json as string;
-      row.snapshot_json =
+      const prefix = location === 'root' ? '{' : `"${location}":{`;
+      const at = json.indexOf(prefix);
+      expect(at).toBeGreaterThanOrEqual(0);
+      const offset = at + prefix.length;
+      const duplicate =
         location === 'root'
-          ? json.replace('{', '{"v":3,')
+          ? '"v":3,'
           : location === 'bidDefinition'
-            ? json.replace('"bidDefinition":{', '"bidDefinition":{"v":1,')
-            : json.replace('"settings":{', '"settings":{"turnTimerSeconds":180,');
+            ? '"v":1,'
+            : '"turnTimerSeconds":180,';
+      row.snapshot_json = json.slice(0, offset) + duplicate + json.slice(offset);
       row.snapshot_sha256 = hash(row.snapshot_json as string);
       rejectUnchanged(() => write(row));
     },
