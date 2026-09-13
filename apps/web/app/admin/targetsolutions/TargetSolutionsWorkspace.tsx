@@ -3,12 +3,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { annualGet, annualPost } from '../annual-plan/annual-plan-client';
+import { AnnualRequestError, annualGet, annualPost } from '../annual-plan/annual-plan-client';
 import { retryImportGroup } from './import-retry';
 
 type Row = {
@@ -64,12 +65,26 @@ const labels: Record<string, string> = {
   NOT_REVIEWED: 'Awaiting comparison',
 };
 const label = (value: string) => labels[value] ?? value.replaceAll('_', ' ');
-export function TargetSolutionsWorkspace() {
+function importHref(basePath: string, importId: string): Route {
+  const [pathname, query = ''] = basePath.split('?', 2);
+  const params = new URLSearchParams(query);
+  if (importId) params.set('import', importId);
+  else params.delete('import');
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ''}` as Route;
+}
+
+export function TargetSolutionsWorkspace({
+  basePath = '/admin/targetsolutions',
+}: { basePath?: string }) {
   const params = useSearchParams();
   const router = useRouter();
   const client = useQueryClient();
   const id = params.get('import') ?? '';
+  const departmentMode = basePath.split('?', 1)[0]?.startsWith('/admin/department/');
+  const Heading = departmentMode ? 'h2' : 'h1';
   const [file, setFile] = useState<File | null>(null);
+  const [retainedFile, setRetainedFile] = useState<File | null>(null);
   const [date, setDate] = useState('');
   const [category, setCategory] = useState('');
   const [mappingName, setMappingName] = useState('');
@@ -80,6 +95,11 @@ export function TargetSolutionsWorkspace() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
+  const [unresolvedRequest, setUnresolvedRequest] = useState(false);
+  useUnsavedChanges(
+    busy || unresolvedRequest || reason.trim() !== '' || (file !== null && file !== retainedFile),
+    'import review notes or pending requests',
+  );
   const stop = useRef(false);
   const retryController = useRef<AbortController | null>(null);
   useEffect(
@@ -126,15 +146,31 @@ export function TargetSolutionsWorkspace() {
       ),
     enabled: !!id,
   });
-  const refresh = () => client.invalidateQueries({ queryKey: ['targetsolutions'] });
+  const refresh = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: ['targetsolutions'] }),
+      client.invalidateQueries({ queryKey: ['admin', 'department'] }),
+    ]);
   async function action(work: () => Promise<void>) {
     setBusy(true);
     setFailed(false);
     setMessage('');
+    let workFinished = false;
     try {
       await work();
+      workFinished = true;
       await refresh();
     } catch (e) {
+      if (
+        !workFinished &&
+        (!(e instanceof AnnualRequestError) ||
+          (e.status >= 500 && e.code !== 'authorization_unavailable')) &&
+        !(e instanceof Error && e.message === 'csrf_bootstrap_failed')
+      ) {
+        // A later unrelated successful action cannot resolve this missing receipt.
+        // Keep the navigation warning until the operator deliberately leaves.
+        setUnresolvedRequest(true);
+      }
       await refresh();
       setFailed(true);
       setMessage(
@@ -156,7 +192,8 @@ export function TargetSolutionsWorkspace() {
         { csv: await file.text(), filename: file.name, ...(date ? { observed_on: date } : {}) },
         crypto.randomUUID(),
       );
-      router.replace(`/admin/targetsolutions?import=${result.id}` as Route);
+      setRetainedFile(file);
+      router.replace(importHref(basePath, result.id));
       await annualPost(
         `targetsolutions/imports/${result.id}/review`,
         { accept: true },
@@ -245,7 +282,7 @@ export function TargetSolutionsWorkspace() {
     <div className="mx-auto max-w-7xl space-y-6">
       <header>
         <p className="text-sm text-muted-foreground">People / Credential imports</p>
-        <h1 className="mt-1 font-heading text-3xl">Update from TargetSolutions</h1>
+        <Heading className="mt-1 font-heading text-3xl">Update from TargetSolutions</Heading>
         <p className="mt-2 max-w-3xl">
           Upload the credential report, review differences, then apply approved updates. Employee
           IDs identify people; existing qualifications retain their history.
@@ -284,11 +321,7 @@ export function TargetSolutionsWorkspace() {
             onChange={(e) => {
               setCategory('');
               setOffset(0);
-              router.replace(
-                (e.target.value
-                  ? `/admin/targetsolutions?import=${e.target.value}`
-                  : '/admin/targetsolutions') as Route,
-              );
+              router.replace(importHref(basePath, e.target.value));
             }}
           >
             <option value="">Choose an import</option>
@@ -310,7 +343,7 @@ export function TargetSolutionsWorkspace() {
             <span className="mt-2 block">
               <a
                 className="underline"
-                href={`/api/auth/start?returnTo=${encodeURIComponent(`/admin/targetsolutions${id ? `?import=${id}` : ''}`)}`}
+                href={`/api/auth/start?returnTo=${encodeURIComponent(importHref(basePath, id))}`}
               >
                 Sign in again and return to this import
               </a>
@@ -646,7 +679,9 @@ export function TargetSolutionsWorkspace() {
                     Resolve the contradictory evidence in{' '}
                     <Link
                       className="underline"
-                      href={`/admin/personnel/qualifications?memberId=${row.member_id}` as Route}
+                      href={
+                        `${departmentMode ? '/admin/department' : '/admin/personnel/qualifications'}?memberId=${row.member_id}` as Route
+                      }
                     >
                       this member’s qualifications
                     </Link>
@@ -657,7 +692,10 @@ export function TargetSolutionsWorkspace() {
                   ['UNKNOWN_MEMBER', 'AMBIGUOUS_MEMBER'].includes(row.classification) && (
                     <p className="mt-3 text-sm">
                       No identity was inferred.{' '}
-                      <Link className="underline" href="/admin/members">
+                      <Link
+                        className="underline"
+                        href={(departmentMode ? '/admin/department' : '/admin/members') as Route}
+                      >
                         Review personnel and the Employee ID
                       </Link>
                       , then refresh this comparison.

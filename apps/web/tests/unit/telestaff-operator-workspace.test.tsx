@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { QueryClient } from '@tanstack/react-query';
 import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -32,6 +33,7 @@ afterEach(() => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -100,6 +102,143 @@ function requiredControl(
 }
 
 describe('TeleStaffOperatorWorkspace', () => {
+  it('guards entered source and effective dates while allowing clean retained views and downloads', async () => {
+    const importSummary = {
+      id: 'synthetic-clean-import',
+      status: 'reviewed',
+      sourceKind: 'official',
+      sourceSnapshotAsOf: '2026-09-12',
+      sourceObservedAt: null,
+      sourceObservationTimeBasis: 'date_only',
+      reconciliationRevision: 3,
+      normalizedDataRowCount: 1,
+      uniqueEmployeeCount: 1,
+      reconciliation: {
+        sourceRows: 1,
+        pendingSourceRows: 0,
+        hardBlockerSourceRows: 0,
+        incompleteTopologySourceRows: 0,
+        missingObservationFindings: 0,
+        pendingMissingObservationFindings: 0,
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith('?limit=25')
+          ? Response.json({ imports: [importSummary] })
+          : Response.json({
+              import: importSummary,
+              rows: [],
+              missingObservationFindings: [],
+              pagination: { totalRows: 1 },
+            }),
+      ),
+    );
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const container = renderWorkspace();
+    await settle();
+    const link = document.createElement('a');
+    link.href = '/admin/department/import?source=targetsolutions';
+    document.body.appendChild(link);
+    const followed = vi.fn((event: Event) => event.preventDefault());
+    link.addEventListener('click', followed);
+    const attempt = () =>
+      act(() => {
+        link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      });
+    attempt();
+    expect(confirmation).not.toHaveBeenCalled();
+    expect(followed).toHaveBeenCalledOnce();
+    const saved = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Snapshot 2026-09-12'),
+    );
+    if (!saved) throw new Error('Saved import missing');
+    await click(saved);
+    attempt();
+    expect(confirmation).not.toHaveBeenCalled();
+    expect(followed).toHaveBeenCalledTimes(2);
+    await setValue(requiredControl(container, 'select[name="source_kind"]'), 'official');
+    attempt();
+    expect(confirmation).toHaveBeenCalled();
+    expect(followed).toHaveBeenCalledTimes(2);
+    link.setAttribute('download', '');
+    attempt();
+    expect(followed).toHaveBeenCalledTimes(3);
+    link.removeAttribute('download');
+    await setValue(requiredControl(container, 'select[name="source_kind"]'), '');
+    confirmation.mockClear();
+    await setValue(
+      requiredControl(container, 'section[aria-labelledby="telestaff-apply-heading"] input'),
+      '2026-09-12',
+    );
+    attempt();
+    expect(confirmation).toHaveBeenCalled();
+    expect(followed).toHaveBeenCalledTimes(3);
+    confirmation.mockReturnValue(true);
+    attempt();
+    expect(followed).toHaveBeenCalledTimes(4);
+  });
+
+  it('refreshes Department and existing staffing views after successful canonical apply', async () => {
+    const invalidation = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+    const importSummary = {
+      id: 'synthetic-department-apply',
+      status: 'reviewed',
+      sourceKind: 'official',
+      sourceSnapshotAsOf: '2026-09-12',
+      sourceObservedAt: null,
+      sourceObservationTimeBasis: 'date_only',
+      reconciliationRevision: 3,
+      normalizedDataRowCount: 1,
+      uniqueEmployeeCount: 1,
+      reconciliation: {
+        sourceRows: 1,
+        pendingSourceRows: 0,
+        hardBlockerSourceRows: 0,
+        incompleteTopologySourceRows: 0,
+        missingObservationFindings: 0,
+        pendingMissingObservationFindings: 0,
+      },
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === '/api/admin/telestaff/imports?limit=25')
+        return Response.json({ imports: [importSummary] });
+      if (path.endsWith('/apply')) return Response.json({ applied: 1 });
+      return Response.json({
+        import: importSummary,
+        rows: [],
+        missingObservationFindings: [],
+        pagination: { totalRows: 1 },
+      });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const container = renderWorkspace();
+    await settle();
+    const saved = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Snapshot 2026-09-12'),
+    );
+    if (!saved) throw new Error('Saved import missing');
+    await click(saved);
+    await setValue(
+      requiredControl(container, 'section[aria-labelledby="telestaff-apply-heading"] input'),
+      '2026-09-12',
+    );
+    const apply = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Apply to canonical staffing',
+    );
+    if (!apply) throw new Error('Canonical apply control missing');
+    await click(apply);
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/admin/telestaff/imports/synthetic-department-apply/apply',
+      expect.any(Object),
+    );
+    expect(invalidation).toHaveBeenCalledWith({ queryKey: ['admin', 'department'] });
+    expect(invalidation).toHaveBeenCalledWith({ queryKey: ['admin', 'current-roster'] });
+    expect(router.refresh).toHaveBeenCalled();
+  });
+
   it('creates reviewed unknown employees through personnel lifecycle then re-reconciles once', async () => {
     const completed = vi.fn();
     const failed = vi.fn();
