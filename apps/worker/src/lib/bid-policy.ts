@@ -3,6 +3,7 @@ import {
   BidConfigurationSettingsSchema,
   type BidConfigurationSettingsV2,
   type BidConfigurationSettingsV3,
+  type BidDefinitionContent,
   type BidParticipation,
   type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
@@ -20,6 +21,7 @@ import {
   annualBidPolicyDocuments,
   assignmentObservations,
   bidSessionPolicySnapshots,
+  bidSessions,
   bidYears,
   credentialCatalogMetadata,
   credentials,
@@ -40,6 +42,12 @@ import {
   type AuthoritativeStaffingBaselineEvaluation,
   evaluateAuthoritativeStaffingBaseline,
 } from './authoritative-staffing-baseline.js';
+import {
+  bidDefinitionContextHash,
+  snapshotMatchesBidDefinition,
+} from './bid-definition-context.js';
+import { validateBidDefinitionSnapshotPin } from './bid-definition-pin.js';
+import { loadBidDefinitionVersionFromDb } from './bid-definition-version.js';
 import { derivePersonnelMemberAsOf } from './personnel-lifecycle.js';
 import { type DecodedPositionRule, decodeRuleBookRows } from './position-rule.js';
 import {
@@ -687,6 +695,26 @@ export async function loadConfiguredBidYearPolicy(
     .where(eq(bidYears.year, bidYear))
     .get();
   if (year === undefined) return { ok: false, code: 'bid_year_not_found' };
+  return loadExplicitBidPolicySource(db, year, mode);
+}
+
+/** Shared validation for the legacy year adapter and an authenticated saved
+ * version. The caller chooses source identity; readiness checks stay intact. */
+export async function loadExplicitBidPolicySource(
+  db: DB,
+  year: {
+    year: number;
+    ruleBookVersion: string | null;
+    positionTemplateVersion: string | null;
+    configJson: string | null;
+    configurationRevision: number;
+    annualPolicyDocumentId: string | null;
+  },
+  mode: BidSessionMode,
+): Promise<
+  { ok: true; policy: ConfiguredBidYearPolicy } | { ok: false; code: ConfiguredBidYearPolicyError }
+> {
+  const bidYear = year.year;
   if (year.ruleBookVersion === null || year.positionTemplateVersion === null) {
     return { ok: false, code: 'bid_configuration_unconfigured' };
   }
@@ -877,7 +905,20 @@ export async function prepareBidSessionPolicySnapshot(
 ): Promise<BidSessionPolicySnapshotPreparation> {
   const configured = await loadConfiguredBidYearPolicy(db, bidYear, mode);
   if (!configured.ok) return { ok: false, code: configured.code };
-  const { policy } = configured;
+  return prepareConfiguredBidPolicySnapshot(db, configured.policy, capturedAtMs, mode);
+}
+
+/** Reuses every existing evidence, baseline, pool and eligibility freeze rule.
+ * Saved versions supply their captured decisions; legacy callers retain the
+ * dated year source query. This function never retargets bid_years. */
+export async function prepareConfiguredBidPolicySnapshot(
+  db: DB,
+  policy: ConfiguredBidYearPolicy,
+  capturedAtMs: number,
+  mode: BidSessionMode,
+  sourceDecisions?: BidDefinitionContent['sourceDecisions'],
+): Promise<BidSessionPolicySnapshotPreparation> {
+  const bidYear = policy.bidYear;
   const { coverage } = policy;
   const templateVersion = policy.positionTemplateVersion;
   const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
@@ -1293,9 +1334,11 @@ export async function prepareBidSessionPolicySnapshot(
       };
     })
     .sort((left, right) => left.memberId - right.memberId);
-  const unresolvedSources = await db.all<{ issueId: string }>(
-    sql`SELECT d.issue_id AS issueId FROM bid_source_decisions d WHERE d.bid_year=${bidYear} AND d.status='OPEN' AND d.revision=(SELECT MAX(r.revision) FROM bid_source_decisions r WHERE r.bid_year=d.bid_year AND r.issue_id=d.issue_id)`,
-  );
+  const unresolvedSources =
+    sourceDecisions?.filter((decision) => decision.status === 'OPEN') ??
+    (await db.all<{ issueId: string }>(
+      sql`SELECT d.issue_id AS issueId FROM bid_source_decisions d WHERE d.bid_year=${bidYear} AND d.status='OPEN' AND d.revision=(SELECT MAX(r.revision) FROM bid_source_decisions r WHERE r.bid_year=d.bid_year AND r.issue_id=d.issue_id)`,
+    ));
   if (unresolvedSources.length) return { ok: false, code: 'policy_source_decision_required' };
   const disputed = await db.all<{ memberId: number }>(sql`
     SELECT DISTINCT r.member_id AS memberId FROM targetsolutions_rows r
@@ -1446,13 +1489,57 @@ export async function loadBidSessionPolicySnapshot(
       ruleBookRevision: bidSessionPolicySnapshots.ruleBookRevision,
       snapshotJson: bidSessionPolicySnapshots.snapshotJson,
       capturedAt: bidSessionPolicySnapshots.capturedAt,
+      bidVersionId: bidSessionPolicySnapshots.bidVersionId,
+      bidVersionSha256: bidSessionPolicySnapshots.bidVersionSha256,
+      snapshotSha256: bidSessionPolicySnapshots.snapshotSha256,
+      contextSha256: bidSessionPolicySnapshots.contextSha256,
     })
     .from(bidSessionPolicySnapshots)
     .where(eq(bidSessionPolicySnapshots.bidSessionId, bidSessionId))
     .get();
   if (row === undefined) return { snapshot: null, error: 'missing' };
+  const pinColumns = [
+    row.bidVersionId,
+    row.bidVersionSha256,
+    row.snapshotSha256,
+    row.contextSha256,
+  ];
+  if (pinColumns.some((value) => value !== null)) {
+    const session = await db
+      .select({ year: bidSessions.bidYear })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, bidSessionId))
+      .get();
+    if (!session || typeof row.bidVersionId !== 'string')
+      return { snapshot: null, error: 'invalid' };
+    const version = await loadBidDefinitionVersionFromDb(db, session.year, row.bidVersionId);
+    if (!version.ok) return { snapshot: null, error: 'invalid' };
+    const validated = validateBidDefinitionSnapshotPin({
+      row: { ...row, bidSessionId, bidYear: session.year, capturedAtMs: row.capturedAt.getTime() },
+      expectedBidSessionId: bidSessionId,
+      version: {
+        id: version.row.id,
+        bidYear: version.row.bid_year,
+        contentSha256: version.sha256,
+        ruleBookVersion: version.row.rule_book_version,
+        ruleBookRevision: version.row.rule_book_revision,
+        positionTemplateVersion: version.row.position_template_version,
+      },
+    });
+    if (
+      !validated.ok ||
+      validated.kind !== 'pinned' ||
+      bidDefinitionContextHash(validated.snapshot) !== row.contextSha256 ||
+      !snapshotMatchesBidDefinition(validated.snapshot, version)
+    )
+      return { snapshot: null, error: 'invalid' };
+    return { snapshot: validated.snapshot, error: null };
+  }
   const snapshot = parseBidSessionPolicySnapshot(row.snapshotJson);
+  const owned = await db.get(sql`SELECT id FROM bid_definition_versions
+    WHERE rule_book_version=${row.ruleBookVersion} OR position_template_version=${row.positionTemplateVersion} LIMIT 1`);
   if (
+    (owned !== undefined && owned !== null) ||
     snapshot === null ||
     snapshot.ruleBookVersion !== row.ruleBookVersion ||
     snapshot.positionTemplateVersion !== row.positionTemplateVersion ||

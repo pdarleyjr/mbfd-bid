@@ -106,6 +106,10 @@ executable characterization, not an approved historical-policy replay.
 
 ## Next transaction and retirement boundary
 
+The subsequent [version storage and run integrity implementation](bid-version-storage.md)
+adds the internal transaction and pin foundations. Its document records the
+remaining route, review/publication and legacy-writer integration boundaries.
+
 The version store must atomically create immutable content and isolated backing
 material, append a version, compare-and-swap the current pointer and persist an
 exact idempotency receipt. Ordinary semantic no-ops create no new version;

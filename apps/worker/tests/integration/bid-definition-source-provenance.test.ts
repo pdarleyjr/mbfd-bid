@@ -304,6 +304,10 @@ describe('Bid source capture provenance and control consistency', () => {
     async (kind) => {
       seedProfiles();
       seedPolicy();
+      // Isolated corruption/recovery characterization of the pre-0059 gap.
+      // Current direct replacement is separately rejected by the schema suite.
+      if (kind === 'profile-replacement')
+        h.sqlite.exec('DROP TRIGGER annual_rule_profile_revisions_no_replace');
       const sourceRevision = revision();
       const originalPrepare = h.env.DB.prepare.bind(h.env.DB);
       let changed = false;
@@ -405,6 +409,8 @@ describe('Bid source capture provenance and control consistency', () => {
 
   it('rejects compiled provenance that references a profile absent from the recorded inputs', async () => {
     seedProfiles();
+    // Deliberately inject malformed historical material in this fixture only.
+    h.sqlite.exec('DROP TRIGGER annual_rule_profile_revisions_no_replace');
     h.sqlite.exec(`INSERT OR REPLACE INTO annual_rule_profile_revisions
       SELECT bid_year,revision,rule_revision,profiles_json,json_set(compiled_json,'$[0].provenance.scoring',json('["absent-profile"]')),actor_subject,reason,created_at FROM annual_rule_profile_revisions`);
     expect(await readOnlyCapture()).toMatchObject({

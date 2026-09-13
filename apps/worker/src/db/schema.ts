@@ -292,6 +292,69 @@ export const bidYears = sqliteTable('bid_years', {
   configurationRevision: integer('configuration_revision').notNull().default(0),
 });
 
+/** Semantic versions own private backing material; ordinals are independent
+ * of the legacy numeric book/template aliases. SQL migrations seal the rows. */
+export const bidDefinitionVersions = sqliteTable(
+  'bid_definition_versions',
+  {
+    id: text('id').primaryKey().notNull(),
+    bidYear: integer('bid_year')
+      .notNull()
+      .references(() => bidYears.year, { onDelete: 'restrict' }),
+    versionNumber: integer('version_number').notNull(),
+    schemaVersion: integer('schema_version').notNull(),
+    contentJson: text('content_json').notNull(),
+    contentSha256: text('content_sha256').notNull(),
+    originJson: text('origin_json').notNull(),
+    ruleBookVersion: text('rule_book_version')
+      .notNull()
+      .unique()
+      .references(() => ruleBooks.version, { onDelete: 'restrict' }),
+    ruleBookRevision: integer('rule_book_revision').notNull(),
+    positionTemplateVersion: text('position_template_version')
+      .notNull()
+      .unique()
+      .references(() => positionTemplates.version, { onDelete: 'restrict' }),
+    policyDocumentId: text('policy_document_id')
+      .unique()
+      .references(() => annualBidPolicyDocuments.id, { onDelete: 'restrict' }),
+    predecessorId: text('predecessor_id'),
+    restoredFromId: text('restored_from_id'),
+    actorSubject: text('actor_subject').notNull(),
+    reason: text('reason').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    ordinal: uniqueIndex('bid_definition_versions_year_number').on(t.bidYear, t.versionNumber),
+    yearIdentity: uniqueIndex('bid_definition_versions_year_id').on(t.bidYear, t.id),
+    predecessor: foreignKey({
+      columns: [t.bidYear, t.predecessorId],
+      foreignColumns: [t.bidYear, t.id],
+    }).onDelete('restrict'),
+    restoredFrom: foreignKey({
+      columns: [t.bidYear, t.restoredFromId],
+      foreignColumns: [t.bidYear, t.id],
+    }).onDelete('restrict'),
+  }),
+);
+
+export const bidDefinitionHeads = sqliteTable(
+  'bid_definition_heads',
+  {
+    bidYear: integer('bid_year')
+      .primaryKey()
+      .references(() => bidYears.year, { onDelete: 'restrict' }),
+    versionId: text('version_id').notNull(),
+    revision: integer('revision').notNull(),
+  },
+  (t) => ({
+    version: foreignKey({
+      columns: [t.bidYear, t.versionId],
+      foreignColumns: [bidDefinitionVersions.bidYear, bidDefinitionVersions.id],
+    }).onDelete('restrict'),
+  }),
+);
+
 export const bidSessions = sqliteTable('bid_sessions', {
   id: text('id').primaryKey(),
   bidYear: integer('bid_year')
@@ -782,6 +845,13 @@ export const bidSessionPolicySnapshots = sqliteTable(
     // Null only for immutable pre-0025 V1 recovery records. Fresh V3
     // snapshots carry the exact source revision alongside immutable material.
     ruleBookRevision: integer('rule_book_revision'),
+    // All NULL means original legacy provenance, never an inferred version.
+    bidVersionId: text('bid_version_id').references(() => bidDefinitionVersions.id, {
+      onDelete: 'restrict',
+    }),
+    bidVersionSha256: text('bid_version_sha256'),
+    snapshotSha256: text('snapshot_sha256'),
+    contextSha256: text('context_sha256'),
     snapshotJson: text('snapshot_json').notNull(),
     capturedAt: integer('captured_at', { mode: 'timestamp_ms' }).notNull(),
   },

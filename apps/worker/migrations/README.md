@@ -6,6 +6,9 @@
 |------|--------|-------|
 | `0001_init.sql` | Hand-written (Plan 01) | Minimal placeholder. Creates a `schema_meta` table and inserts two seed rows so the D1 binding is exercised. Contains no application schema DDL. |
 | `0002_members_certs.sql` | drizzle-kit generated (Plan 02) | Creates `members`, `credentials`, and `member_credentials` tables. |
+| `0059_bid_definition_versions.sql` | Hand-written (Unified Bid) | Adds immutable semantic versions, a forward-only current pointer and permanent ownership seals for private backing material. Saved edits confer no publication authority. No row backfill or year retargeting. |
+| `0060_bid_definition_run_pins.sql` | Hand-written (Unified Bid) | Adds four nullable provenance columns to existing snapshots. New managed snapshots require complete version identity; historical bytes and NULL provenance remain untouched. Protects snapshot and pinned parent identities against deletion and replacement, including SQLite rowid conflicts. |
+| `0061_bid_context_source_revision.sql` | Hand-written (Unified Bid) | Invalidates preparation when a pending adverse TargetSolutions review changes its member/credential identity without changing classification. Existing classification and application invalidation remains unchanged. |
 
 ## Why `_journal.json` starts at `0002`
 

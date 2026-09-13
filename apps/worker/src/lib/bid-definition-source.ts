@@ -1,5 +1,6 @@
 import { type BidDefinitionIssue, BidDefinitionProvenanceSchema } from '@mbfd/shared';
 import { z } from 'zod';
+import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import { bidContentHash, canonicalBidDefinition } from './bid-definition-content.js';
 
 /** Every scalar source that lacks a global source-revision trigger is also
@@ -122,6 +123,26 @@ const issue = (path: string, code: string, message: string): BidDefinitionIssue 
   message,
 });
 const booleanFlag = (flag: number) => (flag === 0 ? false : flag === 1 ? true : flag);
+
+/** Server-created predicate for the first statement of a material transaction.
+ * Exact control values cover legacy sources without revision triggers. Never
+ * accept this SQL or its parameters from an API request. */
+function controlGuard(year: number, control: z.infer<typeof ControlSchema>) {
+  const entries = Object.entries(control);
+  return {
+    sql: `EXISTS(SELECT 1 FROM (${CONTROL_SQL}) captured WHERE ${entries
+      .map(([key]) => `captured.${key} IS ?`)
+      .join(' AND ')})`,
+    parameters: [year, ...entries.map(([, value]) => value)],
+    token: bidContentHash(canonicalize(control as JsonValue)),
+  };
+}
+
+export async function captureBidDefinitionControl(database: D1Database, year: number) {
+  const row = await database.prepare(CONTROL_SQL).bind(year).first();
+  const parsed = ControlSchema.safeParse(row);
+  return parsed.success ? controlGuard(year, parsed.data) : null;
+}
 
 /** Read the currently designated legacy Bid into one typed, canonical source.
  * No year retargeting, rule compilation, source approval, or database write.
@@ -287,6 +308,8 @@ export async function captureBidDefinitionSource(database: D1Database, year: num
     if (!result.ok) return invalid(result.issues);
     return {
       ...result,
+      sourceToken: bidContentHash(`${result.sha256}:${controlGuard(year, source).token}`),
+      sourceGuard: controlGuard(year, source),
       origin: {
         ruleBookVersion: source.ruleBookVersion,
         positionTemplateVersion: source.positionTemplateVersion,
