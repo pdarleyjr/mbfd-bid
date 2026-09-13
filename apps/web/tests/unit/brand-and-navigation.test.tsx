@@ -36,7 +36,7 @@ describe('MBFD identity and operator navigation', () => {
     expect(ADMIN_NAV_LINKS.map(({ href, label }) => ({ href, label }))).toEqual([
       { href: '/admin', label: 'Today' },
       { href: '/admin/department', label: 'Department' },
-      { href: '/admin/annual-plan', label: 'Bid' },
+      { href: '/admin/current-bid', label: 'Bid' },
       { href: '/admin/audit', label: 'History' },
       { href: '/admin/docs', label: 'Docs & Manual' },
       { href: '/admin/system', label: 'Settings' },

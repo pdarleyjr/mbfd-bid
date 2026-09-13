@@ -11,7 +11,24 @@ export type GuideSection = {
   keywords: readonly string[];
 };
 
-const section = (value: GuideSection) => value;
+const legacyBidAuthoringRoutes = new Set([
+  '/admin/source-review',
+  '/admin/annual-plan',
+  '/admin/rules',
+  '/admin/sessions/new',
+  '/admin/bid-setup',
+  '/admin/rule-books',
+  '/admin/positions',
+  '/admin/annual-policy',
+]);
+const section = (value: GuideSection): GuideSection =>
+  legacyBidAuthoringRoutes.has(value.route)
+    ? {
+        ...value,
+        important:
+          `For a year with a saved Current Bid version, use Bid — Edit Bid, Bid Blueprint and Mock Bid. These older authoring controls are compatibility paths for years not yet adopted; they cannot modify a versioned Bid. ${value.important ?? ''}`.trim(),
+      }
+    : value;
 
 /**
  * Administrator-facing content. Keep this close to the routed Admin surface:
@@ -19,6 +36,147 @@ const section = (value: GuideSection) => value;
  * member, session, or internal record identifier.
  */
 export const GUIDE_SECTIONS: readonly GuideSection[] = [
+  section({
+    id: 'current-bid-edit',
+    category: 'Bid',
+    title: 'Edit and save the Current Bid',
+    route: '/admin/current-bid',
+    routeLabel: 'Bid — Edit Bid',
+    summary:
+      'Edit the policy, opportunities, requirements, scoring, participation and operating procedures in one draft, then save an immutable version.',
+    controls: [
+      'Bid year',
+      'Open',
+      'Policy & language',
+      'Participants & flow',
+      'Opportunities & rules',
+      'Specialty rules',
+      'Contact & disposition',
+      'A-Day',
+      'Timing & evidence dates',
+      'Authority & permissions',
+      'Change summary',
+      'Review draft changes',
+      'Save Bid',
+      'Discard edits',
+    ],
+    steps: [
+      'Open Bid and choose an existing year. Use the editing sections to change the draft. Moving between Edit Bid, Blueprint and Mock retains the same unsaved draft.',
+      'Search all opportunities and qualifications. Saved references stay visible even when a catalog item is missing. An Operations pair, an all-qualifications requirement and an OR group have different meanings; review the explicit controls.',
+      'Connect an opportunity to an actual Department staffing position when needed. A different connection starts as Needs review with no inherited authority. Enter its evidence reference and review it explicitly.',
+      'Keep unfinished source decisions open. Before marking one resolved, complete its title, question, reviewed decision and source reference. Each must contain at least four characters; incomplete resolutions cannot be saved or evaluated as approved evidence.',
+      'Enter the reason, review proposed changes and select Save Bid. The first save adopts the existing year. Later content changes create a new numbered version; a semantically unchanged save keeps the version number.',
+      'A saved version does not change an existing run. New Mock runs must select a saved version explicitly. Editing or saving does not publish policy or start Live bidding.',
+      'If a response is interrupted, retain the draft and use Retry original request. It resubmits the same request identity and recovers its receipt. Do not reconstruct the request or assume a missing response means no save occurred.',
+    ],
+    important:
+      'Browser drafts are scoped to the signed-in administrator and year. Storage failures block protected writes so an uncertain request can be recovered. If the saved Bid changed elsewhere, refresh and review your changes before saving again.',
+    keywords: [
+      'current bid',
+      'edit',
+      'save',
+      'draft',
+      'version',
+      'requirements',
+      'scoring',
+      'policy',
+      'retry',
+    ],
+  }),
+  section({
+    id: 'current-bid-blueprint',
+    category: 'Bid',
+    title: 'Understand unsaved Bid impact and decision traces',
+    route: '/admin/current-bid',
+    routeLabel: 'Bid — Bid Blueprint',
+    summary:
+      'Review the authored stage map and compare unsaved changes using the same server eligibility, scoring, priority and participation calculations used by Bid runs.',
+    controls: [
+      'Review proposed changes',
+      'Participation for this calculation',
+      'Evaluate draft impact',
+      'Changed eligibility and priority',
+      'Eligibility by opportunity',
+      'Trace member',
+      'Trace opportunity',
+      'Comparison member (optional)',
+      'Show decision trace',
+      'Calculation evidence',
+    ],
+    steps: [
+      'Choose Bid Blueprint. The stage map shows the draft, including selected people and opportunities. Review proposed changes checks the configuration differences; Evaluate draft impact calculates the member consequences.',
+      'Choose Mock or Live participation for the calculation. Both the saved policy and draft use one captured Department source, each evaluated at its own authored dates. Live calculation does not authorize or start a Live session.',
+      'Inspect affected people, participation changes, stage order and stage or specialty opportunity changes. Eligibility and priority comparisons hold either the requirements or the evidence and participant group constant so the cause remains visible.',
+      'Use Previous changes and Next changes to reach the complete result set. A new or removed opportunity is marked incomparable, not assigned an invented before or after score. Unavailable calculations remain visible and are excluded from known affected counts.',
+      'Select a person and opportunity, and optionally another person for comparison. Show decision trace displays passed and failed requirements, all three point channels, priority, the exact tie-break steps, stage applicability and evidence. Post-award obligations are shown separately from initial eligibility.',
+      'Local edits make earlier results stale. If Department evidence changes between pages or traces, evaluate again. Calculation evidence identifies both policy hashes and the evaluated context.',
+    ],
+    important:
+      'Preview writes no versions, receipts, audit events or session data. A-Day capacity, next-bidder choices, actual specialty interruptions and awards require an explicit selection scenario and are not predicted by the configuration-only comparison. A valid calculation is not publication or run readiness.',
+    keywords: [
+      'blueprint',
+      'impact',
+      'unsaved',
+      'trace',
+      'decision',
+      'eligibility',
+      'priority',
+      'points',
+      'tie break',
+    ],
+  }),
+  section({
+    id: 'current-bid-versions',
+    category: 'History',
+    title: 'Review versions and restore as a new version',
+    route: '/admin/current-bid',
+    routeLabel: 'Bid — Version history',
+    summary:
+      'Read the saved versions of a Bid, compare a proposed restoration and preserve the complete sequence of changes.',
+    controls: [
+      'Version history',
+      'Load versions',
+      'Load older versions',
+      'Review restore',
+      'Restore reason',
+      'Restore as new current version',
+    ],
+    steps: [
+      'Open Version history for the selected Bid year. Versions are listed newest first; Load older versions reaches the full history.',
+      'Select a version to inspect its recorded reason, author, source language, opportunities and captured authoring provenance. The selected historical content is read-only.',
+      'Finish or discard unrelated local edits before restoring. Review restore compares the selected content with the current head and shows the proposed changes.',
+      'Enter the restoration reason and confirm Restore as new current version. This creates a new version, even when the selected historical content already matches the current content.',
+      'The earlier version and any runs using it retain their original evidence. Interrupted restoration requests use the same retained receipt recovery as Save Bid.',
+    ],
+    important:
+      'Restoring changes the Current Bid for future work; it does not overwrite history, retarget an active run or replay an old session.',
+    keywords: ['version', 'history', 'restore', 'immutable', 'reason', 'audit'],
+  }),
+  section({
+    id: 'current-bid-mock',
+    category: 'Bid',
+    title: 'Create a Mock from an exact saved version',
+    route: '/admin/current-bid',
+    routeLabel: 'Bid — Mock Bid',
+    summary:
+      'Check the current saved version against Department evidence, then create an isolated Mock with that exact policy and captured context.',
+    controls: [
+      'Mock Bid',
+      'Check Mock readiness',
+      'Create Mock Bid from Version',
+      'Retry original request',
+    ],
+    steps: [
+      'Save or discard draft edits, then open Mock Bid. Mock creation uses the saved version; it never silently saves your draft.',
+      'Check readiness. Review the saved version, member pool and any blocked source, staffing, qualification or tenure evidence. Resolve blockers in the appropriate Department or Bid workspace.',
+      'Create Mock submits the reviewed version and evidence identities. If the Department context changed, run the readiness check again before creating.',
+      'Open the created run in the existing practice controls. Later edits to the Current Bid do not change its pinned policy or evidence.',
+      'After an interrupted response, retry the retained request to recover the original created session. The recovery does not create another Mock, even if the session has since progressed.',
+    ],
+    important:
+      'Creating a Mock does not start it, complete a rehearsal, approve publication or authorize Live operation. Live and Results currently open the existing operating console and report workflows.',
+    keywords: ['mock', 'rehearsal', 'practice', 'saved version', 'readiness', 'retry', 'context'],
+  }),
   section({
     id: 'department-people',
     category: 'Department',
@@ -1527,6 +1685,12 @@ export const ADMIN_GUIDE_COVERAGE: Readonly<Record<string, readonly string[]>> =
   '/admin/department/roster': ['department-roster'],
   '/admin/department/credentials': ['department-credentials'],
   '/admin/department/import': ['department-import'],
+  '/admin/current-bid': [
+    'current-bid-edit',
+    'current-bid-blueprint',
+    'current-bid-versions',
+    'current-bid-mock',
+  ],
   '/admin/docs': ['glossary'],
   '/admin/targetsolutions': ['targetsolutions'],
   '/admin/bid-board': ['bid-board'],

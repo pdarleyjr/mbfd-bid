@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 type AdminSubNavLink = { href: string; label: string };
@@ -61,10 +61,11 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
     ],
   },
   {
-    href: '/admin/annual-plan',
+    href: '/admin/current-bid',
     label: 'Bid',
     exact: false,
     activePrefixes: [
+      '/admin/annual-plan',
       '/admin/annual-policy',
       '/admin/source-review',
       '/admin/bid-setup',
@@ -79,17 +80,12 @@ export const ADMIN_NAV_LINKS: readonly AdminNavLink[] = [
       '/admin/specialty-adjudication',
     ],
     subnav: [
-      { href: '/admin/annual-plan', label: 'Prepare and approve setup' },
-      { href: '/admin/bid-board', label: 'Bid board' },
-      { href: '/admin/positions', label: 'Bid opportunities' },
-      { href: '/admin/rules', label: 'Requirements and points' },
-      { href: '/admin/annual-policy', label: 'Operating procedures' },
-      { href: '/admin/source-review', label: 'Source decisions and changes' },
-      { href: '/admin/eligibility', label: 'Check eligibility' },
-      { href: '/admin/rehearsal', label: 'Practice bid' },
-      { href: '/admin/bid', label: 'Run live bid' },
-      { href: '/admin/bid-setup', label: 'Advanced setup' },
-      { href: '/admin/rule-books', label: 'Rule versions' },
+      { href: '/admin/current-bid', label: 'Edit Bid' },
+      { href: '/admin/current-bid?view=blueprint', label: 'Bid Blueprint' },
+      { href: '/admin/current-bid?view=mock', label: 'Mock Bid' },
+      { href: '/admin/current-bid?view=live', label: 'Live Bid' },
+      { href: '/admin/current-bid?view=results', label: 'Results' },
+      { href: '/admin/current-bid?view=versions', label: 'Bid versions' },
     ],
   },
   {
@@ -139,6 +135,7 @@ const NAVIGATION_ICONS = {
   '/admin/department': Users,
   '/admin/personnel': UserCog,
   '/admin/annual-plan': CalendarCheck,
+  '/admin/current-bid': CalendarCheck,
   '/admin/bid-setup': ListChecks,
   '/admin/rehearsal': FlaskConical,
   '/admin/bid': Radio,
@@ -153,6 +150,23 @@ function NavigationIcon({ href }: { href: string }) {
 
 export function AdminSideNav({ compact = false }: { compact?: boolean }) {
   const pathname = usePathname();
+  const search = useSearchParams();
+  const year = search.get('year');
+  const view = search.get('view') ?? 'edit';
+  const contextualHref = (href: string) => {
+    if (
+      !href.startsWith('/admin/current-bid') ||
+      !year ||
+      !/^\d{4}$/.test(year) ||
+      Number(year) < 2024 ||
+      Number(year) > 2100
+    )
+      return href;
+    const [path, query] = href.split('?');
+    const params = new URLSearchParams(query);
+    params.set('year', year);
+    return `${path}?${params}`;
+  };
   const activeGroup = ADMIN_NAV_LINKS.find((link) => isActive(link, pathname))?.href;
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() =>
     activeGroup ? { [activeGroup]: true } : {},
@@ -176,7 +190,7 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
           <div key={link.href}>
             <div className="flex items-center">
               <Link
-                href={link.href as Route}
+                href={contextualHref(link.href) as Route}
                 className={[
                   'admin-navigation-link group relative flex min-h-[44px] min-w-0 flex-1 items-center gap-3 rounded-md py-2 text-sm font-medium transition-colors duration-fast ease-out-quart focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
                   compact ? 'justify-center px-2' : 'px-3',
@@ -225,16 +239,18 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
                 className="mt-1 ml-3 flex flex-col gap-1 border-l border-sidebar-border pl-2"
               >
                 {link.subnav.map((sub) => {
-                  const subActive =
-                    matchesPath(pathname, sub.href) &&
-                    !link.subnav?.some(
-                      (other) =>
-                        other.href.length > sub.href.length && matchesPath(pathname, other.href),
-                    );
+                  const subActive = sub.href.startsWith('/admin/current-bid')
+                    ? pathname === '/admin/current-bid' &&
+                      view === (new URLSearchParams(sub.href.split('?')[1]).get('view') ?? 'edit')
+                    : matchesPath(pathname, sub.href) &&
+                      !link.subnav?.some(
+                        (other) =>
+                          other.href.length > sub.href.length && matchesPath(pathname, other.href),
+                      );
                   return (
                     <Link
                       key={sub.href}
-                      href={sub.href as Route}
+                      href={contextualHref(sub.href) as Route}
                       className={[
                         'flex min-h-11 items-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-fast ease-out-quart',
                         subActive

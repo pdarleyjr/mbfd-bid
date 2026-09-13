@@ -7,7 +7,11 @@ type HistoryNavigationEvent = Event & {
 };
 
 /** Protect local form state without interfering with background query refresh. */
-export function useUnsavedChanges(dirty: boolean, description = 'edits') {
+export function useUnsavedChanges(
+  dirty: boolean,
+  description = 'edits',
+  retainsDraft?: (destination: URL) => boolean,
+) {
   useEffect(() => {
     if (!dirty) return;
     const unload = (event: BeforeUnloadEvent) => {
@@ -27,6 +31,7 @@ export function useUnsavedChanges(dirty: boolean, description = 'edits') {
       )
         return;
       const destination = new URL(link.href);
+      if (retainsDraft?.(destination)) return;
       if (
         destination.origin === window.location.origin &&
         destination.pathname === window.location.pathname &&
@@ -51,6 +56,7 @@ export function useUnsavedChanges(dirty: boolean, description = 'edits') {
       )
         return;
       const target = new URL(event.destination.url);
+      if (retainsDraft?.(target)) return;
       if (target.pathname === window.location.pathname && target.search === window.location.search)
         return;
       if (!window.confirm(`Discard unsaved ${description} and leave this page?`))
@@ -64,5 +70,5 @@ export function useUnsavedChanges(dirty: boolean, description = 'edits') {
       document.removeEventListener('click', navigate, true);
       navigation?.removeEventListener('navigate', traverse);
     };
-  }, [dirty, description]);
+  }, [dirty, description, retainsDraft]);
 }
