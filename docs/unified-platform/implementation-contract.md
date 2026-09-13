@@ -41,6 +41,10 @@ Preserve Hub federation and role gates, canonical commands, Durable Object coord
 
 Slices are checkpoints, not permission to report the whole platform finished. Track actual evidence separately from this design.
 
+Phase 4 starts with [typed Bid content and consistent source capture](bid-definition-content.md).
+This foundation preserves existing rule material and establishes canonical hashing;
+automatic versions, transactional Save/Restore and run pins remain separate integration gates.
+
 ## UX and documentation
 
 Top-level navigation converges on Today, Department, Bid and History, with Docs & Manual and Settings secondary. Existing navy, semantic tokens, installed fonts, Base UI controls and roster identity are authoritative. Desktop Today measures usable main space and lays out explicit pages; mobile scrolls naturally. No hidden overflow, tiny type, truncation or fixed six-station assumption may substitute for paging.

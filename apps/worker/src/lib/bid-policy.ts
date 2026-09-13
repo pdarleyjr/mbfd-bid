@@ -52,6 +52,9 @@ import {
 
 export interface RuleBookCoverageInput {
   ruleBookVersion: string;
+  /** Editable definitions can declare their template before adding rules.
+   * Omitted legacy callers retain their exact inference behavior. */
+  declaredTemplateVersion?: string;
   rules: readonly {
     id?: number;
     ruleBookVersion: string;
@@ -230,7 +233,10 @@ export async function loadRuleBookPolicyDiff(
  */
 export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBookCoverage {
   const decoded = decodeRuleBookRows(input.rules);
-  const templateVersions = uniqueSorted(input.rules.map((rule) => rule.templateVersion));
+  const templateVersions = uniqueSorted([
+    ...input.rules.map((rule) => rule.templateVersion),
+    ...(input.declaredTemplateVersion === undefined ? [] : [input.declaredTemplateVersion]),
+  ]);
   const templateVersion = templateVersions.length === 1 ? (templateVersions[0] ?? null) : null;
   const templateVersionIssues: string[] = [];
   if (templateVersions.length === 0) {
@@ -480,28 +486,47 @@ export function validateAnnualPolicySourceReferences(
   snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }>,
   livePolicy: BidConfigurationSettingsV3['livePolicy'],
 ): string[] {
+  return validateAnnualPolicyReferences({ kind: 'run', snapshot }, livePolicy);
+}
+
+/** The same reference rules can inspect draft material without inventing a
+ * Department population or treating absent member evidence as a passed gate. */
+export function validateAnnualPolicyDefinitionReferences(
+  material: Extract<BidSessionPolicySnapshot, { v: 3 }>['ruleBookMaterial'],
+  livePolicy: BidConfigurationSettingsV3['livePolicy'],
+): string[] {
+  return validateAnnualPolicyReferences({ kind: 'definition', material }, livePolicy);
+}
+
+function validateAnnualPolicyReferences(
+  context:
+    | { kind: 'run'; snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }> }
+    | {
+        kind: 'definition';
+        material: Extract<BidSessionPolicySnapshot, { v: 3 }>['ruleBookMaterial'];
+      },
+  livePolicy: BidConfigurationSettingsV3['livePolicy'],
+): string[] {
+  const snapshot = context.kind === 'run' ? context.snapshot : null;
+  const material = context.kind === 'run' ? context.snapshot.ruleBookMaterial : context.material;
+  const members = snapshot?.members ?? [];
   const errors: string[] = [];
-  const allMemberIds = new Set(snapshot.members.map((member) => member.memberId));
+  const allMemberIds = new Set(members.map((member) => member.memberId));
   const participantIds = new Set(
-    snapshot.members
-      .filter((member) => member.pool !== 'EXCLUDED')
-      .map((member) => member.memberId),
+    members.filter((member) => member.pool !== 'EXCLUDED').map((member) => member.memberId),
   );
-  const biddablePositionIds = new Set(
-    snapshot.ruleBookMaterial.rules.map((rule) => rule.positionId),
-  );
-  const memberById = new Map(snapshot.members.map((member) => [member.memberId, member]));
-  const positionById = new Map(
-    snapshot.ruleBookMaterial.positions.map((position) => [position.id, position]),
-  );
+  const biddablePositionIds = new Set(material.rules.map((rule) => rule.positionId));
+  const memberById = new Map(members.map((member) => [member.memberId, member]));
+  const positionById = new Map(material.positions.map((position) => [position.id, position]));
   const stagedMembers = livePolicy.stages.flatMap((stage) => stage.memberIds);
   const stagedMemberIds = new Set(stagedMembers);
   if (
-    stagedMembers.length !== participantIds.size ||
-    [...participantIds].some((memberId) => !stagedMemberIds.has(memberId))
+    snapshot !== null &&
+    (stagedMembers.length !== participantIds.size ||
+      [...participantIds].some((memberId) => !stagedMemberIds.has(memberId)))
   )
     errors.push('stage_member_population_mismatch');
-  if (stagedMembers.some((memberId) => !participantIds.has(memberId)))
+  if (snapshot !== null && stagedMembers.some((memberId) => !participantIds.has(memberId)))
     errors.push('stage_member_reference_invalid');
   if (
     livePolicy.stages.some((stage) =>
@@ -518,7 +543,7 @@ export function validateAnnualPolicySourceReferences(
     const rank = expectedRank.get(stage.kind);
     if (
       rank !== undefined &&
-      (stage.memberIds.some((id) => memberById.get(id)?.rank !== rank) ||
+      ((snapshot !== null && stage.memberIds.some((id) => memberById.get(id)?.rank !== rank)) ||
         stage.opportunityPositionIds.some((id) => positionById.get(id)?.rankRequired !== rank))
     )
       errors.push('stage_rank_category_mismatch');
@@ -529,6 +554,7 @@ export function validateAnnualPolicySourceReferences(
       errors.push('stage_shift_applicability_mismatch');
   }
   if (
+    snapshot !== null &&
     livePolicy.actionPermissions.some((grant) =>
       grant.actorMemberIds.some((memberId) => !allMemberIds.has(memberId)),
     )
@@ -550,15 +576,15 @@ export function validateAnnualPolicySourceReferences(
     )
       errors.push('specialty_position_reference_invalid');
     const credentialNames = new Set(
-      snapshot.authoringCredentialNames ??
-        snapshot.members.flatMap((member) => member.credentialNames),
+      snapshot?.authoringCredentialNames ?? members.flatMap((member) => member.credentialNames),
     );
     const specialtyCodes = new Set(
-      snapshot.members.flatMap((member) =>
+      members.flatMap((member) =>
         (member.specialtyQualifications ?? []).map((qualification) => qualification.specialtyCode),
       ),
     );
     if (
+      snapshot !== null &&
       annual.specialties?.some(
         (specialty) =>
           specialty.requiredCredentialNames.some((name) => !credentialNames.has(name)) ||
@@ -581,6 +607,7 @@ export function validateAnnualPolicySourceReferences(
     )
       errors.push('specialty_credential_reference_invalid');
     if (
+      snapshot !== null &&
       annual.specialties?.some((specialty) =>
         specialty.requiredSpecialtyCodes.some((code) => !specialtyCodes.has(code)),
       )

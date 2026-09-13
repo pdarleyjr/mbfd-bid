@@ -84,3 +84,14 @@ export type {
   DepartmentRetirementOrganizationLink,
   DepartmentRetirementBlocker,
 } from './schemas/department-retirement.js';
+export {
+  BidDefinitionContentSchema,
+  BidDefinitionRuleSchema,
+  BidDefinitionAuthoringSchema,
+  BidDefinitionProvenanceSchema,
+} from './schemas/bid-definition.js';
+export type {
+  BidDefinitionContent,
+  BidDefinitionRule,
+  BidDefinitionIssue,
+} from './schemas/bid-definition.js';
