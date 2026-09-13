@@ -459,7 +459,7 @@ describe('Bid version store with full policy and captured authoring evidence', (
   });
 
   it.each(['document-actor', 'staffing-binding'] as const)(
-    'rolls back an actual invalid %s foreign key without a committed receipt',
+    'rejects an invalid %s reference without a committed receipt',
     async (kind) => {
       const { input, captured } = await adoption();
       if (kind === 'document-actor') input.actorId = 99999;
@@ -487,9 +487,23 @@ describe('Bid version store with full policy and captured authoring evidence', (
           throw error;
         }
       });
-      expect(await saveBidDefinition(h.env.DB, input)).toMatchObject({ ok: false });
-      expect(batch.mock.calls[0]?.[0]).toHaveLength(11);
-      expect(batchFailure).toMatchObject({ code: 'SQLITE_CONSTRAINT_FOREIGNKEY' });
+      const rejected = await saveBidDefinition(h.env.DB, input);
+      expect(rejected).toMatchObject({ ok: false });
+      if (kind === 'staffing-binding') {
+        expect(rejected).toMatchObject({
+          error: 'invalid_bid_definition',
+          issues: [
+            {
+              path: ['staffingBindings', 0, 'staffingPositionId'],
+              code: 'staffing_position_not_found',
+            },
+          ],
+        });
+        expect(batch).not.toHaveBeenCalled();
+      } else {
+        expect(batch.mock.calls[0]?.[0]).toHaveLength(11);
+        expect(batchFailure).toMatchObject({ code: 'SQLITE_CONSTRAINT_FOREIGNKEY' });
+      }
       deepStrictEqual(h.sqlite.serialize(), bytes);
       expect(
         h.sqlite.prepare('SELECT COUNT(*) AS n FROM admin_configuration_receipts').get(),

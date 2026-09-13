@@ -92,9 +92,9 @@ function expectFinalIntegrity(sqlite: Database.Database): void {
   );
 }
 
-describe('integration migration chain 0038 through 0061', () => {
+describe('integration migration chain 0038 through 0062', () => {
   it('is gap-free and applies from a fresh database through the final candidate', () => {
-    expect(migrationFiles().slice(-24)).toEqual([
+    expect(migrationFiles().slice(-25)).toEqual([
       '0038_live_policy_participation_and_amendments.sql',
       '0039_restore_rule_book_participation_guards.sql',
       '0040_annual_bid_operations.sql',
@@ -119,12 +119,13 @@ describe('integration migration chain 0038 through 0061', () => {
       '0059_bid_definition_versions.sql',
       '0060_bid_definition_run_pins.sql',
       '0061_bid_context_source_revision.sql',
+      '0062_bid_receipt_row_identity.sql',
     ]);
 
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
-    const applied = applyThrough(sqlite, '0061_bid_context_source_revision.sql');
-    expect(applied.at(-1)).toBe('0061_bid_context_source_revision.sql');
+    const applied = applyThrough(sqlite, '0062_bid_receipt_row_identity.sql');
+    expect(applied.at(-1)).toBe('0062_bid_receipt_row_identity.sql');
     expectFinalIntegrity(sqlite);
 
     // A D1 migration ledger would record every applied filename; a second

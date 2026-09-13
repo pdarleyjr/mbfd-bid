@@ -9,6 +9,7 @@
 | `0059_bid_definition_versions.sql` | Hand-written (Unified Bid) | Adds immutable semantic versions, a forward-only current pointer and permanent ownership seals for private backing material. Saved edits confer no publication authority. No row backfill or year retargeting. |
 | `0060_bid_definition_run_pins.sql` | Hand-written (Unified Bid) | Adds four nullable provenance columns to existing snapshots. New managed snapshots require complete version identity; historical bytes and NULL provenance remain untouched. Protects snapshot and pinned parent identities against deletion and replacement, including SQLite rowid conflicts. |
 | `0061_bid_context_source_revision.sql` | Hand-written (Unified Bid) | Invalidates preparation when a pending adverse TargetSolutions review changes its member/credential identity without changing classification. Existing classification and application invalidation remains unchanged. |
+| `0062_bid_receipt_row_identity.sql` | Hand-written (Unified Bid) | Preserves configuration and annual-plan receipts against implicit rowid replacement/movement, including annual same-key replacement with recursive triggers disabled. Existing receipt bytes remain unchanged. |
 
 ## Why `_journal.json` starts at `0002`
 

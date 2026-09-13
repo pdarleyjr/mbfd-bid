@@ -95,3 +95,5 @@ export type {
   BidDefinitionRule,
   BidDefinitionIssue,
 } from './schemas/bid-definition.js';
+export { BidImpactResponseSchema } from './schemas/bid-impact.js';
+export type { BidImpactResponse } from './schemas/bid-impact.js';

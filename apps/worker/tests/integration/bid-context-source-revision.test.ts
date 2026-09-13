@@ -185,7 +185,14 @@ describe('pending credential dispute identity invalidation', () => {
         const originalAll = statement.all.bind(statement);
         vi.spyOn(statement, 'all').mockImplementation(async <T>() => {
           const read = await originalAll<T>();
-          expect(read.results).toEqual([]);
+          expect(read.results).toEqual([
+            {
+              memberId: 10001,
+              credentialName: 'Synthetic irrelevant credential',
+              observedOn: '2027-01-01',
+              expiresOn: '2026-12-31',
+            },
+          ]);
           // The SELECT has completed with the irrelevant credential mapping.
           // A concurrent review now maps that same still-pending CONFLICT to
           // the credential used by the immutable version's real rule.

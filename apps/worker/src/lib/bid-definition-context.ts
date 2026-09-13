@@ -1,5 +1,6 @@
 import {
   type BidDefinitionContent,
+  type BidEvaluation,
   type BidSessionPolicySnapshot,
   FrozenAnnualPolicyEvidenceSchema,
 } from '@mbfd/shared';
@@ -16,7 +17,7 @@ const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : a.id 
  * DATE is retained. Optional historical evidence remains absent, never empty.
  * Mock participation concessions are retained and cannot masquerade as Live.
  * Array ordering within evidence is preserved unless it is a documented set. */
-export function bidDefinitionContextHash(snapshot: Snapshot) {
+export function bidDefinitionContextHash(snapshot: BidEvaluation) {
   const members = snapshot.members
     .map((member) => ({
       ...member,

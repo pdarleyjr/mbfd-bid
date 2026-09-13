@@ -6,6 +6,7 @@ import {
   loadConfigurationReceipt,
 } from './admin-configuration-receipt.js';
 import { canonicalBidDefinition } from './bid-definition-content.js';
+import { bidDefinitionReferenceIssues } from './bid-definition-references.js';
 import {
   captureBidDefinitionControl,
   captureBidDefinitionSource,
@@ -120,11 +121,20 @@ export async function saveBidDefinition(database: D1Database, rawInput: SaveBidD
   if (!candidate?.ok) return { ok: false as const, error: 'invalid_bid_definition' };
   if (candidate.content.bidYear !== input.year)
     return { ok: false as const, error: 'bid_definition_year_mismatch' };
+  const referenceIssues = await bidDefinitionReferenceIssues(database, candidate.content);
   const changed =
     input.intent.operation === 'restore' ||
     !current?.ok ||
     candidate.sha256 !== current.sha256 ||
     candidate.serialized !== current.serialized;
+  if (changed && candidate.content.policy && input.actorId === null)
+    referenceIssues.push({
+      path: ['policy'],
+      code: 'mapped_operator_required',
+      message: 'Policy language requires a mapped local operator identity',
+    });
+  if (referenceIssues.length)
+    return { ok: false as const, error: 'invalid_bid_definition', issues: referenceIssues };
   const versions = changed
     ? await database
         .prepare('SELECT version FROM rule_books UNION SELECT version FROM position_templates')

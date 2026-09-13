@@ -16,7 +16,7 @@ export type ImpactChange = {
   after: ImpactScore;
 };
 
-function evaluateCohort(members: ImpactMember[], rule: PositionRule) {
+export function evaluateImpactCohort(members: ImpactMember[], rule: PositionRule) {
   const evaluated = members.map((member) => ({
     memberId: member.memberId,
     ...evaluateEligibility(member.evidence, rule),
@@ -54,12 +54,24 @@ function evaluateCohort(members: ImpactMember[], rule: PositionRule) {
  * constant, then change evidence/cohort while holding prior rules constant.
  * Equal comparator results share a priority; an employee ID never invents a
  * policy tie-break. Neither comparison predicts live choices or awards. */
-export function annualEligibilityImpact(input: {
-  beforeMembers: ImpactMember[];
-  afterMembers: ImpactMember[];
-  beforeRules: readonly PositionRule[];
-  afterRules: readonly PositionRule[];
-}) {
+export function annualEligibilityImpact(
+  input: {
+    beforeMembers: ImpactMember[];
+    afterMembers: ImpactMember[];
+    beforeRules: readonly PositionRule[];
+    afterRules: readonly PositionRule[];
+  },
+  observe?: {
+    /** Request-scoped streaming keeps full-population previews bounded in memory.
+     * Returning false omits only the serialized row, never its calculation. */
+    change?: (cause: 'POLICY' | 'EVIDENCE', change: ImpactChange) => boolean;
+    position?: (
+      positionId: string,
+      before: ReadonlyMap<number, ImpactScore>,
+      after: ReadonlyMap<number, ImpactScore>,
+    ) => void;
+  },
+) {
   for (const cohort of [input.beforeMembers, input.afterMembers]) {
     if (new Set(cohort.map((m) => m.memberId)).size !== cohort.length)
       throw new Error('Ambiguous impact member identity');
@@ -86,26 +98,31 @@ export function annualEligibilityImpact(input: {
   for (const [positionId, oldRule] of priorRules) {
     const newRule = upcomingRules.get(positionId);
     if (!newRule) continue;
-    const prior = evaluateCohort(input.beforeMembers, oldRule);
-    const fixedEvidence = evaluateCohort(input.afterMembers, oldRule);
-    const upcoming = evaluateCohort(input.afterMembers, newRule);
+    const prior = evaluateImpactCohort(input.beforeMembers, oldRule);
+    const fixedEvidence = evaluateImpactCohort(input.afterMembers, oldRule);
+    const upcoming = evaluateImpactCohort(input.afterMembers, newRule);
+    observe?.position?.(positionId, prior, upcoming);
     for (const member of input.afterMembers) {
       const before = fixedEvidence.get(member.memberId);
       const after = upcoming.get(member.memberId);
       if (!before || !after) throw new Error('Missing impact evaluation');
       policyComparisons++;
-      if (changed(before, after))
-        policy.push({ positionId, memberId: member.memberId, before, after });
+      if (changed(before, after)) {
+        const change = { positionId, memberId: member.memberId, before, after };
+        if (observe?.change?.('POLICY', change) !== false) policy.push(change);
+      }
       const oldEvidence = prior.get(member.memberId);
       if (oldEvidence) {
         evidenceComparisons++;
-        if (changed(oldEvidence, before))
-          evidence.push({
+        if (changed(oldEvidence, before)) {
+          const change = {
             positionId,
             memberId: member.memberId,
             before: oldEvidence,
             after: before,
-          });
+          };
+          if (observe?.change?.('EVIDENCE', change) !== false) evidence.push(change);
+        }
       }
     }
   }

@@ -4,6 +4,8 @@ import {
   type BidConfigurationSettingsV2,
   type BidConfigurationSettingsV3,
   type BidDefinitionContent,
+  type BidEvaluation,
+  BidEvaluationSchema,
   type BidParticipation,
   type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
@@ -13,6 +15,7 @@ import {
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
+import { bidSourceDecisionReviewIssues } from './bid-source-decision-review.js';
 import { serviceCreditsAsOf } from './service-evidence.js';
 import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence.js';
 
@@ -491,7 +494,7 @@ export type BidSessionMode = 'mock' | 'live';
 
 /** Validates editable annual policy identifiers against the same immutable source material used by sessions. */
 export function validateAnnualPolicySourceReferences(
-  snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }>,
+  snapshot: BidEvaluation,
   livePolicy: BidConfigurationSettingsV3['livePolicy'],
 ): string[] {
   return validateAnnualPolicyReferences({ kind: 'run', snapshot }, livePolicy);
@@ -508,7 +511,7 @@ export function validateAnnualPolicyDefinitionReferences(
 
 function validateAnnualPolicyReferences(
   context:
-    | { kind: 'run'; snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }> }
+    | { kind: 'run'; snapshot: BidEvaluation }
     | {
         kind: 'definition';
         material: Extract<BidSessionPolicySnapshot, { v: 3 }>['ruleBookMaterial'];
@@ -911,44 +914,19 @@ export async function prepareBidSessionPolicySnapshot(
 /** Reuses every existing evidence, baseline, pool and eligibility freeze rule.
  * Saved versions supply their captured decisions; legacy callers retain the
  * dated year source query. This function never retargets bid_years. */
-export async function prepareConfiguredBidPolicySnapshot(
-  db: DB,
-  policy: ConfiguredBidYearPolicy,
-  capturedAtMs: number,
-  mode: BidSessionMode,
-  sourceDecisions?: BidDefinitionContent['sourceDecisions'],
-): Promise<BidSessionPolicySnapshotPreparation> {
-  const bidYear = policy.bidYear;
-  const { coverage } = policy;
-  const templateVersion = policy.positionTemplateVersion;
-  const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
-  // Managed annual plans explicitly pin personnel and staffing to their reviewed
-  // effective date. Legacy configurations retain their original capture-date behavior.
-  const capturedOn = policy.settings.personnelEvaluationOn ?? snapshotDate(capturedAtMs);
-  const credentialEvaluationOn = policy.settings.credentialEvaluationOn;
 
+/** A coherent raw Department capture can feed saved and proposed definitions.
+ * No filter here depends on either definition's evaluation dates or rules. */
+export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
   const [
-    bindings,
     staffingRows,
     assignmentRows,
     tenureRows,
-    { memberRows, personnelEventRows, credentialRows, qualificationEventRows, serviceRows },
-    snapshotRuleRows,
-    snapshotPositions,
-    snapshotParticipation,
+    eligibility,
     acceptedBaseline,
     catalogRows,
+    disputedRows,
   ] = await Promise.all([
-    db
-      .select({
-        positionId: positionStaffingBindings.positionId,
-        staffingPositionId: positionStaffingBindings.staffingPositionId,
-        authoritativeSourceRef: positionStaffingBindings.authoritativeSourceRef,
-        reviewStatus: positionStaffingBindings.reviewStatus,
-      })
-      .from(positionStaffingBindings)
-      .where(eq(positionStaffingBindings.templateVersion, templateVersion))
-      .all(),
     db
       .select({
         id: staffingPositions.id,
@@ -977,6 +955,77 @@ export async function prepareConfiguredBidPolicySnapshot(
       .all(),
     db.select().from(staffingTenureEvidence).all(),
     loadBidEligibilityEvidence(db),
+    evaluateAuthoritativeStaffingBaseline(db, bidYear),
+    db
+      .select({ name: credentials.name, retiredOn: credentialCatalogMetadata.retiredOn })
+      .from(credentials)
+      .leftJoin(
+        credentialCatalogMetadata,
+        eq(credentialCatalogMetadata.credentialId, credentials.id),
+      )
+      .all(),
+    db.all<{
+      memberId: number | null;
+      credentialName: string;
+      observedOn: string;
+      expiresOn: string | number | null;
+    }>(sql`
+      SELECT r.member_id AS memberId, c.name AS credentialName, i.observed_on AS observedOn,
+        json_extract(r.source_json,'$.expiresOn') AS expiresOn
+      FROM targetsolutions_rows r JOIN targetsolutions_imports i ON i.id=r.import_id
+      JOIN credentials c ON c.id=r.credential_id
+      WHERE r.applied_at IS NULL AND r.classification IN ('CONFLICT','EXPIRATION_REVIEW','REVOCATION_REVIEW')
+    `),
+  ]);
+  return {
+    staffingRows,
+    assignmentRows,
+    tenureRows,
+    ...eligibility,
+    acceptedBaseline,
+    catalogRows,
+    disputedRows,
+  };
+}
+export type BidEvaluationEvidence = Awaited<ReturnType<typeof loadBidEvaluationEvidence>>;
+export type BidEvaluationMaterial = {
+  bidYear: number;
+  settings: BidConfigurationSettingsV2 | BidConfigurationSettingsV3;
+  coverage: RuleBookCoverage;
+  bindings: BidDefinitionContent['staffingBindings'];
+  ruleBookMaterial: BidEvaluation['ruleBookMaterial'];
+  sourceDecisions: readonly { issueId: string; status: 'OPEN' | 'RESOLVED' }[];
+  /** Exact original JSON documents, each evaluated as its own JSON tree. */
+  policyReferenceJson: readonly string[];
+};
+export type BidEvaluationPreparation =
+  | { ok: true; evaluation: BidEvaluation; coverage: RuleBookCoverage }
+  | Extract<BidSessionPolicySnapshotPreparation, { ok: false }>;
+
+async function loadPersistedBidEvaluationMaterial(
+  db: DB,
+  policy: ConfiguredBidYearPolicy,
+  sourceDecisions?: BidDefinitionContent['sourceDecisions'],
+): Promise<BidEvaluationMaterial> {
+  const templateVersion = policy.positionTemplateVersion;
+  const [
+    bindings,
+    snapshotRuleRows,
+    snapshotPositions,
+    snapshotParticipation,
+    decisions,
+    document,
+  ] = await Promise.all([
+    db
+      .select({
+        positionId: positionStaffingBindings.positionId,
+        staffingPositionId: positionStaffingBindings.staffingPositionId,
+        authoritativeSourceRef: positionStaffingBindings.authoritativeSourceRef,
+        reviewStatus: positionStaffingBindings.reviewStatus,
+      })
+      .from(positionStaffingBindings)
+      .where(eq(positionStaffingBindings.templateVersion, templateVersion))
+      .all(),
     db
       .select({
         ruleBookVersion: positionRules.ruleBookVersion,
@@ -1015,17 +1064,119 @@ export async function prepareConfiguredBidPolicySnapshot(
       .from(ruleBookPositionParticipation)
       .where(eq(ruleBookPositionParticipation.ruleBookVersion, policy.ruleBookVersion))
       .all(),
-    evaluateAuthoritativeStaffingBaseline(db, bidYear),
-    db
-      .select({ name: credentials.name, retiredOn: credentialCatalogMetadata.retiredOn })
-      .from(credentials)
-      .leftJoin(
-        credentialCatalogMetadata,
-        eq(credentialCatalogMetadata.credentialId, credentials.id),
-      )
-      .all(),
+    sourceDecisions ??
+      db.all<{ issueId: string; status: 'OPEN' }>(
+        sql`SELECT d.issue_id AS issueId, d.status AS status FROM bid_source_decisions d WHERE d.bid_year=${policy.bidYear} AND d.status='OPEN' AND d.revision=(SELECT MAX(r.revision) FROM bid_source_decisions r WHERE r.bid_year=d.bid_year AND r.issue_id=d.issue_id)`,
+      ),
+    policy.annualPolicyDocument
+      ? db
+          .select({ executionPolicyJson: annualBidPolicyDocuments.executionPolicyJson })
+          .from(annualBidPolicyDocuments)
+          .where(eq(annualBidPolicyDocuments.id, policy.annualPolicyDocument.id))
+          .get()
+      : Promise.resolve(undefined),
   ]);
+  const participationByPositionId = new Map(
+    snapshotParticipation.map((participation) => [participation.positionId, participation]),
+  );
+  const ruleBookMaterial = {
+    v: 1 as const,
+    rules: snapshotRuleRows
+      .map((row) => ({
+        ruleBookVersion: row.ruleBookVersion,
+        positionId: row.positionId,
+        templateVersion: row.templateVersion,
+        requiredCriteriaJson: row.requiredCriteriaJson,
+        pointsPreferenceJson: row.pointsPreferenceJson,
+        tieBreakChainJson: row.tieBreakChainJson,
+      }))
+      .sort((left, right) => left.positionId.localeCompare(right.positionId)),
+    positions: snapshotPositions
+      .map((position) => {
+        const participation = participationByPositionId.get(position.id);
+        return {
+          id: position.id,
+          templateVersion: position.templateVersion,
+          bidParticipation:
+            participation?.templateVersion === position.templateVersion
+              ? participation.bidParticipation
+              : ('BIDDABLE' as const),
+          isExcludedFromCount: position.isExcludedFromCount,
+          shift: position.shift,
+          station: position.station,
+          unit: position.unit,
+          rankRequired: position.rankRequired,
+          positionName: position.positionName,
+          division: position.division,
+          isFloating: position.isFloating,
+          isVacantByDesign: position.isVacantByDesign,
+        };
+      })
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
 
+  return {
+    bidYear: policy.bidYear,
+    settings: policy.settings,
+    coverage: policy.coverage,
+    bindings,
+    ruleBookMaterial,
+    sourceDecisions: decisions,
+    policyReferenceJson: [
+      ...snapshotRuleRows.flatMap((row) => [row.requiredCriteriaJson, row.pointsPreferenceJson]),
+      ...(document ? [document.executionPolicyJson] : []),
+    ],
+  };
+}
+
+/** SQLite's original date and JSON-tree predicate, applied only to the captured
+ * inputs. No live table can make the second side observe another source. */
+export async function referencedBidEvaluationDisputes(
+  db: DB,
+  evidence: BidEvaluationEvidence,
+  material: BidEvaluationMaterial,
+) {
+  return db.all<{ memberId: number | null }>(sql`
+    WITH captured AS (
+      SELECT json_extract(value,'$.memberId') AS memberId,
+        json_extract(value,'$.credentialName') AS credentialName,
+        json_extract(value,'$.observedOn') AS observedOn,
+        json_extract(value,'$.expiresOn') AS expiresOn
+      FROM json_each(${JSON.stringify(evidence.disputedRows)})
+    )
+    SELECT DISTINCT r.memberId FROM captured r
+    WHERE (r.observedOn <= ${material.settings.credentialEvaluationOn} OR r.expiresOn < ${material.settings.credentialEvaluationOn})
+      AND EXISTS (SELECT 1 FROM json_each(${JSON.stringify(material.policyReferenceJson)}) document, json_tree(document.value) tree WHERE tree.value=r.credentialName)
+  `);
+}
+
+/** Shared evidence/pool transformation for an explicit material bundle. This
+ * creates no session and claims no persisted policy-document identity. */
+export async function prepareCapturedBidEvaluation(
+  db: DB,
+  policy: BidEvaluationMaterial,
+  evidence: BidEvaluationEvidence,
+  capturedAtMs: number,
+  mode: BidSessionMode,
+): Promise<BidEvaluationPreparation> {
+  const { coverage, bindings, ruleBookMaterial } = policy;
+  const templateVersion = coverage.templateVersion;
+  if (!coverage.valid || templateVersion === null) return { ok: false, code: 'rule_book_invalid' };
+  const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
+  const capturedOn = policy.settings.personnelEvaluationOn ?? snapshotDate(capturedAtMs);
+  const credentialEvaluationOn = policy.settings.credentialEvaluationOn;
+  const {
+    staffingRows,
+    assignmentRows,
+    tenureRows,
+    memberRows,
+    personnelEventRows,
+    credentialRows,
+    qualificationEventRows,
+    serviceRows,
+    acceptedBaseline,
+    catalogRows,
+  } = evidence;
   const bindingByPosition = new Map(bindings.map((binding) => [binding.positionId, binding]));
   const unbound = nonBiddablePositionIds.filter((positionId) => !bindingByPosition.has(positionId));
   if (unbound.length > 0) {
@@ -1334,24 +1485,14 @@ export async function prepareConfiguredBidPolicySnapshot(
       };
     })
     .sort((left, right) => left.memberId - right.memberId);
-  const unresolvedSources =
-    sourceDecisions?.filter((decision) => decision.status === 'OPEN') ??
-    (await db.all<{ issueId: string }>(
-      sql`SELECT d.issue_id AS issueId FROM bid_source_decisions d WHERE d.bid_year=${bidYear} AND d.status='OPEN' AND d.revision=(SELECT MAX(r.revision) FROM bid_source_decisions r WHERE r.bid_year=d.bid_year AND r.issue_id=d.issue_id)`,
-    ));
-  if (unresolvedSources.length) return { ok: false, code: 'policy_source_decision_required' };
-  const disputed = await db.all<{ memberId: number }>(sql`
-    SELECT DISTINCT r.member_id AS memberId FROM targetsolutions_rows r
-    JOIN targetsolutions_imports i ON i.id=r.import_id
-    JOIN credentials c ON c.id=r.credential_id
-    WHERE r.applied_at IS NULL AND r.classification IN ('CONFLICT','EXPIRATION_REVIEW','REVOCATION_REVIEW')
-      AND (i.observed_on <= ${credentialEvaluationOn} OR json_extract(r.source_json,'$.expiresOn') < ${credentialEvaluationOn})
-      AND (EXISTS (SELECT 1 FROM position_rules pr WHERE pr.rule_book_version=${policy.ruleBookVersion}
-        AND (EXISTS (SELECT 1 FROM json_tree(pr.required_criteria) WHERE value=c.name)
-          OR EXISTS (SELECT 1 FROM json_tree(pr.points_preference) WHERE value=c.name)))
-        OR EXISTS (SELECT 1 FROM annual_bid_policy_documents p WHERE p.id=${policy.annualPolicyDocument?.id ?? null}
-          AND EXISTS (SELECT 1 FROM json_tree(p.execution_policy_json) WHERE value=c.name)))
-  `);
+
+  if (
+    policy.sourceDecisions.some((decision) => decision.status === 'OPEN') ||
+    bidSourceDecisionReviewIssues(policy.sourceDecisions).length > 0
+  )
+    return { ok: false, code: 'policy_source_decision_required' };
+  const disputed = await referencedBidEvaluationDisputes(db, evidence, policy);
+
   if (
     disputed.some((row) =>
       frozenMembers.some(
@@ -1361,55 +1502,14 @@ export async function prepareConfiguredBidPolicySnapshot(
   ) {
     return { ok: false, code: 'credential_import_dispute_requires_review' };
   }
+
   const uniformedOperatorMemberIds = new Set(
     frozenMembers.filter((member) => member.rank !== 'CIVILIAN').map((member) => member.memberId),
   );
 
-  const participationByPositionId = new Map(
-    snapshotParticipation.map((participation) => [participation.positionId, participation]),
-  );
-  const ruleBookMaterial = {
-    v: 1 as const,
-    rules: snapshotRuleRows
-      .map((row) => ({
-        ruleBookVersion: row.ruleBookVersion,
-        positionId: row.positionId,
-        templateVersion: row.templateVersion,
-        requiredCriteriaJson: row.requiredCriteriaJson,
-        pointsPreferenceJson: row.pointsPreferenceJson,
-        tieBreakChainJson: row.tieBreakChainJson,
-      }))
-      .sort((left, right) => left.positionId.localeCompare(right.positionId)),
-    positions: snapshotPositions
-      .map((position) => {
-        const participation = participationByPositionId.get(position.id);
-        return {
-          id: position.id,
-          templateVersion: position.templateVersion,
-          bidParticipation:
-            participation?.templateVersion === position.templateVersion
-              ? participation.bidParticipation
-              : ('BIDDABLE' as const),
-          isExcludedFromCount: position.isExcludedFromCount,
-          shift: position.shift,
-          station: position.station,
-          unit: position.unit,
-          rankRequired: position.rankRequired,
-          positionName: position.positionName,
-          division: position.division,
-          isFloating: position.isFloating,
-          isVacantByDesign: position.isVacantByDesign,
-        };
-      })
-      .sort((left, right) => left.id.localeCompare(right.id)),
-  };
-
-  const snapshot = BidSessionPolicySnapshotSchema.parse({
-    v: 3,
+  const evaluation = BidEvaluationSchema.parse({
     ruleBookVersion: coverage.ruleBookVersion,
-    ruleBookRevision: policy.ruleBookRevision,
     positionTemplateVersion: templateVersion,
-    configurationRevision: policy.configurationRevision,
     settings: policy.settings,
     credentialEvaluationOn: policy.settings.credentialEvaluationOn,
     // A completed Mock can justify annual freeze only for the staffing provenance it rehearsed.
@@ -1444,6 +1544,40 @@ export async function prepareConfiguredBidPolicySnapshot(
         rank: member.rank,
       }))
       .sort((left, right) => left.memberId - right.memberId),
+    ruleBookMaterial,
+  });
+  const evaluatedCoverage = evaluateRuleBookCoverage({
+    ruleBookVersion: evaluation.ruleBookVersion,
+    declaredTemplateVersion: evaluation.positionTemplateVersion,
+    rules: evaluation.ruleBookMaterial.rules,
+    positions: evaluation.ruleBookMaterial.positions,
+  });
+  if (
+    !evaluatedCoverage.valid ||
+    evaluatedCoverage.templateVersion !== evaluation.positionTemplateVersion
+  )
+    return { ok: false, code: 'rule_book_invalid' };
+  return { ok: true, evaluation, coverage: evaluatedCoverage };
+}
+
+export async function prepareConfiguredBidPolicySnapshot(
+  db: DB,
+  policy: ConfiguredBidYearPolicy,
+  capturedAtMs: number,
+  mode: BidSessionMode,
+  sourceDecisions?: BidDefinitionContent['sourceDecisions'],
+): Promise<BidSessionPolicySnapshotPreparation> {
+  const [evidence, material] = await Promise.all([
+    loadBidEvaluationEvidence(db, policy.bidYear),
+    loadPersistedBidEvaluationMaterial(db, policy, sourceDecisions),
+  ]);
+  const prepared = await prepareCapturedBidEvaluation(db, material, evidence, capturedAtMs, mode);
+  if (!prepared.ok) return prepared;
+  const snapshot = BidSessionPolicySnapshotSchema.parse({
+    ...prepared.evaluation,
+    v: 3,
+    ruleBookRevision: policy.ruleBookRevision,
+    configurationRevision: policy.configurationRevision,
     ...(policy.annualPolicyDocument === null
       ? {}
       : {
@@ -1455,19 +1589,12 @@ export async function prepareConfiguredBidPolicySnapshot(
             policyText: policy.annualPolicyDocument.policyText,
           },
         }),
-    ruleBookMaterial,
   });
-  if (snapshot.v !== 3) {
+  if (snapshot.v !== 3) return { ok: false, code: 'rule_book_invalid' };
+  const coverage = loadV3SnapshotRuleBookCoverage(snapshot);
+  if (!coverage.valid || coverage.templateVersion !== snapshot.positionTemplateVersion)
     return { ok: false, code: 'rule_book_invalid' };
-  }
-  const snapshotCoverage = loadV3SnapshotRuleBookCoverage(snapshot);
-  if (
-    !snapshotCoverage.valid ||
-    snapshotCoverage.templateVersion !== snapshot.positionTemplateVersion
-  ) {
-    return { ok: false, code: 'rule_book_invalid' };
-  }
-  return { ok: true, snapshot, coverage: snapshotCoverage };
+  return { ok: true, snapshot, coverage };
 }
 
 export interface SessionPolicySnapshotLoad {

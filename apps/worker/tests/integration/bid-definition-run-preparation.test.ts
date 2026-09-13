@@ -389,6 +389,29 @@ describe('read-only preparation of an explicit saved Bid version', () => {
     expect(legacy.ok, JSON.stringify(legacy)).toBe(true);
   });
 
+  it('prepares a managed version with valid trimmed source decision bounds while preserving recorded whitespace', async () => {
+    decision('RESOLVED', 1);
+    const version = await savedVersion((content) => {
+      content.sourceDecisions = content.sourceDecisions.map((source) => ({
+        ...source,
+        title: ' \tTitle\n ',
+        question: `  ${'Q'.repeat(3000)}  `,
+        decision: ' \tRule\n ',
+        sourceRef: `  ${'S'.repeat(1000)}  `,
+      }));
+    });
+    expect(version.content.sourceDecisions[0]).toMatchObject({
+      title: ' \tTitle\n ',
+      question: `  ${'Q'.repeat(3000)}  `,
+      decision: ' \tRule\n ',
+      sourceRef: `  ${'S'.repeat(1000)}  `,
+    });
+    const result = await prepared(version);
+    expect(result.pins.bidVersionId).toBe(version.row.id);
+    expect(result.pins.bidVersionSha256).toBe(version.sha256);
+    expect(result.coverage.valid).toBe(true);
+  });
+
   it('rejects a control race during evidence loading without leaving preparation writes', async () => {
     const version = await savedVersion();
     const originalPrepare = h.env.DB.prepare.bind(h.env.DB);

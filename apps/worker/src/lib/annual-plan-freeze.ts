@@ -6,6 +6,7 @@ import { mutateAnnualPlan, replayAnnualPlanMutation } from './annual-plan-mutati
 import { loadAnnualPlanReview } from './annual-plan-review.js';
 import { changedAnnualDependencies } from './annual-review-dependencies.js';
 import { auditInsertStatement } from './audit.js';
+import { findManagedLegacyBidWrite } from './bid-definition-legacy-write.js';
 import { loadBidSessionPolicySnapshot, prepareBidSessionPolicySnapshot } from './bid-policy.js';
 
 export type FreezeAnnualPlanInput = {
@@ -68,6 +69,8 @@ export async function freezeAnnualPlan(database: D1Database, input: FreezeAnnual
     request: input.body,
   });
   if (prior) return prior;
+  const managed = await findManagedLegacyBidWrite(database, { kind: 'year', year: input.year });
+  if (managed) return { ok: false as const, ...managed };
   const review = await loadAnnualPlanReview(database, input.year);
   if (!review.ok) return { ok: false as const, error: review.error };
   if (!review.ready)

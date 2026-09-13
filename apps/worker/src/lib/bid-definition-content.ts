@@ -30,6 +30,29 @@ export function definitionRuleRows(
   return content.rules.map((rule) => ({ ...rule, ruleBookVersion, templateVersion }));
 }
 
+/** The canonical definition and unsaved evaluator use the same material adapter.
+ * The default identifiers describe in-memory material, never persisted provenance. */
+export function definitionRuleBookMaterial(
+  content: BidDefinitionContent,
+  ruleBookVersion = CONTENT_IDENTITY,
+  templateVersion = CONTENT_IDENTITY,
+) {
+  const participation = new Map(
+    content.participation.map((row) => [row.positionId, row.bidParticipation]),
+  );
+  return {
+    v: 1 as const,
+    rules: definitionRuleRows(content, ruleBookVersion, templateVersion).map(
+      ({ notes: _notes, ...rule }) => rule,
+    ),
+    positions: content.positions.map((position) => ({
+      ...position,
+      templateVersion,
+      bidParticipation: participation.get(position.id) ?? 'BIDDABLE',
+    })),
+  };
+}
+
 /** Only collections proven to be sets or keyed rows are reordered. Scoring,
  * priority chains, requirement/reason order and specialty sequences stay intact. */
 function normalizePolicy(policy: FrozenLiveBidPolicy) {
@@ -201,18 +224,7 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
   content.participation.sort((a, b) => compareId(a.positionId, b.positionId));
   content.staffingBindings.sort((a, b) => compareId(a.positionId, b.positionId));
   content.sourceDecisions.sort((a, b) => compareId(a.issueId, b.issueId));
-  const participation = new Map(
-    content.participation.map((row) => [row.positionId, row.bidParticipation]),
-  );
-  const material = {
-    v: 1 as const,
-    rules: definitionRuleRows(content, CONTENT_IDENTITY, CONTENT_IDENTITY),
-    positions: content.positions.map((position) => ({
-      ...position,
-      templateVersion: CONTENT_IDENTITY,
-      bidParticipation: participation.get(position.id) ?? 'BIDDABLE',
-    })),
-  };
+  const material = definitionRuleBookMaterial(content);
   if (content.settings?.v === 3) {
     const references = validateAnnualPolicyDefinitionReferences(
       material,

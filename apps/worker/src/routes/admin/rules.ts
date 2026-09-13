@@ -16,6 +16,11 @@ import {
   loadConfigurationReceipt,
 } from '../../lib/admin-configuration-receipt.js';
 import { auditInsertStatement } from '../../lib/audit.js';
+import {
+  assertLegacyBidWrite,
+  legacyBidWriteCondition,
+  runLegacyBidWriteBatch,
+} from '../../lib/bid-definition-legacy-write.js';
 import { decodePositionRule } from '../../lib/position-rule.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
@@ -222,6 +227,7 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   const db = getDb(c.env.DB);
   const existing = await db.select().from(positionRules).where(eq(positionRules.id, id)).get();
   if (existing === undefined) return c.json({ error: 'not_found' }, 404);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'book', version: existing.ruleBookVersion });
 
   // Only drafts are editable; published rulebooks are immutable.
   const book = await db
@@ -307,45 +313,51 @@ router.patch('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   const responseBody = { rule: afterState, ruleBookRevision: book.revision + 1 };
   let results: D1Result[];
   try {
-    results = await c.env.DB.batch([
-      c.env.DB.prepare(
-        `UPDATE position_rules
+    results = await runLegacyBidWriteBatch(
+      c.env.DB,
+      { kind: 'book', version: existing.ruleBookVersion },
+      [
+        c.env.DB.prepare(
+          `UPDATE position_rules
             SET ${assignments.join(', ')}
           WHERE id = ?
             AND EXISTS (
               SELECT 1 FROM rule_books
                WHERE version = ? AND status = 'draft' AND revision = ?
             )`,
-      ).bind(...values, id, existing.ruleBookVersion, book.revision),
-      c.env.DB.prepare(
-        `UPDATE rule_books
+        ).bind(...values, id, existing.ruleBookVersion, book.revision),
+        c.env.DB.prepare(
+          `UPDATE rule_books
             SET revision = revision + 1
           WHERE version = ? AND status = 'draft' AND revision = ? AND changes() = 1`,
-      ).bind(existing.ruleBookVersion, book.revision),
-      auditInsertStatement(
-        c.env.DB,
-        {
-          bidSessionId: null,
-          actorType: 'admin',
-          actorId: c.get('claims').member_id,
-          action: 'override_rule',
-          targetKind: 'position_rule',
-          targetId: String(id),
-          reason: patch.reason,
-          beforeState: existing,
-          afterState,
-        },
-        new Date(),
-        true,
-      ),
-      ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
-    ]);
+        ).bind(existing.ruleBookVersion, book.revision),
+        auditInsertStatement(
+          c.env.DB,
+          {
+            bidSessionId: null,
+            actorType: 'admin',
+            actorId: c.get('claims').member_id,
+            action: 'override_rule',
+            targetKind: 'position_rule',
+            targetId: String(id),
+            reason: patch.reason,
+            beforeState: existing,
+            afterState,
+          },
+          new Date(),
+          true,
+          legacyBidWriteCondition({ kind: 'book', version: existing.ruleBookVersion }),
+        ),
+        ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
+      ],
+    );
   } catch {
     const prior = key ? await loadConfigurationReceipt(c.env.DB, receiptInput) : null;
     if (prior)
       return prior.ok
         ? c.json({ ...prior.response, replayed: true })
         : c.json({ error: prior.error }, 409);
+    await assertLegacyBidWrite(c.env.DB, { kind: 'book', version: existing.ruleBookVersion });
     return c.json({ error: 'rule_book_changed_or_save_failed' }, 409);
   }
   if (
@@ -405,6 +417,7 @@ router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   const db = getDb(c.env.DB);
   const existing = await db.select().from(positionRules).where(eq(positionRules.id, id)).get();
   if (existing === undefined) return c.json({ error: 'not_found' }, 404);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'book', version: existing.ruleBookVersion });
   const book = await db
     .select()
     .from(ruleBooks)
@@ -429,48 +442,54 @@ router.delete('/:id{\\d+}', requireStepUpAuth(), async (c) => {
   };
   let results: D1Result[];
   try {
-    results = await c.env.DB.batch([
-      c.env.DB.prepare(
-        `DELETE FROM position_rules
+    results = await runLegacyBidWriteBatch(
+      c.env.DB,
+      { kind: 'book', version: existing.ruleBookVersion },
+      [
+        c.env.DB.prepare(
+          `DELETE FROM position_rules
         WHERE id = ?
           AND EXISTS (
             SELECT 1 FROM rule_books
              WHERE version = ? AND status = 'draft' AND revision = ?
           )`,
-      ).bind(id, existing.ruleBookVersion, book.revision),
-      c.env.DB.prepare(
-        `UPDATE rule_books
+        ).bind(id, existing.ruleBookVersion, book.revision),
+        c.env.DB.prepare(
+          `UPDATE rule_books
           SET revision = revision + 1
         WHERE version = ? AND status = 'draft' AND revision = ? AND changes() = 1`,
-      ).bind(existing.ruleBookVersion, book.revision),
-      auditInsertStatement(
-        c.env.DB,
-        {
-          bidSessionId: null,
-          actorType: 'admin',
-          actorId: c.get('claims').member_id,
-          action: 'override_rule',
-          targetKind: 'position_rule',
-          targetId: String(id),
-          reason: body.reason,
-          beforeState: existing,
-          afterState: {
-            deleted: true,
-            rule_book_version: existing.ruleBookVersion,
-            position_id: existing.positionId,
+        ).bind(existing.ruleBookVersion, book.revision),
+        auditInsertStatement(
+          c.env.DB,
+          {
+            bidSessionId: null,
+            actorType: 'admin',
+            actorId: c.get('claims').member_id,
+            action: 'override_rule',
+            targetKind: 'position_rule',
+            targetId: String(id),
+            reason: body.reason,
+            beforeState: existing,
+            afterState: {
+              deleted: true,
+              rule_book_version: existing.ruleBookVersion,
+              position_id: existing.positionId,
+            },
           },
-        },
-        new Date(),
-        true,
-      ),
-      ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
-    ]);
+          new Date(),
+          true,
+          legacyBidWriteCondition({ kind: 'book', version: existing.ruleBookVersion }),
+        ),
+        ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
+      ],
+    );
   } catch {
     const prior = key ? await loadConfigurationReceipt(c.env.DB, receiptInput) : null;
     if (prior)
       return prior.ok
         ? c.json({ ...prior.response, replayed: true })
         : c.json({ error: prior.error }, 409);
+    await assertLegacyBidWrite(c.env.DB, { kind: 'book', version: existing.ruleBookVersion });
     return c.json({ error: 'rule_book_changed_or_delete_failed' }, 409);
   }
   if (
