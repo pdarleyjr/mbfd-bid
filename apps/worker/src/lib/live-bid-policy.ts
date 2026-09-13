@@ -1,4 +1,4 @@
-import type { BidSessionPolicySnapshot, FrozenLiveBidPolicy } from '@mbfd/shared';
+import type { BidEvaluation, BidSessionPolicySnapshot, FrozenLiveBidPolicy } from '@mbfd/shared';
 
 export interface FrozenStageOrderEntry {
   ordinal: number;
@@ -30,6 +30,14 @@ export function computeFrozenStageOrder(
   if (snapshot.v !== 3 || livePolicy === null || livePolicy === undefined) {
     return { ok: false, code: 'live_policy_missing' };
   }
+  return computeBidEvaluationStageOrder(snapshot, livePolicy);
+}
+
+/** Same stage authority for an unsaved calculation; no session is invented. */
+export function computeBidEvaluationStageOrder(
+  snapshot: Pick<BidEvaluation, 'members'>,
+  livePolicy: FrozenLiveBidPolicy,
+): FrozenStageOrderResult {
   const members = new Map(snapshot.members.map((member) => [member.memberId, member]));
   const included = new Set<number>();
   const entries: FrozenStageOrderEntry[] = [];

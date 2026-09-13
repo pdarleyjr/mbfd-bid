@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { auditInsertStatement } from './audit.js';
+import { findManagedLegacyBidWrite } from './bid-definition-legacy-write.js';
 
 export const AnnualPlanExpectedSchema = z.object({
   expected_rule_revision: z.number().int().nonnegative(),
@@ -56,12 +57,15 @@ export async function mutateAnnualPlan(
   const receipt = () => replayAnnualPlanMutation(db, input);
   const prior = await receipt();
   if (prior) return prior;
+  const managed = await findManagedLegacyBidWrite(db, { kind: 'year', year: input.year });
+  if (managed) return { ok: false as const, ...managed };
   try {
     await db.batch([
       db
         .prepare(`INSERT INTO annual_plan_receipts (idempotency_key,actor_subject,request_json,response_json,created_at)
         SELECT ?,CASE WHEN EXISTS(SELECT 1 FROM bid_years y JOIN annual_plan_reviews p ON p.bid_year=y.year JOIN rule_books b ON b.version=y.rule_book_version
           WHERE y.year=? AND y.status='configuring' AND b.status='draft' AND b.revision=? AND y.configuration_revision=?
+            AND NOT EXISTS(SELECT 1 FROM bid_definition_heads h WHERE h.bid_year=y.year)
             AND (SELECT revision FROM annual_source_revision WHERE id=1)=?
             AND NOT EXISTS(SELECT 1 FROM bid_sessions s WHERE s.bid_year=y.year AND s.is_mock=0)
             AND NOT EXISTS(SELECT 1 FROM bid_years other WHERE other.year<>y.year AND other.position_template_version=y.position_template_version)
@@ -97,6 +101,8 @@ export async function mutateAnnualPlan(
   } catch {
     const prior = await receipt();
     if (prior) return prior;
+    const managed = await findManagedLegacyBidWrite(db, { kind: 'year', year: input.year });
+    if (managed) return { ok: false as const, ...managed };
     return { ok: false as const, error: 'annual_plan_or_source_changed' };
   }
 }

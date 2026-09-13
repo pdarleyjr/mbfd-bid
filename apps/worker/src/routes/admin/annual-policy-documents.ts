@@ -8,6 +8,11 @@ import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
+import {
+  assertLegacyBidWrite,
+  legacyBidWriteCondition,
+  runLegacyBidWriteBatch,
+} from '../../lib/bid-definition-legacy-write.js';
 
 import { getDb } from '../../db/index.js';
 import { annualBidPolicyDocuments, bidYears, ruleBooks } from '../../db/schema.js';
@@ -173,6 +178,7 @@ router.post('/:year', requireStepUpAuth(), zValidator('json', DraftDocumentSchem
       return c.json({ error: 'expected_revisions_required' }, 400);
   }
   const db = getDb(c.env.DB);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: year.data });
   const [bidYear, ruleBook, previousPublished] = await Promise.all([
     db.select().from(bidYears).where(eq(bidYears.year, year.data)).get(),
     db.select().from(ruleBooks).where(eq(ruleBooks.version, body.rule_book_version)).get(),
@@ -245,7 +251,7 @@ router.post('/:year', requireStepUpAuth(), zValidator('json', DraftDocumentSchem
   const responseBody = { id, revision: nextRevision, status: 'DRAFT' };
   let result: D1Result[];
   try {
-    result = await c.env.DB.batch([
+    result = await runLegacyBidWriteBatch(c.env.DB, { kind: 'year', year: year.data }, [
       c.env.DB.prepare(
         `INSERT INTO annual_bid_policy_documents
           (id,rule_book_version,effective_year,revision,status,policy_text,execution_policy_json,created_by,created_at,updated_at,supersedes_document_id)
@@ -296,6 +302,7 @@ router.post('/:year', requireStepUpAuth(), zValidator('json', DraftDocumentSchem
         },
         new Date(),
         true,
+        legacyBidWriteCondition({ kind: 'year', year: year.data }),
       ),
       ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
     ]);
@@ -305,6 +312,7 @@ router.post('/:year', requireStepUpAuth(), zValidator('json', DraftDocumentSchem
       return prior.ok
         ? c.json({ ...prior.response, replayed: true })
         : c.json({ error: prior.error }, 409);
+    await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: year.data });
     if (error instanceof Error && /constraint|unique/i.test(error.message))
       return c.json({ error: 'annual_policy_changed' }, 409);
     throw error;
@@ -361,6 +369,7 @@ router.post(
       )
         return c.json({ error: 'expected_revisions_required' }, 400);
     }
+    await assertLegacyBidWrite(c.env.DB, { kind: 'document', id: c.req.param('id') });
     if (
       await c.env.DB.prepare('SELECT bid_year FROM annual_plan_reviews WHERE bid_year=?')
         .bind(year.data)
@@ -398,62 +407,68 @@ router.post(
     const responseBody = { id: document.id, revision: document.revision, status: 'PUBLISHED' };
     let results: D1Result[];
     try {
-      results = await c.env.DB.batch([
-        c.env.DB.prepare(
-          `UPDATE annual_bid_policy_documents
+      results = await runLegacyBidWriteBatch(
+        c.env.DB,
+        { kind: 'document', id: c.req.param('id') },
+        [
+          c.env.DB.prepare(
+            `UPDATE annual_bid_policy_documents
            SET status = 'SUPERSEDED', updated_at = ?
          WHERE rule_book_version = ? AND status = 'PUBLISHED' AND id != ? AND EXISTS(SELECT 1 FROM bid_years WHERE year=? AND annual_policy_document_id=? AND configuration_revision=? AND status='configuring')`,
-        ).bind(
-          now,
-          document.ruleBookVersion,
-          document.id,
-          year.data,
-          document.id,
-          bidYear.configurationRevision,
-        ),
-        c.env.DB.prepare(
-          `UPDATE annual_bid_policy_documents
+          ).bind(
+            now,
+            document.ruleBookVersion,
+            document.id,
+            year.data,
+            document.id,
+            bidYear.configurationRevision,
+          ),
+          c.env.DB.prepare(
+            `UPDATE annual_bid_policy_documents
            SET status = 'PUBLISHED', published_by = ?, published_at = ?, updated_at = ?
          WHERE id = ? AND effective_year = ? AND status = 'DRAFT' AND revision=? AND EXISTS(SELECT 1 FROM bid_years WHERE year=? AND annual_policy_document_id=? AND configuration_revision=? AND status='configuring')`,
-        ).bind(
-          c.get('claims').member_id,
-          now,
-          now,
-          document.id,
-          year.data,
-          document.revision,
-          year.data,
-          document.id,
-          bidYear.configurationRevision,
-        ),
-        auditInsertStatement(
-          c.env.DB,
-          {
-            bidSessionId: null,
-            actorType: 'admin',
-            actorId: c.get('claims').member_id,
-            action: 'annual_policy_published',
-            targetKind: 'annual_policy_document',
-            targetId: document.id,
-            afterState: {
-              effective_year: year.data,
-              rule_book_version: document.ruleBookVersion,
-              revision: document.revision,
-              supersedes_document_id: document.supersedesDocumentId,
+          ).bind(
+            c.get('claims').member_id,
+            now,
+            now,
+            document.id,
+            year.data,
+            document.revision,
+            year.data,
+            document.id,
+            bidYear.configurationRevision,
+          ),
+          auditInsertStatement(
+            c.env.DB,
+            {
+              bidSessionId: null,
+              actorType: 'admin',
+              actorId: c.get('claims').member_id,
+              action: 'annual_policy_published',
+              targetKind: 'annual_policy_document',
+              targetId: document.id,
+              afterState: {
+                effective_year: year.data,
+                rule_book_version: document.ruleBookVersion,
+                revision: document.revision,
+                supersedes_document_id: document.supersedesDocumentId,
+              },
+              reason: body.reason,
             },
-            reason: body.reason,
-          },
-          new Date(),
-          true,
-        ),
-        ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
-      ]);
+            new Date(),
+            true,
+            legacyBidWriteCondition({ kind: 'document', id: c.req.param('id') }),
+          ),
+          ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
+        ],
+      );
     } catch {
       const prior = key ? await loadConfigurationReceipt(c.env.DB, receiptInput) : null;
       if (prior)
         return prior.ok
           ? c.json({ ...prior.response, replayed: true })
           : c.json({ error: prior.error }, 409);
+      await assertLegacyBidWrite(c.env.DB, { kind: 'document', id: c.req.param('id') });
       return c.json({ error: 'annual_policy_changed' }, 409);
     }
     if (results[1]?.meta.changes !== 1 || results[2]?.meta.changes !== 1)

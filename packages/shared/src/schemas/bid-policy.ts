@@ -694,6 +694,236 @@ const BidSessionPolicySnapshotV3Schema = z
   })
   .strict();
 
+/** The same typed calculation inputs as a fresh V3 session, without a session,
+ * saved revision, or source-document identity. Rule/template identifiers can
+ * be internal pure-material identities; adapters must never present those as
+ * persisted provenance. No defaults or execution permissions are added. */
+const BidEvaluationBaseSchema = BidSessionPolicySnapshotV3Schema.omit({
+  v: true,
+  ruleBookRevision: true,
+  configurationRevision: true,
+  annualPolicyEvidence: true,
+});
+function refineBidPool(
+  snapshot: { members: z.infer<typeof FrozenBidPoolMemberSchema>[] },
+  ctx: z.RefinementCtx,
+) {
+  const seen = new Set<number>();
+  for (const [index, member] of snapshot.members.entries()) {
+    if (seen.has(member.memberId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['members', index, 'memberId'],
+        message: 'memberId must occur once in a session policy snapshot',
+      });
+    }
+    seen.add(member.memberId);
+    if (member.pool === 'EXCLUDED' && member.exclusionReason === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['members', index, 'exclusionReason'],
+        message: 'an excluded member must carry a deterministic exclusion reason',
+      });
+    }
+    if (member.pool !== 'EXCLUDED' && member.exclusionReason !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['members', index, 'exclusionReason'],
+        message: 'a Bid-pool member cannot carry an exclusion reason',
+      });
+    }
+    if (
+      member.exclusionReason === 'ADMIN_ASSIGNED_NON_BIDDABLE' &&
+      member.authoritativeAssignmentId === null
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['members', index, 'authoritativeAssignmentId'],
+        message: 'an administrative-assignment exclusion must identify its frozen assignment',
+      });
+    }
+  }
+}
+function refineBidEvaluation(
+  snapshot: z.infer<typeof BidEvaluationBaseSchema>,
+  ctx: z.RefinementCtx,
+) {
+  if (snapshot.settings.v === 2 || snapshot.settings.v === 3) {
+    if (snapshot.credentialEvaluationOn === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialEvaluationOn'],
+        message: 'V2 configuration settings require a frozen credential evaluation date',
+      });
+    } else if (snapshot.credentialEvaluationOn !== snapshot.settings.credentialEvaluationOn) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialEvaluationOn'],
+        message: 'credential evaluation date must match the frozen configuration settings',
+      });
+    }
+  } else if (snapshot.credentialEvaluationOn !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['credentialEvaluationOn'],
+      message: 'legacy V1 configuration settings cannot claim a credential evaluation date',
+    });
+  }
+
+  const credentialKeys = new Set<string>();
+  for (const [memberIndex, member] of snapshot.members.entries()) {
+    if (
+      member.scoringEvidence &&
+      (member.scoringEvidence.evaluationOn !== snapshot.credentialEvaluationOn ||
+        new Set(member.scoringEvidence.completedCredentialNames).size !==
+          member.scoringEvidence.completedCredentialNames.length)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['members', memberIndex, 'scoringEvidence'],
+        message:
+          'Completion evidence must match the approved qualification evaluation date and contain unique names',
+      });
+    for (const [credentialIndex, credentialName] of member.credentialNames.entries()) {
+      const normalized = credentialName.trim().toLocaleLowerCase();
+      const key = `${member.memberId}:${normalized}`;
+      if (credentialKeys.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['members', memberIndex, 'credentialNames', credentialIndex],
+          message: 'credentialNames must be unique per session member',
+        });
+      }
+      credentialKeys.add(key);
+    }
+
+    if (member.specialtyQualifications === undefined) continue;
+    const specialtyCodes = new Set<string>();
+    let priorSpecialtyCode: string | null = null;
+    for (const [specialtyIndex, specialty] of member.specialtyQualifications.entries()) {
+      const normalizedCode = specialty.specialtyCode.trim().toLocaleLowerCase();
+      if (specialtyCodes.has(normalizedCode)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [
+            'members',
+            memberIndex,
+            'specialtyQualifications',
+            specialtyIndex,
+            'specialtyCode',
+          ],
+          message: 'specialtyQualifications must be unique per session member',
+        });
+      }
+      specialtyCodes.add(normalizedCode);
+      if (
+        priorSpecialtyCode !== null &&
+        priorSpecialtyCode.localeCompare(specialty.specialtyCode) >= 0
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [
+            'members',
+            memberIndex,
+            'specialtyQualifications',
+            specialtyIndex,
+            'specialtyCode',
+          ],
+          message: 'specialtyQualifications must be sorted by specialty code',
+        });
+      }
+      priorSpecialtyCode = specialty.specialtyCode;
+
+      const credentialEvaluationOn =
+        snapshot.settings.v === 2 || snapshot.settings.v === 3
+          ? snapshot.credentialEvaluationOn
+          : undefined;
+      if (credentialEvaluationOn === undefined) continue;
+      if (specialty.effectiveOn > credentialEvaluationOn) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'effectiveOn'],
+          message: 'frozen specialty evidence cannot begin after the evaluation date',
+        });
+      }
+      if (
+        specialty.status === 'active' &&
+        specialty.expiresOn !== null &&
+        specialty.expiresOn < credentialEvaluationOn
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'expiresOn'],
+          message: 'an active specialty qualification cannot be expired at the evaluation date',
+        });
+      }
+      if (
+        specialty.status === 'expired' &&
+        specialty.expiresOn !== null &&
+        specialty.expiresOn > credentialEvaluationOn
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'expiresOn'],
+          message: 'an expired specialty qualification must be expired at the evaluation date',
+        });
+      }
+    }
+  }
+
+  const positionKeys = new Set<string>();
+  for (const [index, position] of snapshot.ruleBookMaterial.positions.entries()) {
+    const key = `${position.templateVersion}:${position.id}`;
+    if (positionKeys.has(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ruleBookMaterial', 'positions', index, 'id'],
+        message: 'ruleBookMaterial positions must be unique per template',
+      });
+    }
+    positionKeys.add(key);
+    if (position.templateVersion !== snapshot.positionTemplateVersion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ruleBookMaterial', 'positions', index, 'templateVersion'],
+        message: 'ruleBookMaterial position template must match the session snapshot',
+      });
+    }
+  }
+
+  const rulePositionKeys = new Set<string>();
+  for (const [index, rule] of snapshot.ruleBookMaterial.rules.entries()) {
+    const key = `${rule.templateVersion}:${rule.positionId}`;
+    if (rulePositionKeys.has(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ruleBookMaterial', 'rules', index, 'positionId'],
+        message: 'ruleBookMaterial rules must be unique per template position',
+      });
+    }
+    rulePositionKeys.add(key);
+    if (rule.ruleBookVersion !== snapshot.ruleBookVersion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ruleBookMaterial', 'rules', index, 'ruleBookVersion'],
+        message: 'ruleBookMaterial rule book must match the session snapshot',
+      });
+    }
+    if (rule.templateVersion !== snapshot.positionTemplateVersion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ruleBookMaterial', 'rules', index, 'templateVersion'],
+        message: 'ruleBookMaterial rule template must match the session snapshot',
+      });
+    }
+  }
+}
+export const BidEvaluationSchema = BidEvaluationBaseSchema.superRefine((evaluation, ctx) => {
+  refineBidPool(evaluation, ctx);
+  refineBidEvaluation(evaluation, ctx);
+});
+export type BidEvaluation = z.infer<typeof BidEvaluationSchema>;
+
 export const BidSessionPolicySnapshotSchema = z
   .discriminatedUnion('v', [
     BidSessionPolicySnapshotV1Schema,
@@ -725,218 +955,7 @@ export const BidSessionPolicySnapshotSchema = z
         message: 'annual policy evidence must name the frozen executable policy revision',
       });
     }
-    const seen = new Set<number>();
-    for (const [index, member] of snapshot.members.entries()) {
-      if (seen.has(member.memberId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['members', index, 'memberId'],
-          message: 'memberId must occur once in a session policy snapshot',
-        });
-      }
-      seen.add(member.memberId);
-      if (member.pool === 'EXCLUDED' && member.exclusionReason === null) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['members', index, 'exclusionReason'],
-          message: 'an excluded member must carry a deterministic exclusion reason',
-        });
-      }
-      if (member.pool !== 'EXCLUDED' && member.exclusionReason !== null) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['members', index, 'exclusionReason'],
-          message: 'a Bid-pool member cannot carry an exclusion reason',
-        });
-      }
-      if (
-        member.exclusionReason === 'ADMIN_ASSIGNED_NON_BIDDABLE' &&
-        member.authoritativeAssignmentId === null
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['members', index, 'authoritativeAssignmentId'],
-          message: 'an administrative-assignment exclusion must identify its frozen assignment',
-        });
-      }
-    }
-
-    if (snapshot.v !== 3) return;
-
-    if (snapshot.settings.v === 2 || snapshot.settings.v === 3) {
-      if (snapshot.credentialEvaluationOn === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['credentialEvaluationOn'],
-          message: 'V2 configuration settings require a frozen credential evaluation date',
-        });
-      } else if (snapshot.credentialEvaluationOn !== snapshot.settings.credentialEvaluationOn) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['credentialEvaluationOn'],
-          message: 'credential evaluation date must match the frozen configuration settings',
-        });
-      }
-    } else if (snapshot.credentialEvaluationOn !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['credentialEvaluationOn'],
-        message: 'legacy V1 configuration settings cannot claim a credential evaluation date',
-      });
-    }
-
-    const credentialKeys = new Set<string>();
-    for (const [memberIndex, member] of snapshot.members.entries()) {
-      if (
-        member.scoringEvidence &&
-        (member.scoringEvidence.evaluationOn !== snapshot.credentialEvaluationOn ||
-          new Set(member.scoringEvidence.completedCredentialNames).size !==
-            member.scoringEvidence.completedCredentialNames.length)
-      )
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['members', memberIndex, 'scoringEvidence'],
-          message:
-            'Completion evidence must match the approved qualification evaluation date and contain unique names',
-        });
-      for (const [credentialIndex, credentialName] of member.credentialNames.entries()) {
-        const normalized = credentialName.trim().toLocaleLowerCase();
-        const key = `${member.memberId}:${normalized}`;
-        if (credentialKeys.has(key)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['members', memberIndex, 'credentialNames', credentialIndex],
-            message: 'credentialNames must be unique per session member',
-          });
-        }
-        credentialKeys.add(key);
-      }
-
-      if (member.specialtyQualifications === undefined) continue;
-      const specialtyCodes = new Set<string>();
-      let priorSpecialtyCode: string | null = null;
-      for (const [specialtyIndex, specialty] of member.specialtyQualifications.entries()) {
-        const normalizedCode = specialty.specialtyCode.trim().toLocaleLowerCase();
-        if (specialtyCodes.has(normalizedCode)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [
-              'members',
-              memberIndex,
-              'specialtyQualifications',
-              specialtyIndex,
-              'specialtyCode',
-            ],
-            message: 'specialtyQualifications must be unique per session member',
-          });
-        }
-        specialtyCodes.add(normalizedCode);
-        if (
-          priorSpecialtyCode !== null &&
-          priorSpecialtyCode.localeCompare(specialty.specialtyCode) >= 0
-        ) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [
-              'members',
-              memberIndex,
-              'specialtyQualifications',
-              specialtyIndex,
-              'specialtyCode',
-            ],
-            message: 'specialtyQualifications must be sorted by specialty code',
-          });
-        }
-        priorSpecialtyCode = specialty.specialtyCode;
-
-        const credentialEvaluationOn =
-          snapshot.settings.v === 2 || snapshot.settings.v === 3
-            ? snapshot.credentialEvaluationOn
-            : undefined;
-        if (credentialEvaluationOn === undefined) continue;
-        if (specialty.effectiveOn > credentialEvaluationOn) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [
-              'members',
-              memberIndex,
-              'specialtyQualifications',
-              specialtyIndex,
-              'effectiveOn',
-            ],
-            message: 'frozen specialty evidence cannot begin after the evaluation date',
-          });
-        }
-        if (
-          specialty.status === 'active' &&
-          specialty.expiresOn !== null &&
-          specialty.expiresOn < credentialEvaluationOn
-        ) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'expiresOn'],
-            message: 'an active specialty qualification cannot be expired at the evaluation date',
-          });
-        }
-        if (
-          specialty.status === 'expired' &&
-          specialty.expiresOn !== null &&
-          specialty.expiresOn > credentialEvaluationOn
-        ) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['members', memberIndex, 'specialtyQualifications', specialtyIndex, 'expiresOn'],
-            message: 'an expired specialty qualification must be expired at the evaluation date',
-          });
-        }
-      }
-    }
-
-    const positionKeys = new Set<string>();
-    for (const [index, position] of snapshot.ruleBookMaterial.positions.entries()) {
-      const key = `${position.templateVersion}:${position.id}`;
-      if (positionKeys.has(key)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['ruleBookMaterial', 'positions', index, 'id'],
-          message: 'ruleBookMaterial positions must be unique per template',
-        });
-      }
-      positionKeys.add(key);
-      if (position.templateVersion !== snapshot.positionTemplateVersion) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['ruleBookMaterial', 'positions', index, 'templateVersion'],
-          message: 'ruleBookMaterial position template must match the session snapshot',
-        });
-      }
-    }
-
-    const rulePositionKeys = new Set<string>();
-    for (const [index, rule] of snapshot.ruleBookMaterial.rules.entries()) {
-      const key = `${rule.templateVersion}:${rule.positionId}`;
-      if (rulePositionKeys.has(key)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['ruleBookMaterial', 'rules', index, 'positionId'],
-          message: 'ruleBookMaterial rules must be unique per template position',
-        });
-      }
-      rulePositionKeys.add(key);
-      if (rule.ruleBookVersion !== snapshot.ruleBookVersion) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['ruleBookMaterial', 'rules', index, 'ruleBookVersion'],
-          message: 'ruleBookMaterial rule book must match the session snapshot',
-        });
-      }
-      if (rule.templateVersion !== snapshot.positionTemplateVersion) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['ruleBookMaterial', 'rules', index, 'templateVersion'],
-          message: 'ruleBookMaterial rule template must match the session snapshot',
-        });
-      }
-    }
+    refineBidPool(snapshot, ctx);
+    if (snapshot.v === 3) refineBidEvaluation(snapshot, ctx);
   });
 export type BidSessionPolicySnapshot = z.infer<typeof BidSessionPolicySnapshotSchema>;

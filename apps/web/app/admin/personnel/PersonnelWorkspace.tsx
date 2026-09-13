@@ -13,8 +13,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRetainedMutation } from '@/lib/use-retained-mutation';
+import {
+  EnteredMemberDetails,
+  type FocusedMemberCallbacks,
+  PersonnelPreview,
+  matchesPersonnelPreview,
+  useMemberInteractionState,
+  useStaffingTargets,
+} from './focused-member';
 
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface PersonnelSummary {
   asOf: string;
@@ -58,11 +66,12 @@ interface LifecycleHistory {
   }>;
 }
 
-interface PersonnelWorkspaceProps {
-  summary: PersonnelSummary;
+interface PersonnelWorkspaceProps extends FocusedMemberCallbacks {
+  summary: PersonnelSummary | Pick<PersonnelSummary, 'asOf'>;
   members: PersonnelMember[];
   memberIdHint?: number;
   assignmentIdHint?: string;
+  focusedNewHire?: boolean;
 }
 
 const RANKS = ['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'] as const;
@@ -106,7 +115,12 @@ export function PersonnelWorkspace({
   members,
   memberIdHint,
   assignmentIdHint,
+  focusedMember = false,
+  focusedNewHire = false,
+  onInteractionState,
+  onAccepted,
 }: PersonnelWorkspaceProps) {
+  const focused = focusedMember || focusedNewHire;
   const refreshProjections = usePersonnelProjectionRefresh();
   const mutation = useRetainedMutation<Record<string, unknown>>('personnel');
   const validMemberIdHint =
@@ -114,14 +128,15 @@ export function PersonnelWorkspace({
       ? memberIdHint
       : undefined;
   const [kind, setKind] = useState<(typeof MEMBER_KINDS)[number] | (typeof POSITION_KINDS)[number]>(
-    'TRANSFER',
+    focusedNewHire ? 'NEW_HIRE' : 'TRANSFER',
   );
   const [memberId, setMemberId] = useState(() => String(validMemberIdHint ?? members[0]?.id ?? ''));
   const [effectiveOn, setEffectiveOn] = useState(summary.asOf);
   const [reason, setReason] = useState('');
   const [staffingPositionId, setStaffingPositionId] = useState('');
   const [rankAfter, setRankAfter] = useState('FF');
-  const [correctionStatus, setCorrectionStatus] = useState('active');
+  const [correctionRank, setCorrectionRank] = useState('UNCHANGED');
+  const [correctionStatus, setCorrectionStatus] = useState(focusedMember ? 'UNCHANGED' : 'active');
   const [separationType, setSeparationType] = useState('');
   const [newEmployeeId, setNewEmployeeId] = useState('');
   const [newFirstName, setNewFirstName] = useState('');
@@ -137,6 +152,12 @@ export function PersonnelWorkspace({
   const [historyMemberId, setHistoryMemberId] = useState<number | null>(null);
   const [pendingChange, setPendingChange] = useState<Record<string, unknown> | null>(null);
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const retryRequest = useRef<{ key: string; payload: Record<string, unknown> } | null>(null);
+  const targets = useStaffingTargets(effectiveOn, focused);
+  useMemberInteractionState(focused, { dirty, busy, uncertain }, onInteractionState);
 
   const selectedMember = useMemo(
     () => members.find((member) => member.id === Number(memberId)) ?? null,
@@ -148,6 +169,9 @@ export function PersonnelWorkspace({
   const requiresSeparationType = kind === 'RETIREMENT' || kind === 'SEPARATION';
   const requiresSlot = kind === 'VACATE' || kind === 'POSITION_RETIRE';
   const isCorrection = kind === 'CORRECTION';
+  const isFocusedCorrection = focusedMember && isCorrection;
+  const correctionSelectionMissing =
+    isFocusedCorrection && correctionRank === 'UNCHANGED' && correctionStatus === 'UNCHANGED';
   const canPreview = !isNewHire && !isPositionChange;
 
   const loadHistory = useCallback(async (id: number) => {
@@ -171,15 +195,22 @@ export function PersonnelWorkspace({
   useEffect(() => {
     if (validMemberIdHint === undefined) return;
     setMemberId(String(validMemberIdHint));
-    void loadHistory(validMemberIdHint);
-  }, [loadHistory, validMemberIdHint]);
+    if (!focused) void loadHistory(validMemberIdHint);
+  }, [focused, loadHistory, validMemberIdHint]);
 
   async function submitChange(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
+    if (!uncertain && correctionSelectionMissing) {
+      setError('Choose a rank or employment status to correct before previewing.');
+      return;
+    }
     const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
     setBusy(true);
     setError(null);
     setSuccess(null);
+    let commitStarted = false;
+    let accepted = false;
     try {
       const payload: Record<string, unknown> = {
         kind,
@@ -213,12 +244,26 @@ export function PersonnelWorkspace({
       } else {
         payload.member_id = Number(memberId);
         if (staffingPositionId.trim()) payload.staffing_position_id = staffingPositionId.trim();
-        if (isRankChange) payload.rank_after = rankAfter;
-        if (isCorrection) payload.employment_status_after = correctionStatus;
+        if (isRankChange && !isFocusedCorrection) payload.rank_after = rankAfter;
+        if (isFocusedCorrection && correctionRank !== 'UNCHANGED')
+          payload.rank_after = correctionRank;
+        if (isCorrection && (!focusedMember || correctionStatus !== 'UNCHANGED'))
+          payload.employment_status_after = correctionStatus;
         if (requiresSeparationType) payload.separation_type = separationType.trim();
       }
 
-      if (canPreview && JSON.stringify(pendingChange) !== JSON.stringify(payload)) {
+      if (
+        focusedNewHire &&
+        !uncertain &&
+        JSON.stringify(pendingChange) !== JSON.stringify(payload)
+      ) {
+        setPendingChange(payload);
+        setPreviewMessage(
+          'Review the entered member details. No member has been recorded; the server will validate this request when you confirm.',
+        );
+        return;
+      }
+      if (canPreview && !uncertain && JSON.stringify(pendingChange) !== JSON.stringify(payload)) {
         const previewResponse = await csrfFetch('/api/admin/personnel/changes/preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -234,13 +279,26 @@ export function PersonnelWorkspace({
           setError(detail);
           return;
         }
+        if (focused && !matchesPersonnelPreview(previewBody, payload)) {
+          setError(
+            'A complete personnel preview was not returned. Retry the preview before recording.',
+          );
+          return;
+        }
+        if (previewBody !== null && typeof previewBody === 'object')
+          setPreview(previewBody as Record<string, unknown>);
         setPendingChange(payload);
         setPreviewMessage(
           'Preview complete. Confirm to record this effective-dated change; the preview made no changes.',
         );
         return;
       }
-      const request = mutation.prepare(JSON.stringify(payload), () => payload);
+      const request =
+        uncertain && retryRequest.current !== null
+          ? retryRequest.current
+          : mutation.prepare(JSON.stringify(payload), () => payload);
+      retryRequest.current = request;
+      commitStarted = true;
       const response = await csrfFetch('/api/admin/personnel/changes', {
         method: 'POST',
         headers: {
@@ -252,6 +310,7 @@ export function PersonnelWorkspace({
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
+        if (focused && (response.status >= 500 || body === null)) setUncertain(true);
         const detail =
           body !== null && typeof body === 'object' && 'error' in body
             ? String((body as { error: unknown }).error)
@@ -259,6 +318,44 @@ export function PersonnelWorkspace({
         setError(detail);
         return;
       }
+      if (focused) {
+        const receipt =
+          body !== null && typeof body === 'object'
+            ? (body as {
+                replayed?: unknown;
+                event?: {
+                  id?: unknown;
+                  memberId?: unknown;
+                  kind?: unknown;
+                  effectiveOn?: unknown;
+                  idempotencyKey?: unknown;
+                };
+              })
+            : null;
+        if (
+          typeof receipt?.replayed !== 'boolean' ||
+          typeof receipt.event?.id !== 'string' ||
+          receipt.event.id.length === 0 ||
+          (focusedNewHire
+            ? typeof receipt.event.memberId !== 'number' ||
+              !Number.isSafeInteger(receipt.event.memberId) ||
+              receipt.event.memberId <= 0
+            : receipt.event.memberId !== request.payload.member_id) ||
+          receipt.event.kind !== request.payload.kind ||
+          receipt.event.effectiveOn !== request.payload.effective_on ||
+          receipt.event.idempotencyKey !== request.key
+        ) {
+          setUncertain(true);
+          setError(
+            'The response did not establish a personnel receipt. Retry the same request to resolve its outcome.',
+          );
+          return;
+        }
+      }
+      accepted = true;
+      retryRequest.current = null;
+      setUncertain(false);
+      setDirty(false);
       setSuccess(
         response.status === 200
           ? 'The original lifecycle receipt was returned; no duplicate change was made.'
@@ -268,9 +365,12 @@ export function PersonnelWorkspace({
       setReason('');
       setPendingChange(null);
       setPreviewMessage(null);
+      setPreview(null);
       await refreshProjections();
-      if (historyMemberId !== null) await loadHistory(historyMemberId);
+      if (!focused && historyMemberId !== null) await loadHistory(historyMemberId);
+      onAccepted?.();
     } catch (caught) {
+      if (focused && commitStarted && !accepted) setUncertain(true);
       setError(
         caught instanceof Error ? caught.message : 'Personnel change could not be recorded.',
       );
@@ -281,48 +381,59 @@ export function PersonnelWorkspace({
 
   return (
     <div className="space-y-6">
-      <section aria-label="Personnel health" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric
-          label="Active members"
-          value={summary.members.active}
-          detail={`${summary.activeAssignments} active assignments`}
-        />
-        <Metric
-          label="Needs classification"
-          value={summary.members.unclassified}
-          detail="Legacy / unknown status is not treated as active"
-          tone="amber"
-        />
-        <Metric
-          label="Upcoming changes"
-          value={summary.upcomingChanges}
-          detail={`As of ${summary.asOf}`}
-          tone="sky"
-        />
-        <Metric
-          label="Separation history"
-          value={summary.members.retired + summary.members.separated}
-          detail={`${summary.members.inactive} inactive member(s)`}
-        />
-      </section>
+      {!focused && 'members' in summary && (
+        <section aria-label="Personnel health" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric
+            label="Active members"
+            value={summary.members.active}
+            detail={`${summary.activeAssignments} active assignments`}
+          />
+          <Metric
+            label="Needs classification"
+            value={summary.members.unclassified}
+            detail="Legacy / unknown status is not treated as active"
+            tone="amber"
+          />
+          <Metric
+            label="Upcoming changes"
+            value={summary.upcomingChanges}
+            detail={`As of ${summary.asOf}`}
+            tone="sky"
+          />
+          <Metric
+            label="Separation history"
+            value={summary.members.retired + summary.members.separated}
+            detail={`${summary.members.inactive} inactive member(s)`}
+          />
+        </section>
+      )}
 
       <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
-              Year-round control
-            </p>
-            <h2 className="mt-1 font-heading text-xl text-foreground">Personnel lifecycle</h2>
+            {!focused && (
+              <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
+                Year-round control
+              </p>
+            )}
+            <h2 className="mt-1 font-heading text-xl text-foreground">
+              {focusedNewHire ? 'Add member' : focused ? 'Personnel change' : 'Personnel lifecycle'}
+            </h2>
             <p className="mt-2 max-w-3xl text-sm text-foreground">
-              Record reviewed changes with an effective date, operator reason, and immutable
-              receipt. No historical member or assignment is deleted.
+              {focusedNewHire
+                ? 'Enter the member identity and the effective date for this roster action.'
+                : focused
+                  ? 'Choose the effective date and explain the reviewed change.'
+                  : 'Record reviewed changes with an effective date, operator reason, and immutable receipt. No historical member or assignment is deleted.'}
             </p>
-            <p className="mt-2 max-w-3xl text-xs text-muted-foreground">
-              Civilian / no fire rank is supported as excluded personnel. Bid seniority is not
-              required for excluded personnel; the effective date records this roster action and is
-              not treated as a hire date.
-            </p>
-            {validMemberIdHint !== undefined && (
+            {!focused && (
+              <p className="mt-2 max-w-3xl text-xs text-muted-foreground">
+                Civilian / no fire rank is supported as excluded personnel. Bid seniority is not
+                required for excluded personnel; the effective date records this roster action and
+                is not treated as a hire date.
+              </p>
+            )}
+            {!focused && validMemberIdHint !== undefined && (
               <p className="mt-2 text-xs text-info" data-testid="personnel-link-context">
                 Linked member #{validMemberIdHint}
                 {assignmentIdHint === undefined ? '' : ` · Linked assignment ${assignmentIdHint}`}
@@ -338,134 +449,239 @@ export function PersonnelWorkspace({
         <form
           onSubmit={submitChange}
           onChange={() => {
+            setDirty(true);
             setPendingChange(null);
             setPreviewMessage(null);
+            setPreview(null);
           }}
           data-testid="personnel-change-form"
           className="mt-5 grid gap-4 border-t border-border pt-5 lg:grid-cols-2"
         >
-          <Label className="block">
-            <span className="text-sm text-foreground">Change type</span>
-            <NativeSelect
-              value={kind}
-              onChange={(event) => setKind(event.target.value as typeof kind)}
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-            >
-              <optgroup label="Member changes">
-                {MEMBER_KINDS.map((option) => (
-                  <option key={option} value={option}>
-                    {option === 'NEW_HIRE' || option === 'REACTIVATION'
-                      ? 'New hire / reactivation'
-                      : kindLabel(option)}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Staffing position changes">
-                {POSITION_KINDS.map((option) => (
-                  <option key={option} value={option}>
-                    {kindLabel(option)}
-                  </option>
-                ))}
-              </optgroup>
-            </NativeSelect>
-          </Label>
-
-          <Label className="block">
-            <span className="text-sm text-foreground">Effective date</span>
-            <Input
-              type="date"
-              required
-              value={effectiveOn}
-              onChange={(event) => setEffectiveOn(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-            />
-          </Label>
-
-          {!isNewHire && !isPositionChange && (
-            <Label className="block lg:col-span-2">
-              <span className="text-sm text-foreground">Member</span>
-              <NativeSelect
-                required
-                value={memberId}
-                onChange={(event) => setMemberId(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-              >
-                <option value="">Select a member</option>
-                {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.lastName}, {member.firstName} —{' '}
-                    {member.rank ?? 'Civilian / no fire rank'} (
-                    {statusLabel(member.employmentStatus)})
-                  </option>
-                ))}
-              </NativeSelect>
-              {selectedMember?.employmentStatus === 'unknown' && (
-                <span className="mt-1 block text-xs text-warning">
-                  This legacy member is unclassified. The server will fail closed until an explicit
-                  Correction establishes its reviewed employment state; transfer, promotion, and
-                  separation changes remain unavailable until then.
-                </span>
-              )}
-            </Label>
-          )}
-
-          {isNewHire && (
-            <>
+          <fieldset disabled={focused && (busy || uncertain)} className="contents">
+            {!focusedNewHire && (
               <Label className="block">
-                <span className="text-sm text-foreground">Synthetic employee ID</span>
-                <Input
-                  required
-                  value={newEmployeeId}
-                  onChange={(event) => setNewEmployeeId(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-                />
-              </Label>
-              <Label className="block">
-                <span className="text-sm text-foreground">RSC seniority</span>
-                <Input
-                  required={newBidCategory !== 'EXCLUDED'}
-                  type="number"
-                  min={0}
-                  value={newRscSeniority}
-                  onChange={(event) => setNewRscSeniority(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-                />
-              </Label>
-              <Label className="block">
-                <span className="text-sm text-foreground">First name</span>
-                <Input
-                  required
-                  value={newFirstName}
-                  onChange={(event) => setNewFirstName(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-                />
-              </Label>
-              <Label className="block">
-                <span className="text-sm text-foreground">Last name</span>
-                <Input
-                  required
-                  value={newLastName}
-                  onChange={(event) => setNewLastName(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-                />
-              </Label>
-              <Label className="block">
-                <span className="text-sm text-foreground">Bid category</span>
+                <span className="text-sm text-foreground">Change type</span>
                 <NativeSelect
-                  value={newBidCategory}
-                  onChange={(event) => setNewBidCategory(event.target.value)}
+                  value={kind}
+                  onChange={(event) => setKind(event.target.value as typeof kind)}
                   className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                 >
-                  <option value="FF">Firefighter</option>
-                  <option value="OFC">Officer</option>
-                  <option value="EXCLUDED">Excluded</option>
+                  <optgroup label="Member changes">
+                    {MEMBER_KINDS.filter((option) => !focused || option !== 'NEW_HIRE').map(
+                      (option) => (
+                        <option key={option} value={option}>
+                          {!focused && (option === 'NEW_HIRE' || option === 'REACTIVATION')
+                            ? 'New hire / reactivation'
+                            : kindLabel(option)}
+                        </option>
+                      ),
+                    )}
+                  </optgroup>
+                  {!focused && (
+                    <optgroup label="Staffing position changes">
+                      {POSITION_KINDS.map((option) => (
+                        <option key={option} value={option}>
+                          {kindLabel(option)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </NativeSelect>
               </Label>
-            </>
-          )}
+            )}
 
-          {isPositionChange && (
-            <>
+            <Label className="block">
+              <span className="text-sm text-foreground">Effective date</span>
+              <Input
+                type="date"
+                required
+                value={effectiveOn}
+                onChange={(event) => {
+                  setEffectiveOn(event.target.value);
+                  if (focused) setStaffingPositionId('');
+                }}
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+              />
+            </Label>
+
+            {!focused && !isNewHire && !isPositionChange && (
+              <Label className="block lg:col-span-2">
+                <span className="text-sm text-foreground">Member</span>
+                <NativeSelect
+                  required
+                  value={memberId}
+                  onChange={(event) => setMemberId(event.target.value)}
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                >
+                  <option value="">Select a member</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.lastName}, {member.firstName} —{' '}
+                      {member.rank ?? 'Civilian / no fire rank'} (
+                      {statusLabel(member.employmentStatus)})
+                    </option>
+                  ))}
+                </NativeSelect>
+                {selectedMember?.employmentStatus === 'unknown' && (
+                  <span className="mt-1 block text-xs text-warning">
+                    This legacy member is unclassified. The server will fail closed until an
+                    explicit Correction establishes its reviewed employment state; transfer,
+                    promotion, and separation changes remain unavailable until then.
+                  </span>
+                )}
+              </Label>
+            )}
+
+            {isNewHire && (
+              <>
+                <Label className="block">
+                  <span className="text-sm text-foreground">
+                    {focusedNewHire ? 'Employee ID' : 'Synthetic employee ID'}
+                  </span>
+                  <Input
+                    required
+                    value={newEmployeeId}
+                    onChange={(event) => setNewEmployeeId(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                  />
+                </Label>
+                <Label className="block">
+                  <span className="text-sm text-foreground">RSC seniority</span>
+                  <Input
+                    required={newBidCategory !== 'EXCLUDED'}
+                    type="number"
+                    min={0}
+                    value={newRscSeniority}
+                    onChange={(event) => setNewRscSeniority(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                  />
+                </Label>
+                <Label className="block">
+                  <span className="text-sm text-foreground">First name</span>
+                  <Input
+                    required
+                    value={newFirstName}
+                    onChange={(event) => setNewFirstName(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                  />
+                </Label>
+                <Label className="block">
+                  <span className="text-sm text-foreground">Last name</span>
+                  <Input
+                    required
+                    value={newLastName}
+                    onChange={(event) => setNewLastName(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                  />
+                </Label>
+                <Label className="block">
+                  <span className="text-sm text-foreground">Bid category</span>
+                  <NativeSelect
+                    value={newBidCategory}
+                    onChange={(event) => setNewBidCategory(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                  >
+                    <option value="FF">Firefighter</option>
+                    <option value="OFC">Officer</option>
+                    <option value="EXCLUDED">Excluded</option>
+                  </NativeSelect>
+                </Label>
+              </>
+            )}
+
+            {isPositionChange && (
+              <>
+                <Label className="block">
+                  <span className="text-sm text-foreground">Staffing position ID</span>
+                  <Input
+                    required
+                    value={staffingPositionId}
+                    onChange={(event) => setStaffingPositionId(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                  />
+                </Label>
+                {kind === 'POSITION_CREATE' && (
+                  <>
+                    <Label className="block">
+                      <span className="text-sm text-foreground">Stable slot key</span>
+                      <Input
+                        required
+                        value={stableSlotKey}
+                        onChange={(event) => setStableSlotKey(event.target.value)}
+                        className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                      />
+                    </Label>
+                    <Label className="block lg:col-span-2">
+                      <span className="text-sm text-foreground">Position name</span>
+                      <Input
+                        value={positionName}
+                        onChange={(event) => setPositionName(event.target.value)}
+                        className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                      />
+                    </Label>
+                  </>
+                )}
+              </>
+            )}
+
+            {focused && (
+              <Label className="block lg:col-span-2">
+                <span className="text-sm text-foreground">
+                  Staffing position{requiresSlot ? '' : ' (optional)'}
+                </span>
+                <NativeSelect
+                  value={staffingPositionId}
+                  required={requiresSlot}
+                  disabled={targets.loading || targets.projection === null}
+                  onChange={(event) => setStaffingPositionId(event.target.value)}
+                  className="mt-1 min-h-11 w-full"
+                >
+                  <option value="">
+                    {targets.loading
+                      ? 'Loading staffing positions…'
+                      : requiresSlot
+                        ? 'Select a staffing position'
+                        : 'No target position selected'}
+                  </option>
+                  {targets.projection?.positions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {[
+                        position.shift ? `Shift ${position.shift}` : null,
+                        position.station,
+                        position.unit,
+                        position.positionName,
+                        position.occupancy,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </option>
+                  ))}
+                </NativeSelect>
+                {targets.error && (
+                  <span role="alert" className="mt-1 block text-sm text-destructive">
+                    {targets.error}
+                    <Button type="button" onClick={targets.retry}>
+                      Reload staffing positions
+                    </Button>
+                  </span>
+                )}
+              </Label>
+            )}
+            {!focused && !isPositionChange && !requiresSlot && (
+              <Label className="block">
+                <span className="text-sm text-foreground">
+                  Destination staffing position ID (optional)
+                </span>
+                <Input
+                  value={staffingPositionId}
+                  onChange={(event) => setStaffingPositionId(event.target.value)}
+                  placeholder="Reviewed canonical slot ID"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
+                />
+              </Label>
+            )}
+
+            {!focused && !isPositionChange && requiresSlot && (
               <Label className="block">
                 <span className="text-sm text-foreground">Staffing position ID</span>
                 <Input
@@ -475,128 +691,88 @@ export function PersonnelWorkspace({
                   className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
                 />
               </Label>
-              {kind === 'POSITION_CREATE' && (
-                <>
-                  <Label className="block">
-                    <span className="text-sm text-foreground">Stable slot key</span>
-                    <Input
-                      required
-                      value={stableSlotKey}
-                      onChange={(event) => setStableSlotKey(event.target.value)}
-                      className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-                    />
-                  </Label>
-                  <Label className="block lg:col-span-2">
-                    <span className="text-sm text-foreground">Position name</span>
-                    <Input
-                      value={positionName}
-                      onChange={(event) => setPositionName(event.target.value)}
-                      className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-                    />
-                  </Label>
-                </>
-              )}
-            </>
-          )}
+            )}
 
-          {!isPositionChange && !requiresSlot && (
-            <Label className="block">
-              <span className="text-sm text-foreground">
-                Destination staffing position ID (optional)
-              </span>
-              <Input
-                value={staffingPositionId}
-                onChange={(event) => setStaffingPositionId(event.target.value)}
-                placeholder="Reviewed canonical slot ID"
-                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
-              />
-            </Label>
-          )}
+            {(isNewHire || isRankChange) && (
+              <Label className="block">
+                <span className="text-sm text-foreground">Rank after change</span>
+                <NativeSelect
+                  value={isFocusedCorrection ? correctionRank : rankAfter}
+                  onChange={(event) => {
+                    const nextRank = event.target.value;
+                    if (isFocusedCorrection) {
+                      setCorrectionRank(nextRank);
+                      return;
+                    }
+                    setRankAfter(nextRank);
+                    if (nextRank === 'CIVILIAN') {
+                      setNewBidCategory('EXCLUDED');
+                      setNewRscSeniority('');
+                    }
+                  }}
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                >
+                  {isFocusedCorrection && <option value="UNCHANGED">Leave rank unchanged</option>}
+                  {RANKS.map((rank) => (
+                    <option key={rank} value={rank}>
+                      {rank}
+                    </option>
+                  ))}
+                  {isNewHire && <option value="CIVILIAN">Civilian / no fire rank</option>}
+                </NativeSelect>
+              </Label>
+            )}
 
-          {!isPositionChange && requiresSlot && (
-            <Label className="block">
-              <span className="text-sm text-foreground">Staffing position ID</span>
-              <Input
+            {isCorrection && (
+              <Label className="block">
+                <span className="text-sm text-foreground">Corrected employment state</span>
+                <NativeSelect
+                  value={correctionStatus}
+                  onChange={(event) => setCorrectionStatus(event.target.value)}
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                >
+                  {focusedMember && (
+                    <option value="UNCHANGED">Leave employment status unchanged</option>
+                  )}
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="retired">Retired</option>
+                  <option value="separated">Separated</option>
+                </NativeSelect>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Use this reviewed correction path to classify legacy / unknown members before
+                  operational changes.
+                </span>
+              </Label>
+            )}
+
+            {requiresSeparationType && (
+              <Label className="block">
+                <span className="text-sm text-foreground">Separation type</span>
+                <Input
+                  required
+                  value={separationType}
+                  onChange={(event) => setSeparationType(event.target.value)}
+                  placeholder="e.g., RETIREMENT"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
+                />
+              </Label>
+            )}
+
+            <Label className="block lg:col-span-2">
+              <span className="text-sm text-foreground">Operator reason</span>
+              <Textarea
                 required
-                value={staffingPositionId}
-                onChange={(event) => setStaffingPositionId(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                minLength={4}
+                maxLength={500}
+                rows={3}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                className="mt-1 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
+                placeholder="Explain the reviewed personnel or staffing change."
               />
             </Label>
-          )}
-
-          {(isNewHire || isRankChange) && (
-            <Label className="block">
-              <span className="text-sm text-foreground">Rank after change</span>
-              <NativeSelect
-                value={rankAfter}
-                onChange={(event) => {
-                  const nextRank = event.target.value;
-                  setRankAfter(nextRank);
-                  if (nextRank === 'CIVILIAN') {
-                    setNewBidCategory('EXCLUDED');
-                    setNewRscSeniority('');
-                  }
-                }}
-                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-              >
-                {RANKS.map((rank) => (
-                  <option key={rank} value={rank}>
-                    {rank}
-                  </option>
-                ))}
-                {isNewHire && <option value="CIVILIAN">Civilian / no fire rank</option>}
-              </NativeSelect>
-            </Label>
-          )}
-
-          {isCorrection && (
-            <Label className="block">
-              <span className="text-sm text-foreground">Corrected employment state</span>
-              <NativeSelect
-                value={correctionStatus}
-                onChange={(event) => setCorrectionStatus(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="retired">Retired</option>
-                <option value="separated">Separated</option>
-              </NativeSelect>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Use this reviewed correction path to classify legacy / unknown members before
-                operational changes.
-              </span>
-            </Label>
-          )}
-
-          {requiresSeparationType && (
-            <Label className="block">
-              <span className="text-sm text-foreground">Separation type</span>
-              <Input
-                required
-                value={separationType}
-                onChange={(event) => setSeparationType(event.target.value)}
-                placeholder="e.g., RETIREMENT"
-                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
-              />
-            </Label>
-          )}
-
-          <Label className="block lg:col-span-2">
-            <span className="text-sm text-foreground">Operator reason</span>
-            <Textarea
-              required
-              minLength={4}
-              maxLength={500}
-              rows={3}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              className="mt-1 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
-              placeholder="Explain the reviewed personnel or staffing change."
-            />
-          </Label>
-
+          </fieldset>
           <div className="lg:col-span-2">
             {error !== null && (
               <output aria-live="polite" className="block text-sm text-destructive">
@@ -613,118 +789,156 @@ export function PersonnelWorkspace({
                 {previewMessage}
               </output>
             )}
+            {focused && preview !== null && (
+              <PersonnelPreview preview={preview} positions={targets.projection?.positions ?? []} />
+            )}
+            {focusedNewHire && pendingChange !== null && (
+              <section
+                aria-label="Entered member details"
+                className="mt-3 rounded border border-border p-3 text-sm"
+              >
+                <h3 className="mb-2 font-semibold">Review entered member details</h3>
+                <EnteredMemberDetails value={pendingChange} />
+              </section>
+            )}
+            {focused && uncertain && (
+              <p role="alert" className="mt-2 text-sm text-warning">
+                The outcome is uncertain. Further edits are locked until the same request returns a
+                receipt.
+              </p>
+            )}
             <Button
               type="submit"
-              disabled={busy || reason.trim().length < 4}
+              disabled={
+                busy ||
+                reason.trim().length < 4 ||
+                (!uncertain && correctionSelectionMissing) ||
+                (focused && !uncertain && (targets.loading || targets.projection === null))
+              }
               className="mt-2 min-h-11 rounded bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-destructive disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy
-                ? pendingChange === null && canPreview
-                  ? 'Previewing change…'
-                  : 'Recording change…'
-                : pendingChange === null && canPreview
-                  ? 'Preview before recording'
-                  : 'Confirm and record change'}
+              {uncertain && !busy
+                ? 'Retry same personnel request'
+                : busy
+                  ? pendingChange === null && canPreview
+                    ? 'Previewing change…'
+                    : 'Recording change…'
+                  : focusedNewHire
+                    ? pendingChange === null
+                      ? 'Review new member'
+                      : 'Confirm and record new member'
+                    : pendingChange === null && canPreview
+                      ? 'Preview before recording'
+                      : 'Confirm and record change'}
             </Button>
           </div>
         </form>
       </section>
 
-      <TemporaryOverlayWorkspace members={members} asOf={summary.asOf} />
+      {!focused && (
+        <>
+          <TemporaryOverlayWorkspace members={members} asOf={summary.asOf} />
 
-      <section className="overflow-hidden rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-5 py-4">
-          <h2 className="font-heading text-lg text-foreground">Member projection and history</h2>
-          <p className="mt-1 text-sm text-foreground">
-            Select a synthetic member to inspect lifecycle and assignment evidence.
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <Table className="w-full min-w-[700px] text-left text-sm">
-            <TableHeader className="bg-card text-xs uppercase tracking-wide text-muted-foreground">
-              <TableRow>
-                <TableHead className="px-5 py-3">Member</TableHead>
-                <TableHead className="px-4 py-3">Rank</TableHead>
-                <TableHead className="px-4 py-3">Employment</TableHead>
-                <TableHead className="px-4 py-3">Effective</TableHead>
-                <TableHead className="px-5 py-3">History</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody className="divide-y divide-slate-800">
-              {members.map((member) => (
-                <TableRow key={member.id}>
-                  <TableCell className="px-5 py-3 text-foreground">
-                    <span className="font-medium">
-                      {member.firstName} {member.lastName}
-                    </span>
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">
-                      {member.employeeId}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-4 py-3 font-mono text-foreground">
-                    {member.rank ?? 'Civilian / no fire rank'}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClass(member.employmentStatus)}`}
-                    >
-                      {statusLabel(member.employmentStatus)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-foreground">
-                    {member.employmentStatusEffectiveOn ?? 'Not established'}
-                  </TableCell>
-                  <TableCell className="px-5 py-3">
-                    <Button
-                      type="button"
-                      onClick={() => loadHistory(member.id)}
-                      className="min-h-10 rounded border border-border px-3 text-xs font-semibold text-foreground hover:border-destructive/40 hover:text-foreground"
-                    >
-                      View history
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {members.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="px-5 py-8 text-center text-muted-foreground">
-                    No member projections are available.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        {history !== null && historyMemberId !== null && (
-          <div className="grid gap-5 border-t border-border p-5 lg:grid-cols-2">
-            <HistoryList
-              title="Lifecycle events"
-              empty="No lifecycle events were returned."
-              items={history.lifecycleEvents.map(
-                (event) => `${event.effectiveOn} · ${kindLabel(event.kind)} · ${event.reason}`,
-              )}
-            />
-            <HistoryList
-              title="Assignment history"
-              empty="No assignment history was returned."
-              items={history.assignments.map(
-                (assignment) =>
-                  `${assignment.staffingPositionId} · ${assignment.status} · ${assignment.effectiveFrom}${assignment.effectiveTo ? ` → ${assignment.effectiveTo}` : ''}`,
-              )}
-              highlightedItem={
-                assignmentIdHint === undefined
-                  ? undefined
-                  : history.assignments
-                      .filter((assignment) => assignment.id === assignmentIdHint)
-                      .map(
-                        (assignment) =>
-                          `${assignment.staffingPositionId} · ${assignment.status} · ${assignment.effectiveFrom}${assignment.effectiveTo ? ` → ${assignment.effectiveTo}` : ''}`,
-                      )[0]
-              }
-            />
-          </div>
-        )}
-      </section>
+          <section className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="font-heading text-lg text-foreground">
+                Member projection and history
+              </h2>
+              <p className="mt-1 text-sm text-foreground">
+                Select a synthetic member to inspect lifecycle and assignment evidence.
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <Table className="w-full min-w-[700px] text-left text-sm">
+                <TableHeader className="bg-card text-xs uppercase tracking-wide text-muted-foreground">
+                  <TableRow>
+                    <TableHead className="px-5 py-3">Member</TableHead>
+                    <TableHead className="px-4 py-3">Rank</TableHead>
+                    <TableHead className="px-4 py-3">Employment</TableHead>
+                    <TableHead className="px-4 py-3">Effective</TableHead>
+                    <TableHead className="px-5 py-3">History</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-800">
+                  {members.map((member) => (
+                    <TableRow key={member.id}>
+                      <TableCell className="px-5 py-3 text-foreground">
+                        <span className="font-medium">
+                          {member.firstName} {member.lastName}
+                        </span>
+                        <span className="ml-2 font-mono text-xs text-muted-foreground">
+                          {member.employeeId}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 font-mono text-foreground">
+                        {member.rank ?? 'Civilian / no fire rank'}
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClass(member.employmentStatus)}`}
+                        >
+                          {statusLabel(member.employmentStatus)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-foreground">
+                        {member.employmentStatusEffectiveOn ?? 'Not established'}
+                      </TableCell>
+                      <TableCell className="px-5 py-3">
+                        <Button
+                          type="button"
+                          onClick={() => loadHistory(member.id)}
+                          className="min-h-10 rounded border border-border px-3 text-xs font-semibold text-foreground hover:border-destructive/40 hover:text-foreground"
+                        >
+                          View history
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {members.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="px-5 py-8 text-center text-muted-foreground"
+                      >
+                        No member projections are available.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            {history !== null && historyMemberId !== null && (
+              <div className="grid gap-5 border-t border-border p-5 lg:grid-cols-2">
+                <HistoryList
+                  title="Lifecycle events"
+                  empty="No lifecycle events were returned."
+                  items={history.lifecycleEvents.map(
+                    (event) => `${event.effectiveOn} · ${kindLabel(event.kind)} · ${event.reason}`,
+                  )}
+                />
+                <HistoryList
+                  title="Assignment history"
+                  empty="No assignment history was returned."
+                  items={history.assignments.map(
+                    (assignment) =>
+                      `${assignment.staffingPositionId} · ${assignment.status} · ${assignment.effectiveFrom}${assignment.effectiveTo ? ` → ${assignment.effectiveTo}` : ''}`,
+                  )}
+                  highlightedItem={
+                    assignmentIdHint === undefined
+                      ? undefined
+                      : history.assignments
+                          .filter((assignment) => assignment.id === assignmentIdHint)
+                          .map(
+                            (assignment) =>
+                              `${assignment.staffingPositionId} · ${assignment.status} · ${assignment.effectiveFrom}${assignment.effectiveTo ? ` → ${assignment.effectiveTo}` : ''}`,
+                          )[0]
+                  }
+                />
+              </div>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }

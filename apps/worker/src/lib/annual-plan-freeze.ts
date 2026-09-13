@@ -1,4 +1,4 @@
-import { type BidSessionPolicySnapshot, BidSessionPolicySnapshotSchema } from '@mbfd/shared';
+import type { BidSessionPolicySnapshot } from '@mbfd/shared';
 import { loadCanonicalBidSessionState } from '../commands/canonical-command-service.js';
 import { getDb } from '../db/index.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
@@ -6,7 +6,8 @@ import { mutateAnnualPlan, replayAnnualPlanMutation } from './annual-plan-mutati
 import { loadAnnualPlanReview } from './annual-plan-review.js';
 import { changedAnnualDependencies } from './annual-review-dependencies.js';
 import { auditInsertStatement } from './audit.js';
-import { prepareBidSessionPolicySnapshot } from './bid-policy.js';
+import { findManagedLegacyBidWrite } from './bid-definition-legacy-write.js';
+import { loadBidSessionPolicySnapshot, prepareBidSessionPolicySnapshot } from './bid-policy.js';
 
 export type FreezeAnnualPlanInput = {
   year: number;
@@ -68,6 +69,8 @@ export async function freezeAnnualPlan(database: D1Database, input: FreezeAnnual
     request: input.body,
   });
   if (prior) return prior;
+  const managed = await findManagedLegacyBidWrite(database, { kind: 'year', year: input.year });
+  if (managed) return { ok: false as const, ...managed };
   const review = await loadAnnualPlanReview(database, input.year);
   if (!review.ok) return { ok: false as const, error: review.error };
   if (!review.ready)
@@ -102,6 +105,9 @@ export async function freezeAnnualPlan(database: D1Database, input: FreezeAnnual
     mock.result_seq !== mock.current_seq
   )
     return { ok: false as const, error: 'completed_mock_receipt_required' };
+  const loaded = await loadBidSessionPolicySnapshot(getDb(database), input.body.mock_session_id);
+  const frozen = loaded.snapshot;
+  if (!frozen || frozen.v !== 3) return { ok: false as const, error: 'mock_snapshot_invalid' };
   const canonical = await loadCanonicalBidSessionState(database, input.body.mock_session_id);
   if (
     !canonical ||
@@ -110,24 +116,16 @@ export async function freezeAnnualPlan(database: D1Database, input: FreezeAnnual
     canonical.annual.unresolvedMemberIds.length
   )
     return { ok: false as const, error: 'completed_mock_required' };
-  let raw: unknown;
-  try {
-    raw = JSON.parse(mock.snapshot_json);
-  } catch {
-    return { ok: false as const, error: 'mock_snapshot_invalid' };
-  }
-  const frozen = BidSessionPolicySnapshotSchema.safeParse(raw);
   const prepared = await prepareBidSessionPolicySnapshot(
     getDb(database),
     input.year,
     Date.now(),
     'mock',
   );
-  if (!frozen.success || frozen.data.v !== 3 || !prepared.ok)
-    return { ok: false as const, error: 'mock_snapshot_invalid' };
-  if (!validRehearsalCompletion(canonical, frozen.data, mock.current_seq))
+  if (!prepared.ok) return { ok: false as const, error: 'mock_snapshot_invalid' };
+  if (!validRehearsalCompletion(canonical, frozen, mock.current_seq))
     return { ok: false as const, error: 'mock_completion_material_invalid' };
-  const changed = changedAnnualDependencies(frozen.data, prepared.snapshot);
+  const changed = changedAnnualDependencies(frozen, prepared.snapshot);
   if (changed.length)
     return {
       ok: false as const,

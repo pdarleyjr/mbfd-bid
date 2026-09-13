@@ -3,6 +3,7 @@ import { type Context, Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 
+import { loadPositionRetirementImpact } from '../../lib/department-retirement.js';
 import { operationalDate } from '../../lib/operational-date.js';
 import {
   EMPLOYMENT_STATUSES,
@@ -1096,24 +1097,48 @@ router.post('/changes/preview', async (c) => {
   const parsed = PersonnelChangeSchema.safeParse(raw);
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
   const body = parsed.data;
-  if (!isIsoCalendarDate(body.effective_on) || body.member_id === undefined) {
+  if (!isIsoCalendarDate(body.effective_on)) return c.json({ error: 'invalid_effective_on' }, 400);
+  if (body.supersedes_event_id !== undefined && body.kind !== 'CORRECTION') {
+    return c.json({ error: 'supersedes_event_correction_only' }, 422);
+  }
+  if (body.kind === 'POSITION_RETIRE') {
+    if (body.staffing_position_id === undefined)
+      return c.json({ error: 'staffing_position_required' }, 400);
+    if (body.member_id !== undefined || body.new_member !== undefined)
+      return c.json({ error: 'position_change_cannot_include_member' }, 400);
+    const impact = await loadPositionRetirementImpact(
+      c.env.DB,
+      body.staffing_position_id,
+      body.effective_on,
+    );
+    if (impact === null) return c.json({ error: 'staffing_position_not_found' }, 404);
+    return c.json({ preview: true, impact });
+  }
+  if (body.kind === 'NEW_HIRE' || body.kind === 'POSITION_CREATE') {
     return c.json({ error: 'preview_requires_supported_member_change' }, 422);
   }
-  if (
-    body.kind === 'NEW_HIRE' ||
-    body.kind === 'POSITION_CREATE' ||
-    body.kind === 'POSITION_RETIRE'
-  ) {
-    return c.json({ error: 'preview_requires_supported_member_change' }, 422);
+  if (body.member_id === undefined || body.new_member !== undefined) {
+    return c.json({ error: 'member_id_required' }, 400);
   }
-  const member = await loadMember(c.env.DB, body.member_id);
+  const member = await loadMemberAsOf(c.env.DB, body.member_id, body.effective_on);
   if (member === undefined) return c.json({ error: 'member_not_found' }, 404);
   const assignments = await all<AssignmentDbRow>(
     c.env.DB,
     `SELECT id, member_id, staffing_position_id, status, effective_from, effective_to
-       FROM member_assignments WHERE member_id = ?`,
+       FROM member_assignments WHERE member_id = ? AND status <> 'cancelled'`,
     member.id,
   );
+  if (body.supersedes_event_id !== undefined) {
+    const supersession = await validateSupersededEvent(c.env.DB, member.id, body);
+    if (!supersession.ok) return c.json({ error: supersession.error }, 422);
+  }
+  const target = await ensureTargetPositionAvailable(c.env.DB, body, member.id);
+  if (!target.ok) {
+    return c.json(
+      { error: target.error },
+      target.error === 'staffing_position_not_found' ? 404 : 409,
+    );
+  }
   const plan = planPersonnelLifecycleChange({
     kind: body.kind,
     effectiveOn: body.effective_on,
@@ -1330,23 +1355,12 @@ async function createOrRetirePosition(
     }
     const position = await loadPosition(c.env.DB, body.staffing_position_id);
     if (position === undefined) return c.json({ error: 'staffing_position_not_found' }, 404);
-    const retirementActiveTo = priorCalendarDate(body.effective_on);
-    if (position.active_from !== null && retirementActiveTo < position.active_from) {
-      return c.json({ error: 'position_retirement_precedes_active_window' }, 409);
+    const impact = await loadPositionRetirementImpact(c.env.DB, position.id, body.effective_on);
+    if (impact === null) return c.json({ error: 'staffing_position_not_found' }, 404);
+    if (impact.retirementBlocked) {
+      return c.json({ error: impact.blockers[0]?.code }, 409);
     }
-    const occupied = await first<{ id: string }>(
-      c.env.DB,
-      `SELECT id FROM member_assignments
-       WHERE staffing_position_id = ?
-         AND status <> 'cancelled'
-         AND effective_from <= ?
-         AND (effective_to IS NULL OR effective_to >= ?)
-       LIMIT 1`,
-      position.id,
-      body.effective_on,
-      body.effective_on,
-    );
-    if (occupied !== undefined) return c.json({ error: 'position_occupied_requires_vacancy' }, 409);
+    const retirementActiveTo = priorCalendarDate(body.effective_on);
 
     const eventId = ulid();
     const event: LifecycleEventDraft = {

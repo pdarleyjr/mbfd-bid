@@ -15,6 +15,11 @@ import {
 } from '../../db/schema.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import {
+  assertLegacyBidWrite,
+  legacyBidWriteCondition,
+  runLegacyBidWriteBatch,
+} from '../../lib/bid-definition-legacy-write.js';
+import {
   REVIEWED_2026_DRAFT_RULE_BOOK,
   REVIEWED_2026_SOURCE_PROVENANCE,
   REVIEWED_2026_SOURCE_TEMPLATE,
@@ -166,6 +171,7 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
   }
 
   const { destVersion, destYear } = body;
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: destYear });
 
   const db = getDb(c.env.DB);
 
@@ -195,7 +201,7 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
     .where(eq(positions.templateVersion, srcVersion))
     .all();
 
-  await c.env.DB.batch([
+  await runLegacyBidWriteBatch(c.env.DB, { kind: 'year', year: destYear }, [
     c.env.DB.prepare('INSERT INTO position_templates (version, effective_year) VALUES (?, ?)').bind(
       destVersion,
       destYear,
@@ -208,15 +214,21 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
                 position_name, is_floating, is_vacant_by_design, is_excluded_from_count
            FROM positions WHERE template_version = ?`,
     ).bind(destVersion, srcVersion),
-    auditInsertStatement(c.env.DB, {
-      bidSessionId: null,
-      actorType: 'admin',
-      actorId: c.get('claims').member_id,
-      action: 'positions_clone',
-      targetKind: 'position_template',
-      targetId: destVersion,
-      afterState: { srcVersion, destVersion, copied: srcPositions.length },
-    }),
+    auditInsertStatement(
+      c.env.DB,
+      {
+        bidSessionId: null,
+        actorType: 'admin',
+        actorId: c.get('claims').member_id,
+        action: 'positions_clone',
+        targetKind: 'position_template',
+        targetId: destVersion,
+        afterState: { srcVersion, destVersion, copied: srcPositions.length },
+      },
+      new Date(),
+      false,
+      legacyBidWriteCondition({ kind: 'year', year: destYear }),
+    ),
   ]);
   return c.json({ destVersion, destYear, copied: srcPositions.length });
 });
@@ -231,6 +243,7 @@ router.post('/clone-from-year/:src_version', requireStepUpAuth(), async (c) => {
 router.post('/bootstrap-reviewed-2026-source', requireStepUpAuth(), async (c) => {
   const parsed = ReconcileStationSixSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: 2026 });
   if (parsed.data.reason_code !== 'rule_override.policy_direction') {
     return c.json({ error: 'invalid_reason_for_action' }, 400);
   }
@@ -422,24 +435,30 @@ router.post('/bootstrap-reviewed-2026-source', requireStepUpAuth(), async (c) =>
     c.env.DB.prepare(
       "UPDATE rule_books SET status = 'archived' WHERE version = ? AND status = 'draft'",
     ).bind(REVIEWED_2026_SOURCE_TEMPLATE),
-    auditInsertStatement(c.env.DB, {
-      bidSessionId: null,
-      actorType: 'admin',
-      actorId: c.get('claims').member_id,
-      action: 'override_rule',
-      targetKind: 'position_template',
-      targetId: REVIEWED_2026_SOURCE_TEMPLATE,
-      afterState: {
-        source_positions: source.positions.length,
-        source_rules: source.rules.length,
-        draft_rule_book_version: REVIEWED_2026_DRAFT_RULE_BOOK,
-        administrative_positions: source.administrativePositionIds.length,
-        provenance: REVIEWED_2026_SOURCE_PROVENANCE,
+    auditInsertStatement(
+      c.env.DB,
+      {
+        bidSessionId: null,
+        actorType: 'admin',
+        actorId: c.get('claims').member_id,
+        action: 'override_rule',
+        targetKind: 'position_template',
+        targetId: REVIEWED_2026_SOURCE_TEMPLATE,
+        afterState: {
+          source_positions: source.positions.length,
+          source_rules: source.rules.length,
+          draft_rule_book_version: REVIEWED_2026_DRAFT_RULE_BOOK,
+          administrative_positions: source.administrativePositionIds.length,
+          provenance: REVIEWED_2026_SOURCE_PROVENANCE,
+        },
+        reason: parsed.data.reason,
       },
-      reason: parsed.data.reason,
-    }),
+      new Date(),
+      false,
+      legacyBidWriteCondition({ kind: 'year', year: 2026 }),
+    ),
   );
-  await c.env.DB.batch(statements);
+  await runLegacyBidWriteBatch(c.env.DB, { kind: 'year', year: 2026 }, statements);
 
   return c.json(
     {
@@ -463,6 +482,7 @@ router.post('/bootstrap-reviewed-2026-source', requireStepUpAuth(), async (c) =>
 router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
   const parsed = ReconcileStationSixSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: 2026 });
   if (parsed.data.reason_code !== 'rule_override.policy_direction') {
     return c.json({ error: 'invalid_reason_for_action' }, 400);
   }
@@ -559,7 +579,7 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
       return c.json({ error: 'target_template_binding_shape_unrecognized' }, 409);
     }
     if (existingBindings.length === 0) {
-      await c.env.DB.batch([
+      await runLegacyBidWriteBatch(c.env.DB, { kind: 'year', year: 2026 }, [
         ...administrativeBindings.bindings.map((binding) =>
           c.env.DB.prepare(
             `INSERT OR IGNORE INTO position_staffing_bindings (
@@ -573,20 +593,26 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
             now,
           ),
         ),
-        auditInsertStatement(c.env.DB, {
-          bidSessionId: null,
-          actorType: 'admin',
-          actorId: c.get('claims').member_id,
-          action: 'override_rule',
-          targetKind: 'position_staffing_binding',
-          targetId: STATION_SIX_TARGET,
-          afterState: {
-            target_template: STATION_SIX_TARGET,
-            binding_count: administrativeBindings.bindings.length,
-            resumed: true,
+        auditInsertStatement(
+          c.env.DB,
+          {
+            bidSessionId: null,
+            actorType: 'admin',
+            actorId: c.get('claims').member_id,
+            action: 'override_rule',
+            targetKind: 'position_staffing_binding',
+            targetId: STATION_SIX_TARGET,
+            afterState: {
+              target_template: STATION_SIX_TARGET,
+              binding_count: administrativeBindings.bindings.length,
+              resumed: true,
+            },
+            reason: parsed.data.reason,
           },
-          reason: parsed.data.reason,
-        }),
+          new Date(),
+          false,
+          legacyBidWriteCondition({ kind: 'year', year: 2026 }),
+        ),
       ]);
     }
     return c.json({
@@ -715,29 +741,34 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
     c.env.DB.prepare(
       'UPDATE rule_books SET revision = revision + 1 WHERE version = ? AND status = ? AND revision = ?',
     ).bind(STATION_SIX_RULE_BOOK, 'draft', draft.revision),
-    c.env.DB.prepare(
-      `INSERT INTO audit_log (id, bid_session_id, seq, actor_type, actor_id, action, target_kind, target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at)
-         SELECT ?, NULL, COALESCE(MAX(seq), 0) + 1, 'admin', ?, 'override_rule', 'position_template', ?, ?, ?, ?, NULL, NULL, ? FROM audit_log WHERE bid_session_id IS NULL`,
-    ).bind(
-      ulid(),
-      c.get('claims').member_id,
-      STATION_SIX_TARGET,
-      JSON.stringify({
-        source_template: STATION_SIX_SOURCE,
-        source_positions: sourcePositions.length,
-        source_rules: sourceRules.length,
-      }),
-      JSON.stringify({
-        target_template: STATION_SIX_TARGET,
-        positions: correctedPositionCount,
-        rules: correctedRuleCount,
-        station_six_roles_per_shift: 6,
-      }),
-      parsed.data.reason,
-      now,
+    auditInsertStatement(
+      c.env.DB,
+      {
+        bidSessionId: null,
+        actorType: 'admin',
+        actorId: c.get('claims').member_id,
+        action: 'override_rule',
+        targetKind: 'position_template',
+        targetId: STATION_SIX_TARGET,
+        beforeState: {
+          source_template: STATION_SIX_SOURCE,
+          source_positions: sourcePositions.length,
+          source_rules: sourceRules.length,
+        },
+        afterState: {
+          target_template: STATION_SIX_TARGET,
+          positions: correctedPositionCount,
+          rules: correctedRuleCount,
+          station_six_roles_per_shift: 6,
+        },
+        reason: parsed.data.reason,
+      },
+      new Date(now * 1000),
+      false,
+      legacyBidWriteCondition({ kind: 'year', year: 2026 }),
     ),
   );
-  await c.env.DB.batch(statements);
+  await runLegacyBidWriteBatch(c.env.DB, { kind: 'year', year: 2026 }, statements);
 
   return c.json({
     template_version: STATION_SIX_TARGET,

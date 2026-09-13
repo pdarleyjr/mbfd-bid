@@ -2,6 +2,7 @@ import { BidConfigurationSettingsSchema } from '@mbfd/shared';
 import { ulid } from 'ulid';
 import { replayAnnualPlanMutation } from './annual-plan-mutation.js';
 import { auditInsertStatement } from './audit.js';
+import { findManagedLegacyBidWrite } from './bid-definition-legacy-write.js';
 import { parseBidConfigurationSettings } from './bid-policy.js';
 
 /** A new designation, never an edit to the approved book or its evidence. */
@@ -29,6 +30,8 @@ export async function createAnnualPlanSuccessor(
   const intent = { ...input, operation, request: input.body };
   const previous = await replayAnnualPlanMutation(database, intent);
   if (previous) return previous;
+  const managed = await findManagedLegacyBidWrite(database, { kind: 'year', year: input.year });
+  if (managed) return { ok: false as const, ...managed };
   const old = await database.prepare('SELECT * FROM bid_years WHERE year=?').bind(input.year).first<
     {
       rule_book_version: string;
@@ -83,6 +86,7 @@ export async function createAnnualPlanSuccessor(
         .prepare(`INSERT INTO annual_plan_receipts (idempotency_key,actor_subject,request_json,response_json,created_at)
         SELECT ?,CASE WHEN EXISTS(SELECT 1 FROM bid_years y JOIN rule_books b ON b.version=y.rule_book_version
           WHERE y.year=? AND y.status='configuring' AND b.status='active' AND b.version=? AND b.revision=?
+          AND NOT EXISTS(SELECT 1 FROM bid_definition_heads h WHERE h.bid_year=y.year)
           AND y.position_template_version=? AND y.configuration_revision=?
           AND (SELECT revision FROM annual_source_revision WHERE id=1)=?
           AND NOT EXISTS(SELECT 1 FROM bid_sessions s WHERE s.bid_year=y.year AND s.is_mock=0))
@@ -190,11 +194,10 @@ export async function createAnnualPlanSuccessor(
     ]);
     return { ok: true as const, replayed: false, response };
   } catch {
-    return (
-      (await replayAnnualPlanMutation(database, intent)) ?? {
-        ok: false as const,
-        error: 'annual_plan_or_source_changed',
-      }
-    );
+    const prior = await replayAnnualPlanMutation(database, intent);
+    if (prior) return prior;
+    const managed = await findManagedLegacyBidWrite(database, { kind: 'year', year: input.year });
+    if (managed) return { ok: false as const, ...managed };
+    return { ok: false as const, error: 'annual_plan_or_source_changed' };
   }
 }
