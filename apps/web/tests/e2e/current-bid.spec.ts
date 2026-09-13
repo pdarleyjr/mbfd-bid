@@ -251,8 +251,61 @@ for (const viewport of [
     for (const label of ['Bid Blueprint', 'Mock Bid', 'Live Bid', 'Results'] as const) {
       await enter(viewButton(page, label));
       await expect(
-        workspace(page).getByRole('heading', { name: label, exact: true }),
+        workspace(page).getByRole('heading', {
+          name: label === 'Live Bid' ? 'Managed Live preflight' : label,
+          exact: true,
+        }),
       ).toBeVisible();
+      if (label === 'Bid Blueprint') {
+        await expect(
+          workspace(page).getByRole('region', { name: 'Bid relationship map', exact: true }),
+        ).toBeVisible();
+        const lenses = workspace(page).getByRole('tablist', { name: 'Bid Blueprint lenses' });
+        const overview = lenses.getByRole('tab', { name: 'Overview', exact: true });
+        const flow = lenses.getByRole('tab', { name: 'Flow', exact: true });
+        const changes = lenses.getByRole('tab', { name: 'Changes', exact: true });
+        await expect(overview).toHaveAttribute('aria-selected', 'true');
+        await expect(overview).toHaveAttribute('tabindex', '0');
+        await overview.focus();
+        await overview.press('ArrowRight');
+        await expect(flow).toBeFocused();
+        await expect(flow).toHaveAttribute('aria-selected', 'true');
+        await expect(flow).toHaveAttribute('tabindex', '0');
+        await expect(overview).toHaveAttribute('tabindex', '-1');
+        await flow.press('End');
+        await expect(changes).toBeFocused();
+        await expect(changes).toHaveAttribute('aria-selected', 'true');
+        await changes.press('Home');
+        await expect(overview).toBeFocused();
+        await expect(overview).toHaveAttribute('aria-selected', 'true');
+        await overview.press('ArrowLeft');
+        await expect(changes).toBeFocused();
+        await expect(changes).toHaveAttribute('aria-selected', 'true');
+        await changes.press('Home');
+        await expect(
+          workspace(page).getByRole('tabpanel', { name: 'Overview', exact: true }),
+        ).toBeVisible();
+        await enter(lenses.getByRole('tab', { name: 'Specialty', exact: true }));
+        await expect(lenses.getByRole('tab', { name: 'Specialty', exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await expect(
+          workspace(page).getByText('Structured relationship list', { exact: true }),
+        ).toBeVisible();
+      }
+      if (label === 'Live Bid') {
+        await expect(
+          workspace(page).getByRole('button', {
+            name: 'Check Managed Live readiness',
+            exact: true,
+          }),
+        ).toBeEnabled();
+        await expect(workspace(page)).toContainText('No Live run is created by this check.');
+        await expect(
+          workspace(page).getByRole('link', { name: 'Open Live Bid console', exact: true }),
+        ).toHaveCount(0);
+      }
       await assertWidth(page);
     }
     await enter(viewButton(page, 'Edit Bid'));
@@ -313,7 +366,7 @@ test('Opportunity and immutable version pagination expose every synthetic identi
   assertNoWrites(state);
 });
 
-test('Keyboard Save submits the exact entered content and preserves untouched policy and missing references', async ({
+test('Keyboard Save records an edit directly without a required note or preview and preserves untouched rules', async ({
   page,
 }) => {
   const state = await installCurrentBidFixtures(page);
@@ -321,13 +374,13 @@ test('Keyboard Save submits the exact entered content and preserves untouched po
   const expected = structuredClone(state.current.expected);
   const content = structuredClone(state.baseContent);
   const notes = 'Synthetic keyboard-reviewed Bid notes\nRetain final rules and source provenance.';
-  const reason = 'Synthetic keyboard Save browser acceptance';
+  const reason = 'Updated Bid: notes.';
   const field = workspace(page).getByLabel('Bid notes', { exact: true });
   await field.focus();
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.insertText(notes);
   content.notes.bid = notes;
-  await workspace(page).getByLabel('Change summary', { exact: true }).fill(reason);
+  await expect(workspace(page).getByLabel('Change summary', { exact: true })).toHaveValue('');
   expect(state.writeRequests).toEqual([]);
   await enter(workspace(page).getByRole('button', { name: 'Save Bid', exact: true }));
   await expect.poll(() => state.mutations.save).toBe(1);
@@ -348,7 +401,7 @@ test('Keyboard Save submits the exact entered content and preserves untouched po
   assertNoUnexpectedCalls(state);
 });
 
-test('Keyboard restore requires review, allows leaving the review without a write, and posts a forward-version intent', async ({
+test('Keyboard history allows inspection without a write and restores directly as a new version', async ({
   page,
 }) => {
   const state = await installCurrentBidFixtures(page);
@@ -361,10 +414,9 @@ test('Keyboard restore requires review, allows leaving the review without a writ
     workspace(page).getByRole('heading', { name: 'Version 7', exact: true }),
   ).toBeVisible();
   await expect(
-    workspace(page).getByRole('button', { name: 'Restore as new current version', exact: true }),
-  ).toHaveCount(0);
-  await enter(workspace(page).getByRole('button', { name: 'Review restore', exact: true }));
-  await expect(workspace(page).getByLabel('Restore reason', { exact: true })).toBeVisible();
+    workspace(page).getByRole('button', { name: 'Restore this version', exact: true }),
+  ).toBeEnabled();
+  await expect(workspace(page).getByLabel('Restore reason', { exact: true })).toHaveCount(0);
   assertNoWrites(state);
   await enter(viewButton(page, 'Edit Bid'));
   await expect(workspace(page).getByLabel('Bid notes', { exact: true })).toHaveValue(
@@ -372,11 +424,8 @@ test('Keyboard restore requires review, allows leaving the review without a writ
   );
   assertNoWrites(state);
   await enter(workspace(page).getByRole('button', { name: 'Version history', exact: true }));
-  const reason = 'Synthetic restore reviewed by keyboard';
-  await workspace(page).getByLabel('Restore reason', { exact: true }).fill(reason);
-  await enter(
-    workspace(page).getByRole('button', { name: 'Restore as new current version', exact: true }),
-  );
+  const reason = 'Restored Bid version 7.';
+  await enter(workspace(page).getByRole('button', { name: 'Restore this version', exact: true }));
   await expect.poll(() => state.mutations.restore).toBe(1);
   await expect(workspace(page).getByRole('status')).toContainText(
     `Version ${BID_HISTORY_COUNT + 1} restored`,
@@ -443,7 +492,7 @@ for (const viewport of [
   { width: 834, height: 1194 },
   { width: 390, height: 844 },
 ]) {
-  test(`Blueprint impact and authoritative three-channel trace fit ${viewport.width}x${viewport.height}`, async ({
+  test(`[bid-impact] Blueprint impact and authoritative three-channel trace fit ${viewport.width}x${viewport.height}`, async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -531,7 +580,7 @@ for (const viewport of [
   });
 }
 
-test('Blueprint keyboard paging reaches all 521 opportunities and members with context-bound traces', async ({
+test('[bid-impact] Blueprint keyboard paging reaches all 521 opportunities and members with context-bound traces', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -548,7 +597,7 @@ test('Blueprint keyboard paging reaches all 521 opportunities and members with c
     await enter(
       workspace(page).getByRole('button', { name: 'Evaluate draft impact', exact: true }),
     );
-    await expect(workspace(page).locator('output')).toContainText(
+    await expect(workspace(page).getByTestId('bid-impact-change-summary')).toContainText(
       `${BID_COUNT} people with evaluated changes`,
     );
 
@@ -644,7 +693,7 @@ test('Blueprint keyboard paging reaches all 521 opportunities and members with c
       .getByLabel('Bid notes', { exact: true })
       .fill('Synthetic new draft invalidates the old comparison');
     await enter(viewButton(page, 'Bid Blueprint'));
-    await expect(workspace(page).locator('output')).toHaveCount(0);
+    await expect(workspace(page).getByTestId('bid-impact-change-summary')).toHaveCount(0);
     await expect(
       workspace(page).getByRole('heading', { name: 'Draft decision', exact: true }),
     ).toHaveCount(0);
@@ -652,7 +701,7 @@ test('Blueprint keyboard paging reaches all 521 opportunities and members with c
     await enter(
       workspace(page).getByRole('button', { name: 'Evaluate draft impact', exact: true }),
     );
-    await expect(workspace(page).locator('output')).toContainText(
+    await expect(workspace(page).getByTestId('bid-impact-change-summary')).toContainText(
       `${BID_COUNT} people with evaluated changes`,
     );
     expect(state.impactRequests.at(-1)?.expectedImpactSha256).toBeUndefined();
@@ -663,7 +712,7 @@ test('Blueprint keyboard paging reaches all 521 opportunities and members with c
   }
 });
 
-test('Blueprint unresolved draft source decisions remain blocked without invented zero results', async ({
+test('[bid-impact] Blueprint unresolved draft source decisions remain blocked without invented zero results', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -688,7 +737,7 @@ test('Blueprint unresolved draft source decisions remain blocked without invente
     const blocked = impactSection(page, 'Unsaved draft');
     await expect(blocked).toContainText('Resolve the open policy source decisions');
     await expect(blocked).not.toContainText('0 participants');
-    await expect(workspace(page).locator('output')).toHaveCount(0);
+    await expect(workspace(page).getByTestId('bid-impact-change-summary')).toHaveCount(0);
     await expect(workspace(page)).toContainText('No missing result has been treated as zero');
     const eligibility = await openImpactDetails(page, 'Eligibility by opportunity');
     await expect(eligibility).toContainText('Not evaluated eligible members');

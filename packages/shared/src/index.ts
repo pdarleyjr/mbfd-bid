@@ -89,11 +89,17 @@ export {
   BidDefinitionRuleSchema,
   BidDefinitionAuthoringSchema,
   BidDefinitionProvenanceSchema,
+  BidDefinitionSourceDecisionSchema,
+  BidOrderingAuthorityRequestSchema,
+  BidOrderingSourceDecisionResolutionSchema,
 } from './schemas/bid-definition.js';
 export type {
   BidDefinitionContent,
   BidDefinitionRule,
   BidDefinitionIssue,
+  BidDefinitionSourceDecision,
+  BidOrderingAuthorityRequest,
+  BidOrderingSourceDecisionResolution,
 } from './schemas/bid-definition.js';
 export { BidImpactResponseSchema } from './schemas/bid-impact.js';
 export type { BidImpactResponse } from './schemas/bid-impact.js';

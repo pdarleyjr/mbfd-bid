@@ -12,6 +12,26 @@
 - Production health responds 200 (`env=production`); that endpoint does not identify source SHA. Runtime identity remains a separate release gate.
 - Four visual reference images were not included in the supplied attachment directory. The written product contract and existing MBFD visual system guide implementation until references are available.
 
+## Supplied implementation context — non-authoritative
+
+The supplied 2026 documents are historical/reference material for local design,
+fixtures and validation only. They do not authorize populating a working Bid,
+publishing or restoring a policy, changing Department evidence, creating a real
+session, or treating a dated document as the current approved rule set. Any such
+operation requires separately verified source authority and the applicable human
+approval lifecycle.
+
+The desired software semantics are **edit → Save → new version** with automatic
+actor/time recording and optional change note/impact preview. Earlier versions
+remain immutable and Restore creates a new version. These are implementation
+requirements, not permission to bypass source review, policy publication, or
+runtime authorization. Existing runs retain their pinned version and evidence.
+
+Source reconciliation may expose directly supported configuration and explicit
+unresolved questions, but must never invent a qualification, identity, service
+record, expected result, or approval. Missing, contradictory, or unverified
+source facts remain fail-closed.
+
 ## Ownership and invariants
 
 The principal agent owns all architectural choices. Bounded inventories, regression tests, migration review, accessibility and UI QA may be delegated. Department, Bid policy and execution must not become independently designed systems.
@@ -24,7 +44,7 @@ Preserve Hub federation and role gates, canonical commands, Durable Object coord
 2. **Personnel and organization**: reuse `personnel-lifecycle.ts`, personnel preview/commit routes, qualification lifecycle, and versioned organization identities/parents/links. Existing SQL fallback can leak mutable rank/status before the first lifecycle event; characterize and align with the existing `derivePersonnelMemberAsOf` before claiming historical parity. Organization links must supply effective-dated topology, not independently edited station labels.
 3. **Bid**: wrap existing annual configuration, source evidence and typed rule profiles in a product facade. Semantic saves require optimistic concurrency, deterministic hashes, immutable versions and restore-as-new. Runs continue to pin the required configuration and Department context. Never silently retarget an active run.
 4. **Evaluation**: reuse `compileAnnualRules`, `evaluateEligibility`, comparison and A-Day services. The current `bidYear === 2026` stage-order branch must become characterized configuration, not disappear without equivalent validation. New primitives must be reusable and strongly validated.
-5. **Blueprint**: server projection and unsaved draft evaluation use the same deterministic authority as saved configurations. Rendering contains relationships and presentation only. Compare a small SVG prototype with compatible graph libraries before choosing a dependency; measure bundle, keyboard access and large projections.
+5. **Blueprint**: locally authored draft relationships and separately returned server evaluation facts retain distinct provenance. Rendering contains relationships and presentation only; it does not imply that draft data was server-reviewed. The current package and lockfile have no compatible graph renderer, so the implementation uses a small custom SVG relationship layer with native focusable node controls, a selected-node inspector and an equivalent structured list rather than adding a runtime dependency. Keep projections lens-bounded, measure keyboard access and large projections, and never move policy calculation into the renderer.
 
 ## Reviewable delivery sequence
 

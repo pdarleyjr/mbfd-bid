@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BidConfigurationSettingsSchema,
+  BidDefinitionContentSchema,
   BidSessionPolicySnapshotSchema,
   FrozenAnnualOperationsPolicySchema,
   FrozenLiveBidPolicySchema,
   LiveBidCommandSchema,
+  StageParticipantSourceDefinitionsSchema,
   isLiveBidActionAuthorized,
 } from '../../src/index.js';
 
@@ -18,6 +20,7 @@ const liveActions = [
   'resolve_tie',
   'alter_order',
   'pause_resume',
+  'create_live_session',
   'approve_transition',
   'approve_final_results',
   'publish',
@@ -163,6 +166,116 @@ const completeV3Snapshot = {
 };
 
 describe('Bid configuration and session policy contracts', () => {
+  it('keeps explicit-stage definitions readable while admitting typed participant sources', () => {
+    const legacyDefinition = {
+      v: 1,
+      bidYear: 2027,
+      settings: null,
+      notes: { bid: null, positions: null },
+      policy: {
+        policyText: 'Synthetic stage source policy.',
+        executionPolicy: completeLivePolicy,
+      },
+      planning: null,
+      authoring: null,
+      positions: [],
+      rules: [],
+      participation: [],
+      staffingBindings: [],
+      sourceDecisions: [],
+    };
+    expect(BidDefinitionContentSchema.safeParse(legacyDefinition).success).toBe(true);
+
+    const stageParticipantSources = StageParticipantSourceDefinitionsSchema.parse([
+      {
+        stageId: 'D-CPT',
+        sourceRef: 'synthetic-policy:captain-stage',
+        participantSource: {
+          type: 'FILTER',
+          active: true,
+          bidParticipation: 'BIDDABLE',
+          ranks: ['CPT'],
+        },
+        ordering: [
+          { key: 'RANK_SENIORITY', direction: 'ASC' },
+          { key: 'RSC_SENIORITY', direction: 'ASC' },
+        ],
+      },
+      {
+        stageId: 'D-LT',
+        sourceRef: 'synthetic-policy:lieutenant-stage',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [12] },
+        ordering: [{ key: 'RSC_SENIORITY', direction: 'ASC' }],
+      },
+    ]);
+    const adaptiveDefinition = BidDefinitionContentSchema.parse({
+      ...legacyDefinition,
+      policy: { ...legacyDefinition.policy, stageParticipantSources },
+    });
+    expect(adaptiveDefinition.policy?.stageParticipantSources).toEqual(stageParticipantSources);
+    const comparator = [
+      { key: 'RANK_SENIORITY', direction: 'ASC' },
+      { key: 'RSC_SENIORITY', direction: 'ASC' },
+    ];
+    const orderingDecision = {
+      issueId: 'synthetic-governing-ordering-decision',
+      title: 'Synthetic annual ordering authority',
+      question: 'Which comparator controls the synthetic annual Bid order?',
+      area: 'annual-policy' as const,
+      status: 'RESOLVED' as const,
+      decision: 'Use the reviewed synthetic rank-seniority comparator.',
+      sourceRef: 'Synthetic annual-policy source evidence.',
+      effectiveOn: '2027-01-01',
+      resolution: { v: 1 as const, kind: 'BID_ORDERING_COMPARATOR' as const, comparator },
+    };
+    const authorityDefinition = BidDefinitionContentSchema.parse({
+      ...legacyDefinition,
+      policy: {
+        ...legacyDefinition.policy,
+        orderingAuthority: {
+          v: 1,
+          sourceDecisionId: orderingDecision.issueId,
+          comparator,
+        },
+      },
+      sourceDecisions: [orderingDecision],
+    });
+    expect(authorityDefinition.policy?.orderingAuthority).toEqual({
+      v: 1,
+      sourceDecisionId: orderingDecision.issueId,
+      comparator,
+    });
+    expect(
+      StageParticipantSourceDefinitionsSchema.safeParse([
+        {
+          ...stageParticipantSources[0],
+          participantSource: {
+            type: 'FILTER',
+            active: false,
+            bidParticipation: 'BIDDABLE',
+            ranks: ['CPT'],
+          },
+        },
+      ]).success,
+    ).toBe(false);
+    expect(
+      BidDefinitionContentSchema.safeParse({
+        ...authorityDefinition,
+        policy: {
+          ...authorityDefinition.policy,
+          orderingAuthority: {
+            v: 1,
+            sourceDecisionId: orderingDecision.issueId,
+            comparator: [
+              { key: 'RANK_SENIORITY', direction: 'ASC' },
+              { key: 'RANK_SENIORITY', direction: 'DESC' },
+            ],
+          },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it('does not silently invent annual contact timing or A-Day limits', () => {
     expect(
       FrozenAnnualOperationsPolicySchema.safeParse({
@@ -188,9 +301,21 @@ describe('Bid configuration and session policy contracts', () => {
   it('requires an explicit, complete policy before a live action is authorized', () => {
     const policy = FrozenLiveBidPolicySchema.parse(completeLivePolicy);
     expect(isLiveBidActionAuthorized(policy, 'record_selection', 101)).toBe(true);
+    expect(isLiveBidActionAuthorized(policy, 'create_live_session', 101)).toBe(true);
     expect(isLiveBidActionAuthorized(policy, 'record_selection', 999)).toBe(false);
     expect(isLiveBidActionAuthorized(undefined, 'record_selection', 101)).toBe(false);
     expect(isLiveBidActionAuthorized(policy, 'publish', null)).toBe(false);
+  });
+
+  it('keeps historical eleven-action policies readable while denying the later create-session action', () => {
+    const historicalPolicy = FrozenLiveBidPolicySchema.parse({
+      ...completeLivePolicy,
+      actionPermissions: completeLivePolicy.actionPermissions.filter(
+        (grant) => grant.action !== 'create_live_session',
+      ),
+    });
+    expect(isLiveBidActionAuthorized(historicalPolicy, 'record_selection', 101)).toBe(true);
+    expect(isLiveBidActionAuthorized(historicalPolicy, 'create_live_session', 101)).toBe(false);
   });
 
   it('rejects partial policy grants and ambiguous stage membership', () => {
@@ -203,9 +328,53 @@ describe('Bid configuration and session policy contracts', () => {
     expect(
       FrozenLiveBidPolicySchema.safeParse({
         ...completeLivePolicy,
+        actionPermissions: completeLivePolicy.actionPermissions.filter(
+          (grant) => grant.action !== 'publish',
+        ),
+      }).success,
+    ).toBe(false);
+    expect(
+      FrozenLiveBidPolicySchema.safeParse({
+        ...completeLivePolicy,
         stages: [
           ...completeLivePolicy.stages,
           { ...completeLivePolicy.stages[1], id: 'FF', memberIds: [11], order: 3 },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a stage provenance ordering that disagrees with its frozen governing comparator', () => {
+    const orderingAuthority = {
+      v: 1,
+      comparator: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+      sourceDecision: {
+        issueId: 'synthetic-governing-ordering-decision',
+        effectiveOn: '2027-01-01',
+      },
+    };
+    expect(
+      FrozenLiveBidPolicySchema.safeParse({
+        ...completeLivePolicy,
+        orderingAuthority,
+        stages: [
+          {
+            ...completeLivePolicy.stages[0],
+            participantProvenance: {
+              v: 1,
+              stageId: 'D-CPT',
+              sourceRef: 'Synthetic captain stage source.',
+              participantSource: {
+                type: 'EXPLICIT_MEMBERS',
+                memberIds: [11],
+              },
+              ordering: [{ key: 'RSC_SENIORITY', direction: 'ASC' }],
+              orderingAuthority,
+              pinnedEvaluationCapturedAtMs: 1,
+              resolvedMemberIds: [11],
+            },
+          },
+          completeLivePolicy.stages[1],
         ],
       }).success,
     ).toBe(false);

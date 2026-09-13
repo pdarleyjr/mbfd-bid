@@ -7,7 +7,7 @@ remain fail-closed; a configured mechanism is not a policy decision.
 
 | Requirement | Confirmed | Configured | Tested | Unresolved | Blocks live | Source-level disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026 stage order: D Captain, D Lieutenant, ABC Captain, ABC Lieutenant, ABC Firefighter | Yes | Yes, versioned annual operations policy | Yes | No | No | `ANNUAL_2026_STAGE_ORDER` and frozen policy validate the required order; it is not a permanent hard-coded policy. |
+| 2026 stage order: D Captain, D Lieutenant, ABC Captain, ABC Lieutenant, ABC Firefighter | Yes | Yes, versioned annual operations policy | Yes | No | No | At run preparation, readiness verifies the annual operations sequence exactly matches the frozen stage IDs ordered by configured `stage.order`. The supplied 2026 sequence remains a dated baseline, not a hard-coded permanent policy. |
 | Seniority: lower number wins; duplicate or missing values fail closed | Yes | Yes | Yes | No | No | Frozen policy/readiness and canonical command guards retain deterministic ordering; no random or Employee-ID fallback. |
 | Contact attempts and unreachable declaration | Yes: three phone/text attempts and coordinator action | Yes | Yes | “Usually 15 minutes” semantics | Yes | The time rule is absent from confirmed policy and must be explicitly configured before live operation. |
 | Hold, pass, defer, skip, decline | Partly | Yes, as explicit dispositions/action grants | Partly | Exact operational semantics and authority matrix | Yes | Keep action grants explicit and fail closed until Command Staff supplies the approved matrix. |

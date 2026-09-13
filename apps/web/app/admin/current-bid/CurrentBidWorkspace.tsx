@@ -4,15 +4,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
-import type { BidDefinitionContent } from '@mbfd/shared';
+import type { BidDefinitionContent, BidImpactResponse } from '@mbfd/shared';
 import { ArrowRight, BookOpen, GitBranch, History, Save } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { BidBlueprint } from './BidBlueprint';
 import { BidChangeReview } from './BidChangeReview';
 import { FieldSection } from './BidFields';
 import { BidImpactReview } from './BidImpactReview';
+import { BidLiveReview } from './BidLiveReview';
 import { BidMockReview } from './BidMockReview';
 import { BidOpportunityFields } from './BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
@@ -38,6 +40,7 @@ import {
   type BidDraft,
   type PendingBidWrite,
   bidDraftKey,
+  bidSaveSummary,
   preserveBidDraft,
   readBidDraft,
 } from './bid-draft';
@@ -90,12 +93,12 @@ export function CurrentBidWorkspace({
   const [stale, setStale] = useState(false);
   const [preview, setPreview] = useState<BidPreview | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [blueprintImpact, setBlueprintImpact] = useState<BidImpactResponse | null>(null);
+  const [blueprintImpactContent, setBlueprintImpactContent] = useState<string | null>(null);
   const [versions, setVersions] = useState<BidVersion[]>([]);
   const [nextVersion, setNextVersion] = useState<number | null>(null);
   const [versionsLoaded, setVersionsLoaded] = useState(false);
   const [historical, setHistorical] = useState<HistoricalBid | null>(null);
-  const [restorePreview, setRestorePreview] = useState<BidPreview | null>(null);
-  const [restoreReason, setRestoreReason] = useState('');
   const [mockPreview, setMockPreview] = useState<BidMockPreview | null>(null);
   const [createdMock, setCreatedMock] = useState<BidMockResult | null>(null);
   const draftRef = useRef(draft);
@@ -103,6 +106,7 @@ export function CurrentBidWorkspace({
   const busyRef = useRef(false);
   const loadSequence = useRef(0);
   const dirty = draft !== null && !same(draft.content, draft.base.content);
+  const contentStamp = draft ? JSON.stringify(draft.content) : null;
   const pending = draft?.pending ?? null;
   const locked = busy || pending !== null || unreadableDraft;
   const retainsDraft = useCallback(
@@ -126,6 +130,13 @@ export function CurrentBidWorkspace({
     draftRef.current = value;
     setDraft(value);
   }, []);
+  const recordBlueprintImpact = useCallback(
+    (result: BidImpactResponse | null) => {
+      setBlueprintImpact(result);
+      setBlueprintImpactContent(result && contentStamp ? contentStamp : null);
+    },
+    [contentStamp],
+  );
   useEffect(() => {
     setView(initialView);
   }, [initialView]);
@@ -156,6 +167,10 @@ export function CurrentBidWorkspace({
           pending: null,
         },
       );
+      setPreview(null);
+      setPreviewContent(null);
+      setBlueprintImpact(null);
+      setBlueprintImpactContent(null);
       setStale(saved !== null && !same(saved.base.expected, current.expected));
       if (saved)
         setNotice(
@@ -216,7 +231,9 @@ export function CurrentBidWorkspace({
     if (!draftRef.current || busyRef.current || draftRef.current.pending || unreadableDraft) return;
     install({ ...draftRef.current, content });
     setPreview(null);
-    setRestorePreview(null);
+    setPreviewContent(null);
+    setBlueprintImpact(null);
+    setBlueprintImpactContent(null);
     setNotice(null);
   }
   async function execute(write: PendingBidWrite) {
@@ -259,7 +276,9 @@ export function CurrentBidWorkspace({
       install(settled);
       setStale(false);
       setPreview(null);
-      setRestorePreview(null);
+      setPreviewContent(null);
+      setBlueprintImpact(null);
+      setBlueprintImpactContent(null);
       setHistorical(null);
       setMockPreview(null);
       setVersionsLoaded(false);
@@ -346,29 +365,10 @@ export function CurrentBidWorkspace({
   }
   async function selectVersion(version: BidVersion) {
     if (!startWork()) return;
-    setRestorePreview(null);
     setHistorical(null);
     try {
       setHistorical(
         await bidRequest(year, `versions/${encodeURIComponent(version.id)}`, HistoricalBidSchema),
-      );
-    } catch (caught) {
-      setError(message(caught));
-    } finally {
-      finishWork();
-    }
-  }
-  async function reviewRestore() {
-    if (!draft || !historical || dirty || pending || !startWork()) return;
-    try {
-      setRestorePreview(
-        await bidRequest(year, 'preview', BidPreviewSchema, {
-          body: {
-            kind: 'definition',
-            expected: draft.base.expected,
-            intent: { operation: 'restore', versionId: historical.version.id },
-          },
-        }),
       );
     } catch (caught) {
       setError(message(caught));
@@ -402,7 +402,9 @@ export function CurrentBidWorkspace({
       setStorageError(null);
       setStale(false);
       setPreview(null);
-      setRestorePreview(null);
+      setPreviewContent(null);
+      setBlueprintImpact(null);
+      setBlueprintImpactContent(null);
       setNotice('Current saved Bid loaded.');
     } catch (caught) {
       setError(message(caught));
@@ -617,14 +619,14 @@ export function CurrentBidWorkspace({
                   onSubmit={(event) => {
                     event.preventDefault();
                     const current = draftRef.current;
-                    if (!current || locked || stale || current.reason.trim().length < 4) return;
+                    if (!current || locked || stale) return;
                     void execute({
                       path: 'versions',
                       key: crypto.randomUUID(),
                       body: {
                         expected: current.base.expected,
                         content: current.content,
-                        reason: current.reason,
+                        reason: bidSaveSummary(current),
                       },
                     });
                   }}
@@ -634,24 +636,18 @@ export function CurrentBidWorkspace({
                     <Input
                       id="bid-save-reason"
                       value={draft.reason}
-                      minLength={4}
                       maxLength={1000}
-                      required
                       disabled={locked}
                       className="mt-1"
                       onChange={(e) => install({ ...draft, reason: e.target.value })}
                     />
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Describe this save for the version history. Unchanged policy does not create
-                      an extra version.
+                      Optional. Save records what changed, who changed it and when. Earlier versions
+                      stay in History and can be restored.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      disabled={locked || stale || draft.reason.trim().length < 4}
-                    >
+                    <Button type="submit" variant="primary" disabled={locked || stale}>
                       <Save aria-hidden="true" size={16} />
                       {busy ? 'Working…' : 'Save Bid'}
                     </Button>
@@ -663,7 +659,7 @@ export function CurrentBidWorkspace({
                         void evaluateDraft();
                       }}
                     >
-                      Review draft changes
+                      Preview changes (optional)
                       <ArrowRight aria-hidden="true" size={16} />
                     </Button>
                     <Button type="button" disabled={locked} onClick={() => void refreshDiscard()}>
@@ -693,6 +689,11 @@ export function CurrentBidWorkspace({
                   <BidChangeReview preview={preview} />
                 )}
               </FieldSection>
+              <BidBlueprint
+                content={draft.content}
+                preview={previewContent === JSON.stringify(draft.content) ? preview : null}
+                impact={blueprintImpactContent === contentStamp ? blueprintImpact : null}
+              />
               <BidImpactReview
                 content={draft.content}
                 expected={draft.base.expected}
@@ -700,6 +701,7 @@ export function CurrentBidWorkspace({
                 locked={locked || stale}
                 begin={startWork}
                 finish={finishWork}
+                onImpact={recordBlueprintImpact}
               />
             </div>
           )}
@@ -715,12 +717,8 @@ export function CurrentBidWorkspace({
                 locked,
                 dirty,
                 stale,
-                restorePreview,
-                restoreReason,
-                setRestoreReason,
                 browseVersions,
                 selectVersion,
-                reviewRestore,
                 execute,
               }}
             />
@@ -732,17 +730,18 @@ export function CurrentBidWorkspace({
             />
           )}
           {view === 'live' && (
-            <FieldSection
-              title="Live Bid"
-              description="The active run retains its own policy and evidence."
-            >
-              <Link
-                href="/admin/bid"
-                className="inline-flex min-h-11 items-center text-sm underline"
-              >
-                Open Live Bid console
-              </Link>
-            </FieldSection>
+            <BidLiveReview
+              base={draft.base}
+              year={year}
+              {...{
+                busy,
+                locked,
+                dirty,
+                stale,
+                begin: startWork,
+                finish: finishWork,
+              }}
+            />
           )}
           {view === 'results' && (
             <FieldSection title="Results">

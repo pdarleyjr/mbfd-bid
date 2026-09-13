@@ -155,6 +155,7 @@ describe('canonical annual completion projection', () => {
           'resolve_tie',
           'alter_order',
           'pause_resume',
+          'create_live_session',
           'approve_transition',
           'approve_final_results',
           'publish',

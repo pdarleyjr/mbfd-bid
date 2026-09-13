@@ -26,12 +26,14 @@ import {
 } from '../../lib/annual-specialty-policy.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import {
+  type FrozenSessionBidPolicy,
   eligibilityMemberFromFrozen,
   frozenEligibilityMemberForSession,
   loadFrozenSessionBidPolicy,
   resolveFrozenSessionBidTarget,
 } from '../../lib/bid-policy.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
+import { adviseFrozenSpecialtyCoverage } from '../../lib/specialty-coverage-advisory.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -58,6 +60,157 @@ async function loadLiveAdapterState(
   return response.ok ? ((await response.json()) as BidSessionState) : null;
 }
 
+type SpecialtyCoverageProjection =
+  | {
+      availability: 'AVAILABLE';
+      source: 'FROZEN_SESSION_SNAPSHOT';
+      status: 'FEASIBLE' | 'AT_RISK' | 'SHORTAGE';
+      total_specialty_seat_count: number;
+      filled_specialty_seat_count: number;
+      remaining_specialty_seat_count: number;
+      maximum_remaining_covered_count: number;
+      guaranteed_uncovered_seat_count: number;
+      unmatched_seat_ids: readonly string[];
+      critical_member_ids: readonly number[];
+      rule_groups: ReadonlyArray<{
+        rule_group_id: string;
+        total_seat_count: number;
+        filled_seat_count: number;
+        remaining_seat_count: number;
+        simple_eligible_member_ids: readonly number[];
+      }>;
+    }
+  | {
+      availability: 'UNAVAILABLE';
+      source: 'FROZEN_SESSION_SNAPSHOT';
+      code: string;
+    };
+
+function unavailableSpecialtyCoverage(code: string): SpecialtyCoverageProjection {
+  return { availability: 'UNAVAILABLE', source: 'FROZEN_SESSION_SNAPSHOT', code };
+}
+
+/**
+ * Builds an advisory graph from immutable session policy only.  In particular,
+ * this helper intentionally receives no current roster, credential, or
+ * eligibility source: a missing frozen rule or specialty fact is surfaced as
+ * unavailable instead of being reconstructed from mutable Department data.
+ */
+function projectFrozenSpecialtyCoverage(input: {
+  frozen: Extract<FrozenSessionBidPolicy, { ok: true }>;
+  canonical: BidSessionState;
+}): SpecialtyCoverageProjection {
+  if (input.frozen.snapshot.settings.v !== 3)
+    return unavailableSpecialtyCoverage('SPECIALTY_COVERAGE_POLICY_MISSING');
+  const annualOperations = input.frozen.snapshot.settings.livePolicy.annualOperations;
+  const specialties = annualOperations?.specialties;
+  if (annualOperations === undefined || specialties === undefined)
+    return unavailableSpecialtyCoverage('SPECIALTY_COVERAGE_POLICY_MISSING');
+  const evaluationOn = input.frozen.snapshot.credentialEvaluationOn;
+  if (evaluationOn === undefined)
+    return unavailableSpecialtyCoverage('SPECIALTY_COVERAGE_EVIDENCE_DATE_MISSING');
+
+  const specialtyIds = new Set<string>();
+  const positionIds = new Set<string>();
+  try {
+    const frozenCandidates = input.frozen.snapshot.members
+      .filter((member) => member.pool !== 'EXCLUDED')
+      .map((member) => ({
+        memberId: member.memberId,
+        rscSeniority: member.rscSeniority,
+        rankSeniority: member.rankSeniority,
+        credentialNames: member.credentialNames,
+        scoringEvidence: member.scoringEvidence,
+        specialtyQualifications: member.specialtyQualifications,
+      }));
+    const specialtySeats: Array<{
+      seatId: string;
+      positionId: string;
+      ruleGroupId: string;
+      filled: boolean;
+    }> = [];
+    const frozenEligibilityEdges: Array<{ seatId: string; memberId: number }> = [];
+
+    for (const specialty of specialties) {
+      if (specialtyIds.has(specialty.id))
+        return unavailableSpecialtyCoverage('SPECIALTY_COVERAGE_DUPLICATE_SPECIALTY');
+      specialtyIds.add(specialty.id);
+      const rankedCandidateIds = new Set(
+        rankFrozenSpecialtyCandidates({
+          policy: specialty,
+          evaluationOn,
+          members: frozenCandidates,
+        }).map((candidate) => candidate.memberId),
+      );
+
+      for (const positionId of specialty.opportunityPositionIds) {
+        // One physical opportunity cannot be silently counted as two independent
+        // specialty seats. Its policy relationship needs explicit review.
+        if (positionIds.has(positionId))
+          return unavailableSpecialtyCoverage('SPECIALTY_COVERAGE_AMBIGUOUS_POSITION');
+        positionIds.add(positionId);
+        const rule = input.frozen.coverage.rules.find(
+          (candidate) => candidate.positionId === positionId,
+        );
+        if (rule === undefined)
+          return unavailableSpecialtyCoverage('SPECIALTY_COVERAGE_POSITION_RULE_MISSING');
+        const seatId = `specialty:${encodeURIComponent(specialty.id)}:position:${encodeURIComponent(positionId)}`;
+        specialtySeats.push({
+          seatId,
+          positionId,
+          ruleGroupId: specialty.id,
+          filled: input.canonical.fills[positionId] !== undefined,
+        });
+        for (const memberId of rankedCandidateIds) {
+          const member = frozenEligibilityMemberForSession(input.frozen.snapshot, memberId);
+          if (member === null || member.pool === 'EXCLUDED')
+            return unavailableSpecialtyCoverage('SPECIALTY_COVERAGE_MEMBER_MATERIAL_MISSING');
+          if (evaluateEligibility(eligibilityMemberFromFrozen(member), rule).eligible)
+            frozenEligibilityEdges.push({ seatId, memberId });
+        }
+      }
+    }
+
+    const advisory = adviseFrozenSpecialtyCoverage({
+      // The calculation deliberately has identical Mock/Live semantics; the
+      // route does not read mutable session metadata merely to choose this label.
+      mode: 'live',
+      frozenMembers: input.frozen.snapshot.members.map((member) => ({
+        memberId: member.memberId,
+        pool: member.pool,
+      })),
+      specialtySeats,
+      frozenEligibilityEdges,
+      assignedMemberIds: Object.values(input.canonical.fills).map((fill) => fill.memberId),
+    });
+    return {
+      availability: 'AVAILABLE',
+      source: 'FROZEN_SESSION_SNAPSHOT',
+      status: advisory.status,
+      total_specialty_seat_count: advisory.totalSpecialtySeatCount,
+      filled_specialty_seat_count: advisory.filledSpecialtySeatCount,
+      remaining_specialty_seat_count: advisory.remainingSpecialtySeatCount,
+      maximum_remaining_covered_count: advisory.maximumRemainingCoveredCount,
+      guaranteed_uncovered_seat_count: advisory.guaranteedUncoveredSeatCount,
+      unmatched_seat_ids: advisory.unmatchedSeatIds,
+      critical_member_ids: advisory.criticalMemberIds,
+      rule_groups: advisory.ruleGroups.map((group) => ({
+        rule_group_id: group.ruleGroupId,
+        total_seat_count: group.totalSeatCount,
+        filled_seat_count: group.filledSeatCount,
+        remaining_seat_count: group.remainingSeatCount,
+        simple_eligible_member_ids: group.simpleEligibleMemberIds,
+      })),
+    };
+  } catch (error) {
+    const code =
+      error instanceof Error ? error.message : 'SPECIALTY_COVERAGE_EVALUATION_UNAVAILABLE';
+    return unavailableSpecialtyCoverage(
+      code.startsWith('SPECIALTY_') ? code : 'SPECIALTY_COVERAGE_EVALUATION_UNAVAILABLE',
+    );
+  }
+}
+
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
 
@@ -71,6 +224,7 @@ router.get('/:id/specialty-live', async (c) => {
   if (!frozen.ok || frozen.snapshot.settings.v !== 3)
     return c.json({ error: 'live_action_policy_missing' }, 409);
   const policy = frozen.snapshot.settings.livePolicy;
+  const specialtyCoverage = projectFrozenSpecialtyCoverage({ frozen, canonical });
   const identities = new Map(
     (frozen.snapshot.operatorIdentityProjection ?? []).map((identity) => [
       identity.memberId,
@@ -176,6 +330,7 @@ router.get('/:id/specialty-live', async (c) => {
         };
       }),
     })),
+    specialty_coverage: specialtyCoverage,
     active: activeProjection,
   });
 });

@@ -6,6 +6,7 @@ import {
   PauseSessionSchema,
   ResumeSessionSchema,
   TimerConfigSchema,
+  isLiveBidActionAuthorized,
 } from '@mbfd/shared';
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -24,6 +25,7 @@ import {
 } from '../../lib/admin-configuration-receipt.js';
 import { initializeAnnualOperations } from '../../lib/annual-bid-operations.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
+import { LIVE_CREATION_ACTION } from '../../lib/bid-definition-live.js';
 import { loadBidDefinitionHead } from '../../lib/bid-definition-version.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import {
@@ -185,6 +187,13 @@ router.post(
         policy_error: prepared.code,
       });
     }
+    const operatorAuthorized =
+      prepared.snapshot.settings.v === 3 &&
+      isLiveBidActionAuthorized(
+        prepared.snapshot.settings.livePolicy,
+        LIVE_CREATION_ACTION,
+        actorIdFromClaims(c.get('claims')),
+      );
     const readiness = await evaluateLiveBidReadiness({
       db,
       env: c.env,
@@ -193,7 +202,7 @@ router.post(
       bidSessionId: `readiness-preview-${body.bid_year}`,
       bidYear: body.bid_year,
       frozenPolicy: { ok: true, snapshot: prepared.snapshot, coverage: prepared.coverage },
-      operatorAuthorized: true,
+      operatorAuthorized,
     });
     return c.json({
       dry_run: true,
@@ -207,6 +216,7 @@ router.post(
 router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), async (c) => {
   const body = c.req.valid('json');
   const db = getDb(c.env.DB);
+  const actorId = actorIdFromClaims(c.get('claims'));
   const requestedMode = body.mode ?? (body.is_mock === true ? 'mock' : 'live');
   const key = c.req.header('Idempotency-Key');
   if (key !== undefined && (!key || key.trim() !== key || key.length > 256))
@@ -253,6 +263,20 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       },
       409,
     );
+  }
+  // A legacy year has no saved-definition path, but its Live creation is
+  // still separately consequential. A post-Bid transition grant cannot
+  // materialize a new Live session.
+  if (
+    requestedMode === 'live' &&
+    (policy.snapshot.settings.v !== 3 ||
+      !isLiveBidActionAuthorized(
+        policy.snapshot.settings.livePolicy,
+        LIVE_CREATION_ACTION,
+        actorId,
+      ))
+  ) {
+    return c.json({ error: 'live_action_forbidden', action: LIVE_CREATION_ACTION }, 403);
   }
   if (
     (body.expected_duration_days !== undefined &&
@@ -340,7 +364,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
           body.bid_year,
         ],
       },
-      actorId: actorIdFromClaims(c.get('claims')),
+      actorId,
       ...(key ? { receipt: receiptInput } : {}),
       response: responseBody,
     });

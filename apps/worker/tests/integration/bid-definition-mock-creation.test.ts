@@ -685,7 +685,7 @@ describe('managed Mock preview and atomic creation through the admin router', ()
     deepStrictEqual(h.sqlite.serialize(), before);
   });
 
-  it('rejects missing/invalid fields, client identity overrides and all Live/mode fields', async () => {
+  it('rejects missing/invalid fields, client identity overrides and unsupported mode fields', async () => {
     const valid = createBody(await preview());
     const invalid: unknown[] = [
       null,
@@ -712,7 +712,7 @@ describe('managed Mock preview and atomic creation through the admin router', ()
       await rejection('bid/2027/mock-sessions', body, 400, undefined, { key: 'invalid-body' });
     for (const body of [
       { kind: 'mock', ...selection(), mode: 'live' },
-      { kind: 'live', ...selection() },
+      { kind: 'live', ...selection(), expectedSourceToken: valid.expectedSourceToken },
       { kind: 'mock', ...selection(), expectedSourceToken: valid.expectedSourceToken },
     ])
       await rejection('bid/2027/preview', body, 400);

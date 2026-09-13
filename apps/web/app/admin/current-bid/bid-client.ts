@@ -197,6 +197,92 @@ export const BidMockPreviewSchema = z.discriminatedUnion('wouldAllowCreateMock',
     })
     .strict(),
 ]);
+const liveReadinessStatus = z.enum(['READY', 'WARNING', 'BLOCKING', 'NOT_CONFIGURED']);
+const liveReadinessCheck = z
+  .object({ id: identity, status: liveReadinessStatus, detail: z.string().optional() })
+  .strict();
+const liveReadiness = z
+  .object({
+    checks: z.array(liveReadinessCheck),
+    overallStatus: liveReadinessStatus,
+    canStartLiveBid: z.boolean(),
+    blockingCheckIds: z.array(identity),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const duplicateIds = value.checks.some(
+      (check, index) => value.checks.findIndex((candidate) => candidate.id === check.id) !== index,
+    );
+    const blockingCheckIds = value.checks
+      .filter((check) => check.status === 'BLOCKING' || check.status === 'NOT_CONFIGURED')
+      .map((check) => check.id);
+    const overallStatus = value.checks.some((check) => check.status === 'BLOCKING')
+      ? 'BLOCKING'
+      : value.checks.some((check) => check.status === 'NOT_CONFIGURED')
+        ? 'NOT_CONFIGURED'
+        : value.checks.some((check) => check.status === 'WARNING')
+          ? 'WARNING'
+          : 'READY';
+    if (duplicateIds)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Live readiness checks must have unique identifiers.',
+      });
+    if (value.canStartLiveBid !== (blockingCheckIds.length === 0))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Live readiness start status is inconsistent.',
+      });
+    if (
+      value.blockingCheckIds.length !== blockingCheckIds.length ||
+      value.blockingCheckIds.some((id, index) => id !== blockingCheckIds[index])
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Live readiness blocking checks are inconsistent.',
+      });
+    if (value.overallStatus !== overallStatus)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Live readiness overall status is inconsistent.',
+      });
+  });
+const livePolicyBlocked = z
+  .object({
+    wouldAllowCreateLive: z.literal(false),
+    policyError: z.string().min(1),
+    positionIds: ids.optional(),
+    tenureIssues: z
+      .array(
+        z
+          .object({ staffingPositionId: z.string(), code: z.string(), recordId: z.string() })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+const liveReadinessPreview = z
+  .object({
+    wouldAllowCreateLive: z.boolean(),
+    versionId: identity,
+    versionSha256: digest,
+    versionNumber: z.number().int().positive(),
+    contextSha256: digest,
+    runtimeSourceToken: digest,
+    pool: poolSummary,
+    readiness: liveReadiness,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.wouldAllowCreateLive !== value.readiness.canStartLiveBid)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Live preflight and readiness status are inconsistent.',
+      });
+  });
+/** A Live preflight can either stop during immutable policy preparation or
+ * return the server's complete, read-only readiness report. */
+export const BidLivePreviewSchema = z.union([livePolicyBlocked, liveReadinessPreview]);
 export const BidMockResultSchema = z
   .object({
     id: identity,
@@ -228,6 +314,7 @@ export const BidMockResultSchema = z
   );
 export type BidMockPreview = z.infer<typeof BidMockPreviewSchema>;
 export type BidMockResult = z.infer<typeof BidMockResultSchema>;
+export type BidLivePreview = z.infer<typeof BidLivePreviewSchema>;
 
 /** Non-success HTTP responses are distinct from an unknown mutation outcome. */
 export class BidRequestError extends Error {
@@ -319,6 +406,21 @@ export async function bidRequest<T>(
           !('versionSha256' in data) ||
           data.versionId !== request.data.versionId ||
           data.versionSha256 !== request.data.versionSha256
+        )
+          throw new BidRequestError('invalid_server_response', response.status, mutation);
+      }
+      if ('wouldAllowCreateLive' in data) {
+        const request = z
+          .object({ kind: z.literal('live'), versionId: identity, versionSha256: digest })
+          .strict()
+          .safeParse(options?.body);
+        const result = BidLivePreviewSchema.safeParse(data);
+        if (
+          !request.success ||
+          !result.success ||
+          ('versionId' in result.data &&
+            (result.data.versionId !== request.data.versionId ||
+              result.data.versionSha256 !== request.data.versionSha256))
         )
           throw new BidRequestError('invalid_server_response', response.status, mutation);
       }

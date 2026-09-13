@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BIDDING_RANKS } from '../constants/ranks.js';
 import { ConfiguredScoringSchema } from './configured-scoring.js';
 import { FrozenServiceCreditSchema } from './service-evidence.js';
 
@@ -27,11 +28,19 @@ export const LiveBidActionSchema = z.enum([
   'resolve_tie',
   'alter_order',
   'pause_resume',
+  /** Creating a Managed Live session is separate from every in-session or post-Bid transition. */
+  'create_live_session',
   'approve_transition',
   'approve_final_results',
   'publish',
 ]);
 export type LiveBidAction = z.infer<typeof LiveBidActionSchema>;
+
+/** Historical frozen policies predate the explicit Managed-Live creation
+ * action. They remain readable, but that omitted grant is always denied. */
+const HistoricalLiveBidActions = LiveBidActionSchema.options.filter(
+  (action) => action !== 'create_live_session',
+);
 
 export const BidDispositionSchema = z.enum([
   'HOLD',
@@ -208,6 +217,142 @@ export const FrozenAnnualOperationsPolicySchema = z
   });
 export type FrozenAnnualOperationsPolicy = z.infer<typeof FrozenAnnualOperationsPolicySchema>;
 
+/**
+ * Authoring selects from the Department context only through these typed
+ * predicates. They deliberately have no expression, SQL, or executable-code
+ * escape hatch. A FILTER source carries the safe, affirmative values that can
+ * be resolved against a pinned Bid evaluation; it never means "look up whoever
+ * is currently active" during a running session.
+ */
+export const StageParticipantSourceSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('EXPLICIT_MEMBERS'),
+      memberIds: z
+        .array(z.number().int().positive())
+        .min(1)
+        .max(10_000)
+        .refine((memberIds) => new Set(memberIds).size === memberIds.length, {
+          message: 'explicit stage member ids must be unique',
+        }),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('FILTER'),
+      active: z.literal(true),
+      bidParticipation: z.literal('BIDDABLE'),
+      ranks: z
+        .array(z.enum(BIDDING_RANKS))
+        .min(1)
+        .max(BIDDING_RANKS.length)
+        .refine((ranks) => new Set(ranks).size === ranks.length, {
+          message: 'stage filter ranks must be unique',
+        }),
+    })
+    .strict(),
+]);
+export type StageParticipantSource = z.infer<typeof StageParticipantSourceSchema>;
+
+export const StageParticipantOrderingRuleSchema = z
+  .object({
+    key: z.enum(['RSC_SENIORITY', 'RANK_SENIORITY']),
+    direction: z.enum(['ASC', 'DESC']),
+  })
+  .strict();
+export type StageParticipantOrderingRule = z.infer<typeof StageParticipantOrderingRuleSchema>;
+
+/** A selector requires an explicit, deterministic ordering contract. */
+export const StageParticipantOrderingSchema = z
+  .array(StageParticipantOrderingRuleSchema)
+  .min(1)
+  .max(2)
+  .refine((ordering) => new Set(ordering.map((rule) => rule.key)).size === ordering.length, {
+    message: 'stage participant ordering keys must be unique',
+  });
+export type StageParticipantOrdering = z.infer<typeof StageParticipantOrderingSchema>;
+
+/** The governing annual comparator can use the same explicit, deterministic
+ * ordering shape as a stage. It is not authoritative by itself: a frozen
+ * source-decision identity is required before Live may use it. */
+export const BidOrderingComparatorSchema = StageParticipantOrderingSchema;
+export type BidOrderingComparator = z.infer<typeof BidOrderingComparatorSchema>;
+
+const FrozenPolicyCalendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'must be an ISO calendar date');
+
+/** A comparator becomes execution material only after a separate, resolved
+ * source decision has been matched and frozen. Free-form source references
+ * and a comparator enum alone are deliberately insufficient. */
+export const FrozenBidOrderingAuthoritySchema = z
+  .object({
+    v: z.literal(1),
+    comparator: BidOrderingComparatorSchema,
+    sourceDecision: z
+      .object({
+        issueId: z.string().trim().min(1).max(200),
+        effectiveOn: FrozenPolicyCalendarDateSchema,
+      })
+      .strict(),
+  })
+  .strict();
+export type FrozenBidOrderingAuthority = z.infer<typeof FrozenBidOrderingAuthoritySchema>;
+
+/** Saved-definition authoring data. The source reference survives resolution
+ * so an operator can trace frozen membership to reviewed policy material. */
+export const StageParticipantSourceDefinitionSchema = z
+  .object({
+    stageId: z.string().trim().min(1).max(80),
+    sourceRef: z.string().trim().min(4).max(500),
+    participantSource: StageParticipantSourceSchema,
+    ordering: StageParticipantOrderingSchema,
+  })
+  .strict();
+export type StageParticipantSourceDefinition = z.infer<
+  typeof StageParticipantSourceDefinitionSchema
+>;
+
+export const StageParticipantSourceDefinitionsSchema = z
+  .array(StageParticipantSourceDefinitionSchema)
+  .min(1)
+  .max(100)
+  .refine(
+    (definitions) =>
+      new Set(definitions.map((definition) => definition.stageId)).size === definitions.length,
+    { message: 'stage participant source definitions require unique stage ids' },
+  );
+export type StageParticipantSourceDefinitions = z.infer<
+  typeof StageParticipantSourceDefinitionsSchema
+>;
+
+/**
+ * Frozen evidence of how a stage's already-explicit memberIds were resolved.
+ * The runtime consumes memberIds only; this provenance is audit material and
+ * cannot trigger a current-roster query.
+ */
+export const FrozenStageParticipantProvenanceSchema = z
+  .object({
+    v: z.literal(1),
+    stageId: z.string().trim().min(1).max(80),
+    sourceRef: z.string().trim().min(4).max(500),
+    participantSource: StageParticipantSourceSchema,
+    ordering: StageParticipantOrderingSchema,
+    /** Present only when the policy-level governing comparator has been
+     * independently resolved and frozen for this run. */
+    orderingAuthority: FrozenBidOrderingAuthoritySchema.optional(),
+    pinnedEvaluationCapturedAtMs: z.number().int().nonnegative(),
+    resolvedMemberIds: z.array(z.number().int().positive()).min(1),
+  })
+  .strict();
+export type FrozenStageParticipantProvenance = z.infer<
+  typeof FrozenStageParticipantProvenanceSchema
+>;
+
 const FrozenLiveStageSchema = z
   .object({
     id: z.string().trim().min(1).max(80),
@@ -219,8 +364,24 @@ const FrozenLiveStageSchema = z
     opportunityPositionIds: z.array(z.string().trim().min(1)).min(1),
     /** Substages are represented by separate, explicitly ordered stage rows. */
     kind: z.enum(['D_SHIFT', 'CAPTAIN', 'LIEUTENANT', 'FIREFIGHTER', 'MIXED']),
+    /** Optional so historical and explicit-member policies remain readable. */
+    participantProvenance: FrozenStageParticipantProvenanceSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((stage, context) => {
+    const provenance = stage.participantProvenance;
+    if (
+      provenance !== undefined &&
+      (provenance.stageId !== stage.id ||
+        JSON.stringify(provenance.resolvedMemberIds) !== JSON.stringify(stage.memberIds))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['participantProvenance'],
+        message: 'stage participant provenance must describe this exact frozen member list',
+      });
+    }
+  });
 export type FrozenLiveStage = z.infer<typeof FrozenLiveStageSchema>;
 
 const FrozenDispositionRuleSchema = z
@@ -263,8 +424,14 @@ export const FrozenLiveBidPolicySchema = z
     v: z.literal(1),
     policyRevision: z.string().trim().min(1).max(200),
     stages: z.array(FrozenLiveStageSchema).min(1),
+    /** This is generated from a resolved saved-definition decision, not taken
+     * from a stage source reference or a bare comparator selection. */
+    orderingAuthority: FrozenBidOrderingAuthoritySchema.optional(),
     dispositions: z.array(FrozenDispositionRuleSchema).length(6),
-    actionPermissions: z.array(LiveActionPermissionSchema).length(11),
+    actionPermissions: z
+      .array(LiveActionPermissionSchema)
+      .min(HistoricalLiveBidActions.length)
+      .max(LiveBidActionSchema.options.length),
     specialtyCatalogReference: z.string().trim().min(1).max(200).nullable(),
     aDayPolicyReference: z.string().trim().min(1).max(200).nullable(),
     /** Omitted only for pre-Annual-Operations sessions; live operations then fail closed. */
@@ -287,6 +454,28 @@ export const FrozenLiveBidPolicySchema = z
       }
       stageIds.add(stage.id);
       stageOrders.add(stage.order);
+      if (
+        stage.participantProvenance?.orderingAuthority !== undefined &&
+        JSON.stringify(stage.participantProvenance.orderingAuthority) !==
+          JSON.stringify(policy.orderingAuthority)
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['stages', index, 'participantProvenance', 'orderingAuthority'],
+          message: 'stage ordering authority must exactly match the frozen policy authority',
+        });
+      }
+      if (
+        stage.participantProvenance?.orderingAuthority !== undefined &&
+        JSON.stringify(stage.participantProvenance.ordering) !==
+          JSON.stringify(policy.orderingAuthority?.comparator)
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['stages', index, 'participantProvenance', 'ordering'],
+          message: 'stage ordering must exactly match the frozen governing comparator',
+        });
+      }
       for (const memberId of stage.memberIds) {
         if (memberIds.has(memberId)) {
           context.addIssue({
@@ -307,11 +496,18 @@ export const FrozenLiveBidPolicySchema = z
       });
     }
     const actions = new Set(policy.actionPermissions.map((grant) => grant.action));
-    if (actions.size !== 11) {
+    const missingHistoricalAction = HistoricalLiveBidActions.some((action) => !actions.has(action));
+    const isCurrentPolicy = policy.actionPermissions.length === LiveBidActionSchema.options.length;
+    if (
+      actions.size !== policy.actionPermissions.length ||
+      missingHistoricalAction ||
+      (isCurrentPolicy && !actions.has('create_live_session'))
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['actionPermissions'],
-        message: 'every live action requires one explicit grant row',
+        message:
+          'every historical live action requires one explicit grant row; current policies also require create_live_session',
       });
     }
     for (const rule of policy.dispositions) {
@@ -345,15 +541,6 @@ export function isLiveBidActionAuthorized(
       permission.action === action && permission.actorMemberIds.includes(actorMemberId),
   );
 }
-
-/** Canonical calendar-date encoding used by frozen annual-policy facts. */
-const FrozenPolicyCalendarDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((value) => {
-    const parsed = new Date(`${value}T00:00:00.000Z`);
-    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-  }, 'must be an ISO calendar date');
 
 export const FrozenBidPoolMemberSchema = z
   .object({

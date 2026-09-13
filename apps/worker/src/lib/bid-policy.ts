@@ -15,6 +15,7 @@ import {
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
+import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { bidSourceDecisionReviewIssues } from './bid-source-decision-review.js';
 import { serviceCreditsAsOf } from './service-evidence.js';
 import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence.js';
@@ -1573,8 +1574,22 @@ export async function prepareConfiguredBidPolicySnapshot(
   ]);
   const prepared = await prepareCapturedBidEvaluation(db, material, evidence, capturedAtMs, mode);
   if (!prepared.ok) return prepared;
+  const settings =
+    prepared.evaluation.settings.v === 3
+      ? {
+          ...prepared.evaluation.settings,
+          // Direct year-level configuration has no saved-definition source
+          // decision bundle to resolve. Treat an authority-shaped field there
+          // as unverified and preserve the historical execution fallback.
+          livePolicy: withResolvedBidOrderingAuthority(
+            prepared.evaluation.settings.livePolicy,
+            undefined,
+          ),
+        }
+      : prepared.evaluation.settings;
   const snapshot = BidSessionPolicySnapshotSchema.parse({
     ...prepared.evaluation,
+    settings,
     v: 3,
     ruleBookRevision: policy.ruleBookRevision,
     configurationRevision: policy.configurationRevision,

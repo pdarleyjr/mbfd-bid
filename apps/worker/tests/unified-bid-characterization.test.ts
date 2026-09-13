@@ -9,7 +9,6 @@ import {
 } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import {
-  ANNUAL_2026_STAGE_ORDER,
   type AnnualOperationsPolicy,
   declareUnreachable,
   initializeAnnualOperations,
@@ -32,6 +31,8 @@ import { decodePositionRule } from '../src/lib/position-rule.js';
  * Expected outputs are literals, never captured by calling the implementation.
  * The separate private, approved replay manifest remains required for a
  * normative historical-policy claim; this suite supplies no substitute for it.
+ * The configurable-stage tests intentionally replace ec4087a's year-specific
+ * restriction; the original five-stage decisions remain regression evidence.
  */
 const execution2026: AnnualOperationsPolicy = {
   v: 1,
@@ -104,20 +105,12 @@ const technicianCredentials = [
 ];
 
 describe('unified Bid: current executable 2026 characterization', () => {
-  it('pins the current literal stage sequence independently of the exported constant', () => {
-    expect(ANNUAL_2026_STAGE_ORDER).toEqual([
-      'D_CAPTAIN',
-      'D_LIEUTENANT',
-      'ABC_CAPTAIN',
-      'ABC_LIEUTENANT',
-      'ABC_FIREFIGHTER',
-    ]);
+  it('accepts the original explicit five-stage configuration', () => {
     expect(
       validateAnnualOperationsReadiness({
         operations: execution2026,
-        bidYear: 2026,
         isMock: false,
-        configuredStageIds: execution2026.stageOrder,
+        configuredStageOrder: execution2026.stageOrder,
         missingTopologyIds: [],
       }),
     ).toEqual({ ok: true });
@@ -127,17 +120,19 @@ describe('unified Bid: current executable 2026 characterization', () => {
     ['ABC_CAPTAIN', 'D_CAPTAIN', 'D_LIEUTENANT', 'ABC_LIEUTENANT', 'ABC_FIREFIGHTER'],
     ['D_CAPTAIN', 'D_LIEUTENANT', 'ABC_CAPTAIN', 'ABC_LIEUTENANT'],
     ['D_CAPTAIN', 'D_LIEUTENANT', 'ABC_CAPTAIN', 'ABC_LIEUTENANT', 'ABC_FIREFIGHTER', 'NEW_STAGE'],
-  ])('records the existing 2026 stage restriction: %j', (...stageOrder) => {
-    expect(
-      validateAnnualOperationsReadiness({
-        operations: { ...execution2026, stageOrder },
-        bidYear: 2026,
-        isMock: true,
-        configuredStageIds: stageOrder,
-        missingTopologyIds: [],
-      }),
-    ).toEqual({ ok: false, code: 'ANNUAL_2026_STAGE_ORDER_INVALID' });
-  });
+  ])(
+    'accepts an explicitly consistent change to the starting stage sequence: %j',
+    (...stageOrder) => {
+      expect(
+        validateAnnualOperationsReadiness({
+          operations: { ...execution2026, stageOrder },
+          isMock: true,
+          configuredStageOrder: stageOrder,
+          missingTopologyIds: [],
+        }),
+      ).toEqual({ ok: true });
+    },
+  );
 
   it('pins D101 cap and D102 mandatory credential behavior from committed seed rows', () => {
     const d101 = fixtureRule('D101');

@@ -4,15 +4,7 @@
  * its data, while this layer supplies replay-safe policy decisions.
  */
 
-export const ANNUAL_2026_STAGE_ORDER = [
-  'D_CAPTAIN',
-  'D_LIEUTENANT',
-  'ABC_CAPTAIN',
-  'ABC_LIEUTENANT',
-  'ABC_FIREFIGHTER',
-] as const;
-
-export type AnnualStageId = (typeof ANNUAL_2026_STAGE_ORDER)[number] | string;
+export type AnnualStageId = string;
 export type ContactMethod = 'PHONE' | 'TEXT';
 export type PreferenceSheetStatus = 'DRAFT' | 'SUBMITTED' | 'REVIEWED' | 'FROZEN';
 export type ContactTimingMode = 'HARD_MINIMUM' | 'TARGET' | 'OPERATOR_DISCRETION';
@@ -140,9 +132,9 @@ export function initializeAnnualOperations(input: {
 
 export function validateAnnualOperationsReadiness(input: {
   operations: AnnualOperationsPolicy | undefined;
-  bidYear: number;
   isMock: boolean;
-  configuredStageIds: readonly string[];
+  /** Frozen stage ids sorted by the explicit configured stage.order. */
+  configuredStageOrder: readonly string[];
   missingTopologyIds: readonly string[];
 }): { ok: true } | { ok: false; code: string; detail?: string } {
   if (input.operations === undefined)
@@ -150,16 +142,13 @@ export function validateAnnualOperationsReadiness(input: {
   if (input.operations.stageOrder.length === 0)
     return { ok: false, code: 'ANNUAL_STAGE_ORDER_MISSING' };
   if (
-    input.bidYear === 2026 &&
-    (input.operations.stageOrder.length !== ANNUAL_2026_STAGE_ORDER.length ||
-      input.operations.stageOrder.some(
-        (stageId, index) => stageId !== ANNUAL_2026_STAGE_ORDER[index],
-      ))
+    input.operations.stageOrder.length !== input.configuredStageOrder.length ||
+    new Set(input.configuredStageOrder).size !== input.configuredStageOrder.length ||
+    input.operations.stageOrder.some(
+      (stageId, index) => stageId !== input.configuredStageOrder[index],
+    )
   )
-    return { ok: false, code: 'ANNUAL_2026_STAGE_ORDER_INVALID' };
-  const configured = new Set(input.configuredStageIds);
-  if (input.operations.stageOrder.some((stageId) => !configured.has(stageId)))
-    return { ok: false, code: 'ANNUAL_STAGE_POPULATION_INCOMPLETE' };
+    return { ok: false, code: 'ANNUAL_STAGE_ORDER_MISMATCH' };
   if (!input.isMock && input.missingTopologyIds.length > 0)
     return {
       ok: false,

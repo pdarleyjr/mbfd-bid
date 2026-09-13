@@ -43,7 +43,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     route: '/admin/current-bid',
     routeLabel: 'Bid — Edit Bid',
     summary:
-      'Edit the policy, opportunities, requirements, scoring, participation and operating procedures in one draft, then save an immutable version.',
+      'Change policy language, requirements, points and Bid settings in one place. A material Save records a new version automatically; a no-op keeps the current version, and earlier settings remain available in History.',
     controls: [
       'Bid year',
       'Open',
@@ -56,7 +56,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Timing & evidence dates',
       'Authority & permissions',
       'Change summary',
-      'Review draft changes',
+      'Preview changes (optional)',
       'Save Bid',
       'Discard edits',
     ],
@@ -64,8 +64,8 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Open Bid and choose an existing year. Use the editing sections to change the draft. Moving between Edit Bid, Blueprint and Mock retains the same unsaved draft.',
       'Search all opportunities and qualifications. Saved references stay visible even when a catalog item is missing. An Operations pair, an all-qualifications requirement and an OR group have different meanings; review the explicit controls.',
       'Connect an opportunity to an actual Department staffing position when needed. A different connection starts as Needs review with no inherited authority. Enter its evidence reference and review it explicitly.',
-      'Keep unfinished source decisions open. Before marking one resolved, complete its title, question, reviewed decision and source reference. Each must contain at least four characters; incomplete resolutions cannot be saved or evaluated as approved evidence.',
-      'Enter the reason, review proposed changes and select Save Bid. The first save adopts the existing year. Later content changes create a new numbered version; a semantically unchanged save keeps the version number.',
+      'Policy decisions can record questions and interpretations where needed. Leave an unfinished decision open; complete the decision and its source before marking it resolved.',
+      'Select Save Bid. The system records the changes, administrator and time automatically. Change summary is optional, and previewing is optional. You do not need to unlock or unfreeze the year. Changed settings create a new numbered version; unchanged settings keep the current version.',
       'A saved version does not change an existing run. New Mock runs must select a saved version explicitly. Editing or saving does not publish policy or start Live bidding.',
       'If a response is interrupted, retain the draft and use Retry original request. It resubmits the same request identity and recovers its receipt. Do not reconstruct the request or assume a missing response means no save occurred.',
     ],
@@ -86,12 +86,22 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   section({
     id: 'current-bid-blueprint',
     category: 'Bid',
-    title: 'Understand unsaved Bid impact and decision traces',
-    route: '/admin/current-bid',
+    title: 'Understand the Bid Blueprint, draft impact and decision traces',
+    route: '/admin/current-bid?view=blueprint',
     routeLabel: 'Bid — Bid Blueprint',
     summary:
-      'Review the authored stage map and compare unsaved changes using the same server eligibility, scoring, priority and participation calculations used by Bid runs.',
+      'Use the interactive Bid Blueprint to inspect authored/local policy relationships. Server Preview and draft impact add separately labeled server facts from the same evaluation authorities used by Bid runs.',
     controls: [
+      'Overview',
+      'Flow',
+      'Policy',
+      'Specialty',
+      'Opportunities',
+      'Members',
+      'Changes',
+      'Zoom in',
+      'Zoom out',
+      'Structured relationship list',
       'Review proposed changes',
       'Participation for this calculation',
       'Evaluate draft impact',
@@ -104,7 +114,9 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Calculation evidence',
     ],
     steps: [
-      'Choose Bid Blueprint. The stage map shows the draft, including selected people and opportunities. Review proposed changes checks the configuration differences; Evaluate draft impact calculates the member consequences.',
+      'Choose Bid Blueprint. Use Overview, Flow, Policy, Specialty, Opportunities, Members and Changes to focus the relationship map. Select a map node to read its status, source and server-analysis facts. Use the zoom controls or scroll to pan; the Structured relationship list contains the same information without relying on the graph.',
+      'The map starts with authored local structure, which is not server-evaluated. Server Preview and draft impact facts are separately labeled when available. The browser never calculates eligibility, points, priorities, staffing outcomes or a substitute relationship. An unresolved reference is labeled UNRESOLVED.',
+      'Review proposed changes checks the configuration differences; Evaluate draft impact calculates the member consequences.',
       'Choose Mock or Live participation for the calculation. Both the saved policy and draft use one captured Department source, each evaluated at its own authored dates. Live calculation does not authorize or start a Live session.',
       'Inspect affected people, participation changes, stage order and stage or specialty opportunity changes. Eligibility and priority comparisons hold either the requirements or the evidence and participant group constant so the cause remains visible.',
       'Use Previous changes and Next changes to reach the complete result set. A new or removed opportunity is marked incomparable, not assigned an invented before or after score. Unavailable calculations remain visible and are excluded from known affected counts.',
@@ -128,24 +140,17 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   section({
     id: 'current-bid-versions',
     category: 'History',
-    title: 'Review versions and restore as a new version',
-    route: '/admin/current-bid',
+    title: 'View history and restore earlier settings',
+    route: '/admin/current-bid?view=versions',
     routeLabel: 'Bid — Version history',
     summary:
-      'Read the saved versions of a Bid, compare a proposed restoration and preserve the complete sequence of changes.',
-    controls: [
-      'Version history',
-      'Load versions',
-      'Load older versions',
-      'Review restore',
-      'Restore reason',
-      'Restore as new current version',
-    ],
+      'Find earlier settings and bring them back with Restore this version. Your current settings remain in History too.',
+    controls: ['Version history', 'Load versions', 'Load older versions', 'Restore this version'],
     steps: [
       'Open Version history for the selected Bid year. Versions are listed newest first; Load older versions reaches the full history.',
       'Select a version to inspect its recorded reason, author, source language, opportunities and captured authoring provenance. The selected historical content is read-only.',
-      'Finish or discard unrelated local edits before restoring. Review restore compares the selected content with the current head and shows the proposed changes.',
-      'Enter the restoration reason and confirm Restore as new current version. This creates a new version, even when the selected historical content already matches the current content.',
+      'Save or discard unfinished edits so restoring does not lose them.',
+      'Select Restore this version. The settings become a new current version, and the restoration is recorded automatically. No separate review or reason form is required.',
       'The earlier version and any runs using it retain their original evidence. Interrupted restoration requests use the same retained receipt recovery as Save Bid.',
     ],
     important:
@@ -156,7 +161,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     id: 'current-bid-mock',
     category: 'Bid',
     title: 'Create a Mock from an exact saved version',
-    route: '/admin/current-bid',
+    route: '/admin/current-bid?view=mock',
     routeLabel: 'Bid — Mock Bid',
     summary:
       'Check the current saved version against Department evidence, then create an isolated Mock with that exact policy and captured context.',
@@ -174,8 +179,34 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'After an interrupted response, retry the retained request to recover the original created session. The recovery does not create another Mock, even if the session has since progressed.',
     ],
     important:
-      'Creating a Mock does not start it, complete a rehearsal, approve publication or authorize Live operation. Live and Results currently open the existing operating console and report workflows.',
+      'Creating a Mock does not start it or authorize Live operation. Current Bid Live is read-only preflight; the separate console is for authorized sessions.',
     keywords: ['mock', 'rehearsal', 'practice', 'saved version', 'readiness', 'retry', 'context'],
+  }),
+  section({
+    id: 'current-bid-live-preflight',
+    category: 'Bid',
+    title: 'Review Managed Live readiness',
+    route: '/admin/current-bid?view=live',
+    routeLabel: 'Bid — Live Bid',
+    summary:
+      'Check one immutable saved Bid version against server policy and Live readiness without creating or starting a session.',
+    controls: ['Live Bid', 'Check Managed Live readiness'],
+    steps: [
+      'Save or discard draft edits, then open Live Bid. The preflight is available only for the exact current immutable saved version.',
+      'Select Check Managed Live readiness. The server either reports the sealed policy preparation block or the complete readiness result for that saved version.',
+      'Read each blocker in its source workflow. A readiness result is evidence only; it does not publish a version, create a Live session, start bidding or transfer operator authority.',
+      'If the server reports that the version policy document is invalid, do not bypass it with a Mock or a browser change. The required immutable version/context review and publication lifecycle is not implemented here; stop and seek separately authorized implementation and review rather than inventing a workflow.',
+    ],
+    important:
+      'Current Bid has no Live creation control. The existing Live operator console is for a separately authorized, already-created session; never start a real Bid merely to test readiness.',
+    keywords: [
+      'managed live',
+      'live readiness',
+      'preflight',
+      'saved version',
+      'publication',
+      'policy block',
+    ],
   }),
   section({
     id: 'department-people',
@@ -859,7 +890,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     steps: [
       'Enter Bid from MBFD Hub with your authorized account.',
       'Use the left navigation on desktop; select Navigation on a phone or tablet.',
-      'Use Mock Bids for rehearsal. Live Bid is a separate, operator-only workspace.',
+      'Use Mock Bids for rehearsal. Current Bid Live provides read-only readiness for a saved version; the separate Live console is operator-only for an already-authorized session.',
     ],
     important:
       'Hub authentication and the Bid Access PIN serve different purposes. Never treat a PIN as a Hub sign-in method.',
@@ -1414,6 +1445,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Specialty Adjudication records a controlled specialty review with the original bidder, eligible higher-priority candidates, points or rank, contacts, outcomes, and exact resumption state.',
     controls: [
       'Specialty review state',
+      'Specialty coverage advisory',
       'Candidate list',
       'Contact attempts',
       'Accept',
@@ -1423,8 +1455,9 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Evidence and reason fields',
     ],
     steps: [
+      'Before an authorized specialty action, read the Specialty coverage advisory when it is available. It is derived from the frozen session snapshot and canonical fills; it describes coverage risk but does not approve, block or change an operator action.',
       'Start the specialty review from the live controls when authorized.',
-      'Review the original bidder, requested position, candidate order, and policy status.',
+      'Review the original bidder, requested position, candidate order, policy status and any available advisory.',
       'Record each contact attempt and disposition.',
       'Complete the adjudication and confirm the suspended bidder resumes at the recorded queue state.',
     ],
@@ -1433,6 +1466,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     keywords: [
       'specialty',
       'adjudication',
+      'coverage advisory',
       'higher priority',
       'points',
       'ranking',

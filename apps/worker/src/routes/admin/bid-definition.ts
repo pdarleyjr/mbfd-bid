@@ -13,6 +13,12 @@ import {
   previewBidDefinitionImpact,
 } from '../../lib/bid-definition-impact.js';
 import {
+  BidLiveSelectionSchema,
+  CreateBidLiveSchema,
+  createBidDefinitionLive,
+  previewBidDefinitionLive,
+} from '../../lib/bid-definition-live.js';
+import {
   BidIdentitySchema,
   BidMockSelectionSchema,
   CreateBidMockSchema,
@@ -43,6 +49,7 @@ const PreviewBody = z.discriminatedUnion('kind', [
     })
     .strict(),
   BidMockSelectionSchema.extend({ kind: z.literal('mock') }).strict(),
+  BidLiveSelectionSchema.extend({ kind: z.literal('live') }).strict(),
   BidImpactRequestSchema,
 ]);
 const SaveResult = z
@@ -56,11 +63,13 @@ const SaveResult = z
   })
   .strict();
 const errorStatus = (error: string) =>
-  error === 'bid_year_not_found' || error === 'bid_version_not_found'
-    ? (404 as const)
-    : error.startsWith('invalid_') || error === 'bid_definition_year_mismatch'
-      ? (400 as const)
-      : (409 as const);
+  error === 'live_action_forbidden'
+    ? (403 as const)
+    : error === 'bid_year_not_found' || error === 'bid_version_not_found'
+      ? (404 as const)
+      : error.startsWith('invalid_') || error === 'bid_definition_year_mismatch'
+        ? (400 as const)
+        : (409 as const);
 function mutationKey(key: string | undefined) {
   if (key === undefined) return { ok: false as const, error: 'idempotency_key_required' };
   if (!key || key !== key.trim() || key.length > 200)
@@ -98,6 +107,7 @@ for (const path of [
   '/:year/preview',
   '/:year/restore',
   '/:year/mock-sessions',
+  '/:year/live-sessions',
 ]) {
   router.use(path, requireAdmin, yearContext);
 }
@@ -156,6 +166,16 @@ router.post('/:year/preview', requireStepUpAuth(), zValidator('json', PreviewBod
         versionSha256: body.versionSha256,
       }),
     );
+  if (body.kind === 'live')
+    return c.json(
+      await previewBidDefinitionLive(
+        c.env.DB,
+        c.env,
+        c.get('bidYear'),
+        { versionId: body.versionId, versionSha256: body.versionSha256 },
+        c.get('claims').member_id,
+      ),
+    );
   const result = await previewBidDefinition(c.env.DB, c.get('bidYear'), body);
   return result.ok ? c.json(result.response) : c.json(result, errorStatus(result.error));
 });
@@ -204,6 +224,25 @@ router.post(
     const key = mutationKey(c.req.header('Idempotency-Key'));
     if (!key.ok) return c.json({ error: key.error }, 400);
     const result = await createBidDefinitionMock(c.env.DB, {
+      year: c.get('bidYear'),
+      key: key.key,
+      actorSubject: String(c.get('claims').sub),
+      actorId: c.get('claims').member_id,
+      body: c.req.valid('json'),
+    });
+    return result.ok
+      ? c.json({ ...result.response, replayed: result.replayed }, 201)
+      : c.json(result, errorStatus(result.error));
+  },
+);
+router.post(
+  '/:year/live-sessions',
+  requireStepUpAuth(),
+  zValidator('json', CreateBidLiveSchema),
+  async (c) => {
+    const key = mutationKey(c.req.header('Idempotency-Key'));
+    if (!key.ok) return c.json({ error: key.error }, 400);
+    const result = await createBidDefinitionLive(c.env.DB, c.env, {
       year: c.get('bidYear'),
       key: key.key,
       actorSubject: String(c.get('claims').sub),

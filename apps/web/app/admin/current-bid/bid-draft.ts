@@ -90,6 +90,32 @@ export const BidDraftSchema = z
     }
   });
 export type BidDraft = z.infer<typeof BidDraftSchema>;
+
+/** A display summary for version history, not a rule comparison or save validator. */
+export function bidSaveSummary(draft: BidDraft) {
+  const note = draft.reason.trim();
+  const labels: [keyof BidDefinitionContent, string][] = [
+    ['policy', 'policy language and procedures'],
+    ['settings', 'Bid settings'],
+    ['positions', 'opportunities'],
+    ['rules', 'requirements and points'],
+    ['participation', 'participation'],
+    ['staffingBindings', 'Department connections'],
+    ['sourceDecisions', 'policy notes'],
+    ['planning', 'planning dates'],
+    ['authoring', 'shared rules'],
+    ['notes', 'notes'],
+  ];
+  const changed = labels
+    .filter(
+      ([key]) => JSON.stringify(draft.base.content[key]) !== JSON.stringify(draft.content[key]),
+    )
+    .map(([, label]) => label);
+  const summary = changed.length
+    ? `Updated Bid: ${changed.join(', ')}.`
+    : 'Saved Bid configuration.';
+  return note ? `${summary} Note: ${note}` : summary;
+}
 export function bidDraftKey(actorScope: string, year: number) {
   return `mbfd-current-bid:v1:${encodeURIComponent(actorScope)}:${year}`;
 }

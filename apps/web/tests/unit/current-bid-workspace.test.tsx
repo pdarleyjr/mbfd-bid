@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { BidDefinitionContent } from '@mbfd/shared';
+import type { BidDefinitionContent, BidImpactResponse } from '@mbfd/shared';
 import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,6 +29,18 @@ vi.mock('../../app/admin/current-bid/BidPolicyFields', () => ({
 }));
 vi.mock('../../app/admin/current-bid/BidOpportunityFields', () => ({
   BidOpportunityFields: () => <p>Opportunity field adapter</p>,
+}));
+vi.mock('../../app/admin/current-bid/BidBlueprint', () => ({
+  BidBlueprint: ({ impact }: { impact: BidImpactResponse | null }) => (
+    <p>{impact ? 'Synthetic visual impact is present' : 'No synthetic visual impact'}</p>
+  ),
+}));
+vi.mock('../../app/admin/current-bid/BidImpactReview', () => ({
+  BidImpactReview: ({ onImpact }: { onImpact?(result: BidImpactResponse | null): void }) => (
+    <button type="button" onClick={() => onImpact?.({ valid: true } as BidImpactResponse)}>
+      Inject synthetic Blueprint impact
+    </button>
+  ),
 }));
 
 import { CurrentBidWorkspace } from '../../app/admin/current-bid/CurrentBidWorkspace';
@@ -380,7 +392,7 @@ describe('Current Bid workspace save and recovery protocol', () => {
     expect(container.textContent).toContain('2027 Current Bid');
     expect(field('Bid notes').value).toBe(SAVED_NOTES);
     expect(requests).toMatchObject([{ path: 'current', method: 'GET' }]);
-    expect(button('Save Bid').disabled).toBe(true);
+    expect(button('Save Bid').disabled).toBe(false);
     expect(stored()?.content).toEqual(head.content);
     expect(stored()?.pending).toBeNull();
   });
@@ -409,7 +421,7 @@ describe('Current Bid workspace save and recovery protocol', () => {
     expect(writes()[0]?.body).toEqual({
       expected: current().expected,
       content: { ...current().content, notes: { ...current().content.notes, bid: EDITED_NOTES } },
-      reason: REASON,
+      reason: `Updated Bid: notes. Note: ${REASON}`,
     });
     expect(container.textContent).toContain('Version 3 saved.');
     expect(stored()?.pending).toBeNull();
@@ -428,6 +440,39 @@ describe('Current Bid workspace save and recovery protocol', () => {
     expect(container.textContent).not.toContain('Version 3 saved');
     expect(field('Bid notes').value).toBe(SAVED_NOTES);
     expect(stored()?.pending).toBeNull();
+  });
+
+  it('saves an edit without a mandatory note or preview and automatically describes the change', async () => {
+    handle = (request) => {
+      if (request.path !== 'versions') return;
+      head = current(3, EDITED_NOTES);
+      return response(receipt(), 201);
+    };
+    await mount();
+    await change('Bid notes', EDITED_NOTES);
+    expect(field('Change summary').value).toBe('');
+    expect(button('Save Bid').disabled).toBe(false);
+    await click('Save Bid');
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0]?.body).toMatchObject({ reason: 'Updated Bid: notes.' });
+    expect(requests.some((request) => request.path === 'preview')).toBe(false);
+    expect(container.textContent).toContain('Version 3 saved.');
+  });
+
+  it('keeps the automatic change summary when the administrator adds an optional note', async () => {
+    handle = (request) => {
+      if (request.path !== 'versions') return;
+      head = current(3, EDITED_NOTES);
+      return response(receipt(), 201);
+    };
+    await mount();
+    await change('Bid notes', EDITED_NOTES);
+    await change('Change summary', 'Synthetic operational context');
+    await click('Save Bid');
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0]?.body).toMatchObject({
+      reason: 'Updated Bid: notes. Note: Synthetic operational context',
+    });
   });
 
   it('retains an uncertain request across remount and retries the same key/body despite a newer head', async () => {
@@ -611,7 +656,7 @@ describe('Current Bid workspace save and recovery protocol', () => {
 });
 
 describe('Current Bid version history and restore', () => {
-  it('inspects immutable history, previews restore, and sends only the explicit restore request', async () => {
+  it('restores an inspected historical version directly, with an automatic history note and no preview hurdle', async () => {
     const source = historical(1);
     const originalBytes = JSON.stringify(source);
     handle = (request) => {
@@ -633,32 +678,49 @@ describe('Current Bid version history and restore', () => {
     await mount();
     await click('Version history');
     await click(/^Version 1\b/);
-    expect(container.textContent).toContain('Every saved version is immutable.');
+    expect(container.textContent).toContain(
+      'Earlier versions stay in History and can be restored.',
+    );
     expect(container.querySelector('textarea')).toBeNull();
     expect(writes()).toHaveLength(0);
-    await click('Review restore');
-    const review = requests.find((request) => request.path === 'preview');
-    expect(review?.key).toBeNull();
-    expect(review?.body).toEqual({
-      kind: 'definition',
-      expected: current().expected,
-      intent: { operation: 'restore', versionId: 'synthetic-version-1' },
-    });
-    expect(button('Restore as new current version').disabled).toBe(true);
-    await change('Restore reason', 'Synthetic restore approved policy');
+    expect(button('Restore this version').disabled).toBe(false);
     expect(writes()).toHaveLength(0);
-    await click('Restore as new current version');
+    await click('Restore this version');
     expect(writes()).toHaveLength(1);
     expect(writes()[0]?.path).toBe('restore');
     expect(writes()[0]?.body).toEqual({
       expected: current().expected,
       versionId: 'synthetic-version-1',
-      reason: 'Synthetic restore approved policy',
+      reason: 'Restored Bid version 1.',
     });
     expect(writes()[0]?.key).toMatch(/^[0-9a-f-]{36}$/i);
     expect(JSON.stringify(source)).toBe(originalBytes);
     expect(container.textContent).toContain('Version 3 restored as a new current version.');
     expect(stored()?.pending).toBeNull();
+    expect(requests.some((request) => request.path === 'preview')).toBe(false);
+  });
+
+  it('shows the selected current version as current instead of offering a duplicate restore', async () => {
+    handle = (request) => {
+      if (request.path === 'versions?limit=20')
+        return response({
+          bidYear: YEAR,
+          versions: [metadata(2), metadata(1)],
+          nextBeforeVersionNumber: null,
+        });
+      if (request.path === 'versions/synthetic-version-2') return response(historical(2));
+      return undefined;
+    };
+    await mount();
+    await click('Version history');
+    await click(/^Version 2\b/);
+    expect(container.textContent).toContain('This is the current saved Bid version.');
+    expect(
+      [...container.querySelectorAll('button')].some(
+        (node) => node.textContent?.replace(/\s+/g, ' ').trim() === 'Restore this version',
+      ),
+    ).toBe(false);
+    expect(writes()).toHaveLength(0);
   });
 
   it('pages version history using the server cursor and retains previously loaded versions without duplicates', async () => {
@@ -696,7 +758,7 @@ describe('Current Bid version history and restore', () => {
       request.path === 'preview' ? response(preview(stored()?.content ?? head.content)) : undefined;
     await mount();
     await editAndDescribe();
-    await click('Review draft changes');
+    await click('Preview changes (optional)');
     expect(container.textContent).toContain('This proposal would create a new Bid version.');
     expect(writes()).toHaveLength(0);
     await click('Edit Bid');
@@ -990,5 +1052,58 @@ describe('Current Bid managed Mock workflow', () => {
     expect(container.textContent).toContain('Synthetic storage blocked');
     expect(writes()).toHaveLength(0);
     expect(stored()?.pending).toBeNull();
+  });
+});
+
+describe('Current Bid Managed Live preflight', () => {
+  afterEach(() => {
+    expect(
+      requests.every(
+        (request) =>
+          (request.path === 'current' && request.method === 'GET') ||
+          (request.path === 'preview' && request.method === 'POST'),
+      ),
+    ).toBe(true);
+  });
+
+  it('reviews the exact saved version without exposing a Live creation action', async () => {
+    handle = (request) =>
+      request.path === 'preview'
+        ? response({
+            wouldAllowCreateLive: false,
+            policyError: 'bid_configuration_annual_policy_document_invalid',
+          })
+        : undefined;
+    await mount();
+    await click('Live Bid');
+    expect(container.textContent).toContain('Managed Live preflight');
+    expect(container.textContent).toContain('No Live run is created by this check.');
+    expect(container.textContent).not.toContain('Open Live Bid console');
+    await click('Check Managed Live readiness');
+    expect(requests.filter((request) => request.path === 'preview')).toMatchObject([
+      {
+        method: 'POST',
+        key: null,
+        body: { kind: 'live', versionId: metadata(2).id, versionSha256: metadata(2).contentSha256 },
+      },
+    ]);
+    expect(container.textContent).toContain(
+      'Live policy preparation is blocked: bid_configuration_annual_policy_document_invalid.',
+    );
+    expect(writes()).toHaveLength(0);
+    expect(container.textContent).not.toContain('Create Live');
+  });
+});
+
+describe('Current Bid Blueprint impact binding', () => {
+  it('clears a prior same-year server impact when the draft changes away from Blueprint', async () => {
+    await mount();
+    await click('Bid Blueprint');
+    await click('Inject synthetic Blueprint impact');
+    expect(container.textContent).toContain('Synthetic visual impact is present');
+    await click('Edit Bid');
+    await change('Bid notes', 'Synthetic edit invalidates the prior server impact');
+    await click('Bid Blueprint');
+    expect(container.textContent).toContain('No synthetic visual impact');
   });
 });

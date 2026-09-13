@@ -7,10 +7,74 @@ import {
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import { bidContentHash, definitionRuleRows } from './bid-definition-content.js';
 import type { BidDefinitionVersionRow } from './bid-definition-version.js';
+import {
+  resolveFrozenBidOrderingAuthority,
+  withResolvedBidOrderingAuthority,
+} from './bid-ordering-authority.js';
+import {
+  type StageParticipantCompilationFailureCode,
+  compileStageParticipantsFromPinnedEvaluation,
+} from './stage-participant-selector.js';
 
 type Snapshot = Extract<BidSessionPolicySnapshot, { v: 3 }>;
 const canonical = (value: unknown) => canonicalize(value as JsonValue);
 const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/**
+ * Resolves typed stage authoring only from a supplied immutable evaluation.
+ * The caller owns the evaluation capture; this helper deliberately cannot
+ * reach a current Department table or silently alter any other setting.
+ */
+export function compileBidDefinitionStagePolicy(input: {
+  pinnedEvaluation: Pick<BidEvaluation, 'capturedAtMs' | 'members'>;
+  content: BidDefinitionContent;
+}):
+  | {
+      ok: true;
+      kind: 'legacy_explicit_members' | 'resolved_typed_sources';
+      executionPolicy: NonNullable<BidDefinitionContent['policy']>['executionPolicy'];
+    }
+  | { ok: true; kind: 'legacy_explicit_members' }
+  | {
+      ok: false;
+      code: StageParticipantCompilationFailureCode;
+      stageId?: string;
+      memberIds?: readonly number[];
+    } {
+  const policyAuthoring = input.content.policy;
+  const stageParticipantSources = policyAuthoring?.stageParticipantSources;
+  const orderingAuthorityRequest = policyAuthoring?.orderingAuthority;
+  if (stageParticipantSources === undefined && orderingAuthorityRequest === undefined)
+    return { ok: true, kind: 'legacy_explicit_members' };
+  const settings = input.content.settings;
+  const executionPolicy = policyAuthoring?.executionPolicy;
+  if (
+    settings?.v !== 3 ||
+    executionPolicy === undefined ||
+    canonical(settings.livePolicy) !== canonical(executionPolicy)
+  )
+    return { ok: false, code: 'stage_authoring_compilation_invalid' };
+  const resolvedOrderingAuthority = resolveFrozenBidOrderingAuthority({
+    request: orderingAuthorityRequest,
+    sourceDecisions: input.content.sourceDecisions,
+  });
+  // An unresolved request remains representable in a draft/Mock path, but it
+  // cannot alter execution. Only the independently resolved source decision
+  // below can replace historical RSC→rank fallback behavior.
+  const authority = resolvedOrderingAuthority.ok ? resolvedOrderingAuthority.authority : undefined;
+  const compiled = compileStageParticipantsFromPinnedEvaluation({
+    pinnedEvaluation: input.pinnedEvaluation,
+    executionPolicy: withResolvedBidOrderingAuthority(executionPolicy, authority),
+    stageParticipantSources,
+    ...(authority === undefined ? {} : { orderingAuthority: authority }),
+  });
+  if (!compiled.ok) return compiled;
+  return {
+    ok: true,
+    kind: compiled.kind,
+    executionPolicy: compiled.executionPolicy,
+  };
+}
 
 /** Identity of the frozen execution context, separate from policy content.
  * Clock time and minted aliases are excluded; an actual fallback evaluation
@@ -64,9 +128,20 @@ export function snapshotMatchesBidDefinition(
   },
 ) {
   const { row, content } = version;
+  const compiledStagePolicy = compileBidDefinitionStagePolicy({
+    pinnedEvaluation: snapshot,
+    content,
+  });
+  if (!compiledStagePolicy.ok) return false;
+  const expectedSettings =
+    'executionPolicy' in compiledStagePolicy
+      ? content.settings?.v === 3
+        ? { ...content.settings, livePolicy: compiledStagePolicy.executionPolicy }
+        : null
+      : content.settings;
   if (
     snapshot.configurationRevision !== row.version_number ||
-    canonical(snapshot.settings) !== canonical(content.settings)
+    canonical(snapshot.settings) !== canonical(expectedSettings)
   )
     return false;
   const participation = new Map(

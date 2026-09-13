@@ -61,9 +61,11 @@ and mutations require step-up. Mutations require an idempotency key.
 | POST `preview`, kind `definition` | Structural validation and semantic configuration diff; no writes |
 | POST `preview`, kind `impact` | Unsaved baseline/candidate calculation on one Department capture; no writes |
 | POST `preview`, kind `mock` | Exact saved-version/context readiness; no writes |
+| POST `preview`, kind `live` | Exact saved-version managed-policy preparation and Live readiness; no writes |
 | POST `versions` | Semantic Save/no-op with the existing atomic version store |
 | POST `restore` | Restore selected historical content as a new immutable version |
 | POST `mock-sessions` | Exact reviewed saved version/context into an isolated new Mock |
+| POST `live-sessions` | Guarded managed Live creation; it rejects until version/context publication authority exists |
 
 Concrete middleware paths avoid consuming the existing `/api/admin/bid/freeze`
 command. Malformed JSON is rejected before framework validation. Responses
@@ -120,10 +122,16 @@ Before/after opportunity summaries are collected during those same three control
 passes. It does not retain the full changed-result matrix or cache across requests.
 Each subsequent page is freshly calculated and context-checked.
 
-The Blueprint renders a semantic stage list, per-opportunity counts, paginated
-changes and server decision cards. It contains no eligibility, scoring or ranking
-calculation. A-Day capacity, next-bidder selection, actual interruptions and awards
-still require explicit selection context; this implementation does not invent it.
+The Blueprint renders a deterministic, lens-bounded `BidVisualModel`: stage,
+policy, opportunity, member, source and change nodes; decorative SVG relationship
+edges; focusable native node controls; a selected-node inspector; and an equivalent
+structured list. Authored draft relationships are local configuration, not a
+server-reviewed result. Server-returned preview or impact facts are attached only
+when their content identity matches and are labeled separately. In particular, an
+unknown participant source is shown as `UNRESOLVED` and never becomes an inferred
+member list. The renderer contains no eligibility, scoring or ranking calculation.
+A-Day capacity, next-bidder selection, actual interruptions and awards still
+require explicit selection context; this implementation does not invent them.
 
 ## Remaining integration
 
@@ -132,9 +140,14 @@ snapshot hash. A guarded creation batch writes the session, snapshot, audit and
 receipt together. Replay validates the original session and returns it even if
 its run has progressed. Creating a Mock neither starts nor completes it.
 
-Live and Results currently expose the existing consoles/reports. Version-bound
-Live publication, complete integrated History, profile compilation editing,
-source-document upload, generic stage/timing/A-Day primitives, full selection
-scenarios and normative approved 2026 parity remain unfinished. No production
-adoption should be released before the required run creation/publication and
-release gates are integrated and independently verified.
+Managed Live now exposes only a server-authoritative, exact-version preflight in
+the workspace. It has no start/create affordance. The current sealed Draft policy
+documents deliberately block managed Live preparation, because the required
+immutable version/context review and publication lifecycle does not yet exist.
+Results still provides the established reports and reviewed-assignment paths.
+Complete integrated History, profile compilation editing, participant-source
+authoring, source-document upload, generic stage/timing/A-Day primitives, full
+selection scenarios and normative approved 2026 parity remain unfinished. No
+production adoption should be released before the required
+publication, run-creation and release gates are integrated and independently
+verified.

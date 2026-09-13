@@ -1,8 +1,7 @@
 'use client';
 import { Button } from '@/components/ui/button';
-import { BidChangeReview } from './BidChangeReview';
-import { FieldSection, TextField } from './BidFields';
-import type { BidPreview, BidVersion, CurrentBid, HistoricalBid } from './bid-client';
+import { FieldSection } from './BidFields';
+import type { BidVersion, CurrentBid, HistoricalBid } from './bid-client';
 import type { PendingBidWrite } from './bid-draft';
 
 export function BidVersionHistory({
@@ -15,12 +14,8 @@ export function BidVersionHistory({
   locked,
   dirty,
   stale,
-  restorePreview,
-  restoreReason,
-  setRestoreReason,
   browseVersions,
   selectVersion,
-  reviewRestore,
   execute,
 }: {
   base: CurrentBid;
@@ -32,17 +27,17 @@ export function BidVersionHistory({
   locked: boolean;
   dirty: boolean;
   stale: boolean;
-  restorePreview: BidPreview | null;
-  restoreReason: string;
-  setRestoreReason(value: string): void;
   browseVersions(older?: boolean): Promise<void>;
   selectVersion(version: BidVersion): Promise<void>;
-  reviewRestore(): Promise<void>;
   execute(write: PendingBidWrite): Promise<void>;
 }) {
+  const selectedIsCurrent = historical?.version.id === base.version?.id;
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <FieldSection title="Version history" description="Every saved version is immutable.">
+      <FieldSection
+        title="Version history"
+        description="Earlier versions stay in History and can be restored."
+      >
         <div className="space-y-2">
           {versions.map((version) => (
             <Button
@@ -121,56 +116,43 @@ export function BidVersionHistory({
                 <dd>{historical.version.restoredFromId ?? 'Direct edit'}</dd>
               </dl>
             </details>
-            {dirty && (
-              <p className="text-sm">Save or discard your edits before reviewing a restore.</p>
-            )}
-            <Button
-              type="button"
-              disabled={locked || dirty || stale}
-              onClick={() => void reviewRestore()}
-            >
-              Review restore
-            </Button>
-            {restorePreview && (
+            {selectedIsCurrent ? (
+              <p className="text-sm">This is the current saved Bid version.</p>
+            ) : (
               <>
-                <BidChangeReview preview={restorePreview} />
-                {restorePreview.valid && (
-                  <div className="space-y-3">
-                    <p className="text-sm">
-                      Restoring Version {historical.version.versionNumber} creates a new current
-                      version. All existing versions and run snapshots remain preserved.
-                    </p>
-                    <TextField
-                      label="Restore reason"
-                      value={restoreReason}
-                      onChange={setRestoreReason}
-                    />
-                    <Button
-                      type="button"
-                      variant="primary"
-                      disabled={locked || dirty || stale || restoreReason.trim().length < 4}
-                      onClick={() =>
-                        void execute({
-                          path: 'restore',
-                          key: crypto.randomUUID(),
-                          body: {
-                            expected: base.expected,
-                            versionId: historical.version.id,
-                            reason: restoreReason,
-                          },
-                        })
-                      }
-                    >
-                      Restore as new current version
-                    </Button>
-                  </div>
+                {dirty && (
+                  <p className="text-sm">
+                    Save or discard your edits before restoring this version.
+                  </p>
                 )}
+                <p className="text-sm">
+                  Restore these settings as the current Bid. Your current settings will remain in
+                  History, so you can return to them later.
+                </p>
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={locked || dirty || stale}
+                  onClick={() =>
+                    void execute({
+                      path: 'restore',
+                      key: crypto.randomUUID(),
+                      body: {
+                        expected: base.expected,
+                        versionId: historical.version.id,
+                        reason: `Restored Bid version ${historical.version.versionNumber}.`,
+                      },
+                    })
+                  }
+                >
+                  Restore this version
+                </Button>
               </>
             )}
           </FieldSection>
         ) : (
           <p className="p-4 text-sm text-muted-foreground">
-            Select a version to inspect its saved content and review a restore.
+            Select an earlier version to view or restore its settings.
           </p>
         )}
       </div>

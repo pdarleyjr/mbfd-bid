@@ -835,7 +835,7 @@ describe('BidPolicyFields', () => {
     expect(policy.stages).toEqual([]);
     expect(policy.policyRevision).toBe('');
     expect(policy.actionPermissions.map((grant) => grant.actorMemberIds)).toEqual(
-      Array.from({ length: 11 }, () => []),
+      Array.from({ length: LiveBidActionSchema.options.length }, () => []),
     );
     expect(policy).not.toHaveProperty('annualOperations');
     expect(policy.specialtyCatalogReference).toBeNull();

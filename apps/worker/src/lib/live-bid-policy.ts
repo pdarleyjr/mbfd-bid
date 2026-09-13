@@ -1,4 +1,9 @@
-import type { BidEvaluation, BidSessionPolicySnapshot, FrozenLiveBidPolicy } from '@mbfd/shared';
+import type {
+  BidEvaluation,
+  BidSessionPolicySnapshot,
+  FrozenLiveBidPolicy,
+  StageParticipantOrdering,
+} from '@mbfd/shared';
 
 export interface FrozenStageOrderEntry {
   ordinal: number;
@@ -15,8 +20,100 @@ export type FrozenStageOrderResult =
         | 'stage_member_not_in_snapshot'
         | 'stage_member_excluded'
         | 'stage_coverage_incomplete'
-        | 'stage_seniority_tie';
+        | 'stage_seniority_tie'
+        | 'stage_ordering_fact_missing'
+        | 'stage_ordering_tie'
+        | 'stage_ordering_authority_mismatch';
     };
+
+type StageMember = BidEvaluation['members'][number];
+
+function orderingValue(member: StageMember, key: StageParticipantOrdering[number]['key']) {
+  return key === 'RSC_SENIORITY' ? member.rscSeniority : member.rankSeniority;
+}
+
+function sortWithFrozenOrdering(
+  stageMembers: readonly StageMember[],
+  ordering: StageParticipantOrdering,
+):
+  | { ok: true; members: StageMember[] }
+  | { ok: false; code: 'stage_ordering_fact_missing' | 'stage_ordering_tie' } {
+  for (const member of stageMembers) {
+    for (const rule of ordering) {
+      if (orderingValue(member, rule.key) === null)
+        return { ok: false, code: 'stage_ordering_fact_missing' };
+    }
+  }
+  const compare = (left: StageMember, right: StageMember) => {
+    for (const rule of ordering) {
+      const leftValue = orderingValue(left, rule.key);
+      const rightValue = orderingValue(right, rule.key);
+      // A missing value was rejected above for every configured key.
+      if (leftValue === null || rightValue === null) return 0;
+      if (leftValue === rightValue) continue;
+      const ascending = leftValue < rightValue ? -1 : 1;
+      return rule.direction === 'ASC' ? ascending : -ascending;
+    }
+    return 0;
+  };
+  const members = [...stageMembers].sort(compare);
+  for (let index = 1; index < members.length; index += 1) {
+    const prior = members[index - 1];
+    const current = members[index];
+    if (prior !== undefined && current !== undefined && compare(prior, current) === 0)
+      return { ok: false, code: 'stage_ordering_tie' };
+  }
+  return { ok: true, members };
+}
+
+/** Existing frozen policies have no authored selector metadata. Preserve their
+ * fixed RSC → rank ordering and its original tie semantics exactly. */
+function sortWithLegacySeniority(
+  stageMembers: readonly StageMember[],
+): { ok: true; members: StageMember[] } | { ok: false; code: 'stage_seniority_tie' } {
+  const seniorityKeys = new Set<string>();
+  for (const member of stageMembers) {
+    const key = `${member.rscSeniority}:${member.rankSeniority ?? 'none'}`;
+    if (seniorityKeys.has(key)) return { ok: false, code: 'stage_seniority_tie' };
+    seniorityKeys.add(key);
+  }
+  const members = [...stageMembers].sort((left, right) => {
+    if (left.rscSeniority !== right.rscSeniority) return left.rscSeniority - right.rscSeniority;
+    const leftRank = left.rankSeniority ?? Number.MAX_SAFE_INTEGER;
+    const rightRank = right.rankSeniority ?? Number.MAX_SAFE_INTEGER;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return 0;
+  });
+  return { ok: true, members };
+}
+
+function sameOrdering(left: StageParticipantOrdering, right: StageParticipantOrdering): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function orderingForStage(input: {
+  policy: FrozenLiveBidPolicy;
+  stage: FrozenLiveBidPolicy['stages'][number];
+}):
+  | { ok: true; ordering: StageParticipantOrdering | null }
+  | { ok: false; code: 'stage_ordering_authority_mismatch' } {
+  const policyAuthority = input.policy.orderingAuthority;
+  const provenance = input.stage.participantProvenance;
+  if (provenance !== undefined && provenance.orderingAuthority !== undefined) {
+    const provenanceAuthority = provenance.orderingAuthority;
+    if (
+      policyAuthority === undefined ||
+      JSON.stringify(provenanceAuthority) !== JSON.stringify(policyAuthority) ||
+      !sameOrdering(provenance.ordering, policyAuthority.comparator)
+    )
+      return { ok: false, code: 'stage_ordering_authority_mismatch' };
+    return { ok: true, ordering: provenance.ordering };
+  }
+  // A verified policy-level authority governs legacy explicit stages too. A
+  // selector without that frozen authority remains a non-authoritative source
+  // of membership only, so legacy RSC→rank behavior is retained.
+  return { ok: true, ordering: policyAuthority?.comparator ?? null };
+}
 
 /**
  * Creates the live order from an already frozen annual policy, never today’s
@@ -50,23 +147,14 @@ export function computeBidEvaluationStageOrder(
       included.add(memberId);
       stageMembers.push(member);
     }
-    // A frozen live order must never invent a tiebreak from a member id. A
-    // duplicate supposedly-unique seniority fact is source/policy integrity
-    // failure and requires explicit command-staff correction.
-    const seniorityKeys = new Set<string>();
-    for (const member of stageMembers) {
-      const key = `${member.rscSeniority}:${member.rankSeniority ?? 'none'}`;
-      if (seniorityKeys.has(key)) return { ok: false, code: 'stage_seniority_tie' };
-      seniorityKeys.add(key);
-    }
-    stageMembers.sort((left, right) => {
-      if (left.rscSeniority !== right.rscSeniority) return left.rscSeniority - right.rscSeniority;
-      const leftRank = left.rankSeniority ?? Number.MAX_SAFE_INTEGER;
-      const rightRank = right.rankSeniority ?? Number.MAX_SAFE_INTEGER;
-      if (leftRank !== rightRank) return leftRank - rightRank;
-      return 0;
-    });
-    for (const member of stageMembers) {
+    const configuredOrdering = orderingForStage({ policy: livePolicy, stage });
+    if (!configuredOrdering.ok) return configuredOrdering;
+    const ordered =
+      configuredOrdering.ordering === null
+        ? sortWithLegacySeniority(stageMembers)
+        : sortWithFrozenOrdering(stageMembers, configuredOrdering.ordering);
+    if (!ordered.ok) return ordered;
+    for (const member of ordered.members) {
       entries.push({ ordinal: entries.length + 1, memberId: member.memberId, stageId: stage.id });
     }
   }

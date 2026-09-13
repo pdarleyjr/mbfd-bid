@@ -1,6 +1,7 @@
 import { getDb } from '../db/index.js';
 import {
   bidDefinitionContextHash,
+  compileBidDefinitionStagePolicy,
   snapshotMatchesBidDefinition,
 } from './bid-definition-context.js';
 import { bidSnapshotSha256, validateBidDefinitionSnapshotPin } from './bid-definition-pin.js';
@@ -53,14 +54,36 @@ export async function prepareBidDefinitionRun(
     version.content.sourceDecisions,
   );
   if (!prepared.ok) return prepared;
+  const compiledStagePolicy = compileBidDefinitionStagePolicy({
+    pinnedEvaluation: prepared.snapshot,
+    content: version.content,
+  });
+  if (!compiledStagePolicy.ok) return compiledStagePolicy;
+  const executionSnapshot =
+    'executionPolicy' in compiledStagePolicy
+      ? prepared.snapshot.settings.v === 3
+        ? {
+            ...prepared.snapshot,
+            // Typed authoring and a verified ordering authority may resolve
+            // only this one frozen execution field. All remaining captured
+            // evidence and settings retain the exact saved-version material.
+            settings: {
+              ...prepared.snapshot.settings,
+              livePolicy: compiledStagePolicy.executionPolicy,
+            },
+          }
+        : null
+      : prepared.snapshot;
+  if (executionSnapshot === null)
+    return { ok: false as const, code: 'stage_authoring_compilation_invalid' };
   const after = await captureBidDefinitionControl(database, input.year);
   if (!after || before.token !== after.token)
     return { ok: false as const, code: 'bid_definition_source_changed' };
-  if (!snapshotMatchesBidDefinition(prepared.snapshot, version))
+  if (!snapshotMatchesBidDefinition(executionSnapshot, version))
     return { ok: false as const, code: 'bid_version_execution_material_mismatch' };
-  const contextSha256 = bidDefinitionContextHash(prepared.snapshot);
+  const contextSha256 = bidDefinitionContextHash(executionSnapshot);
   const snapshot = {
-    ...prepared.snapshot,
+    ...executionSnapshot,
     bidDefinition: {
       v: 1 as const,
       bidSessionId: input.bidSessionId,

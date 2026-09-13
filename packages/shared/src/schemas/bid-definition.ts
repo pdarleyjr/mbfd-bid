@@ -2,11 +2,13 @@ import { z } from 'zod';
 import { AnnualRuleProfilesSchema } from './annual-rule-profile.js';
 import {
   BidConfigurationSettingsSchema,
+  BidOrderingComparatorSchema,
   BidParticipationSchema,
   CredentialEvaluationDateSchema,
   FrozenLiveBidPolicySchema,
   FrozenRuleBookPositionSchema,
   FrozenRuleBookRuleSchema,
+  StageParticipantSourceDefinitionsSchema,
 } from './bid-policy.js';
 
 const Identity = z
@@ -60,6 +62,31 @@ export const BidDefinitionAuthoringSchema = z
   })
   .strict();
 
+/** Typed result recorded on the independently reviewed source decision. A
+ * prose sourceRef or a requested enum selection cannot stand in for it. */
+export const BidOrderingSourceDecisionResolutionSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('BID_ORDERING_COMPARATOR'),
+    comparator: BidOrderingComparatorSchema,
+  })
+  .strict();
+export type BidOrderingSourceDecisionResolution = z.infer<
+  typeof BidOrderingSourceDecisionResolutionSchema
+>;
+
+/** Saved-definition request for a governing comparator. This pointer must
+ * resolve to a separate RESOLVED annual-policy source decision before it is
+ * copied into a frozen policy snapshot. */
+export const BidOrderingAuthorityRequestSchema = z
+  .object({
+    v: z.literal(1),
+    sourceDecisionId: Identity,
+    comparator: BidOrderingComparatorSchema,
+  })
+  .strict();
+export type BidOrderingAuthorityRequest = z.infer<typeof BidOrderingAuthorityRequestSchema>;
+
 export const BidDefinitionSourceDecisionSchema = z
   .object({
     issueId: Identity,
@@ -70,8 +97,10 @@ export const BidDefinitionSourceDecisionSchema = z
     decision: z.string(),
     sourceRef: z.string(),
     effectiveOn: CredentialEvaluationDateSchema,
+    resolution: BidOrderingSourceDecisionResolutionSchema.optional(),
   })
   .strict();
+export type BidDefinitionSourceDecision = z.infer<typeof BidDefinitionSourceDecisionSchema>;
 
 /** Typed policy material. Runtime members, credentials, assignments, baseline,
  * and clock-dependent readiness belong to the run context, never this hash.
@@ -87,6 +116,9 @@ export const BidDefinitionContentSchema = z
       .object({
         policyText: z.string(),
         executionPolicy: FrozenLiveBidPolicySchema,
+        orderingAuthority: BidOrderingAuthorityRequestSchema.optional(),
+        /** Optional preserves prior explicit-member definitions verbatim. */
+        stageParticipantSources: StageParticipantSourceDefinitionsSchema.optional(),
       })
       .strict()
       .nullable(),

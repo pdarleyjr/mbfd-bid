@@ -29,6 +29,10 @@ const labels: Record<string, string> = {
   action_actor_reference_invalid:
     'An action permission names a person absent from the Department evidence.',
   stage_seniority_tie: 'Two members have the same stage seniority. Review the ordering evidence.',
+  stage_ordering_fact_missing:
+    'A frozen stage ordering fact is missing. Review the resolved participant evidence.',
+  stage_ordering_tie:
+    'The configured stage ordering still ties. Review the resolved participant evidence.',
   rule_book_invalid:
     'An opportunity is missing valid requirements. Review the configuration comparison.',
   bid_impact_context_changed:
@@ -252,6 +256,7 @@ export function BidImpactReview({
   locked,
   begin,
   finish,
+  onImpact,
 }: {
   content: BidDefinitionContent;
   expected: BidExpected;
@@ -259,6 +264,8 @@ export function BidImpactReview({
   locked: boolean;
   begin: () => boolean;
   finish: () => void;
+  /** Lets the visual-only Blueprint consume the exact server result. */
+  onImpact?: (result: BidImpactResponse | null) => void;
 }) {
   const [mode, setMode] = useState<'mock' | 'live'>('mock');
   const [result, setResult] = useState<BidImpactResponse | null>(null);
@@ -275,6 +282,9 @@ export function BidImpactReview({
   const stamp = JSON.stringify({ content, expected, mode });
   const current = resultStamp === stamp && result?.valid ? result : null;
   const comparison = current?.comparison.status === 'EVALUATED' ? current.comparison : null;
+  useEffect(() => {
+    onImpact?.(current);
+  }, [current, onImpact]);
   useEffect(() => {
     if (!current?.trace || !focusTrace.current || !traceHeading.current) return;
     focusTrace.current = false;
@@ -431,7 +441,7 @@ export function BidImpactReview({
             </p>
             {comparison ? (
               <>
-                <output className="block font-medium">
+                <output data-testid="bid-impact-change-summary" className="block font-medium">
                   {comparison.affectedMemberIds.length} people with evaluated changes.
                 </output>
                 <p className="text-sm">

@@ -1,3 +1,4 @@
+import { deepStrictEqual } from 'node:assert';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
@@ -35,7 +36,23 @@ async function freshPolicyAdmin(): Promise<string> {
   );
 }
 
+async function freshLiveCreationAdmin(): Promise<string> {
+  return signJwt(
+    {
+      sub: LIVE_CREATION_MEMBER_ID,
+      emp: '60062',
+      role: 'admin',
+      rank: 'FF',
+      first_name: 'Live',
+      last_name: 'Creator',
+      fresh_auth_at: Math.floor(Date.now() / 1000),
+    },
+    KEY,
+  );
+}
+
 const POLICY_MEMBER_ID = 61;
+const LIVE_CREATION_MEMBER_ID = 62;
 const LIVE_ACTIONS = [
   'record_selection',
   'amend_selection',
@@ -45,6 +62,7 @@ const LIVE_ACTIONS = [
   'resolve_tie',
   'alter_order',
   'pause_resume',
+  'create_live_session',
   'approve_transition',
   'approve_final_results',
   'publish',
@@ -115,6 +133,48 @@ function liveSettings(grants: string[]) {
   };
 }
 
+/**
+ * A deliberately local, legacy-year fixture: its frozen policy grants the
+ * post-Bid transition action to one admin and the separate Live-creation
+ * action to another. No saved definition/head is created.
+ */
+function legacyLiveCreationAuthorityPolicy() {
+  return {
+    v: 1,
+    policyRevision: 'legacy-live-creation-authority-test',
+    stages: [
+      {
+        id: 'legacy-live-stage',
+        label: 'Legacy Live authority test stage',
+        order: 0,
+        memberIds: [POLICY_MEMBER_ID, LIVE_CREATION_MEMBER_ID],
+        opportunityPositionIds: ['A101'],
+        kind: 'MIXED',
+      },
+    ],
+    dispositions: LIVE_DISPOSITIONS.map((disposition) => ({
+      disposition,
+      advances: true,
+      returns: false,
+      returnStageId: null,
+      retainsLaterSelectionRights: false,
+      terminal: false,
+      requiresReason: true,
+      requiresEvidence: false,
+      contactPolicyReference: null,
+    })),
+    actionPermissions: LIVE_ACTIONS.map((action) => ({
+      action,
+      actorMemberIds:
+        action === 'create_live_session' ? [LIVE_CREATION_MEMBER_ID] : [POLICY_MEMBER_ID],
+    })),
+    specialtyCatalogReference: null,
+    aDayPolicyReference: null,
+    transitionPolicyReference: null,
+    publicationPolicyReference: null,
+  };
+}
+
 async function seedActiveSinglePositionPolicy(h: TestD1, now: number): Promise<void> {
   await h.db.run(
     `INSERT INTO members
@@ -141,6 +201,49 @@ async function seedActiveSinglePositionPolicy(h: TestD1, now: number): Promise<v
        '{"rank":["FF"],"credentials":[],"custom":[]}',
        '{"max":0,"items":[]}',
        '["points","rsc_seniority","rank_seniority"]');`,
+  );
+}
+
+async function seedLegacyLiveCreationAuthorityPolicy(h: TestD1, now: number): Promise<void> {
+  const livePolicy = legacyLiveCreationAuthorityPolicy();
+  await h.db.run(
+    `INSERT INTO members
+       (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority, is_probationary,
+        employment_status, employment_status_effective_on, created_at, updated_at)
+     VALUES (${LIVE_CREATION_MEMBER_ID}, '60062', 'Live', 'Creator', 'FF', 'FF', 2, 0,
+       'active', '2026-01-01', ${now}, ${now});`,
+  );
+  await h.db.run(
+    `INSERT INTO annual_bid_policy_documents
+       (id, rule_book_version, effective_year, revision, status, policy_text, execution_policy_json,
+        created_by, created_at, updated_at, published_by, published_at)
+     VALUES (?, '2026.1', 2026, 1, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?);`,
+    [
+      'legacy-live-creation-authority-policy',
+      'Synthetic legacy policy for Live creation authority coverage only.',
+      JSON.stringify(livePolicy),
+      POLICY_MEMBER_ID,
+      now,
+      now,
+      POLICY_MEMBER_ID,
+      now,
+    ],
+  );
+  await h.db.run(
+    `UPDATE bid_years
+        SET config_json = ?, annual_policy_document_id = ?
+      WHERE year = 2026;`,
+    [
+      JSON.stringify({
+        v: 3,
+        expectedDurationDays: 2,
+        turnTimerSeconds: 180,
+        credentialEvaluationOn: '2026-01-15',
+        personnelEvaluationOn: '2026-01-15',
+        livePolicy,
+      }),
+      'legacy-live-creation-authority-policy',
+    ],
   );
 }
 
@@ -388,6 +491,94 @@ describe('POST /api/admin/bid-session', () => {
     expect((await h.db.run('SELECT count(*) AS n FROM bid_sessions')).results).toEqual([{ n: 0 }]);
   });
 
+  it('rejects legacy Live creation by an approve_transition-only actor before any session can persist', async () => {
+    await seedLegacyLiveCreationAuthorityPolicy(h, Date.now());
+    const before = h.sqlite.serialize();
+    // The red path must remain non-materializing even before the route has
+    // its authority guard: if it reaches persistence, this rolls it back.
+    h.failNextBatchAt(0);
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await freshPolicyAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ bid_year: 2026, mode: 'live' }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status, await res.clone().text()).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'live_action_forbidden',
+      action: 'create_live_session',
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect((await h.db.run('SELECT count(*) AS n FROM bid_sessions')).results).toEqual([{ n: 0 }]);
+  });
+
+  it('reports the missing Live-creation grant in the legacy readiness preview without writing', async () => {
+    await seedLegacyLiveCreationAuthorityPolicy(h, Date.now());
+    const before = h.sqlite.serialize();
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session/readiness-preview', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await freshPolicyAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ bid_year: 2026 }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toMatchObject({
+      dry_run: true,
+      would_allow_start: false,
+      readiness: {
+        blockingCheckIds: expect.arrayContaining(['operator_authorization']),
+        checks: expect.arrayContaining([
+          expect.objectContaining({ id: 'operator_authorization', status: 'BLOCKING' }),
+        ]),
+      },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect((await h.db.run('SELECT count(*) AS n FROM bid_sessions')).results).toEqual([{ n: 0 }]);
+  });
+
+  it('recognizes a create_live_session-only actor in the legacy readiness preview without writing', async () => {
+    await seedLegacyLiveCreationAuthorityPolicy(h, Date.now());
+    const before = h.sqlite.serialize();
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/bid-session/readiness-preview', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await freshLiveCreationAdmin()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ bid_year: 2026 }),
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toMatchObject({
+      dry_run: true,
+      readiness: {
+        checks: expect.arrayContaining([
+          expect.objectContaining({ id: 'operator_authorization', status: 'READY' }),
+        ]),
+      },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect((await h.db.run('SELECT count(*) AS n FROM bid_sessions')).results).toEqual([{ n: 0 }]);
+  });
+
   it('rejects an omitted session mode instead of defaulting to a real Bid', async () => {
     const res = await app.fetch(
       new Request('http://x/api/admin/bid-session', {
@@ -574,7 +765,7 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     });
   });
 
-  it('permits a fully evidenced live session to start without enabling writeback', async () => {
+  it('fails closed when a fully evidenced live session has unresolved ordering authority', async () => {
     await seedAcceptedOfficialBaselineForLiveReadiness(h);
     await h.db.run('UPDATE bid_years SET config_json = ? WHERE year = 2026', [
       JSON.stringify(liveSettings(['approve_transition'])),
@@ -621,6 +812,7 @@ describe('POST /api/admin/bid-session/:id/start', () => {
       R2_AUDIT: { put: async () => undefined } as never,
       R2_EXPORTS: { put: async () => undefined } as never,
     };
+    const before = h.sqlite.serialize();
 
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/start`, {
@@ -631,27 +823,49 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     );
 
     const responseBody = await res.json();
-    expect(responseBody).toMatchObject({ current_phase: 'position_bid' });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(409);
+    expect(responseBody).toMatchObject({
+      error: 'readiness_blocked',
+      readiness: {
+        canStartLiveBid: false,
+        overallStatus: 'BLOCKING',
+        blockingCheckIds: expect.arrayContaining(['ordering_authority']),
+        checks: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'ordering_authority',
+            status: 'BLOCKING',
+            detail: expect.stringContaining('unresolved'),
+          }),
+        ]),
+      },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
     expect(
-      (await h.db.run('SELECT is_mock FROM bid_sessions WHERE id = ?', [sessionId])).results,
-    ).toEqual([{ is_mock: 0 }]);
+      (
+        await h.db.run('SELECT current_phase, current_bidder_id FROM bid_sessions WHERE id = ?', [
+          sessionId,
+        ])
+      ).results,
+    ).toEqual([{ current_phase: 'config', current_bidder_id: null }]);
+    expect(
+      (await h.db.run('SELECT count(*) AS n FROM bid_order WHERE bid_session_id = ?', [sessionId]))
+        .results,
+    ).toEqual([{ n: 0 }]);
   });
 
-  it('performs a passing real-mode dry run without creating a real session', async () => {
+  it('reports unresolved ordering authority in a real-mode dry run without mutating a session', async () => {
     await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
     await seedAcceptedOfficialBaselineForLiveReadiness(h);
     await h.db.run('UPDATE bid_years SET config_json = ? WHERE year = 2026', [
-      JSON.stringify(liveSettings([])),
+      JSON.stringify(liveSettings(['create_live_session'])),
     ]);
     await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?', [
       sessionId,
     ]);
     await seedFrozenPolicySnapshot(h, sessionId, Date.now(), {
       configurationRevision: 1,
-      liveActionGrants: [],
+      liveActionGrants: ['create_live_session'],
     });
-    const before = await h.db.run('SELECT count(*) AS n FROM bid_sessions');
     const env = {
       ...h.env,
       JWT_SIGNING_KEY: KEY,
@@ -663,12 +877,13 @@ describe('POST /api/admin/bid-session/:id/start', () => {
       R2_AUDIT: { put: async () => undefined } as never,
       R2_EXPORTS: { put: async () => undefined } as never,
     };
+    const before = h.sqlite.serialize();
 
     const res = await app.fetch(
       new Request('http://x/api/admin/bid-session/readiness-preview', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${await freshAdmin()}`,
+          Authorization: `Bearer ${await freshPolicyAdmin()}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ bid_year: 2026 }),
@@ -679,10 +894,23 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       dry_run: true,
-      would_allow_start: true,
-      readiness: { canStartLiveBid: true },
+      would_allow_start: false,
+      readiness: {
+        canStartLiveBid: false,
+        overallStatus: 'BLOCKING',
+        blockingCheckIds: expect.arrayContaining(['ordering_authority']),
+        checks: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'ordering_authority',
+            status: 'BLOCKING',
+            detail: expect.stringContaining('unresolved'),
+          }),
+          expect.objectContaining({ id: 'operator_authorization', status: 'READY' }),
+        ]),
+      },
     });
-    expect(await h.db.run('SELECT count(*) AS n FROM bid_sessions')).toEqual(before);
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect((await h.db.run('SELECT count(*) AS n FROM bid_sessions')).results).toEqual([{ n: 1 }]);
   });
 
   it('writes audit log session_start', async () => {
