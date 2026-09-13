@@ -70,7 +70,7 @@ def footer(canvas, doc):
 
 story = [Spacer(1, 1.0 * inch), Paragraph('MBFD BID', styles['Title']), Spacer(1, 20),
          Paragraph('Complete Administrator Manual', styles['Heading1']),
-         Paragraph('People · Staffing · Annual Bid · History & Reports', styles['BodyText']),
+         Paragraph('Today · Department · Bid · History', styles['BodyText']),
          Spacer(1, 24), Paragraph('September 2026', styles['Heading2']),
          Paragraph('Use this manual alongside the searchable Docs page and the “How to use this page” explanation in each administrator workspace. The manual and live help use the same source content.', styles['BodyText']),
          Paragraph('Approved policy and amendments determine the rules. This manual explains software operation and does not adopt policy, authorize a selection, or establish that every qualification is current.', styles['Note']),

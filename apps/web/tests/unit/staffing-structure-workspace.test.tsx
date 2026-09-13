@@ -51,12 +51,12 @@ describe('StaffingStructureWorkspace', () => {
     );
 
     expect(html).toContain('Staffing Structure');
-    expect(html).toContain('Add authorized staffing seat');
+    expect(html).toContain('Add authorized position');
     expect(html).toContain('Reviewable canonical key');
     expect(html).toContain('Create authorized seat');
     expect(html).toContain('Retire seat');
     expect(html).toContain('Move or reassign a member');
-    expect(html).toContain('never labelled a Bid opportunity');
+    expect(html).toContain('Review Bid participation');
     expect(html).toContain('Projection date');
     expect(html).toContain('name="as_of"');
     expect(html).toContain('View projection');
