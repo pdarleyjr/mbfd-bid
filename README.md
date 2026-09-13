@@ -14,6 +14,15 @@ pages sized to the available viewport; phone and tablet rosters scroll normally.
 The Department projection does not require an annual Bid Rule Book. Existing Bid
 consumers add participation metadata through a compatibility adapter.
 
+Department brings People, Roster & organization, Credentials and Import data into
+one workspace. Member updates reuse the existing employment and qualification
+services. Retirement previews show dated dependencies and retained history;
+submission rechecks existing guards. TeleStaff and TargetSolutions retain their
+source-specific review, identity and receipt behavior.
+
+See [Department workflow and data contracts](docs/unified-platform/department-workspace.md)
+for the delivered scope and remaining integration boundaries.
+
 The staged unified-platform implementation and its remaining acceptance gates are
 tracked in [the implementation contract](docs/unified-platform/implementation-contract.md).
 

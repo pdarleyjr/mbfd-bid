@@ -16,6 +16,7 @@ import adminBid from './routes/admin/bid.js';
 import adminCredentialImports from './routes/admin/credential-imports.js';
 import adminCredentials from './routes/admin/credentials.js';
 import adminCurrentRoster from './routes/admin/current-roster.js';
+import adminDepartmentPeople from './routes/admin/department-people.js';
 import adminDepartment from './routes/admin/department.js';
 import adminEligibilityPreview from './routes/admin/eligibility-preview.js';
 import adminExports from './routes/admin/exports.js';
@@ -67,6 +68,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/credentials', adminCredentials)
   .route('/api/admin/current-roster', adminCurrentRoster)
   .route('/api/admin/department', adminDepartment)
+  .route('/api/admin/department', adminDepartmentPeople)
   .route('/api/admin/organization', adminOrganization)
   .route('/api/admin/service-evidence', adminServiceEvidence)
   .route('/api/admin/tenure-evidence', adminTenureEvidence)

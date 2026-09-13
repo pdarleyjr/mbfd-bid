@@ -200,6 +200,7 @@ test('independent board views preserve source boundaries at phone, tablet and de
         .getByRole('link', { name: 'Bid board', exact: true })
         .click();
       await expect(page.locator('#admin-mobile-navigation')).toBeHidden();
+      await expect(page).toHaveURL(/\/admin\/bid-board$/);
       await expect(
         page.getByRole('main').getByText('Current Occupant', { exact: true }),
       ).toBeVisible();
@@ -249,12 +250,12 @@ test('independent board views preserve source boundaries at phone, tablet and de
   const sidebar = page.getByTestId('admin-sidebar');
   await page.getByRole('button', { name: 'Collapse admin sidebar', exact: true }).click();
   await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
-  await expect(sidebar.getByRole('link', { name: 'Annual Bid', exact: true })).toBeVisible();
-  await sidebar.getByRole('link', { name: 'Annual Bid', exact: true }).focus();
+  await expect(sidebar.getByRole('link', { name: 'Bid', exact: true })).toBeVisible();
+  await sidebar.getByRole('link', { name: 'Bid', exact: true }).focus();
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Tab');
   await expect(
-    sidebar.getByRole('link', { name: 'Annual Bid', exact: true }).locator('span'),
+    sidebar.getByRole('link', { name: 'Bid', exact: true }).locator('span'),
   ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('compact-navigation.png'), fullPage: true });
   await page.getByRole('button', { name: 'Expand admin sidebar', exact: true }).click();

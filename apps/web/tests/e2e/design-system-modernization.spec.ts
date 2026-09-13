@@ -179,7 +179,7 @@ test('dense dynamic Board preserves all assignments, search, disclosure and resp
     .getByTestId('admin-sidebar')
     .getByRole('link', { name: 'Bid board', exact: true });
   if (!(await boardLink.isVisible())) {
-    await page.getByRole('button', { name: 'Expand Annual Bid menu' }).click();
+    await page.getByRole('button', { name: 'Expand Bid menu' }).click();
   }
   await boardLink.click();
   await expect(page).toHaveURL(/\/admin\/bid-board/);

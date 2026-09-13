@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
@@ -261,6 +262,7 @@ export function UnknownEmployeeOnboardingPanel(props: {
   busy: boolean;
   onComplete: () => void | Promise<void>;
   onError: (code: string) => void;
+  onPendingChanges?: (pending: boolean) => void;
 }) {
   const [drafts, setDrafts] = useState<Record<string, UnknownEmployeeDraft>>(() =>
     Object.fromEntries(
@@ -279,6 +281,13 @@ export function UnknownEmployeeOnboardingPanel(props: {
     ),
   );
   const [submitting, setSubmitting] = useState(false);
+  const pendingDetails =
+    submitting ||
+    Object.values(drafts).some((draft) => Object.values(draft).some((value) => value !== ''));
+  useEffect(() => {
+    props.onPendingChanges?.(pendingDetails);
+    return () => props.onPendingChanges?.(false);
+  }, [pendingDetails, props.onPendingChanges]);
 
   function update(rowId: string, values: Partial<UnknownEmployeeDraft>) {
     setDrafts((current) => {
@@ -560,6 +569,36 @@ export function TeleStaffOperatorWorkspace() {
     null,
   );
   const [baselineConfirmationRequired, setBaselineConfirmationRequired] = useState(false);
+  const [onboardingDirty, setOnboardingDirty] = useState(false);
+  const [recordedSource, setRecordedSource] = useState<{
+    file: File | null;
+    sourceKind: TeleStaffSourceKind | '';
+    sourceSnapshotAsOf: string;
+    sourceObservedAt: string;
+    sourceObservationTimeBasis: SourceObservationTimeBasis;
+  }>({
+    file: null,
+    sourceKind: '',
+    sourceSnapshotAsOf: '',
+    sourceObservedAt: '',
+    sourceObservationTimeBasis: 'date_only',
+  });
+  const [recordedApply, setRecordedApply] = useState<{ importId: string; date: string } | null>(
+    null,
+  );
+  const sourceDirty =
+    file !== recordedSource.file ||
+    sourceKind !== recordedSource.sourceKind ||
+    sourceSnapshotAsOf !== recordedSource.sourceSnapshotAsOf ||
+    sourceObservedAt !== recordedSource.sourceObservedAt ||
+    sourceObservationTimeBasis !== recordedSource.sourceObservationTimeBasis;
+  const applyDateDirty =
+    canonicalEffectiveOn !== '' &&
+    (recordedApply?.importId !== detail?.import.id || recordedApply?.date !== canonicalEffectiveOn);
+  useUnsavedChanges(
+    busy || sourceDirty || applyDateDirty || onboardingDirty || baselineConfirmationRequired,
+    'TeleStaff import details or pending requests',
+  );
 
   async function loadImport(importId: string, offset = 0): Promise<ImportDetail | null> {
     const pageQuery = offset === 0 ? '' : `?limit=${REVIEW_PAGE_SIZE}&offset=${offset}`;
@@ -676,6 +715,13 @@ export function TeleStaffOperatorWorkspace() {
         setError('stage_unavailable');
         return;
       }
+      setRecordedSource({
+        file,
+        sourceKind,
+        sourceSnapshotAsOf,
+        sourceObservedAt,
+        sourceObservationTimeBasis,
+      });
       const transientUnknowns =
         body !== null &&
         typeof body === 'object' &&
@@ -756,6 +802,7 @@ export function TeleStaffOperatorWorkspace() {
         setError(errorCode(body, 'canonical_apply_unavailable'));
         return;
       }
+      setRecordedApply({ importId: detail.import.id, date: canonicalEffectiveOn });
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice('Canonical staffing was updated only for reviewed, deterministic observations.');
       await refreshProjections();
@@ -1319,6 +1366,7 @@ export function TeleStaffOperatorWorkspace() {
                 expectedRevision={detail.import.reconciliationRevision}
                 employees={unknownEmployees}
                 busy={busy}
+                onPendingChanges={setOnboardingDirty}
                 onError={(code) => setError(code)}
                 onComplete={async () => {
                   setUnknownEmployees([]);

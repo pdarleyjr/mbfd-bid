@@ -35,10 +35,9 @@ describe('MBFD identity and operator navigation', () => {
   it('uses the approved year-round bid control-center sections in operator navigation', () => {
     expect(ADMIN_NAV_LINKS.map(({ href, label }) => ({ href, label }))).toEqual([
       { href: '/admin', label: 'Today' },
-      { href: '/admin/members', label: 'People' },
-      { href: '/admin/current-rosters', label: 'Staffing' },
-      { href: '/admin/annual-plan', label: 'Annual Bid' },
-      { href: '/admin/audit', label: 'History & Reports' },
+      { href: '/admin/department', label: 'Department' },
+      { href: '/admin/annual-plan', label: 'Bid' },
+      { href: '/admin/audit', label: 'History' },
       { href: '/admin/docs', label: 'Docs & Manual' },
       { href: '/admin/system', label: 'Settings' },
     ]);
@@ -52,19 +51,19 @@ describe('MBFD identity and operator navigation', () => {
     });
   });
 
-  it('makes the effective-dated qualification evidence workspace discoverable from Personnel Changes', () => {
-    const personnel = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/members');
+  it('makes member updates discoverable through Department People', () => {
+    const personnel = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/department');
     expect(personnel?.subnav).toContainEqual({
-      href: '/admin/personnel/qualifications',
-      label: 'Update qualifications',
+      href: '/admin/department',
+      label: 'People',
     });
   });
 
-  it('makes the credentials catalog and specialty points workspace discoverable from Members', () => {
-    const members = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/members');
+  it('makes credential definitions discoverable from Department', () => {
+    const members = ADMIN_NAV_LINKS.find((link) => link.href === '/admin/department');
     expect(members?.subnav).toContainEqual({
-      href: '/admin/credentials',
-      label: 'Qualification catalog',
+      href: '/admin/department/credentials',
+      label: 'Credentials',
     });
   });
 });
