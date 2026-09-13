@@ -14,6 +14,7 @@ import { ulid } from 'ulid';
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import { handleFreeze } from '../durable/bid-session-handlers.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
+import { assertBidDefinitionRunIntegrity } from '../lib/bid-definition-integrity.js';
 import { reduceLiveBidCommand } from './live-bid-reducer.js';
 
 interface CanonicalStateRow {
@@ -213,6 +214,7 @@ export async function loadCanonicalBidSessionState(
   db: D1Database,
   bidSessionId: string,
 ): Promise<BidSessionState | null> {
+  await assertBidDefinitionRunIntegrity(db, bidSessionId);
   const row = await first<CanonicalStateRow>(
     db,
     `SELECT current_seq, state_json, last_command_id
@@ -328,6 +330,7 @@ export async function commitMockFreezeCommand(
   input: CommitMockFreezeCommandInput,
 ): Promise<CanonicalMockFreezeCommandCommit> {
   const { db, command } = input;
+  await assertBidDefinitionRunIntegrity(db, command.bidSessionId);
   const now = (input.nowMs ?? Date.now)();
   const newId = input.newId ?? ulid;
   const requestSha256 = sha256Hex(canonicalJson(command));
@@ -674,6 +677,7 @@ export interface CommitLiveBidCommandInput {
 export async function commitLiveBidCommand(
   input: CommitLiveBidCommandInput,
 ): Promise<{ result: LiveBidCommandResult; canonicalState: BidSessionState | null }> {
+  await assertBidDefinitionRunIntegrity(input.db, input.command.bidSessionId, input.policy);
   const now = (input.nowMs ?? Date.now)();
   const newId = input.newId ?? ulid;
   const requestSha256 = sha256Hex(canonicalJson(input.command));

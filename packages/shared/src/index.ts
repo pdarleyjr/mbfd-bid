@@ -64,3 +64,34 @@ export type {
 } from './schemas/a-day.js';
 export { HistoricalBidSchema, HistoricalBidReceiptSchema } from './schemas/historical-bid.js';
 export type { HistoricalBid, HistoricalBidReceipt } from './schemas/historical-bid.js';
+
+export type {
+  DepartmentRosterPosition,
+  DepartmentRosterProjection,
+} from './schemas/department-roster.js';
+export type {
+  DepartmentEmploymentStatus,
+  DepartmentPerson,
+  DepartmentPeopleListResponse,
+  DepartmentPersonDetailResponse,
+  DepartmentQualificationEvidence,
+} from './schemas/department-people.js';
+export type {
+  DepartmentRetirementImpact,
+  DepartmentRetirementTarget,
+  DepartmentRetirementAssignment,
+  DepartmentRetirementOrganizationVersion,
+  DepartmentRetirementOrganizationLink,
+  DepartmentRetirementBlocker,
+} from './schemas/department-retirement.js';
+export {
+  BidDefinitionContentSchema,
+  BidDefinitionRuleSchema,
+  BidDefinitionAuthoringSchema,
+  BidDefinitionProvenanceSchema,
+} from './schemas/bid-definition.js';
+export type {
+  BidDefinitionContent,
+  BidDefinitionRule,
+  BidDefinitionIssue,
+} from './schemas/bid-definition.js';

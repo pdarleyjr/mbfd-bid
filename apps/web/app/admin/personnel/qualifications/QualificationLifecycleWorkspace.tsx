@@ -14,15 +14,24 @@ import { Textarea } from '@/components/ui/textarea';
 import { usePersonnelProjectionRefresh } from '@/lib/admin-projection-refresh';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRetainedMutation } from '@/lib/use-retained-mutation';
+import { type FocusedMemberCallbacks, useMemberInteractionState } from '../focused-member';
 
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  type ComponentProps,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 export interface QualificationMember {
   id: number;
   employeeId: string;
   firstName: string;
   lastName: string;
-  rank: string;
+  rank: string | null;
   employmentStatus: string;
 }
 
@@ -97,7 +106,7 @@ interface QualificationReceipt {
   replayed: boolean;
 }
 
-interface QualificationLifecycleWorkspaceProps {
+interface QualificationLifecycleWorkspaceProps extends FocusedMemberCallbacks {
   asOf: string;
   members: QualificationMember[];
   credentials: QualificationCredential[];
@@ -423,6 +432,9 @@ export function QualificationLifecycleWorkspace({
   members,
   credentials,
   memberIdHint,
+  focusedMember = false,
+  onInteractionState,
+  onAccepted,
 }: QualificationLifecycleWorkspaceProps) {
   const refreshProjections = usePersonnelProjectionRefresh();
   const [impact, setImpact] = useState<{
@@ -473,6 +485,13 @@ export function QualificationLifecycleWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [backendUnavailable, setBackendUnavailable] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const [previewFingerprint, setPreviewFingerprint] = useState<string | null>(null);
+  const retryRequest = useRef<{ key: string; payload: Record<string, number | string> } | null>(
+    null,
+  );
+  useMemberInteractionState(focusedMember, { dirty, busy, uncertain }, onInteractionState);
 
   const selectedMemberId = Number(memberId);
   const selectedMember = useMemo(
@@ -520,13 +539,14 @@ export function QualificationLifecycleWorkspace({
   );
 
   useEffect(() => {
+    if (focusedMember) return;
     if (!Number.isSafeInteger(selectedMemberId) || selectedMemberId <= 0) {
       setHistory(null);
       setBackendUnavailable(null);
       return;
     }
     void loadHistory(selectedMemberId);
-  }, [loadHistory, selectedMemberId]);
+  }, [focusedMember, loadHistory, selectedMemberId]);
 
   useEffect(() => {
     if (kind === 'CERTIFICATION_EXPIRED' || kind === 'SPECIALTY_EXPIRED') {
@@ -604,6 +624,7 @@ export function QualificationLifecycleWorkspace({
 
   async function submitEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     const previewOnly =
       (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'preview';
     setError(null);
@@ -643,10 +664,25 @@ export function QualificationLifecycleWorkspace({
     if (evidenceReference.trim() !== '') {
       payload.evidence_reference = evidenceReference.trim();
     }
+    if (
+      focusedMember &&
+      !uncertain &&
+      !previewOnly &&
+      previewFingerprint !== JSON.stringify(payload)
+    ) {
+      setError('Preview this credential change before recording it.');
+      return;
+    }
+    if (focusedMember && uncertain && previewOnly) return;
 
     setBusy(true);
+    let accepted = false;
     try {
-      const request = mutation.prepare(JSON.stringify(payload), () => payload);
+      const request =
+        uncertain && retryRequest.current !== null
+          ? retryRequest.current
+          : mutation.prepare(JSON.stringify(payload), () => payload);
+      if (!previewOnly) retryRequest.current = request;
       const csrfFetch = createCsrfAwareFetch(fetch, () => window.location.origin);
       const response = await csrfFetch(
         `/api/admin/qualification-lifecycle/events${previewOnly ? '/preview' : ''}`,
@@ -662,37 +698,99 @@ export function QualificationLifecycleWorkspace({
       );
       const body: unknown = await response.json().catch(() => null);
       if (isUnavailableEndpoint(response, body)) {
+        if (focusedMember && !previewOnly && response.status >= 500) setUncertain(true);
         setBackendUnavailable(
-          'Qualification lifecycle backend unavailable. No event was recorded because POST /api/admin/qualification-lifecycle/events is not available.',
+          focusedMember
+            ? 'Credential change service unavailable. No receipt was returned.'
+            : 'Qualification lifecycle backend unavailable. No event was recorded because POST /api/admin/qualification-lifecycle/events is not available.',
         );
         return;
       }
       if (!response.ok) {
+        if (focusedMember && !previewOnly && (response.status >= 500 || body === null))
+          setUncertain(true);
         setError(
-          `Qualification event was not recorded: ${responseError(body, `status_${response.status}`)}.`,
+          `${focusedMember ? 'Credential request failed' : 'Qualification event was not recorded'}: ${responseError(body, `status_${response.status}`)}.`,
         );
         return;
       }
       if (previewOnly) {
+        const result = asRecord(body);
+        if (
+          result === null ||
+          typeof result.scope !== 'string' ||
+          !Array.isArray(result.results) ||
+          result.results.some((item) => {
+            const record = asRecord(item);
+            return (
+              record === null ||
+              typeof record.year !== 'number' ||
+              typeof record.available !== 'boolean' ||
+              (record.available &&
+                (!Array.isArray(record.changes) ||
+                  record.changes.some((change) => {
+                    const entry = asRecord(change);
+                    return (
+                      entry === null ||
+                      typeof entry.positionId !== 'string' ||
+                      asRecord(entry.before) === null ||
+                      asRecord(entry.after) === null
+                    );
+                  })))
+            );
+          })
+        ) {
+          setError(
+            'A complete credential preview was not returned. Retry the preview before recording.',
+          );
+          return;
+        }
         setImpact(body as NonNullable<typeof impact>);
+        setPreviewFingerprint(JSON.stringify(payload));
         return;
       }
       const parsedReceipt = parseReceipt(body);
       if (parsedReceipt === null) {
+        if (focusedMember) setUncertain(true);
         setError('Qualification event response did not include an auditable lifecycle receipt.');
         return;
       }
+      if (focusedMember) {
+        const event = asRecord(asRecord(body)?.event);
+        if (
+          event?.memberId !== request.payload.member_id ||
+          event?.kind !== request.payload.kind ||
+          event?.effectiveOn !== request.payload.effective_on ||
+          event?.idempotencyKey !== request.key
+        ) {
+          setUncertain(true);
+          setError(
+            'The receipt did not match this credential request. Retry the same request to resolve its outcome.',
+          );
+          return;
+        }
+      }
+      accepted = true;
+      retryRequest.current = null;
+      setUncertain(false);
+      setDirty(false);
+      setPreviewFingerprint(null);
+      setImpact(null);
       setReceipt(parsedReceipt);
       mutation.accepted(request.key);
       setNotice(
         parsedReceipt.replayed
           ? 'The original qualification lifecycle receipt was returned; no duplicate event was made.'
-          : 'The qualification evidence event was accepted. History was reloaded from the lifecycle ledger.',
+          : focusedMember
+            ? 'The credential change was accepted. Member details are refreshing.'
+            : 'The qualification evidence event was accepted. History was reloaded from the lifecycle ledger.',
       );
       setReason('');
       await refreshProjections('qualification');
-      await loadHistory(selectedMember.id);
+      if (!focusedMember) await loadHistory(selectedMember.id);
+      onAccepted?.();
     } catch (caught) {
+      if (focusedMember && !previewOnly && !accepted) setUncertain(true);
       setError(
         caught instanceof Error ? caught.message : 'Qualification event could not be recorded.',
       );
@@ -720,6 +818,7 @@ export function QualificationLifecycleWorkspace({
         : kind === 'SPECIALTY_REMOVED'
           ? 'Expiration date (not used for removal)'
           : 'Expiration date (optional)';
+  const PreviewPanel = focusedMember ? FocusedImpactPanel : TaskPanel;
 
   return (
     <div className="space-y-6">
@@ -729,20 +828,24 @@ export function QualificationLifecycleWorkspace({
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
-              Effective-dated evidence control
-            </p>
+            {!focusedMember && (
+              <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
+                Effective-dated evidence control
+              </p>
+            )}
             <h2
               id="qualification-lifecycle-heading"
               className="mt-1 font-heading text-xl text-foreground"
             >
-              Qualification lifecycle
+              {focusedMember ? 'Credential change' : 'Qualification lifecycle'}
             </h2>
-            <p className="mt-2 max-w-3xl text-sm text-foreground">
-              Record reviewed certification or specialty evidence with an effective date, optional
-              expiration where allowed, source, evidence reference, and reason. No legacy direct
-              credential toggle is available.
-            </p>
+            {!focusedMember && (
+              <p className="mt-2 max-w-3xl text-sm text-foreground">
+                Record reviewed certification or specialty evidence with an effective date, optional
+                expiration where allowed, source, evidence reference, and reason. No legacy direct
+                credential toggle is available.
+              </p>
+            )}
           </div>
           <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">
             As of {history?.asOf ?? asOf}
@@ -752,188 +855,216 @@ export function QualificationLifecycleWorkspace({
         <form
           data-testid="qualification-event-form"
           onSubmit={submitEvent}
+          onChange={() => {
+            setDirty(true);
+            setImpact(null);
+            setPreviewFingerprint(null);
+          }}
           className="mt-5 grid gap-4 border-t border-border pt-5 lg:grid-cols-2"
         >
-          <p className="text-sm text-foreground lg:col-span-2">
-            Certification events require a certification credential. Specialty qualification code is
-            a separate evidence target and is never sent with a credential ID.
-          </p>
+          <fieldset disabled={focusedMember && (busy || uncertain)} className="contents">
+            {!focusedMember && (
+              <p className="text-sm text-foreground lg:col-span-2">
+                Certification events require a certification credential. Specialty qualification
+                code is a separate evidence target and is never sent with a credential ID.
+              </p>
+            )}
 
-          <Label className="block">
-            <span className="text-sm text-foreground">Member</span>
-            <NativeSelect
-              data-testid="qualification-member"
-              required
-              value={memberId}
-              onChange={(event) => {
-                setMemberId(event.target.value);
-                setReceipt(null);
-                setNotice(null);
-              }}
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-            >
-              {members.length === 0 && <option value="">No members available</option>}
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.lastName}, {member.firstName} — {member.rank} ({member.employmentStatus})
-                </option>
-              ))}
-            </NativeSelect>
-          </Label>
+            {!focusedMember && (
+              <Label className="block">
+                <span className="text-sm text-foreground">Member</span>
+                <NativeSelect
+                  data-testid="qualification-member"
+                  required
+                  value={memberId}
+                  onChange={(event) => {
+                    setMemberId(event.target.value);
+                    setReceipt(null);
+                    setNotice(null);
+                  }}
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                >
+                  {members.length === 0 && <option value="">No members available</option>}
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.lastName}, {member.firstName} — {member.rank} (
+                      {member.employmentStatus})
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Label>
+            )}
 
-          <Label className="block">
-            <span className="text-sm text-foreground">Lifecycle event</span>
-            <NativeSelect
-              data-testid="qualification-kind"
-              value={kind}
-              onChange={(event) => {
-                if (isQualificationEventKind(event.target.value)) setKind(event.target.value);
-              }}
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-            >
-              {(Object.keys(EVENT_KIND_LABELS) as QualificationEventKind[]).map((option) => (
-                <option key={option} value={option}>
-                  {EVENT_KIND_LABELS[option]}
-                </option>
-              ))}
-            </NativeSelect>
-          </Label>
-
-          {certificationEvent ? (
             <Label className="block">
-              <span className="text-sm text-foreground">Certification credential</span>
+              <span className="text-sm text-foreground">Lifecycle event</span>
               <NativeSelect
-                data-testid="qualification-credential"
-                required
-                value={credentialId}
-                onChange={(event) => setCredentialId(event.target.value)}
+                data-testid="qualification-kind"
+                value={kind}
+                onChange={(event) => {
+                  if (isQualificationEventKind(event.target.value)) setKind(event.target.value);
+                }}
                 className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
               >
-                {credentials.length === 0 && <option value="">No credentials available</option>}
-                {credentials.map((credential) => (
-                  <option key={credential.id} value={credential.id}>
-                    {credential.name}{' '}
-                    {credential.fyPointsDefault === 0
-                      ? ''
-                      : `(${credential.fyPointsDefault} points)`}
+                {(Object.keys(EVENT_KIND_LABELS) as QualificationEventKind[]).map((option) => (
+                  <option key={option} value={option}>
+                    {EVENT_KIND_LABELS[option]}
                   </option>
                 ))}
               </NativeSelect>
             </Label>
-          ) : (
+
+            {certificationEvent ? (
+              <Label className="block">
+                <span className="text-sm text-foreground">Certification credential</span>
+                <NativeSelect
+                  data-testid="qualification-credential"
+                  required
+                  value={credentialId}
+                  onChange={(event) => setCredentialId(event.target.value)}
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+                >
+                  {credentials.length === 0 && <option value="">No credentials available</option>}
+                  {credentials.map((credential) => (
+                    <option key={credential.id} value={credential.id}>
+                      {credential.name}{' '}
+                      {credential.fyPointsDefault === 0
+                        ? ''
+                        : `(${credential.fyPointsDefault} points)`}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Label>
+            ) : (
+              <Label className="block">
+                <span className="text-sm text-foreground">Specialty qualification code</span>
+                <Input
+                  data-testid="qualification-specialty-code"
+                  required
+                  maxLength={128}
+                  value={specialtyCode}
+                  onChange={(event) => setSpecialtyCode(event.target.value)}
+                  placeholder="TECHNICAL_RESCUE"
+                  className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
+                />
+              </Label>
+            )}
+
             <Label className="block">
-              <span className="text-sm text-foreground">Specialty qualification code</span>
+              <span className="text-sm text-foreground">Effective date</span>
               <Input
-                data-testid="qualification-specialty-code"
+                data-testid="qualification-effective-on"
+                required
+                type="date"
+                value={effectiveOn}
+                onChange={(event) => setEffectiveOn(event.target.value)}
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+              />
+            </Label>
+
+            <Label className="block">
+              <span className="text-sm text-foreground">{expirationLabel}</span>
+              <Input
+                data-testid="qualification-expires-on"
+                type="date"
+                disabled={expirationDisabled}
+                value={
+                  kind === 'CERTIFICATION_EXPIRED' || kind === 'SPECIALTY_EXPIRED'
+                    ? effectiveOn
+                    : expiresOn
+                }
+                onChange={(event) => setExpiresOn(event.target.value)}
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              {(kind === 'CERTIFICATION_REVOKED' || kind === 'SPECIALTY_REVOKED') && (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Revocation closes qualification validity; no expiration is sent.
+                </span>
+              )}
+              {kind === 'SPECIALTY_REMOVED' && (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Removal closes specialty qualification validity; no expiration is sent.
+                </span>
+              )}
+            </Label>
+
+            <Label className="block">
+              <span className="text-sm text-foreground">Evidence source</span>
+              <Input
+                data-testid="qualification-source"
                 required
                 maxLength={128}
-                value={specialtyCode}
-                onChange={(event) => setSpecialtyCode(event.target.value)}
-                placeholder="TECHNICAL_RESCUE"
+                value={evidenceSource}
+                onChange={(event) => setEvidenceSource(event.target.value)}
+                placeholder="State registry, certification office, reviewed case file"
                 className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
               />
             </Label>
-          )}
 
-          <Label className="block">
-            <span className="text-sm text-foreground">Effective date</span>
-            <Input
-              data-testid="qualification-effective-on"
-              required
-              type="date"
-              value={effectiveOn}
-              onChange={(event) => setEffectiveOn(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-            />
-          </Label>
+            <Label className="block">
+              <span className="text-sm text-foreground">Evidence reference (optional)</span>
+              <Input
+                data-testid="qualification-evidence-reference"
+                maxLength={512}
+                value={evidenceReference}
+                onChange={(event) => setEvidenceReference(event.target.value)}
+                placeholder="Case, registry, document, or controlled-record reference"
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
+              />
+            </Label>
 
-          <Label className="block">
-            <span className="text-sm text-foreground">{expirationLabel}</span>
-            <Input
-              data-testid="qualification-expires-on"
-              type="date"
-              disabled={expirationDisabled}
-              value={
-                kind === 'CERTIFICATION_EXPIRED' || kind === 'SPECIALTY_EXPIRED'
-                  ? effectiveOn
-                  : expiresOn
-              }
-              onChange={(event) => setExpiresOn(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            {(kind === 'CERTIFICATION_REVOKED' || kind === 'SPECIALTY_REVOKED') && (
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Revocation closes qualification validity; no expiration is sent.
-              </span>
-            )}
-            {kind === 'SPECIALTY_REMOVED' && (
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Removal closes specialty qualification validity; no expiration is sent.
-              </span>
-            )}
-          </Label>
-
-          <Label className="block">
-            <span className="text-sm text-foreground">Evidence source</span>
-            <Input
-              data-testid="qualification-source"
-              required
-              maxLength={128}
-              value={evidenceSource}
-              onChange={(event) => setEvidenceSource(event.target.value)}
-              placeholder="State registry, certification office, reviewed case file"
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
-            />
-          </Label>
-
-          <Label className="block">
-            <span className="text-sm text-foreground">Evidence reference (optional)</span>
-            <Input
-              data-testid="qualification-evidence-reference"
-              maxLength={512}
-              value={evidenceReference}
-              onChange={(event) => setEvidenceReference(event.target.value)}
-              placeholder="Case, registry, document, or controlled-record reference"
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground placeholder:text-muted-foreground"
-            />
-          </Label>
-
-          <Label className="block lg:col-span-2">
-            <span className="text-sm text-foreground">Reason</span>
-            <Textarea
-              data-testid="qualification-reason"
-              required
-              minLength={4}
-              maxLength={500}
-              rows={3}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              className="mt-1 min-h-24 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
-            />
-          </Label>
-
+            <Label className="block lg:col-span-2">
+              <span className="text-sm text-foreground">Reason</span>
+              <Textarea
+                data-testid="qualification-reason"
+                required
+                minLength={4}
+                maxLength={500}
+                rows={3}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                className="mt-1 min-h-24 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
+              />
+            </Label>
+          </fieldset>
           <div className="lg:col-span-2">
             {formIssues.length > 0 && (
               <output aria-live="polite" className="block text-sm text-warning">
                 {formIssues[0]}
               </output>
             )}
-            <Button type="submit" value="preview" disabled={submitDisabled} className="mt-3 mr-3">
-              Preview bid impact
+            <Button
+              type="submit"
+              value="preview"
+              disabled={submitDisabled || (focusedMember && uncertain)}
+              className="mt-3 mr-3"
+            >
+              {focusedMember ? 'Preview credential change' : 'Preview bid impact'}
             </Button>
             <Button
               data-testid="qualification-submit"
               type="submit"
-              disabled={submitDisabled}
+              disabled={
+                submitDisabled || (focusedMember && !uncertain && previewFingerprint === null)
+              }
               className="mt-3 min-h-11 rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground hover:bg-destructive disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy ? 'Recording evidence…' : 'Record qualification evidence'}
+              {busy
+                ? 'Recording evidence…'
+                : uncertain
+                  ? 'Retry same credential request'
+                  : 'Record qualification evidence'}
             </Button>
           </div>
         </form>
       </section>
 
-      <TaskPanel
+      {focusedMember && uncertain && (
+        <p role="alert" className="text-sm text-warning">
+          The outcome is uncertain. Further edits are locked until the same request returns a
+          receipt.
+        </p>
+      )}
+      <PreviewPanel
         open={impact !== null}
         onClose={() => setImpact(null)}
         title="Qualification impact preview"
@@ -965,8 +1096,8 @@ export function QualificationLifecycleWorkspace({
                       {item.changes?.map((change) => (
                         <li key={change.positionId}>
                           <strong>{change.positionId}</strong>:{' '}
-                          {change.before.eligible ? 'Eligible' : 'Ineligible'} →{' '}
-                          {change.after.eligible ? 'Eligible' : 'Ineligible'}; points{' '}
+                          {qualificationEligibilityLabel(change.before.eligible)} →{' '}
+                          {qualificationEligibilityLabel(change.after.eligible)}; points{' '}
                           {change.before.points} → {change.after.points}; SO{' '}
                           {change.before.soPoints} → {change.after.soPoints}; Marine{' '}
                           {change.before.moPoints} → {change.after.moPoints}; priority{' '}
@@ -980,7 +1111,7 @@ export function QualificationLifecycleWorkspace({
             ))}
           </div>
         )}
-      </TaskPanel>
+      </PreviewPanel>
       {backendUnavailable !== null && (
         <section
           aria-label="Qualification backend unavailable"
@@ -988,10 +1119,12 @@ export function QualificationLifecycleWorkspace({
         >
           <h2 className="font-semibold">Qualification lifecycle backend unavailable</h2>
           <p className="mt-1">{backendUnavailable}</p>
-          <p className="mt-2 text-warning">
-            No qualification status or history was inferred. This fail-closed UI does not treat
-            absent lifecycle data as qualification approval.
-          </p>
+          {!focusedMember && (
+            <p className="mt-2 text-warning">
+              No qualification status or history was inferred. This fail-closed UI does not treat
+              absent lifecycle data as qualification approval.
+            </p>
+          )}
         </section>
       )}
 
@@ -1028,238 +1161,258 @@ export function QualificationLifecycleWorkspace({
         </section>
       )}
 
-      <section
-        aria-labelledby="qualification-status-heading"
-        className="rounded-xl border border-border bg-card p-5"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+      {!focusedMember && (
+        <>
+          <section
+            aria-labelledby="qualification-status-heading"
+            className="rounded-xl border border-border bg-card p-5"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-info">
+                  Projected evidence
+                </p>
+                <h2
+                  id="qualification-status-heading"
+                  className="mt-1 font-heading text-xl text-foreground"
+                >
+                  Current status
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm text-foreground">
+                  Effective, expiration, and status values are displayed only from the Worker&apos;s
+                  effective-dated projection.
+                </p>
+              </div>
+              {selectedMember !== null && (
+                <Button
+                  type="button"
+                  onClick={() => void loadHistory(selectedMember.id)}
+                  disabled={loadingHistory}
+                  className="min-h-11 rounded border border-border px-4 text-sm font-semibold text-foreground hover:border-border disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loadingHistory ? 'Loading…' : 'Refresh history'}
+                </Button>
+              )}
+            </div>
+
+            {history === null && (
+              <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
+                {loadingHistory
+                  ? 'Loading qualification history…'
+                  : 'No current qualification projection is available from the lifecycle backend.'}
+              </p>
+            )}
+
+            {history !== null && (
+              <div className="mt-5 grid gap-5 xl:grid-cols-2">
+                <section aria-labelledby="certification-status-heading">
+                  <h3 id="certification-status-heading" className="font-semibold text-foreground">
+                    Certification status
+                  </h3>
+                  {history.certifications.length === 0 ? (
+                    <p className="mt-3 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
+                      The lifecycle backend returned no certification projections for this member.
+                    </p>
+                  ) : (
+                    <div className="mt-3 overflow-x-auto rounded border border-border">
+                      <Table className="w-full border-collapse text-sm">
+                        <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <TableRow>
+                            <TableHead className="px-3 py-2">Credential</TableHead>
+                            <TableHead className="px-3 py-2">Status</TableHead>
+                            <TableHead className="px-3 py-2">Effective / expiration</TableHead>
+                            <TableHead className="px-3 py-2">Source / evidence</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {history.certifications.map((qualification) => (
+                            <TableRow
+                              key={qualification.credentialId}
+                              className="border-t border-border"
+                            >
+                              <TableCell className="px-3 py-3 font-medium text-foreground">
+                                {qualification.credentialName ??
+                                  `Credential #${qualification.credentialId}`}
+                              </TableCell>
+                              <TableCell className="px-3 py-3">
+                                <span
+                                  className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusClass(qualification.status)}`}
+                                >
+                                  {statusLabel(qualification.status)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
+                                <div>{displayValue(qualification.effectiveOn)}</div>
+                                <div className="mt-1 text-muted-foreground">
+                                  expires {displayValue(qualification.expiresOn)}
+                                </div>
+                              </TableCell>
+                              <TableCell className="px-3 py-3 text-foreground">
+                                <div>{displayValue(qualification.evidenceSource)}</div>
+                                <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                                  {displayValue(qualification.evidenceReference)}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </section>
+
+                <section aria-labelledby="specialty-status-heading">
+                  <h3 id="specialty-status-heading" className="font-semibold text-foreground">
+                    Specialty qualification status
+                  </h3>
+                  {history.specialties.length === 0 ? (
+                    <p className="mt-3 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
+                      The lifecycle backend returned no specialty qualification projections for this
+                      member.
+                    </p>
+                  ) : (
+                    <div className="mt-3 overflow-x-auto rounded border border-border">
+                      <Table className="w-full border-collapse text-sm">
+                        <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <TableRow>
+                            <TableHead className="px-3 py-2">Specialty code</TableHead>
+                            <TableHead className="px-3 py-2">Status</TableHead>
+                            <TableHead className="px-3 py-2">Effective / expiration</TableHead>
+                            <TableHead className="px-3 py-2">Source / evidence</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {history.specialties.map((specialty) => (
+                            <TableRow
+                              key={specialty.specialtyCode}
+                              className="border-t border-border"
+                            >
+                              <TableCell className="px-3 py-3 font-mono text-xs font-semibold text-foreground">
+                                {specialty.specialtyCode}
+                              </TableCell>
+                              <TableCell className="px-3 py-3">
+                                <span
+                                  className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusClass(specialty.status)}`}
+                                >
+                                  {statusLabel(specialty.status)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
+                                <div>{specialty.effectiveOn}</div>
+                                <div className="mt-1 text-muted-foreground">
+                                  expires {displayValue(specialty.expiresOn)}
+                                </div>
+                              </TableCell>
+                              <TableCell className="px-3 py-3 text-foreground">
+                                <div>{specialty.evidenceSource}</div>
+                                <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                                  {displayValue(specialty.evidenceReference)}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
+          </section>
+
+          <section
+            aria-labelledby="qualification-history-heading"
+            className="rounded-xl border border-border bg-card p-5"
+          >
             <p className="text-xs font-semibold uppercase tracking-wider text-info">
-              Projected evidence
+              Immutable audit trail
             </p>
             <h2
-              id="qualification-status-heading"
+              id="qualification-history-heading"
               className="mt-1 font-heading text-xl text-foreground"
             >
-              Current status
+              Qualification history
             </h2>
             <p className="mt-2 max-w-3xl text-sm text-foreground">
-              Effective, expiration, and status values are displayed only from the Worker&apos;s
-              effective-dated projection.
+              Each lifecycle event retains its effective date, expiration, source/evidence, reason,
+              operator subject, and recorded time. Historical evidence is not edited in place.
             </p>
-          </div>
-          {selectedMember !== null && (
-            <Button
-              type="button"
-              onClick={() => void loadHistory(selectedMember.id)}
-              disabled={loadingHistory}
-              className="min-h-11 rounded border border-border px-4 text-sm font-semibold text-foreground hover:border-border disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loadingHistory ? 'Loading…' : 'Refresh history'}
-            </Button>
-          )}
-        </div>
 
-        {history === null && (
-          <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
-            {loadingHistory
-              ? 'Loading qualification history…'
-              : 'No current qualification projection is available from the lifecycle backend.'}
-          </p>
-        )}
-
-        {history !== null && (
-          <div className="mt-5 grid gap-5 xl:grid-cols-2">
-            <section aria-labelledby="certification-status-heading">
-              <h3 id="certification-status-heading" className="font-semibold text-foreground">
-                Certification status
-              </h3>
-              {history.certifications.length === 0 ? (
-                <p className="mt-3 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
-                  The lifecycle backend returned no certification projections for this member.
-                </p>
-              ) : (
-                <div className="mt-3 overflow-x-auto rounded border border-border">
-                  <Table className="w-full border-collapse text-sm">
-                    <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <TableRow>
-                        <TableHead className="px-3 py-2">Credential</TableHead>
-                        <TableHead className="px-3 py-2">Status</TableHead>
-                        <TableHead className="px-3 py-2">Effective / expiration</TableHead>
-                        <TableHead className="px-3 py-2">Source / evidence</TableHead>
+            {history === null ? (
+              <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
+                No qualification history is displayed until the lifecycle backend returns an
+                auditable response.
+              </p>
+            ) : history.events.length === 0 ? (
+              <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
+                The lifecycle backend returned no qualification history for this member.
+              </p>
+            ) : (
+              <div className="mt-5 overflow-x-auto rounded border border-border">
+                <Table className="w-full border-collapse text-sm">
+                  <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <TableRow>
+                      <TableHead className="px-3 py-2">Effective</TableHead>
+                      <TableHead className="px-3 py-2">Event</TableHead>
+                      <TableHead className="px-3 py-2">Credential / specialty</TableHead>
+                      <TableHead className="px-3 py-2">Expiration</TableHead>
+                      <TableHead className="px-3 py-2">Source / evidence</TableHead>
+                      <TableHead className="px-3 py-2">Reason / audit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {history.events.map((qualificationEvent) => (
+                      <TableRow
+                        key={qualificationEvent.id}
+                        className="border-t border-border align-top"
+                      >
+                        <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
+                          {qualificationEvent.effectiveOn}
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-foreground">
+                          {eventKindLabel(qualificationEvent.kind)}
+                        </TableCell>
+                        <TableCell className="px-3 py-3 font-medium text-foreground">
+                          {eventTargetLabel(qualificationEvent)}
+                        </TableCell>
+                        <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
+                          {displayValue(qualificationEvent.expiresOn)}
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-foreground">
+                          <div>{qualificationEvent.evidenceSource}</div>
+                          <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                            {displayValue(qualificationEvent.evidenceReference)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-foreground">
+                          <div>{qualificationEvent.reason}</div>
+                          <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                            event {qualificationEvent.id} · {qualificationEvent.actorSubject} ·{' '}
+                            {displayTimestamp(qualificationEvent.createdAt)}
+                          </div>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {history.certifications.map((qualification) => (
-                        <TableRow
-                          key={qualification.credentialId}
-                          className="border-t border-border"
-                        >
-                          <TableCell className="px-3 py-3 font-medium text-foreground">
-                            {qualification.credentialName ??
-                              `Credential #${qualification.credentialId}`}
-                          </TableCell>
-                          <TableCell className="px-3 py-3">
-                            <span
-                              className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusClass(qualification.status)}`}
-                            >
-                              {statusLabel(qualification.status)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
-                            <div>{displayValue(qualification.effectiveOn)}</div>
-                            <div className="mt-1 text-muted-foreground">
-                              expires {displayValue(qualification.expiresOn)}
-                            </div>
-                          </TableCell>
-                          <TableCell className="px-3 py-3 text-foreground">
-                            <div>{displayValue(qualification.evidenceSource)}</div>
-                            <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
-                              {displayValue(qualification.evidenceReference)}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </section>
-
-            <section aria-labelledby="specialty-status-heading">
-              <h3 id="specialty-status-heading" className="font-semibold text-foreground">
-                Specialty qualification status
-              </h3>
-              {history.specialties.length === 0 ? (
-                <p className="mt-3 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
-                  The lifecycle backend returned no specialty qualification projections for this
-                  member.
-                </p>
-              ) : (
-                <div className="mt-3 overflow-x-auto rounded border border-border">
-                  <Table className="w-full border-collapse text-sm">
-                    <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <TableRow>
-                        <TableHead className="px-3 py-2">Specialty code</TableHead>
-                        <TableHead className="px-3 py-2">Status</TableHead>
-                        <TableHead className="px-3 py-2">Effective / expiration</TableHead>
-                        <TableHead className="px-3 py-2">Source / evidence</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {history.specialties.map((specialty) => (
-                        <TableRow key={specialty.specialtyCode} className="border-t border-border">
-                          <TableCell className="px-3 py-3 font-mono text-xs font-semibold text-foreground">
-                            {specialty.specialtyCode}
-                          </TableCell>
-                          <TableCell className="px-3 py-3">
-                            <span
-                              className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusClass(specialty.status)}`}
-                            >
-                              {statusLabel(specialty.status)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
-                            <div>{specialty.effectiveOn}</div>
-                            <div className="mt-1 text-muted-foreground">
-                              expires {displayValue(specialty.expiresOn)}
-                            </div>
-                          </TableCell>
-                          <TableCell className="px-3 py-3 text-foreground">
-                            <div>{specialty.evidenceSource}</div>
-                            <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
-                              {displayValue(specialty.evidenceReference)}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </section>
-          </div>
-        )}
-      </section>
-
-      <section
-        aria-labelledby="qualification-history-heading"
-        className="rounded-xl border border-border bg-card p-5"
-      >
-        <p className="text-xs font-semibold uppercase tracking-wider text-info">
-          Immutable audit trail
-        </p>
-        <h2
-          id="qualification-history-heading"
-          className="mt-1 font-heading text-xl text-foreground"
-        >
-          Qualification history
-        </h2>
-        <p className="mt-2 max-w-3xl text-sm text-foreground">
-          Each lifecycle event retains its effective date, expiration, source/evidence, reason,
-          operator subject, and recorded time. Historical evidence is not edited in place.
-        </p>
-
-        {history === null ? (
-          <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
-            No qualification history is displayed until the lifecycle backend returns an auditable
-            response.
-          </p>
-        ) : history.events.length === 0 ? (
-          <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
-            The lifecycle backend returned no qualification history for this member.
-          </p>
-        ) : (
-          <div className="mt-5 overflow-x-auto rounded border border-border">
-            <Table className="w-full border-collapse text-sm">
-              <TableHeader className="bg-card text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <TableRow>
-                  <TableHead className="px-3 py-2">Effective</TableHead>
-                  <TableHead className="px-3 py-2">Event</TableHead>
-                  <TableHead className="px-3 py-2">Credential / specialty</TableHead>
-                  <TableHead className="px-3 py-2">Expiration</TableHead>
-                  <TableHead className="px-3 py-2">Source / evidence</TableHead>
-                  <TableHead className="px-3 py-2">Reason / audit</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.events.map((qualificationEvent) => (
-                  <TableRow
-                    key={qualificationEvent.id}
-                    className="border-t border-border align-top"
-                  >
-                    <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
-                      {qualificationEvent.effectiveOn}
-                    </TableCell>
-                    <TableCell className="px-3 py-3 text-foreground">
-                      {eventKindLabel(qualificationEvent.kind)}
-                    </TableCell>
-                    <TableCell className="px-3 py-3 font-medium text-foreground">
-                      {eventTargetLabel(qualificationEvent)}
-                    </TableCell>
-                    <TableCell className="px-3 py-3 font-mono text-xs text-foreground">
-                      {displayValue(qualificationEvent.expiresOn)}
-                    </TableCell>
-                    <TableCell className="px-3 py-3 text-foreground">
-                      <div>{qualificationEvent.evidenceSource}</div>
-                      <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
-                        {displayValue(qualificationEvent.evidenceReference)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-3 py-3 text-foreground">
-                      <div>{qualificationEvent.reason}</div>
-                      <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
-                        event {qualificationEvent.id} · {qualificationEvent.actorSubject} ·{' '}
-                        {displayTimestamp(qualificationEvent.createdAt)}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </section>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
+}
+
+function qualificationEligibilityLabel(value: unknown) {
+  return value === true ? 'Eligible' : value === false ? 'Ineligible' : 'Unknown';
+}
+
+function FocusedImpactPanel({ open, title, children }: ComponentProps<typeof TaskPanel>) {
+  return open ? (
+    <section aria-label={title} className="rounded border border-border p-3">
+      <h3 className="mb-3 font-semibold">{title}</h3>
+      {children}
+    </section>
+  ) : null;
 }

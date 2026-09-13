@@ -3,6 +3,7 @@ import {
   BidConfigurationSettingsSchema,
   type BidConfigurationSettingsV2,
   type BidConfigurationSettingsV3,
+  type BidDefinitionContent,
   type BidParticipation,
   type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
@@ -20,6 +21,7 @@ import {
   annualBidPolicyDocuments,
   assignmentObservations,
   bidSessionPolicySnapshots,
+  bidSessions,
   bidYears,
   credentialCatalogMetadata,
   credentials,
@@ -40,6 +42,12 @@ import {
   type AuthoritativeStaffingBaselineEvaluation,
   evaluateAuthoritativeStaffingBaseline,
 } from './authoritative-staffing-baseline.js';
+import {
+  bidDefinitionContextHash,
+  snapshotMatchesBidDefinition,
+} from './bid-definition-context.js';
+import { validateBidDefinitionSnapshotPin } from './bid-definition-pin.js';
+import { loadBidDefinitionVersionFromDb } from './bid-definition-version.js';
 import { derivePersonnelMemberAsOf } from './personnel-lifecycle.js';
 import { type DecodedPositionRule, decodeRuleBookRows } from './position-rule.js';
 import {
@@ -52,6 +60,9 @@ import {
 
 export interface RuleBookCoverageInput {
   ruleBookVersion: string;
+  /** Editable definitions can declare their template before adding rules.
+   * Omitted legacy callers retain their exact inference behavior. */
+  declaredTemplateVersion?: string;
   rules: readonly {
     id?: number;
     ruleBookVersion: string;
@@ -230,7 +241,10 @@ export async function loadRuleBookPolicyDiff(
  */
 export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBookCoverage {
   const decoded = decodeRuleBookRows(input.rules);
-  const templateVersions = uniqueSorted(input.rules.map((rule) => rule.templateVersion));
+  const templateVersions = uniqueSorted([
+    ...input.rules.map((rule) => rule.templateVersion),
+    ...(input.declaredTemplateVersion === undefined ? [] : [input.declaredTemplateVersion]),
+  ]);
   const templateVersion = templateVersions.length === 1 ? (templateVersions[0] ?? null) : null;
   const templateVersionIssues: string[] = [];
   if (templateVersions.length === 0) {
@@ -480,28 +494,47 @@ export function validateAnnualPolicySourceReferences(
   snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }>,
   livePolicy: BidConfigurationSettingsV3['livePolicy'],
 ): string[] {
+  return validateAnnualPolicyReferences({ kind: 'run', snapshot }, livePolicy);
+}
+
+/** The same reference rules can inspect draft material without inventing a
+ * Department population or treating absent member evidence as a passed gate. */
+export function validateAnnualPolicyDefinitionReferences(
+  material: Extract<BidSessionPolicySnapshot, { v: 3 }>['ruleBookMaterial'],
+  livePolicy: BidConfigurationSettingsV3['livePolicy'],
+): string[] {
+  return validateAnnualPolicyReferences({ kind: 'definition', material }, livePolicy);
+}
+
+function validateAnnualPolicyReferences(
+  context:
+    | { kind: 'run'; snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }> }
+    | {
+        kind: 'definition';
+        material: Extract<BidSessionPolicySnapshot, { v: 3 }>['ruleBookMaterial'];
+      },
+  livePolicy: BidConfigurationSettingsV3['livePolicy'],
+): string[] {
+  const snapshot = context.kind === 'run' ? context.snapshot : null;
+  const material = context.kind === 'run' ? context.snapshot.ruleBookMaterial : context.material;
+  const members = snapshot?.members ?? [];
   const errors: string[] = [];
-  const allMemberIds = new Set(snapshot.members.map((member) => member.memberId));
+  const allMemberIds = new Set(members.map((member) => member.memberId));
   const participantIds = new Set(
-    snapshot.members
-      .filter((member) => member.pool !== 'EXCLUDED')
-      .map((member) => member.memberId),
+    members.filter((member) => member.pool !== 'EXCLUDED').map((member) => member.memberId),
   );
-  const biddablePositionIds = new Set(
-    snapshot.ruleBookMaterial.rules.map((rule) => rule.positionId),
-  );
-  const memberById = new Map(snapshot.members.map((member) => [member.memberId, member]));
-  const positionById = new Map(
-    snapshot.ruleBookMaterial.positions.map((position) => [position.id, position]),
-  );
+  const biddablePositionIds = new Set(material.rules.map((rule) => rule.positionId));
+  const memberById = new Map(members.map((member) => [member.memberId, member]));
+  const positionById = new Map(material.positions.map((position) => [position.id, position]));
   const stagedMembers = livePolicy.stages.flatMap((stage) => stage.memberIds);
   const stagedMemberIds = new Set(stagedMembers);
   if (
-    stagedMembers.length !== participantIds.size ||
-    [...participantIds].some((memberId) => !stagedMemberIds.has(memberId))
+    snapshot !== null &&
+    (stagedMembers.length !== participantIds.size ||
+      [...participantIds].some((memberId) => !stagedMemberIds.has(memberId)))
   )
     errors.push('stage_member_population_mismatch');
-  if (stagedMembers.some((memberId) => !participantIds.has(memberId)))
+  if (snapshot !== null && stagedMembers.some((memberId) => !participantIds.has(memberId)))
     errors.push('stage_member_reference_invalid');
   if (
     livePolicy.stages.some((stage) =>
@@ -518,7 +551,7 @@ export function validateAnnualPolicySourceReferences(
     const rank = expectedRank.get(stage.kind);
     if (
       rank !== undefined &&
-      (stage.memberIds.some((id) => memberById.get(id)?.rank !== rank) ||
+      ((snapshot !== null && stage.memberIds.some((id) => memberById.get(id)?.rank !== rank)) ||
         stage.opportunityPositionIds.some((id) => positionById.get(id)?.rankRequired !== rank))
     )
       errors.push('stage_rank_category_mismatch');
@@ -529,6 +562,7 @@ export function validateAnnualPolicySourceReferences(
       errors.push('stage_shift_applicability_mismatch');
   }
   if (
+    snapshot !== null &&
     livePolicy.actionPermissions.some((grant) =>
       grant.actorMemberIds.some((memberId) => !allMemberIds.has(memberId)),
     )
@@ -550,15 +584,15 @@ export function validateAnnualPolicySourceReferences(
     )
       errors.push('specialty_position_reference_invalid');
     const credentialNames = new Set(
-      snapshot.authoringCredentialNames ??
-        snapshot.members.flatMap((member) => member.credentialNames),
+      snapshot?.authoringCredentialNames ?? members.flatMap((member) => member.credentialNames),
     );
     const specialtyCodes = new Set(
-      snapshot.members.flatMap((member) =>
+      members.flatMap((member) =>
         (member.specialtyQualifications ?? []).map((qualification) => qualification.specialtyCode),
       ),
     );
     if (
+      snapshot !== null &&
       annual.specialties?.some(
         (specialty) =>
           specialty.requiredCredentialNames.some((name) => !credentialNames.has(name)) ||
@@ -581,6 +615,7 @@ export function validateAnnualPolicySourceReferences(
     )
       errors.push('specialty_credential_reference_invalid');
     if (
+      snapshot !== null &&
       annual.specialties?.some((specialty) =>
         specialty.requiredSpecialtyCodes.some((code) => !specialtyCodes.has(code)),
       )
@@ -660,6 +695,26 @@ export async function loadConfiguredBidYearPolicy(
     .where(eq(bidYears.year, bidYear))
     .get();
   if (year === undefined) return { ok: false, code: 'bid_year_not_found' };
+  return loadExplicitBidPolicySource(db, year, mode);
+}
+
+/** Shared validation for the legacy year adapter and an authenticated saved
+ * version. The caller chooses source identity; readiness checks stay intact. */
+export async function loadExplicitBidPolicySource(
+  db: DB,
+  year: {
+    year: number;
+    ruleBookVersion: string | null;
+    positionTemplateVersion: string | null;
+    configJson: string | null;
+    configurationRevision: number;
+    annualPolicyDocumentId: string | null;
+  },
+  mode: BidSessionMode,
+): Promise<
+  { ok: true; policy: ConfiguredBidYearPolicy } | { ok: false; code: ConfiguredBidYearPolicyError }
+> {
+  const bidYear = year.year;
   if (year.ruleBookVersion === null || year.positionTemplateVersion === null) {
     return { ok: false, code: 'bid_configuration_unconfigured' };
   }
@@ -850,7 +905,20 @@ export async function prepareBidSessionPolicySnapshot(
 ): Promise<BidSessionPolicySnapshotPreparation> {
   const configured = await loadConfiguredBidYearPolicy(db, bidYear, mode);
   if (!configured.ok) return { ok: false, code: configured.code };
-  const { policy } = configured;
+  return prepareConfiguredBidPolicySnapshot(db, configured.policy, capturedAtMs, mode);
+}
+
+/** Reuses every existing evidence, baseline, pool and eligibility freeze rule.
+ * Saved versions supply their captured decisions; legacy callers retain the
+ * dated year source query. This function never retargets bid_years. */
+export async function prepareConfiguredBidPolicySnapshot(
+  db: DB,
+  policy: ConfiguredBidYearPolicy,
+  capturedAtMs: number,
+  mode: BidSessionMode,
+  sourceDecisions?: BidDefinitionContent['sourceDecisions'],
+): Promise<BidSessionPolicySnapshotPreparation> {
+  const bidYear = policy.bidYear;
   const { coverage } = policy;
   const templateVersion = policy.positionTemplateVersion;
   const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
@@ -1266,9 +1334,11 @@ export async function prepareBidSessionPolicySnapshot(
       };
     })
     .sort((left, right) => left.memberId - right.memberId);
-  const unresolvedSources = await db.all<{ issueId: string }>(
-    sql`SELECT d.issue_id AS issueId FROM bid_source_decisions d WHERE d.bid_year=${bidYear} AND d.status='OPEN' AND d.revision=(SELECT MAX(r.revision) FROM bid_source_decisions r WHERE r.bid_year=d.bid_year AND r.issue_id=d.issue_id)`,
-  );
+  const unresolvedSources =
+    sourceDecisions?.filter((decision) => decision.status === 'OPEN') ??
+    (await db.all<{ issueId: string }>(
+      sql`SELECT d.issue_id AS issueId FROM bid_source_decisions d WHERE d.bid_year=${bidYear} AND d.status='OPEN' AND d.revision=(SELECT MAX(r.revision) FROM bid_source_decisions r WHERE r.bid_year=d.bid_year AND r.issue_id=d.issue_id)`,
+    ));
   if (unresolvedSources.length) return { ok: false, code: 'policy_source_decision_required' };
   const disputed = await db.all<{ memberId: number }>(sql`
     SELECT DISTINCT r.member_id AS memberId FROM targetsolutions_rows r
@@ -1419,13 +1489,57 @@ export async function loadBidSessionPolicySnapshot(
       ruleBookRevision: bidSessionPolicySnapshots.ruleBookRevision,
       snapshotJson: bidSessionPolicySnapshots.snapshotJson,
       capturedAt: bidSessionPolicySnapshots.capturedAt,
+      bidVersionId: bidSessionPolicySnapshots.bidVersionId,
+      bidVersionSha256: bidSessionPolicySnapshots.bidVersionSha256,
+      snapshotSha256: bidSessionPolicySnapshots.snapshotSha256,
+      contextSha256: bidSessionPolicySnapshots.contextSha256,
     })
     .from(bidSessionPolicySnapshots)
     .where(eq(bidSessionPolicySnapshots.bidSessionId, bidSessionId))
     .get();
   if (row === undefined) return { snapshot: null, error: 'missing' };
+  const pinColumns = [
+    row.bidVersionId,
+    row.bidVersionSha256,
+    row.snapshotSha256,
+    row.contextSha256,
+  ];
+  if (pinColumns.some((value) => value !== null)) {
+    const session = await db
+      .select({ year: bidSessions.bidYear })
+      .from(bidSessions)
+      .where(eq(bidSessions.id, bidSessionId))
+      .get();
+    if (!session || typeof row.bidVersionId !== 'string')
+      return { snapshot: null, error: 'invalid' };
+    const version = await loadBidDefinitionVersionFromDb(db, session.year, row.bidVersionId);
+    if (!version.ok) return { snapshot: null, error: 'invalid' };
+    const validated = validateBidDefinitionSnapshotPin({
+      row: { ...row, bidSessionId, bidYear: session.year, capturedAtMs: row.capturedAt.getTime() },
+      expectedBidSessionId: bidSessionId,
+      version: {
+        id: version.row.id,
+        bidYear: version.row.bid_year,
+        contentSha256: version.sha256,
+        ruleBookVersion: version.row.rule_book_version,
+        ruleBookRevision: version.row.rule_book_revision,
+        positionTemplateVersion: version.row.position_template_version,
+      },
+    });
+    if (
+      !validated.ok ||
+      validated.kind !== 'pinned' ||
+      bidDefinitionContextHash(validated.snapshot) !== row.contextSha256 ||
+      !snapshotMatchesBidDefinition(validated.snapshot, version)
+    )
+      return { snapshot: null, error: 'invalid' };
+    return { snapshot: validated.snapshot, error: null };
+  }
   const snapshot = parseBidSessionPolicySnapshot(row.snapshotJson);
+  const owned = await db.get(sql`SELECT id FROM bid_definition_versions
+    WHERE rule_book_version=${row.ruleBookVersion} OR position_template_version=${row.positionTemplateVersion} LIMIT 1`);
   if (
+    (owned !== undefined && owned !== null) ||
     snapshot === null ||
     snapshot.ruleBookVersion !== row.ruleBookVersion ||
     snapshot.positionTemplateVersion !== row.positionTemplateVersion ||

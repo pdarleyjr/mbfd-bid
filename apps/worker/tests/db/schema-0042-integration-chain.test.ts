@@ -92,9 +92,9 @@ function expectFinalIntegrity(sqlite: Database.Database): void {
   );
 }
 
-describe('integration migration chain 0038 through 0058', () => {
+describe('integration migration chain 0038 through 0061', () => {
   it('is gap-free and applies from a fresh database through the final candidate', () => {
-    expect(migrationFiles().slice(-21)).toEqual([
+    expect(migrationFiles().slice(-24)).toEqual([
       '0038_live_policy_participation_and_amendments.sql',
       '0039_restore_rule_book_participation_guards.sql',
       '0040_annual_bid_operations.sql',
@@ -116,12 +116,15 @@ describe('integration migration chain 0038 through 0058', () => {
       '0056_targetsolutions_reconciliation.sql',
       '0057_admin_working_drafts.sql',
       '0058_bid_source_decisions.sql',
+      '0059_bid_definition_versions.sql',
+      '0060_bid_definition_run_pins.sql',
+      '0061_bid_context_source_revision.sql',
     ]);
 
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
-    const applied = applyThrough(sqlite, '0058_bid_source_decisions.sql');
-    expect(applied.at(-1)).toBe('0058_bid_source_decisions.sql');
+    const applied = applyThrough(sqlite, '0061_bid_context_source_revision.sql');
+    expect(applied.at(-1)).toBe('0061_bid_context_source_revision.sql');
     expectFinalIntegrity(sqlite);
 
     // A D1 migration ledger would record every applied filename; a second
@@ -230,6 +233,18 @@ describe('integration migration chain 0038 through 0058', () => {
       (f) => f > '0044_annual_policy_session_evidence.sql',
     ))
       applyOne(sqlite, file);
+    // Additive provenance columns stay explicitly NULL. Compare every old
+    // value, including the exact historical JSON string, without backfilling.
+    before.set(
+      'bid_session_policy_snapshots',
+      (before.get('bid_session_policy_snapshots') as Record<string, unknown>[]).map((row) => ({
+        ...row,
+        bid_version_id: null,
+        bid_version_sha256: null,
+        snapshot_sha256: null,
+        context_sha256: null,
+      })),
+    );
     for (const table of tables)
       expect(sqlite.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(), table).toEqual(
         before.get(table),

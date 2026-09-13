@@ -18,8 +18,15 @@ export function usePersonnelProjectionRefresh() {
   return async (kind: 'personnel' | 'qualification' = 'personnel') => {
     const keys =
       kind === 'personnel'
-        ? ['members', 'current-roster', 'organization', 'annual-plan', 'service-evidence']
-        : ['credentials', 'annual-plan'];
+        ? [
+            'members',
+            'department',
+            'current-roster',
+            'organization',
+            'annual-plan',
+            'service-evidence',
+          ]
+        : ['credentials', 'department', 'annual-plan'];
     await Promise.all([
       ...keys.map((key) => client.invalidateQueries({ queryKey: ['admin', key] })),
       invalidateWorkingBidBoards(

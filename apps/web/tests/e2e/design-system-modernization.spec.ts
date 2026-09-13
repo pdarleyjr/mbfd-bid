@@ -60,6 +60,18 @@ test('dense dynamic Board preserves all assignments, search, disclosure and resp
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('**/api/admin/annual-plan', (route) => route.fulfill({ json: { plans: [] } }));
+  await page.route('**/api/admin/department/current-roster*', (route) =>
+    route.fulfill({
+      json: {
+        asOf: '2026-09-12',
+        updatedAt: Date.UTC(2026, 8, 12),
+        positions: [],
+        unassignedMembers: [],
+        organizationUnits: [],
+        summary: { totalPositions: 0, occupiedPositions: 0, vacantPositions: 0 },
+      },
+    }),
+  );
   await page.route('**/api/admin/bid-board?**', (route) =>
     route.fulfill({
       json: {
@@ -163,8 +175,14 @@ test('dense dynamic Board preserves all assignments, search, disclosure and resp
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: info.outputPath(`dashboard-${width}.png`), fullPage: true });
   }
-  await page.getByRole('link', { name: 'Upcoming Bid', exact: true }).click();
-  await expect(page).toHaveURL(/view=upcoming/);
+  const boardLink = page
+    .getByTestId('admin-sidebar')
+    .getByRole('link', { name: 'Bid board', exact: true });
+  if (!(await boardLink.isVisible())) {
+    await page.getByRole('button', { name: 'Expand Bid menu' }).click();
+  }
+  await boardLink.click();
+  await expect(page).toHaveURL(/\/admin\/bid-board/);
   expect(errors).toEqual([]);
 });
 

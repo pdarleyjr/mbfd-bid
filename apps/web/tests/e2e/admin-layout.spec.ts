@@ -133,21 +133,15 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     const nav = page
       .getByRole('navigation', { name: 'Admin navigation', exact: true })
       .locator('visible=true');
-    for (const name of [
-      'Today',
-      'People',
-      'Staffing',
-      'Annual Bid',
-      'History & Reports',
-      'Docs & Manual',
-      'Settings',
-    ]) {
+    for (const name of ['Today', 'Department', 'Bid', 'History', 'Docs & Manual', 'Settings']) {
       await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
     }
-    await nav.getByRole('button', { name: 'Expand Staffing menu' }).click();
-    await expect(nav.getByRole('link', { name: 'Current assignments', exact: true })).toBeVisible();
-    await nav.getByRole('button', { name: 'Collapse Staffing menu' }).click();
-    await expect(nav.getByRole('link', { name: 'Current assignments', exact: true })).toHaveCount(
+    await nav.getByRole('button', { name: 'Expand Department menu' }).click();
+    await expect(
+      nav.getByRole('link', { name: 'Roster & organization', exact: true }),
+    ).toBeVisible();
+    await nav.getByRole('button', { name: 'Collapse Department menu' }).click();
+    await expect(nav.getByRole('link', { name: 'Roster & organization', exact: true })).toHaveCount(
       0,
     );
   });
@@ -165,10 +159,13 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     ).toBeVisible();
     const search = page.getByRole('searchbox', { name: 'Search the Administrator Guide' });
     await search.fill('hold presentation');
+    await page
+      .getByRole('navigation', { name: 'Guide sections' })
+      .getByRole('link', { name: 'Live Presentation', exact: true })
+      .click();
     await expect(
       page.getByRole('heading', { name: 'Live Presentation', exact: true }),
     ).toBeVisible();
-    await page.getByRole('button', { name: 'Show how to use it', exact: true }).click();
     await expect(
       page.getByText('HOLD DISPLAY is not the same as pausing Bid execution'),
     ).toBeVisible();
@@ -196,7 +193,7 @@ test.describe('Admin dashboard — role=admin JWT', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(mobileNavigation).toBeVisible();
     await expect(
-      mobileNavigation.getByRole('link', { name: 'Staffing', exact: true }),
+      mobileNavigation.getByRole('link', { name: 'Department', exact: true }),
     ).toBeVisible();
   });
 });
