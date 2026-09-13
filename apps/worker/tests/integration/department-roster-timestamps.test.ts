@@ -1,3 +1,4 @@
+import { deepStrictEqual } from 'node:assert';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadDepartmentRosterProjection } from '../../src/lib/department-roster.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
@@ -33,7 +34,7 @@ describe('Department source update timestamp units', () => {
     insertMember(1, NEW_MS / 1000);
     const before = h.sqlite.serialize();
     expect(await timestamp()).toBe(NEW_MS);
-    expect(h.sqlite.serialize()).toEqual(before);
+    deepStrictEqual(h.sqlite.serialize(), before);
   });
 
   it('lets a newer seconds-based member update advance older staffing milliseconds', async () => {
