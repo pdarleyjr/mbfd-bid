@@ -47,6 +47,31 @@ type SpecialtyState = {
     suspended_turn: boolean;
     resume: { member_id: number; queue_cursor: number; current_phase: string };
   };
+  specialty_coverage?:
+    | {
+        availability: 'AVAILABLE';
+        source: 'FROZEN_SESSION_SNAPSHOT';
+        status: 'FEASIBLE' | 'AT_RISK' | 'SHORTAGE';
+        total_specialty_seat_count: number;
+        filled_specialty_seat_count: number;
+        remaining_specialty_seat_count: number;
+        maximum_remaining_covered_count: number;
+        guaranteed_uncovered_seat_count: number;
+        unmatched_seat_ids: readonly string[];
+        critical_member_ids: readonly number[];
+        rule_groups: ReadonlyArray<{
+          rule_group_id: string;
+          total_seat_count: number;
+          filled_seat_count: number;
+          remaining_seat_count: number;
+          simple_eligible_member_ids: readonly number[];
+        }>;
+      }
+    | {
+        availability: 'UNAVAILABLE';
+        source: 'FROZEN_SESSION_SNAPSHOT';
+        code: string;
+      };
 };
 
 interface Props {
@@ -214,6 +239,49 @@ export function AnnualLiveControls(props: Props) {
         <p className="mb-4 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-900">
           MOCK REHEARSAL — canonical commands remain isolated from staffing and portal write-back.
         </p>
+      ) : null}
+      {state?.specialty_coverage ? (
+        <section
+          className="mb-4 rounded border border-border bg-muted/30 px-3 py-2 text-sm"
+          data-testid="specialty-coverage-advisory"
+          aria-live="polite"
+        >
+          <h2 className="font-semibold text-foreground">Specialty coverage advisory</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Read-only advisory from the frozen session snapshot and canonical fills. It does not
+            approve, block, or change an operator action.
+          </p>
+          {state.specialty_coverage.availability === 'UNAVAILABLE' ? (
+            <p className="mt-2 text-sm text-warning">
+              Frozen specialty coverage is unavailable: {state.specialty_coverage.code}.
+            </p>
+          ) : (
+            <div className="mt-2 space-y-1 text-sm">
+              <p>
+                Status: <strong>{state.specialty_coverage.status.replace('_', ' ')}</strong> ·{' '}
+                {state.specialty_coverage.filled_specialty_seat_count} of{' '}
+                {state.specialty_coverage.total_specialty_seat_count} specialty seats filled ·{' '}
+                {state.specialty_coverage.remaining_specialty_seat_count} remaining.
+              </p>
+              {state.specialty_coverage.guaranteed_uncovered_seat_count > 0 ? (
+                <p className="text-warning">
+                  {state.specialty_coverage.guaranteed_uncovered_seat_count} remaining specialty{' '}
+                  {state.specialty_coverage.guaranteed_uncovered_seat_count === 1
+                    ? 'seat is'
+                    : 'seats are'}{' '}
+                  uncovered by the frozen eligibility graph.
+                </p>
+              ) : null}
+              {state.specialty_coverage.critical_member_ids.length > 0 ? (
+                <p>
+                  {state.specialty_coverage.critical_member_ids.length} frozen candidate
+                  {state.specialty_coverage.critical_member_ids.length === 1 ? ' is' : 's are'}{' '}
+                  critical to the remaining coverage.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </section>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         {(

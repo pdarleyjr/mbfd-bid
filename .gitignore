@@ -61,6 +61,7 @@ Thumbs.db
 desktop.ini
 
 # Test artifacts
+/tmp/unified-platform/
 coverage/
 playwright-report/
 playwright/.cache/

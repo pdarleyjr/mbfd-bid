@@ -48,6 +48,163 @@ describe('frozen live stages', () => {
     });
   });
 
+  it('rejects typed provenance without a resolved ordering authority instead of falling back to legacy seniority', () => {
+    const pinned = {
+      ...snapshot,
+      members: [
+        { memberId: 1, pool: 'FF', rscSeniority: 1, rankSeniority: 2 },
+        { memberId: 2, pool: 'FF', rscSeniority: 2, rankSeniority: 1 },
+      ],
+    } as unknown as BidSessionPolicySnapshot;
+    const authored = {
+      ...policy,
+      stages: [
+        {
+          id: 'CAPTAINS',
+          label: 'Synthetic captains',
+          order: 0,
+          memberIds: [1, 2],
+          opportunityPositionIds: ['A101'],
+          kind: 'CAPTAIN',
+          participantProvenance: {
+            v: 1,
+            stageId: 'CAPTAINS',
+            sourceRef: 'synthetic-policy:captain-stage',
+            participantSource: {
+              type: 'FILTER',
+              active: true,
+              bidParticipation: 'BIDDABLE',
+              ranks: ['CPT'],
+            },
+            ordering: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+            pinnedEvaluationCapturedAtMs: 1,
+            resolvedMemberIds: [1, 2],
+          },
+        },
+      ],
+    } as unknown as FrozenLiveBidPolicy;
+
+    expect(computeFrozenStageOrder(pinned, authored)).toEqual({
+      ok: false,
+      code: 'stage_ordering_authority_unresolved',
+    });
+  });
+
+  it('honors rank-seniority only when the frozen policy carries the resolved source-decision identity', () => {
+    const pinned = {
+      ...snapshot,
+      members: [
+        { memberId: 1, pool: 'FF', rscSeniority: 1, rankSeniority: 2 },
+        { memberId: 2, pool: 'FF', rscSeniority: 2, rankSeniority: 1 },
+      ],
+    } as unknown as BidSessionPolicySnapshot;
+    const orderingAuthority = {
+      v: 1 as const,
+      comparator: [{ key: 'RANK_SENIORITY' as const, direction: 'ASC' as const }],
+      sourceDecision: {
+        issueId: 'synthetic-governing-ordering-decision',
+        effectiveOn: '2027-01-01',
+      },
+    };
+    const authored = {
+      ...policy,
+      orderingAuthority,
+      stages: [
+        {
+          id: 'CAPTAINS',
+          label: 'Synthetic captains',
+          order: 0,
+          memberIds: [1, 2],
+          opportunityPositionIds: ['A101'],
+          kind: 'CAPTAIN',
+          participantProvenance: {
+            v: 1,
+            stageId: 'CAPTAINS',
+            sourceRef: 'synthetic-policy:captain-stage',
+            participantSource: {
+              type: 'FILTER',
+              active: true,
+              bidParticipation: 'BIDDABLE',
+              ranks: ['CPT'],
+            },
+            ordering: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+            orderingAuthority,
+            pinnedEvaluationCapturedAtMs: 1,
+            resolvedMemberIds: [1, 2],
+          },
+        },
+      ],
+    } as unknown as FrozenLiveBidPolicy;
+
+    expect(computeFrozenStageOrder(pinned, authored)).toEqual({
+      ok: true,
+      entries: [
+        { ordinal: 1, memberId: 2, stageId: 'CAPTAINS' },
+        { ordinal: 2, memberId: 1, stageId: 'CAPTAINS' },
+      ],
+    });
+  });
+
+  it.each([
+    {
+      name: 'a missing rank-seniority fact',
+      members: [
+        { memberId: 1, pool: 'FF', rscSeniority: 1, rankSeniority: null },
+        { memberId: 2, pool: 'FF', rscSeniority: 2, rankSeniority: 1 },
+      ],
+      code: 'stage_ordering_fact_missing',
+    },
+    {
+      name: 'a duplicate authored ordering key',
+      members: [
+        { memberId: 1, pool: 'FF', rscSeniority: 1, rankSeniority: 1 },
+        { memberId: 2, pool: 'FF', rscSeniority: 2, rankSeniority: 1 },
+      ],
+      code: 'stage_ordering_tie',
+    },
+  ] as const)('fails closed for $name', ({ members, code }) => {
+    const pinned = { ...snapshot, members } as unknown as BidSessionPolicySnapshot;
+    const orderingAuthority = {
+      v: 1 as const,
+      comparator: [{ key: 'RANK_SENIORITY' as const, direction: 'ASC' as const }],
+      sourceDecision: {
+        issueId: 'synthetic-governing-ordering-decision',
+        effectiveOn: '2027-01-01',
+      },
+    };
+    const authored = {
+      ...policy,
+      orderingAuthority,
+      stages: [
+        {
+          id: 'CAPTAINS',
+          label: 'Synthetic captains',
+          order: 0,
+          memberIds: [1, 2],
+          opportunityPositionIds: ['A101'],
+          kind: 'CAPTAIN',
+          participantProvenance: {
+            v: 1,
+            stageId: 'CAPTAINS',
+            sourceRef: 'synthetic-policy:captain-stage',
+            participantSource: {
+              type: 'FILTER',
+              active: true,
+              bidParticipation: 'BIDDABLE',
+              ranks: ['CPT'],
+            },
+            ordering: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+            orderingAuthority,
+            pinnedEvaluationCapturedAtMs: 1,
+            resolvedMemberIds: [1, 2],
+          },
+        },
+      ],
+    } as unknown as FrozenLiveBidPolicy;
+
+    expect(computeFrozenStageOrder(pinned, authored)).toEqual({ ok: false, code });
+  });
+
   it('fails closed for missing coverage and never makes a reserved position an opportunity', () => {
     expect(computeFrozenStageOrder(snapshot, null)).toEqual({
       ok: false,

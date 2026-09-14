@@ -92,6 +92,18 @@ test('independent board views preserve source boundaries at phone, tablet and de
   await page.route('**/api/admin/annual-plan', (route) =>
     route.fulfill({ json: { plans: [{ year: 2027, ruleBookVersion: '2027.1' }] } }),
   );
+  await page.route('**/api/admin/department/current-roster*', (route) =>
+    route.fulfill({
+      json: {
+        asOf: '2026-09-12',
+        updatedAt: now * 1000,
+        positions: [],
+        unassignedMembers: [],
+        organizationUnits: [],
+        summary: { totalPositions: 0, occupiedPositions: 0, vacantPositions: 0 },
+      },
+    }),
+  );
   await page.route('**/api/admin/bid-board?**', async (route) => {
     const url = new URL(route.request().url());
     const view = url.searchParams.get('view');
@@ -188,6 +200,7 @@ test('independent board views preserve source boundaries at phone, tablet and de
         .getByRole('link', { name: 'Bid board', exact: true })
         .click();
       await expect(page.locator('#admin-mobile-navigation')).toBeHidden();
+      await expect(page).toHaveURL(/\/admin\/bid-board$/);
       await expect(
         page.getByRole('main').getByText('Current Occupant', { exact: true }),
       ).toBeVisible();
@@ -237,12 +250,12 @@ test('independent board views preserve source boundaries at phone, tablet and de
   const sidebar = page.getByTestId('admin-sidebar');
   await page.getByRole('button', { name: 'Collapse admin sidebar', exact: true }).click();
   await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
-  await expect(sidebar.getByRole('link', { name: 'Annual Bid', exact: true })).toBeVisible();
-  await sidebar.getByRole('link', { name: 'Annual Bid', exact: true }).focus();
+  await expect(sidebar.getByRole('link', { name: 'Bid', exact: true })).toBeVisible();
+  await sidebar.getByRole('link', { name: 'Bid', exact: true }).focus();
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Tab');
   await expect(
-    sidebar.getByRole('link', { name: 'Annual Bid', exact: true }).locator('span'),
+    sidebar.getByRole('link', { name: 'Bid', exact: true }).locator('span'),
   ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('compact-navigation.png'), fullPage: true });
   await page.getByRole('button', { name: 'Expand admin sidebar', exact: true }).click();
@@ -354,24 +367,23 @@ test('independent board views preserve source boundaries at phone, tablet and de
     await page.screenshot({ path: testInfo.outputPath(`roster-colors-${nextShift}.png`) });
   }
   await page.goto('/admin');
-  await expect(page.getByRole('heading', { name: 'Annual Bid', exact: true })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByRole('heading', { name: /Bid Board/ })).toBeVisible();
+  await expect(page.getByLabel('Staffing date')).toBeVisible();
+  await expect(page.getByText('No reviewed staffing positions for this date')).toBeVisible();
   for (const width of [390, 646, 1486, 1857]) {
     await page.setViewportSize({ width, height: 970 });
     if (width >= 1486) {
-      const card = await page
-        .getByRole('heading', { name: 'Annual Bid', exact: true })
-        .boundingBox();
+      const card = await page.getByRole('heading', { name: 'Today', exact: true }).boundingBox();
       const main = await page.getByRole('main').boundingBox();
-      if (!card || !main) throw new Error('Missing dashboard bounds');
+      if (!card || !main) throw new Error('Missing Today bounds');
       expect(card.y - main.y).toBeLessThan(170);
     }
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`dashboard-${width}.png`), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`today-${width}.png`), fullPage: true });
   }
   expect(errors).toEqual([]);
 });

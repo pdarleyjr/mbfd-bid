@@ -19,6 +19,11 @@ import {
 } from '../../db/schema.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import {
+  assertLegacyBidWrite,
+  legacyBidWriteCondition,
+  runLegacyBidWriteBatch,
+} from '../../lib/bid-definition-legacy-write.js';
+import {
   loadRuleBookCoverage,
   loadRuleBookPolicyDiff,
   preflightConfiguredRuleBookPublication,
@@ -66,6 +71,7 @@ router.get('/', async (c) => {
 // POST /api/admin/rule-books   (step-up; creates draft, optionally clones)
 router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), async (c) => {
   const { effective_year, clone_from, notes, reason } = c.req.valid('json');
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: effective_year });
   const db = getDb(c.env.DB);
 
   const allVersions = await db.select({ v: ruleBooks.version }).from(ruleBooks).all();
@@ -111,23 +117,22 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), 
     clone_from: clone_from ?? null,
     notes: notes ?? null,
   };
-  const auditStatement = c.env.DB.prepare(
-    `INSERT INTO audit_log (
-         id, bid_session_id, seq, actor_type, actor_id, action, target_kind,
-         target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at
-       )
-       SELECT ?, NULL, COALESCE(MAX(seq), 0) + 1, 'admin', ?, 'rule_book_clone',
-              'rule_book', ?, ?, ?, ?, NULL, NULL, ?
-         FROM audit_log
-        WHERE bid_session_id IS NULL`,
-  ).bind(
-    ulid(),
-    claims.member_id,
-    newVersion,
-    JSON.stringify(beforeState),
-    JSON.stringify(afterState),
-    reason,
-    Math.floor(Date.now() / 1000),
+  const auditStatement = auditInsertStatement(
+    c.env.DB,
+    {
+      bidSessionId: null,
+      actorType: 'admin',
+      actorId: claims.member_id,
+      action: 'rule_book_clone',
+      targetKind: 'rule_book',
+      targetId: newVersion,
+      beforeState,
+      afterState,
+      reason,
+    },
+    new Date(),
+    false,
+    legacyBidWriteCondition({ kind: 'year', year: effective_year }),
   );
   const statements: D1PreparedStatement[] = [insertRuleBook];
   if (clone_from !== undefined) {
@@ -166,7 +171,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateRuleBookSchema), 
   // The draft, all copied policy rows, and its receipt must be one D1
   // transaction: no partial clone can be exposed or audited independently.
   statements.push(auditStatement);
-  await c.env.DB.batch(statements);
+  await runLegacyBidWriteBatch(c.env.DB, { kind: 'year', year: effective_year }, statements);
 
   return c.json({ version: newVersion, status: 'draft' }, 201);
 });
@@ -268,6 +273,7 @@ router.put(
     const db = getDb(c.env.DB);
     const book = await db.select().from(ruleBooks).where(eq(ruleBooks.version, version)).get();
     if (book === undefined) return c.json({ error: 'not_found' }, 404);
+    await assertLegacyBidWrite(c.env.DB, { kind: 'book', version: version });
     if (book.status !== 'draft') {
       return c.json({ error: 'rule_book_immutable', status: book.status }, 409);
     }
@@ -321,7 +327,7 @@ router.put(
       authoritativeSourceRef: body.authoritative_source_ref,
       createdAt: new Date(now),
     };
-    const results = await c.env.DB.batch([
+    const results = await runLegacyBidWriteBatch(c.env.DB, { kind: 'book', version: version }, [
       c.env.DB.prepare(
         `INSERT INTO rule_book_position_participation (
              rule_book_version, position_id, template_version, bid_participation,
@@ -366,6 +372,8 @@ router.put(
           afterState: after,
         },
         new Date(now),
+        false,
+        legacyBidWriteCondition({ kind: 'book', version: version }),
       ),
     ]);
     if (
@@ -406,6 +414,7 @@ router.post(
 
     const target = await db.select().from(ruleBooks).where(eq(ruleBooks.version, version)).get();
     if (target === undefined) return c.json({ error: 'not_found' }, 404);
+    await assertLegacyBidWrite(c.env.DB, { kind: 'book', version: version });
     if (target.status === 'active') return c.json({ error: 'already_active' }, 409);
     if (target.status === 'archived') return c.json({ error: 'archived_cannot_republish' }, 409);
 
@@ -662,9 +671,15 @@ router.post(
           afterState: { effective_year: target.effectiveYear, status: 'active' },
         },
         now,
+        false,
+        legacyBidWriteCondition({ kind: 'book', version: version }),
       ),
     );
-    const results = await c.env.DB.batch(statements);
+    const results = await runLegacyBidWriteBatch(
+      c.env.DB,
+      { kind: 'book', version: version },
+      statements,
+    );
     const publishResult = results[results.length - 2];
     const auditResult = results[results.length - 1];
     if (publishResult?.meta.changes !== 1 || auditResult?.meta.changes !== 1) {

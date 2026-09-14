@@ -15,7 +15,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'apps/web/app/admin/guide/guide-content.ts'
@@ -70,7 +70,7 @@ def footer(canvas, doc):
 
 story = [Spacer(1, 1.0 * inch), Paragraph('MBFD BID', styles['Title']), Spacer(1, 20),
          Paragraph('Complete Administrator Manual', styles['Heading1']),
-         Paragraph('People · Staffing · Annual Bid · History & Reports', styles['BodyText']),
+         Paragraph('Today · Department · Bid · History', styles['BodyText']),
          Spacer(1, 24), Paragraph('September 2026', styles['Heading2']),
          Paragraph('Use this manual alongside the searchable Docs page and the “How to use this page” explanation in each administrator workspace. The manual and live help use the same source content.', styles['BodyText']),
          Paragraph('Approved policy and amendments determine the rules. This manual explains software operation and does not adopt policy, authorize a selection, or establish that every qualification is current.', styles['Note']),
@@ -79,7 +79,15 @@ story = [Spacer(1, 1.0 * inch), Paragraph('MBFD BID', styles['Title']), Spacer(1
 for index, section in enumerate(sections, 1):
     story.append(Paragraph(f'{index}. <link href="#{section["id"]}" color="#164d78">{escape(section["title"])}</link>', styles['BodyText']))
 for index, section in enumerate(sections, 1):
-    story.append(PageBreak())
+    previous_section = sections[index - 2] if index > 1 else None
+    # The Blueprint's safety callout may continue onto a second page. Let the
+    # following History topic use that page when enough room remains, rather
+    # than producing a page containing only the callout. Other topics retain
+    # the existing one-topic-per-page boundary.
+    if previous_section and previous_section['id'] == 'current-bid-blueprint':
+        story.append(CondPageBreak(4 * inch))
+    else:
+        story.append(PageBreak())
     heading = Paragraph(f'{index}. {escape(section["title"])}', styles['Heading1'])
     heading._bookmark = section['id']
     story.extend([heading, Paragraph(escape(section['category']), styles['Small']), Paragraph(escape(section['summary']), styles['BodyText']),

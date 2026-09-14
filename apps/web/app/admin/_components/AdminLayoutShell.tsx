@@ -131,7 +131,9 @@ export function AdminLayoutShell({
             </Button>
           </div>
           <div className={compact ? '' : 'min-h-0 overflow-y-auto'}>
-            <AdminSideNav compact={compact} />
+            <Suspense>
+              <AdminSideNav compact={compact} />
+            </Suspense>
           </div>
           {!compact && (
             <footer className="mx-6 mb-6 mt-8 border-t border-sidebar-border pt-5 text-center text-[10px] uppercase tracking-[0.18em] text-sidebar-muted">
@@ -218,7 +220,9 @@ export function AdminLayoutShell({
               >
                 <X size={20} />
               </Dialog.Close>
-              <AdminSideNav />
+              <Suspense>
+                <AdminSideNav />
+              </Suspense>
             </Dialog.Popup>
           </Dialog.Portal>
         </Dialog.Root>

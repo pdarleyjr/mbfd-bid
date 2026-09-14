@@ -11,11 +11,14 @@ import adminBidAwardTransition from './routes/admin/bid-award-transition.js';
 import adminBidBoard from './routes/admin/bid-board.js';
 import adminBidConfiguration from './routes/admin/bid-configuration.js';
 import adminBidControls from './routes/admin/bid-controls.js';
+import adminBidDefinition from './routes/admin/bid-definition.js';
 import adminBidSession from './routes/admin/bid-session.js';
 import adminBid from './routes/admin/bid.js';
 import adminCredentialImports from './routes/admin/credential-imports.js';
 import adminCredentials from './routes/admin/credentials.js';
 import adminCurrentRoster from './routes/admin/current-roster.js';
+import adminDepartmentPeople from './routes/admin/department-people.js';
+import adminDepartment from './routes/admin/department.js';
 import adminEligibilityPreview from './routes/admin/eligibility-preview.js';
 import adminExports from './routes/admin/exports.js';
 import adminForceADay from './routes/admin/force-a-day.js';
@@ -65,6 +68,8 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/qualification-lifecycle', adminQualificationLifecycle)
   .route('/api/admin/credentials', adminCredentials)
   .route('/api/admin/current-roster', adminCurrentRoster)
+  .route('/api/admin/department', adminDepartment)
+  .route('/api/admin/department', adminDepartmentPeople)
   .route('/api/admin/organization', adminOrganization)
   .route('/api/admin/service-evidence', adminServiceEvidence)
   .route('/api/admin/tenure-evidence', adminTenureEvidence)
@@ -77,6 +82,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/positions', adminPositions)
   .route('/api/admin/rules', adminRules)
   .route('/api/admin/rule-books', adminRuleBooks)
+  .route('/api/admin/bid', adminBidDefinition)
   .route('/api/admin/bid', adminBid)
   .route('/api/admin/bid-session', adminBidSession)
   .route('/api/admin/bid-session', adminSpecialtyAdjudication)
@@ -133,6 +139,7 @@ app.route('/', routes);
 app.notFound((c) => c.json({ error: 'not_found' }, 404));
 
 app.onError((err, c) => {
+  if (err instanceof BidDefinitionManagedWriteError) return err.getResponse();
   console.error('[worker error]', err);
   return c.json({ error: 'internal_error' }, 500);
 });
@@ -140,6 +147,7 @@ app.onError((err, c) => {
 export { BidSessionDO } from './durable/bid-session.js';
 
 import type { MessageBatch as CfMessageBatch } from '@cloudflare/workers-types';
+import { BidDefinitionManagedWriteError } from './lib/bid-definition-legacy-write.js';
 
 import { handlePortalQueueBatch } from './portal-writeback/queue-handler.js';
 import { handleCanonicalAuditArchive, handlePortalReconciliation } from './scheduled.js';

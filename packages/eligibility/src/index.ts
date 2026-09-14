@@ -22,7 +22,17 @@ export {
   type OpTechPair,
 } from './operations-techs.js';
 
-export { compare, sortByTieBreak, type ComparableResult } from './tie-break.js';
+export {
+  compare,
+  compareWithTrace,
+  sortByTieBreak,
+  type ComparableResult,
+  type TieBreakStep,
+} from './tie-break.js';
 
-export { evaluateEligibility } from './evaluate.js';
+export {
+  evaluateEligibility,
+  evaluateEligibilityWithTrace,
+  type EligibilityChannels,
+} from './evaluate.js';
 export { configuredChannel } from './points/configured.js';

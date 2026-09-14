@@ -112,12 +112,17 @@ export async function evaluateLiveBidReadiness(
     biddablePositions.length > 0 && biddablePositions.every((position) => ruleIds.has(position.id));
   const annualOperations =
     snapshot.settings.v === 3 ? snapshot.settings.livePolicy.annualOperations : undefined;
+  const orderingAuthority =
+    snapshot.settings.v === 3 ? snapshot.settings.livePolicy.orderingAuthority : undefined;
   const annualReadiness = validateAnnualOperationsReadiness({
     operations: annualOperations,
-    bidYear,
     isMock: false,
-    configuredStageIds:
-      snapshot.settings.v === 3 ? snapshot.settings.livePolicy.stages.map((stage) => stage.id) : [],
+    configuredStageOrder:
+      snapshot.settings.v === 3
+        ? [...snapshot.settings.livePolicy.stages]
+            .sort((left, right) => left.order - right.order)
+            .map((stage) => stage.id)
+        : [],
     // Exact specialty seats are frozen configuration. Current staffing never
     // creates a topology id; missing configured ids therefore block a real run.
     missingTopologyIds: annualOperations
@@ -137,6 +142,7 @@ export async function evaluateLiveBidReadiness(
       'position_catalog',
       'qualification_rule_readiness',
       'annual_operations_policy',
+      'ordering_authority',
       'no_conflicting_active_real_bid',
       'audit_infrastructure',
       'runtime_bindings',
@@ -194,6 +200,13 @@ export async function evaluateLiveBidReadiness(
                 ? ` (${annualReadiness.detail})`
                 : ''
             }.`,
+      ),
+      check(
+        'ordering_authority',
+        orderingAuthority !== undefined,
+        orderingAuthority === undefined
+          ? 'Bid ordering authority unresolved. Live operation is not authorized until the governing comparator is reconciled.'
+          : `Frozen governing comparator is bound to resolved source decision ${orderingAuthority.sourceDecision.issueId}.`,
       ),
       check(
         'no_conflicting_active_real_bid',

@@ -53,9 +53,12 @@ function readError(payload: unknown): string {
 
 export function CredentialsCatalogWorkspace({
   initialCredentials,
+  departmentMode = false,
 }: {
   initialCredentials: CatalogCredential[];
+  departmentMode?: boolean;
 }) {
+  const Heading = departmentMode ? 'h2' : 'h1';
   const queryClient = useQueryClient();
   const catalog = useQuery({
     queryKey: ['admin', 'credentials'],
@@ -162,7 +165,7 @@ export function CredentialsCatalogWorkspace({
     setNotice(null);
     const payload = {
       name,
-      fy_points_default: Number(points),
+      fy_points_default: departmentMode ? (editing?.fyPointsDefault ?? 0) : Number(points),
       reason,
       ...(editing === null
         ? {}
@@ -199,6 +202,7 @@ export function CredentialsCatalogWorkspace({
         );
       });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'credentials'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'department'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'annual-plan'] });
       setNotice(
         editing === null
@@ -248,20 +252,20 @@ export function CredentialsCatalogWorkspace({
           <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
             Year-round personnel reference data
           </p>
-          <h1
+          <Heading
             id="credentials-catalog-heading"
             className="mt-1 font-heading text-3xl text-foreground"
           >
-            Credentials &amp; Specialty Points
-          </h1>
+            {departmentMode ? 'Credential definitions' : 'Credentials & Specialty Points'}
+          </Heading>
           <p className="mt-2 max-w-3xl text-sm text-foreground">
-            Manage the credential catalog and its default informational points. Current
-            qualifications remain effective-dated evidence on each member; these defaults do not
-            rewrite any frozen annual Bid score.
+            {departmentMode
+              ? 'Define the credentials the department records. Evidence and expiration dates belong to each person. Annual Bid values are managed separately.'
+              : 'Manage the credential catalog and its default informational points. Current qualifications remain effective-dated evidence on each member; these defaults do not rewrite any frozen annual Bid score.'}
           </p>
         </div>
         <Link
-          href="/admin/personnel/qualifications"
+          href={(departmentMode ? '/admin/department' : '/admin/personnel/qualifications') as Route}
           className="inline-flex min-h-11 items-center rounded border border-destructive/40 bg-destructive px-4 text-sm font-semibold text-primary-foreground hover:bg-destructive"
         >
           Record qualification evidence
@@ -359,18 +363,20 @@ export function CredentialsCatalogWorkspace({
               )}
             </div>
           )}
-          <Label>
-            <span className="text-sm font-medium text-foreground">Default points</span>
-            <Input
-              required
-              min="0"
-              step="1"
-              type="number"
-              value={points}
-              onChange={(event) => setPoints(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
-            />
-          </Label>
+          {!departmentMode && (
+            <Label>
+              <span className="text-sm font-medium text-foreground">Default points</span>
+              <Input
+                required
+                min="0"
+                step="1"
+                type="number"
+                value={points}
+                onChange={(event) => setPoints(event.target.value)}
+                className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
+              />
+            </Label>
+          )}
           <Label className="md:col-span-2">
             <span className="text-sm font-medium text-foreground">Reason</span>
             <Textarea
@@ -461,9 +467,11 @@ export function CredentialsCatalogWorkspace({
             <TableHeader className="bg-card text-xs uppercase tracking-wide text-muted-foreground">
               <TableRow>
                 <TableHead className="px-3 py-2">Credential</TableHead>
-                <TableHead className="hidden w-20 px-2 py-2 sm:table-cell">
-                  Default points
-                </TableHead>
+                {!departmentMode && (
+                  <TableHead className="hidden w-20 px-2 py-2 sm:table-cell">
+                    Default points
+                  </TableHead>
+                )}
                 <TableHead className="hidden w-20 px-2 py-2 sm:table-cell">
                   Referenced members
                 </TableHead>
@@ -478,7 +486,8 @@ export function CredentialsCatalogWorkspace({
                   <TableCell className="break-words px-3 py-2 font-medium text-foreground">
                     {credential.name}
                     <span className="mt-1 block text-xs font-normal text-muted-foreground sm:hidden">
-                      {credential.holderCount} members · {credential.fyPointsDefault} default points
+                      {credential.holderCount} members
+                      {!departmentMode && ` · ${credential.fyPointsDefault} default points`}
                     </span>
                     {credential.retiredOn && (
                       <span className="block text-xs text-warning">
@@ -486,9 +495,11 @@ export function CredentialsCatalogWorkspace({
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="hidden px-4 py-3 tabular-nums text-foreground sm:table-cell">
-                    {credential.fyPointsDefault}
-                  </TableCell>
+                  {!departmentMode && (
+                    <TableCell className="hidden px-4 py-3 tabular-nums text-foreground sm:table-cell">
+                      {credential.fyPointsDefault}
+                    </TableCell>
+                  )}
                   <TableCell className="hidden px-4 py-3 text-foreground sm:table-cell">
                     {credential.holderCount}
                   </TableCell>
@@ -572,7 +583,11 @@ export function CredentialsCatalogWorkspace({
                     </span>
                   </span>
                   <Link
-                    href={holder.historyHref as Route}
+                    href={
+                      (departmentMode
+                        ? `/admin/department?memberId=${holder.memberId}`
+                        : holder.historyHref) as Route
+                    }
                     className="font-medium text-destructive hover:text-destructive"
                   >
                     Open qualification history

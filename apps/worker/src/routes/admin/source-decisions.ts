@@ -1,6 +1,7 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { assertLegacyBidWrite } from '../../lib/bid-definition-legacy-write.js';
 import { isQualificationCalendarDate } from '../../lib/qualification-lifecycle.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -45,9 +46,10 @@ router.post('/:year', requireStepUpAuth(), async (c) => {
     .safeParse(await c.req.json().catch(() => null));
   if (!input.success) return c.json({ error: 'complete_source_decision_required' }, 400);
   const b = input.data;
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year });
   try {
     const result = await c.env.DB.prepare(
-      'INSERT INTO bid_source_decisions SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE COALESCE((SELECT MAX(revision) FROM bid_source_decisions WHERE bid_year=? AND issue_id=?),0)=?',
+      'INSERT INTO bid_source_decisions SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE COALESCE((SELECT MAX(revision) FROM bid_source_decisions WHERE bid_year=? AND issue_id=?),0)=? AND NOT EXISTS(SELECT 1 FROM bid_definition_heads WHERE bid_year=?)',
     )
       .bind(
         year,
@@ -65,11 +67,15 @@ router.post('/:year', requireStepUpAuth(), async (c) => {
         year,
         b.issue_id,
         b.expected_revision,
+        year,
       )
       .run();
-    if (result.meta.changes !== 1)
+    if (result.meta.changes !== 1) {
+      await assertLegacyBidWrite(c.env.DB, { kind: 'year', year });
       return c.json({ error: 'source_decision_changed_refresh_before_saving' }, 409);
+    }
   } catch {
+    await assertLegacyBidWrite(c.env.DB, { kind: 'year', year });
     return c.json({ error: 'source_decision_changed_refresh_before_saving' }, 409);
   }
   return c.json({

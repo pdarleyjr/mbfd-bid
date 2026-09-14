@@ -99,7 +99,13 @@ export function ConfiguredScoringEditor({
       <NativeSelect
         multiple
         value={selected}
-        onChange={(e) => change(Array.from(e.target.selectedOptions, (o) => o.value))}
+        onChange={(e) => {
+          const chosen = Array.from(e.target.selectedOptions, (o) => o.value);
+          change([
+            ...selected.filter((token) => chosen.includes(token)),
+            ...chosen.filter((token) => !selected.includes(token)),
+          ]);
+        }}
         className={`${inputClass} min-h-28 py-2`}
       >
         {selected
@@ -304,6 +310,34 @@ export function ConfiguredScoringEditor({
                             </p>
                             {people.isError && <p role="alert">{people.error.message}</p>}
                             {people.isLoading && <output>Loading members…</output>}
+                            {(item.completionCredit.memberIds ?? [])
+                              .filter((id) => !people.data?.some((person) => person.id === id))
+                              .map((id) => (
+                                <label
+                                  key={id}
+                                  className="flex min-h-11 items-center gap-2 text-sm"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked
+                                    onChange={(event) => {
+                                      if (!item.completionCredit || event.target.checked) return;
+                                      const memberIds = (
+                                        item.completionCredit.memberIds ?? []
+                                      ).filter((memberId) => memberId !== id);
+                                      const { memberIds: _members, ...credit } =
+                                        item.completionCredit;
+                                      updateItem(channel, gi, ii, {
+                                        completionCredit: {
+                                          ...credit,
+                                          ...(memberIds.length ? { memberIds } : {}),
+                                        },
+                                      });
+                                    }}
+                                  />
+                                  Member {id} · Saved exception scope; catalog review required
+                                </label>
+                              ))}
                             <div className="max-h-52 overflow-auto rounded border p-2">
                               {(people.data ?? []).map((person) => (
                                 <label

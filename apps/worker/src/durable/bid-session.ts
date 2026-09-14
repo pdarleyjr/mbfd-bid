@@ -41,6 +41,11 @@ import {
   auditEntryForPickMade,
   auditEntryForSkip,
 } from '../lib/audit.js';
+import {
+  BidDefinitionIntegrityError,
+  assertBidDefinitionRunIntegrity,
+} from '../lib/bid-definition-integrity.js';
+import { BidDefinitionSnapshotColumnsSchema } from '../lib/bid-definition-pin.js';
 import { computeBidOrder } from '../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
@@ -405,13 +410,37 @@ export class BidSessionDO implements DurableObject {
   }
 
   private async getState(): Promise<BidSessionState> {
+    const marker = await this.storage.get<unknown>(this.bidDefinitionPinKey());
+    if (marker !== undefined) {
+      const stored = BidDefinitionSnapshotColumnsSchema.safeParse(marker);
+      if (!stored.success || Object.values(stored.data).some((value) => value === null))
+        throw new BidDefinitionIntegrityError();
+      const pins = await assertBidDefinitionRunIntegrity(this.env.DB, this.namedSessionId());
+      if (
+        pins === null ||
+        Object.entries(pins).some(([key, value]) => stored.data[key as keyof typeof pins] !== value)
+      )
+        throw new BidDefinitionIntegrityError();
+    }
     if (!this.memoryState) {
       const id = this.state.id.toString();
       const persisted = await loadBidSessionState(this.storage, id);
       this.memoryState = persisted.bidSessionId === id ? persisted : emptyBidSessionState(id);
     }
-    if ((await this.canonicalMockIntentState()) === null) return this.memoryState;
+    if (marker === undefined && (await this.canonicalMockIntentState()) === null)
+      return this.memoryState;
     return this.hydrateCanonicalMockState(this.memoryState);
+  }
+
+  private bidDefinitionPinKey(): string {
+    return `bid-definition-pin:${this.state.id.toString()}`;
+  }
+
+  /** A verified durable marker precedes every managed local projection. Legacy
+   * snapshots stay local when no canonical or managed marker was established. */
+  private async rememberBidDefinitionPin(): Promise<void> {
+    const pins = await assertBidDefinitionRunIntegrity(this.env.DB, this.namedSessionId());
+    if (pins !== null) await this.storage.put(this.bidDefinitionPinKey(), pins);
   }
 
   /**
@@ -1957,6 +1986,7 @@ export class BidSessionDO implements DurableObject {
           currentSeq: localState.lastSeq,
         };
       }
+      await this.rememberBidDefinitionPin();
       const commit = await commitMockFreezeCommand({
         db: this.env.DB,
         command,
@@ -2010,6 +2040,7 @@ export class BidSessionDO implements DurableObject {
           code: 'LIVE_POLICY_MISSING',
           currentSeq: localState.lastSeq,
         };
+      await this.rememberBidDefinitionPin();
       const commit = await commitLiveBidCommand({
         db: this.env.DB,
         command,
@@ -2040,6 +2071,7 @@ export class BidSessionDO implements DurableObject {
       }
       const policy = await this.guardFrozenBidOrder(input.bidOrder);
       if (!policy.ok) return;
+      await this.rememberBidDefinitionPin();
       const first = input.bidOrder[0]?.memberId ?? null;
       const newState: BidSessionState = {
         ...state,

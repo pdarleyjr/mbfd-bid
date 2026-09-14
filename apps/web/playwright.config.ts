@@ -10,6 +10,10 @@ export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: path.resolve(__dirname, './tests/e2e/global-setup.ts'),
   fullyParallel: true,
+  // The 521-member authoritative impact fixture executes the real Worker
+  // evaluator. It has a separate one-worker config so normal E2E retains its
+  // parallel coverage without resource-starving the deterministic fixture.
+  grepInvert: /\[bid-impact\]/,
   retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: 'http://localhost:3000',

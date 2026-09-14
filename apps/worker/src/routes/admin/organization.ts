@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 import { auditInsertStatement } from '../../lib/audit.js';
+import { loadOrganizationRetirementDependencies } from '../../lib/department-retirement.js';
 import { operationalDate } from '../../lib/operational-date.js';
 import { isIsoCalendarDate } from '../../lib/personnel-lifecycle.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
@@ -71,26 +72,10 @@ router.get('/:id/dependencies', async (c) => {
   const id = c.req.param('id');
   const date = c.req.query('as_of') ?? operationalDate();
   if (!isIsoCalendarDate(date)) return c.json({ error: 'invalid_as_of' }, 400);
-  const children =
-    await c.env.DB.prepare(`SELECT DISTINCT child.unit_id AS id,child.display_name AS name FROM organization_unit_versions child
-    WHERE child.parent_id=? AND child.status='active' AND NOT EXISTS (SELECT 1 FROM organization_unit_versions successor
-      WHERE successor.unit_id=child.unit_id AND successor.revision>child.revision AND successor.effective_on<=MAX(?,child.effective_on))`)
-      .bind(id, date)
-      .all();
-  const seats =
-    await c.env.DB.prepare(`SELECT DISTINCT seat.id,seat.stable_slot_key AS stableSlotKey FROM organization_staffing_links link
-    JOIN staffing_positions seat ON seat.id=link.staffing_position_id WHERE link.organization_unit_id=?
-      AND (seat.active_to IS NULL OR seat.active_to>=MAX(?,link.effective_on))
-      AND NOT EXISTS (SELECT 1 FROM organization_staffing_links successor WHERE successor.staffing_position_id=link.staffing_position_id
-        AND successor.revision>link.revision AND successor.effective_on<=MAX(?,link.effective_on))`)
-      .bind(id, date, date)
-      .all();
-  return c.json({
-    asOf: date,
-    children: children.results,
-    seats: seats.results,
-    retirementBlocked: children.results.length + seats.results.length > 0,
-  });
+  const dependencies = await loadOrganizationRetirementDependencies(c.env.DB, id, date);
+  if (dependencies === null) return c.json({ error: 'not_found' }, 404);
+  c.header('Cache-Control', 'no-store');
+  return c.json(dependencies);
 });
 
 router.on(['POST', 'PATCH'], ['/', '/:id'], requireStepUpAuth(), async (c) => {

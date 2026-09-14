@@ -11,7 +11,24 @@ export type GuideSection = {
   keywords: readonly string[];
 };
 
-const section = (value: GuideSection) => value;
+const legacyBidAuthoringRoutes = new Set([
+  '/admin/source-review',
+  '/admin/annual-plan',
+  '/admin/rules',
+  '/admin/sessions/new',
+  '/admin/bid-setup',
+  '/admin/rule-books',
+  '/admin/positions',
+  '/admin/annual-policy',
+]);
+const section = (value: GuideSection): GuideSection =>
+  legacyBidAuthoringRoutes.has(value.route)
+    ? {
+        ...value,
+        important:
+          `For a year with a saved Current Bid version, use Bid — Edit Bid, Bid Blueprint and Mock Bid. These older authoring controls are compatibility paths for years not yet adopted; they cannot modify a versioned Bid. ${value.important ?? ''}`.trim(),
+      }
+    : value;
 
 /**
  * Administrator-facing content. Keep this close to the routed Admin surface:
@@ -19,6 +36,317 @@ const section = (value: GuideSection) => value;
  * member, session, or internal record identifier.
  */
 export const GUIDE_SECTIONS: readonly GuideSection[] = [
+  section({
+    id: 'current-bid-edit',
+    category: 'Bid',
+    title: 'Edit and save the Current Bid',
+    route: '/admin/current-bid',
+    routeLabel: 'Bid — Edit Bid',
+    summary:
+      'Change policy language, requirements, points and Bid settings in one place. A material Save records a new version automatically; a no-op keeps the current version, and earlier settings remain available in History.',
+    controls: [
+      'Bid year',
+      'Open',
+      'Policy & language',
+      'Participants & flow',
+      'Opportunities & rules',
+      'Specialty rules',
+      'Contact & disposition',
+      'A-Day',
+      'Timing & evidence dates',
+      'Authority & permissions',
+      'Change summary',
+      'Preview changes (optional)',
+      'Save Bid',
+      'Discard edits',
+    ],
+    steps: [
+      'Open Bid and choose an existing year. Use the editing sections to change the draft. Moving between Edit Bid, Blueprint and Mock retains the same unsaved draft.',
+      'Search all opportunities and qualifications. Saved references stay visible even when a catalog item is missing. An Operations pair, an all-qualifications requirement and an OR group have different meanings; review the explicit controls.',
+      'Connect an opportunity to an actual Department staffing position when needed. A different connection starts as Needs review with no inherited authority. Enter its evidence reference and review it explicitly.',
+      'Policy decisions can record questions and interpretations where needed. Leave an unfinished decision open; complete the decision and its source before marking it resolved.',
+      'Select Save Bid. The system records the changes, administrator and time automatically. Change summary is optional, and previewing is optional. You do not need to unlock or unfreeze the year. Changed settings create a new numbered version; unchanged settings keep the current version.',
+      'A saved version does not change an existing run. New Mock runs must select a saved version explicitly. Editing or saving does not publish policy or start Live bidding.',
+      'If a response is interrupted, retain the draft and use Retry original request. It resubmits the same request identity and recovers its receipt. Do not reconstruct the request or assume a missing response means no save occurred.',
+    ],
+    important:
+      'Browser drafts are scoped to the signed-in administrator and year. Storage failures block protected writes so an uncertain request can be recovered. If the saved Bid changed elsewhere, refresh and review your changes before saving again.',
+    keywords: [
+      'current bid',
+      'edit',
+      'save',
+      'draft',
+      'version',
+      'requirements',
+      'scoring',
+      'policy',
+      'retry',
+    ],
+  }),
+  section({
+    id: 'current-bid-blueprint',
+    category: 'Bid',
+    title: 'Understand the Bid Blueprint, draft impact and decision traces',
+    route: '/admin/current-bid?view=blueprint',
+    routeLabel: 'Bid — Bid Blueprint',
+    summary:
+      'Use the interactive Bid Blueprint to inspect authored/local policy relationships. Server Preview and draft impact add separately labeled server facts from the same evaluation authorities used by Bid runs.',
+    controls: [
+      'Overview',
+      'Flow',
+      'Policy',
+      'Specialty',
+      'Opportunities',
+      'Members',
+      'Changes',
+      'Zoom in',
+      'Zoom out',
+      'Structured relationship list',
+      'Review proposed changes',
+      'Participation for this calculation',
+      'Evaluate draft impact',
+      'Changed eligibility and priority',
+      'Eligibility by opportunity',
+      'Trace member',
+      'Trace opportunity',
+      'Comparison member (optional)',
+      'Show decision trace',
+      'Calculation evidence',
+    ],
+    steps: [
+      'Choose Bid Blueprint. Use Overview, Flow, Policy, Specialty, Opportunities, Members and Changes to focus the relationship map. Select a map node to read its status, source and server-analysis facts. Use the zoom controls or scroll to pan; the Structured relationship list contains the same information without relying on the graph.',
+      'The map starts with authored local structure, which is not server-evaluated. Server Preview and draft impact facts are separately labeled when available. The browser never calculates eligibility, points, priorities, staffing outcomes or a substitute relationship. An unresolved reference is labeled UNRESOLVED.',
+      'Review proposed changes checks the configuration differences; Evaluate draft impact calculates the member consequences.',
+      'Choose Mock or Live participation for the calculation. Both the saved policy and draft use one captured Department source, each evaluated at its own authored dates. Live calculation does not authorize or start a Live session.',
+      'Inspect affected people, participation changes, stage order and stage or specialty opportunity changes. Eligibility and priority comparisons hold either the requirements or the evidence and participant group constant so the cause remains visible.',
+      'Use Previous changes and Next changes to reach the complete result set. A new or removed opportunity is marked incomparable, not assigned an invented before or after score. Unavailable calculations remain visible and are excluded from known affected counts.',
+      'Select a person and opportunity, and optionally another person for comparison. Show decision trace displays passed and failed requirements, all three point channels, priority, the exact tie-break steps, stage applicability and evidence. Post-award obligations are shown separately from initial eligibility.',
+      'Local edits make earlier results stale. If Department evidence changes between pages or traces, evaluate again. Calculation evidence identifies both policy hashes and the evaluated context.',
+    ],
+    important:
+      'Preview writes no versions, receipts, audit events or session data. A-Day capacity, next-bidder choices, actual specialty interruptions and awards require an explicit selection scenario and are not predicted by the configuration-only comparison. A valid calculation is not publication or run readiness.',
+    keywords: [
+      'blueprint',
+      'impact',
+      'unsaved',
+      'trace',
+      'decision',
+      'eligibility',
+      'priority',
+      'points',
+      'tie break',
+    ],
+  }),
+  section({
+    id: 'current-bid-versions',
+    category: 'History',
+    title: 'View history and restore earlier settings',
+    route: '/admin/current-bid?view=versions',
+    routeLabel: 'Bid — Version history',
+    summary:
+      'Find earlier settings and bring them back with Restore this version. Your current settings remain in History too.',
+    controls: ['Version history', 'Load versions', 'Load older versions', 'Restore this version'],
+    steps: [
+      'Open Version history for the selected Bid year. Versions are listed newest first; Load older versions reaches the full history.',
+      'Select a version to inspect its recorded reason, author, source language, opportunities and captured authoring provenance. The selected historical content is read-only.',
+      'Save or discard unfinished edits so restoring does not lose them.',
+      'Select Restore this version. The settings become a new current version, and the restoration is recorded automatically. No separate review or reason form is required.',
+      'The earlier version and any runs using it retain their original evidence. Interrupted restoration requests use the same retained receipt recovery as Save Bid.',
+    ],
+    important:
+      'Restoring changes the Current Bid for future work; it does not overwrite history, retarget an active run or replay an old session.',
+    keywords: ['version', 'history', 'restore', 'immutable', 'reason', 'audit'],
+  }),
+  section({
+    id: 'current-bid-mock',
+    category: 'Bid',
+    title: 'Create a Mock from an exact saved version',
+    route: '/admin/current-bid?view=mock',
+    routeLabel: 'Bid — Mock Bid',
+    summary:
+      'Check the current saved version against Department evidence, then create an isolated Mock with that exact policy and captured context.',
+    controls: [
+      'Mock Bid',
+      'Check Mock readiness',
+      'Create Mock Bid from Version',
+      'Retry original request',
+    ],
+    steps: [
+      'Save or discard draft edits, then open Mock Bid. Mock creation uses the saved version; it never silently saves your draft.',
+      'Check readiness. Review the saved version, member pool and any blocked source, staffing, qualification or tenure evidence. Resolve blockers in the appropriate Department or Bid workspace.',
+      'Create Mock submits the reviewed version and evidence identities. If the Department context changed, run the readiness check again before creating.',
+      'Open the created run in the existing practice controls. Later edits to the Current Bid do not change its pinned policy or evidence.',
+      'After an interrupted response, retry the retained request to recover the original created session. The recovery does not create another Mock, even if the session has since progressed.',
+    ],
+    important:
+      'Creating a Mock does not start it or authorize Live operation. Current Bid Live is read-only preflight; the separate console is for authorized sessions.',
+    keywords: ['mock', 'rehearsal', 'practice', 'saved version', 'readiness', 'retry', 'context'],
+  }),
+  section({
+    id: 'current-bid-live-preflight',
+    category: 'Bid',
+    title: 'Review Managed Live readiness',
+    route: '/admin/current-bid?view=live',
+    routeLabel: 'Bid — Live Bid',
+    summary:
+      'Check one immutable saved Bid version against server policy and Live readiness without creating or starting a session.',
+    controls: ['Live Bid', 'Check Managed Live readiness'],
+    steps: [
+      'Save or discard draft edits, then open Live Bid. The preflight is available only for the exact current immutable saved version.',
+      'Select Check Managed Live readiness. The server either reports the sealed policy preparation block or the complete readiness result for that saved version.',
+      'Read each blocker in its source workflow. A readiness result is evidence only; it does not publish a version, create a Live session, start bidding or transfer operator authority.',
+      'If the server reports that the version policy document is invalid, do not bypass it with a Mock or a browser change. The required immutable version/context review and publication lifecycle is not implemented here; stop and seek separately authorized implementation and review rather than inventing a workflow.',
+    ],
+    important:
+      'Current Bid has no Live creation control. The existing Live operator console is for a separately authorized, already-created session; never start a real Bid merely to test readiness.',
+    keywords: [
+      'managed live',
+      'live readiness',
+      'preflight',
+      'saved version',
+      'publication',
+      'policy block',
+    ],
+  }),
+  section({
+    id: 'department-people',
+    category: 'Department',
+    title: 'Find and update a Department member',
+    route: '/admin/department',
+    routeLabel: 'Department — People',
+    summary:
+      'Review one person’s assignments, employment status, service dates, qualifications and recorded history in the year-round Department workspace.',
+    controls: [
+      'Search people',
+      'As of date',
+      'Employment status',
+      'Previous / Next',
+      'Add member',
+      'Update member',
+      'Employment or assignment',
+      'Credential change',
+    ],
+    steps: [
+      'Open Department and search by name or employee identifier. Choose an as-of date and employment status, then select Search. Use the page controls to reach the complete result set.',
+      'Select a member. Check their identifier, dated status and assignments, qualification evidence and history. Service dates and seniority show the latest recorded information; they are not reconstructed historical values.',
+      'Choose Update member, then Employment or assignment for a promotion, demotion, transfer, vacancy, retirement, separation, reactivation or correction. Choose Credential change to record qualification evidence. The selected person remains attached to the form.',
+      'Enter the effective date, reason and required fields. Assignment choices show the dated roster. Review the server preview and the before/after information. A preview can still be rejected at submission if the underlying records change.',
+      'For a new employee, choose Add member and enter the authoritative identity and employment details. Review new member shows the details you entered; it performs no server validation or write. Confirm and record new member submits the existing employment change service.',
+      'Cancel leaves recorded data unchanged. Dirty forms ask before discarding. If a result is unconfirmed, keep the form and retry its retained request to recover the receipt. Accepted changes refresh Department and related working views.',
+    ],
+    important:
+      'Unknown evidence remains unknown. Department employment and qualifications do not rewrite completed Bid evidence or the configuration already pinned to a running Bid.',
+    keywords: [
+      'member',
+      'employee',
+      'people',
+      'department',
+      'promotion',
+      'transfer',
+      'retirement',
+      'credential',
+      'history',
+      'add member',
+    ],
+  }),
+  section({
+    id: 'department-roster',
+    category: 'Department',
+    title: 'Maintain Department staffing and organization',
+    route: '/admin/department/roster',
+    routeLabel: 'Department — Roster & organization',
+    summary:
+      'Review dated positions, occupants and vacancies, then maintain staffing capacity and the organization that contains it.',
+    controls: [
+      'Assignments & positions',
+      'Organization',
+      'Staffing as of',
+      'View staffing',
+      'Refresh staffing',
+      'Add authorized position',
+      'Retire',
+      'View organization as of',
+      'Save organization',
+      'Confirm retirement',
+      'Save reviewed link',
+    ],
+    steps: [
+      'Choose Assignments & positions and a staffing date. This view uses the same Department staffing source as Today and does not require annual Bid policy.',
+      'Add a reviewed authorized position using the actual shift, organization labels and position details. Shift entry is editable; the application does not assume four permanent shifts. Use the member link to change an occupied assignment or fill a vacancy.',
+      'To retire a position, enter the effective date and reason and load its impact. Review the dated assignment and organization records and every blocker. Retirement ends authorization on the preceding day and retains history. A future assignment can block retirement even when the position is vacant today.',
+      'Choose Organization to add or revise stations, groups and apparatus. Select the viewing date, review the parent and record the effective date, evidence reference and reason. Existing identities and earlier revisions remain available.',
+      'A retirement requires a successful, unblocked impact for the selected identity and date. Resolve linked active or future children and positions first. The server rechecks existing dependencies at submission.',
+      'Use the reviewed link form to associate an existing position with an organization identity. The link changes its dated placement; it does not create a position or assign a member. Finish or cancel local edits before changing views or dates.',
+    ],
+    important:
+      'Capacity, organization and membership are distinct records. Retiring an organization does not delete its history or silently retire its positions. Accepted changes refresh Today and Department according to their effective dates.',
+    keywords: [
+      'department',
+      'roster',
+      'station',
+      'apparatus',
+      'group',
+      'position',
+      'vacancy',
+      'retire',
+      'effective date',
+    ],
+  }),
+  section({
+    id: 'department-credentials',
+    category: 'Department',
+    title: 'Maintain credential definitions',
+    route: '/admin/department/credentials',
+    routeLabel: 'Department — Credentials',
+    summary:
+      'Maintain the names and operational meaning of credential definitions independently of the Bid points awarded for them.',
+    controls: ['Search', 'Add credential', 'Edit', 'Record qualification evidence'],
+    steps: [
+      'Open Department — Credentials to search the complete catalog and review a definition.',
+      'Add or revise the descriptive fields using an authoritative name and classification. Department does not expose Bid point controls; editing a definition preserves existing stored point values.',
+      'Use People and Update member — Credential change to record a person’s evidence, issue or renewal, expiration, withdrawal or correction. Catalog definitions and member evidence remain separate.',
+      'Review how a credential is valued within the Bid configuration before relying on it for eligibility or points. Renaming a Department definition does not change its stable identity or replace a running session’s evidence.',
+    ],
+    important:
+      'A credential definition is not proof that a member holds it. A member’s dated evidence is not itself an instruction to award Bid points.',
+    keywords: [
+      'department',
+      'credential',
+      'qualification',
+      'catalog',
+      'definition',
+      'evidence',
+      'points',
+    ],
+  }),
+  section({
+    id: 'department-import',
+    category: 'Department',
+    title: 'Import Department data',
+    route: '/admin/department/import',
+    routeLabel: 'Department — Import data',
+    summary:
+      'Review TeleStaff assignments and TargetSolutions qualifications from one Department destination while preserving each source’s validation and receipts.',
+    controls: ['TeleStaff assignments', 'TargetSolutions credentials', 'Upload', 'Review', 'Apply'],
+    steps: [
+      'Choose TeleStaff assignments or TargetSolutions credentials. The selected source and retained import stay in the page address so a review can be resumed.',
+      'Select the actual source file and inspect its parsed records, matched employee identifiers, exceptions and proposed dated changes. Names corroborate identity; they do not replace exact identifier matching.',
+      'Resolve required reviews using the existing source-specific controls. Do not guess missing dates or silently apply adverse qualification changes.',
+      'Apply only after reviewing the proposed effect. Repeated imports and retries retain the existing source hashes, progress and idempotency receipts. A loaded review alone is not proof that changes were applied.',
+      'After an accepted apply, review Department People and Today at the effective date. Qualification evidence and assignments refresh automatically. Follow the detailed TeleStaff or TargetSolutions topic for source-specific steps and recovery.',
+    ],
+    important:
+      'Importing assignments or qualifications does not start a Bid, promote policy, or enable writeback. Keep an unconfirmed operation open until its result can be recovered.',
+    keywords: [
+      'department',
+      'import',
+      'TeleStaff',
+      'TargetSolutions',
+      'credential',
+      'assignment',
+      'resume',
+    ],
+  }),
   section({
     id: 'compact-workspaces',
     category: 'Getting started',
@@ -36,16 +364,16 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'How to use this page',
     ],
     steps: [
-      'Use Today, People, Staffing, Annual Bid and History & Reports as the main starting points. The arrow beside each menu opens and closes its links independently of navigation. The full sidebar can also collapse. On a phone, open the navigation menu and close it with X or Escape.',
+      'Use Today, Department, Bid and History as the main starting points. The arrow beside each menu opens and closes its links independently of navigation. The full sidebar can also collapse. On a phone, open the navigation menu and close it with X or Escape.',
       'Member lists, catalog editors and bid-day actions open in focused panels. The title and close control remain visible; long details scroll inside the panel. Closing a panel does not cancel an action that was already submitted. Wait for its receipt before retrying.',
-      'The Bid Board starts with one station or pool. Select another station, or Compare all stations for the overview. Use global search across stations and Previous or Next within a station to reach every seat. Current rosters switch by shift and page through positions; full exports and print views remain available.',
+      'Today opens the current Department staffing picture. Choose a date and shift; use Previous roster page and Next roster page to reach every position on desktop. Department holds People, Roster & organization, Credentials and Import data. The Bid Board separately shows Bid opportunities and results; existing roster exports and print views remain available.',
       'Annual Bid remembers the selected year across its linked workspaces. Expand Setup, staffing and sessions for the actual designated rules, staffing source, dates and session links. Each session is marked Practice or Real bid.',
       'Use the preparation step selector on smaller screens. Long rule and operating-policy forms show one section at a time; switching sections retains all fields. Show all sections remains available for a full review.',
       'On bid day, choose Record selection, Specialty and contact, Presentation, Correct selection or Remaining order. Active specialty review opens its contact panel and can be collapsed and reopened. Presentation controls remain distinct from pausing bidding; all actions retain the session policy and operator checks.',
       'Use How to use this page for task instructions. Docs shows one selected topic, with search and a collapsible detail view. Download the complete PDF or offline HTML manual when you need all topics together.',
     ],
     important:
-      'Readable text and complete information take priority over forcing every record onto one screen. Long records remain available through search, paging, internal scrolling and full exports.',
+      'Today uses explicit roster pages on desktop without nested roster scrolling. Phone and tablet views scroll normally. Other workspaces retain focused detail panels, search, paging and full exports.',
     keywords: [
       'navigation',
       'panel',
@@ -555,14 +883,14 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     category: 'Start here',
     title: 'Getting started',
     route: '/admin',
-    routeLabel: 'Dashboard',
+    routeLabel: 'Today',
     summary:
       'Use Bid through your authorized MBFD Hub sign-in. The Admin Console is for year-round staffing administration and controlled Bid operations.',
     controls: ['Admin navigation', 'Navigation button on mobile', 'Sidebar links'],
     steps: [
       'Enter Bid from MBFD Hub with your authorized account.',
       'Use the left navigation on desktop; select Navigation on a phone or tablet.',
-      'Use Mock Bids for rehearsal. Live Bid is a separate, operator-only workspace.',
+      'Use Mock Bids for rehearsal. Current Bid Live provides read-only readiness for a saved version; the separate Live console is operator-only for an already-authorized session.',
     ],
     important:
       'Hub authentication and the Bid Access PIN serve different purposes. Never treat a PIN as a Hub sign-in method.',
@@ -571,20 +899,32 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   section({
     id: 'dashboard',
     category: 'Start here',
-    title: 'Dashboard',
+    title: 'Today: current Department staffing',
     route: '/admin',
-    routeLabel: 'Dashboard',
+    routeLabel: 'Today',
     summary:
-      'The dashboard is the control-center landing page. Read its status cards and use its shortcuts to move into the area that needs attention.',
-    controls: ['Status cards', 'Operational shortcuts', 'Admin navigation'],
+      'Today shows effective-dated Department positions, occupants and vacancies. It uses year-round staffing records and does not require an annual Bid Rule Book.',
+    controls: ['Date', 'Shift', 'Previous roster page', 'Next roster page', 'Refresh staffing'],
     steps: [
-      'Review the status shown before making a change.',
-      'Use a shortcut to open the related workspace.',
-      'Follow blocked or unavailable notices instead of working around them.',
+      'Choose the effective date and shift you want to view. Shift options come from recorded staffing rather than a fixed list.',
+      'Read the station and unit groups, member names, position names and vacancies. An empty staffing position is not automatically an available Bid opportunity.',
+      'On desktop, use Previous roster page and Next roster page when the selected shift needs more than one page. Every record remains reachable and names wrap instead of being silently cut off. On a phone or tablet, scroll through the roster.',
+      'Check the recorded update time and use Refresh staffing after a change. Today also refreshes periodically and when you return to the window. A failed refresh is shown explicitly; the last loaded roster is identified when retained.',
+      'Use the staffing and member workspaces to maintain assignments and effective-dated personnel history. Approved organization links control dated station and unit names; unmapped legacy positions retain their recorded labels.',
     ],
     important:
-      'A dashboard status is an operational signal, not authorization to start a live Bid or change controlled records.',
-    keywords: ['status', 'cards', 'shortcuts', 'attention'],
+      'Today is read-only. Viewing dates, switching shifts, paging and refreshing do not change Department records, create Bid versions or advance Mock or Live runs.',
+    keywords: [
+      'today',
+      'staffing',
+      'shift',
+      'date',
+      'vacant',
+      'roster',
+      'pagination',
+      'refresh',
+      'department',
+    ],
   }),
   section({
     id: 'current-rosters',
@@ -1105,6 +1445,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Specialty Adjudication records a controlled specialty review with the original bidder, eligible higher-priority candidates, points or rank, contacts, outcomes, and exact resumption state.',
     controls: [
       'Specialty review state',
+      'Specialty coverage advisory',
       'Candidate list',
       'Contact attempts',
       'Accept',
@@ -1114,8 +1455,9 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Evidence and reason fields',
     ],
     steps: [
+      'Before an authorized specialty action, read the Specialty coverage advisory when it is available. It is derived from the frozen session snapshot and canonical fills; it describes coverage risk but does not approve, block or change an operator action.',
       'Start the specialty review from the live controls when authorized.',
-      'Review the original bidder, requested position, candidate order, and policy status.',
+      'Review the original bidder, requested position, candidate order, policy status and any available advisory.',
       'Record each contact attempt and disposition.',
       'Complete the adjudication and confirm the suspended bidder resumes at the recorded queue state.',
     ],
@@ -1124,6 +1466,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     keywords: [
       'specialty',
       'adjudication',
+      'coverage advisory',
       'higher priority',
       'points',
       'ranking',
@@ -1372,6 +1715,16 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 /** Every Admin navigation destination must be represented in guide content. */
 export const ADMIN_GUIDE_COVERAGE: Readonly<Record<string, readonly string[]>> = {
   '/admin': ['getting-started', 'dashboard'],
+  '/admin/department': ['department-people'],
+  '/admin/department/roster': ['department-roster'],
+  '/admin/department/credentials': ['department-credentials'],
+  '/admin/department/import': ['department-import'],
+  '/admin/current-bid': [
+    'current-bid-edit',
+    'current-bid-blueprint',
+    'current-bid-versions',
+    'current-bid-mock',
+  ],
   '/admin/docs': ['glossary'],
   '/admin/targetsolutions': ['targetsolutions'],
   '/admin/bid-board': ['bid-board'],

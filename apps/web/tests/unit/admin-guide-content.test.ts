@@ -58,6 +58,23 @@ describe('Administrator Guide content contract', () => {
     expect(text).not.toMatch(/AI Assist|Workers AI|\/admin\/ai-assist/i);
   });
 
+  it('deep-links each Current Bid guide workflow to its selected workspace view', () => {
+    expect(GUIDE_SECTIONS.find((section) => section.id === 'current-bid-blueprint')).toMatchObject({
+      route: '/admin/current-bid?view=blueprint',
+    });
+    expect(GUIDE_SECTIONS.find((section) => section.id === 'current-bid-versions')).toMatchObject({
+      route: '/admin/current-bid?view=versions',
+    });
+    expect(GUIDE_SECTIONS.find((section) => section.id === 'current-bid-mock')).toMatchObject({
+      route: '/admin/current-bid?view=mock',
+    });
+    expect(
+      GUIDE_SECTIONS.find((section) => section.id === 'current-bid-live-preflight'),
+    ).toMatchObject({
+      route: '/admin/current-bid?view=live',
+    });
+  });
+
   it('uses an intentional category, a real route, and concise guide content for each section', () => {
     expect(GUIDE_SECTIONS.length).toBeGreaterThanOrEqual(27);
 
