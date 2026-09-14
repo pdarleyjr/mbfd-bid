@@ -71,6 +71,21 @@ function normalizePolicy(policy: FrozenLiveBidPolicy) {
     ].sort(compareId);
 }
 
+/** Selector definitions are keyed by stage and their explicit ids/filter
+ * ranks are membership sets. Comparator rule order remains intentional. */
+function normalizeStageParticipantSourceAuthoring(
+  policy: NonNullable<BidDefinitionContent['policy']>,
+) {
+  const sources = policy.stageParticipantSources;
+  if (sources === undefined) return;
+  for (const source of sources) {
+    if (source.participantSource.type === 'EXPLICIT_MEMBERS')
+      source.participantSource.memberIds.sort((a, b) => a - b);
+    else source.participantSource.ranks.sort(compareId);
+  }
+  sources.sort((a, b) => compareId(a.stageId, b.stageId));
+}
+
 function normalizeRule(
   rule: BidDefinitionRule,
   path: (string | number)[],
@@ -148,6 +163,73 @@ export function canonicalBidDefinition(input: unknown): CanonicalBidDefinition {
   }
 }
 
+/** A comparator request can remain OPEN, but its identifier must still point
+ * to actual annual-policy evidence in the saved definition. Resolution and
+ * freezing remain a later, fail-closed preparation concern. */
+function validateOrderingAuthorityRequest(
+  content: BidDefinitionContent,
+  issues: BidDefinitionIssue[],
+) {
+  const request = content.policy?.orderingAuthority;
+  if (request === undefined) return;
+  const sourceDecision = content.sourceDecisions.find(
+    (decision) => decision.issueId === request.sourceDecisionId,
+  );
+  if (sourceDecision === undefined) {
+    issues.push({
+      path: ['policy', 'orderingAuthority', 'sourceDecisionId'],
+      code: 'ordering_authority_source_decision_missing',
+      message: 'The ordering-authority request must name a saved annual-policy source decision.',
+    });
+  } else if (sourceDecision.area !== 'annual-policy') {
+    issues.push({
+      path: ['policy', 'orderingAuthority', 'sourceDecisionId'],
+      code: 'ordering_authority_source_decision_not_annual_policy',
+      message: 'The ordering-authority request must name source evidence in annual-policy.',
+    });
+  }
+}
+
+/**
+ * Typed participant authoring is keyed to an already-saved V3 execution
+ * policy. This checks only that the authoring describes that exact policy and
+ * does not contradict a comparator request already present in the same saved
+ * definition. It deliberately does not resolve source decisions: an OPEN or
+ * otherwise unresolved decision remains representable as a draft.
+ */
+function validateStageParticipantSourceAuthoring(
+  content: BidDefinitionContent,
+  issues: BidDefinitionIssue[],
+) {
+  const policy = content.policy;
+  const sources = policy?.stageParticipantSources;
+  if (policy === null || sources === undefined) return;
+
+  const executionStageIds = new Set(policy.executionPolicy.stages.map((stage) => stage.id));
+  const describesExactExecutionStages =
+    sources.length === executionStageIds.size &&
+    sources.every((source) => executionStageIds.has(source.stageId));
+  if (!describesExactExecutionStages) {
+    issues.push({
+      path: ['policy', 'stageParticipantSources'],
+      code: 'stage_participant_source_stage_mismatch',
+      message: 'Typed stage participant sources must describe every configured execution stage.',
+    });
+  }
+
+  const requestedComparator = policy.orderingAuthority?.comparator;
+  if (requestedComparator === undefined) return;
+  sources.forEach((source, index) => {
+    if (canonical(source.ordering) === canonical(requestedComparator)) return;
+    issues.push({
+      path: ['policy', 'stageParticipantSources', index, 'ordering'],
+      code: 'stage_participant_source_ordering_mismatch',
+      message:
+        'Typed stage participant ordering must match the saved ordering-authority comparator request.',
+    });
+  });
+}
+
 function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
   const parsed = BidDefinitionContentSchema.safeParse(input);
   if (!parsed.success)
@@ -161,7 +243,10 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
     };
   const content = parsed.data;
   if (content.settings?.v === 3) normalizePolicy(content.settings.livePolicy);
-  if (content.policy) normalizePolicy(content.policy.executionPolicy);
+  if (content.policy) {
+    normalizePolicy(content.policy.executionPolicy);
+    normalizeStageParticipantSourceAuthoring(content.policy);
+  }
   const issues: BidDefinitionIssue[] = [];
   const positionIds = unique(content.positions, (row) => row.id, 'positions', issues);
   unique(content.rules, (row) => row.positionId, 'rules', issues);
@@ -218,6 +303,8 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
       message: 'Source document execution policy differs from the configured Bid policy',
     });
   }
+  validateOrderingAuthorityRequest(content, issues);
+  validateStageParticipantSourceAuthoring(content, issues);
   if (issues.length) return { ok: false, issues };
   content.positions.sort((a, b) => compareId(a.id, b.id));
   content.rules.sort((a, b) => compareId(a.positionId, b.positionId));

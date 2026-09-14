@@ -5,8 +5,10 @@ import { useCredentialCatalog } from '@/lib/use-credential-catalog';
 import {
   type BidDefinitionContent,
   BidDispositionSchema,
+  type BidOrderingAuthorityRequest,
   type FrozenLiveBidPolicy,
   LiveBidActionSchema,
+  type StageParticipantSourceDefinition,
 } from '@mbfd/shared';
 import {
   CheckField,
@@ -21,6 +23,10 @@ import {
   useBidMembers,
 } from './BidFields';
 import { BidPolicySourceFields } from './BidPolicySourceFields';
+import {
+  BidOrderingAuthorityRequestEditor,
+  StageParticipantSourceEditor,
+} from './StageParticipantSourceEditor';
 
 export type PolicySection =
   | 'language'
@@ -31,6 +37,159 @@ export type PolicySection =
   | 'authority'
   | 'timing';
 type Policy = FrozenLiveBidPolicy;
+type PolicyDocument = NonNullable<BidDefinitionContent['policy']>;
+
+function withoutStageParticipantSource(policy: PolicyDocument, stageId: string): PolicyDocument {
+  const remaining = policy.stageParticipantSources?.filter(
+    (definition) => definition.stageId !== stageId,
+  );
+  if (remaining?.length) return { ...policy, stageParticipantSources: remaining };
+  const { stageParticipantSources: _stageParticipantSources, ...withoutSources } = policy;
+  return withoutSources;
+}
+
+function withStageParticipantSource(
+  policy: PolicyDocument,
+  definition: StageParticipantSourceDefinition,
+): PolicyDocument {
+  const existing = policy.stageParticipantSources ?? [];
+  const hasExisting = existing.some((candidate) => candidate.stageId === definition.stageId);
+  return {
+    ...policy,
+    stageParticipantSources: hasExisting
+      ? existing.map((candidate) =>
+          candidate.stageId === definition.stageId ? definition : candidate,
+        )
+      : [...existing, definition],
+  };
+}
+
+function withOrderingAuthorityRequest(
+  policy: PolicyDocument,
+  request: BidOrderingAuthorityRequest | undefined,
+): PolicyDocument {
+  if (request) return { ...policy, orderingAuthority: request };
+  const { orderingAuthority: _orderingAuthority, ...withoutRequest } = policy;
+  return withoutRequest;
+}
+
+function sameStageParticipantOrdering(
+  left: StageParticipantSourceDefinition['ordering'],
+  right: BidOrderingAuthorityRequest['comparator'],
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function StageParticipantSourceCoverageNotice({
+  stages,
+  definitions,
+  orderingAuthority,
+  orderingAuthorityAvailable,
+}: {
+  stages: Policy['stages'];
+  definitions: readonly StageParticipantSourceDefinition[];
+  orderingAuthority: BidOrderingAuthorityRequest | undefined;
+  orderingAuthorityAvailable: boolean;
+}) {
+  const configuredStageIds = new Set(stages.map((stage) => stage.id));
+  const unexpectedStageIds = definitions
+    .filter((definition) => !configuredStageIds.has(definition.stageId))
+    .map((definition) => definition.stageId);
+  const executionStageBlocked = stages.filter((stage) => stage.memberIds.length === 0);
+  if (!stages.length)
+    return (
+      <p className="text-sm text-muted-foreground">
+        {unexpectedStageIds.length
+          ? `Selector coverage is partial. Unexpected saved source stage IDs: ${unexpectedStageIds.join(', ')}. Remove or remap them before server acceptance.`
+          : 'No configured stages yet. There is no selector coverage to save, accept, or use for Live operation.'}
+      </p>
+    );
+  if (!definitions.length)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Selector coverage is partial. No saved typed selector sources exist. Legacy absence is
+        retained, but a current governing comparator request and a matching typed source for every
+        configured stage are required for selector-based server acceptance.
+        {executionStageBlocked.length > 0
+          ? ` Frozen execution participant references are absent for ${executionStageBlocked
+              .map((stage) => stage.label || stage.id)
+              .join(', ')}; do not add placeholders.`
+          : ''}
+      </p>
+    );
+  if (!orderingAuthority || !orderingAuthorityAvailable)
+    return (
+      <p className="text-sm text-destructive">
+        Typed selector sources are retained but unbound and Live-blocked because no current
+        governing comparator request is available. They do not count as selector coverage or
+        server-acceptable selector authoring until a valid request is saved and each stage is
+        reviewed against it.
+        {unexpectedStageIds.length
+          ? ` Unexpected saved source stage IDs: ${unexpectedStageIds.join(', ')}.`
+          : ''}
+      </p>
+    );
+  const matchingStageIds = new Set(
+    definitions
+      .filter((definition) =>
+        sameStageParticipantOrdering(definition.ordering, orderingAuthority.comparator),
+      )
+      .map((definition) => definition.stageId),
+  );
+  const missingStages = stages.filter((stage) => !matchingStageIds.has(stage.id));
+  const staleStageIds = new Set(
+    definitions
+      .filter(
+        (definition) =>
+          stages.some((stage) => stage.id === definition.stageId) &&
+          !sameStageParticipantOrdering(definition.ordering, orderingAuthority.comparator),
+      )
+      .map((definition) => definition.stageId),
+  );
+  const staleStages = stages.filter((stage) => staleStageIds.has(stage.id));
+  if (!missingStages.length && !unexpectedStageIds.length && !executionStageBlocked.length)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Typed selector sources cover every configured stage locally. Server acceptance and Live
+        authority still require separate server-side review and freeze.
+      </p>
+    );
+  return (
+    <p className="text-sm text-muted-foreground">
+      Selector coverage is partial.
+      {missingStages.length > 0 && (
+        <>
+          {' '}
+          {missingStages.map((stage) => stage.label || stage.id).join(', ')}{' '}
+          {missingStages.length === 1 ? 'has' : 'have'} no matching saved typed source.
+        </>
+      )}
+      {staleStages.length > 0 && (
+        <>
+          {' '}
+          Saved selector ordering is stale for{' '}
+          {staleStages.map((stage) => stage.label || stage.id).join(', ')} and must be reviewed and
+          re-saved.
+        </>
+      )}
+      {unexpectedStageIds.length > 0 && (
+        <> Unexpected saved source stage IDs: {unexpectedStageIds.join(', ')}.</>
+      )}
+      {executionStageBlocked.length > 0 && (
+        <>
+          {' '}
+          Frozen execution participant references are absent for{' '}
+          {executionStageBlocked.map((stage) => stage.label || stage.id).join(', ')}. Do not add
+          placeholders; their selectors remain local until real references are available.
+        </>
+      )}{' '}
+      Legacy absence is retained, but selector-based server acceptance requires a matching typed
+      source for every configured stage. Saving one stage here does not accept a version or
+      authorize Live.
+    </p>
+  );
+}
+
 export function emptyOperatingPolicy(): Policy {
   return {
     v: 1,
@@ -84,17 +243,41 @@ export function BidPolicyFields({
   const people = useBidMembers();
   const credentials = useCredentialCatalog();
   const policy = content.settings?.v === 3 ? content.settings.livePolicy : null;
+  const orderingAuthorityRequest = content.policy?.orderingAuthority;
+  const orderingAuthorityAvailable =
+    orderingAuthorityRequest !== undefined &&
+    content.sourceDecisions.some(
+      (decision) =>
+        decision.issueId === orderingAuthorityRequest.sourceDecisionId &&
+        decision.area === 'annual-policy',
+    );
   const opportunities = content.positions.map((p) => ({
     value: p.id,
     label: `${p.positionName} · ${p.shift} · ${p.id}`,
   }));
-  const updatePolicy = (next: Policy) => {
+  const updatePolicy = (
+    next: Policy,
+    policyDocument: BidDefinitionContent['policy'] = content.policy,
+  ) => {
     if (content.settings?.v !== 3) return;
     onChange({
       ...content,
       settings: { ...content.settings, livePolicy: next },
-      policy: content.policy ? { ...content.policy, executionPolicy: next } : null,
+      policy: policyDocument ? { ...policyDocument, executionPolicy: next } : null,
     });
+  };
+  const updatePolicyDocument = (next: PolicyDocument) => onChange({ ...content, policy: next });
+  const saveStageParticipantSource = (definition: StageParticipantSourceDefinition) => {
+    if (!content.policy) return;
+    updatePolicyDocument(withStageParticipantSource(content.policy, definition));
+  };
+  const removeStageParticipantSource = (stageId: string) => {
+    if (!content.policy) return;
+    updatePolicyDocument(withoutStageParticipantSource(content.policy, stageId));
+  };
+  const updateOrderingAuthorityRequest = (request: BidOrderingAuthorityRequest | undefined) => {
+    if (!content.policy) return;
+    updatePolicyDocument(withOrderingAuthorityRequest(content.policy, request));
   };
   const ops = policy?.annualOperations;
   const initializePolicy = () => {
@@ -161,6 +344,26 @@ export function BidPolicyFields({
         title="Participants & Bid flow"
         description="Each stage names its participants and opportunities. Members retain their Department identity. Move stages to change their configured order."
       >
+        {content.policy ? (
+          <>
+            <BidOrderingAuthorityRequestEditor
+              sourceDecisions={content.sourceDecisions}
+              value={content.policy.orderingAuthority}
+              onChange={updateOrderingAuthorityRequest}
+            />
+            <StageParticipantSourceCoverageNotice
+              stages={policy.stages}
+              definitions={content.policy.stageParticipantSources ?? []}
+              orderingAuthority={orderingAuthorityRequest}
+              orderingAuthorityAvailable={orderingAuthorityAvailable}
+            />
+          </>
+        ) : (
+          <p role="alert" className="text-sm text-destructive">
+            Add policy language before recording a governing comparator request or a participant
+            source. Existing stages remain unchanged.
+          </p>
+        )}
         {people.isError && (
           <p role="alert">
             The member catalog could not be loaded. Existing participant references are retained.
@@ -204,10 +407,23 @@ export function BidPolicyFields({
                     onChange={(kind) => updateStage({ kind })}
                   />
                   <ReferencePicker
-                    label={`Participants in ${stage.label || stage.id}`}
+                    label={
+                      content.policy?.stageParticipantSources?.some(
+                        (definition) => definition.stageId === stage.id,
+                      )
+                        ? `Legacy explicit participant references in ${stage.label || stage.id}`
+                        : `Participants in ${stage.label || stage.id}`
+                    }
                     values={stage.memberIds.map(String)}
                     options={people.data ?? []}
                     onChange={(members) => updateStage({ memberIds: members.map(Number) })}
+                    help={
+                      content.policy?.stageParticipantSources?.some(
+                        (definition) => definition.stageId === stage.id,
+                      )
+                        ? 'Retained legacy compatibility data only. It is not this stage’s authored selector roster and this browser does not resolve or synchronize selector membership.'
+                        : 'The current frozen execution schema retains these explicit references separately. A selector-only new stage cannot become execution-ready here; do not enter placeholders.'
+                    }
                   />
                   <ReferencePicker
                     label={`Opportunities in ${stage.label || stage.id}`}
@@ -215,6 +431,19 @@ export function BidPolicyFields({
                     options={opportunities}
                     onChange={(opportunityPositionIds) => updateStage({ opportunityPositionIds })}
                   />
+                  {content.policy && (
+                    <StageParticipantSourceEditor
+                      stageId={stage.id}
+                      savedDefinition={content.policy.stageParticipantSources?.find(
+                        (definition) => definition.stageId === stage.id,
+                      )}
+                      orderingAuthority={orderingAuthorityRequest}
+                      orderingAuthorityAvailable={orderingAuthorityAvailable}
+                      executionStageReady={stage.memberIds.length > 0}
+                      onSave={saveStageParticipantSource}
+                      onRemove={() => removeStageParticipantSource(stage.id)}
+                    />
+                  )}
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" disabled={index === 0} onClick={() => move(-1)}>
                       Move stage earlier
@@ -228,8 +457,8 @@ export function BidPolicyFields({
                     </Button>
                     <Button
                       type="button"
-                      onClick={() =>
-                        updatePolicy({
+                      onClick={() => {
+                        const next = {
                           ...policy,
                           stages: policy.stages.filter((s) => s.id !== stage.id),
                           ...(ops
@@ -240,8 +469,14 @@ export function BidPolicyFields({
                                 },
                               }
                             : {}),
-                        })
-                      }
+                        };
+                        updatePolicy(
+                          next,
+                          content.policy
+                            ? withoutStageParticipantSource(content.policy, stage.id)
+                            : null,
+                        );
+                      }}
                     >
                       Remove stage from draft
                     </Button>

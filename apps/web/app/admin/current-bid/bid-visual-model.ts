@@ -278,7 +278,7 @@ function participantSourceSummary(definition: StageParticipantSourceDefinition):
           String(memberId).padStart(12, '0'),
         ).join(', ')}.`;
   const ordering = definition.ordering.map((rule) => `${rule.key} ${rule.direction}`).join(' → ');
-  return `${sourceDetail} Ordering: ${ordering}.`;
+  return `${sourceDetail} Ordering: ${ordering}. Saved selector authoring only; roster resolution is pending a pinned server evaluation.`;
 }
 
 class VisualModelBuilder {
@@ -437,6 +437,10 @@ class VisualModelBuilder {
 }
 
 function addStructuralNodes(builder: VisualModelBuilder, content: BidDefinitionContent): void {
+  const participantSources = content.policy?.stageParticipantSources ?? [];
+  const participantSourceByStageId = new Map(
+    participantSources.map((definition) => [definition.stageId, definition]),
+  );
   const policyNode = builder.addNode({
     id: 'policy:bid',
     type: 'policy',
@@ -472,16 +476,21 @@ function addStructuralNodes(builder: VisualModelBuilder, content: BidDefinitionC
   });
   builder.addEdge(flowNode.id, opportunityAggregate.id, 'contains', 'AUTHORED', 'flow');
 
-  const stageMemberCount =
+  const legacyStageMemberCount =
     content.policy?.executionPolicy.stages.reduce(
-      (total, stage) => total + stage.memberIds.length,
+      (total, stage) =>
+        total + (participantSourceByStageId.has(stage.id) ? 0 : stage.memberIds.length),
       0,
     ) ?? 0;
+  const typedParticipantSourceSummary =
+    participantSources.length === 1
+      ? '1 typed participant selector authoring record awaits pinned server resolution.'
+      : `${participantSources.length} typed participant selector authoring records await pinned server resolution.`;
   const memberAggregate = builder.addNode({
     id: 'aggregate:members',
     type: 'aggregate',
     label: 'Configured participant references',
-    summary: `${stageMemberCount} configured stage-member references; identities require server analysis.`,
+    summary: `${legacyStageMemberCount} configured legacy stage-member references; ${typedParticipantSourceSummary}`,
     provenance: content.policy ? policyNode.provenance : ['Bid definition'],
     status: 'NOT_EVALUATED',
     group: 'members',
@@ -695,11 +704,14 @@ function addStructuralNodes(builder: VisualModelBuilder, content: BidDefinitionC
     (value) =>
       `${String(value.order).padStart(8, '0')}\u0000${value.id}\u0000${canonicalJson(value)}`,
   )) {
+    const participantSource = participantSourceByStageId.get(stage.id);
     const node = builder.addNode({
       id: `stage:${segment(stage.id)}`,
       type: 'stage',
       label: stage.label,
-      summary: `${stage.kind} · ${stage.memberIds.length} participant references · ${stage.opportunityPositionIds.length} opportunities.`,
+      summary: participantSource
+        ? `${stage.kind} · typed participant selector authoring; roster resolution pending a pinned server evaluation. · ${stage.opportunityPositionIds.length} opportunities.`
+        : `${stage.kind} · ${stage.memberIds.length} participant references · ${stage.opportunityPositionIds.length} opportunities.`,
       provenance: [`Policy revision ${execution.policyRevision}`],
       status: 'AUTHORED',
       group: 'flow',
@@ -715,13 +727,16 @@ function addStructuralNodes(builder: VisualModelBuilder, content: BidDefinitionC
         provenance: node.provenance,
       });
     }
-    for (const memberId of stage.memberIds) {
-      builder.pendingMemberReferences.push({ stageId: stage.id, memberId });
-    }
+    // A typed selector supersedes saved raw stage memberIds for this renderer.
+    // Only a separately labeled server impact may establish a member edge.
+    if (!participantSource)
+      for (const memberId of stage.memberIds) {
+        builder.pendingMemberReferences.push({ stageId: stage.id, memberId });
+      }
   }
 
   for (const definition of stableOrder(
-    content.policy.stageParticipantSources ?? [],
+    participantSources,
     (value) => `${value.stageId}\u0000${canonicalJson(value)}`,
   )) {
     const stage = builder.resolve('stage', definition.stageId);

@@ -4,6 +4,7 @@ import {
   type FrozenLiveBidPolicy,
   FrozenLiveBidPolicySchema,
   LiveBidActionSchema,
+  type StageParticipantSourceDefinitions,
 } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import { canonicalBidDefinition } from '../src/lib/bid-definition-content.js';
@@ -152,7 +153,219 @@ function specialty(policy: FrozenLiveBidPolicy) {
   return entry(annual(policy).specialties ?? []);
 }
 
+function typedStageSources(): StageParticipantSourceDefinitions {
+  return [
+    {
+      stageId: 'synthetic-first',
+      sourceRef: 'Synthetic first-stage roster evidence.',
+      participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [101, 102] },
+      ordering: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+    },
+    {
+      stageId: 'synthetic-second',
+      sourceRef: 'Synthetic second-stage roster evidence.',
+      participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [103, 104] },
+      ordering: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+    },
+  ];
+}
+
+function requestOpenOrderingAuthority(candidate: BidDefinitionContent) {
+  if (!candidate.policy) throw new Error('Synthetic policy required');
+  candidate.policy.orderingAuthority = {
+    v: 1,
+    sourceDecisionId: 'synthetic-unresolved-ordering-decision',
+    comparator: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+  };
+  candidate.sourceDecisions = [
+    {
+      issueId: 'synthetic-unresolved-ordering-decision',
+      title: 'Synthetic unresolved annual ordering authority',
+      question: 'Which reviewed comparator governs this synthetic Bid?',
+      area: 'annual-policy',
+      status: 'OPEN',
+      decision: 'Awaiting review.',
+      sourceRef: 'Synthetic annual-policy evidence.',
+      effectiveOn: '2027-01-01',
+    },
+  ];
+}
+
 describe('Bid definition policy normalization and validation', () => {
+  it.each([
+    [
+      'omits an execution-policy stage',
+      (sources: StageParticipantSourceDefinitions) => sources.slice(0, 1),
+    ],
+    [
+      'names a stage absent from the execution policy',
+      (sources: StageParticipantSourceDefinitions) => [
+        ...sources,
+        { ...entry(sources, 1), stageId: 'synthetic-unconfigured-stage' },
+      ],
+    ],
+  ] as const)(
+    'rejects typed stage authoring that %s at the canonical save boundary',
+    (_label, edit) => {
+      const candidate = definition();
+      if (!candidate.policy) throw new Error('Synthetic policy required');
+      candidate.policy.stageParticipantSources = edit(typedStageSources());
+
+      const result = canonicalBidDefinition(candidate);
+
+      expect(result).toMatchObject({
+        ok: false,
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            path: ['policy', 'stageParticipantSources'],
+            code: 'stage_participant_source_stage_mismatch',
+          }),
+        ]),
+      });
+    },
+  );
+
+  it('rejects typed stage ordering that disagrees with the saved ordering-authority request', () => {
+    const candidate = definition();
+    if (!candidate.policy) throw new Error('Synthetic policy required');
+    const sources = typedStageSources();
+    entry(sources).ordering = [{ key: 'RSC_SENIORITY', direction: 'ASC' }];
+    candidate.policy.stageParticipantSources = sources;
+    requestOpenOrderingAuthority(candidate);
+
+    const result = canonicalBidDefinition(candidate);
+
+    expect(result).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          path: ['policy', 'stageParticipantSources', 0, 'ordering'],
+          code: 'stage_participant_source_ordering_mismatch',
+        }),
+      ]),
+    });
+  });
+
+  it('rejects an ordering-authority request that names no saved source decision', () => {
+    const candidate = definition();
+    requestOpenOrderingAuthority(candidate);
+    candidate.sourceDecisions = [];
+
+    expect(canonicalBidDefinition(candidate)).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          path: ['policy', 'orderingAuthority', 'sourceDecisionId'],
+          code: 'ordering_authority_source_decision_missing',
+        }),
+      ]),
+    });
+  });
+
+  it('rejects an ordering-authority request outside annual-policy evidence', () => {
+    const candidate = definition();
+    requestOpenOrderingAuthority(candidate);
+    entry(candidate.sourceDecisions).area = 'rules';
+
+    expect(canonicalBidDefinition(candidate)).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          path: ['policy', 'orderingAuthority', 'sourceDecisionId'],
+          code: 'ordering_authority_source_decision_not_annual_policy',
+        }),
+      ]),
+    });
+  });
+
+  it('keeps matching typed sources representable while their ordering source decision is unresolved', () => {
+    const candidate = definition();
+    if (!candidate.policy) throw new Error('Synthetic policy required');
+    candidate.policy.stageParticipantSources = typedStageSources();
+    requestOpenOrderingAuthority(candidate);
+
+    const result = accepted(candidate);
+
+    expect(result.content.policy?.orderingAuthority).toEqual(candidate.policy.orderingAuthority);
+    expect(result.content.policy?.executionPolicy.orderingAuthority).toBeUndefined();
+  });
+
+  it('suppresses semantic no-ops in typed selector row and predicate-set order', () => {
+    const baselineCandidate = definition();
+    if (!baselineCandidate.policy) throw new Error('Synthetic policy required');
+    const baselineSources = typedStageSources();
+    baselineSources[1] = {
+      ...entry(baselineSources, 1),
+      participantSource: {
+        type: 'FILTER',
+        active: true,
+        bidParticipation: 'BIDDABLE',
+        ranks: ['CPT', 'FF'],
+      },
+    };
+    baselineCandidate.policy.stageParticipantSources = baselineSources;
+    const baseline = accepted(baselineCandidate);
+
+    const reorderedCandidate = structuredClone(baselineCandidate);
+    const reorderedPolicy = reorderedCandidate.policy;
+    const reorderedSources = reorderedPolicy?.stageParticipantSources;
+    if (reorderedPolicy === null || reorderedSources === undefined)
+      throw new Error('Typed sources required');
+    const first = entry(reorderedSources);
+    const second = entry(reorderedSources, 1);
+    if (
+      first.participantSource.type !== 'EXPLICIT_MEMBERS' ||
+      second.participantSource.type !== 'FILTER'
+    )
+      throw new Error('Synthetic typed source kinds required');
+    reorderedPolicy.stageParticipantSources = [
+      {
+        ...second,
+        participantSource: {
+          ...second.participantSource,
+          ranks: [...second.participantSource.ranks].reverse(),
+        },
+      },
+      {
+        ...first,
+        participantSource: {
+          ...first.participantSource,
+          memberIds: [...first.participantSource.memberIds].reverse(),
+        },
+      },
+    ];
+
+    expect(accepted(reorderedCandidate)).toEqual(baseline);
+  });
+
+  it('retains typed selector comparator precedence', () => {
+    const baselineCandidate = definition();
+    if (!baselineCandidate.policy) throw new Error('Synthetic policy required');
+    baselineCandidate.policy.stageParticipantSources = typedStageSources().map((source) => ({
+      ...source,
+      ordering: [
+        { key: 'RSC_SENIORITY', direction: 'ASC' },
+        { key: 'RANK_SENIORITY', direction: 'ASC' },
+      ],
+    }));
+    const baseline = accepted(baselineCandidate);
+
+    const changedCandidate = structuredClone(baselineCandidate);
+    const changedPolicy = changedCandidate.policy;
+    const changedSources = changedPolicy?.stageParticipantSources;
+    if (changedPolicy === null || changedSources === undefined)
+      throw new Error('Typed sources required');
+    changedPolicy.stageParticipantSources = changedSources.map((source) => ({
+      ...source,
+      ordering: [
+        { key: 'RANK_SENIORITY', direction: 'ASC' },
+        { key: 'RSC_SENIORITY', direction: 'ASC' },
+      ],
+    }));
+
+    expect(accepted(changedCandidate).sha256).not.toBe(baseline.sha256);
+  });
+
   it.each([
     ['stage rows', (policy: FrozenLiveBidPolicy) => policy.stages.reverse()],
     ['stage members', (policy: FrozenLiveBidPolicy) => entry(policy.stages).memberIds.reverse()],

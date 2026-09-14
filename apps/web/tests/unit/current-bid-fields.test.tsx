@@ -868,11 +868,25 @@ describe('BidPolicyFields', () => {
 
   it('reorders/removes stage identities consistently while preserving members and references needing explicit repair', async () => {
     const original = baseContent();
+    required(original.policy).stageParticipantSources = [
+      {
+        stageId: 'stage-two',
+        sourceRef: 'Synthetic second-stage participant authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [902] },
+        ordering: [{ key: 'RSC_SENIORITY', direction: 'ASC' }],
+      },
+    ];
     const state = policyEditor(original, 'flow');
     const later = Array.from(state.container.querySelectorAll('details')).find((node) =>
       node.querySelector('summary')?.textContent?.includes('Synthetic second stage'),
     );
     if (!later) throw new Error('Missing second stage');
+    expect(group(state.container, 'Participants in Synthetic first stage').textContent).toContain(
+      'The current frozen execution schema retains these explicit references separately.',
+    );
+    expect(
+      group(later, 'Legacy explicit participant references in Synthetic second stage').textContent,
+    ).toContain('Retained legacy compatibility data only.');
     await click(button(later, 'Move stage earlier'));
     expect(live(state.value()).stages).toEqual([
       { ...live(original).stages[1], order: 0 },
@@ -883,8 +897,259 @@ describe('BidPolicyFields', () => {
     await click(button(later, 'Remove stage from draft'));
     expect(live(state.value()).stages.map((row) => row.id)).toEqual(['stage-one']);
     expect(ops(state.value()).stageOrder).toEqual(['stage-one']);
+    expect(state.value().policy).not.toHaveProperty('stageParticipantSources');
     expect(live(state.value()).dispositions).toEqual(live(original).dispositions);
     expect(state.value().policy?.executionPolicy).toEqual(live(state.value()));
+  });
+
+  it('stores a valid selector and unverified comparator request as authoring material only', async () => {
+    const original = baseContent();
+    original.sourceDecisions[0] = {
+      ...required(original.sourceDecisions[0]),
+      area: 'annual-policy',
+      title: 'Synthetic governing comparator decision',
+    };
+    const sourceDecision = structuredClone(required(original.sourceDecisions[0]));
+    const state = policyEditor(original, 'flow');
+    const stage = Array.from(state.container.querySelectorAll('details')).find((node) =>
+      node.querySelector('summary')?.textContent?.includes('Synthetic first stage'),
+    );
+    if (!stage) throw new Error('Missing first stage');
+
+    await setValue(control(state.container, 'Governing source decision'), sourceDecision.issueId);
+    await setValue(control(state.container, 'Primary comparator key'), 'RSC_SENIORITY');
+    await setValue(control(state.container, 'Primary comparator direction'), 'ASC');
+    await click(button(state.container, 'Save governing comparator request'));
+    await setValue(control(stage, 'Source reference'), 'Synthetic participant source authority');
+    await setValue(control(stage, 'Explicit member IDs'), '901, 999');
+    await click(button(stage, 'Save participant source'));
+
+    expect(state.value().policy?.orderingAuthority).toEqual({
+      v: 1,
+      sourceDecisionId: sourceDecision.issueId,
+      comparator: [{ key: 'RSC_SENIORITY', direction: 'ASC' }],
+    });
+    expect(state.value().policy?.stageParticipantSources).toEqual([
+      {
+        stageId: 'stage-one',
+        sourceRef: 'Synthetic participant source authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [901, 999] },
+        ordering: [{ key: 'RSC_SENIORITY', direction: 'ASC' }],
+      },
+    ]);
+    expect(state.value().sourceDecisions).toEqual([sourceDecision]);
+    expect(live(state.value())).toEqual(live(original));
+    expect(state.value().policy?.executionPolicy).toEqual(live(original));
+    expect(state.container.textContent).toContain(
+      'Selector coverage is partial. Synthetic second stage',
+    );
+    expect(state.container.textContent).toContain(
+      'Saving one stage here does not accept a version or authorize Live.',
+    );
+  });
+
+  it('keeps Filter and explicit selector drafts local for a freshly added empty stage', async () => {
+    const original = baseContent();
+    original.sourceDecisions[0] = {
+      ...required(original.sourceDecisions[0]),
+      area: 'annual-policy',
+      title: 'Synthetic governing comparator decision',
+    };
+    const state = policyEditor(original, 'flow');
+
+    await setValue(
+      control(state.container, 'Governing source decision'),
+      required(original.sourceDecisions[0]).issueId,
+    );
+    await setValue(control(state.container, 'Primary comparator key'), 'RSC_SENIORITY');
+    await setValue(control(state.container, 'Primary comparator direction'), 'ASC');
+    await click(button(state.container, 'Save governing comparator request'));
+    await click(button(state.container, 'Add stage'));
+    const emptyStage = Array.from(state.container.querySelectorAll('details')).find((node) =>
+      node.querySelector('summary')?.textContent?.includes('Stage name required'),
+    );
+    if (!emptyStage) throw new Error('Missing newly added stage');
+
+    await setValue(control(emptyStage, 'Participant source type'), 'FILTER');
+    await setValue(control(emptyStage, 'Source reference'), 'Synthetic new-stage authority');
+    await click(control(emptyStage, 'FF'));
+    expect(button(emptyStage, 'Save participant source').disabled).toBe(true);
+    await setValue(control(emptyStage, 'Participant source type'), 'EXPLICIT_MEMBERS');
+    await setValue(control(emptyStage, 'Explicit member IDs'), '901');
+    expect(button(emptyStage, 'Save participant source').disabled).toBe(true);
+    expect(emptyStage.textContent).toContain(
+      'This stage has no explicit frozen participant references',
+    );
+    expect(live(state.value()).stages.at(-1)?.memberIds).toEqual([]);
+    expect(state.value().policy).not.toHaveProperty('stageParticipantSources');
+    expect(state.container.textContent).toContain(
+      'Frozen execution participant references are absent',
+    );
+    await click(control(emptyStage, 'Synthetic member 901'));
+    expect(live(state.value()).stages.at(-1)?.memberIds).toEqual([901]);
+    expect(button(emptyStage, 'Save participant source').disabled).toBe(false);
+    await click(button(emptyStage, 'Save participant source'));
+    expect(state.value().policy?.stageParticipantSources).toEqual([
+      {
+        stageId: required(live(state.value()).stages.at(-1)).id,
+        sourceRef: 'Synthetic new-stage authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [901] },
+        ordering: [{ key: 'RSC_SENIORITY', direction: 'ASC' }],
+      },
+    ]);
+  });
+
+  it('marks every mismatched saved selector stale after an explicit comparator request change', async () => {
+    const original = baseContent();
+    original.sourceDecisions[0] = {
+      ...required(original.sourceDecisions[0]),
+      area: 'annual-policy',
+      title: 'Synthetic governing comparator decision',
+    };
+    const oldOrdering = [{ key: 'RSC_SENIORITY' as const, direction: 'ASC' as const }];
+    required(original.policy).orderingAuthority = {
+      v: 1,
+      sourceDecisionId: required(original.sourceDecisions[0]).issueId,
+      comparator: oldOrdering,
+    };
+    required(original.policy).stageParticipantSources = [
+      {
+        stageId: 'stage-one',
+        sourceRef: 'Synthetic first-stage participant authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [901, 999] },
+        ordering: oldOrdering,
+      },
+      {
+        stageId: 'stage-two',
+        sourceRef: 'Synthetic second-stage participant authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [902] },
+        ordering: oldOrdering,
+      },
+    ];
+    const savedSources = structuredClone(
+      required(required(original.policy).stageParticipantSources),
+    );
+    const state = policyEditor(original, 'flow');
+    const firstStage = Array.from(state.container.querySelectorAll('details')).find((node) =>
+      node.querySelector('summary')?.textContent?.includes('Synthetic first stage'),
+    );
+    if (!firstStage) throw new Error('Missing first stage');
+
+    expect(state.container.textContent).toContain(
+      'Typed selector sources cover every configured stage locally.',
+    );
+    await setValue(control(state.container, 'Primary comparator key'), 'RANK_SENIORITY');
+    await click(button(state.container, 'Save governing comparator request'));
+
+    expect(state.value().policy?.stageParticipantSources).toEqual(savedSources);
+    expect(state.container.textContent).toContain(
+      'Selector coverage is partial. Synthetic first stage, Synthetic second stage have no matching saved typed source.',
+    );
+    expect(state.container.textContent).toContain(
+      'Saved selector ordering is stale for Synthetic first stage, Synthetic second stage and must be reviewed and re-saved.',
+    );
+    expect(firstStage.textContent).toContain('Saved selector ordering is stale and unresolved');
+    expect(button(firstStage, 'Save participant source').disabled).toBe(true);
+
+    await click(button(firstStage, 'Review current governing comparator'));
+    await click(button(firstStage, 'Save participant source'));
+    expect(state.value().policy?.stageParticipantSources).toEqual([
+      { ...savedSources[0], ordering: [{ key: 'RANK_SENIORITY', direction: 'ASC' }] },
+      savedSources[1],
+    ]);
+    expect(state.container.textContent).toContain(
+      'Selector coverage is partial. Synthetic second stage',
+    );
+  });
+
+  it('retains typed selectors but marks them unbound and Live-blocked when the request is removed', async () => {
+    const original = baseContent();
+    original.sourceDecisions[0] = {
+      ...required(original.sourceDecisions[0]),
+      area: 'annual-policy',
+      title: 'Synthetic governing comparator decision',
+    };
+    const ordering = [{ key: 'RSC_SENIORITY' as const, direction: 'ASC' as const }];
+    required(original.policy).orderingAuthority = {
+      v: 1,
+      sourceDecisionId: required(original.sourceDecisions[0]).issueId,
+      comparator: ordering,
+    };
+    required(original.policy).stageParticipantSources = [
+      {
+        stageId: 'stage-one',
+        sourceRef: 'Synthetic first-stage participant authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [901, 999] },
+        ordering,
+      },
+    ];
+    const savedSources = structuredClone(
+      required(required(original.policy).stageParticipantSources),
+    );
+    const state = policyEditor(original, 'flow');
+    const firstStage = Array.from(state.container.querySelectorAll('details')).find((node) =>
+      node.querySelector('summary')?.textContent?.includes('Synthetic first stage'),
+    );
+    if (!firstStage) throw new Error('Missing first stage');
+
+    await click(button(state.container, 'Remove governing comparator request'));
+
+    expect(state.value().policy).not.toHaveProperty('orderingAuthority');
+    expect(state.value().policy?.stageParticipantSources).toEqual(savedSources);
+    expect(state.container.textContent).toContain('retained but unbound and Live-blocked');
+    expect(firstStage.textContent).toContain(
+      'A saved governing comparator request is required before a participant source can be saved.',
+    );
+    expect(button(firstStage, 'Save participant source').disabled).toBe(true);
+  });
+
+  it('does not claim full selector coverage when an orphan source remains saved', () => {
+    const original = baseContent();
+    original.sourceDecisions[0] = {
+      ...required(original.sourceDecisions[0]),
+      area: 'annual-policy',
+      title: 'Synthetic governing comparator decision',
+    };
+    const ordering = [{ key: 'RSC_SENIORITY' as const, direction: 'ASC' as const }];
+    required(original.policy).orderingAuthority = {
+      v: 1,
+      sourceDecisionId: required(original.sourceDecisions[0]).issueId,
+      comparator: ordering,
+    };
+    required(original.policy).stageParticipantSources = [
+      {
+        stageId: 'stage-one',
+        sourceRef: 'Synthetic first-stage participant authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [901, 999] },
+        ordering,
+      },
+      {
+        stageId: 'stage-two',
+        sourceRef: 'Synthetic second-stage participant authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [902] },
+        ordering,
+      },
+      {
+        stageId: 'removed-stage',
+        sourceRef: 'Synthetic orphan participant authority',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [902] },
+        ordering,
+      },
+    ];
+    const state = policyEditor(original, 'flow');
+
+    expect(state.value().policy?.stageParticipantSources?.map((source) => source.stageId)).toEqual([
+      'stage-one',
+      'stage-two',
+      'removed-stage',
+    ]);
+    expect(state.container.textContent).toContain('Selector coverage is partial.');
+    expect(state.container.textContent).toContain(
+      'Unexpected saved source stage IDs: removed-stage.',
+    );
+    expect(state.container.textContent).not.toContain(
+      'Typed selector sources cover every configured stage locally.',
+    );
   });
 
   it('keeps a missing return stage visible and edits the returns/id pair atomically', async () => {

@@ -4,6 +4,31 @@ import { FieldSection } from './BidFields';
 import type { BidVersion, CurrentBid, HistoricalBid } from './bid-client';
 import type { PendingBidWrite } from './bid-draft';
 
+type SavedParticipantSelector = NonNullable<
+  NonNullable<HistoricalBid['content']['policy']>['stageParticipantSources']
+>[number];
+
+function savedParticipantSelectorStageLabel(
+  historical: HistoricalBid,
+  selector: SavedParticipantSelector,
+): string {
+  const stage = historical.content.policy?.executionPolicy.stages.find(
+    (candidate) => candidate.id === selector.stageId,
+  );
+  return stage ? `${stage.label} (${stage.id})` : `Saved stage ${selector.stageId}`;
+}
+
+function savedParticipantSelectorSourceSummary(selector: SavedParticipantSelector): string {
+  const source = selector.participantSource;
+  return source.type === 'FILTER'
+    ? `FILTER · ${source.active ? 'Active BIDDABLE ranks' : 'Saved filter ranks'}: ${source.ranks.join(', ')}.`
+    : `EXPLICIT_MEMBERS · Saved selector member references: ${source.memberIds.join(', ')}.`;
+}
+
+function savedParticipantSelectorOrderingSummary(selector: SavedParticipantSelector): string {
+  return selector.ordering.map((rule) => `${rule.key} ${rule.direction}`).join(' → ');
+}
+
 export function BidVersionHistory({
   base,
   versions,
@@ -32,6 +57,7 @@ export function BidVersionHistory({
   execute(write: PendingBidWrite): Promise<void>;
 }) {
   const selectedIsCurrent = historical?.version.id === base.version?.id;
+  const participantSources = historical?.content.policy?.stageParticipantSources ?? [];
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <FieldSection
@@ -101,6 +127,32 @@ export function BidVersionHistory({
                 ))}
               </ul>
             </details>
+            {participantSources.length > 0 && (
+              <details>
+                <summary className="min-h-11 content-center cursor-pointer">
+                  Saved participant selector authoring ({participantSources.length})
+                </summary>
+                <p className="text-sm">
+                  Saved selector authoring only. This is not a resolved roster. A pinned server
+                  evaluation is required before participant resolution.
+                </p>
+                <ul className="space-y-3 text-sm">
+                  {participantSources.map((selector) => (
+                    <li key={selector.stageId}>
+                      <strong>{savedParticipantSelectorStageLabel(historical, selector)}</strong>
+                      <dl className="mt-1 space-y-1 break-words text-xs">
+                        <dt>Saved source reference</dt>
+                        <dd>{selector.sourceRef}</dd>
+                        <dt>Saved selector</dt>
+                        <dd>{savedParticipantSelectorSourceSummary(selector)}</dd>
+                        <dt>Saved ordering</dt>
+                        <dd>Ordering: {savedParticipantSelectorOrderingSummary(selector)}.</dd>
+                      </dl>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             <details>
               <summary className="min-h-11 content-center cursor-pointer">
                 Version provenance

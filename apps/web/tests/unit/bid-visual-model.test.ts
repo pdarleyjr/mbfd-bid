@@ -412,7 +412,8 @@ describe('Bid visual model', () => {
     expect(node(first, 'stage-participant-source:stage-firefighter')).toMatchObject({
       type: 'participant-source',
       label: 'FILTER participant source',
-      summary: 'Active BIDDABLE ranks: FF, LT. Ordering: RSC_SENIORITY ASC → RANK_SENIORITY DESC.',
+      summary:
+        'Active BIDDABLE ranks: FF, LT. Ordering: RSC_SENIORITY ASC → RANK_SENIORITY DESC. Saved selector authoring only; roster resolution is pending a pinned server evaluation.',
       provenance: ['Synthetic firefighter stage source'],
       status: 'AUTHORED',
       group: 'flow',
@@ -437,6 +438,37 @@ describe('Bid visual model', () => {
     expect(selectBidVisualLens(first, 'opportunities')).toMatchObject({
       projection: first.lenses.opportunities,
     });
+  });
+
+  it('keeps typed participant selector authoring separate from unresolved legacy member references', () => {
+    const model = buildBidVisualModel({ content: content() });
+
+    expect(node(model, 'stage:stage-firefighter')).toMatchObject({
+      summary:
+        'FIREFIGHTER · typed participant selector authoring; roster resolution pending a pinned server evaluation. · 1 opportunities.',
+    });
+    expect(node(model, 'aggregate:members')).toMatchObject({
+      summary:
+        '0 configured legacy stage-member references; 1 typed participant selector authoring record awaits pinned server resolution.',
+    });
+    expect(node(model, 'stage-participant-source:stage-firefighter')).toMatchObject({
+      status: 'AUTHORED',
+      summary:
+        'Active BIDDABLE ranks: FF, LT. Ordering: RSC_SENIORITY ASC → RANK_SENIORITY DESC. Saved selector authoring only; roster resolution is pending a pinned server evaluation.',
+    });
+    expect(
+      model.nodes.some((value) =>
+        value.id.startsWith('unresolved:stage-member:stage-firefighter:'),
+      ),
+    ).toBe(false);
+    expect(
+      model.edges.some(
+        (edge) =>
+          edge.source === 'stage:stage-firefighter' &&
+          edge.relationship === 'participates-in' &&
+          edge.impact === undefined,
+      ),
+    ).toBe(false);
   });
 
   it('copies only authoritative preview and impact facts into affected node metadata and lenses', () => {
@@ -527,7 +559,8 @@ describe('Bid visual model', () => {
     expect(node(model, sourceId)).toMatchObject({
       type: 'participant-source',
       label: 'EXPLICIT_MEMBERS participant source',
-      summary: 'Explicit member IDs: 777. Ordering: RSC_SENIORITY ASC.',
+      summary:
+        'Explicit member IDs: 777. Ordering: RSC_SENIORITY ASC. Saved selector authoring only; roster resolution is pending a pinned server evaluation.',
       provenance: ['Synthetic missing-stage source'],
       status: 'UNRESOLVED',
     });
