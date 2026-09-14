@@ -492,6 +492,9 @@ export async function loadActiveRuleBookCoverage(
 }
 
 export type BidSessionMode = 'mock' | 'live';
+/** A read-only preview captures the same Department evidence but must never
+ * inherit Mock participation concessions or enter a session-preparation path. */
+export type CapturedBidEvaluationPurpose = BidSessionMode | 'participant_preview';
 
 /** Validates editable annual policy identifiers against the same immutable source material used by sessions. */
 export function validateAnnualPolicySourceReferences(
@@ -1158,7 +1161,7 @@ export async function prepareCapturedBidEvaluation(
   policy: BidEvaluationMaterial,
   evidence: BidEvaluationEvidence,
   capturedAtMs: number,
-  mode: BidSessionMode,
+  mode: CapturedBidEvaluationPurpose,
 ): Promise<BidEvaluationPreparation> {
   const { coverage, bindings, ruleBookMaterial } = policy;
   const templateVersion = coverage.templateVersion;

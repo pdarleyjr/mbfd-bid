@@ -103,3 +103,5 @@ export type {
 } from './schemas/bid-definition.js';
 export { BidImpactResponseSchema } from './schemas/bid-impact.js';
 export type { BidImpactResponse } from './schemas/bid-impact.js';
+export { BidStageParticipantPreviewResponseSchema } from './schemas/bid-stage-participant-preview.js';
+export type { BidStageParticipantPreviewResponse } from './schemas/bid-stage-participant-preview.js';

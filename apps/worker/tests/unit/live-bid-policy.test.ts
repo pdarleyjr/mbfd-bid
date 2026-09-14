@@ -48,7 +48,7 @@ describe('frozen live stages', () => {
     });
   });
 
-  it('keeps legacy RSC-to-rank execution when a selector names rank seniority without a resolved authority', () => {
+  it('rejects typed provenance without a resolved ordering authority instead of falling back to legacy seniority', () => {
     const pinned = {
       ...snapshot,
       members: [
@@ -85,11 +85,8 @@ describe('frozen live stages', () => {
     } as unknown as FrozenLiveBidPolicy;
 
     expect(computeFrozenStageOrder(pinned, authored)).toEqual({
-      ok: true,
-      entries: [
-        { ordinal: 1, memberId: 1, stageId: 'CAPTAINS' },
-        { ordinal: 2, memberId: 2, stageId: 'CAPTAINS' },
-      ],
+      ok: false,
+      code: 'stage_ordering_authority_unresolved',
     });
   });
 

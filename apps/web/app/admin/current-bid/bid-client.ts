@@ -1,7 +1,11 @@
 'use client';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
-import { BidDefinitionContentSchema, BidImpactResponseSchema } from '@mbfd/shared';
+import {
+  BidDefinitionContentSchema,
+  BidImpactResponseSchema,
+  BidStageParticipantPreviewResponseSchema,
+} from '@mbfd/shared';
 import { z } from 'zod';
 
 const identity = z.string().min(1).max(200);
@@ -472,6 +476,36 @@ export async function bidRequest<T>(
                 result.data.comparison.eligibility.changeOffset !== request.changeOffset) ||
               JSON.stringify(result.data.trace?.selection ?? null) !==
                 JSON.stringify(request.trace ?? null)))
+        )
+          throw new BidRequestError('invalid_server_response', response.status, mutation);
+      }
+      const participantPreviewRequest = z
+        .object({
+          kind: z.literal('stage-participant-membership'),
+          expected: BidExpectedSchema,
+          intent: z.object({ operation: z.enum(['save', 'restore']) }).passthrough(),
+        })
+        .passthrough()
+        .safeParse(options?.body);
+      if (participantPreviewRequest.success) {
+        const result = BidStageParticipantPreviewResponseSchema.safeParse(data);
+        const request = participantPreviewRequest.data;
+        const sourceKind =
+          request.intent.operation === 'restore' ? 'RESTORE_CANDIDATE' : 'UNSAVED_DRAFT';
+        const definitionMatches =
+          result.success && result.data.valid
+            ? request.expected.kind === 'version'
+              ? result.data.definition.kind === 'VERSION' &&
+                result.data.definition.versionId === request.expected.versionId &&
+                result.data.definition.revision === request.expected.revision &&
+                result.data.definition.contentSha256 === request.expected.sha256 &&
+                result.data.source.baselineContentSha256 === request.expected.sha256
+              : result.data.definition.kind === 'LEGACY_SOURCE' &&
+                result.data.definition.sourceToken === request.expected.sourceToken
+            : false;
+        if (
+          !result.success ||
+          (result.data.valid && (!definitionMatches || result.data.source.kind !== sourceKind))
         )
           throw new BidRequestError('invalid_server_response', response.status, mutation);
       }

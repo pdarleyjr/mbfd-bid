@@ -25,6 +25,10 @@ import {
   createBidDefinitionMock,
   previewBidDefinitionMock,
 } from '../../lib/bid-definition-mock.js';
+import {
+  BidStageParticipantPreviewRequestSchema,
+  previewBidStageParticipantMembership,
+} from '../../lib/bid-definition-stage-participant-preview.js';
 import { SaveBidDefinitionSchema, saveBidDefinition } from '../../lib/bid-definition-store.js';
 import {
   BidDefinitionVersionRowSchema,
@@ -51,6 +55,7 @@ const PreviewBody = z.discriminatedUnion('kind', [
   BidMockSelectionSchema.extend({ kind: z.literal('mock') }).strict(),
   BidLiveSelectionSchema.extend({ kind: z.literal('live') }).strict(),
   BidImpactRequestSchema,
+  BidStageParticipantPreviewRequestSchema,
 ]);
 const SaveResult = z
   .object({
@@ -157,6 +162,10 @@ router.post('/:year/preview', requireStepUpAuth(), zValidator('json', PreviewBod
   const body = c.req.valid('json');
   if (body.kind === 'impact') {
     const result = await previewBidDefinitionImpact(c.env.DB, c.get('bidYear'), body);
+    return result.ok ? c.json(result.response) : c.json(result, errorStatus(result.error));
+  }
+  if (body.kind === 'stage-participant-membership') {
+    const result = await previewBidStageParticipantMembership(c.env.DB, c.get('bidYear'), body);
     return result.ok ? c.json(result.response) : c.json(result, errorStatus(result.error));
   }
   if (body.kind === 'mock')

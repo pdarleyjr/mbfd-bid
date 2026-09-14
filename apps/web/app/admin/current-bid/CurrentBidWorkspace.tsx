@@ -19,6 +19,7 @@ import { BidMockReview } from './BidMockReview';
 import { BidOpportunityFields } from './BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
 import { BidVersionHistory } from './BidVersionHistory';
+import { StageParticipantPreview } from './StageParticipantPreview';
 import {
   type BidMockPreview,
   BidMockPreviewSchema,
@@ -614,6 +615,14 @@ export function CurrentBidWorkspace({
                     />
                   )}
                 </fieldset>
+                {section === 'flow' && (
+                  <StageParticipantPreview
+                    content={draft.content}
+                    expected={draft.base.expected}
+                    year={year}
+                    locked={locked || stale}
+                  />
+                )}
                 <form
                   className="space-y-4 rounded-lg border border-border bg-card p-4 sm:p-6"
                   onSubmit={(event) => {

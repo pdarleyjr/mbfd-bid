@@ -6,10 +6,9 @@ import {
   FrozenLiveBidPolicySchema,
   LiveBidActionSchema,
 } from '@mbfd/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDb } from '../../src/db/index.js';
 import { app } from '../../src/index.js';
-import { snapshotMatchesBidDefinition } from '../../src/lib/bid-definition-context.js';
 import { prepareBidDefinitionRun } from '../../src/lib/bid-definition-run.js';
 import { captureBidDefinitionSource } from '../../src/lib/bid-definition-source.js';
 import { saveBidDefinition } from '../../src/lib/bid-definition-store.js';
@@ -245,6 +244,42 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
     expect(created.status, await created.clone().text()).toBe(201);
     return (await created.json()) as { id: string };
   }
+  function configureUnresolvedTypedParticipantSources(candidate: BidDefinitionContent) {
+    if (!candidate.policy) throw new Error('V3 policy fixture required');
+    const comparator = [{ key: 'RSC_SENIORITY' as const, direction: 'ASC' as const }];
+    candidate.policy.stageParticipantSources = [
+      {
+        stageId: 'EARLIER',
+        sourceRef: 'Synthetic Earlier-stage roster',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [10003, 10002] },
+        ordering: comparator,
+      },
+      {
+        stageId: 'LATER',
+        sourceRef: 'Synthetic Later-stage roster',
+        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [10001] },
+        ordering: comparator,
+      },
+    ];
+    candidate.policy.orderingAuthority = {
+      v: 1,
+      sourceDecisionId: 'synthetic-open-governing-ordering-decision',
+      comparator,
+    };
+    candidate.sourceDecisions = [
+      {
+        issueId: 'synthetic-open-governing-ordering-decision',
+        title: 'Synthetic annual ordering authority',
+        question: 'Which reviewed comparator governs the synthetic annual Bid order?',
+        area: 'annual-policy',
+        status: 'OPEN',
+        decision: '',
+        sourceRef: 'Synthetic annual-policy source evidence.',
+        effectiveOn: `${year}-01-01`,
+      },
+    ];
+    return candidate;
+  }
 
   it('reads an existing unsorted policy array by configured order without rewriting its snapshot', async () => {
     const db = getDb(h.env.DB);
@@ -416,7 +451,7 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
     },
   );
 
-  it('compiles typed participant sources with legacy RSC-to-rank execution while ordering authority is unresolved', async () => {
+  it('keeps typed participant membership out of Mock and Live preparation while ordering authority is unresolved', async () => {
     if (!content.policy) throw new Error('V3 policy fixture required');
     content.policy.stageParticipantSources = [
       {
@@ -433,72 +468,258 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
       },
     ];
     const version = await saved();
-    const prepared = await prepare(version);
-    if (!prepared.ok || prepared.snapshot.settings.v !== 3)
-      throw new Error(JSON.stringify(prepared));
+    expect(await prepare(version)).toEqual({
+      ok: false,
+      code: 'stage_authoring_ordering_authority_unresolved',
+    });
+    const preview = await readOnly(() =>
+      post(`bid/${year}/preview`, {
+        kind: 'mock',
+        versionId: version.row.id,
+        versionSha256: version.sha256,
+      }),
+    );
+    expect(preview.status, await preview.clone().text()).toBe(200);
+    expect(await preview.json()).toEqual({
+      wouldAllowCreateMock: false,
+      policyError: 'stage_authoring_ordering_authority_unresolved',
+    });
+  });
 
-    expect(prepared.snapshot.settings.livePolicy.stages).toMatchObject([
+  it('returns display-only typed participant membership from one zero-write captured preview', async () => {
+    configureUnresolvedTypedParticipantSources(content);
+
+    const before = h.sqlite.serialize();
+    const sessionLookup = vi.spyOn(h.env.BID_SESSION, 'get');
+    const response = await post(`bid/${year}/preview`, {
+      kind: 'stage-participant-membership',
+      expected: { kind: 'legacy', sourceToken },
+      intent: { operation: 'save', content },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect(sessionLookup).not.toHaveBeenCalled();
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    const result = (await response.json()) as {
+      valid: boolean;
+      definition: { kind: string; sourceToken?: string };
+      source: { baselineContentSha256: string; candidateContentSha256: string };
+      runtimeSourceToken: string;
+      contextSha256: string;
+      participantPreviewSha256: string;
+      orderingAuthority: { status: string; code?: string };
+      membership: { status: string };
+      stages: Array<{
+        stageId: string;
+        matchedMemberIds: number[];
+        displayOrder: string;
+        matchedMembers: Array<{ memberId: number; displayName: string | null }>;
+      }>;
+      executionReady: boolean;
+      executionIssues: string[];
+    };
+    expect(result.valid).toBe(true);
+    expect(result.definition).toEqual({ kind: 'LEGACY_SOURCE', sourceToken });
+    expect(result.source.baselineContentSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.source.candidateContentSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.runtimeSourceToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.contextSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.participantPreviewSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.membership).toEqual({ status: 'RESOLVED_FOR_PREVIEW' });
+    expect(result.orderingAuthority).toMatchObject({
+      status: 'UNRESOLVED',
+      code: 'ordering_authority_source_decision_unresolved',
+    });
+    expect(result.stages).toMatchObject([
       {
-        id: 'EARLIER',
-        memberIds: [10002, 10003],
-        participantProvenance: {
-          sourceRef: 'Synthetic Earlier-stage roster',
-          pinnedEvaluationCapturedAtMs: Date.parse(`${year}-02-01T12:00:00Z`),
-          resolvedMemberIds: [10002, 10003],
-        },
+        stageId: 'EARLIER',
+        matchedMemberIds: [10002, 10003],
+        displayOrder: 'MEMBER_ID_ASC',
+        matchedMembers: [
+          { memberId: 10002, displayName: 'Synthetic Second' },
+          { memberId: 10003, displayName: 'Synthetic Third' },
+        ],
       },
       {
-        id: 'LATER',
-        memberIds: [10001],
-        participantProvenance: {
-          sourceRef: 'Synthetic Later-stage roster',
-          pinnedEvaluationCapturedAtMs: Date.parse(`${year}-02-01T12:00:00Z`),
-          resolvedMemberIds: [10001],
-        },
+        stageId: 'LATER',
+        matchedMemberIds: [10001],
+        displayOrder: 'MEMBER_ID_ASC',
+        matchedMembers: [{ memberId: 10001, displayName: 'Synthetic Editor' }],
       },
     ]);
-    // The saved definition remains the authored source; only its frozen run
-    // snapshot receives the resolved explicit membership/provenance material.
-    const savedEarlier =
-      version.content.settings?.v === 3
-        ? version.content.settings.livePolicy.stages.find((stage) => stage.id === 'EARLIER')
-        : undefined;
-    expect(savedEarlier).toMatchObject({ memberIds: [10002, 10003] });
-    expect(savedEarlier).not.toHaveProperty('participantProvenance');
-    expect(prepared.snapshot.settings.livePolicy.orderingAuthority).toBeUndefined();
-    const nonDeterministic = structuredClone(prepared.snapshot);
-    if (nonDeterministic.settings.v !== 3) throw new Error('V3 frozen snapshot required');
-    const nonDeterministicEarlier = nonDeterministic.settings.livePolicy.stages.find(
-      (stage) => stage.id === 'EARLIER',
-    );
-    if (!nonDeterministicEarlier?.participantProvenance)
-      throw new Error('Compiled provenance required');
-    nonDeterministicEarlier.memberIds = [10003, 10002];
-    nonDeterministicEarlier.participantProvenance.resolvedMemberIds = [10003, 10002];
-    expect(snapshotMatchesBidDefinition(nonDeterministic, version)).toBe(false);
+    expect(result.executionReady).toBe(false);
+    expect(result.executionIssues).toEqual(['ordering_authority_source_decision_unresolved']);
+    for (const table of [
+      'bid_definition_versions',
+      'bid_definition_heads',
+      'bid_sessions',
+      'bid_session_policy_snapshots',
+      'canonical_bid_session_state',
+      'bid_command_receipts',
+      'bid_audit_outbox',
+    ]) {
+      expect(h.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+    }
+  });
 
-    const session = await createMock(version);
-    const frozen = await readOnly(() => loadFrozenSessionBidPolicy(getDb(h.env.DB), session.id));
-    expect(frozen).toMatchObject({
-      ok: true,
-      snapshot: {
-        settings: {
-          v: 3,
-          livePolicy: {
-            stages: expect.arrayContaining([
-              expect.objectContaining({
-                id: 'EARLIER',
-                memberIds: [10002, 10003],
-                participantProvenance: expect.objectContaining({
-                  sourceRef: 'Synthetic Earlier-stage roster',
-                  resolvedMemberIds: [10002, 10003],
-                }),
-              }),
-            ]),
-          },
+  it('keeps every unrelated OPEN source decision blocking during participant preview', async () => {
+    configureUnresolvedTypedParticipantSources(content);
+    content.sourceDecisions.push({
+      issueId: 'synthetic-unrelated-open-decision',
+      title: 'Synthetic unresolved staffing question',
+      question: 'Which reviewed source settles the synthetic staffing question?',
+      area: 'positions',
+      status: 'OPEN',
+      decision: '',
+      sourceRef: 'Synthetic positions source evidence.',
+      effectiveOn: `${year}-01-01`,
+    });
+    const before = h.sqlite.serialize();
+    const sessionLookup = vi.spyOn(h.env.BID_SESSION, 'get');
+    const response = await post(`bid/${year}/preview`, {
+      kind: 'stage-participant-membership',
+      expected: { kind: 'legacy', sourceToken },
+      intent: { operation: 'save', content },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect(sessionLookup).not.toHaveBeenCalled();
+    expect(response.status, await response.clone().text()).toBe(409);
+    expect(await response.json()).toEqual({ ok: false, error: 'policy_source_decision_required' });
+  });
+
+  it('reports both blocked membership and unresolved authority without producing a partial candidate set', async () => {
+    configureUnresolvedTypedParticipantSources(content);
+    const earlier = content.policy?.stageParticipantSources?.find(
+      (source) => source.stageId === 'EARLIER',
+    );
+    if (!earlier || earlier.participantSource.type !== 'EXPLICIT_MEMBERS')
+      throw new Error('Synthetic Earlier-stage explicit source required');
+    earlier.participantSource.memberIds = [10004, 10002];
+    const before = h.sqlite.serialize();
+    const response = await post(`bid/${year}/preview`, {
+      kind: 'stage-participant-membership',
+      expected: { kind: 'legacy', sourceToken },
+      intent: { operation: 'save', content },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect(response.status, await response.clone().text()).toBe(200);
+    const result = (await response.json()) as {
+      valid: boolean;
+      membership: { status: string; code?: string; memberIds?: number[] };
+      orderingAuthority: { status: string; code?: string };
+      stages: unknown[];
+      executionReady: boolean;
+      executionIssues: string[];
+    };
+    expect(result.valid).toBe(true);
+    expect(result.membership).toMatchObject({
+      status: 'BLOCKED',
+      code: 'stage_authoring_member_not_participant',
+      memberIds: [10004],
+    });
+    expect(result.orderingAuthority).toMatchObject({
+      status: 'UNRESOLVED',
+      code: 'ordering_authority_source_decision_unresolved',
+    });
+    expect(result.stages).toEqual([]);
+    expect(result.executionReady).toBe(false);
+    expect(result.executionIssues).toEqual([
+      'stage_authoring_member_not_participant',
+      'ordering_authority_source_decision_unresolved',
+    ]);
+  });
+
+  it('rejects a typed preview whose named ordering decision is missing before evaluation', async () => {
+    configureUnresolvedTypedParticipantSources(content);
+    content.sourceDecisions = [];
+    const before = h.sqlite.serialize();
+    const sessionLookup = vi.spyOn(h.env.BID_SESSION, 'get');
+    const response = await post(`bid/${year}/preview`, {
+      kind: 'stage-participant-membership',
+      expected: { kind: 'legacy', sourceToken },
+      intent: { operation: 'save', content },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect(sessionLookup).not.toHaveBeenCalled();
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect(await response.json()).toMatchObject({
+      valid: false,
+      issues: [expect.objectContaining({ code: 'ordering_authority_source_decision_missing' })],
+    });
+  });
+
+  it('keeps membership display-only when the resolved decision comparator does not match the request', async () => {
+    configureUnresolvedTypedParticipantSources(content);
+    const openDecision = content.sourceDecisions[0];
+    if (!openDecision) throw new Error('Synthetic open decision required');
+    content.sourceDecisions = [
+      {
+        ...openDecision,
+        status: 'RESOLVED',
+        decision: 'Use rank seniority as the reviewed synthetic comparator.',
+        resolution: {
+          v: 1,
+          kind: 'BID_ORDERING_COMPARATOR',
+          comparator: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
         },
       },
+    ];
+    const before = h.sqlite.serialize();
+    const response = await post(`bid/${year}/preview`, {
+      kind: 'stage-participant-membership',
+      expected: { kind: 'legacy', sourceToken },
+      intent: { operation: 'save', content },
     });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect(response.status, await response.clone().text()).toBe(200);
+    const result = (await response.json()) as {
+      valid: boolean;
+      membership: { status: string };
+      orderingAuthority: { status: string; code?: string };
+      stages: Array<{ matchedMemberIds: number[]; displayOrder: string }>;
+      executionReady: boolean;
+      executionIssues: string[];
+    };
+    expect(result.valid).toBe(true);
+    expect(result.membership).toEqual({ status: 'RESOLVED_FOR_PREVIEW' });
+    expect(result.stages.map((stage) => stage.matchedMemberIds)).toEqual([[10002, 10003], [10001]]);
+    expect(result.stages.every((stage) => stage.displayOrder === 'MEMBER_ID_ASC')).toBe(true);
+    expect(result.orderingAuthority).toMatchObject({
+      status: 'UNRESOLVED',
+      code: 'ordering_authority_comparator_mismatch',
+    });
+    expect(result.executionReady).toBe(false);
+    expect(result.executionIssues).toEqual(['ordering_authority_comparator_mismatch']);
+  });
+
+  it('rejects a Department source race rather than returning a mixed participant preview', async () => {
+    configureUnresolvedTypedParticipantSources(content);
+    let raced = false;
+    let afterRace: Buffer | undefined;
+    const original = h.env.DB.prepare.bind(h.env.DB);
+    vi.spyOn(h.env.DB, 'prepare').mockImplementation((sql) => {
+      const statement = original(sql);
+      if (!raced && /from\s+"members"/i.test(sql)) {
+        const raw = statement.raw.bind(statement);
+        vi.spyOn(statement, 'raw').mockImplementation(async <T = unknown[]>() => {
+          const rows = await raw<T>();
+          h.sqlite.prepare('UPDATE members SET rsc_seniority=? WHERE id=?').run(99, 10001);
+          raced = true;
+          afterRace = h.sqlite.serialize();
+          return rows;
+        });
+      }
+      return statement;
+    });
+    const response = await post(`bid/${year}/preview`, {
+      kind: 'stage-participant-membership',
+      expected: { kind: 'legacy', sourceToken },
+      intent: { operation: 'save', content },
+    });
+    expect(raced).toBe(true);
+    expect(response.status, await response.clone().text()).toBe(409);
+    expect(await response.json()).toEqual({ ok: false, error: 'bid_definition_or_source_changed' });
+    deepStrictEqual(h.sqlite.serialize(), afterRace);
   });
 
   it('freezes rank ordering only from the matching resolved annual-policy decision and exposes it to Live readiness', async () => {

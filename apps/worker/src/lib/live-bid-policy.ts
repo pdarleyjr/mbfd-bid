@@ -23,6 +23,7 @@ export type FrozenStageOrderResult =
         | 'stage_seniority_tie'
         | 'stage_ordering_fact_missing'
         | 'stage_ordering_tie'
+        | 'stage_ordering_authority_unresolved'
         | 'stage_ordering_authority_mismatch';
     };
 
@@ -96,9 +97,14 @@ function orderingForStage(input: {
   stage: FrozenLiveBidPolicy['stages'][number];
 }):
   | { ok: true; ordering: StageParticipantOrdering | null }
-  | { ok: false; code: 'stage_ordering_authority_mismatch' } {
+  | {
+      ok: false;
+      code: 'stage_ordering_authority_unresolved' | 'stage_ordering_authority_mismatch';
+    } {
   const policyAuthority = input.policy.orderingAuthority;
   const provenance = input.stage.participantProvenance;
+  if (provenance !== undefined && provenance.orderingAuthority === undefined)
+    return { ok: false, code: 'stage_ordering_authority_unresolved' };
   if (provenance !== undefined && provenance.orderingAuthority !== undefined) {
     const provenanceAuthority = provenance.orderingAuthority;
     if (
@@ -109,9 +115,8 @@ function orderingForStage(input: {
       return { ok: false, code: 'stage_ordering_authority_mismatch' };
     return { ok: true, ordering: provenance.ordering };
   }
-  // A verified policy-level authority governs legacy explicit stages too. A
-  // selector without that frozen authority remains a non-authoritative source
-  // of membership only, so legacy RSC→rank behavior is retained.
+  // A verified policy-level authority governs legacy explicit stages too.
+  // Only stages without typed provenance may retain historical RSC→rank order.
   return { ok: true, ordering: policyAuthority?.comparator ?? null };
 }
 

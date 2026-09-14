@@ -21,8 +21,36 @@ export type StageParticipantCompilationFailureCode =
   | 'stage_authoring_population_incomplete'
   | 'stage_authoring_ordering_fact_missing'
   | 'stage_authoring_ordering_tie'
+  | 'stage_authoring_ordering_authority_unresolved'
   | 'stage_authoring_ordering_authority_mismatch'
   | 'stage_authoring_compilation_invalid';
+
+/**
+ * Resolved membership is deliberately not an execution artifact. Its member
+ * sequence is a deterministic display order for review only; run preparation
+ * must separately establish an authoritative comparator before freezing order.
+ */
+export type ResolvedStageParticipantMembership = {
+  stageId: string;
+  definition: StageParticipantSourceDefinition;
+  matchedMembers: readonly BidEvaluation['members'][number][];
+  matchedMemberIds: readonly number[];
+  displayOrder: 'MEMBER_ID_ASC';
+};
+
+export type StageParticipantMembershipResolution =
+  | {
+      ok: true;
+      kind: 'legacy_explicit_members' | 'resolved_typed_sources';
+      capturedAtMs: number;
+      stages: readonly ResolvedStageParticipantMembership[];
+    }
+  | {
+      ok: false;
+      code: StageParticipantCompilationFailureCode;
+      stageId?: string;
+      memberIds?: readonly number[];
+    };
 
 export type StageParticipantCompilation =
   | {
@@ -100,42 +128,6 @@ function sortByAuthoredOrdering(input: {
   return { ok: true, members };
 }
 
-/** Preserve the historical execution ordering whenever a typed selector has
- * not been bound to an independently resolved governing comparator. */
-function sortWithLegacySeniority(input: {
-  stageId: string;
-  members: readonly PinnedMember[];
-}):
-  | { ok: true; members: PinnedMember[] }
-  | {
-      ok: false;
-      code: 'stage_authoring_ordering_tie';
-      stageId: string;
-      memberIds: readonly number[];
-    } {
-  const keys = new Set<string>();
-  for (const member of input.members) {
-    const key = `${member.rscSeniority}:${member.rankSeniority ?? 'none'}`;
-    if (keys.has(key))
-      return {
-        ok: false,
-        code: 'stage_authoring_ordering_tie',
-        stageId: input.stageId,
-        memberIds: [member.memberId],
-      };
-    keys.add(key);
-  }
-  return {
-    ok: true,
-    members: [...input.members].sort((left, right) => {
-      if (left.rscSeniority !== right.rscSeniority) return left.rscSeniority - right.rscSeniority;
-      const leftRank = left.rankSeniority ?? Number.MAX_SAFE_INTEGER;
-      const rightRank = right.rankSeniority ?? Number.MAX_SAFE_INTEGER;
-      return leftRank - rightRank;
-    }),
-  };
-}
-
 function sameOrdering(left: StageParticipantOrdering, right: StageParticipantOrdering): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -190,25 +182,21 @@ function selectPinnedMembers(input: {
 }
 
 /**
- * Compiles saved stage authoring against a caller-supplied, already pinned
- * Department evaluation. This is deliberately a pure function: no DB handle,
- * current-roster adapter, or wall-clock lookup can enter the execution path.
- * Its output remains the existing explicit FrozenLiveBidPolicy shape.
+ * Resolves saved typed stage membership against a caller-supplied, already
+ * pinned Department evaluation. This pure operation never sorts a Bid order,
+ * queries a current roster, or creates a frozen execution artifact.
  */
-export function compileStageParticipantsFromPinnedEvaluation(input: {
+export function resolveStageParticipantMembership(input: {
   pinnedEvaluation: Pick<BidEvaluation, 'capturedAtMs' | 'members'>;
   executionPolicy: FrozenLiveBidPolicy;
   stageParticipantSources: StageParticipantSourceDefinitions | undefined;
-  /** Supplied only by the saved-definition compiler after it resolves an exact
-   * RESOLVED annual-policy source decision. */
-  orderingAuthority?: FrozenBidOrderingAuthority;
-}): StageParticipantCompilation {
+}): StageParticipantMembershipResolution {
   if (input.stageParticipantSources === undefined)
     return {
       ok: true,
       kind: 'legacy_explicit_members',
-      executionPolicy: FrozenLiveBidPolicySchema.parse(input.executionPolicy),
-      provenance: [],
+      capturedAtMs: input.pinnedEvaluation.capturedAtMs,
+      stages: [],
     };
 
   const definitionsByStageId = new Map(
@@ -228,8 +216,7 @@ export function compileStageParticipantsFromPinnedEvaluation(input: {
     input.pinnedEvaluation.members.map((member) => [member.memberId, member]),
   );
   const includedMemberIds = new Set<number>();
-  const provenance: FrozenStageParticipantProvenance[] = [];
-  const stages = [] as FrozenLiveBidPolicy['stages'];
+  const stages: ResolvedStageParticipantMembership[] = [];
   for (const stage of input.executionPolicy.stages) {
     const definition = definitionsByStageId.get(stage.id);
     if (definition === undefined)
@@ -240,25 +227,8 @@ export function compileStageParticipantsFromPinnedEvaluation(input: {
       pinnedMembers: input.pinnedEvaluation.members,
     });
     if (!selected.ok) return selected;
-    if (
-      input.orderingAuthority !== undefined &&
-      !sameOrdering(definition.ordering, input.orderingAuthority.comparator)
-    )
-      return {
-        ok: false,
-        code: 'stage_authoring_ordering_authority_mismatch',
-        stageId: stage.id,
-      };
-    const ordered =
-      input.orderingAuthority === undefined
-        ? sortWithLegacySeniority({ stageId: stage.id, members: selected.members })
-        : sortByAuthoredOrdering({
-            stageId: stage.id,
-            members: selected.members,
-            ordering: definition.ordering,
-          });
-    if (!ordered.ok) return ordered;
-    const memberIds = ordered.members.map((member) => member.memberId);
+    const members = [...selected.members].sort((left, right) => left.memberId - right.memberId);
+    const memberIds = members.map((member) => member.memberId);
     const duplicate = memberIds.find((memberId) => includedMemberIds.has(memberId));
     if (duplicate !== undefined)
       return {
@@ -268,20 +238,13 @@ export function compileStageParticipantsFromPinnedEvaluation(input: {
         memberIds: [duplicate],
       };
     for (const memberId of memberIds) includedMemberIds.add(memberId);
-    const participantProvenance: FrozenStageParticipantProvenance = {
-      v: 1,
+    stages.push({
       stageId: stage.id,
-      sourceRef: definition.sourceRef,
-      participantSource: definition.participantSource,
-      ordering: definition.ordering,
-      ...(input.orderingAuthority === undefined
-        ? {}
-        : { orderingAuthority: input.orderingAuthority }),
-      pinnedEvaluationCapturedAtMs: input.pinnedEvaluation.capturedAtMs,
-      resolvedMemberIds: memberIds,
-    };
-    provenance.push(participantProvenance);
-    stages.push({ ...stage, memberIds, participantProvenance });
+      definition,
+      matchedMembers: members,
+      matchedMemberIds: memberIds,
+      displayOrder: 'MEMBER_ID_ASC',
+    });
   }
   const uncoveredMemberIds = input.pinnedEvaluation.members
     .filter((member) => isPinnedBidParticipant(member) && !includedMemberIds.has(member.memberId))
@@ -292,11 +255,75 @@ export function compileStageParticipantsFromPinnedEvaluation(input: {
       code: 'stage_authoring_population_incomplete',
       memberIds: uncoveredMemberIds,
     };
+  return {
+    ok: true,
+    kind: 'resolved_typed_sources',
+    capturedAtMs: input.pinnedEvaluation.capturedAtMs,
+    stages,
+  };
+}
+
+/**
+ * Converts a successful membership resolution into the explicit ordered
+ * execution shape only when an independently resolved annual-policy
+ * comparator is supplied. It never derives authority from historical RSC/rank
+ * behavior for newly authored typed selectors.
+ */
+export function compileFrozenStageParticipants(input: {
+  membership: Extract<StageParticipantMembershipResolution, { ok: true }>;
+  executionPolicy: FrozenLiveBidPolicy;
+  /** Supplied only after an exact RESOLVED annual-policy source decision. */
+  orderingAuthority?: FrozenBidOrderingAuthority;
+}): StageParticipantCompilation {
+  if (input.membership.kind === 'legacy_explicit_members')
+    return {
+      ok: true,
+      kind: 'legacy_explicit_members',
+      executionPolicy: FrozenLiveBidPolicySchema.parse(input.executionPolicy),
+      provenance: [],
+    };
+  if (input.orderingAuthority === undefined)
+    return { ok: false, code: 'stage_authoring_ordering_authority_unresolved' };
+
+  const membershipByStageId = new Map(
+    input.membership.stages.map((stage) => [stage.stageId, stage]),
+  );
+  const stages: FrozenLiveBidPolicy['stages'] = [];
+  const provenance: FrozenStageParticipantProvenance[] = [];
+  for (const stage of input.executionPolicy.stages) {
+    const membership = membershipByStageId.get(stage.id);
+    if (membership === undefined)
+      return { ok: false, code: 'stage_authoring_stage_source_missing', stageId: stage.id };
+    if (!sameOrdering(membership.definition.ordering, input.orderingAuthority.comparator))
+      return {
+        ok: false,
+        code: 'stage_authoring_ordering_authority_mismatch',
+        stageId: stage.id,
+      };
+    const ordered = sortByAuthoredOrdering({
+      stageId: stage.id,
+      members: membership.matchedMembers,
+      ordering: input.orderingAuthority.comparator,
+    });
+    if (!ordered.ok) return ordered;
+    const memberIds = ordered.members.map((member) => member.memberId);
+    const participantProvenance: FrozenStageParticipantProvenance = {
+      v: 1,
+      stageId: stage.id,
+      sourceRef: membership.definition.sourceRef,
+      participantSource: membership.definition.participantSource,
+      ordering: membership.definition.ordering,
+      orderingAuthority: input.orderingAuthority,
+      pinnedEvaluationCapturedAtMs: input.membership.capturedAtMs,
+      resolvedMemberIds: memberIds,
+    };
+    provenance.push(participantProvenance);
+    stages.push({ ...stage, memberIds, participantProvenance });
+  }
+  const { orderingAuthority: _unverifiedAuthority, ...withoutAuthority } = input.executionPolicy;
   const parsed = FrozenLiveBidPolicySchema.safeParse({
-    ...input.executionPolicy,
-    ...(input.orderingAuthority === undefined
-      ? {}
-      : { orderingAuthority: input.orderingAuthority }),
+    ...withoutAuthority,
+    orderingAuthority: input.orderingAuthority,
     stages,
   });
   if (!parsed.success) return { ok: false, code: 'stage_authoring_compilation_invalid' };
@@ -306,4 +333,27 @@ export function compileStageParticipantsFromPinnedEvaluation(input: {
     executionPolicy: parsed.data,
     provenance,
   };
+}
+
+/**
+ * Compatibility wrapper for existing run-preparation callers. Typed sources
+ * now resolve membership first and fail closed until an authoritative
+ * comparator is independently supplied; legacy explicit policies are retained
+ * exactly as they were.
+ */
+export function compileStageParticipantsFromPinnedEvaluation(input: {
+  pinnedEvaluation: Pick<BidEvaluation, 'capturedAtMs' | 'members'>;
+  executionPolicy: FrozenLiveBidPolicy;
+  stageParticipantSources: StageParticipantSourceDefinitions | undefined;
+  orderingAuthority?: FrozenBidOrderingAuthority;
+}): StageParticipantCompilation {
+  const membership = resolveStageParticipantMembership(input);
+  if (!membership.ok) return membership;
+  return compileFrozenStageParticipants({
+    membership,
+    executionPolicy: input.executionPolicy,
+    ...(input.orderingAuthority === undefined
+      ? {}
+      : { orderingAuthority: input.orderingAuthority }),
+  });
 }

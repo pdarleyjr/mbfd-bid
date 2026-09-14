@@ -9,7 +9,11 @@ import {
 } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import { computeBidEvaluationStageOrder } from '../../src/lib/live-bid-policy.js';
-import { compileStageParticipantsFromPinnedEvaluation } from '../../src/lib/stage-participant-selector.js';
+import {
+  compileFrozenStageParticipants,
+  compileStageParticipantsFromPinnedEvaluation,
+  resolveStageParticipantMembership,
+} from '../../src/lib/stage-participant-selector.js';
 
 function executionPolicy() {
   return FrozenLiveBidPolicySchema.parse({
@@ -170,6 +174,22 @@ const sources = () =>
     },
   ]);
 
+function orderingAuthority(
+  comparator = [
+    { key: 'RANK_SENIORITY' as const, direction: 'ASC' as const },
+    { key: 'RSC_SENIORITY' as const, direction: 'ASC' as const },
+  ],
+): FrozenBidOrderingAuthority {
+  return {
+    v: 1,
+    comparator,
+    sourceDecision: {
+      issueId: 'synthetic-governing-ordering-decision',
+      effectiveOn: '2027-01-01',
+    },
+  };
+}
+
 describe('adaptive stage participant compiler', () => {
   it('keeps a legacy explicit-member policy unchanged when no adaptive source exists', () => {
     const policy = executionPolicy();
@@ -190,6 +210,7 @@ describe('adaptive stage participant compiler', () => {
       pinnedEvaluation: evaluation,
       executionPolicy: executionPolicy(),
       stageParticipantSources: sources(),
+      orderingAuthority: orderingAuthority(),
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -212,13 +233,14 @@ describe('adaptive stage participant compiler', () => {
         { key: 'RANK_SENIORITY', direction: 'ASC' },
         { key: 'RSC_SENIORITY', direction: 'ASC' },
       ],
+      orderingAuthority: orderingAuthority(),
       pinnedEvaluationCapturedAtMs: evaluation.capturedAtMs,
       resolvedMemberIds: [10002, 10001],
     });
     expect(result.executionPolicy.stages[0]?.memberIds).not.toContain(10003);
   });
 
-  it('keeps legacy RSC-to-rank execution when a selector requests rank ordering without a resolved authority', () => {
+  it('resolves typed membership for preview but refuses to compile an unresolved comparator into execution order', () => {
     const rankRequested = sources();
     const captains = rankRequested[0];
     if (!captains) throw new Error('Synthetic captain source required');
@@ -227,41 +249,31 @@ describe('adaptive stage participant compiler', () => {
       ordering: [{ key: 'RANK_SENIORITY', direction: 'DESC' }],
     };
 
-    const result = compileStageParticipantsFromPinnedEvaluation({
+    const membership = resolveStageParticipantMembership({
       pinnedEvaluation: pinnedEvaluation(),
       executionPolicy: executionPolicy(),
       stageParticipantSources: rankRequested,
     });
-
-    if (!result.ok) throw new Error(JSON.stringify(result));
-    expect(result.executionPolicy.stages[0]?.memberIds).toEqual([10002, 10001]);
+    if (!membership.ok) throw new Error(JSON.stringify(membership));
+    expect(membership.stages[0]?.matchedMemberIds).toEqual([10001, 10002]);
+    expect(membership.stages[0]?.displayOrder).toBe('MEMBER_ID_ASC');
     expect(
-      result.executionPolicy.stages[0]?.participantProvenance?.orderingAuthority,
-    ).toBeUndefined();
+      compileFrozenStageParticipants({
+        membership,
+        executionPolicy: executionPolicy(),
+      }),
+    ).toMatchObject({ ok: false, code: 'stage_authoring_ordering_authority_unresolved' });
     expect(
-      computeBidEvaluationStageOrder(pinnedEvaluation(), result.executionPolicy),
-    ).toMatchObject({
-      ok: true,
-      entries: [
-        { ordinal: 1, memberId: 10002, stageId: 'CAPTAINS' },
-        { ordinal: 2, memberId: 10001, stageId: 'CAPTAINS' },
-        { ordinal: 3, memberId: 10004, stageId: 'FIREFIGHTERS' },
-      ],
-    });
+      compileStageParticipantsFromPinnedEvaluation({
+        pinnedEvaluation: pinnedEvaluation(),
+        executionPolicy: executionPolicy(),
+        stageParticipantSources: rankRequested,
+      }),
+    ).toMatchObject({ ok: false, code: 'stage_authoring_ordering_authority_unresolved' });
   });
 
   it('uses a typed comparator only when its resolved source-decision identity is supplied', () => {
-    const authority: FrozenBidOrderingAuthority = {
-      v: 1,
-      comparator: [
-        { key: 'RANK_SENIORITY', direction: 'ASC' },
-        { key: 'RSC_SENIORITY', direction: 'ASC' },
-      ],
-      sourceDecision: {
-        issueId: 'synthetic-governing-ordering-decision',
-        effectiveOn: '2027-01-01',
-      },
-    };
+    const authority = orderingAuthority();
     const result = compileStageParticipantsFromPinnedEvaluation({
       pinnedEvaluation: pinnedEvaluation(),
       executionPolicy: executionPolicy(),
@@ -281,6 +293,7 @@ describe('adaptive stage participant compiler', () => {
       pinnedEvaluation: evaluation,
       executionPolicy: executionPolicy(),
       stageParticipantSources: sources(),
+      orderingAuthority: orderingAuthority(),
     });
     if (!result.ok) throw new Error(JSON.stringify(result));
 
@@ -338,6 +351,7 @@ describe('adaptive stage participant compiler', () => {
         pinnedEvaluation: evaluation,
         executionPolicy: executionPolicy(),
         stageParticipantSources: tieSources,
+        orderingAuthority: orderingAuthority([{ key: 'RANK_SENIORITY', direction: 'ASC' }]),
       }),
     ).toMatchObject({ ok: false, code: 'stage_authoring_ordering_tie', stageId: 'CAPTAINS' });
   });

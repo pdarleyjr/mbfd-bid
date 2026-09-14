@@ -1,9 +1,12 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { BidDefinitionContentSchema } from '@mbfd/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 import {
   BID_COUNT,
   BID_HISTORY_COUNT,
+  BID_LAST_MEMBER_LABEL,
+  BID_STAGE_LABEL,
   BID_YEAR,
   MISSING_CREDENTIAL_NAME,
   MISSING_MEMBER_ID,
@@ -75,6 +78,33 @@ function assertImpactReadOnly(state: Fixture) {
     expect(request.body?.kind).toBe('impact');
     expect(request.key).toBeNull();
   }
+}
+
+function assertParticipantPreviewReadOnly(state: Fixture) {
+  assertNoWrites(state);
+  expect(state.impactRequests).toEqual([]);
+  expect(state.participantPreviewReadOnlyProofs).toBe(state.participantPreviewRequests.length);
+  expect(state.previewReadOnlyProofs).toBe(state.participantPreviewRequests.length);
+  expect(state.participantPreviewArtifactCounts).toEqual([
+    {
+      bid_definition_versions: 0,
+      bid_definition_heads: 0,
+      bid_sessions: 0,
+      bid_session_policy_snapshots: 0,
+      canonical_bid_session_state: 0,
+      bid_command_receipts: 0,
+      bid_audit_outbox: 0,
+    },
+  ]);
+  const preview = state.postRequests.filter(
+    (request) => request.path === `/api/admin/bid/${BID_YEAR}/preview`,
+  );
+  expect(preview).toHaveLength(1);
+  expect(preview[0]?.key).toBeNull();
+  expect(preview[0]?.body?.kind).toBe('stage-participant-membership');
+  expect(
+    state.postRequests.filter((request) => /(?:mock|live|session)/i.test(request.path)),
+  ).toEqual([]);
 }
 
 async function enter(locator: Locator) {
@@ -484,6 +514,61 @@ test('Cancelling opportunity and rule removal plus rejected draft discard preser
   await expect(notes).toHaveValue(state.baseContent.notes.bid ?? '');
   expect(state.current.content).toEqual(state.baseContent);
   assertNoWrites(state);
+});
+
+test('[bid-impact] participant membership preview renders server evidence without a write or run artifact', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const state = await installCurrentBidFixtures(page, { participantPreview: true });
+  try {
+    await openBid(page);
+    await enter(sectionButton(page, 'Participants & flow'));
+    const action = workspace(page).getByRole('button', {
+      name: 'Preview participant membership',
+      exact: true,
+    });
+    await expect(action).toBeVisible();
+    await enter(action);
+
+    const review = section(page, 'Captured membership review');
+    await expect(review).toContainText('Governing comparator decision is awaiting resolution');
+    await expect(review).toContainText(
+      'This preview does not create, approve, or authorize a Bid run.',
+    );
+    await expect(review).not.toContainText(/frozen/i);
+
+    const opening = section(page, `Preview-resolved members · ${BID_STAGE_LABEL}`);
+    await expect(opening).toContainText(
+      `SYNTHETIC participant preview source for ${BID_STAGE_LABEL}`,
+    );
+    await expect(opening).toContainText('261 matched');
+    await expect(opening).toContainText('Display-only member-ID order');
+    await expect(opening).toContainText(
+      'Ordering: awaiting authoritative annual-policy comparator decision.',
+    );
+    await expect(opening).not.toContainText(/frozen/i);
+
+    const following = section(page, 'Preview-resolved members · Synthetic following stage');
+    await expect(following).toContainText(BID_LAST_MEMBER_LABEL);
+
+    expect(state.participantPreviewRequests).toHaveLength(1);
+    const request = state.participantPreviewRequests[0];
+    expect(request?.expected).toEqual(state.current.expected);
+    if (request?.intent.operation !== 'save')
+      throw new Error('Participant preview must preserve the unsaved draft intent.');
+    const candidate = BidDefinitionContentSchema.parse(request.intent.content);
+    expect(candidate.policy?.stageParticipantSources).toHaveLength(2);
+    expect(candidate.policy?.orderingAuthority?.sourceDecisionId).toBe(
+      'synthetic-open-annual-ordering-decision',
+    );
+    await assertWidth(page);
+    await assertControlLabels(page);
+    assertParticipantPreviewReadOnly(state);
+  } finally {
+    await state.dispose();
+  }
 });
 
 for (const viewport of [

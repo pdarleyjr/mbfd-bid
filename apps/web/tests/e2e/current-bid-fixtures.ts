@@ -4,6 +4,7 @@ import {
   BidDispositionSchema,
   type BidImpactResponse,
   BidImpactResponseSchema,
+  BidStageParticipantPreviewResponseSchema,
   type ConfiguredScoring,
   type FrozenLiveBidPolicy,
   LiveBidActionSchema,
@@ -22,6 +23,11 @@ import {
   BidImpactRequestSchema,
   previewBidDefinitionImpact,
 } from '../../../worker/src/lib/bid-definition-impact.js';
+import {
+  type BidStageParticipantPreviewRequest,
+  BidStageParticipantPreviewRequestSchema,
+  previewBidStageParticipantMembership,
+} from '../../../worker/src/lib/bid-definition-stage-participant-preview.js';
 import type { TestD1 } from '../../../worker/tests/integration/helpers/test-d1.js';
 import {
   BidExpectedSchema,
@@ -399,6 +405,55 @@ export function currentBidContent(): BidDefinitionContent {
   return candidate.content;
 }
 
+/** An isolated unsaved draft with complete typed sources. The service must
+ * evaluate this browser payload against the underlying legacy source without
+ * writing the authoring fields back to the TestD1 database. */
+function participantPreviewDraft(source: BidDefinitionContent): BidDefinitionContent {
+  const content = structuredClone(source);
+  if (content.settings?.v !== 3 || content.policy === null)
+    throw new Error('Synthetic participant preview requires a V3 policy document');
+  const comparator = [{ key: 'RSC_SENIORITY' as const, direction: 'ASC' as const }];
+  const memberIds = members.map((member) => member.id);
+  const midpoint = Math.ceil(memberIds.length / 2);
+  content.policy = {
+    ...content.policy,
+    executionPolicy: structuredClone(content.settings.livePolicy),
+    orderingAuthority: {
+      v: 1,
+      sourceDecisionId: 'synthetic-open-annual-ordering-decision',
+      comparator,
+    },
+    stageParticipantSources: content.settings.livePolicy.stages.map((stage, index) => ({
+      stageId: stage.id,
+      sourceRef: `SYNTHETIC participant preview source for ${stage.label}`,
+      participantSource: {
+        type: 'EXPLICIT_MEMBERS',
+        memberIds: index === 0 ? memberIds.slice(0, midpoint) : memberIds.slice(midpoint),
+      },
+      ordering: comparator,
+    })),
+  };
+  content.sourceDecisions = [
+    ...content.sourceDecisions,
+    {
+      issueId: 'synthetic-open-annual-ordering-decision',
+      title: 'Synthetic annual ordering decision',
+      question: 'Which reviewed comparator governs this isolated annual Bid?',
+      area: 'annual-policy',
+      status: 'OPEN',
+      decision: '',
+      sourceRef: 'SYNTHETIC annual-policy comparator review evidence',
+      effectiveOn: '2027-01-01',
+    },
+  ];
+  const candidate = canonicalBidDefinition(content);
+  if (!candidate.ok)
+    throw new Error(
+      `Synthetic participant preview draft is invalid: ${JSON.stringify(candidate.issues)}`,
+    );
+  return candidate.content;
+}
+
 async function createImpactDatabase(source: BidDefinitionContent) {
   // Keep database initialization out of the existing presentation-only cases.
   const { setupTestD1 } = await import('../../../worker/tests/integration/helpers/test-d1.js');
@@ -737,7 +792,10 @@ export async function authenticateCurrentBid(context: BrowserContext, baseURL: s
   ]);
 }
 
-export async function installCurrentBidFixtures(page: Page, options: { impact?: boolean } = {}) {
+export async function installCurrentBidFixtures(
+  page: Page,
+  options: { impact?: boolean; participantPreview?: boolean } = {},
+) {
   const baseContent = currentBidContent();
   let impactDatabase: TestD1 | null = null;
   let disposed = false;
@@ -765,7 +823,18 @@ export async function installCurrentBidFixtures(page: Page, options: { impact?: 
     postRequests: [] as CurrentBidFixtureRequest[],
     impactRequests: [] as BidImpactRequest[],
     impactResponses: [] as BidImpactResponse[],
+    participantPreviewRequests: [] as BidStageParticipantPreviewRequest[],
     impactReadOnlyProofs: 0,
+    participantPreviewReadOnlyProofs: 0,
+    participantPreviewArtifactCounts: [] as Array<{
+      bid_definition_versions: number;
+      bid_definition_heads: number;
+      bid_sessions: number;
+      bid_session_policy_snapshots: number;
+      canonical_bid_session_state: number;
+      bid_command_receipts: number;
+      bid_audit_outbox: number;
+    }>,
     previewReadOnlyProofs: 0,
     unexpectedRequests: [] as string[],
     consoleErrors: [] as string[],
@@ -788,7 +857,7 @@ export async function installCurrentBidFixtures(page: Page, options: { impact?: 
       }
     },
   };
-  if (options.impact) {
+  if (options.impact || options.participantPreview) {
     const captured = await createImpactDatabase(baseContent);
     impactDatabase = captured.database;
     state.current = captured.current;
@@ -799,6 +868,11 @@ export async function installCurrentBidFixtures(page: Page, options: { impact?: 
       ...credential,
       holderCount: captured.holderCounts.get(credential.id) ?? 0,
     }));
+    if (options.participantPreview) {
+      const authored = participantPreviewDraft(captured.current.content);
+      state.current = CurrentBidSchema.parse({ ...captured.current, content: authored });
+      state.baseContent = structuredClone(authored);
+    }
   }
   page.on('close', () => {
     void state.dispose();
@@ -942,6 +1016,19 @@ export async function installCurrentBidFixtures(page: Page, options: { impact?: 
           state.impactResponses.push(response);
           return json(response);
         }
+        if (impactDatabase && entry.body?.kind === 'stage-participant-membership') {
+          const parsed = BidStageParticipantPreviewRequestSchema.safeParse(entry.body);
+          if (!parsed.success)
+            return json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+          state.participantPreviewRequests.push(parsed.data);
+          const result = await previewBidStageParticipantMembership(
+            impactDatabase.env.DB,
+            BID_YEAR,
+            parsed.data,
+          );
+          if (!result.ok) return json(result, 409);
+          return json(BidStageParticipantPreviewResponseSchema.parse(result.response));
+        }
         const parsed = previewBody.safeParse(entry.body);
         if (!parsed.success)
           return json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
@@ -977,6 +1064,24 @@ export async function installCurrentBidFixtures(page: Page, options: { impact?: 
           deepStrictEqual(impactDatabase.sqlite.serialize(), before);
           state.previewReadOnlyProofs++;
           if (entry.body?.kind === 'impact') state.impactReadOnlyProofs++;
+          if (entry.body?.kind === 'stage-participant-membership') {
+            state.participantPreviewReadOnlyProofs++;
+            const count = (table: string) => {
+              const row = impactDatabase.sqlite
+                .prepare(`SELECT COUNT(*) AS n FROM ${table}`)
+                .get() as { n: number };
+              return Number(row.n);
+            };
+            state.participantPreviewArtifactCounts.push({
+              bid_definition_versions: count('bid_definition_versions'),
+              bid_definition_heads: count('bid_definition_heads'),
+              bid_sessions: count('bid_sessions'),
+              bid_session_policy_snapshots: count('bid_session_policy_snapshots'),
+              canonical_bid_session_state: count('canonical_bid_session_state'),
+              bid_command_receipts: count('bid_command_receipts'),
+              bid_audit_outbox: count('bid_audit_outbox'),
+            });
+          }
         }
       }
     }
