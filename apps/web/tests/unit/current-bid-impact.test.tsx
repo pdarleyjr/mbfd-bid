@@ -575,6 +575,9 @@ describe('Current Bid server impact review', () => {
     expect(finish).toHaveBeenCalledTimes(1);
   });
 
+  // These 501-member correctness cases perform many complete JSDOM renders.
+  // Keep their budget local: shared-runner contention must not interrupt an
+  // unfinished React act and cascade into the following small-fixture cases.
   it('binds forward/back change pages and row traces to the evaluated hash across 501 members', async () => {
     await mount(material(501));
     await evaluate();
@@ -603,7 +606,7 @@ describe('Current Bid server impact review', () => {
     expect(document.activeElement?.textContent).toContain(person(500));
     expect(document.activeElement?.textContent).toContain(seat(0));
     expect(section('Draft decision').textContent).toContain('2 points');
-  });
+  }, 15_000);
 
   it('pages all 501 opportunity/member choices locally and sends exact selected trace identities', async () => {
     await mount(material(501));
@@ -648,7 +651,7 @@ describe('Current Bid server impact review', () => {
     expect(requests.at(-1)?.body.expectedImpactSha256).toBe(IMPACT);
     expect(section('Draft decision').textContent).toContain(QUALIFICATION);
     expect(section('Draft decision').textContent).toContain('Comparison member ranks first');
-  });
+  }, 15_000);
 
   it('keeps a smaller newly evaluated opportunity list reachable after paging a larger result', async () => {
     await mount(material(501));
@@ -659,7 +662,7 @@ describe('Current Bid server impact review', () => {
     await evaluate();
     expect(details('Eligibility by opportunity').querySelectorAll('li')).toHaveLength(2);
     expect(details('Eligibility by opportunity').textContent).toContain(seat(0));
-  });
+  }, 15_000);
 
   it('surfaces reference and specialty failures as unavailable areas while retaining evaluated eligibility', async () => {
     handle = (body) => {
