@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Unstable_DevWorker, unstable_dev } from 'wrangler';
 import { signJwt } from '../../src/lib/jwt.js';
+import { waitForWranglerRuntime } from './helpers/wrangler-readiness.js';
 
 const SIGNING_KEY = 'test-key-with-at-least-32-characters-long';
 
@@ -45,10 +46,11 @@ describe('POST /api/admin/bid-session/:id/force-a-day (Plan 07 Task 14)', () => 
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });
+    await waitForWranglerRuntime(worker, SIGNING_KEY);
   });
 
   afterAll(async () => {
-    await worker.stop();
+    await worker?.stop();
   });
 
   it('returns 401 without JWT', async () => {

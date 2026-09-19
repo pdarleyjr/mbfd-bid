@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Unstable_DevWorker, unstable_dev } from 'wrangler';
 import { signJwt } from '../../src/lib/jwt.js';
+import { waitForWranglerRuntime } from './helpers/wrangler-readiness.js';
 
 const KEY = 'test-key-with-at-least-32-characters-long';
 const IDEM_A = '11111111-1111-4111-8111-111111111111';
@@ -20,6 +21,7 @@ describe('admin bid routes (Plan 04 Task 9)', () => {
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });
+    await waitForWranglerRuntime(worker, KEY);
     adminJwt = await signJwt(
       {
         sub: 1,
@@ -37,7 +39,7 @@ describe('admin bid routes (Plan 04 Task 9)', () => {
       KEY,
     );
   });
-  afterAll(async () => worker.stop());
+  afterAll(async () => worker?.stop());
 
   it('POST /api/admin/bid/freeze returns 401 without admin JWT', async () => {
     const res = await worker.fetch('/api/admin/bid/freeze', {

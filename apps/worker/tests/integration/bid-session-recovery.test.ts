@@ -2,6 +2,7 @@ import { WEBSOCKET_TICKET_AUDIENCE } from '@mbfd/shared';
 import { SignJWT } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Unstable_DevWorker, unstable_dev } from 'wrangler';
+import { waitForWranglerRuntime } from './helpers/wrangler-readiness.js';
 
 const LOCAL_SIGNING_KEY = 'test-key-with-at-least-32-characters-long';
 const STAGING_PUBLIC_ORIGIN = 'https://staging.bid.mbfdhub.com';
@@ -240,8 +241,9 @@ describe('BidSession DO recovery (Plan 04 Task 15)', () => {
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });
+    await waitForWranglerRuntime(worker, LOCAL_SIGNING_KEY);
   });
-  afterAll(async () => worker.stop());
+  afterAll(async () => worker?.stop());
 
   it('snapshot survives across requests (proxy for DO eviction)', async () => {
     const r1 = await worker.fetch('/api/board?bidSessionId=01HRECOVERY', {
