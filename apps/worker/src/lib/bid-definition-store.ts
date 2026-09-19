@@ -12,6 +12,10 @@ import {
   captureBidDefinitionSource,
 } from './bid-definition-source.js';
 import { loadBidDefinitionHead, loadBidDefinitionVersion } from './bid-definition-version.js';
+import {
+  materializePendingBidProfiles,
+  validateMaterializedBidDefinitionProfiles,
+} from './bid-profile-review.js';
 import { nextVersion } from './rule-book-version.js';
 
 const Hash = z.string().regex(/^[0-9a-f]{64}$/);
@@ -53,8 +57,10 @@ export async function saveBidDefinition(database: D1Database, rawInput: SaveBidD
   if (!parsed.success)
     return { ok: false as const, error: 'invalid_bid_save_request', issues: parsed.error.issues };
   const input = parsed.data;
-  const proposed =
-    input.intent.operation === 'save' ? canonicalBidDefinition(input.intent.content) : null;
+  const authored =
+    input.intent.operation === 'save' ? materializePendingBidProfiles(input.intent.content) : null;
+  if (authored && !authored.ok) return authored;
+  const proposed = authored?.ok ? canonicalBidDefinition(authored.content) : null;
   if (proposed && !proposed.ok)
     return { ok: false as const, error: 'invalid_bid_definition', issues: proposed.issues };
   const request = JSON.parse(
@@ -121,6 +127,11 @@ export async function saveBidDefinition(database: D1Database, rawInput: SaveBidD
   if (!candidate?.ok) return { ok: false as const, error: 'invalid_bid_definition' };
   if (candidate.content.bidYear !== input.year)
     return { ok: false as const, error: 'bid_definition_year_mismatch' };
+  // New Current-Bid profile edits carry an explicit pending/materialized state.
+  // Historical capture divergence remains valid; only a pending edit or a
+  // claimed materialization that no longer matches the compiler is rejected.
+  const profileValidation = validateMaterializedBidDefinitionProfiles(candidate.content);
+  if (!profileValidation.ok) return { ok: false as const, error: profileValidation.error };
   const referenceIssues = await bidDefinitionReferenceIssues(database, candidate.content);
   const changed =
     input.intent.operation === 'restore' ||

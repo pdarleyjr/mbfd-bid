@@ -4,6 +4,7 @@ import {
   type BidDefinitionIssue,
   type BidDefinitionRule,
   type FrozenLiveBidPolicy,
+  bidOrderingComparatorForStage,
 } from '@mbfd/shared';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
@@ -56,8 +57,14 @@ export function definitionRuleBookMaterial(
 /** Only collections proven to be sets or keyed rows are reordered. Scoring,
  * priority chains, requirement/reason order and specialty sequences stay intact. */
 function normalizePolicy(policy: FrozenLiveBidPolicy) {
+  if (policy.orderingAuthority?.v === 2)
+    policy.orderingAuthority.stages.sort((a, b) => compareId(a.stageId, b.stageId));
   policy.stages.sort((a, b) => a.order - b.order);
   for (const stage of policy.stages) {
+    if (stage.participantProvenance?.orderingAuthority?.v === 2)
+      stage.participantProvenance.orderingAuthority.stages.sort((a, b) =>
+        compareId(a.stageId, b.stageId),
+      );
     stage.memberIds.sort((a, b) => a - b);
     stage.opportunityPositionIds = [...new Set(stage.opportunityPositionIds)].sort(compareId);
   }
@@ -69,6 +76,36 @@ function normalizePolicy(policy: FrozenLiveBidPolicy) {
     policy.annualOperations.requiredTopologyPositionIds = [
       ...new Set(policy.annualOperations.requiredTopologyPositionIds),
     ].sort(compareId);
+  const constraints = policy.annualOperations?.aDay.execution?.constraints;
+  const terms = policy.annualOperations?.assignmentTerms;
+  if (terms) {
+    terms.sort((a, b) => compareId(a.id, b.id));
+    for (const term of terms) term.positionIds.sort(compareId);
+  }
+  const fallbacks = policy.annualOperations?.fallbackPolicies;
+  policy.annualOperations?.opportunityPools?.sort((a, b) => compareId(a.id, b.id));
+  const distributions = policy.annualOperations?.membershipDistributions;
+  if (distributions) {
+    distributions.sort((a, b) => compareId(a.id, b.id));
+    for (const distribution of distributions) {
+      distribution.memberIds.sort((a, b) => a - b);
+      distribution.shifts.sort(compareId);
+    }
+  }
+  if (fallbacks) {
+    fallbacks.sort((a, b) => compareId(a.id, b.id));
+    // Tier and comparator sequence is policy order, not a set.
+    for (const fallback of fallbacks) fallback.positionIds.sort(compareId);
+  }
+  if (constraints) {
+    constraints.sort((a, b) => compareId(a.id, b.id));
+    for (const rule of constraints) {
+      rule.positionIds.sort(compareId);
+      rule.memberIds.sort((a, b) => a - b);
+      rule.ranks.sort(compareId);
+      rule.shifts.sort(compareId);
+    }
+  }
 }
 
 /** Selector definitions are keyed by stage and their explicit ids/filter
@@ -172,6 +209,18 @@ function validateOrderingAuthorityRequest(
 ) {
   const request = content.policy?.orderingAuthority;
   if (request === undefined) return;
+  if (request.v === 2) {
+    const stages = content.policy?.executionPolicy.stages ?? [];
+    if (
+      stages.length !== request.stages.length ||
+      stages.some((stage) => !request.stages.some((entry) => entry.stageId === stage.id))
+    )
+      issues.push({
+        path: ['policy', 'orderingAuthority', 'stages'],
+        code: 'ordering_authority_stage_mismatch',
+        message: 'Specify an ordering rule for every configured stage.',
+      });
+  }
   const sourceDecision = content.sourceDecisions.find(
     (decision) => decision.issueId === request.sourceDecisionId,
   );
@@ -217,10 +266,17 @@ function validateStageParticipantSourceAuthoring(
     });
   }
 
-  const requestedComparator = policy.orderingAuthority?.comparator;
-  if (requestedComparator === undefined) return;
+  if (policy.orderingAuthority === undefined) return;
   sources.forEach((source, index) => {
-    if (canonical(source.ordering) === canonical(requestedComparator)) return;
+    const requestedComparator = bidOrderingComparatorForStage(
+      policy.orderingAuthority,
+      source.stageId,
+    );
+    if (
+      requestedComparator !== undefined &&
+      canonical(source.ordering) === canonical(requestedComparator)
+    )
+      return;
     issues.push({
       path: ['policy', 'stageParticipantSources', index, 'ordering'],
       code: 'stage_participant_source_ordering_mismatch',
@@ -242,6 +298,12 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
       })),
     };
   const content = parsed.data;
+  if (content.policy?.orderingAuthority?.v === 2)
+    content.policy.orderingAuthority.stages.sort((a, b) => compareId(a.stageId, b.stageId));
+  for (const decision of content.sourceDecisions) {
+    if (decision.resolution?.v === 2)
+      decision.resolution.stages.sort((a, b) => compareId(a.stageId, b.stageId));
+  }
   if (content.settings?.v === 3) normalizePolicy(content.settings.livePolicy);
   if (content.policy) {
     normalizePolicy(content.policy.executionPolicy);
@@ -254,6 +316,39 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
   unique(content.staffingBindings, (row) => row.positionId, 'staffingBindings', issues);
   unique(content.staffingBindings, (row) => row.staffingPositionId, 'staffingBindings', issues);
   unique(content.sourceDecisions, (row) => row.issueId, 'sourceDecisions', issues);
+  const fallbacks = content.policy?.executionPolicy.annualOperations?.fallbackPolicies ?? [];
+  for (const field of ['opportunityPools', 'membershipDistributions'] as const) {
+    const entries = content.policy?.executionPolicy.annualOperations?.[field] ?? [];
+    for (const [index, entry] of entries.entries()) {
+      const source = content.sourceDecisions.find(
+        (decision) => decision.issueId === entry.sourceDecisionId,
+      );
+      if (!source || source.area !== 'annual-policy')
+        issues.push({
+          path: ['policy', 'executionPolicy', 'annualOperations', field, index, 'sourceDecisionId'],
+          code: 'assignment_source_decision_missing',
+          message: 'Assignment semantics must reference an annual-policy source decision.',
+        });
+    }
+  }
+  for (const [index, fallback] of fallbacks.entries()) {
+    const source = content.sourceDecisions.find(
+      (decision) => decision.issueId === fallback.sourceDecisionId,
+    );
+    if (!source || source.area !== 'annual-policy')
+      issues.push({
+        path: [
+          'policy',
+          'executionPolicy',
+          'annualOperations',
+          'fallbackPolicies',
+          index,
+          'sourceDecisionId',
+        ],
+        code: 'fallback_source_decision_missing',
+        message: 'Fallback must reference an annual-policy source decision.',
+      });
+  }
   for (const field of ['rules', 'participation', 'staffingBindings'] as const) {
     content[field].forEach((row, index) => {
       if (!positionIds.has(row.positionId))

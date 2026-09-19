@@ -175,15 +175,40 @@ export function recordContactAttempt(
   return { ok: true, state: { ...state, contactAttempts: [...state.contactAttempts, attempt] } };
 }
 
-export function declareUnreachable(
+/** Shared gate for every ordinary and specialty unreachable command. */
+export function validateUnreachableContact(
   state: AnnualOperationsState,
   policy: AnnualOperationsPolicy | undefined,
-  input: { memberId: number; actorMemberId: number },
-): { ok: true; state: AnnualOperationsState } | { ok: false; code: string } {
+  input: { memberId: number; nowMs?: number },
+): { ok: true } | { ok: false; code: string } {
   if (policy === undefined) return { ok: false, code: 'CONTACT_POLICY_MISSING' };
   const attempts = state.contactAttempts.filter((attempt) => attempt.memberId === input.memberId);
   if (attempts.length < policy.contact.minimumAttempts)
     return { ok: false, code: 'CONTACT_ATTEMPTS_INCOMPLETE' };
+  if (policy.contact.timingMode === 'HARD_MINIMUM') {
+    const firstAttempt = attempts.length
+      ? Math.min(...attempts.map((attempt) => attempt.atMs))
+      : null;
+    if (
+      firstAttempt === null ||
+      input.nowMs === undefined ||
+      !Number.isSafeInteger(input.nowMs) ||
+      policy.contact.durationSeconds === null ||
+      input.nowMs < firstAttempt ||
+      input.nowMs - firstAttempt < policy.contact.durationSeconds * 1_000
+    )
+      return { ok: false, code: 'CONTACT_MINIMUM_TIME_INCOMPLETE' };
+  }
+  return { ok: true };
+}
+
+export function declareUnreachable(
+  state: AnnualOperationsState,
+  policy: AnnualOperationsPolicy | undefined,
+  input: { memberId: number; actorMemberId: number; nowMs?: number },
+): { ok: true; state: AnnualOperationsState } | { ok: false; code: string } {
+  const contact = validateUnreachableContact(state, policy, input);
+  if (!contact.ok) return contact;
   if (state.unresolvedMemberIds.includes(input.memberId))
     return { ok: false, code: 'MEMBER_ALREADY_UNRESOLVED' };
   return {

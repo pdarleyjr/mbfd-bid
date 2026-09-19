@@ -163,7 +163,7 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
     return route.fulfill({ json: detail() });
   });
   await page.goto('/admin/targetsolutions');
-  await page.getByText('How to use this page', { exact: true }).click();
+  await page.getByRole('button', { name: 'How to use this page', exact: true }).click();
   await expect(page.getByText('Controls on this page:', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close panel', exact: true }).click();
   await page.locator('input[type=file]').setInputFiles({

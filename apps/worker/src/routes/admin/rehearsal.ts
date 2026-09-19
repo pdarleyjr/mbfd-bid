@@ -42,6 +42,7 @@ import {
   frozenEligibilityMemberForSession,
   loadFrozenSessionBidPolicy,
 } from '../../lib/bid-policy.js';
+import { requiresCanonicalAnnualExecution } from '../../lib/canonical-annual-execution.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -1073,6 +1074,15 @@ router.post(
             409,
           );
         }
+        if (requiresCanonicalAnnualExecution(frozenPolicy.snapshot))
+          return c.json(
+            {
+              error: 'managed_canonical_required',
+              detail:
+                'Start this Mock from its session controls, then use the session operator console. Its frozen annual policy requires canonical execution.',
+            },
+            409,
+          );
         const { rules } = frozenPolicy.coverage;
         const orderRows = await db
           .select()
@@ -1393,6 +1403,15 @@ router.post(
         409,
       );
     }
+    if (requiresCanonicalAnnualExecution(frozenPolicy.snapshot))
+      return c.json(
+        {
+          error: 'managed_canonical_required',
+          detail:
+            'Start this Mock from its session controls, then use the session operator console. Its frozen annual policy requires canonical execution.',
+        },
+        409,
+      );
     const activeRules = frozenPolicy.coverage;
 
     const frozenMember = frozenEligibilityMemberForSession(frozenPolicy.snapshot, body.member_id);

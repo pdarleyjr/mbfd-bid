@@ -175,14 +175,9 @@ test('dense dynamic Board preserves all assignments, search, disclosure and resp
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: info.outputPath(`dashboard-${width}.png`), fullPage: true });
   }
-  const boardLink = page
-    .getByTestId('admin-sidebar')
-    .getByRole('link', { name: 'Bid board', exact: true });
-  if (!(await boardLink.isVisible())) {
-    await page.getByRole('button', { name: 'Expand Bid menu' }).click();
-  }
-  await boardLink.click();
-  await expect(page).toHaveURL(/\/admin\/bid-board/);
+  const bidLink = page.getByTestId('admin-sidebar').getByRole('link', { name: 'Bid', exact: true });
+  await bidLink.click();
+  await expect(page).toHaveURL(/\/admin\/current-bid(?:\?|$)/);
   expect(errors).toEqual([]);
 });
 

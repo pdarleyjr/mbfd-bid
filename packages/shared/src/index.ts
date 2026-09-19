@@ -105,3 +105,13 @@ export { BidImpactResponseSchema } from './schemas/bid-impact.js';
 export type { BidImpactResponse } from './schemas/bid-impact.js';
 export { BidStageParticipantPreviewResponseSchema } from './schemas/bid-stage-participant-preview.js';
 export type { BidStageParticipantPreviewResponse } from './schemas/bid-stage-participant-preview.js';
+export { BidProfileReviewResponseSchema } from './schemas/bid-profile-review.js';
+export type { BidProfileReviewResponse } from './schemas/bid-profile-review.js';
+export {
+  BidOpportunityPoolSchema,
+  BidOpportunityPoolsSchema,
+  BidPoolSelectionSchema,
+} from './schemas/bid-opportunity-pool.js';
+export type { BidOpportunityPool } from './schemas/bid-opportunity-pool.js';
+export { BidMembershipDistributionSchema } from './schemas/bid-membership-distribution.js';
+export type { BidMembershipDistribution } from './schemas/bid-membership-distribution.js';

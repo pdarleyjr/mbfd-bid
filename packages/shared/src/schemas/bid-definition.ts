@@ -4,6 +4,7 @@ import {
   BidConfigurationSettingsSchema,
   BidOrderingComparatorSchema,
   BidParticipationSchema,
+  BidStageComparatorsSchema,
   CredentialEvaluationDateSchema,
   FrozenLiveBidPolicySchema,
   FrozenRuleBookPositionSchema,
@@ -58,19 +59,37 @@ export const BidDefinitionAuthoringSchema = z
         })
         .strict(),
     ),
-    reconciliation: z.enum(['MATCHES_CAPTURED_RULE_REVISION', 'RULES_CHANGED_AFTER_COMPILATION']),
+    reconciliation: z.enum([
+      // Historical capture states remain readable and save-compatible.
+      'MATCHES_CAPTURED_RULE_REVISION',
+      'RULES_CHANGED_AFTER_COMPILATION',
+      // New profile edits cannot be persisted until the server has reviewed
+      // and materialized the exact concrete rules for this candidate.
+      'PROFILE_EDITS_PENDING_REVIEW',
+      'MATERIALIZED_FOR_CURRENT_VERSION',
+    ]),
   })
   .strict();
 
 /** Typed result recorded on the independently reviewed source decision. A
  * prose sourceRef or a requested enum selection cannot stand in for it. */
-export const BidOrderingSourceDecisionResolutionSchema = z
+const LegacyBidOrderingSourceDecisionResolutionSchema = z
   .object({
     v: z.literal(1),
     kind: z.literal('BID_ORDERING_COMPARATOR'),
     comparator: BidOrderingComparatorSchema,
   })
   .strict();
+export const BidOrderingSourceDecisionResolutionSchema = z.discriminatedUnion('v', [
+  LegacyBidOrderingSourceDecisionResolutionSchema,
+  z
+    .object({
+      v: z.literal(2),
+      kind: z.literal('CONTEXTUAL_BID_ORDERING'),
+      stages: BidStageComparatorsSchema,
+    })
+    .strict(),
+]);
 export type BidOrderingSourceDecisionResolution = z.infer<
   typeof BidOrderingSourceDecisionResolutionSchema
 >;
@@ -78,13 +97,19 @@ export type BidOrderingSourceDecisionResolution = z.infer<
 /** Saved-definition request for a governing comparator. This pointer must
  * resolve to a separate RESOLVED annual-policy source decision before it is
  * copied into a frozen policy snapshot. */
-export const BidOrderingAuthorityRequestSchema = z
+const LegacyBidOrderingAuthorityRequestSchema = z
   .object({
     v: z.literal(1),
     sourceDecisionId: Identity,
     comparator: BidOrderingComparatorSchema,
   })
   .strict();
+export const BidOrderingAuthorityRequestSchema = z.discriminatedUnion('v', [
+  LegacyBidOrderingAuthorityRequestSchema,
+  z
+    .object({ v: z.literal(2), sourceDecisionId: Identity, stages: BidStageComparatorsSchema })
+    .strict(),
+]);
 export type BidOrderingAuthorityRequest = z.infer<typeof BidOrderingAuthorityRequestSchema>;
 
 export const BidDefinitionSourceDecisionSchema = z

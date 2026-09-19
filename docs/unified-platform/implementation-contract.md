@@ -12,14 +12,26 @@
 - Production health responds 200 (`env=production`); that endpoint does not identify source SHA. Runtime identity remains a separate release gate.
 - Four visual reference images were not included in the supplied attachment directory. The written product contract and existing MBFD visual system guide implementation until references are available.
 
-## Supplied implementation context — non-authoritative
+## Final 2026 source authority — verified 2026-09-19
 
-The supplied 2026 documents are historical/reference material for local design,
-fixtures and validation only. They do not authorize populating a working Bid,
-publishing or restoring a policy, changing Department evidence, creating a real
-session, or treating a dated document as the current approved rule set. Any such
-operation requires separately verified source authority and the applicable human
-approval lifecycle.
+The final extracted package has been independently hash-verified. Its governing
+authority supersedes the earlier historical-only implementation context:
+
+1. `2026 Bid Policy.pdf`, July 2026: governing policy semantics.
+2. `MASTER 2026 Bid Positions Selection V2.xlsx`: organization and position plan.
+3. `2026 Annual Bid Calculations v3.xlsx`: subordinate calculation and ranking oracle.
+4. `(EX) Export Assignments - 2026-08-24.xls`: dated Department assignment snapshot.
+
+Existing software and earlier operational descriptions cannot override the PDF.
+See the sanitized final-source manifest; original files and personnel analysis
+remain private, read-only, and excluded from Git. Spreadsheet formula defects
+are intentional parity divergences where the PDF provides contrary requirements.
+
+The user authorizes guarded software release, rehearsed migrations, exact-source
+deployment and a new canonical final Current Bid version after release gates pass.
+Real session creation/start, real selections, real force actions, personnel test
+mutations and historical Mock deletion are excluded from acceptance. Portal
+writeback remains disabled. This contract records authorization, not completion.
 
 The desired software semantics are **edit → Save → new version** with automatic
 actor/time recording and optional change note/impact preview. Earlier versions
@@ -36,7 +48,7 @@ source facts remain fail-closed.
 
 The principal agent owns all architectural choices. Bounded inventories, regression tests, migration review, accessibility and UI QA may be delegated. Department, Bid policy and execution must not become independently designed systems.
 
-Preserve Hub federation and role gates, canonical commands, Durable Object coordination, D1 atomic batches, idempotency receipts, append-only personnel and qualification evidence, source provenance, audit, Mock/Live isolation, run snapshots and disabled portal writeback. Do not test by starting/advancing Real Bids, changing real people or policies, deleting Mocks, or altering completed evidence.
+Preserve Hub federation and role gates, canonical commands, Durable Object coordination, D1 atomic batches, idempotency receipts, append-only personnel and qualification evidence, source provenance, audit, Mock/Live isolation, run snapshots and disabled portal writeback. Do not test by starting/advancing Real Bids, changing real people, deleting Mocks, or altering completed evidence. The authorized final policy configuration must be a new canonical version, never a rewrite of history.
 
 ## Authoritative seams
 

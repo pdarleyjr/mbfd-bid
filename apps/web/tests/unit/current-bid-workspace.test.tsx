@@ -371,7 +371,8 @@ function stored() {
 function writes() {
   return requests.filter(
     (request) =>
-      request.method === 'POST' && ['versions', 'restore', 'mock-sessions'].includes(request.path),
+      request.method === 'POST' &&
+      ['versions', 'restore', 'mock-sessions', 'live-sessions'].includes(request.path),
   );
 }
 
@@ -768,6 +769,211 @@ describe('Current Bid version history and restore', () => {
     expect(requests.filter((request) => request.path === 'preview')).toHaveLength(1);
     expect(BidDraftSchema.safeParse(stored()).success).toBe(true);
   });
+});
+
+describe('Current Bid managed Live workflow', () => {
+  function livePreview() {
+    const { wouldAllowCreateMock: _mock, ...pins } = mockPreview();
+    return {
+      ...pins,
+      wouldAllowCreateLive: true,
+      readiness: {
+        checks: [
+          { id: 'annual_operations_policy', status: 'READY', detail: 'Synthetic policy is ready.' },
+        ],
+        overallStatus: 'READY',
+        canStartLiveBid: true,
+        blockingCheckIds: [],
+      },
+    };
+  }
+
+  function liveReceipt(replayed = false) {
+    return { ...mockReceipt(replayed), id: 'synthetic-live-session', is_mock: false };
+  }
+
+  afterEach(() => {
+    // Synthetic request allowlist: creation never dispatches a start or legacy mutation.
+    expect(
+      requests.every(
+        (request) =>
+          (request.path === 'current' && request.method === 'GET') ||
+          (['preview', 'live-sessions'].includes(request.path) && request.method === 'POST'),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([false, true])(
+    'requires confirmation and durably pins creation without starting (replayed=%s)',
+    async (replayed) => {
+      let persistedBeforeDispatch = false;
+      handle = (request) => {
+        if (request.path === 'preview') return response(livePreview());
+        if (request.path === 'live-sessions') {
+          expect(stored()?.pending).toStrictEqual({
+            path: 'live-sessions',
+            key: request.key,
+            body: mockBody(),
+          });
+          expect(request.body).toStrictEqual(mockBody());
+          persistedBeforeDispatch = true;
+          return response(liveReceipt(replayed), replayed ? 200 : 201);
+        }
+        return undefined;
+      };
+      await mount();
+      await click('Live Bid');
+      await click('Check Managed Live readiness');
+      expect(requests.filter((request) => request.path === 'preview')).toMatchObject([
+        {
+          key: null,
+          body: {
+            kind: 'live',
+            versionId: metadata(2).id,
+            versionSha256: metadata(2).contentSha256,
+          },
+        },
+      ]);
+      expect(writes()).toHaveLength(0);
+      expect(stored()?.pending).toBeNull();
+      await click('Create Live session…');
+      expect(writes()).toHaveLength(0);
+      await click('Confirm Live session creation');
+      expect(persistedBeforeDispatch).toBe(true);
+      expect(writes()).toHaveLength(1);
+      expect(writes()[0]?.key).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(stored()?.pending).toBeNull();
+      expect(container.textContent).toContain('Live session created; it has not started.');
+      expect(container.querySelector('a[href="/admin/bid"]')?.textContent).toContain(
+        'Open Live console',
+      );
+      expect(() => button('Create Live session…')).toThrow('Missing public button');
+    },
+  );
+
+  it.each(['bid_run_context_changed', 'bid_definition_or_source_changed'] as const)(
+    'invalidates Live review and confirmation after definitive %s before allowing a new request',
+    async (code) => {
+      let previews = 0;
+      let creations = 0;
+      const fresh = mockPreview(2, 'f'.repeat(64), 'a'.repeat(64));
+      handle = (request) => {
+        if (request.path === 'preview') {
+          const checked = livePreview();
+          return response(
+            ++previews === 1
+              ? checked
+              : {
+                  ...checked,
+                  contextSha256: fresh.contextSha256,
+                  runtimeSourceToken: fresh.runtimeSourceToken,
+                },
+          );
+        }
+        if (request.path === 'live-sessions') {
+          return ++creations === 1
+            ? response({ error: code }, 409)
+            : response(
+                { ...mockReceipt(false, fresh), id: 'synthetic-live-session', is_mock: false },
+                201,
+              );
+        }
+        return undefined;
+      };
+      await mount();
+      await click('Live Bid');
+      await click('Check Managed Live readiness');
+      await click('Create Live session…');
+      await click('Confirm Live session creation');
+      expect(stored()?.pending).toBeNull();
+      expect(container.textContent).not.toContain('Server Live readiness: ready.');
+      expect(() => button('Create Live session…')).toThrow('Missing public button');
+      expect(() => button('Confirm Live session creation')).toThrow('Missing public button');
+      expect(writes()).toHaveLength(1);
+      if (code === 'bid_definition_or_source_changed') {
+        expect(button('Check Managed Live readiness').disabled).toBe(true);
+        await click('Load current saved Bid');
+      }
+      expect(button('Check Managed Live readiness').disabled).toBe(false);
+      await click('Check Managed Live readiness');
+      expect(() => button('Confirm Live session creation')).toThrow('Missing public button');
+      await click('Create Live session…');
+      expect(writes()).toHaveLength(1);
+      await click('Confirm Live session creation');
+      expect(writes().map((request) => request.body)).toStrictEqual([mockBody(), mockBody(fresh)]);
+      expect(writes()[1]?.key).not.toBe(writes()[0]?.key);
+      expect(stored()?.pending).toBeNull();
+      expect(container.textContent).toContain('Live session created; it has not started.');
+    },
+  );
+
+  it('recovers a lost Live receipt after refresh and head advance with the same key and exact original pins', async () => {
+    let attempts = 0;
+    handle = (request) => {
+      if (request.path === 'preview') return response(livePreview());
+      if (request.path === 'live-sessions') {
+        if (++attempts === 1) throw new TypeError('Synthetic lost Live receipt');
+        return response(liveReceipt(true));
+      }
+      return undefined;
+    };
+    await mount();
+    await click('Live Bid');
+    await click('Check Managed Live readiness');
+    await click('Create Live session…');
+    await click('Confirm Live session creation');
+    const pending = stored()?.pending;
+    expect(pending).toMatchObject({ path: 'live-sessions', body: mockBody() });
+    expect(button('Check Managed Live readiness').disabled).toBe(true);
+    expect(await stepUpPreservation()).toMatchObject([{ status: 'fulfilled' }]);
+    head = current(3, 'Synthetic newer Bid');
+    await remount();
+    await click('Live Bid');
+    expect(stored()?.pending).toStrictEqual(pending);
+    expect(button('Check Managed Live readiness').disabled).toBe(true);
+    await click('Retry original request');
+    expect(writes()).toHaveLength(2);
+    expect(writes()[1]?.serializedBody).toBe(writes()[0]?.serializedBody);
+    expect(writes()[1]?.key).toBe(writes()[0]?.key);
+    expect(writes()[1]?.body).toStrictEqual(mockBody());
+    expect(requests.filter((request) => request.path === 'preview')).toHaveLength(1);
+    expect(stored()?.pending).toBeNull();
+    expect(stored()?.base.version?.versionNumber).toBe(3);
+    expect(container.textContent).toContain('Live session created; it has not started.');
+  });
+
+  it.each(['mock', 'foreign-context'] as const)(
+    'preserves the original recovery request when the Live response is %s',
+    async (invalid) => {
+      handle = (request) => {
+        if (request.path === 'preview') return response(livePreview());
+        if (request.path === 'live-sessions') {
+          const receipt = liveReceipt();
+          return response(
+            invalid === 'mock'
+              ? { ...receipt, is_mock: true }
+              : {
+                  ...receipt,
+                  bidDefinition: { ...receipt.bidDefinition, contextSha256: 'f'.repeat(64) },
+                },
+            201,
+          );
+        }
+        return undefined;
+      };
+      await mount();
+      await click('Live Bid');
+      await click('Check Managed Live readiness');
+      await click('Create Live session…');
+      await click('Confirm Live session creation');
+      expect(stored()?.pending).toMatchObject({ path: 'live-sessions', body: mockBody() });
+      expect(container.textContent).toContain('invalid server response');
+      expect(container.textContent).not.toContain('Live session created; it has not started.');
+      expect(button('Check Managed Live readiness').disabled).toBe(true);
+      expect(button('Retry original request').disabled).toBe(false);
+      expect(writes()).toHaveLength(1);
+    },
+  );
 });
 
 describe('Current Bid managed Mock workflow', () => {

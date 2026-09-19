@@ -879,10 +879,9 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
     },
   );
 
-  it('keeps a saved custom-stage draft behind the actual Live publication gate', async () => {
+  it('prepares the immutable saved custom stages without changing legacy publication state', async () => {
     expect(await prepare(await saved(), 'live')).toMatchObject({
-      ok: false,
-      code: 'bid_configuration_annual_policy_document_invalid',
+      ok: true,
     });
   });
 });

@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { BIDDING_RANKS } from '../constants/ranks.js';
+import { AnnualRuleProfileSchema } from './annual-rule-profile.js';
+import { BidMembershipDistributionSchema } from './bid-membership-distribution.js';
+import { BidOpportunityPoolsSchema } from './bid-opportunity-pool.js';
 import { ConfiguredScoringSchema } from './configured-scoring.js';
 import { FrozenServiceCreditSchema } from './service-evidence.js';
 
@@ -146,9 +149,73 @@ export const FrozenAnnualOperationsPolicySchema = z
     /** Dedicated specialty seats must be named in frozen topology, never inferred from staffing. */
     requiredTopologyPositionIds: z.array(z.string().trim().min(1).max(160)).min(1),
     specialties: z.array(FrozenAnnualSpecialtyPolicySchema).max(100).optional(),
+    opportunityPools: BidOpportunityPoolsSchema.optional(),
+    membershipDistributions: z.array(BidMembershipDistributionSchema).max(100).optional(),
+    assignmentTerms: z
+      .array(
+        z
+          .object({
+            id: z.string().trim().min(1).max(80),
+            positionIds: z.array(z.string().trim().min(1).max(160)).min(1),
+            requiredServiceMonths: z.number().int().min(1).max(1_200),
+            reopenAfterConsecutiveCycles: z.number().int().min(1).max(100),
+            closedForThisBid: z.boolean(),
+            sourceRef: z.string().trim().min(4).max(500),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
+    fallbackPolicies: z
+      .array(
+        z
+          .object({
+            id: z.string().trim().min(1).max(80),
+            label: z.string().trim().min(1).max(160),
+            sourceRef: z.string().trim().min(4).max(500),
+            sourceDecisionId: z.string().trim().min(1).max(160),
+            positionIds: z.array(z.string().trim().min(1).max(160)).min(1),
+            tiers: z
+              .array(
+                z
+                  .object({
+                    id: z.string().trim().min(1).max(80),
+                    label: z.string().trim().min(1).max(160),
+                    mode: z.enum(['VOLUNTARY', 'FORCED']),
+                    eligibility: z.discriminatedUnion('kind', [
+                      z.object({ kind: z.literal('MINIMUM_QUALIFIED') }).strict(),
+                      z
+                        .object({
+                          kind: z.literal('EXPLICIT_REQUIREMENTS'),
+                          requirements: AnnualRuleProfileSchema.shape.requirements,
+                        })
+                        .strict(),
+                    ]),
+                    currentlyAssignedOnly: z.boolean(),
+                    comparator: z
+                      .array(
+                        z
+                          .object({
+                            key: z.enum(['RSC_SENIORITY', 'RANK_SENIORITY']),
+                            direction: z.enum(['ASC', 'DESC']),
+                          })
+                          .strict(),
+                      )
+                      .min(1)
+                      .max(2),
+                  })
+                  .strict(),
+              )
+              .min(1)
+              .max(10),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
     contact: z
       .object({
-        minimumAttempts: z.number().int().min(1).max(10),
+        minimumAttempts: z.number().int().min(0).max(10),
         timingMode: z.enum(['HARD_MINIMUM', 'TARGET', 'OPERATOR_DISCRETION']),
         durationSeconds: z.number().int().min(0).max(86_400).nullable(),
         /** Explicit annual evidence policy; omitted only for pre-editor recovery material. */
@@ -170,6 +237,38 @@ export const FrozenAnnualOperationsPolicySchema = z
         min: z.number().int().min(0).max(1_000),
         max: z.number().int().min(0).max(1_000),
         captainDcMax: z.number().int().min(0).max(1_000),
+        /** Explicit execution policy for new versions; old snapshots are unchanged. */
+        execution: z
+          .object({
+            timing: z.literal('SIMULTANEOUS'),
+            officersPerGroup: z.number().int().min(0).max(1_000).nullable(),
+            sourceRef: z.string().trim().min(4).max(500),
+            constraints: z
+              .array(
+                z
+                  .object({
+                    shifts: z.array(z.enum(['A', 'B', 'C', 'D'])).min(1),
+                    id: z.string().trim().min(1).max(80),
+                    label: z.string().trim().min(1).max(160),
+                    sourceRef: z.string().trim().min(4).max(500),
+                    maximum: z.number().int().min(0).max(1_000),
+                    positionIds: z.array(z.string().trim().min(1).max(160)),
+                    memberIds: z.array(z.number().int().positive()),
+                    ranks: z.array(z.enum(['CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF'])),
+                  })
+                  .strict()
+                  .refine(
+                    (rule) =>
+                      rule.positionIds.length + rule.memberIds.length + rule.ranks.length > 0,
+                    {
+                      message: 'A-Day constraints require an explicit scope',
+                    },
+                  ),
+              )
+              .max(100),
+          })
+          .strict()
+          .optional(),
         specialtyMaximums: z
           .object({
             MARINE_ASSIGNED: z.number().int().min(0).max(1_000),
@@ -206,7 +305,71 @@ export const FrozenAnnualOperationsPolicySchema = z
         message: 'A-Day minimum cannot exceed maximum',
       });
     }
+    const constraints = policy.aDay.execution?.constraints ?? [];
+    if (new Set(constraints.map((rule) => rule.id)).size !== constraints.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['aDay', 'execution', 'constraints'],
+        message: 'A-Day constraint identities must be unique',
+      });
+    for (const [index, rule] of constraints.entries()) {
+      for (const key of ['positionIds', 'memberIds', 'ranks', 'shifts'] as const) {
+        if (new Set<string | number>(rule[key]).size !== rule[key].length)
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['aDay', 'execution', 'constraints', index, key],
+            message: 'A-Day scope entries must be unique',
+          });
+      }
+    }
+    const terms = policy.assignmentTerms ?? [];
+    const distributions = policy.membershipDistributions ?? [];
+    if (new Set(distributions.map((entry) => entry.id)).size !== distributions.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['membershipDistributions'],
+        message: 'Membership distribution identities must be unique',
+      });
+    const termPositions = terms.flatMap((term) => term.positionIds);
+    if (
+      new Set(terms.map((term) => term.id)).size !== terms.length ||
+      new Set(termPositions).size !== termPositions.length
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['assignmentTerms'],
+        message: 'Assignment term identities must be unique and opportunity scopes cannot overlap',
+      });
     const specialtyIds = policy.specialties?.map((specialty) => specialty.id) ?? [];
+    const fallbacks = policy.fallbackPolicies ?? [];
+    if (
+      new Set(fallbacks.map((entry) => entry.id)).size !== fallbacks.length ||
+      fallbacks.some(
+        (entry) => new Set(entry.tiers.map((tier) => tier.id)).size !== entry.tiers.length,
+      )
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fallbackPolicies'],
+        message: 'Fallback policy and tier identities must be unique',
+      });
+    const fallbackPositions = fallbacks.flatMap((entry) => entry.positionIds);
+    for (const [index, fallback] of fallbacks.entries()) {
+      for (const [tierIndex, tier] of fallback.tiers.entries()) {
+        if (new Set(tier.comparator.map((rule) => rule.key)).size !== tier.comparator.length)
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['fallbackPolicies', index, 'tiers', tierIndex, 'comparator'],
+            message: 'Fallback comparator keys must be unique',
+          });
+      }
+    }
+    if (new Set(fallbackPositions).size !== fallbackPositions.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fallbackPolicies'],
+        message: 'Each opportunity can have only one fallback policy',
+      });
     if (new Set(specialtyIds).size !== specialtyIds.length) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -278,6 +441,35 @@ export type StageParticipantOrdering = z.infer<typeof StageParticipantOrderingSc
 export const BidOrderingComparatorSchema = StageParticipantOrderingSchema;
 export type BidOrderingComparator = z.infer<typeof BidOrderingComparatorSchema>;
 
+export const BidStageComparatorsSchema = z
+  .array(
+    z
+      .object({
+        stageId: z.string().trim().min(1).max(80),
+        comparator: BidOrderingComparatorSchema,
+      })
+      .strict(),
+  )
+  .min(1)
+  .max(100)
+  .refine(
+    (stages) => new Set(stages.map((stage) => stage.stageId)).size === stages.length,
+    'Ordering requires unique stage identities',
+  );
+
+/** V1 remains byte-compatible. V2 never falls back to another stage's order. */
+export function bidOrderingComparatorForStage(
+  authority:
+    | { v: 1; comparator: BidOrderingComparator }
+    | { v: 2; stages: z.infer<typeof BidStageComparatorsSchema> }
+    | undefined,
+  stageId: string,
+): BidOrderingComparator | undefined {
+  return authority?.v === 1
+    ? authority.comparator
+    : authority?.stages.find((stage) => stage.stageId === stageId)?.comparator;
+}
+
 const FrozenPolicyCalendarDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -289,7 +481,7 @@ const FrozenPolicyCalendarDateSchema = z
 /** A comparator becomes execution material only after a separate, resolved
  * source decision has been matched and frozen. Free-form source references
  * and a comparator enum alone are deliberately insufficient. */
-export const FrozenBidOrderingAuthoritySchema = z
+const LegacyFrozenBidOrderingAuthoritySchema = z
   .object({
     v: z.literal(1),
     comparator: BidOrderingComparatorSchema,
@@ -301,6 +493,16 @@ export const FrozenBidOrderingAuthoritySchema = z
       .strict(),
   })
   .strict();
+export const FrozenBidOrderingAuthoritySchema = z.discriminatedUnion('v', [
+  LegacyFrozenBidOrderingAuthoritySchema,
+  z
+    .object({
+      v: z.literal(2),
+      stages: BidStageComparatorsSchema,
+      sourceDecision: LegacyFrozenBidOrderingAuthoritySchema.shape.sourceDecision,
+    })
+    .strict(),
+]);
 export type FrozenBidOrderingAuthority = z.infer<typeof FrozenBidOrderingAuthoritySchema>;
 
 /** Saved-definition authoring data. The source reference survives resolution
@@ -441,6 +643,19 @@ export const FrozenLiveBidPolicySchema = z
   })
   .strict()
   .superRefine((policy, context) => {
+    if (
+      policy.orderingAuthority?.v === 2 &&
+      (policy.orderingAuthority.stages.length !== policy.stages.length ||
+        policy.stages.some(
+          (stage) =>
+            bidOrderingComparatorForStage(policy.orderingAuthority, stage.id) === undefined,
+        ))
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['orderingAuthority'],
+        message: 'Contextual ordering must cover every frozen stage exactly.',
+      });
     const stageIds = new Set<string>();
     const stageOrders = new Set<number>();
     const memberIds = new Set<number>();
@@ -468,7 +683,7 @@ export const FrozenLiveBidPolicySchema = z
       if (
         stage.participantProvenance?.orderingAuthority !== undefined &&
         JSON.stringify(stage.participantProvenance.ordering) !==
-          JSON.stringify(policy.orderingAuthority?.comparator)
+          JSON.stringify(bidOrderingComparatorForStage(policy.orderingAuthority, stage.id))
       ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -614,6 +829,26 @@ export type FrozenSpecialtyQualification = z.infer<typeof FrozenSpecialtyQualifi
  * decisions without persisting names or source-system identifiers.
  */
 export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend({
+  /** Permission is frozen evidence, not an election to leave the retained assignment. */
+  termParticipation: z
+    .object({
+      assignmentId: z.string().min(1),
+      staffingPositionId: z.string().min(1),
+      positionId: z.string().min(1),
+      termId: z.string().min(1),
+      evidenceId: z.string().min(1),
+      evidenceRevision: z.number().int().positive(),
+      sourceRef: z.string().min(4),
+      evaluatedOn: FrozenPolicyCalendarDateSchema,
+      assignmentEffectiveFrom: FrozenPolicyCalendarDateSchema,
+      assignmentEffectiveTo: FrozenPolicyCalendarDateSchema.nullable(),
+      memberMayLeave: z.literal(true),
+      protected: z.boolean(),
+      voluntaryOnly: z.literal(true),
+    })
+    .strict()
+    .optional(),
+  currentBidPositionIds: z.array(z.string().min(1)).optional(),
   rank: z.enum(['CIVILIAN', 'CHIEF', 'DEP_CHIEF', 'DC', 'CPT', 'LT', 'FF']),
   isProbationary: z.boolean(),
   credentialNames: z.array(z.string().trim().min(1)),
@@ -836,6 +1071,9 @@ const BidSessionPolicySnapshotV2Schema = z
  */
 const FrozenTenureEvidenceSchema = z
   .object({
+    termMemberId: z.number().int().positive().nullable().optional(),
+    accumulatedServiceMonths: z.number().int().nonnegative().nullable().optional(),
+    consecutiveBidCycles: z.number().int().nonnegative().nullable().optional(),
     id: z.string().min(1),
     staffingPositionId: z.string().min(1),
     revision: z.number().int().positive(),

@@ -4,6 +4,7 @@ import type {
   FrozenLiveBidPolicy,
   StageParticipantOrdering,
 } from '@mbfd/shared';
+import { bidOrderingComparatorForStage } from '@mbfd/shared';
 
 export interface FrozenStageOrderEntry {
   ordinal: number;
@@ -33,7 +34,7 @@ function orderingValue(member: StageMember, key: StageParticipantOrdering[number
   return key === 'RSC_SENIORITY' ? member.rscSeniority : member.rankSeniority;
 }
 
-function sortWithFrozenOrdering(
+export function sortWithFrozenOrdering(
   stageMembers: readonly StageMember[],
   ordering: StageParticipantOrdering,
 ):
@@ -102,6 +103,9 @@ function orderingForStage(input: {
       code: 'stage_ordering_authority_unresolved' | 'stage_ordering_authority_mismatch';
     } {
   const policyAuthority = input.policy.orderingAuthority;
+  const comparator = bidOrderingComparatorForStage(policyAuthority, input.stage.id);
+  if (policyAuthority !== undefined && comparator === undefined)
+    return { ok: false, code: 'stage_ordering_authority_mismatch' };
   const provenance = input.stage.participantProvenance;
   if (provenance !== undefined && provenance.orderingAuthority === undefined)
     return { ok: false, code: 'stage_ordering_authority_unresolved' };
@@ -110,14 +114,15 @@ function orderingForStage(input: {
     if (
       policyAuthority === undefined ||
       JSON.stringify(provenanceAuthority) !== JSON.stringify(policyAuthority) ||
-      !sameOrdering(provenance.ordering, policyAuthority.comparator)
+      comparator === undefined ||
+      !sameOrdering(provenance.ordering, comparator)
     )
       return { ok: false, code: 'stage_ordering_authority_mismatch' };
     return { ok: true, ordering: provenance.ordering };
   }
   // A verified policy-level authority governs legacy explicit stages too.
   // Only stages without typed provenance may retain historical RSC→rank order.
-  return { ok: true, ordering: policyAuthority?.comparator ?? null };
+  return { ok: true, ordering: comparator ?? null };
 }
 
 /**

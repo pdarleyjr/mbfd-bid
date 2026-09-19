@@ -37,6 +37,9 @@ const Side = z.discriminatedUnion('status', [
       status: z.literal('BLOCKED'),
       code: z.string(),
       positionIds: ids,
+      termIssues: z
+        .array(z.object({ positionId: id, code: z.string(), sourceRef: z.string() }).strict())
+        .optional(),
       tenureIssues: z.array(
         z.object({ staffingPositionId: id, code: z.string(), recordId: id }).strict(),
       ),

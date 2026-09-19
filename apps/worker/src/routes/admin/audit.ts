@@ -31,7 +31,7 @@ router.get('/', async (c) => {
   if (q.to !== undefined) filters.push(lte(auditLog.createdAt, new Date(q.to)));
   if (q.actor_id !== undefined) filters.push(eq(auditLog.actorId, q.actor_id));
   if (q.actor_type !== undefined) filters.push(eq(auditLog.actorType, q.actor_type));
-  if (q.action !== undefined) filters.push(eq(auditLog.action, q.action));
+  if (q.action !== undefined) filters.push(sql`${auditLog.action} = ${q.action}`);
   if (q.target_id !== undefined) filters.push(eq(auditLog.targetId, q.target_id));
   if (q.bid_session_id !== undefined) filters.push(eq(auditLog.bidSessionId, q.bid_session_id));
   const where = filters.length > 0 ? and(...filters) : undefined;
@@ -41,7 +41,7 @@ router.get('/', async (c) => {
     .select()
     .from(auditLog)
     .where(where)
-    .orderBy(desc(auditLog.seq), desc(auditLog.createdAt))
+    .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
     .limit(q.limit)
     .offset(q.offset)
     .all();
@@ -70,7 +70,7 @@ router.get('/export', async (c) => {
   if (q.to !== undefined) filters.push(lte(auditLog.createdAt, new Date(q.to)));
   if (q.actor_id !== undefined) filters.push(eq(auditLog.actorId, q.actor_id));
   if (q.actor_type !== undefined) filters.push(eq(auditLog.actorType, q.actor_type));
-  if (q.action !== undefined) filters.push(eq(auditLog.action, q.action));
+  if (q.action !== undefined) filters.push(sql`${auditLog.action} = ${q.action}`);
   if (q.target_id !== undefined) filters.push(eq(auditLog.targetId, q.target_id));
   if (q.bid_session_id !== undefined) filters.push(eq(auditLog.bidSessionId, q.bid_session_id));
   const where = filters.length > 0 ? and(...filters) : undefined;
@@ -85,7 +85,7 @@ router.get('/export', async (c) => {
         .select()
         .from(auditLog)
         .where(where)
-        .orderBy(desc(auditLog.seq), desc(auditLog.createdAt))
+        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
         .limit(PAGE)
         .offset(offset)
         .all();

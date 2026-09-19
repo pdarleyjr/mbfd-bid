@@ -5,6 +5,7 @@ import {
   type BidDefinitionRule,
   BidDispositionSchema,
   type ConfiguredScoring,
+  type FrozenAnnualOperationsPolicy,
   type FrozenLiveBidPolicy,
   LiveBidActionSchema,
 } from '@mbfd/shared';
@@ -20,6 +21,7 @@ import {
   OrderedChoices,
   ReferencePicker,
 } from '../../app/admin/current-bid/BidFields';
+import { BidMembershipFields } from '../../app/admin/current-bid/BidMembershipFields';
 import { BidOpportunityFields } from '../../app/admin/current-bid/BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from '../../app/admin/current-bid/BidPolicyFields';
 import { BidRuleFields } from '../../app/admin/current-bid/BidRuleFields';
@@ -402,6 +404,100 @@ function policyEditor(content = baseContent(), section: PolicySection = 'languag
     <BidPolicyFields content={value} section={section} onChange={onChange} />
   ));
 }
+describe('BidMembershipFields', () => {
+  type Memberships = FrozenAnnualOperationsPolicy['membershipDistributions'];
+  const members = [
+    { value: '901', label: 'Synthetic member 901' },
+    { value: '902', label: 'Synthetic member 902' },
+  ];
+  const editor = (initial: Memberships) =>
+    renderState(initial, (value, onChange) => (
+      <BidMembershipFields value={value} members={members} onChange={onChange} />
+    ));
+
+  it('preserves historical absence until explicit configuration and supports removal', async () => {
+    const state = editor(undefined);
+    expect(state.value()).toBeUndefined();
+    expect(state.changes).toEqual([]);
+    expect(state.container.textContent).not.toContain('Add membership distribution');
+    await click(control(state.container, 'Configure existing membership distribution'));
+    expect(state.value()).toEqual([]);
+    await click(control(state.container, 'Configure existing membership distribution'));
+    expect(state.value()).toBeUndefined();
+  });
+
+  it('requires explicit members, shifts, limits and source rather than deriving them from a label', async () => {
+    const state = editor([]);
+    await click(button(state.container, 'Add membership distribution'));
+    expect(state.value()).toEqual([
+      {
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        label: '',
+        sourceRef: '',
+        sourceDecisionId: '',
+        membershipSource: 'REVIEWED_EXISTING_MEMBERS',
+        memberIds: [],
+        shifts: [],
+        minimumPerShift: 0,
+        maximumPerShift: 0,
+        maximumPerADay: 0,
+      },
+    ]);
+    await setValue(control(state.container, 'Membership name'), 'Synthetic SWAT overlay');
+    expect(state.value()?.[0]).toMatchObject({
+      sourceRef: '',
+      sourceDecisionId: '',
+      memberIds: [],
+      shifts: [],
+    });
+    await setValue(control(state.container, 'Membership source'), 'Synthetic reviewed roster');
+    await setValue(control(state.container, 'Membership source decision'), 'synthetic-decision');
+    await click(
+      control(group(state.container, 'Reviewed existing members'), 'Synthetic member 902'),
+    );
+    await click(control(group(state.container, 'Membership shifts'), 'B'));
+    await setValue(control(state.container, 'Minimum members per shift'), '2');
+    await setValue(control(state.container, 'Maximum members per shift'), '2');
+    await setValue(control(state.container, 'Maximum members per A-Day group'), '1');
+    expect(state.value()?.[0]).toMatchObject({
+      label: 'Synthetic SWAT overlay',
+      sourceRef: 'Synthetic reviewed roster',
+      sourceDecisionId: 'synthetic-decision',
+      membershipSource: 'REVIEWED_EXISTING_MEMBERS',
+      memberIds: [902],
+      shifts: ['B'],
+      minimumPerShift: 2,
+      maximumPerShift: 2,
+      maximumPerADay: 1,
+    });
+  });
+
+  it('preserves saved missing members and sibling distributions during a limit edit', async () => {
+    const original: Memberships = [
+      {
+        id: 'synthetic-existing',
+        label: 'Synthetic existing overlay',
+        sourceRef: 'Synthetic saved authority',
+        sourceDecisionId: 'synthetic-saved-decision',
+        membershipSource: 'REVIEWED_EXISTING_MEMBERS',
+        memberIds: [999],
+        shifts: ['A', 'B', 'C'],
+        minimumPerShift: 2,
+        maximumPerShift: 2,
+        maximumPerADay: 1,
+      },
+    ];
+    original.push({ ...required(original[0]), id: 'synthetic-sibling', memberIds: [901] });
+    const state = editor(original);
+    const first = group(state.container, 'Membership distribution 1');
+    expect(first.textContent).toContain('999');
+    expect(state.changes).toEqual([]);
+    await setValue(control(first, 'Maximum members per A-Day group'), '2');
+    expect(state.value()).toEqual([{ ...original[0], maximumPerADay: 2 }, original[1]]);
+    await click(button(first, 'Remove membership distribution 1'));
+    expect(state.value()).toEqual([original[1]]);
+  });
+});
 function ruleEditor(rule = baseRule()) {
   return renderState(rule, (value, onChange) => <BidRuleFields rule={value} onChange={onChange} />);
 }
@@ -809,6 +905,364 @@ describe('BidPolicyFields', () => {
     });
     expect(state.value().policy?.executionPolicy).toEqual(live(state.value()));
     expect(ops(state.value()).aDay).toEqual(ops(original).aDay);
+  });
+
+  it('preserves historical A-Day execution absence until explicitly enabled and removes it without rewriting capacity', async () => {
+    const original = baseContent();
+    const state = policyEditor(original, 'a-day');
+    expect(state.changes).toEqual([]);
+    await setValue(control(state.container, 'Maximum group size'), '31');
+    expect(ops(state.value()).aDay).not.toHaveProperty('execution');
+    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    expect(ops(state.value()).aDay.execution).toStrictEqual({
+      timing: 'SIMULTANEOUS',
+      officersPerGroup: null,
+      sourceRef: '',
+      constraints: [],
+    });
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(false);
+    await setValue(
+      control(state.container, 'A-Day execution source'),
+      'Synthetic approved timing policy',
+    );
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
+    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    const expected = structuredClone(original);
+    ops(expected).aDay.max = 31;
+    required(expected.policy).executionPolicy = structuredClone(live(expected));
+    expect(state.value()).toStrictEqual(expected);
+    expect(ops(state.value()).aDay).not.toHaveProperty('execution');
+  });
+
+  it('authors an exact officer count while preserving the distinction between zero and no exact count', async () => {
+    const state = policyEditor(baseContent(), 'a-day');
+    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await setValue(control(state.container, 'A-Day execution source'), 'Synthetic officer policy');
+    expect(ops(state.value()).aDay.execution?.officersPerGroup).toBeNull();
+    await setValue(control(state.container, 'Exact officers per combat group'), '5');
+    expect(ops(state.value()).aDay.execution?.officersPerGroup).toBe(5);
+    await setValue(control(state.container, 'Exact officers per combat group'), '0');
+    expect(ops(state.value()).aDay.execution?.officersPerGroup).toBe(0);
+    await setValue(control(state.container, 'Exact officers per combat group'), '');
+    expect(ops(state.value()).aDay.execution?.officersPerGroup).toBeNull();
+    expect(state.value().policy?.executionPolicy).toEqual(live(state.value()));
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
+  });
+
+  it('authors named A-Day limits using explicit shift and union scopes without inferring membership from the name', async () => {
+    const original = baseContent();
+    const state = policyEditor(original, 'a-day');
+    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await setValue(
+      control(state.container, 'A-Day execution source'),
+      'Synthetic execution authority',
+    );
+    await click(button(state.container, 'Add A-Day limit'));
+    const scope = group(state.container, 'A-Day limit 1');
+    await setValue(control(scope, 'Limit name'), 'Marine and selected officers');
+    await setValue(control(scope, 'Limit source'), 'Synthetic scoped limit authority');
+    await setValue(control(scope, 'Maximum per A-Day'), '2');
+    const incomplete = required(ops(state.value()).aDay.execution).constraints[0];
+    expect(incomplete).toMatchObject({ shifts: [], positionIds: [], memberIds: [], ranks: [] });
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(false);
+    await click(control(group(scope, 'Applicable shifts'), 'A shift'));
+    await click(control(group(scope, 'Applicable shifts'), 'D shift'));
+    await click(
+      control(
+        group(scope, 'Included opportunities'),
+        'Synthetic opportunity 1 · A · synthetic-seat-1',
+      ),
+    );
+    await click(control(group(scope, 'Included members'), 'Synthetic member 901'));
+    await click(control(group(scope, 'Included ranks'), 'Captain'));
+    expect(ops(state.value()).aDay.execution?.constraints).toStrictEqual([
+      {
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        label: 'Marine and selected officers',
+        sourceRef: 'Synthetic scoped limit authority',
+        maximum: 2,
+        shifts: ['A', 'D'],
+        positionIds: ['synthetic-seat-1'],
+        memberIds: [901],
+        ranks: ['CPT'],
+      },
+    ]);
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
+    expect(state.value().policy?.executionPolicy).toEqual(live(state.value()));
+    expect(state.value().positions).toEqual(original.positions);
+    expect(state.value().authoring).toEqual(original.authoring);
+    expect(ops(state.value()).specialties).toEqual(ops(original).specialties);
+    expect(ops(state.value()).aDay.specialtyMaximums).toEqual(ops(original).aDay.specialtyMaximums);
+    await click(button(scope, 'Remove A-Day limit 1'));
+    expect(ops(state.value()).aDay.execution?.constraints).toEqual([]);
+  });
+
+  it('preserves saved missing A-Day references and sibling limits across edits and picker searches', async () => {
+    const original = baseContent();
+    ops(original).aDay.execution = {
+      timing: 'SIMULTANEOUS',
+      officersPerGroup: null,
+      sourceRef: 'Synthetic saved execution authority',
+      constraints: [
+        {
+          id: 'saved-marine-limit',
+          label: 'Saved Marine limit',
+          sourceRef: 'Synthetic saved scope authority',
+          maximum: 2,
+          shifts: ['A', 'B', 'C'],
+          positionIds: ['saved-missing-opportunity'],
+          memberIds: [999],
+          ranks: [],
+        },
+        {
+          id: 'saved-officer-limit',
+          label: 'Saved officer limit',
+          sourceRef: 'Synthetic officer authority',
+          maximum: 1,
+          shifts: ['D'],
+          positionIds: [],
+          memberIds: [],
+          ranks: ['DC', 'CPT'],
+        },
+      ],
+    };
+    required(original.policy).executionPolicy = structuredClone(live(original));
+    const state = policyEditor(original, 'a-day');
+    const scope = group(state.container, 'A-Day limit 1');
+    expect(scope.textContent).toContain(
+      'saved-missing-opportunity · Saved selection; catalog review required',
+    );
+    expect(scope.textContent).toContain('999 · Saved selection; catalog review required');
+    await setValue(
+      control(group(scope, 'Included members'), 'Find included members'),
+      'no matches',
+    );
+    expect(state.changes).toEqual([]);
+    await setValue(control(scope, 'Limit name'), 'Amended limit name');
+    const expected = structuredClone(original);
+    required(required(ops(expected).aDay.execution).constraints[0]).label = 'Amended limit name';
+    required(expected.policy).executionPolicy = structuredClone(live(expected));
+    expect(state.value()).toStrictEqual(expected);
+  });
+
+  it('preserves absent fallback policies and distinguishes explicit no-fallback configuration from historical absence', async () => {
+    const original = baseContent();
+    const state = policyEditor(original, 'specialties');
+    expect(state.changes).toEqual([]);
+    expect(ops(state.value())).not.toHaveProperty('fallbackPolicies');
+    await click(control(state.container, 'Configure fallback assignment policies'));
+    expect(ops(state.value()).fallbackPolicies).toStrictEqual([]);
+    expect(state.container.textContent).toContain('An empty list permits no fallback assignments.');
+    expect(state.value().policy?.executionPolicy).toEqual(live(state.value()));
+    await click(control(state.container, 'Configure fallback assignment policies'));
+    expect(state.value()).toStrictEqual(original);
+  });
+
+  it('authors ordered fallback tiers with explicit opportunities, source decision, eligibility and comparator direction', async () => {
+    const original = baseContent();
+    const state = policyEditor(original, 'specialties');
+    await click(control(state.container, 'Configure fallback assignment policies'));
+    await click(button(state.container, 'Add fallback policy'));
+    const policy = group(state.container, 'Fallback policy 1');
+    expect(ops(state.value()).fallbackPolicies?.[0]).toMatchObject({
+      label: '',
+      sourceRef: '',
+      sourceDecisionId: '',
+      positionIds: [],
+      tiers: [],
+    });
+    await setValue(control(policy, 'Fallback policy name'), 'Synthetic Marine fallback');
+    await setValue(
+      control(policy, 'Fallback policy source'),
+      'Synthetic approved fallback authority',
+    );
+    await setValue(control(policy, 'Fallback source decision'), 'synthetic-source-decision');
+    await click(
+      control(
+        group(policy, 'Fallback opportunities'),
+        'Synthetic opportunity 1 · A · synthetic-seat-1',
+      ),
+    );
+    await click(button(policy, 'Add fallback tier'));
+    let tier = group(policy, 'Fallback tier 1');
+    await setValue(control(tier, 'Tier name'), 'Qualified volunteers');
+    await click(button(tier, 'Add seniority comparison'));
+    await click(button(tier, 'Add seniority comparison'));
+    await setValue(control(group(tier, 'Comparison 1'), 'Comparison direction'), 'DESC');
+    await click(button(group(tier, 'Comparison 2'), 'Move comparison up'));
+    await click(button(policy, 'Add fallback tier'));
+    tier = group(policy, 'Fallback tier 2');
+    await setValue(control(tier, 'Tier name'), 'Qualified forced personnel');
+    await setValue(control(tier, 'Assignment method'), 'FORCED');
+    await click(control(tier, 'Limit this tier to currently assigned personnel'));
+    await click(button(tier, 'Add seniority comparison'));
+    await setValue(control(group(tier, 'Comparison 1'), 'Comparison direction'), 'DESC');
+    await click(button(tier, 'Move tier up'));
+    const configured = required(ops(state.value()).fallbackPolicies?.[0]);
+    expect(configured).toMatchObject({
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      sourceDecisionId: 'synthetic-source-decision',
+      positionIds: ['synthetic-seat-1'],
+      tiers: [
+        {
+          label: 'Qualified forced personnel',
+          mode: 'FORCED',
+          eligibility: { kind: 'MINIMUM_QUALIFIED' },
+          currentlyAssignedOnly: true,
+          comparator: [{ key: 'RSC_SENIORITY', direction: 'DESC' }],
+        },
+        {
+          label: 'Qualified volunteers',
+          mode: 'VOLUNTARY',
+          eligibility: { kind: 'MINIMUM_QUALIFIED' },
+          comparator: [
+            { key: 'RANK_SENIORITY', direction: 'ASC' },
+            { key: 'RSC_SENIORITY', direction: 'DESC' },
+          ],
+        },
+      ],
+    });
+    expect(new Set(configured.tiers.map((entry) => entry.id)).size).toBe(2);
+    expect(state.value().sourceDecisions).toStrictEqual(original.sourceDecisions);
+    expect(state.value().sourceDecisions[0]?.status).toBe('OPEN');
+    expect(state.value().policy?.executionPolicy).toEqual(live(state.value()));
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
+    await click(button(policy, 'Remove fallback policy 1'));
+    expect(ops(state.value()).fallbackPolicies).toStrictEqual([]);
+  });
+
+  it('authors separate fallback requirements without rewriting ordinary rules or resolving its source decision', async () => {
+    const original = baseContent();
+    const state = policyEditor(original, 'specialties');
+    await click(control(state.container, 'Configure fallback assignment policies'));
+    await click(button(state.container, 'Add fallback policy'));
+    const policy = group(state.container, 'Fallback policy 1');
+    await click(button(policy, 'Add fallback tier'));
+    const tier = group(policy, 'Fallback tier 1');
+    await setValue(control(tier, 'Tier eligibility'), 'EXPLICIT_REQUIREMENTS');
+    expect(ops(state.value()).fallbackPolicies?.[0]?.tiers[0]?.eligibility).toStrictEqual({
+      kind: 'EXPLICIT_REQUIREMENTS',
+      requirements: { credentials: [], custom: [] },
+    });
+    await click(control(group(tier, 'Eligible ranks'), 'FF'));
+    await click(control(group(tier, 'Required qualifications'), 'Renamed display for All A'));
+    expect(ops(state.value()).fallbackPolicies?.[0]?.tiers[0]?.eligibility).toStrictEqual({
+      kind: 'EXPLICIT_REQUIREMENTS',
+      requirements: { ranks: ['FF'], credentials: ['All A'], custom: [] },
+    });
+    await click(control(group(tier, 'Eligible ranks'), 'FF'));
+    expect(ops(state.value()).fallbackPolicies?.[0]?.tiers[0]?.eligibility).toStrictEqual({
+      kind: 'EXPLICIT_REQUIREMENTS',
+      requirements: { credentials: ['All A'], custom: [] },
+    });
+    expect(state.value().rules).toStrictEqual(original.rules);
+    expect(state.value().sourceDecisions).toStrictEqual(original.sourceDecisions);
+    expect(ops(state.value()).specialties).toStrictEqual(ops(original).specialties);
+    expect(ops(state.value()).aDay).toStrictEqual(ops(original).aDay);
+  });
+
+  it('retains missing fallback source and opportunity references plus advanced requirements on unrelated edits', async () => {
+    const original = baseContent();
+    ops(original).fallbackPolicies = [
+      {
+        id: 'synthetic-saved-fallback',
+        label: 'Saved fallback',
+        sourceRef: 'Synthetic saved authority',
+        sourceDecisionId: 'missing-saved-decision',
+        positionIds: ['missing-saved-opportunity'],
+        tiers: [
+          {
+            id: 'synthetic-saved-tier',
+            label: 'Saved tier',
+            mode: 'VOLUNTARY',
+            currentlyAssignedOnly: true,
+            comparator: [{ key: 'RANK_SENIORITY', direction: 'DESC' }],
+            eligibility: {
+              kind: 'EXPLICIT_REQUIREMENTS',
+              requirements: {
+                credentials: [MISSING],
+                custom: ['non_probationary'],
+                ranks: ['LT'],
+                anyOfCredentials: [['Either B', MISSING]],
+                service: [{ serviceCode: 'SYNTHETIC_SERVICE', minimumMonths: 12 }],
+              },
+            },
+          },
+        ],
+      },
+    ];
+    required(original.policy).executionPolicy = structuredClone(live(original));
+    const state = policyEditor(original, 'specialties');
+    const policy = group(state.container, 'Fallback policy 1');
+    expect(policy.textContent).toContain(
+      'missing-saved-decision · Saved decision missing; review required',
+    );
+    expect(policy.textContent).toContain(
+      'missing-saved-opportunity · Saved selection; catalog review required',
+    );
+    expect(state.changes).toEqual([]);
+    await setValue(control(policy, 'Fallback policy name'), 'Amended fallback label');
+    const expected = structuredClone(original);
+    required(ops(expected).fallbackPolicies?.[0]).label = 'Amended fallback label';
+    required(expected.policy).executionPolicy = structuredClone(live(expected));
+    expect(state.value()).toStrictEqual(expected);
+  });
+
+  it('authors assignment terms with independent service and cycle thresholds while preserving optional absence', async () => {
+    const original = baseContent();
+    const state = policyEditor(original, 'specialties');
+    expect(ops(state.value())).not.toHaveProperty('assignmentTerms');
+    expect(state.changes).toEqual([]);
+    await click(control(state.container, 'Configure assignment terms'));
+    expect(ops(state.value()).assignmentTerms).toStrictEqual([]);
+    await click(button(state.container, 'Add assignment term'));
+    const term = group(state.container, 'Assignment term 1');
+    expect(control(term, 'Assignment term source').value).toBe('');
+    expect(control(term, 'Service months required before leaving').value).toBe('');
+    expect(control(term, 'Consecutive bid cycles before annual reopening').value).toBe('');
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(false);
+    await setValue(control(term, 'Assignment term source'), 'Synthetic reviewed term policy');
+    await setValue(control(term, 'Service months required before leaving'), '36');
+    await setValue(control(term, 'Consecutive bid cycles before annual reopening'), '3');
+    await click(
+      control(group(term, 'Term opportunities'), 'Synthetic opportunity 1 · A · synthetic-seat-1'),
+    );
+    await click(control(term, 'Closed for this Bid'));
+    expect(ops(state.value()).assignmentTerms).toStrictEqual([
+      {
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        positionIds: ['synthetic-seat-1'],
+        requiredServiceMonths: 36,
+        reopenAfterConsecutiveCycles: 3,
+        closedForThisBid: true,
+        sourceRef: 'Synthetic reviewed term policy',
+      },
+    ]);
+    expect(state.value().policy?.executionPolicy).toStrictEqual(live(state.value()));
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
+    expect(ops(state.value()).aDay).toStrictEqual(ops(original).aDay);
+    expect(ops(state.value()).specialties).toStrictEqual(ops(original).specialties);
+    await click(control(state.container, 'Configure assignment terms'));
+    expect(state.value()).toStrictEqual(original);
+  });
+
+  it('preserves assignment-term scope, closure and thresholds when an unrelated capacity changes', async () => {
+    const original = baseContent();
+    ops(original).assignmentTerms = [
+      {
+        id: 'synthetic-saved-term',
+        positionIds: ['saved-missing-term-seat'],
+        requiredServiceMonths: 36,
+        reopenAfterConsecutiveCycles: 3,
+        closedForThisBid: true,
+        sourceRef: 'Synthetic saved term authority',
+      },
+    ];
+    required(original.policy).executionPolicy = structuredClone(live(original));
+    const state = policyEditor(original, 'a-day');
+    await setValue(control(state.container, 'Maximum group size'), '29');
+    expect(ops(state.value()).assignmentTerms).toStrictEqual(ops(original).assignmentTerms);
+    expect(state.value().policy?.executionPolicy).toStrictEqual(live(state.value()));
   });
 
   it('initializes operating policy with no invented members, grants, stages, authority or dates', async () => {

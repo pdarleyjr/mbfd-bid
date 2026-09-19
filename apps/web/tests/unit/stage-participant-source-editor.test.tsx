@@ -15,7 +15,7 @@ import {
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 const roots: Root[] = [];
-const orderingAuthority: BidOrderingAuthorityRequest = {
+const orderingAuthority: Extract<BidOrderingAuthorityRequest, { v: 1 }> = {
   v: 1,
   sourceDecisionId: 'synthetic-annual-policy-decision',
   comparator: [

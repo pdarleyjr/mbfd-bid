@@ -55,6 +55,23 @@ test.describe('Lobby protection', () => {
     context,
     page,
   }) => {
+    // This is a synthetic redirect contract check. Keep Bid's local redirect
+    // chain real and intercept only the external Hub boundary; no Hub account
+    // or live login page is required by a local browser test.
+    const authorizations: URL[] = [];
+    await page.route('https://staging.mbfdhub.com/auth/bid/authorize?**', async (route) => {
+      authorizations.push(new URL(route.request().url()));
+      await route.fulfill({
+        status: 302,
+        headers: { location: 'https://staging.mbfdhub.com/login' },
+      });
+    });
+    await page.route('https://staging.mbfdhub.com/login', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><html><body><h1>MBFD Hub</h1><p>Synthetic login destination fixture</p><label>Employee ID<input name="employee_id"></label></body></html>',
+      }),
+    );
     await context.clearCookies();
     await context.addCookies([
       {
@@ -66,7 +83,19 @@ test.describe('Lobby protection', () => {
       },
     ]);
     await page.goto('/lobby', { waitUntil: 'commit' });
+    // The local streamed /lobby -> /login -> /api/auth/start chain must finish
+    // before asserting the external fixture destination.
+    await expect.poll(() => authorizations.length, { timeout: 15_000 }).toBe(1);
+    const authorization = authorizations[0];
+    expect(authorization?.origin).toBe('https://staging.mbfdhub.com');
+    expect(authorization?.pathname).toBe('/auth/bid/authorize');
+    expect(authorization?.searchParams.get('client_id')).toBe('bid');
+    expect(authorization?.searchParams.get('redirect_uri')).toBe(
+      'https://staging.bid.mbfdhub.com/api/auth/callback',
+    );
+    expect(authorization?.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
     await expectCanonicalHubLogin(page);
+    await expect(page.getByText('Synthetic login destination fixture')).toBeVisible();
   });
 });
 

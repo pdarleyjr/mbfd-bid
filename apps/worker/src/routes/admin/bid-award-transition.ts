@@ -16,6 +16,7 @@ import {
 } from '../../lib/bid-award-transition.js';
 import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
+import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
 import { operationalDate } from '../../lib/operational-date.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -143,6 +144,9 @@ interface ExactReceiptEvidence {
 }
 
 interface TransitionContext {
+  canonicalStateJson?: string;
+  canonicalTransitionActorIds?: readonly number[];
+  termSourceAssignments: readonly AssignmentDbRow[];
   session: BidSessionDbRow;
   asOfDate: string;
   templateVersion: string;
@@ -325,6 +329,27 @@ function lifecycleFailure(error: string): TransitionLoadFailure {
   return { ok: false, status: 409, body: { error } };
 }
 
+/** Canonical awards are authoritative whenever that session has a canonical
+ * state. Legacy rows are never merged into or used to repair that set. */
+async function loadTransitionAwards(db: D1Database, sessionId: string): Promise<BidDbRow[]> {
+  const canonical = await loadCanonicalBidSessionState(db, sessionId);
+  if (canonical !== null)
+    return Object.entries(canonical.fills)
+      .map(([positionId, fill]) => ({
+        id: fill.bidId,
+        bid_session_id: sessionId,
+        position_id: positionId,
+        member_id: fill.memberId,
+        ordinal: fill.ordinal,
+      }))
+      .sort((a, b) => a.ordinal - b.ordinal || a.id.localeCompare(b.id));
+  return all<BidDbRow>(
+    db,
+    'SELECT id,bid_session_id,position_id,member_id,ordinal FROM bids WHERE bid_session_id=? ORDER BY ordinal,id',
+    sessionId,
+  );
+}
+
 async function loadTransitionContext(
   db: D1Database,
   sessionId: string,
@@ -339,6 +364,18 @@ async function loadTransitionContext(
   if (session === undefined) {
     return { ok: false, status: 404, body: { error: 'session_not_found' } };
   }
+  const canonicalRow = await first<{ state_json: string }>(
+    db,
+    'SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?',
+    sessionId,
+  );
+  let canonicalOfficial: Awaited<ReturnType<typeof loadOfficialAnnualCompletion>> | null = null;
+  if (canonicalRow) {
+    canonicalOfficial = await loadOfficialAnnualCompletion(db, sessionId);
+    if (!canonicalOfficial.ok) return lifecycleFailure(canonicalOfficial.error);
+    session.current_phase = 'complete';
+    session.completed_at = canonicalOfficial.completion.completion.completedAtMs;
+  }
   if (
     (session.is_mock !== 0 && session.is_mock !== 1) ||
     (session.completed_at !== null &&
@@ -347,9 +384,8 @@ async function loadTransitionContext(
     return lifecycleFailure('invalid_session');
   }
 
-  // A canonical state row, if present, is authoritative. The legacy session
-  // projection must independently agree that awards are complete; otherwise a
-  // stale mirror could turn a paused or live Bid into staffing changes.
+  // Canonical completion is independently verified above. Historical sessions
+  // without canonical state retain the legacy final-award requirement.
   try {
     const canonical = await loadCanonicalBidSessionState(db, sessionId);
     if (canonical !== null && canonical.currentPhase !== 'complete') {
@@ -374,12 +410,7 @@ async function loadTransitionContext(
   }
 
   const [awards, bindings, assignments, members] = await Promise.all([
-    all<BidDbRow>(
-      db,
-      `SELECT id, bid_session_id, position_id, member_id, ordinal
-         FROM bids WHERE bid_session_id = ? ORDER BY ordinal ASC, id ASC`,
-      sessionId,
-    ),
+    loadTransitionAwards(db, sessionId),
     all<PositionBindingDbRow>(
       db,
       `SELECT binding.position_id, binding.staffing_position_id, binding.review_status,
@@ -399,6 +430,26 @@ async function loadTransitionContext(
   ]);
 
   const asOfDate = operationalDate();
+  const termSourceAssignments: AssignmentDbRow[] = [];
+  if (canonicalOfficial?.ok) {
+    for (const award of awards) {
+      const rights = canonicalOfficial.snapshot.members.find(
+        (member) => member.memberId === award.member_id,
+      )?.termParticipation;
+      if (!rights) continue;
+      const prior = assignments.find((assignment) => assignment.id === rights.assignmentId);
+      if (
+        !prior ||
+        prior.member_id !== award.member_id ||
+        prior.staffing_position_id !== rights.staffingPositionId ||
+        prior.status !== 'active' ||
+        prior.effective_from !== rights.assignmentEffectiveFrom ||
+        prior.effective_to !== rights.assignmentEffectiveTo
+      )
+        return lifecycleFailure('term_departure_source_assignment_changed');
+      termSourceAssignments.push(prior);
+    }
+  }
   const planned = planBidAwardTransition({
     session: {
       id: session.id,
@@ -444,6 +495,16 @@ async function loadTransitionContext(
   return {
     ok: true,
     context: {
+      termSourceAssignments,
+      ...(canonicalRow ? { canonicalStateJson: canonicalRow.state_json } : {}),
+      ...(canonicalOfficial?.ok && canonicalOfficial.snapshot.settings.v === 3
+        ? {
+            canonicalTransitionActorIds:
+              canonicalOfficial.snapshot.settings.livePolicy.actionPermissions.find(
+                (grant) => grant.action === 'approve_transition',
+              )?.actorMemberIds ?? [],
+          }
+        : {}),
       session,
       asOfDate,
       templateVersion: frozenPolicy.snapshot.positionTemplateVersion,
@@ -560,8 +621,7 @@ function closureStatement(
           AND status = 'active' AND effective_from = ? AND effective_to IS ?
           AND EXISTS (
             SELECT 1 FROM bid_sessions
-             WHERE id = ? AND is_mock = 0 AND current_phase = 'complete'
-               AND completed_at IS NOT NULL
+             WHERE id = ? AND is_mock = 0 AND ((current_phase = 'complete' AND completed_at IS NOT NULL) OR EXISTS (SELECT 1 FROM canonical_bid_session_state final_state WHERE final_state.bid_session_id=bid_sessions.id AND json_extract(final_state.state_json, '$.currentPhase')='complete' AND json_extract(final_state.state_json, '$.annual.completion.readyForFinalizationAtMs')>0))
           )`,
     )
     .bind(
@@ -591,8 +651,7 @@ function plannedAssignmentStatement(
        SELECT ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?
         WHERE EXISTS (
           SELECT 1 FROM bid_sessions
-           WHERE id = ? AND is_mock = 0 AND current_phase = 'complete'
-             AND completed_at IS NOT NULL
+           WHERE id = ? AND is_mock = 0 AND ((current_phase = 'complete' AND completed_at IS NOT NULL) OR EXISTS (SELECT 1 FROM canonical_bid_session_state final_state WHERE final_state.bid_session_id=bid_sessions.id AND json_extract(final_state.state_json, '$.currentPhase')='complete' AND json_extract(final_state.state_json, '$.annual.completion.readyForFinalizationAtMs')>0))
         )
           AND EXISTS (
             SELECT 1 FROM position_staffing_bindings binding
@@ -698,8 +757,7 @@ function transitionGuard(
   add(
     `EXISTS (
        SELECT 1 FROM bid_sessions
-        WHERE id = ? AND is_mock = 0 AND current_phase = 'complete'
-          AND completed_at IS NOT NULL
+        WHERE id = ? AND is_mock = 0 AND ((current_phase = 'complete' AND completed_at IS NOT NULL) OR EXISTS (SELECT 1 FROM canonical_bid_session_state final_state WHERE final_state.bid_session_id=bid_sessions.id AND json_extract(final_state.state_json, '$.currentPhase')='complete' AND json_extract(final_state.state_json, '$.annual.completion.readyForFinalizationAtMs')>0))
      )`,
     context.session.id,
   );
@@ -724,23 +782,49 @@ function transitionGuard(
     context.ruleBookVersion,
     context.templateVersion,
   );
-  add(
-    '(SELECT count(*) FROM bids WHERE bid_session_id = ?) = ?',
-    context.session.id,
-    context.awards.length,
-  );
-  for (const award of context.awards) {
+  if (context.canonicalStateJson !== undefined) {
     add(
-      `EXISTS (
+      'EXISTS (SELECT 1 FROM canonical_bid_session_state WHERE bid_session_id=? AND state_json=?)',
+      context.session.id,
+      context.canonicalStateJson,
+    );
+  } else {
+    add(
+      '(SELECT count(*) FROM bids WHERE bid_session_id = ?) = ?',
+      context.session.id,
+      context.awards.length,
+    );
+    for (const award of context.awards) {
+      add(
+        `EXISTS (
          SELECT 1 FROM bids
           WHERE id = ? AND bid_session_id = ? AND ordinal = ?
             AND member_id = ? AND position_id = ?
        )`,
-      award.id,
-      context.session.id,
-      award.ordinal,
-      award.member_id,
-      award.position_id,
+        award.id,
+        context.session.id,
+        award.ordinal,
+        award.member_id,
+        award.position_id,
+      );
+    }
+  }
+  // The final guard runs after planned closures. A term source that needed no
+  // closure must still match its reviewed row, including a finite end date.
+  for (const source of context.termSourceAssignments) {
+    const closure = mutations.find((mutation) => mutation.closure?.id === source.id)?.closure;
+    add(
+      `EXISTS (
+         SELECT 1 FROM member_assignments
+          WHERE id = ? AND member_id = ? AND staffing_position_id = ?
+            AND status = ? AND effective_from = ? AND effective_to IS ?
+       )`,
+      source.id,
+      source.member_id,
+      source.staffing_position_id,
+      source.status,
+      source.effective_from,
+      closure?.effectiveTo ?? source.effective_to,
     );
   }
   for (const mutation of mutations) {
@@ -945,12 +1029,7 @@ async function receipt(
       sessionId,
       auditClientMeta(transition),
     ),
-    all<BidDbRow>(
-      db,
-      `SELECT id, bid_session_id, position_id, member_id, ordinal
-         FROM bids WHERE bid_session_id = ? ORDER BY ordinal ASC, id ASC`,
-      sessionId,
-    ),
+    loadTransitionAwards(db, sessionId),
     all<ReceiptAssignmentDbRow>(
       db,
       `SELECT id, member_id, staffing_position_id, status, effective_to
@@ -1261,6 +1340,11 @@ router.post('/:sessionId/apply', requireStepUpAuth(), async (c) => {
 
   const loaded = await loadTransitionContext(c.env.DB, sessionId, parsed.data.effective_on);
   if (!loaded.ok) return c.json(loaded.body, loaded.status);
+  if (
+    loaded.context.canonicalTransitionActorIds !== undefined &&
+    !loaded.context.canonicalTransitionActorIds.includes(actorId)
+  )
+    return c.json({ error: 'live_action_forbidden', action: 'approve_transition' }, 403);
   const mutations = buildMutations(loaded.context, transition);
   if (mutations === null || mutations.length === 0) {
     return c.json({ error: 'bid_award_transition_not_applicable' }, 409);

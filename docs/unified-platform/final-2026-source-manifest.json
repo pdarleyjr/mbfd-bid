@@ -1,0 +1,60 @@
+{
+  "sources": [
+    {
+      "file": "2026 Bid Policy.pdf",
+      "sha256": "a28e73c403fb2b8e5ece4559cf16324f9e4dfe56425d16ac6f1559080ec6befc",
+      "source_role": "Final governing policy",
+      "revision_or_date": "July2026",
+      "sanitized_references": "pages1-9",
+      "precedence": 1
+    },
+    {
+      "file": "MASTER 2026 Bid Positions Selection V2.xlsx",
+      "sha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "source_role": "Final organization and position plan",
+      "revision_or_date": "2026; fileversionV2",
+      "sanitized_references": "Positions!A1:I229; Personnel headers only",
+      "precedence": 2
+    },
+    {
+      "file": "2026 Annual Bid Calculations v3.xlsx",
+      "sha256": "dcd5d13e91a4889157a54074335b87105765e6e0cd8aa1828542bec313133f58",
+      "source_role": "Calculation and ranking parity oracle, subordinate toPDF",
+      "revision_or_date": "2026; fileversionv3",
+      "sanitized_references": "Rules & Points!A1:C236; Points!A3:HB4; Seniority RD!A1:L1",
+      "precedence": 3
+    },
+    {
+      "file": "(EX) Export Assignments - 2026-08-24.xls",
+      "sha256": "1adb6c119dd08b3812b0b282647e37a04c2d85e60cb1dacb75fdbaaefcfc0354",
+      "source_role": "Dated Department assignment snapshot, notpolicy",
+      "revision_or_date": "2026-08-24",
+      "sanitized_references": "SpreadsheetML worksheet headerrow5",
+      "precedence": 4
+    }
+  ],
+  "missing_external_references": [
+    {
+      "reference": "Specialized Shift Positions Timeline",
+      "anchor": "PDFp7 Procedure14a"
+    },
+    {
+      "reference": "Article5 rights/authority",
+      "anchor": "PDFp8 Procedure16"
+    },
+    {
+      "reference": "Current FireChief SpecialOperations assignment requirements",
+      "anchor": "PDFp5 Procedure8iii"
+    }
+  ],
+  "supporting_external_references": [
+    {
+      "source_filename": "SOG Manual 5.31.26.pdf",
+      "sha256": "ab3f8cac25b318049d2f3079e2fe1997c0adb8122b73f1fe14efee87b4710971",
+      "source_role": "Located referenced relationship SOG; supporting authority subordinate to final Bid policy",
+      "revision_or_date": "SOG200.17 issued2025-10-21; manualfilename2026-05-31",
+      "sanitized_references": "physical/printed p56",
+      "precedence": "supporting reference, not replacement for final package"
+    }
+  ]
+}

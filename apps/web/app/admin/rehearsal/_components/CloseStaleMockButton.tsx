@@ -1,8 +1,9 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRouter } from 'next/navigation';
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useMemo, useState } from 'react';
 
 interface Props {
   sessionId: string;
@@ -19,6 +20,7 @@ interface CloseResponse {
  * history. Canonical mock sessions remain fail-closed at the Worker boundary.
  */
 export function CloseStaleMockButton({ sessionId }: Props): ReactElement {
+  const csrfFetch = useMemo(() => createCsrfAwareFetch(fetch, () => window.location.origin), []);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function CloseStaleMockButton({ sessionId }: Props): ReactElement {
           setBusy(true);
           setMessage(null);
           try {
-            const response = await fetch(
+            const response = await csrfFetch(
               `/api/admin/rehearsal/${encodeURIComponent(sessionId)}/close-mock`,
               {
                 method: 'POST',

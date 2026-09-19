@@ -961,6 +961,50 @@ export async function installCurrentBidFixtures(
         })),
       });
     }
+    if (entry.method === 'GET' && entry.path === `/api/admin/annual-plan/${BID_YEAR}`)
+      return json({
+        plan: {
+          year: BID_YEAR,
+          sessions: [
+            { id: 'synthetic-reviewed-mock', isMock: 1, currentPhase: 'complete', startedAt: null },
+          ],
+        },
+      });
+    if (
+      entry.method === 'GET' &&
+      entry.path === '/api/admin/bid-session/synthetic-reviewed-mock/results'
+    )
+      return json({
+        session: {
+          id: 'synthetic-reviewed-mock',
+          bidYear: BID_YEAR,
+          isMock: true,
+          currentPhase: 'complete',
+          sequence: 3,
+        },
+        awardSource: 'CANONICAL',
+        provenance: {
+          valid: true,
+          error: null,
+          pin: null,
+          ruleBookVersion: 'synthetic-browser-version',
+          topologyReference: 'synthetic-browser-topology',
+        },
+        awards: [
+          {
+            memberId: memberId(1),
+            name: 'Synthetic Browser Member',
+            positionId: positionId(1),
+            positionName: 'Synthetic station pool',
+            shift: 'A',
+            station: '1',
+            unit: 'Combat 1',
+            aDay: 'G1',
+            memberships: [{ id: 'synthetic-membership', label: 'Synthetic specialty membership' }],
+          },
+        ],
+        completion: { verified: false, blockers: ['mock_session_not_transitionable'] },
+      });
     const root = `/api/admin/bid/${BID_YEAR}`;
     if (entry.method === 'GET' && entry.path === `${root}/current`) {
       await state.currentReadGate;

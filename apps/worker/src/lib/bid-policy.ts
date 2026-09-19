@@ -14,6 +14,7 @@ import {
   FrozenLiveBidPolicySchema,
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
+import { evaluateAssignmentTerms } from './assignment-terms.js';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { bidSourceDecisionReviewIssues } from './bid-source-decision-review.js';
@@ -52,6 +53,7 @@ import {
 } from './bid-definition-context.js';
 import { validateBidDefinitionSnapshotPin } from './bid-definition-pin.js';
 import { loadBidDefinitionVersionFromDb } from './bid-definition-version.js';
+import { validateBidOpportunityPools } from './bid-opportunity-pool.js';
 import { derivePersonnelMemberAsOf } from './personnel-lifecycle.js';
 import { type DecodedPositionRule, decodeRuleBookRows } from './position-rule.js';
 import {
@@ -576,7 +578,34 @@ function validateAnnualPolicyReferences(
   )
     errors.push('action_actor_reference_invalid');
   const annual = livePolicy.annualOperations;
+  const poolValidation = validateBidOpportunityPools(material, livePolicy);
+  if (!poolValidation.ok) errors.push(poolValidation.code.toLowerCase());
   if (annual !== undefined) {
+    if (
+      snapshot !== null &&
+      annual.membershipDistributions?.some((distribution) =>
+        distribution.memberIds.some((id) => !participantIds.has(id)),
+      )
+    )
+      errors.push('membership_participant_reference_invalid');
+    if (
+      annual.assignmentTerms?.some((term) => term.positionIds.some((id) => !positionById.has(id)))
+    )
+      errors.push('assignment_term_position_reference_invalid');
+    if (
+      annual.fallbackPolicies?.some((fallback) =>
+        fallback.positionIds.some((id) => !biddablePositionIds.has(id)),
+      )
+    )
+      errors.push('fallback_position_reference_invalid');
+    const aDayConstraints = annual.aDay.execution?.constraints ?? [];
+    if (aDayConstraints.some((rule) => rule.positionIds.some((id) => !biddablePositionIds.has(id))))
+      errors.push('a_day_constraint_position_reference_invalid');
+    if (
+      snapshot !== null &&
+      aDayConstraints.some((rule) => rule.memberIds.some((id) => !participantIds.has(id)))
+    )
+      errors.push('a_day_constraint_member_reference_invalid');
     const orderedStageIds = [...livePolicy.stages]
       .sort((left, right) => left.order - right.order)
       .map((stage) => stage.id);
@@ -844,10 +873,12 @@ export type BidSessionPolicySnapshotPreparation =
         | 'credential_import_dispute_requires_review'
         | 'policy_source_decision_required'
         | 'tenure_evidence_requires_review'
+        | 'assignment_term_evidence_requires_review'
         | 'authoritative_staffing_baseline_required'
         | ConfiguredBidYearPolicyError;
       positionIds?: readonly string[];
       tenureIssues?: readonly { staffingPositionId: string; code: string; recordId: string }[];
+      termIssues?: readonly { positionId: string; code: string; sourceRef: string }[];
     };
 
 export type ConfiguredRuleBookPublicationPreflight =
@@ -1238,6 +1269,39 @@ export async function prepareCapturedBidEvaluation(
       effectiveOn(capturedOn, assignment.effectiveFrom, assignment.effectiveTo),
   );
   const tenureEvidence = tenureEvidenceAsOf(tenureRows, capturedOn);
+  const termReview = evaluateAssignmentTerms({
+    asOf: capturedOn,
+    terms:
+      policy.settings.v === 3
+        ? (policy.settings.livePolicy.annualOperations?.assignmentTerms ?? [])
+        : [],
+    records: tenureEvidence,
+    bindings,
+    assignments: assignmentRows.filter(
+      (assignment) =>
+        assignment.status !== 'cancelled' &&
+        (assignment.status === 'active' ||
+          assignment.status === 'planned' ||
+          assignment.effectiveTo !== null) &&
+        effectiveOn(capturedOn, assignment.effectiveFrom, assignment.effectiveTo),
+    ),
+    nonBiddablePositionIds: [
+      ...coverage.administrativelyAssignedPositionIds,
+      ...coverage.reservedPositionIds,
+    ],
+  });
+  const blockedTerms = termReview.filter((term) => term.status === 'BLOCKED');
+  if (blockedTerms.length)
+    return {
+      ok: false,
+      code: 'assignment_term_evidence_requires_review',
+      positionIds: blockedTerms.map((term) => term.positionId),
+      termIssues: blockedTerms.map(({ positionId, code, sourceRef }) => ({
+        positionId,
+        code,
+        sourceRef,
+      })),
+    };
   const tenureIssues = tenureParticipationIssues({
     asOf: capturedOn,
     records: tenureEvidence,
@@ -1398,11 +1462,74 @@ export async function prepareCapturedBidEvaluation(
     .map<FrozenBidEligibilityMember>((member) => {
       const personnelState = personnelStateByMember.get(member.id);
       const administrativeAssignment = assignmentByMember.get(member.id);
+      const termPosition = administrativeAssignment
+        ? positionByStaffingId.get(administrativeAssignment.staffingPositionId)
+        : undefined;
+      const voluntaryTerm = termReview.find(
+        (term) =>
+          term.positionId === termPosition &&
+          term.status === 'EVALUATED' &&
+          term.memberMayLeave === true,
+      );
+      const termEvidence = administrativeAssignment
+        ? tenureEvidence.find(
+            (row) =>
+              row.staffingPositionId === administrativeAssignment.staffingPositionId &&
+              row.termMemberId === member.id,
+          )
+        : undefined;
+      const termParticipation =
+        administrativeAssignment?.status === 'active' && voluntaryTerm && termEvidence
+          ? {
+              assignmentId: administrativeAssignment.id,
+              staffingPositionId: administrativeAssignment.staffingPositionId,
+              positionId: voluntaryTerm.positionId,
+              termId: voluntaryTerm.termId,
+              evidenceId: termEvidence.id,
+              evidenceRevision: termEvidence.revision,
+              sourceRef: voluntaryTerm.sourceRef,
+              evaluatedOn: capturedOn,
+              assignmentEffectiveFrom: administrativeAssignment.effectiveFrom,
+              assignmentEffectiveTo: administrativeAssignment.effectiveTo,
+              memberMayLeave: true as const,
+              protected: voluntaryTerm.protected === true,
+              voluntaryOnly: true as const,
+            }
+          : undefined;
       const hasAcceptedMockParticipationEvidence =
         mode === 'mock' &&
         personnelState?.employmentStatus === 'unknown' &&
         mockParticipantMemberIds.has(member.id);
       const eligibility = {
+        ...(termParticipation ? { termParticipation } : {}),
+        ...(policy.settings.v === 3 &&
+        policy.settings.livePolicy.annualOperations?.fallbackPolicies?.some((fallback) =>
+          fallback.tiers.some((tier) => tier.currentlyAssignedOnly),
+        )
+          ? {
+              currentBidPositionIds: uniqueSorted(
+                assignmentRows
+                  .filter(
+                    (assignment) =>
+                      assignment.memberId === member.id &&
+                      assignment.status !== 'cancelled' &&
+                      (assignment.status === 'active' ||
+                        assignment.status === 'planned' ||
+                        assignment.effectiveTo !== null) &&
+                      effectiveOn(capturedOn, assignment.effectiveFrom, assignment.effectiveTo),
+                  )
+                  .flatMap((assignment) =>
+                    bindings
+                      .filter(
+                        (binding) =>
+                          binding.staffingPositionId === assignment.staffingPositionId &&
+                          binding.reviewStatus === 'approved',
+                      )
+                      .map((binding) => binding.positionId),
+                  ),
+              ),
+            }
+          : {}),
         rank: personnelState?.rank ?? member.rank,
         isProbationary: member.isProbationary,
         credentialNames: credentialNamesByMember.get(member.id) ?? [],
@@ -1445,7 +1572,7 @@ export async function prepareCapturedBidEvaluation(
           ...eligibility,
         };
       }
-      if (administrativeAssignment !== undefined) {
+      if (administrativeAssignment !== undefined && termParticipation === undefined) {
         return {
           memberId: member.id,
           pool: 'EXCLUDED',
@@ -1556,6 +1683,23 @@ export async function prepareCapturedBidEvaluation(
     rules: evaluation.ruleBookMaterial.rules,
     positions: evaluation.ruleBookMaterial.positions,
   });
+  if (evaluation.settings.v === 3) {
+    const pools = validateBidOpportunityPools(
+      evaluation.ruleBookMaterial,
+      evaluation.settings.livePolicy,
+    );
+    if (!pools.ok) return { ok: false, code: 'rule_book_invalid' };
+    if (
+      evaluation.settings.livePolicy.annualOperations?.opportunityPools?.some(
+        (pool) =>
+          !policy.sourceDecisions.some(
+            (decision) =>
+              decision.issueId === pool.sourceDecisionId && decision.status === 'RESOLVED',
+          ),
+      )
+    )
+      return { ok: false, code: 'policy_source_decision_required' };
+  }
   if (
     !evaluatedCoverage.valid ||
     evaluatedCoverage.templateVersion !== evaluation.positionTemplateVersion
@@ -1739,6 +1883,14 @@ export async function loadFrozenSessionBidPolicy(
   }
 
   const coverage = loadV3SnapshotRuleBookCoverage(loaded.snapshot);
+  if (
+    loaded.snapshot.settings.v === 3 &&
+    !validateBidOpportunityPools(
+      loaded.snapshot.ruleBookMaterial,
+      loaded.snapshot.settings.livePolicy,
+    ).ok
+  )
+    return { ok: false, code: 'session_rule_book_invalid' };
   if (!coverage.valid || coverage.templateVersion !== loaded.snapshot.positionTemplateVersion) {
     return { ok: false, code: 'session_rule_book_invalid' };
   }
@@ -1748,9 +1900,9 @@ export async function loadFrozenSessionBidPolicy(
 export type FrozenSessionBidTarget =
   | {
       ok: true;
-      snapshot: BidSessionPolicySnapshot;
+      snapshot: MaterializedBidSessionPolicySnapshot;
       coverage: RuleBookCoverage;
-      member: FrozenBidPoolMember;
+      member: FrozenBidEligibilityMember;
       rule: DecodedPositionRule;
     }
   | {

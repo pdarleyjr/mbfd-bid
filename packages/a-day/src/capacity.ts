@@ -46,7 +46,7 @@ export function computeCapacityMeter(
     total,
     max: cap.max,
     officers,
-    officersRequired: cap.officersRequired,
+    officersRequired: cap.officerMode === 'NONE' ? undefined : cap.officersRequired,
     isFull: total >= cap.max,
   };
 }

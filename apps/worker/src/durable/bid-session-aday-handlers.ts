@@ -30,6 +30,10 @@ export function hydrateADayState(
   membersById: ReadonlyMap<number, Member>,
 ): ADayState {
   return {
+    ...(persisted.constraints === undefined ? {} : { constraints: persisted.constraints }),
+    ...(persisted.allocationIncomplete === undefined
+      ? {}
+      : { allocationIncomplete: persisted.allocationIncomplete }),
     groupCaps: persisted.groupCaps,
     weekdayCaps: persisted.weekdayCaps,
     picksByMember: new Map(persisted.picks.map((p) => [p.memberId, p])),
@@ -43,6 +47,10 @@ export function hydrateADayState(
 /** Convert an in-memory ADayState back to the JSON-safe persisted shape. */
 export function dehydrateADayState(state: ADayState): PersistedADayState {
   return {
+    ...(state.constraints === undefined ? {} : { constraints: state.constraints }),
+    ...(state.allocationIncomplete === undefined
+      ? {}
+      : { allocationIncomplete: state.allocationIncomplete }),
     groupCaps: state.groupCaps,
     weekdayCaps: state.weekdayCaps,
     picks: [...state.picksByMember.values()],

@@ -1,4 +1,5 @@
 'use client';
+import { BidTermIssues } from './BidTermIssues';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -201,6 +202,7 @@ function SideStatus({ label, side }: { label: string; side: Result['before'] }) 
               {issue.staffingPositionId}: {explain(issue.code)}
             </p>
           ))}
+          <BidTermIssues issues={side.termIssues} />
         </>
       ) : (
         <>

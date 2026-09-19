@@ -9,7 +9,11 @@ import {
   type FrozenLiveBidPolicy,
   LiveBidActionSchema,
   type StageParticipantSourceDefinition,
+  bidOrderingComparatorForStage,
 } from '@mbfd/shared';
+import { BidADayExecutionFields } from './BidADayExecutionFields';
+import { BidAssignmentTermFields } from './BidAssignmentTermFields';
+import { BidFallbackFields } from './BidFallbackFields';
 import {
   CheckField,
   ChoiceField,
@@ -22,6 +26,8 @@ import {
   TextField,
   useBidMembers,
 } from './BidFields';
+import { BidMembershipFields } from './BidMembershipFields';
+import { BidOpportunityPoolFields } from './BidOpportunityPoolFields';
 import { BidPolicySourceFields } from './BidPolicySourceFields';
 import {
   BidOrderingAuthorityRequestEditor,
@@ -75,7 +81,7 @@ function withOrderingAuthorityRequest(
 
 function sameStageParticipantOrdering(
   left: StageParticipantSourceDefinition['ordering'],
-  right: BidOrderingAuthorityRequest['comparator'],
+  right: StageParticipantSourceDefinition['ordering'] | undefined,
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -132,7 +138,10 @@ function StageParticipantSourceCoverageNotice({
   const matchingStageIds = new Set(
     definitions
       .filter((definition) =>
-        sameStageParticipantOrdering(definition.ordering, orderingAuthority.comparator),
+        sameStageParticipantOrdering(
+          definition.ordering,
+          bidOrderingComparatorForStage(orderingAuthority, definition.stageId),
+        ),
       )
       .map((definition) => definition.stageId),
   );
@@ -142,7 +151,10 @@ function StageParticipantSourceCoverageNotice({
       .filter(
         (definition) =>
           stages.some((stage) => stage.id === definition.stageId) &&
-          !sameStageParticipantOrdering(definition.ordering, orderingAuthority.comparator),
+          !sameStageParticipantOrdering(
+            definition.ordering,
+            bidOrderingComparatorForStage(orderingAuthority, definition.stageId),
+          ),
       )
       .map((definition) => definition.stageId),
   );
@@ -347,6 +359,7 @@ export function BidPolicyFields({
         {content.policy ? (
           <>
             <BidOrderingAuthorityRequestEditor
+              stages={policy.stages}
               sourceDecisions={content.sourceDecisions}
               value={content.policy.orderingAuthority}
               onChange={updateOrderingAuthorityRequest}
@@ -554,7 +567,7 @@ export function BidPolicyFields({
             <>
               <NumberField
                 label="Minimum contact attempts"
-                min={1}
+                min={0}
                 max={10}
                 value={ops.contact.minimumAttempts}
                 onChange={(minimumAttempts) =>
@@ -687,6 +700,15 @@ export function BidPolicyFields({
         />
         {ops ? (
           <div className="grid gap-4 sm:grid-cols-2">
+            <BidADayExecutionFields
+              value={ops.aDay.execution}
+              opportunities={opportunities}
+              members={people.data ?? []}
+              onChange={(execution) => {
+                const { execution: _previous, ...capacity } = ops.aDay;
+                changeOps({ ...ops, aDay: execution ? { ...capacity, execution } : capacity });
+              }}
+            />
             <NumberField
               label="Minimum group size"
               value={ops.aDay.min}
@@ -743,6 +765,50 @@ export function BidPolicyFields({
       />
       {ops ? (
         <>
+          <BidFallbackFields
+            value={ops.fallbackPolicies}
+            opportunities={opportunities}
+            sourceDecisions={content.sourceDecisions}
+            onChange={(fallbackPolicies) => {
+              const { fallbackPolicies: _previous, ...remaining } = ops;
+              changeOps(
+                fallbackPolicies === undefined ? remaining : { ...remaining, fallbackPolicies },
+              );
+            }}
+          />
+          <BidOpportunityPoolFields
+            value={ops.opportunityPools}
+            opportunities={opportunities}
+            sourceDecisions={content.sourceDecisions}
+            onChange={(opportunityPools) => {
+              const { opportunityPools: _previous, ...remaining } = ops;
+              changeOps(
+                opportunityPools === undefined ? remaining : { ...remaining, opportunityPools },
+              );
+            }}
+          />
+          <BidMembershipFields
+            value={ops.membershipDistributions}
+            members={people.data ?? []}
+            onChange={(membershipDistributions) => {
+              const { membershipDistributions: _previous, ...remaining } = ops;
+              changeOps(
+                membershipDistributions === undefined
+                  ? remaining
+                  : { ...remaining, membershipDistributions },
+              );
+            }}
+          />
+          <BidAssignmentTermFields
+            value={ops.assignmentTerms}
+            opportunities={opportunities}
+            onChange={(assignmentTerms) => {
+              const { assignmentTerms: _previous, ...remaining } = ops;
+              changeOps(
+                assignmentTerms === undefined ? remaining : { ...remaining, assignmentTerms },
+              );
+            }}
+          />
           <ReferencePicker
             label="Required specialty opportunities"
             values={ops.requiredTopologyPositionIds}

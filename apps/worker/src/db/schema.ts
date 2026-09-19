@@ -1546,6 +1546,9 @@ export const memberServiceEvidence = sqliteTable('member_service_evidence', {
 });
 
 export const staffingTenureEvidence = sqliteTable('staffing_tenure_evidence', {
+  termMemberId: integer('term_member_id').references(() => members.id),
+  accumulatedServiceMonths: integer('accumulated_service_months'),
+  consecutiveBidCycles: integer('consecutive_bid_cycles'),
   id: text('id').primaryKey().notNull(),
   staffingPositionId: text('staffing_position_id')
     .notNull()

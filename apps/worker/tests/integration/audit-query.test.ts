@@ -51,7 +51,9 @@ describe('GET /api/admin/audit', () => {
     const body = (await res.json()) as { entries: { seq: number }[]; total: number };
     expect(body.entries).toHaveLength(50);
     expect(body.total).toBe(200);
-    expect(body.entries[0]?.seq).toBe(200);
+    // This fixture intentionally gives lower sequence values newer timestamps.
+    // Global History orders time, not unrelated per-session sequence numbers.
+    expect(body.entries[0]?.seq).toBe(1);
   });
 
   it('respects limit + offset', async () => {
@@ -64,7 +66,7 @@ describe('GET /api/admin/audit', () => {
     );
     const body = (await res.json()) as { entries: { seq: number }[] };
     expect(body.entries).toHaveLength(10);
-    expect(body.entries[0]?.seq).toBe(180);
+    expect(body.entries[0]?.seq).toBe(21);
   });
 
   it('filters by action', async () => {
@@ -99,6 +101,18 @@ describe('GET /api/admin/audit', () => {
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
     expect(res.status).toBe(400);
+  });
+
+  it('filters canonical fallback responses without treating the action as unknown', async () => {
+    await seedAudit(h, 3, 'live.record_fallback_response');
+    const response = await app.fetch(
+      new Request('http://x/api/admin/audit?action=live.record_fallback_response', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ total: 3 });
   });
 
   it('caps limit at 500 (returns 400 when above)', async () => {

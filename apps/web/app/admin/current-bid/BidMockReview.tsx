@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { FieldSection } from './BidFields';
+import { BidTermIssues } from './BidTermIssues';
 import type { BidMockPreview, BidMockResult, CurrentBid } from './bid-client';
 import type { PendingBidWrite } from './bid-draft';
 
@@ -64,6 +65,7 @@ export function BidMockReview({
               ))}
             </ul>
           )}
+          <BidTermIssues issues={mockPreview.termIssues} />
         </div>
       )}
       {mockPreview?.wouldAllowCreateMock &&

@@ -1,6 +1,6 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { signJwt } from '../../src/lib/jwt.js';
 import bidAwardTransitionRouter from '../../src/routes/admin/bid-award-transition.js';
@@ -219,12 +219,18 @@ describe('Bid award transition administration', () => {
   let h: TestD1;
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     h = await setupTestD1();
     await seedCompletedBid(h);
   });
 
   afterEach(async () => {
-    await teardownTestD1(h);
+    try {
+      await teardownTestD1(h);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('previews the frozen award transition without writing assignments, events, or audit rows', async () => {

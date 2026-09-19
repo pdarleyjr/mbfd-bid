@@ -81,6 +81,7 @@ export async function previewBidDefinitionLive(
       policyError: prepared.code,
       ...('positionIds' in prepared ? { positionIds: prepared.positionIds } : {}),
       ...('tenureIssues' in prepared ? { tenureIssues: prepared.tenureIssues } : {}),
+      ...('termIssues' in prepared ? { termIssues: prepared.termIssues } : {}),
     };
   const operatorAuthorized = hasLiveCreationAuthority(prepared.snapshot, actorId);
   const readiness = await evaluateLiveBidReadiness({
@@ -197,6 +198,7 @@ export async function createBidDefinitionLive(
       policyError: prepared.code,
       ...('positionIds' in prepared ? { positionIds: prepared.positionIds } : {}),
       ...('tenureIssues' in prepared ? { tenureIssues: prepared.tenureIssues } : {}),
+      ...('termIssues' in prepared ? { termIssues: prepared.termIssues } : {}),
     };
   if (
     prepared.pins.contextSha256 !== input.body.expectedContextSha256 ||

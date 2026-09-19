@@ -11,6 +11,8 @@ import type {
 } from './types.js';
 
 export interface InitADayStateInput {
+  constraints?: ADayState['constraints'];
+  allocationIncomplete?: boolean;
   /**
    * One entry per non-vacant Phase 1 pick. Vacant positions (e.g., A215) are
    * simply absent.
@@ -55,6 +57,10 @@ export function initADayState(input: InitADayStateInput): ADayState {
     cursor++;
   }
   return {
+    ...(input.constraints === undefined ? {} : { constraints: input.constraints }),
+    ...(input.allocationIncomplete === undefined
+      ? {}
+      : { allocationIncomplete: input.allocationIncomplete }),
     groupCaps: input.groupCaps,
     weekdayCaps: input.weekdayCaps,
     picksByMember,

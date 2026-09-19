@@ -1,9 +1,22 @@
 import { z } from 'zod';
+import { ADayValueSchema } from './a-day.js';
 import type { BidEventEnvelope } from './bid-events.js';
+import { BidPoolSelectionSchema } from './bid-opportunity-pool.js';
 
 const CommandIdSchema = z.string().uuid();
 const ExpectedSeqSchema = z.number().int().nonnegative();
 const ReasonSchema = z.string().min(1).max(500);
+const FallbackSelectionSchema = z
+  .object({ policyId: z.string().min(1), tierId: z.string().min(1) })
+  .strict();
+export const TermDepartureElectionSchema = z
+  .object({
+    assignmentId: z.string().trim().min(1).max(256),
+    memberConfirmed: z.literal(true),
+    evidenceReference: z.string().trim().min(4).max(500),
+  })
+  .strict();
+export type TermDepartureElection = z.infer<typeof TermDepartureElectionSchema>;
 
 /**
  * Browser-facing input for the rehearsal-only freeze command. The authenticated
@@ -85,6 +98,10 @@ const LiveCommandBase = z.object({
 export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.record_selection'),
+    termDeparture: TermDepartureElectionSchema.optional(),
+    pool: BidPoolSelectionSchema.optional(),
+    fallback: FallbackSelectionSchema.optional(),
+    aDay: ADayValueSchema.optional(),
     memberId: z.number().int().positive(),
     positionId: z.string().min(1),
     /** Frozen sheet provenance only; it never changes a command into auto-award. */
@@ -92,6 +109,9 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.amend_selection'),
+    termDeparture: TermDepartureElectionSchema.optional(),
+    pool: BidPoolSelectionSchema.optional(),
+    aDay: ADayValueSchema.optional(),
     memberId: z.number().int().positive(),
     fromPositionId: z.string().min(1),
     toPositionId: z.string().min(1),
@@ -102,10 +122,20 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.force_selection'),
+    pool: BidPoolSelectionSchema.optional(),
+    fallback: FallbackSelectionSchema.optional(),
+    aDay: ADayValueSchema.optional(),
     memberId: z.number().int().positive(),
     positionId: z.string().min(1),
   }).strict(),
   LiveCommandBase.extend({ type: z.literal('live.pause') }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.record_fallback_response'),
+    fallback: FallbackSelectionSchema,
+    positionId: z.string().min(1),
+    memberId: z.number().int().positive(),
+    outcome: z.enum(['DECLINE', 'UNREACHABLE']),
+  }).strict(),
   LiveCommandBase.extend({ type: z.literal('live.resume') }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.record_contact_attempt'),
@@ -142,6 +172,8 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.resolve_specialty_candidate'),
+    termDeparture: TermDepartureElectionSchema.optional(),
+    aDay: ADayValueSchema.optional(),
     memberId: z.number().int().positive(),
     outcome: z.enum(['ACCEPT', 'DECLINE', 'PASS', 'UNREACHABLE']),
   }).strict(),

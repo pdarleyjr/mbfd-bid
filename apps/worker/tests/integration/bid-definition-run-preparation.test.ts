@@ -22,6 +22,7 @@ import {
   loadFrozenSessionBidPolicy,
   prepareBidSessionPolicySnapshot,
 } from '../../src/lib/bid-policy.js';
+import { evaluateLiveBidReadiness } from '../../src/lib/live-bid-readiness.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 type Version = Extract<Awaited<ReturnType<typeof loadBidDefinitionVersion>>, { ok: true }>;
@@ -499,7 +500,7 @@ describe('read-only preparation of an explicit saved Bid version', () => {
   });
 
   it.each(['document', 'pre-document'] as const)(
-    'keeps the existing Live publication/freeze gate on a private saved %s draft',
+    'keeps incomplete saved %s material blocked at Live readiness after sealed preparation',
     async (kind) => {
       const version = await savedVersion((content) => {
         const policy = syntheticLivePolicy();
@@ -524,15 +525,30 @@ describe('read-only preparation of an explicit saved Bid version', () => {
           .prepare('SELECT status FROM rule_books WHERE version=?')
           .get(version.row.rule_book_version),
       ).toEqual({ status: 'draft' });
-      expect(
-        await readOnly(() => prepareBidDefinitionRun(h.env.DB, input(version, { mode: 'live' }))),
-      ).toMatchObject({
-        ok: false,
-        code:
-          kind === 'document'
-            ? 'bid_configuration_annual_policy_document_invalid'
-            : 'bid_configuration_frozen_required',
-      });
+      const result = await readOnly(() =>
+        prepareBidDefinitionRun(h.env.DB, input(version, { mode: 'live' })),
+      );
+      if (!result.ok) throw new Error(JSON.stringify(result));
+      const readiness = await readOnly(() =>
+        evaluateLiveBidReadiness({
+          db: getDb(h.env.DB),
+          env: h.env,
+          bidSessionId: SESSION,
+          bidYear: 2027,
+          frozenPolicy: { ok: true, snapshot: result.snapshot, coverage: result.coverage },
+          operatorAuthorized: true,
+        }),
+      );
+      expect(readiness.canStartLiveBid).toBe(false);
+      expect(readiness.blockingCheckIds).toEqual(
+        expect.arrayContaining([
+          'accepted_staffing_baseline',
+          'participant_population',
+          'execution_policy_references',
+          'annual_operations_policy',
+          'ordering_authority',
+        ]),
+      );
     },
   );
 });

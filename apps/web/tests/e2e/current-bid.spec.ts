@@ -191,6 +191,31 @@ async function useMainBidNavigation(page: Page) {
   );
 }
 
+test('Results show only the selected run and retain membership without creating another award', async ({
+  page,
+}) => {
+  const state = await installCurrentBidFixtures(page);
+  await openBid(page);
+  await enter(viewButton(page, 'Results'));
+  await expect(workspace(page).getByLabel('Bid run', { exact: true })).toHaveValue('');
+  await expect(
+    workspace(page).getByRole('heading', { name: 'Recorded awards', exact: true }),
+  ).toHaveCount(0);
+  await workspace(page)
+    .getByLabel('Bid run', { exact: true })
+    .selectOption('synthetic-reviewed-mock');
+  await expect(
+    workspace(page).getByText('Synthetic Browser Member', { exact: false }),
+  ).toBeVisible();
+  await expect(
+    workspace(page).getByText('Synthetic specialty membership', { exact: true }),
+  ).toBeVisible();
+  await expect(workspace(page).getByRole('row')).toHaveCount(2);
+  await expect(workspace(page).getByRole('link', { name: /transition/i })).toHaveCount(0);
+  await assertWidth(page);
+  assertNoWrites(state);
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1857, height: 970 },

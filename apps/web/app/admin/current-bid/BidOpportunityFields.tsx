@@ -402,91 +402,101 @@ export function BidOpportunityFields({
               )}
             </details>
           </FieldSection>
-          {rule ? (
-            <>
-              <FieldSection title="Bid rule">
-                {(position.isExcludedFromCount ||
-                  (participation && participation.bidParticipation !== 'BIDDABLE')) && (
-                  <p role="alert" className="text-sm">
-                    This opportunity is configured outside ordinary bidding. Remove its Bid rule
-                    before saving, or restore its biddable participation.
-                  </p>
-                )}
-                {removeRuleReview === position.id ? (
-                  <>
-                    <p className="text-sm">
-                      Remove the requirements, point awards and tie breaks for {position.id} from
-                      this draft? The opportunity, staffing connection and historical versions
-                      remain.
-                    </p>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        onChange({
-                          ...content,
-                          rules: content.rules.filter((r) => r.positionId !== position.id),
-                        });
-                        setRemoveRuleReview(null);
-                      }}
-                    >
-                      Confirm rule removal
-                    </Button>
-                    <Button type="button" onClick={() => setRemoveRuleReview(null)}>
-                      Keep Bid rule
-                    </Button>
-                  </>
-                ) : (
-                  <Button type="button" onClick={() => setRemoveRuleReview(position.id)}>
-                    Review rule removal
-                  </Button>
-                )}
-              </FieldSection>
-              <BidRuleFields
-                key={position.id}
-                rule={rule}
-                onChange={(updated) =>
-                  onChange({
-                    ...content,
-                    rules: content.rules.map((r) => (r.positionId === position.id ? updated : r)),
-                  })
-                }
-              />
-            </>
-          ) : (
-            <FieldSection title="Requirements not configured">
-              <p className="text-sm">
-                A biddable opportunity needs a valid rule before a run can be created.
-              </p>
-              <Button
-                type="button"
-                disabled={
-                  position.isExcludedFromCount ||
-                  (!!participation && participation.bidParticipation !== 'BIDDABLE')
-                }
-                onClick={() =>
-                  onChange({
-                    ...content,
-                    rules: [
-                      ...content.rules,
-                      {
-                        positionId: position.id,
-                        requiredCriteriaJson: JSON.stringify({
-                          rank: [position.rankRequired],
-                          credentials: [],
-                          custom: [],
-                        }),
-                        pointsPreferenceJson: JSON.stringify({ max: 0, items: [] }),
-                        tieBreakChainJson: '[]',
-                        notes: null,
-                      },
-                    ],
-                  })
-                }
-              >
-                Configure requirements
-              </Button>
-            </FieldSection>
+          {content.authoring?.reconciliation === 'PROFILE_EDITS_PENDING_REVIEW' && (
+            <p className="text-sm text-warning">
+              Save shared-rule changes before editing individual opportunity overrides.
+            </p>
           )}
+          <fieldset
+            disabled={content.authoring?.reconciliation === 'PROFILE_EDITS_PENDING_REVIEW'}
+            className="min-w-0 space-y-4"
+          >
+            {rule ? (
+              <>
+                <FieldSection title="Bid rule">
+                  {(position.isExcludedFromCount ||
+                    (participation && participation.bidParticipation !== 'BIDDABLE')) && (
+                    <p role="alert" className="text-sm">
+                      This opportunity is configured outside ordinary bidding. Remove its Bid rule
+                      before saving, or restore its biddable participation.
+                    </p>
+                  )}
+                  {removeRuleReview === position.id ? (
+                    <>
+                      <p className="text-sm">
+                        Remove the requirements, point awards and tie breaks for {position.id} from
+                        this draft? The opportunity, staffing connection and historical versions
+                        remain.
+                      </p>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          onChange({
+                            ...content,
+                            rules: content.rules.filter((r) => r.positionId !== position.id),
+                          });
+                          setRemoveRuleReview(null);
+                        }}
+                      >
+                        Confirm rule removal
+                      </Button>
+                      <Button type="button" onClick={() => setRemoveRuleReview(null)}>
+                        Keep Bid rule
+                      </Button>
+                    </>
+                  ) : (
+                    <Button type="button" onClick={() => setRemoveRuleReview(position.id)}>
+                      Review rule removal
+                    </Button>
+                  )}
+                </FieldSection>
+                <BidRuleFields
+                  key={position.id}
+                  rule={rule}
+                  onChange={(updated) =>
+                    onChange({
+                      ...content,
+                      rules: content.rules.map((r) => (r.positionId === position.id ? updated : r)),
+                    })
+                  }
+                />
+              </>
+            ) : (
+              <FieldSection title="Requirements not configured">
+                <p className="text-sm">
+                  A biddable opportunity needs a valid rule before a run can be created.
+                </p>
+                <Button
+                  type="button"
+                  disabled={
+                    position.isExcludedFromCount ||
+                    (!!participation && participation.bidParticipation !== 'BIDDABLE')
+                  }
+                  onClick={() =>
+                    onChange({
+                      ...content,
+                      rules: [
+                        ...content.rules,
+                        {
+                          positionId: position.id,
+                          requiredCriteriaJson: JSON.stringify({
+                            rank: [position.rankRequired],
+                            credentials: [],
+                            custom: [],
+                          }),
+                          pointsPreferenceJson: JSON.stringify({ max: 0, items: [] }),
+                          tieBreakChainJson: '[]',
+                          notes: null,
+                        },
+                      ],
+                    })
+                  }
+                >
+                  Configure requirements
+                </Button>
+              </FieldSection>
+            )}
+          </fieldset>
         </>
       )}
     </div>

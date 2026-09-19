@@ -13,6 +13,10 @@ describe('administrator manual and contextual explanations', () => {
     }
     expect(html).toContain('window.print()');
     expect(html).not.toContain('src="http');
+    expect(html).toContain('Confirm Live session creation');
+    expect(html).toContain('Results and History are read-only');
+    expect(html).toContain('Save Bid checks and applies those profile changes');
+    expect(html).toContain('voluntary departure consent');
   });
   it('selects specific page help rather than matching the entire admin area', () => {
     expect(helpForPath('/admin/personnel/qualifications').map((s) => s.id)).toEqual([

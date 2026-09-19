@@ -1,4 +1,5 @@
 import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types';
+import { evaluateEligibility } from '@mbfd/eligibility';
 import {
   BID_EVENT_VERSION,
   type FrozenLiveBidPolicy,
@@ -10,11 +11,21 @@ import {
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { ulid } from 'ulid';
+import { validateTermDeparture } from '../lib/term-departure.js';
 
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
+import { getDb } from '../db/index.js';
 import { handleFreeze } from '../durable/bid-session-handlers.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
 import { assertBidDefinitionRunIntegrity } from '../lib/bid-definition-integrity.js';
+import { evaluateBidFallback } from '../lib/bid-fallback.js';
+import { resolveBidPoolSelection } from '../lib/bid-opportunity-pool.js';
+import {
+  eligibilityMemberFromFrozen,
+  loadFrozenSessionBidPolicy,
+  resolveFrozenSessionBidTarget,
+} from '../lib/bid-policy.js';
+import { evaluateFrozenSimultaneousADays } from '../lib/frozen-a-day.js';
 import { reduceLiveBidCommand } from './live-bid-reducer.js';
 
 interface CanonicalStateRow {
@@ -763,7 +774,74 @@ export async function commitLiveBidCommand(
       return { result, canonicalState: null };
     }
   }
-  const reduction = reduceLiveBidCommand(current, input.policy, input.command, now, newId());
+  let fallbackReview: Extract<ReturnType<typeof evaluateBidFallback>, { ok: true }> | null = null;
+  if ('fallback' in input.command && input.command.fallback !== undefined) {
+    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    const review =
+      frozen.ok &&
+      frozen.snapshot.settings.v === 3 &&
+      canonicalJson(frozen.snapshot.settings.livePolicy) === canonicalJson(input.policy)
+        ? evaluateBidFallback({
+            snapshot: frozen.snapshot,
+            state: current,
+            positionId: input.command.positionId,
+          })
+        : { ok: false as const, code: 'FROZEN_FALLBACK_POLICY_UNAVAILABLE' };
+    const expectedMode = input.command.type === 'live.force_selection' ? 'FORCED' : 'VOLUNTARY';
+    const code = !review.ok
+      ? review.code
+      : review.policyId !== input.command.fallback.policyId ||
+          review.tierId !== input.command.fallback.tierId
+        ? 'FALLBACK_TIER_NOT_ACTIVE'
+        : review.mode !== expectedMode
+          ? 'FALLBACK_ACTION_NOT_ALLOWED'
+          : review.candidateMemberIds[0] !== input.command.memberId
+            ? 'FALLBACK_CANDIDATE_OUT_OF_ORDER'
+            : null;
+    if (code !== null) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code,
+        currentSeq: current.lastSeq,
+      };
+      await insertRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
+    if (review.ok) fallbackReview = review;
+  } else if (
+    input.command.type === 'live.force_selection' &&
+    input.policy.annualOperations?.fallbackPolicies !== undefined
+  ) {
+    const result: LiveBidCommandResult = {
+      kind: 'rejected',
+      commandId: input.command.commandId,
+      code: 'FALLBACK_REVIEW_REQUIRED',
+      currentSeq: current.lastSeq,
+    };
+    await insertRejectedReceipt(
+      input.db,
+      input.command as unknown as MockFreezeCommand,
+      requestSha256,
+      result as unknown as MockFreezeCommandResult,
+      now,
+    );
+    return { result, canonicalState: null };
+  }
+  const reduction = reduceLiveBidCommand(
+    current,
+    input.policy,
+    input.command,
+    now,
+    newId(),
+    fallbackReview !== null,
+  );
   if (!reduction.ok) {
     const result: LiveBidCommandResult = {
       kind: 'rejected',
@@ -779,6 +857,149 @@ export async function commitLiveBidCommand(
       now,
     );
     return { result, canonicalState: null };
+  }
+  // Every accepted award, including amendment and specialty interruption, must
+  // pass the same frozen evaluator as ordinary picks. A stage grant alone is
+  // not evidence of eligibility. Evaluate the proposed changes before D1 writes.
+  for (const [positionId, fill] of Object.entries(reduction.state.fills)) {
+    const previous = current.fills[positionId];
+    if (previous?.memberId === fill.memberId && previous.bidId === fill.bidId) continue;
+    if (
+      (input.policy.annualOperations?.opportunityPools?.length ?? 0) > 0 ||
+      ('pool' in input.command && input.command.pool !== undefined)
+    ) {
+      const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+      const pooled =
+        frozen.ok &&
+        frozen.snapshot.settings.v === 3 &&
+        canonicalJson(frozen.snapshot.settings.livePolicy) === canonicalJson(input.policy)
+          ? resolveBidPoolSelection({
+              material: frozen.snapshot.ruleBookMaterial,
+              policy: input.policy,
+              fills: current.fills,
+              positionId,
+              ...('pool' in input.command && input.command.pool
+                ? { poolId: input.command.pool.poolId }
+                : {}),
+            })
+          : {
+              ok: false as const,
+              code: frozen.ok ? 'FROZEN_POOL_POLICY_UNAVAILABLE' : frozen.code.toUpperCase(),
+            };
+      if (!pooled.ok) {
+        const rejected: LiveBidCommandResult = {
+          kind: 'rejected',
+          commandId: input.command.commandId,
+          code: pooled.code,
+          currentSeq: current.lastSeq,
+        };
+        await insertRejectedReceipt(
+          input.db,
+          input.command as unknown as MockFreezeCommand,
+          requestSha256,
+          rejected as unknown as MockFreezeCommandResult,
+          now,
+        );
+        return { result: rejected, canonicalState: null };
+      }
+      if (pooled.pool)
+        reduction.payload.pool = {
+          poolId: pooled.pool.id,
+          label: pooled.pool.label,
+          kind: pooled.pool.kind,
+          sourceRef: pooled.pool.sourceRef,
+          sourceDecisionId: pooled.pool.sourceDecisionId,
+          positionId,
+        };
+    }
+    const target = await resolveFrozenSessionBidTarget(getDb(input.db), {
+      bidSessionId: input.command.bidSessionId,
+      memberId: fill.memberId,
+      positionId,
+    });
+    const termDeparture = target.ok
+      ? validateTermDeparture({ member: target.member, command: input.command, nowMs: now })
+      : null;
+    const code =
+      termDeparture && !termDeparture.ok
+        ? termDeparture.code
+        : !target.ok
+          ? target.code.toUpperCase()
+          : target.snapshot.settings.v !== 3 ||
+              canonicalJson(target.snapshot.settings.livePolicy) !== canonicalJson(input.policy)
+            ? 'LIVE_POLICY_MISMATCH'
+            : !evaluateEligibility(
+                  eligibilityMemberFromFrozen(target.member),
+                  fallbackReview?.rule ?? target.rule,
+                ).eligible
+              ? 'MEMBER_NOT_ELIGIBLE'
+              : null;
+    if (code !== null) {
+      const rejected: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code,
+        currentSeq: current.lastSeq,
+      };
+      await insertRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        rejected as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result: rejected, canonicalState: null };
+    }
+    if (termDeparture?.ok && termDeparture.election) {
+      reduction.state.fills[positionId] = { ...fill, termDeparture: termDeparture.election };
+      reduction.payload.termDeparture = termDeparture.election;
+    }
+  }
+  if (fallbackReview !== null)
+    reduction.payload.fallback = {
+      policyId: fallbackReview.policyId,
+      tierId: fallbackReview.tierId,
+      sourceRef: fallbackReview.sourceRef,
+      sourceDecisionId: fallbackReview.sourceDecisionId,
+      comparator: fallbackReview.comparator,
+      exhausted: fallbackReview.exhausted,
+      eligibleMemberIds: fallbackReview.eligibleMemberIds,
+    };
+  if (
+    input.policy.annualOperations?.aDay.execution !== undefined ||
+    input.policy.annualOperations?.membershipDistributions !== undefined ||
+    Object.values(reduction.state.fills).some((fill) => fill.aDay !== undefined)
+  ) {
+    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    const allocation =
+      frozen.ok &&
+      frozen.snapshot.settings.v === 3 &&
+      canonicalJson(frozen.snapshot.settings.livePolicy) === canonicalJson(input.policy)
+        ? evaluateFrozenSimultaneousADays(frozen.snapshot, reduction.state, {
+            nowMs: now,
+            actorId: input.command.actor.id,
+            forced: input.command.type === 'live.force_selection',
+            finalize: input.command.type === 'live.complete_session',
+          })
+        : { ok: false as const, code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE' };
+    if (!allocation.ok) {
+      const rejected: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code: allocation.code,
+        currentSeq: current.lastSeq,
+      };
+      await insertRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        rejected as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result: rejected, canonicalState: null };
+    }
+    reduction.state.aDay = allocation.aDay;
+    if ('aDay' in input.command) reduction.payload.aDay = input.command.aDay ?? null;
   }
   const eventId = newId();
   const auditId = newId();
@@ -858,11 +1079,16 @@ export async function commitLiveBidCommand(
         ),
     );
   }
-  if (
+  const unreachableMemberId =
     input.command.type === 'live.declare_unreachable' ||
-    (input.command.type === 'live.resolve_specialty_candidate' &&
+    ((input.command.type === 'live.resolve_specialty_candidate' ||
+      input.command.type === 'live.record_fallback_response') &&
       input.command.outcome === 'UNREACHABLE')
-  ) {
+      ? input.command.memberId
+      : input.command.type === 'live.disposition' && input.command.disposition === 'UNREACHABLE'
+        ? current.currentBidderId
+        : null;
+  if (unreachableMemberId !== null) {
     statements.push(
       input.db
         .prepare(
@@ -875,9 +1101,9 @@ export async function commitLiveBidCommand(
         )
         .bind(
           input.command.bidSessionId,
-          input.command.memberId,
+          unreachableMemberId,
           input.command.bidSessionId,
-          input.command.memberId,
+          unreachableMemberId,
         ),
     );
   }

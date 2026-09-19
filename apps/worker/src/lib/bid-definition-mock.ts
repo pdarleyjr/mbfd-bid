@@ -41,6 +41,7 @@ export async function previewBidDefinitionMock(
       policyError: prepared.code,
       ...('positionIds' in prepared ? { positionIds: prepared.positionIds } : {}),
       ...('tenureIssues' in prepared ? { tenureIssues: prepared.tenureIssues } : {}),
+      ...('termIssues' in prepared ? { termIssues: prepared.termIssues } : {}),
     };
   return {
     wouldAllowCreateMock: true as const,
@@ -146,6 +147,7 @@ export async function createBidDefinitionMock(
       policyError: prepared.code,
       ...('positionIds' in prepared ? { positionIds: prepared.positionIds } : {}),
       ...('tenureIssues' in prepared ? { tenureIssues: prepared.tenureIssues } : {}),
+      ...('termIssues' in prepared ? { termIssues: prepared.termIssues } : {}),
     };
   if (
     prepared.pins.contextSha256 !== input.body.expectedContextSha256 ||

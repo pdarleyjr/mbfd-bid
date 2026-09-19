@@ -15,6 +15,7 @@ import {
   bidDraftKey,
   preserveBidDraft,
   readBidDraft,
+  reconcileProfileDraftEdit,
 } from '../../app/admin/current-bid/bid-draft';
 
 const YEAR = 2027;
@@ -608,5 +609,75 @@ describe('Current Bid pending write recovery', () => {
       body: { ...body, ...('body' in override ? override.body : {}) },
     };
     expect(PendingBidWriteSchema.safeParse(candidate).success).toBe(false);
+  });
+});
+
+describe('shared profile draft invalidation', () => {
+  function materialized() {
+    const value = content();
+    const authoring = present(value.authoring);
+    value.authoring = { ...authoring, reconciliation: 'MATERIALIZED_FOR_CURRENT_VERSION' };
+    return value;
+  }
+
+  it.each(['topology', 'participation', 'profile'] as const)(
+    'marks a %s edit pending without compiling in the browser',
+    (change) => {
+      const before = materialized();
+      const after = structuredClone(before);
+      if (change === 'topology') present(after.positions[0]).station = 'Synthetic changed station';
+      if (change === 'participation')
+        after.participation = [
+          {
+            positionId: present(after.positions[0]).id,
+            bidParticipation: 'RESERVED_NON_BIDDABLE',
+            authoritativeSourceRef: 'Synthetic changed participation',
+          },
+        ];
+      if (change === 'profile')
+        present(present(after.authoring).profiles[0]).name = 'Synthetic renamed shared profile';
+      const result = reconcileProfileDraftEdit(before, after);
+      expect(result.authoring).toMatchObject({
+        reconciliation: 'PROFILE_EDITS_PENDING_REVIEW',
+        compiled: [],
+      });
+      expect(result.rules).toEqual(after.rules);
+      expect(before.authoring?.reconciliation).toBe('MATERIALIZED_FOR_CURRENT_VERSION');
+    },
+  );
+
+  it('preserves an intentional direct rule change as advanced concrete rules', () => {
+    const before = materialized();
+    const after = structuredClone(before);
+    present(after.rules[0]).tieBreakChainJson = '["rsc_seniority"]';
+    const result = reconcileProfileDraftEdit(before, after);
+    expect(result.authoring?.reconciliation).toBe('RULES_CHANGED_AFTER_COMPILATION');
+    expect(result.authoring?.compiled).toEqual(before.authoring?.compiled);
+    expect(result.rules).toEqual(after.rules);
+  });
+
+  it('gives opportunity removal precedence over its associated concrete rule cleanup', () => {
+    const before = materialized();
+    const removed = present(before.positions[0]).id;
+    const after = structuredClone(before);
+    after.positions = after.positions.filter((position) => position.id !== removed);
+    after.rules = after.rules.filter((rule) => rule.positionId !== removed);
+    after.participation = after.participation.filter((row) => row.positionId !== removed);
+    const result = reconcileProfileDraftEdit(before, after);
+    expect(result.authoring).toMatchObject({
+      reconciliation: 'PROFILE_EDITS_PENDING_REVIEW',
+      compiled: [],
+    });
+    expect(result.positions).toEqual(after.positions);
+    expect(result.rules).toEqual(after.rules);
+  });
+
+  it('leaves a note-only edit materialized and preserves an explicit removal of sharing', () => {
+    const before = materialized();
+    const after = structuredClone(before);
+    after.notes.bid = 'Synthetic note change';
+    expect(reconcileProfileDraftEdit(before, after)).toEqual(after);
+    const detached = { ...after, authoring: null };
+    expect(reconcileProfileDraftEdit(before, detached)).toEqual(detached);
   });
 });

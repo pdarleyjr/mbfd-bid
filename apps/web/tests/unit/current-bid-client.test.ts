@@ -404,6 +404,94 @@ describe('Current Bid managed Mock request contracts', () => {
   });
 });
 
+describe('Current Bid managed Live request contracts', () => {
+  function liveReceipt(replayed = false) {
+    return { ...mockReceipt(replayed), id: 'synthetic-live-session', is_mock: false as const };
+  }
+
+  it.each([false, true])(
+    'accepts only a config-phase Live receipt with exact pins and key (replayed=%s)',
+    async (replayed) => {
+      const fetcher = serve(liveReceipt(replayed), replayed ? 200 : 201);
+      const body = mockRequest();
+      expect(
+        await client.bidRequest(YEAR, 'live-sessions', client.BidLiveResultSchema, {
+          body,
+          key: KEY,
+        }),
+      ).toStrictEqual(liveReceipt(replayed));
+      expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+        '/api/auth/csrf',
+        '/api/admin/bid/2027/live-sessions',
+      ]);
+      const init = fetcher.mock.calls[1]?.[1];
+      expect(init).toMatchObject({ method: 'POST', body: JSON.stringify(body) });
+      expect(new Headers(init?.headers).get('Idempotency-Key')).toBe(KEY);
+      expect(new Headers(init?.headers).get('X-MBFD-CSRF')).toBe(CSRF);
+    },
+  );
+
+  it.each([
+    [
+      'foreign version ID',
+      (r: ReturnType<typeof liveReceipt>) => ({
+        ...r,
+        bidDefinition: { ...r.bidDefinition, versionId: 'synthetic-foreign-version' },
+      }),
+    ],
+    [
+      'foreign version hash',
+      (r: ReturnType<typeof liveReceipt>) => ({
+        ...r,
+        bidDefinition: { ...r.bidDefinition, versionSha256: 'f'.repeat(64) },
+      }),
+    ],
+    [
+      'foreign context hash',
+      (r: ReturnType<typeof liveReceipt>) => ({
+        ...r,
+        bidDefinition: { ...r.bidDefinition, contextSha256: 'f'.repeat(64) },
+      }),
+    ],
+    [
+      'missing snapshot hash',
+      (r: ReturnType<typeof liveReceipt>) => ({
+        ...r,
+        bidDefinition: { ...r.bidDefinition, snapshotSha256: undefined },
+      }),
+    ],
+    [
+      'inconsistent version number',
+      (r: ReturnType<typeof liveReceipt>) => ({ ...r, configuration_revision: 3 }),
+    ],
+    ['Mock receipt', (r: ReturnType<typeof liveReceipt>) => ({ ...r, is_mock: true })],
+    [
+      'started session',
+      (r: ReturnType<typeof liveReceipt>) => ({ ...r, current_phase: 'officer' }),
+    ],
+    [
+      'unknown response material',
+      (r: ReturnType<typeof liveReceipt>) => ({ ...r, unreviewedAuthorization: true }),
+    ],
+  ])(
+    'retains an uncertain outcome for %s rather than accepting the receipt',
+    async (_label, alter) => {
+      const fetcher = serve(alter(liveReceipt()), 201);
+      await expect(
+        client.bidRequest(YEAR, 'live-sessions', client.BidLiveResultSchema, {
+          body: mockRequest(),
+          key: KEY,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_server_response', status: 201, uncertain: true });
+      expect(
+        fetcher.mock.calls.every(([input]) =>
+          ['/api/auth/csrf', '/api/admin/bid/2027/live-sessions'].includes(String(input)),
+        ),
+      ).toBe(true);
+    },
+  );
+});
+
 describe('Current Bid client identity and strict response contracts', () => {
   it('reads a valid versioned and legacy Bid without issuing a CSRF bootstrap or a mutation', async () => {
     const versioned = current();

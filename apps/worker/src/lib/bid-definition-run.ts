@@ -12,8 +12,10 @@ import { loadExplicitBidPolicySource, prepareConfiguredBidPolicySnapshot } from 
 /** Build a run from an explicit immutable version without touching a year
  * designation. This is still a read-only preparation: callers must place the
  * returned source guard, session and exact serialized snapshot in one batch.
- * Live uses the same active-book/published-document gates as legacy creation;
- * a saved draft is not a publication or completed-Mock approval. */
+ * The integrity-checked immutable version owns managed execution material.
+ * Legacy publication status cannot be changed on its sealed backing rows.
+ * Live still requires normal participation, resolved sources, explicit action
+ * authority and readiness at the separate session-creation boundary. */
 export async function prepareBidDefinitionRun(
   database: D1Database,
   input: {
@@ -32,6 +34,8 @@ export async function prepareBidDefinitionRun(
   if (version.sha256 !== input.versionSha256)
     return { ok: false as const, code: 'bid_version_hash_mismatch' };
   const db = getDb(database);
+  if (input.mode === 'live' && version.content.settings?.v !== 3)
+    return { ok: false as const, code: 'bid_configuration_live_policy_required' };
   const configured = await loadExplicitBidPolicySource(
     db,
     {
@@ -43,7 +47,10 @@ export async function prepareBidDefinitionRun(
       configurationRevision: version.row.version_number,
       annualPolicyDocumentId: version.row.policy_document_id,
     },
-    input.mode,
+    // Validate the sealed backing document/book without requiring mutable
+    // legacy publication flags. This does NOT choose Mock participation:
+    // prepareConfiguredBidPolicySnapshot below uses the requested run mode.
+    'mock',
   );
   if (!configured.ok) return configured;
   const prepared = await prepareConfiguredBidPolicySnapshot(

@@ -1,11 +1,19 @@
 import { deepStrictEqual } from 'node:assert';
-import { BidDispositionSchema, FrozenLiveBidPolicySchema, LiveBidActionSchema } from '@mbfd/shared';
+import {
+  type BidDefinitionContent,
+  BidDispositionSchema,
+  FrozenLiveBidPolicySchema,
+  LiveBidActionSchema,
+} from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getDb } from '../../src/db/index.js';
 import { app } from '../../src/index.js';
 import { captureBidDefinitionSource } from '../../src/lib/bid-definition-source.js';
 import { saveBidDefinition } from '../../src/lib/bid-definition-store.js';
 import { loadBidDefinitionVersion } from '../../src/lib/bid-definition-version.js';
+import { loadFrozenSessionBidPolicy } from '../../src/lib/bid-policy.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import { evaluateLiveBidReadiness } from '../../src/lib/live-bid-readiness.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const YEAR = 2027;
@@ -48,7 +56,7 @@ function draftLivePolicy() {
   });
 }
 
-describe('managed Live creation remains fail-closed pending an authoritative publication lifecycle', () => {
+describe('managed Live creation from sealed versions and separate runtime authority', () => {
   let h: TestD1;
   let version: Version;
   let adminToken: string;
@@ -169,15 +177,169 @@ describe('managed Live creation remains fail-closed pending an authoritative pub
     return { versionId: version.row.id, versionSha256: version.sha256 };
   }
 
-  it('reports the sealed draft publication blocker during Live preview without writing', async () => {
+  async function saveRevision(change: (content: BidDefinitionContent) => void) {
+    const content = structuredClone(version.content);
+    change(content);
+    const saved = await saveBidDefinition(h.env.DB, {
+      year: YEAR,
+      key: `synthetic-live-revision-${version.row.version_number + 1}`,
+      actorSubject: String(ACTOR),
+      actorId: ACTOR,
+      expected: {
+        kind: 'version',
+        versionId: version.row.id,
+        revision: version.row.version_number,
+        sha256: version.sha256,
+      },
+      reason: 'Synthetic independently reviewed runtime policy',
+      intent: { operation: 'save', content },
+    });
+    if (!saved.ok) throw new Error(JSON.stringify(saved));
+    const loaded = await loadBidDefinitionVersion(h.env.DB, YEAR, String(saved.response.versionId));
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded));
+    version = loaded;
+  }
+
+  async function completeEvidence(change?: (content: BidDefinitionContent) => void) {
+    const hash = 'a'.repeat(64);
+    h.sqlite.exec(`
+      INSERT INTO staffing_positions
+        (id,stable_slot_key,shift,station,unit,position_name,applicable_rank,active_from,review_status,created_at,updated_at)
+        VALUES ('synthetic-live-staffing','SYNTHETIC/A/7/FF','A','7','Synthetic Engine','Synthetic firefighter','FF','2027-01-01','approved',1,1);
+      INSERT INTO staffing_position_source_mappings
+        (id,staffing_position_id,source_system,source_locator,source_signature,source_version,source_hash,effective_from,created_at)
+        VALUES ('synthetic-live-mapping','synthetic-live-staffing','telestaff',
+          '{"v":1,"shift":"A","division":"Combat","station":"7","unit":"Synthetic Engine","position":"Synthetic firefighter"}',
+          '${hash}','synthetic-v1','${hash}','2027-01-01',1);
+      INSERT INTO assignment_imports
+        (id,source_system,source_version,source_hash,source_format,parser_version,source_kind,status,input_row_count,
+         normalized_data_row_count,unique_employee_count,report_row_count,structural_row_count,source_snapshot_as_of,created_at)
+        VALUES ('synthetic-live-import','telestaff','synthetic-v1','${hash}','TELSTAFF_ASSIGNMENTS_HTML_V1',
+          'telestaff-assignments-html@1','official','staged',1,1,1,1,0,'2027-01-01',1);
+      INSERT INTO assignment_import_rows
+        (id,import_id,source_row_number,row_fingerprint,member_reference_hmac,resolved_member_id,
+         staffing_position_source_mapping_id,normalized_source_topology,disposition,reconciliation_classification,review_status,created_at)
+        VALUES ('synthetic-live-row','synthetic-live-import',1,'${'b'.repeat(64)}','${'c'.repeat(64)}',${ACTOR},
+          'synthetic-live-mapping','{"v":1,"shift":"A","division":"Combat","station":"7","unit":"Synthetic Engine","position":"Synthetic firefighter"}',
+          'unchanged','UNCHANGED','not_required',1);
+      UPDATE assignment_imports SET status='reviewed' WHERE id='synthetic-live-import';
+      UPDATE assignment_imports SET status='approved',approved_at=1,approved_by_member_id=${ACTOR} WHERE id='synthetic-live-import';
+      UPDATE assignment_imports SET status='committed',committed_at=1 WHERE id='synthetic-live-import';
+      INSERT INTO assignment_observations
+        (id,assignment_import_id,assignment_import_row_id,member_id,staffing_position_id,
+         staffing_position_source_mapping_id,normalized_source_topology,observed_at,created_at)
+        VALUES ('synthetic-live-observation','synthetic-live-import','synthetic-live-row',${ACTOR},'synthetic-live-staffing',
+          'synthetic-live-mapping','{"v":1,"shift":"A","division":"Combat","station":"7","unit":"Synthetic Engine","position":"Synthetic firefighter"}',1,1);
+      INSERT INTO member_assignments
+        (id,member_id,staffing_position_id,origin_type,origin_ref,source_observation_id,status,effective_from,created_at,updated_at)
+        VALUES ('synthetic-live-assignment',${ACTOR},'synthetic-live-staffing','TELESTAFF_IMPORT','synthetic-live-import',
+          'synthetic-live-observation','active','2027-01-01',1,1);
+      INSERT INTO bid_year_staffing_baselines
+        (id,bid_year,assignment_import_id,status,accepted_at,accepted_by_member_id,acceptance_reason,created_at)
+        VALUES ('synthetic-live-baseline',${YEAR},'synthetic-live-import','accepted',1,${ACTOR},'Synthetic accepted complete baseline',1);
+    `);
+    // In-memory binding doubles are never connected to remote infrastructure.
+    h.env.KV = {
+      get: vi.fn(async () => null),
+      put: vi.fn(async () => {}),
+    } as unknown as typeof h.env.KV;
+    h.env.R2_AUDIT = { put: vi.fn(async () => null) } as unknown as typeof h.env.R2_AUDIT;
+    h.env.R2_EXPORTS = { put: vi.fn(async () => null) } as unknown as typeof h.env.R2_EXPORTS;
+    h.env.AUDIT_SIGNING_PRIVKEY = '11'.repeat(32);
+    h.env.AUDIT_SIGNING_PUBKEY = '22'.repeat(32);
+    h.env.PORTAL_WRITEBACK_ENABLED = 'false';
+    h.env.PORTAL_WRITEBACK_BASE_URL = 'https://portal-writeback-disabled.invalid';
+    await saveRevision((content) => {
+      if (!content.policy || content.settings?.v !== 3)
+        throw new Error('Expected V3 synthetic policy');
+      const comparator = [{ key: 'RSC_SENIORITY' as const, direction: 'ASC' as const }];
+      content.policy.executionPolicy.annualOperations = {
+        v: 1,
+        stageOrder: ['firefighter'],
+        requiredTopologyPositionIds: ['synthetic-live-seat'],
+        specialties: [],
+        contact: {
+          minimumAttempts: 2,
+          timingMode: 'OPERATOR_DISCRETION',
+          durationSeconds: null,
+          evidenceRequired: true,
+        },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 1,
+          max: 2,
+          captainDcMax: 1,
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 1, SWAT: 1 },
+        },
+      };
+      content.policy.orderingAuthority = {
+        v: 1,
+        sourceDecisionId: 'synthetic-live-order',
+        comparator,
+      };
+      content.sourceDecisions = [
+        {
+          issueId: 'synthetic-live-order',
+          title: 'Synthetic approved ordering',
+          question: 'Which synthetic comparator applies?',
+          area: 'annual-policy',
+          status: 'RESOLVED',
+          decision: 'Use the synthetic typed RSC comparator.',
+          sourceRef: 'synthetic:approved-ordering',
+          effectiveOn: '2027-01-01',
+          resolution: { v: 1, kind: 'BID_ORDERING_COMPARATOR', comparator },
+        },
+      ];
+      content.settings.livePolicy = structuredClone(content.policy.executionPolicy);
+      change?.(content);
+    });
+  }
+
+  async function preflight() {
+    const before = h.sqlite.serialize();
+    const response = await request(`bid/${YEAR}/preview`, { kind: 'live', ...selection() });
+    expect(response.status, await response.clone().text()).toBe(200);
+    const result = (await response.json()) as {
+      wouldAllowCreateLive: boolean;
+      contextSha256?: string;
+      runtimeSourceToken?: string;
+      readiness?: { blockingCheckIds: string[] };
+      policyError?: string;
+    };
+    deepStrictEqual(h.sqlite.serialize(), before);
+    return result;
+  }
+
+  async function creationBody() {
+    const preview = await preflight();
+    expect(preview.wouldAllowCreateLive, JSON.stringify(preview)).toBe(true);
+    if (!preview.contextSha256 || !preview.runtimeSourceToken)
+      throw new Error('Synthetic preflight pins missing');
+    return {
+      ...selection(),
+      expectedContextSha256: preview.contextSha256,
+      expectedSourceToken: preview.runtimeSourceToken,
+    };
+  }
+
+  it('reports the missing accepted baseline during Live preview without writing', async () => {
     const before = h.sqlite.serialize();
     const response = await request(`bid/${YEAR}/preview`, { kind: 'live', ...selection() });
 
     expect(response.status, await response.clone().text()).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       wouldAllowCreateLive: false,
-      policyError: 'bid_configuration_annual_policy_document_invalid',
+      readiness: {
+        blockingCheckIds: expect.arrayContaining([
+          'accepted_staffing_baseline',
+          'annual_operations_policy',
+          'ordering_authority',
+          'audit_infrastructure',
+          'runtime_bindings',
+          'writeback_safety',
+        ]),
+      },
     });
     deepStrictEqual(h.sqlite.serialize(), before);
     expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM bid_sessions').get()).toEqual({ n: 0 });
@@ -189,10 +351,11 @@ describe('managed Live creation remains fail-closed pending an authoritative pub
   });
 
   it('rejects a creation request and stale step-up before any Live session or receipt is written', async () => {
+    const preview = await preflight();
     const body = {
       ...selection(),
-      expectedContextSha256: 'a'.repeat(64),
-      expectedSourceToken: 'b'.repeat(64),
+      expectedContextSha256: preview.contextSha256,
+      expectedSourceToken: preview.runtimeSourceToken,
     };
     const before = h.sqlite.serialize();
     const blocked = await request(`bid/${YEAR}/live-sessions`, body, {
@@ -202,8 +365,13 @@ describe('managed Live creation remains fail-closed pending an authoritative pub
     expect(blocked.status, await blocked.clone().text()).toBe(409);
     expect(await blocked.json()).toMatchObject({
       ok: false,
-      error: 'session_policy_snapshot_unavailable',
-      policyError: 'bid_configuration_annual_policy_document_invalid',
+      error: 'readiness_blocked',
+      readiness: {
+        blockingCheckIds: expect.arrayContaining([
+          'accepted_staffing_baseline',
+          'ordering_authority',
+        ]),
+      },
     });
     deepStrictEqual(h.sqlite.serialize(), before);
 
@@ -220,5 +388,208 @@ describe('managed Live creation remains fail-closed pending an authoritative pub
     ).toEqual({
       n: 1,
     });
+  });
+
+  it('preflights sealed draft backing and creates only a pinned config session, never a started run', async () => {
+    await completeEvidence();
+    const body = await creationBody();
+    expect(
+      h.sqlite
+        .prepare('SELECT status FROM rule_books WHERE version=?')
+        .get(version.row.rule_book_version),
+    ).toEqual({ status: 'draft' });
+    expect(
+      h.sqlite
+        .prepare('SELECT status FROM annual_bid_policy_documents WHERE id=?')
+        .get(version.row.policy_document_id),
+    ).toEqual({ status: 'DRAFT' });
+    const response = await request(`bid/${YEAR}/live-sessions`, body, {
+      key: 'synthetic-live-create',
+    });
+    expect(response.status, await response.clone().text()).toBe(201);
+    const created = (await response.json()) as {
+      id: string;
+      current_phase: string;
+      is_mock: boolean;
+    };
+    expect(created).toMatchObject({ current_phase: 'config', is_mock: false });
+    expect(
+      h.sqlite
+        .prepare('SELECT current_phase,is_mock,current_bidder_id FROM bid_sessions WHERE id=?')
+        .get(created.id),
+    ).toEqual({ current_phase: 'config', is_mock: 0, current_bidder_id: null });
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM canonical_bid_session_state').get()).toEqual(
+      { n: 0 },
+    );
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM bids').get()).toEqual({ n: 0 });
+    const frozen = await loadFrozenSessionBidPolicy(getDb(h.env.DB), created.id);
+    if (!frozen.ok) throw new Error(JSON.stringify(frozen));
+    const originalSnapshot = structuredClone(frozen.snapshot);
+    await saveRevision((content) => {
+      content.notes.bid = 'Synthetic newer saved head';
+      if (!content.settings) throw new Error('Expected saved settings');
+      content.settings.turnTimerSeconds = 240;
+    });
+    const reloaded = await loadFrozenSessionBidPolicy(getDb(h.env.DB), created.id);
+    expect(reloaded).toEqual(frozen);
+    expect(frozen.snapshot.settings.turnTimerSeconds).toBe(180);
+    expect(version.content.settings?.turnTimerSeconds).toBe(240);
+    const readiness = await evaluateLiveBidReadiness({
+      db: getDb(h.env.DB),
+      env: h.env,
+      bidSessionId: created.id,
+      bidYear: YEAR,
+      frozenPolicy: frozen,
+      operatorAuthorized: true,
+    });
+    expect(readiness.canStartLiveBid, JSON.stringify(readiness)).toBe(true);
+    expect(frozen.snapshot).toEqual(originalSnapshot);
+    expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
+  });
+
+  it('requires separately granted creation authority, fresh auth, and audit credentials', async () => {
+    await completeEvidence((content) => {
+      if (!content.policy || content.settings?.v !== 3) throw new Error('Expected policy');
+      content.policy.executionPolicy.actionPermissions =
+        content.policy.executionPolicy.actionPermissions.filter(
+          (grant) => grant.action !== 'create_live_session',
+        );
+      content.settings.livePolicy = structuredClone(content.policy.executionPolicy);
+    });
+    const preview = await preflight();
+    expect(preview.wouldAllowCreateLive).toBe(false);
+    expect(preview.readiness?.blockingCheckIds).toContain('operator_authorization');
+    const denied = await request(
+      `bid/${YEAR}/live-sessions`,
+      {
+        ...selection(),
+        expectedContextSha256: preview.contextSha256,
+        expectedSourceToken: preview.runtimeSourceToken,
+      },
+      { key: 'synthetic-live-no-grant' },
+    );
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ error: 'live_action_forbidden' });
+    await saveRevision((content) => {
+      if (!content.policy || content.settings?.v !== 3) throw new Error('Expected policy');
+      content.policy.executionPolicy.actionPermissions = draftLivePolicy().actionPermissions;
+      content.settings.livePolicy = structuredClone(content.policy.executionPolicy);
+    });
+    const body = await creationBody();
+    const stale = await request(`bid/${YEAR}/live-sessions`, body, {
+      key: 'synthetic-live-auth-stale',
+      auth: await token(false),
+    });
+    expect(stale.status).toBe(401);
+    h.env.AUDIT_SIGNING_PRIVKEY = '';
+    const missingCredential = await preflight();
+    expect(missingCredential.wouldAllowCreateLive).toBe(false);
+    expect(missingCredential.readiness?.blockingCheckIds).toContain('audit_infrastructure');
+    const before = h.sqlite.serialize();
+    const noCredential = await request(`bid/${YEAR}/live-sessions`, body, {
+      key: 'synthetic-live-no-audit-key',
+    });
+    expect(noCredential.status).toBe(409);
+    expect(await noCredential.json()).toMatchObject({
+      error: 'readiness_blocked',
+      readiness: { blockingCheckIds: expect.arrayContaining(['audit_infrastructure']) },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM bid_sessions').get()).toEqual({ n: 0 });
+  });
+
+  it.each(['context', 'source', 'version', 'credentials'] as const)(
+    'rejects changed %s pins or evidence before creation',
+    async (changed) => {
+      await completeEvidence();
+      const body = await creationBody();
+      if (changed === 'context') body.expectedContextSha256 = 'd'.repeat(64);
+      if (changed === 'source') body.expectedSourceToken = 'e'.repeat(64);
+      if (changed === 'version') body.versionSha256 = 'f'.repeat(64);
+      if (changed === 'credentials')
+        h.sqlite.exec(
+          `INSERT INTO credentials(id,name) VALUES (9001,'Synthetic changed credential'); INSERT INTO member_credentials(member_id,credential_id,start_date) VALUES (${ACTOR},9001,'2026-01-01');`,
+        );
+      const before = h.sqlite.serialize();
+      const response = await request(`bid/${YEAR}/live-sessions`, body, {
+        key: `synthetic-live-changed-${changed}`,
+      });
+      expect(response.status, await response.clone().text()).toBe(409);
+      expect(await response.json()).toMatchObject(
+        changed === 'version'
+          ? {
+              error: 'session_policy_snapshot_unavailable',
+              policyError: 'bid_version_hash_mismatch',
+            }
+          : { error: 'bid_run_context_changed' },
+      );
+      deepStrictEqual(h.sqlite.serialize(), before);
+    },
+  );
+
+  it('rejects an unresolved saved policy decision', async () => {
+    await completeEvidence((content) => {
+      content.sourceDecisions = content.sourceDecisions.map((entry) => ({
+        ...entry,
+        status: 'OPEN',
+      }));
+    });
+    expect(await preflight()).toMatchObject({
+      wouldAllowCreateLive: false,
+      policyError: 'policy_source_decision_required',
+    });
+  });
+
+  it('requires V3 Live policy even though sealed backing is read through the draft-compatible loader', async () => {
+    await completeEvidence((content) => {
+      content.policy = null;
+      content.settings = {
+        v: 2,
+        expectedDurationDays: 2,
+        turnTimerSeconds: 180,
+        credentialEvaluationOn: '2027-01-01',
+        personnelEvaluationOn: '2027-01-01',
+      };
+    });
+    expect(await preflight()).toMatchObject({
+      wouldAllowCreateLive: false,
+      policyError: 'bid_configuration_live_policy_required',
+    });
+  });
+
+  it('blocks a sealed policy that has no independently resolved ordering authority', async () => {
+    await completeEvidence((content) => {
+      if (!content.policy) throw new Error('Expected policy');
+      const { orderingAuthority: _orderingAuthority, ...withoutOrdering } = content.policy;
+      content.policy = withoutOrdering;
+      content.sourceDecisions = [];
+    });
+    const preview = await preflight();
+    expect(preview.wouldAllowCreateLive).toBe(false);
+    expect(preview.readiness?.blockingCheckIds).toContain('ordering_authority');
+  });
+
+  it('does not inherit Mock participation concessions from an accepted staffing observation', async () => {
+    await completeEvidence();
+    h.sqlite.exec(
+      `UPDATE members SET employment_status='unknown', employment_status_effective_on=NULL WHERE id=${ACTOR}`,
+    );
+    const preview = await preflight();
+    expect(preview.wouldAllowCreateLive, JSON.stringify(preview)).toBe(false);
+    expect(preview.readiness?.blockingCheckIds).toContain('participant_population');
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM bid_sessions').get()).toEqual({ n: 0 });
+  });
+
+  it('rejects incomplete explicit participant coverage despite valid sealed material', async () => {
+    await completeEvidence((content) => {
+      if (!content.policy || content.settings?.v !== 3) throw new Error('Expected policy');
+      content.policy.executionPolicy.stages = content.policy.executionPolicy.stages.map(
+        (stage) => ({ ...stage, memberIds: [99999] }),
+      );
+      content.settings.livePolicy = structuredClone(content.policy.executionPolicy);
+    });
+    const preview = await preflight();
+    expect(preview.wouldAllowCreateLive, JSON.stringify(preview)).toBe(false);
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM bid_sessions').get()).toEqual({ n: 0 });
   });
 });

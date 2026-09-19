@@ -80,7 +80,35 @@ export function canPick(state: ADayState, memberId: number, aDay: ADayValue): Pi
   }
 
   // Officer-invariant check (A/B/C only)
-  if (shift !== 'D' && isCombatGroup(aDay)) {
+  for (const constraint of state.constraints ?? []) {
+    if (constraint.shifts && !constraint.shifts.includes(shift)) continue;
+    const matches = (id: number) => {
+      const candidate = state.membersById.get(id);
+      const assignment = state.phase1ByMember.get(id);
+      return (
+        constraint.memberIds.includes(id) ||
+        (assignment !== undefined && constraint.positionIds.includes(assignment.positionId)) ||
+        (candidate !== undefined && constraint.ranks.includes(candidate.rank))
+      );
+    };
+    if (!matches(memberId)) continue;
+    const count = [...state.picksByMember.values()].filter(
+      (pick) => pick.shift === shift && pick.aDay === aDay && matches(pick.memberId),
+    ).length;
+    if (count >= constraint.maximum)
+      return {
+        ok: false,
+        reasonCode: 'SCOPED_A_DAY_MAXIMUM',
+        reasonLabel: `${constraint.label}: maximum ${constraint.maximum} on ${shift}-${aDay}.`,
+        detail: {
+          constraintId: constraint.id,
+          sourceRef: constraint.sourceRef,
+          count,
+          maximum: constraint.maximum,
+        },
+      };
+  }
+  if (shift !== 'D' && isCombatGroup(aDay) && state.groupCaps[shift][aDay].officerMode !== 'NONE') {
     const snapshot = validateOfficerInvariant(state, shift, aDay as ADayGroupId, memberId);
     if (!snapshot.feasible) {
       return {

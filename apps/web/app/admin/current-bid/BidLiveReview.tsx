@@ -1,16 +1,20 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { FieldSection } from './BidFields';
+import { BidTermIssues } from './BidTermIssues';
 import {
   type BidLivePreview,
   BidLivePreviewSchema,
+  type BidLiveResult,
   BidRequestError,
   type BidVersion,
   type CurrentBid,
   bidRequest,
 } from './bid-client';
+import type { PendingBidWrite } from './bid-draft';
 
 const words = (value: string) => value.toLowerCase().replaceAll('_', ' ');
 
@@ -56,6 +60,7 @@ function PolicyBlock({ result }: { result: Extract<BidLivePreview, { policyError
           ))}
         </ul>
       )}
+      <BidTermIssues issues={result.termIssues} />
     </div>
   );
 }
@@ -98,12 +103,14 @@ export type BidLiveReviewProps = {
   /** Uses the workspace's shared busy gate so a step-up request cannot race another action. */
   begin(): boolean;
   finish(): void;
+  execute?(write: PendingBidWrite): Promise<void>;
+  createdLive?: BidLiveResult | null;
 };
 
 /**
- * Displays a server-authoritative, read-only Managed Live preflight. It has
- * no activation or session-creation affordance; Live execution remains
- * separately guarded by the managed console and server policy.
+ * Preflight is read-only. Creation is a separate deliberate action using the
+ * exact reviewed version/context and the workspace's recoverable request path.
+ * Starting the run remains a separate console command.
  */
 export function BidLiveReview({
   base,
@@ -114,6 +121,8 @@ export function BidLiveReview({
   stale,
   begin,
   finish,
+  execute,
+  createdLive,
 }: BidLiveReviewProps) {
   const version = immutableCurrentVersion(base);
   const sourceStamp = version
@@ -122,6 +131,7 @@ export function BidLiveReview({
   const [result, setResult] = useState<BidLivePreview | null>(null);
   const [resultStamp, setResultStamp] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmCreate, setConfirmCreate] = useState(false);
   const requestSequence = useRef(0);
   const reviewed = resultStamp === sourceStamp ? result : null;
 
@@ -130,6 +140,7 @@ export function BidLiveReview({
     const sequence = ++requestSequence.current;
     const stamp = sourceStamp;
     setError(null);
+    setConfirmCreate(false);
     setResult(null);
     setResultStamp(null);
     try {
@@ -189,6 +200,63 @@ export function BidLiveReview({
         ) : (
           <ReadinessReview result={reviewed} />
         ))}
+      {execute &&
+        reviewed &&
+        !('policyError' in reviewed) &&
+        reviewed.wouldAllowCreateLive &&
+        !createdLive && (
+          <div className="space-y-3 rounded border border-warning p-4">
+            <p>
+              Create the Live session using this reviewed Bid and Department snapshot. Starting the
+              Bid is a separate action.
+            </p>
+            {!confirmCreate ? (
+              <Button
+                type="button"
+                disabled={busy || locked || dirty || stale}
+                onClick={() => setConfirmCreate(true)}
+              >
+                Create Live session…
+              </Button>
+            ) : (
+              <>
+                <p>
+                  This creates a real Live session. Proceed only when the coordinator is ready to
+                  prepare the real Bid.
+                </p>
+                <Button
+                  type="button"
+                  disabled={busy || locked || dirty || stale}
+                  onClick={() =>
+                    void execute({
+                      path: 'live-sessions',
+                      key: crypto.randomUUID(),
+                      body: {
+                        versionId: reviewed.versionId,
+                        versionSha256: reviewed.versionSha256,
+                        expectedContextSha256: reviewed.contextSha256,
+                        expectedSourceToken: reviewed.runtimeSourceToken,
+                      },
+                    })
+                  }
+                >
+                  Confirm Live session creation
+                </Button>
+                <Button type="button" disabled={busy} onClick={() => setConfirmCreate(false)}>
+                  Cancel
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+      {createdLive && (
+        <p>
+          Live session created; it has not started.{' '}
+          <Link href="/admin/bid" className="underline">
+            Open Live console
+          </Link>
+        </p>
+      )}
     </FieldSection>
   );
 }

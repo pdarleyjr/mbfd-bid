@@ -1,17 +1,15 @@
-import type { BidDefinitionSourceDecision, BidOrderingAuthorityRequest } from '@mbfd/shared';
+import type {
+  BidDefinitionSourceDecision,
+  BidOrderingAuthorityRequest,
+  BidOrderingComparator,
+} from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import { resolveFrozenBidOrderingAuthority } from '../../src/lib/bid-ordering-authority.js';
 
-const rankComparator: BidOrderingAuthorityRequest['comparator'] = [
-  { key: 'RANK_SENIORITY', direction: 'ASC' },
-];
-const rscComparator: BidOrderingAuthorityRequest['comparator'] = [
-  { key: 'RSC_SENIORITY', direction: 'ASC' },
-];
+const rankComparator: BidOrderingComparator = [{ key: 'RANK_SENIORITY', direction: 'ASC' }];
+const rscComparator: BidOrderingComparator = [{ key: 'RSC_SENIORITY', direction: 'ASC' }];
 
-function request(
-  comparator: BidOrderingAuthorityRequest['comparator'] = rankComparator,
-): BidOrderingAuthorityRequest {
+function request(comparator: BidOrderingComparator = rankComparator): BidOrderingAuthorityRequest {
   return {
     v: 1,
     sourceDecisionId: 'annual-ordering-governing-decision',
@@ -20,7 +18,7 @@ function request(
 }
 
 function resolvedDecision(
-  comparator: BidOrderingAuthorityRequest['comparator'] = rankComparator,
+  comparator: BidOrderingComparator = rankComparator,
 ): BidDefinitionSourceDecision {
   return {
     issueId: 'annual-ordering-governing-decision',

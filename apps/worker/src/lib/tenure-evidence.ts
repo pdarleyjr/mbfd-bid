@@ -1,4 +1,7 @@
 export type TenureEvidence = {
+  termMemberId?: number | null;
+  accumulatedServiceMonths?: number | null;
+  consecutiveBidCycles?: number | null;
   id: string;
   staffingPositionId: string;
   revision: number;
@@ -14,7 +17,7 @@ export type TenureEvidence = {
 export async function loadTenureAsOf(db: D1Database, asOf: string) {
   return (
     await db
-      .prepare(`SELECT t.id,t.staffing_position_id AS staffingPositionId,t.revision,t.effective_on AS effectiveOn,t.status,t.member_id AS memberId,t.protected_from AS protectedFrom,t.protected_through AS protectedThrough,t.source_ref AS sourceRef,t.reason,t.actor_subject AS actorSubject
+      .prepare(`SELECT t.id,t.staffing_position_id AS staffingPositionId,t.revision,t.effective_on AS effectiveOn,t.status,t.member_id AS memberId,t.protected_from AS protectedFrom,t.protected_through AS protectedThrough,t.source_ref AS sourceRef,t.reason,t.actor_subject AS actorSubject,t.term_member_id AS termMemberId,t.accumulated_service_months AS accumulatedServiceMonths,t.consecutive_bid_cycles AS consecutiveBidCycles
     FROM staffing_tenure_evidence t WHERE t.effective_on<=? AND NOT EXISTS(SELECT 1 FROM staffing_tenure_evidence newer WHERE newer.staffing_position_id=t.staffing_position_id AND newer.effective_on<=? AND newer.revision>t.revision) ORDER BY t.staffing_position_id`)
       .bind(asOf, asOf)
       .all<TenureEvidence>()

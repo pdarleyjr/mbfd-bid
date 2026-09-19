@@ -7,6 +7,7 @@ import {
   markReadyForFinalization,
   recordContactAttempt,
   returnAtCurrentSequence,
+  validateUnreachableContact,
 } from '../lib/annual-bid-operations.js';
 
 export type LiveReduction =
@@ -29,6 +30,8 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
       return command.disposition === 'UNREACHABLE' ? 'mark_unreachable' : 'skip_defer';
     case 'live.force_selection':
       return 'force';
+    case 'live.record_fallback_response':
+      return command.outcome === 'UNREACHABLE' ? 'mark_unreachable' : 'skip_defer';
     case 'live.pause':
     case 'live.resume':
     case 'live.checkpoint':
@@ -56,7 +59,10 @@ function next(
   state: BidSessionState,
   now: number,
 ): Pick<BidSessionState, 'queueCursor' | 'currentBidderId' | 'currentPhase' | 'turnStartedAtMs'> {
-  const queueCursor = state.queueCursor + 1;
+  let queueCursor = state.queueCursor + 1;
+  const selected = new Set(Object.values(state.fills).map((fill) => fill.memberId));
+  while (state.bidOrder[queueCursor] && selected.has(state.bidOrder[queueCursor]?.memberId ?? -1))
+    queueCursor += 1;
   const entry = state.bidOrder[queueCursor];
   return entry
     ? {
@@ -88,6 +94,8 @@ export function reduceLiveBidCommand(
   command: LiveBidCommand,
   now: number,
   bidId: string,
+  /** Supplied only by the canonical boundary after frozen fallback evaluation. */
+  fallbackAuthorized = false,
 ): LiveReduction {
   const permitted = policy.actionPermissions.some(
     (grant) =>
@@ -298,12 +306,12 @@ export function reduceLiveBidCommand(
       if (rule.requiresEvidence && command.evidenceReference === null)
         return { ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' };
       if (command.outcome === 'UNREACHABLE') {
-        const minimumAttempts = policy.annualOperations?.contact.minimumAttempts;
-        if (minimumAttempts === undefined) return { ok: false, code: 'CONTACT_POLICY_MISSING' };
-        const attempts = (state.annual?.contactAttempts ?? []).filter(
-          (attempt) => attempt.memberId === command.memberId,
-        ).length;
-        if (attempts < minimumAttempts) return { ok: false, code: 'CONTACT_ATTEMPTS_INCOMPLETE' };
+        const contact = validateUnreachableContact(
+          state.annual ?? initializeAnnualOperations({ preferenceSheets: [] }),
+          policy.annualOperations,
+          { memberId: command.memberId, nowMs: now },
+        );
+        if (!contact.ok) return contact;
       }
     }
     if (command.outcome === 'ACCEPT') {
@@ -314,6 +322,7 @@ export function reduceLiveBidCommand(
         return { ok: false, code: 'SPECIALTY_CANDIDATE_FILL_AMBIGUOUS' };
       const prior = existingFills[0];
       const fill: Fill = {
+        ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
         memberId: command.memberId,
         ordinal:
           prior?.[1].ordinal ??
@@ -387,6 +396,45 @@ export function reduceLiveBidCommand(
   }
   const annual = state.annual ?? initializeAnnualOperations({ preferenceSheets: [] });
   const annualPolicy = policy.annualOperations;
+  if (command.type === 'live.record_fallback_response') {
+    if (!fallbackAuthorized) return { ok: false, code: 'FALLBACK_REVIEW_REQUIRED' };
+    if (state.currentPhase !== 'position_bid') return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (live.specialty) return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
+    const disposition = command.outcome === 'DECLINE' ? 'DECLINED' : command.outcome;
+    const rule = policy.dispositions.find((candidate) => candidate.disposition === disposition);
+    if (!rule) return { ok: false, code: 'LIVE_DISPOSITION_POLICY_INCOMPLETE' };
+    if (
+      (rule.requiresEvidence && command.evidenceReference === null) ||
+      (rule.requiresReason && !command.reason.trim())
+    )
+      return { ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' };
+    if (command.outcome === 'UNREACHABLE') {
+      const contact = validateUnreachableContact(annual, annualPolicy, {
+        memberId: command.memberId,
+        nowMs: now,
+      });
+      if (!contact.ok) return contact;
+    }
+    const response = {
+      ...command.fallback,
+      positionId: command.positionId,
+      memberId: command.memberId,
+      outcome: command.outcome,
+      reason: command.reason,
+      evidenceReference: command.evidenceReference,
+    };
+    return {
+      ok: true,
+      state: {
+        ...state,
+        live: { ...live, fallbackResponses: [...(live.fallbackResponses ?? []), response] },
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: { operation: 'record_fallback_response', ...response },
+      supersedesBidId: null,
+    };
+  }
   if (command.type === 'live.record_contact_attempt') {
     const result = recordContactAttempt(annual, {
       memberId: command.memberId,
@@ -411,6 +459,7 @@ export function reduceLiveBidCommand(
     const result = declareUnreachable(annual, annualPolicy, {
       memberId: command.memberId,
       actorMemberId: command.actor.id,
+      nowMs: now,
     });
     if (!result.ok) return result;
     return {
@@ -489,7 +538,11 @@ export function reduceLiveBidCommand(
     const selectedStage = policy.stages.find((stage) => stage.id === selectedEntry?.stageId);
     if (!selectedStage?.opportunityPositionIds.includes(command.toPositionId))
       return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
-    const fill: Fill = { ...prior, bidId };
+    const fill: Fill = {
+      ...prior,
+      bidId,
+      ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
+    };
     const fills = { ...state.fills };
     delete fills[command.fromPositionId];
     fills[command.toPositionId] = fill;
@@ -527,12 +580,23 @@ export function reduceLiveBidCommand(
     )
       return { ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' };
     if (state.currentBidderId === null) return { ok: false, code: 'NO_CURRENT_BIDDER' };
+    let dispositionAnnual = annual;
+    if (command.disposition === 'UNREACHABLE') {
+      const contact = declareUnreachable(annual, annualPolicy, {
+        memberId: state.currentBidderId,
+        actorMemberId: command.actor.id,
+        nowMs: now,
+      });
+      if (!contact.ok) return contact;
+      dispositionAnnual = contact.state;
+    }
     const advance = rule.advances ? next(state, now) : {};
     return {
       ok: true,
       state: {
         ...state,
         ...advance,
+        ...(command.disposition === 'UNREACHABLE' ? { annual: dispositionAnnual } : {}),
         live: {
           ...live,
           dispositions: [
@@ -569,7 +633,8 @@ export function reduceLiveBidCommand(
   if (
     command.type === 'live.record_selection' &&
     memberId !== state.currentBidderId &&
-    !isReturnedAtCurrentSequence
+    !isReturnedAtCurrentSequence &&
+    !fallbackAuthorized
   )
     return { ok: false, code: 'NOT_CURRENT_BIDDER' };
   if (state.fills[positionId]) return { ok: false, code: 'POSITION_FILLED' };
@@ -577,8 +642,13 @@ export function reduceLiveBidCommand(
     return { ok: false, code: 'MEMBER_ALREADY_SELECTED' };
   const stage = policy.stages.find((candidate) => candidate.id === currentStageId);
   if (!stage) return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
-  if (!stage.memberIds.includes(memberId) || !stage.opportunityPositionIds.includes(positionId))
+  if (
+    !fallbackAuthorized &&
+    (!stage.memberIds.includes(memberId) || !stage.opportunityPositionIds.includes(positionId))
+  )
     return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
+  if ('fallback' in command && command.fallback && !fallbackAuthorized)
+    return { ok: false, code: 'FALLBACK_REVIEW_REQUIRED' };
   const entry = state.bidOrder.find((candidate) => candidate.memberId === memberId);
   if (!entry) return { ok: false, code: 'MEMBER_NOT_IN_FROZEN_ORDER' };
   const advance = memberId === state.currentBidderId ? next(state, now) : {};
@@ -587,7 +657,15 @@ export function reduceLiveBidCommand(
     state: {
       ...state,
       ...advance,
-      fills: { ...state.fills, [positionId]: { memberId, ordinal: entry.ordinal, bidId } },
+      fills: {
+        ...state.fills,
+        [positionId]: {
+          memberId,
+          ordinal: entry.ordinal,
+          bidId,
+          ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
+        },
+      },
       live: { ...live, lastSelectionBidId: bidId },
       annual: isReturnedAtCurrentSequence ? { ...annual, returningMemberId: null } : annual,
       lastSeq: state.lastSeq + 1,

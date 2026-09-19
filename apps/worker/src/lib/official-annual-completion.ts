@@ -2,6 +2,7 @@ import { loadCanonicalBidSessionState } from '../commands/canonical-command-serv
 import { getDb } from '../db/index.js';
 import { projectCanonicalAnnualCompletion } from './annual-completion-result.js';
 import { loadFrozenSessionBidPolicy } from './bid-policy.js';
+import { hasAcceptedTermElection } from './term-departure.js';
 
 export async function loadCanonicalAmendmentLinks(
   db: D1Database,
@@ -36,6 +37,13 @@ export async function loadOfficialAnnualCompletion(db: D1Database, sessionId: st
   const frozen = await loadFrozenSessionBidPolicy(getDb(db), sessionId);
   if (!frozen.ok || frozen.snapshot.settings.v !== 3)
     return { ok: false as const, error: 'frozen_policy_required' };
+  for (const fill of Object.values(canonical.fills)) {
+    const member = frozen.snapshot.members.find(
+      (candidate) => candidate.memberId === fill.memberId,
+    );
+    if (member && !(await hasAcceptedTermElection(db, sessionId, member, fill)))
+      return { ok: false as const, error: 'term_departure_election_required' };
+  }
   const metadata = await db
     .prepare(
       'SELECT current_seq, last_command_id FROM canonical_bid_session_state WHERE bid_session_id = ?',

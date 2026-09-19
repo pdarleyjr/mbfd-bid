@@ -66,7 +66,7 @@ type Ready = Extract<BidEvaluationPreparation, { ok: true }>;
 
 /** Pure material has neither publication status nor document/version identity.
  * Live calculation changes participation semantics only; it grants no run authority. */
-async function prepareDefinition(
+export async function prepareDefinition(
   db: ReturnType<typeof getDb>,
   content: BidDefinitionContent,
   coverage: RuleBookCoverage,
@@ -205,6 +205,7 @@ function projectSide(prepared: BidEvaluationPreparation, counts?: OpportunityCou
       code: prepared.code,
       positionIds: [...(prepared.positionIds ?? [])],
       tenureIssues: [...(prepared.tenureIssues ?? [])],
+      ...(prepared.termIssues ? { termIssues: [...prepared.termIssues] } : {}),
     };
   const { evaluation } = prepared;
   const members = cohort(evaluation);

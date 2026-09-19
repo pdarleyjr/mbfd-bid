@@ -12,7 +12,7 @@ import type {
 import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AddMemberPanel } from './AddMemberPanel';
 import { MemberDetails } from './MemberDetails';
 import { UpdateMemberPanel } from './UpdateMemberPanel';
@@ -34,6 +34,20 @@ function positive(value: string | null) {
 export function DepartmentPeopleWorkspace({ initialDate }: { initialDate: string }) {
   const router = useRouter();
   const search = useSearchParams();
+  const committedSearch = search.toString();
+  const intendedSearch = useRef(committedSearch);
+  const pendingSearches = useRef<string[]>([]);
+  useEffect(() => {
+    const committedIndex = pendingSearches.current.indexOf(committedSearch);
+    if (committedIndex >= 0) {
+      pendingSearches.current.splice(0, committedIndex + 1);
+      if (pendingSearches.current.length) return;
+    } else {
+      // Back/forward and other external navigation become the new source.
+      pendingSearches.current = [];
+    }
+    intendedSearch.current = committedSearch;
+  }, [committedSearch]);
   const asOf = search.get('as_of') ?? initialDate;
   const query = search.get('q') ?? '';
   const requestedStatus = search.get('employment_status') ?? 'all';
@@ -45,11 +59,15 @@ export function DepartmentPeopleWorkspace({ initialDate }: { initialDate: string
   const [editing, setEditing] = useState<{ person: DepartmentPerson; asOf: string } | null>(null);
   const [addingAsOf, setAddingAsOf] = useState<string | null>(null);
   function navigate(changes: Record<string, string | null>) {
-    const next = new URLSearchParams(search.toString());
+    // A row click may precede the router committing a submitted filter change.
+    // Compose against the latest requested URL so that click preserves filters.
+    const next = new URLSearchParams(intendedSearch.current);
     for (const [key, value] of Object.entries(changes)) {
       if (value === null || value === '') next.delete(key);
       else next.set(key, value);
     }
+    intendedSearch.current = next.toString();
+    pendingSearches.current.push(intendedSearch.current);
     router.push(`/admin/department${next.size ? `?${next}` : ''}` as Route, { scroll: false });
   }
   const people = useQuery({

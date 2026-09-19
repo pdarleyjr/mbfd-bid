@@ -7,6 +7,7 @@ import {
   type StageParticipantOrdering,
   type StageParticipantSourceDefinition,
   type StageParticipantSourceDefinitions,
+  bidOrderingComparatorForStage,
 } from '@mbfd/shared';
 
 type PinnedMember = BidEvaluation['members'][number];
@@ -294,7 +295,8 @@ export function compileFrozenStageParticipants(input: {
     const membership = membershipByStageId.get(stage.id);
     if (membership === undefined)
       return { ok: false, code: 'stage_authoring_stage_source_missing', stageId: stage.id };
-    if (!sameOrdering(membership.definition.ordering, input.orderingAuthority.comparator))
+    const comparator = bidOrderingComparatorForStage(input.orderingAuthority, stage.id);
+    if (!comparator || !sameOrdering(membership.definition.ordering, comparator))
       return {
         ok: false,
         code: 'stage_authoring_ordering_authority_mismatch',
@@ -303,7 +305,7 @@ export function compileFrozenStageParticipants(input: {
     const ordered = sortByAuthoredOrdering({
       stageId: stage.id,
       members: membership.matchedMembers,
-      ordering: input.orderingAuthority.comparator,
+      ordering: comparator,
     });
     if (!ordered.ok) return ordered;
     const memberIds = ordered.members.map((member) => member.memberId);

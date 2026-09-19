@@ -1,6 +1,40 @@
 import { type BidDefinitionContent, BidDefinitionContentSchema } from '@mbfd/shared';
 import { z } from 'zod';
-import { BidExpectedSchema, BidMockRequestSchema, CurrentBidSchema } from './bid-client';
+import {
+  BidExpectedSchema,
+  BidLiveRequestSchema,
+  BidMockRequestSchema,
+  CurrentBidSchema,
+} from './bid-client';
+
+/** Draft invalidation only: no rule compilation or eligibility in the browser.
+ * Direct opportunity rules remain an explicit advanced override of profiles. */
+export function reconcileProfileDraftEdit(
+  before: BidDefinitionContent,
+  after: BidDefinitionContent,
+): BidDefinitionContent {
+  if (after.authoring?.reconciliation !== 'MATERIALIZED_FOR_CURRENT_VERSION') return after;
+  const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+  if (
+    !same(before.positions, after.positions) ||
+    !same(before.participation, after.participation) ||
+    !same(before.authoring?.profiles, after.authoring.profiles)
+  )
+    return {
+      ...after,
+      authoring: {
+        ...after.authoring,
+        compiled: [],
+        reconciliation: 'PROFILE_EDITS_PENDING_REVIEW',
+      },
+    };
+  if (!same(before.rules, after.rules))
+    return {
+      ...after,
+      authoring: { ...after.authoring, reconciliation: 'RULES_CHANGED_AFTER_COMPILATION' },
+    };
+  return after;
+}
 
 /** Browser drafts may contain incomplete text or temporarily invalid ranges.
  * Preserve only the known schema shape. This is never used for API validation,
@@ -39,6 +73,13 @@ export const BidDraftContentSchema = draftShape(
   BidDefinitionContentSchema,
 ) as z.ZodType<BidDefinitionContent>;
 export const PendingBidWriteSchema = z.discriminatedUnion('path', [
+  z
+    .object({
+      path: z.literal('live-sessions'),
+      key: z.string().uuid(),
+      body: BidLiveRequestSchema,
+    })
+    .strict(),
   z
     .object({
       path: z.literal('mock-sessions'),

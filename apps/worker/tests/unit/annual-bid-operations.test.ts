@@ -9,6 +9,7 @@ import {
   upsertPreferenceSheet,
   validateAnnualOperationsReadiness,
   validateSpecialtyADayMaximum,
+  validateUnreachableContact,
 } from '../../src/lib/annual-bid-operations.js';
 
 const operations = {
@@ -30,6 +31,29 @@ const operations = {
 };
 
 describe('annual bid operations', () => {
+  it('requires an explicit valid clock for HARD_MINIMUM contact validation', () => {
+    const annual = {
+      ...initializeAnnualOperations({ preferenceSheets: [] }),
+      contactAttempts: [{ memberId: 1, actorMemberId: 99, method: 'PHONE' as const, atMs: 10_000 }],
+    };
+    const hardMinimum = {
+      ...operations,
+      contact: { minimumAttempts: 1, timingMode: 'HARD_MINIMUM' as const, durationSeconds: 60 },
+    };
+    for (const input of [
+      { memberId: 1 },
+      { memberId: 1, nowMs: Number.NaN },
+      { memberId: 1, nowMs: 9_999 },
+    ]) {
+      expect(validateUnreachableContact(annual, hardMinimum, input)).toEqual({
+        ok: false,
+        code: 'CONTACT_MINIMUM_TIME_INCOMPLETE',
+      });
+    }
+    expect(validateUnreachableContact(annual, hardMinimum, { memberId: 1, nowMs: 70_000 })).toEqual(
+      { ok: true },
+    );
+  });
   it('preserves the original five-stage configuration and requires complete topology before real use', () => {
     expect(
       validateAnnualOperationsReadiness({

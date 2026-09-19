@@ -204,6 +204,13 @@ async function mount(
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
+  await render(current, props);
+}
+
+async function render(
+  current = base(),
+  props: Partial<React.ComponentProps<typeof BidLiveReview>> = {},
+) {
   await settle(() =>
     root?.render(
       <BidLiveReview
@@ -235,15 +242,97 @@ async function click(name: string | RegExp) {
 }
 
 describe('BidLiveReview', () => {
+  it('requires separate creation confirmation and sends exactly the reviewed pins without starting', async () => {
+    result = allowedReadiness();
+    const execute = vi.fn(async () => {});
+    await mount(base(), { execute });
+    await click('Check Managed Live readiness');
+    expect(execute).not.toHaveBeenCalled();
+    await click('Create Live session…');
+    expect(execute).not.toHaveBeenCalled();
+    await click('Cancel');
+    expect(execute).not.toHaveBeenCalled();
+    await click('Create Live session…');
+    await click('Confirm Live session creation');
+    expect(execute).toHaveBeenCalledExactlyOnceWith({
+      path: 'live-sessions',
+      key: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      body: {
+        versionId: base().version?.id,
+        versionSha256: DIGEST,
+        expectedContextSha256: 'b'.repeat(64),
+        expectedSourceToken: 'c'.repeat(64),
+      },
+    });
+    expect(requests.every(({ url }) => url.endsWith('/csrf') || url.endsWith('/preview'))).toBe(
+      true,
+    );
+  });
+
+  it.each(['dirty', 'stale', 'locked', 'busy'] as const)(
+    'denies readiness and both creation steps when %s becomes true',
+    async (flag) => {
+      result = allowedReadiness();
+      const execute = vi.fn(async () => {});
+      await mount(base(), { execute });
+      await click('Check Managed Live readiness');
+      await render(base(), { execute, [flag]: true });
+      expect(button(flag === 'busy' ? 'Checking…' : 'Check Managed Live readiness').disabled).toBe(
+        true,
+      );
+      expect(button('Create Live session…').disabled).toBe(true);
+      await click('Create Live session…');
+      expect(execute).not.toHaveBeenCalled();
+      await render(base(), { execute });
+      await click('Create Live session…');
+      await render(base(), { execute, [flag]: true });
+      expect(button('Confirm Live session creation').disabled).toBe(true);
+      await click('Confirm Live session creation');
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it('invalidates an open confirmation when the saved source version changes', async () => {
+    result = allowedReadiness();
+    const execute = vi.fn(async () => {});
+    await mount(base(), { execute });
+    await click('Check Managed Live readiness');
+    await click('Create Live session…');
+    const previous = base();
+    const next = CurrentBidSchema.parse({
+      ...previous,
+      version: {
+        ...previous.version,
+        id: 'synthetic-next-version',
+        versionNumber: 3,
+        contentSha256: 'd'.repeat(64),
+      },
+      expected: {
+        kind: 'version',
+        versionId: 'synthetic-next-version',
+        revision: 3,
+        sha256: 'd'.repeat(64),
+      },
+    });
+    await render(next, { execute });
+    expect(() => button('Confirm Live session creation')).toThrow('Missing public button');
+    expect(() => button('Create Live session…')).toThrow('Missing public button');
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('uses the step-up-aware read-only Live preview for the exact immutable current version', async () => {
     await mount();
     await click('Check Managed Live readiness');
 
-    expect(requests.map((request) => request.url)).toEqual([
-      '/api/auth/csrf',
-      `/api/admin/bid/${YEAR}/preview`,
-    ]);
-    const preview = requests[1];
+    // The CSRF token may already be cached by another review in this tab.
+    expect(
+      requests.every(
+        ({ url }) => url.endsWith('/csrf') || url === `/api/admin/bid/${YEAR}/preview`,
+      ),
+    ).toBe(true);
+    const previews = requests.filter(({ url }) => url === `/api/admin/bid/${YEAR}/preview`);
+    expect(previews).toHaveLength(1);
+    const preview = previews[0];
     expect(preview?.init).toMatchObject({
       method: 'POST',
       body: JSON.stringify({

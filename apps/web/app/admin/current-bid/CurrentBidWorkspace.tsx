@@ -7,7 +7,6 @@ import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import type { BidDefinitionContent, BidImpactResponse } from '@mbfd/shared';
 import { ArrowRight, BookOpen, GitBranch, History, Save } from 'lucide-react';
 import type { Route } from 'next';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BidBlueprint } from './BidBlueprint';
@@ -18,9 +17,14 @@ import { BidLiveReview } from './BidLiveReview';
 import { BidMockReview } from './BidMockReview';
 import { BidOpportunityFields } from './BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
+import { BidProfileReview } from './BidProfileReview';
+import { BidResults } from './BidResults';
+import { BidRuleProfiles } from './BidRuleProfiles';
 import { BidVersionHistory } from './BidVersionHistory';
 import { StageParticipantPreview } from './StageParticipantPreview';
 import {
+  type BidLiveResult,
+  BidLiveResultSchema,
   type BidMockPreview,
   BidMockPreviewSchema,
   type BidMockResult,
@@ -44,12 +48,14 @@ import {
   bidSaveSummary,
   preserveBidDraft,
   readBidDraft,
+  reconcileProfileDraftEdit,
 } from './bid-draft';
 
 const sections = [
   ['language', 'Policy & language'],
   ['flow', 'Participants & flow'],
   ['opportunities', 'Opportunities & rules'],
+  ['profiles', 'Shared requirements & points'],
   ['specialties', 'Specialty rules'],
   ['contact', 'Contact & disposition'],
   ['a-day', 'A-Day'],
@@ -102,6 +108,8 @@ export function CurrentBidWorkspace({
   const [historical, setHistorical] = useState<HistoricalBid | null>(null);
   const [mockPreview, setMockPreview] = useState<BidMockPreview | null>(null);
   const [createdMock, setCreatedMock] = useState<BidMockResult | null>(null);
+  const [createdLive, setCreatedLive] = useState<BidLiveResult | null>(null);
+  const [liveReviewGeneration, setLiveReviewGeneration] = useState(0);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const busyRef = useRef(false);
@@ -230,7 +238,10 @@ export function CurrentBidWorkspace({
   };
   function edit(content: BidDefinitionContent) {
     if (!draftRef.current || busyRef.current || draftRef.current.pending || unreadableDraft) return;
-    install({ ...draftRef.current, content });
+    install({
+      ...draftRef.current,
+      content: reconcileProfileDraftEdit(draftRef.current.content, content),
+    });
     setPreview(null);
     setPreviewContent(null);
     setBlueprintImpact(null);
@@ -254,6 +265,13 @@ export function CurrentBidWorkspace({
         });
         setCreatedMock(result);
         completed = `Mock Bid created from Version ${result.bidDefinition.versionNumber}.`;
+      } else if (write.path === 'live-sessions') {
+        const result = await bidRequest(year, write.path, BidLiveResultSchema, {
+          body: write.body,
+          key: write.key,
+        });
+        setCreatedLive(result);
+        completed = `Live session created from Version ${result.bidDefinition.versionNumber}. It has not started.`;
       } else {
         const result = await bidRequest(year, write.path, BidSaveResultSchema, {
           body: write.body,
@@ -296,6 +314,10 @@ export function CurrentBidWorkspace({
           const state = draftRef.current;
           if (state) install({ ...state, pending: null });
           if (write.path === 'mock-sessions') setMockPreview(null);
+          // A definitive rejection requires a new preflight and confirmation.
+          // An uncertain outcome keeps the original review and durable request
+          // locked for recovery with the same idempotency key instead.
+          if (write.path === 'live-sessions') setLiveReviewGeneration((value) => value + 1);
           if (caught.code === 'bid_definition_or_source_changed') setStale(true);
         }
       }
@@ -607,6 +629,12 @@ export function CurrentBidWorkspace({
                 <fieldset disabled={locked} className="min-w-0">
                   {section === 'opportunities' ? (
                     <BidOpportunityFields content={draft.content} onChange={edit} />
+                  ) : section === 'profiles' ? (
+                    <BidRuleProfiles
+                      content={draft.content}
+                      selectedPositionId={null}
+                      onChange={edit}
+                    />
                   ) : (
                     <BidPolicyFields
                       content={draft.content}
@@ -615,6 +643,14 @@ export function CurrentBidWorkspace({
                     />
                   )}
                 </fieldset>
+                {section === 'profiles' && (
+                  <BidProfileReview
+                    content={draft.content}
+                    expected={draft.base.expected}
+                    year={year}
+                    locked={locked || stale}
+                  />
+                )}
                 {section === 'flow' && (
                   <StageParticipantPreview
                     content={draft.content}
@@ -740,8 +776,11 @@ export function CurrentBidWorkspace({
           )}
           {view === 'live' && (
             <BidLiveReview
+              key={liveReviewGeneration}
               base={draft.base}
               year={year}
+              execute={execute}
+              createdLive={createdLive}
               {...{
                 busy,
                 locked,
@@ -752,30 +791,7 @@ export function CurrentBidWorkspace({
               }}
             />
           )}
-          {view === 'results' && (
-            <FieldSection title="Results">
-              <div className="flex flex-wrap gap-5">
-                <Link
-                  href="/admin/exports"
-                  className="inline-flex min-h-11 items-center text-sm underline"
-                >
-                  Bid reports
-                </Link>
-                <Link
-                  href="/admin/audit"
-                  className="inline-flex min-h-11 items-center text-sm underline"
-                >
-                  Decision history
-                </Link>
-                <Link
-                  href="/admin/award-transition"
-                  className="inline-flex min-h-11 items-center text-sm underline"
-                >
-                  Reviewed final assignments
-                </Link>
-              </div>
-            </FieldSection>
-          )}
+          {view === 'results' && <BidResults year={year} />}
         </>
       )}
     </div>

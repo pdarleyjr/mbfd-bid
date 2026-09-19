@@ -1,6 +1,7 @@
 import {
   type BidDefinitionSourceDecision,
   type BidOrderingAuthorityRequest,
+  type BidOrderingComparator,
   type FrozenBidOrderingAuthority,
   type FrozenLiveBidPolicy,
   FrozenLiveBidPolicySchema,
@@ -16,10 +17,7 @@ export type BidOrderingAuthorityResolution =
   | { ok: true; authority: FrozenBidOrderingAuthority }
   | { ok: false; code: BidOrderingAuthorityResolutionCode };
 
-function sameComparator(
-  left: BidOrderingAuthorityRequest['comparator'],
-  right: BidOrderingAuthorityRequest['comparator'],
-): boolean {
+function sameComparator(left: BidOrderingComparator, right: BidOrderingComparator): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -43,10 +41,35 @@ export function resolveFrozenBidOrderingAuthority(input: {
     decision.status !== 'RESOLVED' ||
     decision.area !== 'annual-policy' ||
     decision.resolution === undefined ||
-    decision.resolution.kind !== 'BID_ORDERING_COMPARATOR'
+    decision.resolution.v !== request.v
   )
     return { ok: false, code: 'ordering_authority_source_decision_unresolved' };
-  if (!sameComparator(request.comparator, decision.resolution.comparator))
+  if (request.v === 2) {
+    if (
+      decision.resolution.v !== 2 ||
+      request.stages.length !== decision.resolution.stages.length ||
+      request.stages.some((stage) => {
+        const resolved =
+          decision.resolution?.v === 2
+            ? decision.resolution.stages.find((entry) => entry.stageId === stage.stageId)
+            : undefined;
+        return !resolved || !sameComparator(stage.comparator, resolved.comparator);
+      })
+    )
+      return { ok: false, code: 'ordering_authority_comparator_mismatch' };
+    return {
+      ok: true,
+      authority: {
+        v: 2,
+        stages: request.stages,
+        sourceDecision: { issueId: decision.issueId, effectiveOn: decision.effectiveOn },
+      },
+    };
+  }
+  if (
+    decision.resolution.v !== 1 ||
+    !sameComparator(request.comparator, decision.resolution.comparator)
+  )
     return { ok: false, code: 'ordering_authority_comparator_mismatch' };
   return {
     ok: true,

@@ -25,6 +25,9 @@ import {
   rankFrozenSpecialtyCandidates,
 } from '../../lib/annual-specialty-policy.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
+import { BidDefinitionSnapshotPinSchema } from '../../lib/bid-definition-pin.js';
+import { evaluateBidFallback } from '../../lib/bid-fallback.js';
+import { projectBidOpportunityPools } from '../../lib/bid-opportunity-pool.js';
 import {
   type FrozenSessionBidPolicy,
   eligibilityMemberFromFrozen,
@@ -32,6 +35,7 @@ import {
   loadFrozenSessionBidPolicy,
   resolveFrozenSessionBidTarget,
 } from '../../lib/bid-policy.js';
+import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { adviseFrozenSpecialtyCoverage } from '../../lib/specialty-coverage-advisory.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
@@ -214,6 +218,94 @@ function projectFrozenSpecialtyCoverage(input: {
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
 
+router.get('/:id/results', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const sessionId = c.req.param('id');
+  const db = getDb(c.env.DB);
+  const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
+  if (!session) return c.json({ error: 'session_not_found' }, 404);
+  const [canonical, frozen, official] = await Promise.all([
+    loadCanonicalBidSessionState(c.env.DB, sessionId),
+    loadFrozenSessionBidPolicy(db, sessionId),
+    loadOfficialAnnualCompletion(c.env.DB, sessionId),
+  ]);
+  const snapshot = frozen.ok ? frozen.snapshot : null;
+  const pin =
+    snapshot && 'bidDefinition' in snapshot
+      ? BidDefinitionSnapshotPinSchema.safeParse(snapshot.bidDefinition)
+      : null;
+  const positions = new Map(snapshot?.ruleBookMaterial.positions.map((p) => [p.id, p]));
+  const names = new Map(
+    snapshot?.operatorIdentityProjection?.map((person) => [
+      person.memberId,
+      `${person.firstName} ${person.lastName}`.trim(),
+    ]),
+  );
+  return c.json({
+    session: {
+      id: sessionId,
+      bidYear: session.bidYear,
+      isMock: session.isMock,
+      currentPhase: canonical?.currentPhase ?? session.currentPhase,
+      sequence: canonical?.lastSeq ?? null,
+    },
+    awardSource: canonical === null ? 'CANONICAL_UNAVAILABLE' : 'CANONICAL',
+    provenance: {
+      valid: frozen.ok,
+      error: frozen.ok ? null : frozen.code,
+      pin: pin?.success ? pin.data : null,
+      ruleBookVersion: snapshot?.ruleBookVersion ?? null,
+      topologyReference: snapshot?.positionTemplateVersion ?? null,
+    },
+    awards: Object.entries(canonical?.fills ?? {}).map(([positionId, fill]) => {
+      const position = positions.get(positionId);
+      const pool =
+        snapshot?.settings.v === 3
+          ? snapshot.settings.livePolicy.annualOperations?.opportunityPools?.find((entry) =>
+              entry.positionIds.includes(positionId),
+            )
+          : undefined;
+      return {
+        memberId: fill.memberId,
+        name: names.get(fill.memberId) ?? null,
+        memberships:
+          snapshot?.settings.v === 3
+            ? (snapshot.settings.livePolicy.annualOperations?.membershipDistributions ?? [])
+                .filter((entry) => entry.memberIds.includes(fill.memberId))
+                .map(({ id, label }) => ({ id, label }))
+            : [],
+        positionId,
+        pool: pool
+          ? {
+              id: pool.id,
+              label: pool.label,
+              kind: pool.kind,
+              sourceRef: pool.sourceRef,
+              sourceDecisionId: pool.sourceDecisionId,
+            }
+          : null,
+        positionName: position?.positionName ?? null,
+        shift: position?.shift ?? null,
+        station: position?.station ?? null,
+        unit: position?.unit ?? null,
+        aDay:
+          canonical?.aDay?.picks.find((pick) => pick.memberId === fill.memberId)?.aDay ??
+          fill.aDay ??
+          null,
+      };
+    }),
+    completion: { verified: official.ok, blockers: official.ok ? [] : [official.error] },
+  });
+});
+
+router.get('/:id/completion', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const result = await loadOfficialAnnualCompletion(c.env.DB, c.req.param('id'));
+  return result.ok
+    ? c.json({ ok: true, completion: result.completion })
+    : c.json({ ok: false, error: result.error }, result.error === 'session_not_found' ? 404 : 200);
+});
+
 router.get('/:id/specialty-live', async (c) => {
   const sessionId = c.req.param('id');
   const [canonical, frozen] = await Promise.all([
@@ -256,6 +348,7 @@ router.get('/:id/specialty-live', async (c) => {
         rscSeniority: candidate.rscSeniority,
         rankSeniority: candidate.rankSeniority,
         credentialNames: candidate.credentialNames,
+        scoringEvidence: candidate.scoringEvidence,
         specialtyQualifications: candidate.specialtyQualifications,
       })),
     });
@@ -302,9 +395,19 @@ router.get('/:id/specialty-live', async (c) => {
       },
     };
   }
+  const opportunityPools = projectBidOpportunityPools(
+    frozen.snapshot.ruleBookMaterial,
+    policy,
+    canonical.fills,
+  );
   return c.json({
     bid_session_id: sessionId,
     sequence: canonical.lastSeq,
+    term_participation: Object.fromEntries(
+      frozen.snapshot.members.flatMap((person) =>
+        person.termParticipation ? [[String(person.memberId), person.termParticipation]] : [],
+      ),
+    ),
     current_bidder: canonical.currentBidderId === null ? null : member(canonical.currentBidderId),
     remaining_order: canonical.bidOrder.slice(canonical.queueCursor).map((entry) => entry.memberId),
     fills: Object.fromEntries(
@@ -331,6 +434,38 @@ router.get('/:id/specialty-live', async (c) => {
       }),
     })),
     specialty_coverage: specialtyCoverage,
+    opportunity_pools: opportunityPools,
+    a_day_selection: policy.annualOperations?.aDay.execution?.timing ?? null,
+    fallbacks: (policy.annualOperations?.fallbackPolicies ?? []).flatMap((fallback) =>
+      fallback.positionIds
+        .filter(
+          (id) =>
+            canonical.fills[id] === undefined &&
+            !opportunityPools.some(
+              (pool) => pool.positionIds.includes(id) && pool.resolvedPositionId !== id,
+            ),
+        )
+        .map((positionId) => {
+          const result = evaluateBidFallback({
+            snapshot: frozen.snapshot,
+            state: canonical,
+            positionId,
+          });
+          if (!result.ok)
+            return {
+              positionId,
+              policyId: fallback.id,
+              label: fallback.label,
+              sourceRef: fallback.sourceRef,
+              ...result,
+            };
+          const { rule: _rule, ...review } = result;
+          const pool = policy.annualOperations?.opportunityPools?.find((entry) =>
+            entry.positionIds.includes(positionId),
+          );
+          return { positionId, ...review, pool: pool ? { poolId: pool.id } : null };
+        }),
+    ),
     active: activeProjection,
   });
 });
@@ -397,6 +532,7 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
             rscSeniority: member.rscSeniority,
             rankSeniority: member.rankSeniority,
             credentialNames: member.credentialNames,
+            scoringEvidence: member.scoringEvidence,
             specialtyQualifications: member.specialtyQualifications,
           })),
         requesterMemberId: canonical.currentBidderId,
@@ -422,33 +558,37 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
   });
   if (!command.success) return c.json({ error: 'invalid_live_bid_command' }, 400);
   const action =
-    command.data.type === 'live.record_selection'
-      ? 'record_selection'
-      : command.data.type === 'live.amend_selection'
-        ? 'amend_selection'
-        : command.data.type === 'live.force_selection'
-          ? 'force'
-          : command.data.type === 'live.disposition'
-            ? command.data.disposition === 'UNREACHABLE'
-              ? 'mark_unreachable'
-              : 'skip_defer'
-            : command.data.type === 'live.transition_stage'
-              ? 'approve_transition'
-              : command.data.type === 'live.alter_order'
-                ? 'alter_order'
-                : command.data.type === 'live.complete_session'
-                  ? 'approve_final_results'
-                  : command.data.type === 'live.record_contact_attempt' ||
-                      command.data.type === 'live.declare_unreachable'
-                    ? 'mark_unreachable'
-                    : command.data.type === 'live.return_at_current_sequence'
-                      ? 'skip_defer'
-                      : command.data.type === 'live.set_presentation_mode'
-                        ? 'publish'
-                        : command.data.type === 'live.start_specialty_adjudication' ||
-                            command.data.type === 'live.resolve_specialty_candidate'
-                          ? 'approve_transition'
-                          : 'pause_resume';
+    command.data.type === 'live.record_fallback_response'
+      ? command.data.outcome === 'UNREACHABLE'
+        ? 'mark_unreachable'
+        : 'skip_defer'
+      : command.data.type === 'live.record_selection'
+        ? 'record_selection'
+        : command.data.type === 'live.amend_selection'
+          ? 'amend_selection'
+          : command.data.type === 'live.force_selection'
+            ? 'force'
+            : command.data.type === 'live.disposition'
+              ? command.data.disposition === 'UNREACHABLE'
+                ? 'mark_unreachable'
+                : 'skip_defer'
+              : command.data.type === 'live.transition_stage'
+                ? 'approve_transition'
+                : command.data.type === 'live.alter_order'
+                  ? 'alter_order'
+                  : command.data.type === 'live.complete_session'
+                    ? 'approve_final_results'
+                    : command.data.type === 'live.record_contact_attempt' ||
+                        command.data.type === 'live.declare_unreachable'
+                      ? 'mark_unreachable'
+                      : command.data.type === 'live.return_at_current_sequence'
+                        ? 'skip_defer'
+                        : command.data.type === 'live.set_presentation_mode'
+                          ? 'publish'
+                          : command.data.type === 'live.start_specialty_adjudication' ||
+                              command.data.type === 'live.resolve_specialty_candidate'
+                            ? 'approve_transition'
+                            : 'pause_resume';
   if (!isLiveBidActionAuthorized(frozen.snapshot.settings.livePolicy, action, claims.member_id))
     return c.json({ error: 'live_action_forbidden', action }, 403);
   const stub = c.env.BID_SESSION.get(c.env.BID_SESSION.idFromName(sessionId));

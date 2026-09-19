@@ -34,6 +34,10 @@ import {
   BidDefinitionVersionRowSchema,
   loadBidDefinitionVersion,
 } from '../../lib/bid-definition-version.js';
+import {
+  BidProfileReviewRequestSchema,
+  previewBidProfiles,
+} from '../../lib/bid-profile-preview.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -56,6 +60,7 @@ const PreviewBody = z.discriminatedUnion('kind', [
   BidLiveSelectionSchema.extend({ kind: z.literal('live') }).strict(),
   BidImpactRequestSchema,
   BidStageParticipantPreviewRequestSchema,
+  BidProfileReviewRequestSchema,
 ]);
 const SaveResult = z
   .object({
@@ -160,6 +165,10 @@ router.get('/:year/versions/:versionId', async (c) => {
 });
 router.post('/:year/preview', requireStepUpAuth(), zValidator('json', PreviewBody), async (c) => {
   const body = c.req.valid('json');
+  if (body.kind === 'profile-review') {
+    const result = await previewBidProfiles(c.env.DB, c.get('bidYear'), body);
+    return result.ok ? c.json(result.response) : c.json(result, errorStatus(result.error));
+  }
   if (body.kind === 'impact') {
     const result = await previewBidDefinitionImpact(c.env.DB, c.get('bidYear'), body);
     return result.ok ? c.json(result.response) : c.json(result, errorStatus(result.error));

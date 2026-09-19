@@ -8,14 +8,16 @@ import {
   type BidDefinitionSourceDecision,
   type BidOrderingAuthorityRequest,
   BidOrderingAuthorityRequestSchema,
+  type BidOrderingComparator,
   type StageParticipantSourceDefinition,
   StageParticipantSourceDefinitionSchema,
+  bidOrderingComparatorForStage,
 } from '@mbfd/shared';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { CheckField, TextField } from './BidFields';
 
 type ParticipantSourceType = 'EXPLICIT_MEMBERS' | 'FILTER';
-type ComparatorRule = BidOrderingAuthorityRequest['comparator'][number];
+type ComparatorRule = BidOrderingComparator[number];
 type ComparatorKey = ComparatorRule['key'];
 type ComparatorDirection = ComparatorRule['direction'];
 type ComparatorDraftRule = { key: ComparatorKey | ''; direction: ComparatorDirection | '' };
@@ -29,7 +31,7 @@ type ParticipantSourceDraft = {
 
 function sameOrdering(
   left: StageParticipantSourceDefinition['ordering'],
-  right: BidOrderingAuthorityRequest['comparator'],
+  right: BidOrderingComparator | undefined,
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -89,7 +91,7 @@ function stageSourceCandidate(input: {
     stageId: input.stageId,
     sourceRef: input.draft.sourceRef,
     participantSource,
-    ordering: input.orderingAuthority.comparator,
+    ordering: bidOrderingComparatorForStage(input.orderingAuthority, input.stageId),
   });
   return parsed.success ? parsed.data : undefined;
 }
@@ -133,11 +135,14 @@ export function StageParticipantSourceEditor({
   );
   const staleOrderingKey =
     savedDefinition && orderingAuthority && orderingAuthorityAvailable
-      ? sameOrdering(savedDefinition.ordering, orderingAuthority.comparator)
+      ? sameOrdering(
+          savedDefinition.ordering,
+          bidOrderingComparatorForStage(orderingAuthority, stageId),
+        )
         ? ''
         : JSON.stringify({
             savedOrdering: savedDefinition.ordering,
-            requestedOrdering: orderingAuthority.comparator,
+            requestedOrdering: bidOrderingComparatorForStage(orderingAuthority, stageId),
           })
       : '';
   const [orderingReviewed, setOrderingReviewed] = useState(() => staleOrderingKey === '');
@@ -197,7 +202,7 @@ export function StageParticipantSourceEditor({
       {orderingAuthority && orderingAuthorityAvailable ? (
         <p className="text-sm text-muted-foreground">
           This source will use the saved governing comparator request:{' '}
-          {formatComparator(orderingAuthority.comparator)}.
+          {formatComparator(bidOrderingComparatorForStage(orderingAuthority, stageId) ?? [])}.
         </p>
       ) : orderingAuthority ? (
         <p role="alert" className="text-sm text-destructive">
@@ -320,12 +325,95 @@ type OrderingAuthorityDraft = {
   secondary: ComparatorDraftRule | undefined;
 };
 
+export function BidOrderingAuthorityRequestEditor({
+  sourceDecisions,
+  value,
+  onChange,
+  stages = [],
+}: {
+  sourceDecisions: readonly BidDefinitionSourceDecision[];
+  value: BidOrderingAuthorityRequest | undefined;
+  onChange(value: BidOrderingAuthorityRequest | undefined): void;
+  stages?: readonly { id: string; label: string }[];
+}) {
+  if (value?.v !== 2)
+    return (
+      <div className="space-y-3">
+        <SingleOrderingAuthorityRequestEditor
+          sourceDecisions={sourceDecisions}
+          value={value}
+          onChange={onChange}
+        />
+        {value && stages.length > 0 && (
+          <Button
+            type="button"
+            onClick={() =>
+              onChange({
+                v: 2,
+                sourceDecisionId: value.sourceDecisionId,
+                stages: stages.map((stage) => ({
+                  stageId: stage.id,
+                  comparator: value.comparator,
+                })),
+              })
+            }
+          >
+            Set seniority separately for each stage
+          </Button>
+        )}
+      </div>
+    );
+  return (
+    <section aria-label="Seniority by stage" className="space-y-3">
+      <p>
+        Each stage uses its own seniority rule. The governing source must confirm every stage before
+        a run can be prepared.
+      </p>
+      {stages.map((stage) => {
+        const comparator = bidOrderingComparatorForStage(value, stage.id);
+        return (
+          <details key={stage.id} className="rounded border border-border p-3">
+            <summary>
+              {stage.label}: {comparator ? formatComparator(comparator) : 'Ordering required'}
+            </summary>
+            <SingleOrderingAuthorityRequestEditor
+              sourceDecisions={sourceDecisions}
+              value={
+                comparator
+                  ? { v: 1, sourceDecisionId: value.sourceDecisionId, comparator }
+                  : undefined
+              }
+              onChange={(request) => {
+                if (request?.v !== 1) return;
+                onChange({
+                  ...value,
+                  sourceDecisionId: request.sourceDecisionId,
+                  stages: stages.flatMap((item) => {
+                    const next =
+                      item.id === stage.id
+                        ? request.comparator
+                        : bidOrderingComparatorForStage(value, item.id);
+                    return next ? [{ stageId: item.id, comparator: next }] : [];
+                  }),
+                });
+              }}
+            />
+          </details>
+        );
+      })}
+      <Button type="button" onClick={() => onChange(undefined)}>
+        Remove stage ordering
+      </Button>
+    </section>
+  );
+}
+
 function comparatorRuleDraft(rule: ComparatorRule | undefined): ComparatorDraftRule {
   return { key: rule?.key ?? '', direction: rule?.direction ?? '' };
 }
 
 function orderingAuthorityDraft(
-  value: BidOrderingAuthorityRequest | undefined,
+  value: Extract<BidOrderingAuthorityRequest, { v: 1 }> | undefined,
 ): OrderingAuthorityDraft {
   return {
     sourceDecisionId: value?.sourceDecisionId ?? '',
@@ -361,13 +449,13 @@ function orderingAuthorityCandidate(
  * decision. It intentionally cannot mark that decision RESOLVED or write its
  * typed resolution; server-side reconciliation owns that separate authority.
  */
-export function BidOrderingAuthorityRequestEditor({
+function SingleOrderingAuthorityRequestEditor({
   sourceDecisions,
   value,
   onChange,
 }: {
   sourceDecisions: readonly BidDefinitionSourceDecision[];
-  value: BidOrderingAuthorityRequest | undefined;
+  value: Extract<BidOrderingAuthorityRequest, { v: 1 }> | undefined;
   onChange(value: BidOrderingAuthorityRequest | undefined): void;
 }) {
   const [draft, setDraft] = useState(() => orderingAuthorityDraft(value));
@@ -558,7 +646,7 @@ function ComparatorRuleEditor({
   );
 }
 
-function formatComparator(comparator: BidOrderingAuthorityRequest['comparator']): string {
+function formatComparator(comparator: BidOrderingComparator): string {
   return comparator
     .map(
       (rule) =>

@@ -4,6 +4,7 @@ import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import {
   BidDefinitionContentSchema,
   BidImpactResponseSchema,
+  BidProfileReviewResponseSchema,
   BidStageParticipantPreviewResponseSchema,
 } from '@mbfd/shared';
 import { z } from 'zod';
@@ -133,6 +134,40 @@ const issue = z
     message: z.string(),
   })
   .passthrough();
+
+function sameProfileAuthoring(
+  candidate: z.infer<typeof BidDefinitionContentSchema>,
+  materialized: z.infer<typeof BidDefinitionContentSchema>,
+) {
+  const candidateProfiles = candidate.authoring?.profiles ?? [];
+  const materializedProfiles = materialized.authoring?.profiles ?? [];
+  if (candidateProfiles.length !== materializedProfiles.length) return false;
+  const materializedById = new Map(materializedProfiles.map((profile) => [profile.id, profile]));
+  return candidateProfiles.every(
+    (profile) => JSON.stringify(materializedById.get(profile.id)) === JSON.stringify(profile),
+  );
+}
+
+function profileMappingsMatch(
+  candidate: z.infer<typeof BidDefinitionContentSchema>,
+  mappings: Extract<
+    z.infer<typeof BidProfileReviewResponseSchema>,
+    { kind: 'MATERIALIZED' | 'PROFILE_COMPILATION_CONFLICT' }
+  >['profileMappings'],
+) {
+  const profiles = candidate.authoring?.profiles ?? [];
+  if (mappings.length !== profiles.length) return false;
+  const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
+  return mappings.every((mapping) => {
+    const profile = profilesById.get(mapping.id);
+    return (
+      profile !== undefined &&
+      profile.name === mapping.name &&
+      profile.sourceRef === mapping.sourceRef &&
+      JSON.stringify(profile.scope) === JSON.stringify(mapping.scope)
+    );
+  });
+}
 const mockReadiness = z
   .object({
     status: z.literal('NOT_EVALUATED'),
@@ -179,6 +214,11 @@ export const BidMockPreviewSchema = z.discriminatedUnion('wouldAllowCreateMock',
     .object({
       wouldAllowCreateMock: z.literal(false),
       policyError: z.string(),
+      termIssues: z
+        .array(
+          z.object({ positionId: z.string(), code: z.string(), sourceRef: z.string() }).strict(),
+        )
+        .optional(),
       positionIds: ids.optional(),
       tenureIssues: z
         .array(
@@ -255,6 +295,9 @@ const livePolicyBlocked = z
   .object({
     wouldAllowCreateLive: z.literal(false),
     policyError: z.string().min(1),
+    termIssues: z
+      .array(z.object({ positionId: z.string(), code: z.string(), sourceRef: z.string() }).strict())
+      .optional(),
     positionIds: ids.optional(),
     tenureIssues: z
       .array(
@@ -287,6 +330,14 @@ const liveReadinessPreview = z
 /** A Live preflight can either stop during immutable policy preparation or
  * return the server's complete, read-only readiness report. */
 export const BidLivePreviewSchema = z.union([livePolicyBlocked, liveReadinessPreview]);
+export const BidLiveRequestSchema = z
+  .object({
+    versionId: identity,
+    versionSha256: digest,
+    expectedContextSha256: digest,
+    expectedSourceToken: digest,
+  })
+  .strict();
 export const BidMockResultSchema = z
   .object({
     id: identity,
@@ -317,6 +368,13 @@ export const BidMockResultSchema = z
     'Mock version identity is inconsistent.',
   );
 export type BidMockPreview = z.infer<typeof BidMockPreviewSchema>;
+export const BidLiveResultSchema = BidMockResultSchema.innerType()
+  .extend({ is_mock: z.literal(false) })
+  .refine(
+    (value) => value.configuration_revision === value.bidDefinition.versionNumber,
+    'Live version identity is inconsistent.',
+  );
+export type BidLiveResult = z.infer<typeof BidLiveResultSchema>;
 export type BidMockResult = z.infer<typeof BidMockResultSchema>;
 export type BidLivePreview = z.infer<typeof BidLivePreviewSchema>;
 
@@ -428,9 +486,13 @@ export async function bidRequest<T>(
         )
           throw new BidRequestError('invalid_server_response', response.status, mutation);
       }
-      if (path === 'mock-sessions') {
-        const request = BidMockRequestSchema.safeParse(options?.body);
-        const result = BidMockResultSchema.safeParse(data);
+      if (path === 'mock-sessions' || path === 'live-sessions') {
+        const request = (
+          path === 'mock-sessions' ? BidMockRequestSchema : BidLiveRequestSchema
+        ).safeParse(options?.body);
+        const result = (
+          path === 'mock-sessions' ? BidMockResultSchema : BidLiveResultSchema
+        ).safeParse(data);
         if (
           !request.success ||
           !result.success ||
@@ -506,6 +568,41 @@ export async function bidRequest<T>(
         if (
           !result.success ||
           (result.data.valid && (!definitionMatches || result.data.source.kind !== sourceKind))
+        )
+          throw new BidRequestError('invalid_server_response', response.status, mutation);
+      }
+      const profileRequest = z
+        .object({
+          kind: z.literal('profile-review'),
+          expected: BidExpectedSchema,
+          intent: z.discriminatedUnion('operation', [
+            z.object({ operation: z.literal('save'), content: BidDefinitionContentSchema }),
+            z.object({ operation: z.literal('restore'), versionId: identity }),
+          ]),
+        })
+        .safeParse(options?.body);
+      if (profileRequest.success) {
+        const result = BidProfileReviewResponseSchema.safeParse(data);
+        const request = profileRequest.data;
+        if (!result.success)
+          throw new BidRequestError('invalid_server_response', response.status, mutation);
+        if (
+          'source' in result.data &&
+          (result.data.source.kind !==
+            (request.intent.operation === 'save' ? 'UNSAVED_DRAFT' : 'RESTORE_CANDIDATE') ||
+            (request.expected.kind === 'version' &&
+              result.data.source.baselineContentSha256 !== request.expected.sha256) ||
+            (request.intent.operation === 'save' &&
+              !profileMappingsMatch(request.intent.content, result.data.profileMappings)))
+        )
+          throw new BidRequestError('invalid_server_response', response.status, mutation);
+        if (
+          result.data.valid &&
+          (result.data.materialized.content.bidYear !== year ||
+            result.data.materialized.content.authoring?.reconciliation !==
+              'MATERIALIZED_FOR_CURRENT_VERSION' ||
+            (request.intent.operation === 'save' &&
+              !sameProfileAuthoring(request.intent.content, result.data.materialized.content)))
         )
           throw new BidRequestError('invalid_server_response', response.status, mutation);
       }

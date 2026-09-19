@@ -197,10 +197,13 @@ test('independent board views preserve source boundaries at phone, tablet and de
       await toggle.click();
       await page
         .locator('#admin-mobile-navigation')
-        .getByRole('link', { name: 'Bid board', exact: true })
+        .getByRole('link', { name: 'Bid', exact: true })
         .click();
       await expect(page.locator('#admin-mobile-navigation')).toBeHidden();
-      await expect(page).toHaveURL(/\/admin\/bid-board$/);
+      await expect(page).toHaveURL(/\/admin\/current-bid(?:\?|$)/);
+      // The unified navigation opens Current Bid. The retained historical
+      // board route below still independently exercises its three sources.
+      await page.goto('/admin/bid-board');
       await expect(
         page.getByRole('main').getByText('Current Occupant', { exact: true }),
       ).toBeVisible();
