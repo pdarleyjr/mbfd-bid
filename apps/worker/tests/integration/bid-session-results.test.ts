@@ -18,7 +18,7 @@ describe('read-only canonical session results and completion', () => {
       h.env,
     );
 
-  beforeEach(async () => {
+  beforeEach(async ({ task }) => {
     h = await setupTestD1();
     const claims = {
       sub: 0,
@@ -40,7 +40,64 @@ describe('read-only canonical session results and completion', () => {
       INSERT INTO bids (id,bid_session_id,ordinal,member_id,position_id,picked_at,idempotency_key)
       VALUES ('historical-mock-legacy','mock-newer',1,101,'P-ENGINE-1',1,'synthetic-mock-legacy');
     `);
-    seedSyntheticOfficialCompletion(h, []);
+    seedSyntheticOfficialCompletion(
+      h,
+      [],
+      true,
+      task.name.includes('qualified-pool')
+        ? (snapshot, state) => {
+            if (snapshot.v !== 3 || snapshot.settings.v !== 3)
+              throw new Error('Synthetic frozen annual policy required');
+            snapshot.settings.livePolicy.annualOperations = {
+              v: 1,
+              stageOrder: ['annual'],
+              requiredTopologyPositionIds: ['P-ENGINE-1', 'P-RESCUE-1'],
+              contact: {
+                minimumAttempts: 1,
+                timingMode: 'OPERATOR_DISCRETION',
+                durationSeconds: null,
+              },
+              aDay: {
+                combatGroups: ['G1', 'G2', 'G3', 'G4'],
+                min: 0,
+                max: 3,
+                captainDcMax: 1,
+                specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 1, SWAT: 1 },
+              },
+              membershipDistributions: [
+                {
+                  id: 'qualified-swat',
+                  label: 'Reviewed qualified SWAT pool',
+                  sourceRef: 'Synthetic qualification population',
+                  sourceDecisionId: 'synthetic-membership',
+                  membershipSource: 'REVIEWED_QUALIFIED_POOL',
+                  requiredSpecialtyCode: 'SWAT',
+                  memberIds: [101, 202],
+                  shifts: ['A', 'B'],
+                  minimumPerShift: 0,
+                  maximumPerShift: 1,
+                  maximumPerADay: 1,
+                },
+                {
+                  id: 'existing-membership',
+                  label: 'Reviewed existing membership',
+                  sourceRef: 'Synthetic existing membership',
+                  sourceDecisionId: 'synthetic-existing',
+                  membershipSource: 'REVIEWED_EXISTING_MEMBERS',
+                  memberIds: [101],
+                  shifts: ['A'],
+                  minimumPerShift: 1,
+                  maximumPerShift: 1,
+                  maximumPerADay: 1,
+                },
+              ],
+            };
+            const selected = state.fills['P-RESCUE-1'];
+            if (!selected) throw new Error('Synthetic award required');
+            selected.membershipIds = ['qualified-swat'];
+          }
+        : undefined,
+    );
   });
   afterEach(async () => teardownTestD1(h));
 
@@ -112,6 +169,26 @@ describe('read-only canonical session results and completion', () => {
     expect(
       h.sqlite.serialize().length === before.length &&
         h.sqlite.serialize().every((byte, index) => byte === before[index]),
+    ).toBe(true);
+    expect(doGet).not.toHaveBeenCalled();
+  });
+
+  it('shows qualified-pool membership only for selected awards while preserving existing memberships', async () => {
+    const before = h.sqlite.serialize();
+    const response = await request('results');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      awards: { memberId: number; memberships: { id: string; label: string }[] }[];
+    };
+    expect(body.awards.find((award) => award.memberId === 101)?.memberships).toEqual([
+      { id: 'existing-membership', label: 'Reviewed existing membership' },
+    ]);
+    expect(body.awards.find((award) => award.memberId === 202)?.memberships).toEqual([
+      { id: 'qualified-swat', label: 'Reviewed qualified SWAT pool' },
+    ]);
+    const after = h.sqlite.serialize();
+    expect(
+      after.length === before.length && after.every((byte, index) => byte === before[index]),
     ).toBe(true);
     expect(doGet).not.toHaveBeenCalled();
   });

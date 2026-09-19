@@ -25,6 +25,10 @@ import {
   prepareCapturedBidEvaluation,
 } from '../../src/lib/bid-policy.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import {
+  type PersonnelLifecycleProjectionEvent,
+  derivePersonnelMemberAsOf,
+} from '../../src/lib/personnel-lifecycle.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const SESSION = 'synthetic-command-integrity-session';
@@ -734,7 +738,104 @@ describe('canonical voluntary term departure and transition', () => {
     expect(h.sqlite.prepare('SELECT count(*) AS n FROM bids').get()).toEqual({ n: 0 });
   });
 
+  it.each([
+    ['rank', 'LT'],
+    ['employment_status', 'retired'],
+  ] as const)(
+    'rejects a concurrent member %s change before writing stale lifecycle evidence',
+    async (field, value) => {
+      await complete();
+      const lifecycleBefore = h.sqlite.prepare('SELECT * FROM personnel_lifecycle_events').all();
+      const auditBefore = h.sqlite.prepare('SELECT * FROM audit_log').all();
+      const assignmentsBefore = h.sqlite.prepare('SELECT * FROM member_assignments').all();
+      const batch = h.env.DB.batch.bind(h.env.DB);
+      vi.spyOn(h.env.DB, 'batch').mockImplementationOnce(async (statements) => {
+        h.sqlite.prepare(`UPDATE members SET ${field}=? WHERE id=?`).run(value, SECOND);
+        return batch(statements);
+      });
+      const response = await transition('apply', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'synthetic-member-state-race' },
+        body: JSON.stringify({
+          effective_on: '2027-02-01',
+          reason: 'Synthetic concurrent personnel review',
+        }),
+      });
+      expect(response.status, await response.clone().text()).toBe(409);
+      expect(h.sqlite.prepare('SELECT * FROM personnel_lifecycle_events').all()).toEqual(
+        lifecycleBefore,
+      );
+      expect(h.sqlite.prepare('SELECT * FROM audit_log').all()).toEqual(auditBefore);
+      expect(h.sqlite.prepare('SELECT * FROM member_assignments').all()).toEqual(assignmentsBefore);
+      expect(
+        h.sqlite.prepare(`SELECT ${field} AS value FROM members WHERE id=?`).get(SECOND),
+      ).toEqual({ value });
+    },
+  );
+
+  it.each(['PROMOTION', 'RETIREMENT'] as const)(
+    'never lets an assignment transition overwrite scheduled personnel %s',
+    async (kind) => {
+      await complete();
+      h.sqlite
+        .prepare(`INSERT INTO personnel_lifecycle_events
+      (id,member_id,kind,effective_on,employment_status_before,employment_status_after,rank_before,rank_after,
+       reason,origin,actor_subject,idempotency_key,before_state,after_state,created_at)
+      VALUES ('synthetic-scheduled-promotion',?,?,'2027-01-15','active',?,'FF',?,
+       'Synthetic previously reviewed promotion','ADMIN','10001','synthetic-promotion',
+       '{"rank":"FF","employmentStatus":"active"}','{"rank":"LT","employmentStatus":"active"}',?)`)
+        .run(
+          SECOND,
+          kind,
+          kind === 'RETIREMENT' ? 'retired' : 'active',
+          kind === 'PROMOTION' ? 'LT' : 'FF',
+          NOW,
+        );
+      const response = await transition('apply', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'synthetic-scheduled-promotion-transition' },
+        body: JSON.stringify({
+          effective_on: '2027-02-01',
+          reason: 'Synthetic assignment-only transition',
+        }),
+      });
+      expect(response.status, await response.clone().text()).toBe(201);
+      const events = h.sqlite
+        .prepare(`SELECT id,kind,effective_on AS effectiveOn,
+      employment_status_after AS employmentStatusAfter,rank_after AS rankAfter,separation_type AS separationType,
+      before_state AS beforeState,created_at AS createdAt FROM personnel_lifecycle_events WHERE member_id=?`)
+        .all(SECOND) as PersonnelLifecycleProjectionEvent[];
+      const projected = derivePersonnelMemberAsOf(
+        {
+          id: SECOND,
+          employeeId: 'synthetic-second',
+          firstName: 'Synthetic',
+          lastName: 'Second',
+          rank: 'FF',
+          employmentStatus: 'active',
+          employmentStatusEffectiveOn: '2026-01-01',
+          separationType: null,
+        },
+        events,
+        '2027-02-01',
+      );
+      expect(projected.rank).toBe(kind === 'PROMOTION' ? 'LT' : 'FF');
+      expect(projected.employmentStatus).toBe(kind === 'RETIREMENT' ? 'retired' : 'active');
+      expect(
+        h.sqlite
+          .prepare(
+            "SELECT rank_after,employment_status_after FROM personnel_lifecycle_events WHERE origin='BID' AND member_id=?",
+          )
+          .get(SECOND),
+      ).toEqual({ rank_after: null, employment_status_after: null });
+    },
+  );
+
   it('requires explicit consent for specialty acceptance and binds its immutable event election', async () => {
+    // The requester is the lower-priority member; the protected term holder
+    // receives an actual higher-priority offer rather than a self-interruption.
+    state.currentBidderId = SECOND;
+    state.queueCursor = 1;
     const started = await commit({
       v: 1,
       type: 'live.start_specialty_adjudication',

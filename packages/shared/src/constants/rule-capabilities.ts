@@ -9,4 +9,6 @@ export const RULE_TIE_BREAK_KEYS = [
   'mo_points',
   'rsc_seniority',
   'rank_seniority',
+  'time_in_grade_bid_ordinal',
+  'department_service_bid_ordinal',
 ] as const;

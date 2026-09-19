@@ -173,6 +173,40 @@ function responded(f: ReturnType<typeof fixture>, tierId: string, memberIds: num
 }
 
 describe('frozen fallback policy tiers', () => {
+  it('requires reviewed full Days tour history and excludes members with a completed tour', () => {
+    const f = fixture([
+      tier('days-history', {
+        historyPredicate: {
+          kind: 'NO_COMPLETED_DAYS_BID_TOUR',
+          sourceRef: 'synthetic Days vacancy clause',
+        },
+      }),
+    ]);
+    expect(evaluateBidFallback(f)).toMatchObject({
+      ok: false,
+      code: 'FALLBACK_DAYS_TOUR_HISTORY_REQUIRED',
+    });
+    for (const member of f.snapshot.members)
+      member.bidTourEvidence = {
+        recordId: `tour-${member.memberId}`,
+        effectiveOn: '2026-01-01',
+        completedDaysTour: member.memberId === 2,
+        sourceRef: 'synthetic reviewed full tour record',
+      };
+    expect(evaluateBidFallback(f)).toMatchObject({ ok: true, candidateMemberIds: [1] });
+    const first = f.snapshot.members[0];
+    if (!first) throw new Error('Member required');
+    first.bidTourEvidence = {
+      recordId: 'unknown-tour',
+      effectiveOn: '2026-01-01',
+      completedDaysTour: null,
+      sourceRef: 'synthetic missing tour review',
+    };
+    expect(evaluateBidFallback(f)).toMatchObject({
+      ok: false,
+      code: 'FALLBACK_DAYS_TOUR_HISTORY_REQUIRED',
+    });
+  });
   it('offers voluntary-only term incumbents in voluntary tiers but never exposes them to a forced tier', () => {
     const f = fixture([tier('voluntary', { mode: 'VOLUNTARY' }), tier('forced')]);
     const member = f.snapshot.members.find((candidate) => candidate.memberId === 2);

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { RULE_TIE_BREAK_KEYS } from '../constants/rule-capabilities.js';
+import { FrozenBidOrdinalEvidenceSchema } from './bid-ordinal.js';
 import { CredentialEvaluationDateSchema, FrozenBidPoolMemberSchema } from './bid-policy.js';
 import { PostAwardObligationSchema } from './post-award-obligation.js';
 import { FrozenServiceCreditSchema } from './service-evidence.js';
@@ -168,7 +170,7 @@ const Comparison = z.discriminatedUnion('status', [
     })
     .strict(),
 ]);
-const TieBreakKey = z.enum(['points', 'so_points', 'mo_points', 'rsc_seniority', 'rank_seniority']);
+const TieBreakKey = z.enum(RULE_TIE_BREAK_KEYS);
 const Item = z
   .object({ credential: z.string(), awarded: number, reason: z.string().optional() })
   .strict();
@@ -187,6 +189,22 @@ const TraceSide = z.discriminatedUnion('status', [
       points: number,
       soPoints: number,
       moPoints: number,
+      orderedPreference: z
+        .object({
+          sourceRef: z.string(),
+          criteria: z.array(
+            z
+              .object({
+                credential: z.string(),
+                alternatives: z.array(z.string()),
+                requiresAll: z.array(z.string()),
+                value: z.union([z.literal(0), z.literal(1)]),
+              })
+              .strict(),
+          ),
+        })
+        .strict()
+        .optional(),
       breakdown: z
         .object({ total: number, soTotal: number, moTotal: number, itemized: z.array(Item) })
         .strict(),
@@ -199,7 +217,9 @@ const TraceSide = z.discriminatedUnion('status', [
           steps: z.array(
             z
               .object({
-                key: TieBreakKey,
+                key: z.union([TieBreakKey, z.literal('ordered_preference')]),
+                criterion: z.string().optional(),
+                sourceRef: z.string().optional(),
                 left: number,
                 right: number,
                 direction: z.enum(['HIGHER_FIRST', 'LOWER_FIRST']),
@@ -223,6 +243,7 @@ const TraceSide = z.discriminatedUnion('status', [
             .strict()
             .nullable(),
           serviceCredits: z.array(FrozenServiceCreditSchema),
+          bidOrdinalEvidence: FrozenBidOrdinalEvidenceSchema.optional(),
         })
         .strict(),
     })

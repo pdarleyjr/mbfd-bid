@@ -133,6 +133,46 @@ describe('Administrator Guide content contract', () => {
     expect(creation?.important).toContain('Legacy Auto Bid and manual simulations reject');
   });
 
+  it('explains pending source procedures, approved rankings and both membership populations', () => {
+    const edit = GUIDE_SECTIONS.find((section) => section.id === 'current-bid-edit');
+    expect(edit?.steps.join(' ')).toContain('Blank values remain unresolved');
+    expect(edit?.steps.join(' ')).toContain('Use reviewed procedures in this draft');
+    const rules = GUIDE_SECTIONS.find((section) => section.id === 'current-bid-execution-rules');
+    expect(rules?.steps.join(' ')).toContain('Rank Seniority supplies time-in-grade order');
+    expect(rules?.steps.join(' ')).toContain(
+      'Straight Seniority supplies department-service order',
+    );
+    expect(rules?.steps.join(' ')).toContain('Reviewed existing members or Wider qualified pool');
+    expect(rules?.steps.join(' ')).toContain('must be resolved before Real activation');
+    const evidence = GUIDE_SECTIONS.find((section) => section.id === 'bid-evidence');
+    expect(evidence?.route).toBe('/admin/personnel/bid-evidence');
+    expect(evidence?.controls).toContain('Save reviewed Bid ordinals');
+    expect(evidence?.controls).toContain('Save reviewed tour evidence');
+    expect(evidence?.steps.join(' ')).toContain('does not calculate or change hire dates');
+    expect(evidence?.steps.join(' ')).toContain('unknown finding cannot satisfy a fallback rule');
+    const scoring = GUIDE_SECTIONS.find((section) => section.id === 'rules-list');
+    expect(scoring?.steps.join(' ')).toContain('counts each satisfied criterion once');
+    expect(scoring?.steps.join(' ')).toContain(
+      'criteria in their stated order before cumulative credit',
+    );
+    expect(scoring?.steps.join(' ')).toContain(
+      'secondary-course credit to candidates without IAAI',
+    );
+  });
+
+  it('separates result package reads from authorized external publication evidence', () => {
+    const results = GUIDE_SECTIONS.find((section) => section.id === 'current-bid-results');
+    expect(results?.controls).toContain('Generate final result package');
+    expect(results?.steps.join(' ')).toContain('verified completed Live run');
+    expect(results?.steps.join(' ')).toContain('does not send or publish it');
+    expect(results?.steps.join(' ')).toContain('Email distribution and TargetSolutions bulletin');
+    expect(results?.steps.join(' ')).toContain('Corrections add history');
+    expect(results?.steps.join(' ')).toContain('not that this application delivered it');
+    expect(results?.steps.join(' ')).toContain(
+      'Mock runs offer a read-only Department transition rehearsal',
+    );
+  });
+
   it('uses an intentional category, a real route, and concise guide content for each section', () => {
     expect(GUIDE_SECTIONS.length).toBeGreaterThanOrEqual(27);
 

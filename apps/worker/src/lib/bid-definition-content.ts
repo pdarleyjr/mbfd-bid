@@ -56,7 +56,11 @@ export function definitionRuleBookMaterial(
 
 /** Only collections proven to be sets or keyed rows are reordered. Scoring,
  * priority chains, requirement/reason order and specialty sequences stay intact. */
-function normalizePolicy(policy: FrozenLiveBidPolicy) {
+function normalizePolicy(
+  policy:
+    | FrozenLiveBidPolicy
+    | NonNullable<BidDefinitionContent['pendingPolicy']>['executionPolicy'],
+) {
   if (policy.orderingAuthority?.v === 2)
     policy.orderingAuthority.stages.sort((a, b) => compareId(a.stageId, b.stageId));
   policy.stages.sort((a, b) => a.order - b.order);
@@ -111,7 +115,7 @@ function normalizePolicy(policy: FrozenLiveBidPolicy) {
 /** Selector definitions are keyed by stage and their explicit ids/filter
  * ranks are membership sets. Comparator rule order remains intentional. */
 function normalizeStageParticipantSourceAuthoring(
-  policy: NonNullable<BidDefinitionContent['policy']>,
+  policy: Pick<NonNullable<BidDefinitionContent['policy']>, 'stageParticipantSources'>,
 ) {
   const sources = policy.stageParticipantSources;
   if (sources === undefined) return;
@@ -308,6 +312,14 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
   if (content.policy) {
     normalizePolicy(content.policy.executionPolicy);
     normalizeStageParticipantSourceAuthoring(content.policy);
+  }
+  if (content.pendingPolicy) {
+    normalizePolicy(content.pendingPolicy.executionPolicy);
+    normalizeStageParticipantSourceAuthoring(content.pendingPolicy);
+    if (content.pendingPolicy.orderingAuthority?.v === 2)
+      content.pendingPolicy.orderingAuthority.stages.sort((a, b) =>
+        compareId(a.stageId, b.stageId),
+      );
   }
   const issues: BidDefinitionIssue[] = [];
   const positionIds = unique(content.positions, (row) => row.id, 'positions', issues);

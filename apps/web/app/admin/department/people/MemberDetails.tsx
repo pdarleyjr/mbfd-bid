@@ -124,6 +124,12 @@ export function MemberDetails({
           </Link>
           <Link
             className="inline-flex min-h-11 items-center font-medium underline"
+            href={`/admin/personnel/bid-evidence?memberId=${person.id}` as Route}
+          >
+            Bid ordinals and tour evidence
+          </Link>
+          <Link
+            className="inline-flex min-h-11 items-center font-medium underline"
             href={'/admin/personnel/tenure' as Route}
           >
             Review protected positions

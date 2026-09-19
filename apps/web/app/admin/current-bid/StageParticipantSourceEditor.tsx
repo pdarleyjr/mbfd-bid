@@ -19,6 +19,12 @@ import { CheckField, TextField } from './BidFields';
 type ParticipantSourceType = 'EXPLICIT_MEMBERS' | 'FILTER';
 type ComparatorRule = BidOrderingComparator[number];
 type ComparatorKey = ComparatorRule['key'];
+const comparatorLabels: Record<ComparatorKey, string> = {
+  RSC_SENIORITY: 'RSC seniority',
+  RANK_SENIORITY: 'Rank seniority',
+  TIME_IN_GRADE_BID_ORDINAL: 'Time-in-grade Bid ordinal',
+  DEPARTMENT_SERVICE_BID_ORDINAL: 'Department-service Bid ordinal',
+};
 type ComparatorDirection = ComparatorRule['direction'];
 type ComparatorDraftRule = { key: ComparatorKey | ''; direction: ComparatorDirection | '' };
 
@@ -605,9 +611,14 @@ function ComparatorRuleEditor({
 }) {
   const keyId = useId();
   const directionId = useId();
-  const availableKeys = (['RSC_SENIORITY', 'RANK_SENIORITY'] as const).filter(
-    (key) => !exclude.includes(key) || value.key === key,
-  );
+  const availableKeys = (
+    [
+      'RSC_SENIORITY',
+      'RANK_SENIORITY',
+      'TIME_IN_GRADE_BID_ORDINAL',
+      'DEPARTMENT_SERVICE_BID_ORDINAL',
+    ] as const
+  ).filter((key) => !exclude.includes(key) || value.key === key);
   return (
     <fieldset className="grid gap-3 rounded border border-border p-3 sm:grid-cols-2">
       <legend className="px-1 font-medium">{label}</legend>
@@ -623,7 +634,7 @@ function ComparatorRuleEditor({
           <option value="">Select comparator key</option>
           {availableKeys.map((key) => (
             <option key={key} value={key}>
-              {key === 'RSC_SENIORITY' ? 'RSC seniority' : 'Rank seniority'}
+              {comparatorLabels[key]}
             </option>
           ))}
         </NativeSelect>
@@ -650,9 +661,7 @@ function formatComparator(comparator: BidOrderingComparator): string {
   return comparator
     .map(
       (rule) =>
-        `${rule.key === 'RSC_SENIORITY' ? 'RSC seniority' : 'Rank seniority'} ${
-          rule.direction === 'ASC' ? 'ascending' : 'descending'
-        }`,
+        `${comparatorLabels[rule.key]} ${rule.direction === 'ASC' ? 'ascending' : 'descending'}`,
     )
     .join(', then ');
 }

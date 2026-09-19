@@ -36,6 +36,8 @@ export interface PersistedADayState {
 }
 
 export interface Fill {
+  /** Voluntary overlays selected from frozen qualified populations. */
+  membershipIds?: readonly string[];
   termDeparture?: import('@mbfd/shared').TermDepartureElection & {
     commandId: string;
     actorMemberId: number;
@@ -51,6 +53,15 @@ export interface Fill {
 /** Durable, reconstructible live-only projection.  Policy itself remains in
  * the immutable snapshot; this stores only progress and supersession facts. */
 export interface LiveBidProgress {
+  specialtyResponses?: readonly {
+    specialtyId: string;
+    positionId: string;
+    requesterMemberId: number;
+    memberId: number;
+    outcome: 'DECLINE' | 'PASS' | 'UNREACHABLE';
+    reason: string;
+    evidenceReference: string | null;
+  }[];
   fallbackResponses?: readonly {
     policyId: string;
     tierId: string;

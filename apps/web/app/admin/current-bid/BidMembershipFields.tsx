@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import type { FrozenAnnualOperationsPolicy } from '@mbfd/shared';
 import {
   CheckField,
+  ChoiceField,
   FieldSection,
   NumberField,
   type ReferenceOption,
@@ -24,7 +25,7 @@ export function BidMembershipFields({
   return (
     <FieldSection
       title="Specialty membership distribution"
-      description="Reviewed existing memberships stay with the member while their station and shift assignment changes. They do not consume another position."
+      description="Memberships accompany station awards. Choose a reviewed existing team or a qualified candidate pool whose members may elect membership with their selection."
     >
       <CheckField
         label="Configure existing membership distribution"
@@ -53,11 +54,31 @@ export function BidMembershipFields({
               onChange={(sourceDecisionId) => patch({ sourceDecisionId })}
             />
             <ReferencePicker
-              label="Reviewed existing members"
+              label={
+                distribution.membershipSource === 'REVIEWED_EXISTING_MEMBERS'
+                  ? 'Reviewed existing members'
+                  : 'Reviewed qualified candidates'
+              }
               values={distribution.memberIds.map(String)}
               options={members}
               onChange={(ids) => patch({ memberIds: ids.map(Number) })}
             />
+            <ChoiceField
+              label="Membership population"
+              value={distribution.membershipSource}
+              options={[
+                { value: 'REVIEWED_EXISTING_MEMBERS', label: 'Reviewed existing members' },
+                { value: 'REVIEWED_QUALIFIED_POOL', label: 'Wider qualified pool' },
+              ]}
+              onChange={(membershipSource) => patch({ membershipSource })}
+            />
+            {distribution.membershipSource === 'REVIEWED_QUALIFIED_POOL' ? (
+              <TextField
+                label="Required specialty qualification code"
+                value={distribution.requiredSpecialtyCode ?? ''}
+                onChange={(requiredSpecialtyCode) => patch({ requiredSpecialtyCode })}
+              />
+            ) : null}
             <ReferencePicker
               label="Membership shifts"
               values={distribution.shifts}

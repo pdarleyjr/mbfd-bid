@@ -213,6 +213,7 @@ describe.each(['live.record_selection', 'live.force_selection'] as const)(
             memberId: MEMBER,
             pool: 'FF',
             rscSeniority: 1,
+            specialtyQualifications: [],
             rankSeniority: 1,
             exclusionReason: null,
             authoritativeAssignmentId: null,

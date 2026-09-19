@@ -28,6 +28,8 @@ type Requirements = Extract<Tier['eligibility'], { kind: 'EXPLICIT_REQUIREMENTS'
 const comparatorOptions = [
   { value: 'RSC_SENIORITY', label: 'RSC seniority' },
   { value: 'RANK_SENIORITY', label: 'Rank seniority' },
+  { value: 'TIME_IN_GRADE_BID_ORDINAL', label: 'Time-in-grade Bid ordinal' },
+  { value: 'DEPARTMENT_SERVICE_BID_ORDINAL', label: 'Department-service Bid ordinal' },
 ] as const;
 
 function FallbackRequirements({
@@ -235,6 +237,28 @@ export function BidFallbackFields({
                         label="Limit this tier to currently assigned personnel"
                         value={tier.currentlyAssignedOnly}
                         onChange={(currentlyAssignedOnly) => update({ currentlyAssignedOnly })}
+                      />
+                      <CheckField
+                        label="Require no completed full Days Bid tour"
+                        value={tier.historyPredicate !== undefined}
+                        onChange={(enabled) => {
+                          const { historyPredicate: _old, ...rest } = tier;
+                          patch({
+                            tiers: policy.tiers.map((entry, index) =>
+                              index === tierIndex
+                                ? enabled
+                                  ? {
+                                      ...tier,
+                                      historyPredicate: {
+                                        kind: 'NO_COMPLETED_DAYS_BID_TOUR',
+                                        sourceRef: policy.sourceRef,
+                                      },
+                                    }
+                                  : rest
+                                : entry,
+                            ),
+                          });
+                        }}
                       />
                       <p className="text-sm text-muted-foreground">
                         Candidates are compared in the order below. Enter the direction approved by

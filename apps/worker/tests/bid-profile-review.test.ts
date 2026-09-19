@@ -383,3 +383,51 @@ describe('Bid definition profile materialization', () => {
     expect(validateMaterializedBidDefinitionProfiles(changed)).toEqual({ ok: true });
   });
 });
+
+describe('closed opportunity profile preservation', () => {
+  it('preserves closed and excluded source profiles while materializing only open family members', () => {
+    const profiles = [
+      profile('base', { kind: 'department' }),
+      profile('closed-source', { kind: 'position', positionId: 'rescue-lt' }),
+      profile('excluded-source', { kind: 'position', positionId: 'excluded-seat' }),
+      profile('mixed-family', {
+        kind: 'family',
+        name: 'Source family',
+        positionIds: ['engine-ff', 'rescue-lt', 'excluded-seat'],
+      }),
+    ];
+    const input = contentWith(profiles);
+    input.participation = [
+      {
+        positionId: 'rescue-lt',
+        bidParticipation: 'RESERVED_NON_BIDDABLE',
+        authoritativeSourceRef: 'Synthetic source: closed this year',
+      },
+    ];
+    const result = materializeBidDefinitionProfiles(input);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.content.rules.map((rule) => rule.positionId)).toEqual(['engine-ff']);
+    expect(result.content.authoring?.profiles).toEqual(
+      [...profiles].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+    expect(result.content.authoring?.profiles.find((p) => p.id === 'mixed-family')?.scope).toEqual({
+      kind: 'family',
+      name: 'Source family',
+      positionIds: ['engine-ff', 'rescue-lt', 'excluded-seat'],
+    });
+    expect(validateMaterializedBidDefinitionProfiles(result.content)).toEqual({ ok: true });
+  });
+  it('still rejects unknown profile targets rather than silently treating them as closed', () => {
+    const input = contentWith([
+      profile('base', { kind: 'department' }),
+      profile('unknown', { kind: 'position', positionId: 'not-in-definition' }),
+    ]);
+    const result = materializeBidDefinitionProfiles(input);
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'profile_compilation_conflict',
+      conflicts: [{ positionId: 'not-in-definition', field: 'scope' }],
+    });
+  });
+});

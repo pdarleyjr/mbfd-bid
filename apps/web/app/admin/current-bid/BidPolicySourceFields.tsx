@@ -9,6 +9,7 @@ import {
   NumberField,
   TextField,
 } from './BidFields';
+import { PendingPolicyReview } from './PendingPolicyReview';
 
 export function BidPolicySourceFields({
   content,
@@ -26,6 +27,9 @@ export function BidPolicySourceFields({
   if (section === 'language')
     return (
       <div className="space-y-4">
+        {content.pendingPolicy ? (
+          <PendingPolicyReview content={content} onChange={onChange} />
+        ) : null}
         <FieldSection
           title="Policy & language"
           description="Keep the source language beside the configured behavior. Saving records both in the same Bid version."
@@ -44,7 +48,11 @@ export function BidPolicySourceFields({
             />
           ) : (
             <>
-              <p className="text-sm">No source language is attached to this Bid.</p>
+              <p className="text-sm">
+                {content.pendingPolicy
+                  ? 'Source language is retained in the pending policy above.'
+                  : 'No source language is attached to this Bid.'}
+              </p>
               {policy && (
                 <Button
                   type="button"
@@ -90,6 +98,120 @@ export function BidPolicySourceFields({
                 {decision.status === 'OPEN' ? 'Open' : 'Resolved'}
               </summary>
               <div className="mt-3 space-y-3">
+                <ChoiceField
+                  label="Blocking scope"
+                  value={decision.blockingClassification ?? 'BLOCKS_FINAL_2026_CONFIGURATION'}
+                  options={[
+                    { value: 'BLOCKS_APPLICATION_RELEASE', label: 'Application release' },
+                    { value: 'BLOCKS_FINAL_2026_CONFIGURATION', label: 'Final 2026 configuration' },
+                    { value: 'BLOCKS_REAL_BID_ACTIVATION', label: 'Real Bid activation' },
+                  ]}
+                  onChange={(blockingClassification) =>
+                    onChange({
+                      ...content,
+                      sourceDecisions: content.sourceDecisions.map((entry, i) =>
+                        i === index
+                          ? {
+                              ...entry,
+                              blockingClassification,
+                              affectedScopes: entry.affectedScopes ?? [entry.area],
+                            }
+                          : entry,
+                      ),
+                    })
+                  }
+                />
+                <TextField
+                  label="Affected scopes (comma separated)"
+                  value={decision.affectedScopes?.join(', ') ?? decision.area}
+                  onChange={(text) =>
+                    onChange({
+                      ...content,
+                      sourceDecisions: content.sourceDecisions.map((entry, i) =>
+                        i === index
+                          ? {
+                              ...entry,
+                              affectedScopes: text
+                                .split(',')
+                                .map((item) => item.trim())
+                                .filter(Boolean),
+                            }
+                          : entry,
+                      ),
+                    })
+                  }
+                />
+                {decision.membershipPopulation ? (
+                  <TextField
+                    label="Membership distribution ID"
+                    value={decision.membershipPopulation.distributionId}
+                    onChange={(distributionId) =>
+                      onChange({
+                        ...content,
+                        sourceDecisions: content.sourceDecisions.map((entry, i) =>
+                          i === index && entry.membershipPopulation
+                            ? {
+                                ...entry,
+                                membershipPopulation: {
+                                  ...entry.membershipPopulation,
+                                  distributionId,
+                                },
+                              }
+                            : entry,
+                        ),
+                      })
+                    }
+                  />
+                ) : null}
+                <CheckField
+                  label="Record a typed membership population decision"
+                  value={decision.membershipPopulation !== undefined}
+                  onChange={(enabled) =>
+                    onChange({
+                      ...content,
+                      sourceDecisions: content.sourceDecisions.map((entry, i) => {
+                        if (i !== index) return entry;
+                        const { membershipPopulation: _population, ...rest } = entry;
+                        return enabled
+                          ? {
+                              ...rest,
+                              status: 'OPEN',
+                              membershipPopulation: {
+                                kind: 'MEMBERSHIP_POPULATION',
+                                distributionId: '',
+                                choice: 'UNRESOLVED',
+                              },
+                            }
+                          : rest;
+                      }),
+                    })
+                  }
+                />
+                {decision.membershipPopulation ? (
+                  <ChoiceField
+                    label="Reviewed SWAT population"
+                    value={decision.membershipPopulation.choice}
+                    options={[
+                      { value: 'UNRESOLVED', label: 'Unresolved — blocks Real activation' },
+                      { value: 'CURRENT_SIX', label: 'Current six members' },
+                      { value: 'WIDER_QUALIFIED_POOL', label: 'Wider qualified pool' },
+                    ]}
+                    onChange={(choice) =>
+                      onChange({
+                        ...content,
+                        sourceDecisions: content.sourceDecisions.map((entry, i) =>
+                          i === index && entry.membershipPopulation
+                            ? {
+                                ...entry,
+                                membershipPopulation: { ...entry.membershipPopulation, choice },
+                                status: choice === 'UNRESOLVED' ? 'OPEN' : 'RESOLVED',
+                              }
+                            : entry,
+                        ),
+                      })
+                    }
+                  />
+                ) : null}
                 {(['title', 'question', 'decision', 'sourceRef', 'effectiveOn'] as const).map(
                   (field) => (
                     <TextField

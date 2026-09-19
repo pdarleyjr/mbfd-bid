@@ -42,6 +42,7 @@ export type AuditAction =
   | 'portal_writeback_clear'
   | 'rehearsal_finding'
   | 'export_generate'
+  | 'result_distribution_review'
   | 'setting_change'
   | 'portal_writeback_attempt'
   | 'portal_writeback_outcome';

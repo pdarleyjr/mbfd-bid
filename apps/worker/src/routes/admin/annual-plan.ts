@@ -953,10 +953,15 @@ router.post('/:year/profiles', requireStepUpAuth(), async (c) => {
       tokens.push(obligation.credential);
     for (const group of profile.requirements.anyOfCredentials ?? []) tokens.push(...group);
     if (profile.scoring)
+      for (const criterion of profile.scoring.orderedPreference?.criteria ?? [])
+        tokens.push(criterion.credential, ...criterion.alternatives, ...criterion.requiresAll);
+    if (profile.scoring)
       for (const channel of [profile.scoring.total, profile.scoring.so, profile.scoring.mo])
-        for (const group of channel)
-          for (const item of group.items)
+        for (const group of channel) {
+          tokens.push(...(group.excludesAny ?? []));
+          for (const item of group.preference?.criteria ?? group.items)
             tokens.push(item.credential, ...item.alternatives, ...item.requiresAll);
+        }
     for (const token of tokens) if (!active.has(token)) unknown.add(token);
   }
   if (unknown.size)

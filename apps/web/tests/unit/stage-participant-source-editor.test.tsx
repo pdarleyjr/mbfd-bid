@@ -322,6 +322,32 @@ function ButtonForTest({ children, onClick }: { children: React.ReactNode; onCli
 }
 
 describe('BidOrderingAuthorityRequestEditor', () => {
+  it.each(['TIME_IN_GRADE_BID_ORDINAL', 'DEPARTMENT_SERVICE_BID_ORDINAL'])(
+    'preserves the distinct reviewed %s channel without translating to legacy seniority',
+    async (key) => {
+      const onChange = vi.fn();
+      const container = render(
+        <BidOrderingAuthorityRequestEditor
+          sourceDecisions={[decision()]}
+          value={undefined}
+          onChange={onChange}
+        />,
+      );
+      await setValue(
+        control(container, 'Governing source decision'),
+        'synthetic-annual-policy-decision',
+      );
+      await setValue(control(container, 'Primary comparator key'), key);
+      await setValue(control(container, 'Primary comparator direction'), 'DESC');
+      await click(button(container, 'Save governing comparator request'));
+      expect(onChange).toHaveBeenCalledWith({
+        v: 1,
+        sourceDecisionId: 'synthetic-annual-policy-decision',
+        comparator: [{ key, direction: 'DESC' }],
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
   it('saves an explicit unverified request only after a source decision and comparator are selected', async () => {
     const onChange = vi.fn();
     const container = render(

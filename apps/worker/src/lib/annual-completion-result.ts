@@ -34,10 +34,10 @@ export interface CanonicalAnnualCompletionSource {
   }[];
 }
 
-export interface CanonicalAnnualCompletionResult {
+export interface CanonicalAnnualCompletionResult<Mode extends 'REAL' | 'MOCK' = 'REAL'> {
   readonly v: 1;
   readonly sessionId: string;
-  readonly mode: 'REAL';
+  readonly mode: Mode;
   readonly bidYear: number;
   readonly completion: {
     readonly completedAtMs: number;
@@ -60,6 +60,7 @@ export interface CanonicalAnnualCompletionResult {
     readonly position: string | null;
     readonly aDay: string;
     readonly specialty: string | null;
+    readonly membershipIds?: readonly string[];
     readonly amendment: {
       readonly originalBidId: string;
       readonly replacementBidId: string;
@@ -69,12 +70,13 @@ export interface CanonicalAnnualCompletionResult {
   readonly futureRoster: readonly FutureRosterObservation[];
 }
 
-export type CanonicalAnnualCompletionProjection =
-  | { readonly ok: true; readonly value: CanonicalAnnualCompletionResult }
+export type CanonicalAnnualCompletionProjection<Mode extends 'REAL' | 'MOCK' = 'REAL'> =
+  | { readonly ok: true; readonly value: CanonicalAnnualCompletionResult<Mode> }
   | {
       readonly ok: false;
       readonly code:
         | 'REAL_COMPLETION_REQUIRED'
+        | 'MOCK_COMPLETION_REQUIRED'
         | 'ANNUAL_COMPLETION_REQUIRED'
         | 'COMPLETION_REVISION_MISMATCH'
         | 'COMPLETION_RECEIPT_UNVERIFIED'
@@ -96,9 +98,27 @@ export type CanonicalAnnualCompletionProjection =
 export function projectCanonicalAnnualCompletion(
   source: CanonicalAnnualCompletionSource,
 ): CanonicalAnnualCompletionProjection {
+  return projectCompletionForMode(source, 'REAL');
+}
+
+/** Rehearsal evidence only; mode is retained and cannot authorize Department writes. */
+export function projectCanonicalMockCompletion(
+  source: CanonicalAnnualCompletionSource,
+): CanonicalAnnualCompletionProjection<'MOCK'> {
+  return projectCompletionForMode(source, 'MOCK');
+}
+
+function projectCompletionForMode<Mode extends 'REAL' | 'MOCK'>(
+  source: CanonicalAnnualCompletionSource,
+  mode: Mode,
+): CanonicalAnnualCompletionProjection<Mode> {
   const unresolvedMemberIds = source.state.annual?.unresolvedMemberIds ?? [];
-  if (source.session.mode !== 'REAL')
-    return { ok: false, code: 'REAL_COMPLETION_REQUIRED', unresolvedMemberIds };
+  if (source.session.mode !== mode)
+    return {
+      ok: false,
+      code: mode === 'REAL' ? 'REAL_COMPLETION_REQUIRED' : 'MOCK_COMPLETION_REQUIRED',
+      unresolvedMemberIds,
+    };
   if (
     source.state.currentPhase !== 'complete' ||
     source.state.annual?.completion === null ||
@@ -149,6 +169,7 @@ export function projectCanonicalAnnualCompletion(
     participantMemberIds.add(fill.memberId);
     const amendment = amendmentByReplacement.get(fill.bidId) ?? null;
     participants.push({
+      ...(fill.membershipIds === undefined ? {} : { membershipIds: fill.membershipIds }),
       memberId: fill.memberId,
       positionId,
       rank: rankByMember.get(fill.memberId) ?? null,
@@ -178,7 +199,7 @@ export function projectCanonicalAnnualCompletion(
     value: {
       v: 1,
       sessionId: source.session.id,
-      mode: 'REAL',
+      mode,
       bidYear: source.session.bidYear,
       completion: {
         ...source.completion,

@@ -8,6 +8,7 @@ import {
   type StageParticipantSourceDefinition,
   type StageParticipantSourceDefinitions,
   bidOrderingComparatorForStage,
+  bidOrdinalValue,
 } from '@mbfd/shared';
 
 type PinnedMember = BidEvaluation['members'][number];
@@ -76,7 +77,7 @@ function isPinnedBidParticipant(member: PinnedMember): boolean {
 }
 
 function comparisonValue(member: PinnedMember, key: StageParticipantOrdering[number]['key']) {
-  return key === 'RSC_SENIORITY' ? member.rscSeniority : member.rankSeniority;
+  return bidOrdinalValue(member, key);
 }
 
 function sortByAuthoredOrdering(input: {

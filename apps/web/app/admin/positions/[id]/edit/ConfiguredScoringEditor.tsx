@@ -129,13 +129,154 @@ export function ConfiguredScoringEditor({
       <p className="text-sm text-foreground">
         Each channel is explicit. An empty channel awards zero points. Alternatives are approved
         equivalents for this item only; prerequisites require every selected credential. Groups
-        award points in displayed order up to their cap.
+        award points in displayed order up to their cap. Cumulative preference groups count each
+        satisfied criterion once, using the policy source you provide.
       </p>
       {credentials.isError && (
         <p role="alert" className="text-sm text-warning">
           {credentials.error.message}. Stored selections remain visible.
         </p>
       )}
+      <fieldset className="space-y-3 rounded border border-border p-4">
+        <legend className="px-1 font-semibold">Qualification priority</legend>
+        <Label className="flex min-h-11 items-center gap-2">
+          <input
+            type="checkbox"
+            checked={!!value.orderedPreference}
+            onChange={(event) => {
+              const { orderedPreference: _prior, ...rest } = value;
+              onChange(
+                event.target.checked
+                  ? {
+                      ...rest,
+                      orderedPreference: {
+                        mode: 'ORDERED_QUALIFICATIONS',
+                        sourceRef: '',
+                        criteria: [],
+                      },
+                    }
+                  : rest,
+              );
+            }}
+          />
+          Compare listed qualifications before cumulative credits
+        </Label>
+        {value.orderedPreference && (
+          <>
+            <p className="text-sm">
+              The first differing criterion decides priority. Within the same qualification tier,
+              compare the configured points or cumulative credits.
+            </p>
+            <Label className="block text-sm">
+              Qualification priority source
+              <Input
+                value={value.orderedPreference.sourceRef}
+                onChange={(event) => {
+                  if (value.orderedPreference)
+                    onChange({
+                      ...value,
+                      orderedPreference: {
+                        ...value.orderedPreference,
+                        sourceRef: event.target.value,
+                      },
+                    });
+                }}
+              />
+            </Label>
+            {value.orderedPreference.criteria.map((criterion, index) => {
+              const update = (patch: Partial<typeof criterion>) => {
+                if (value.orderedPreference)
+                  onChange({
+                    ...value,
+                    orderedPreference: {
+                      ...value.orderedPreference,
+                      criteria: value.orderedPreference.criteria.map((current, i) =>
+                        i === index ? { ...current, ...patch } : current,
+                      ),
+                    },
+                  });
+              };
+              return (
+                <div
+                  key={`${criterion.credential}-priority-${index}`}
+                  className="grid gap-3 border-t border-border pt-3 md:grid-cols-2"
+                >
+                  <Label className="text-sm">
+                    Priority qualification {index + 1}
+                    <NativeSelect
+                      value={criterion.credential}
+                      onChange={(event) => update({ credential: event.target.value })}
+                      className={inputClass}
+                    >
+                      <option value="">Select credential</option>
+                      {criterion.credential &&
+                        !options.some(
+                          (option) => (option.policyName ?? option.name) === criterion.credential,
+                        ) && (
+                          <option value={criterion.credential}>
+                            {criterion.credential} · Catalog review required
+                          </option>
+                        )}
+                      {options.map((option) => (
+                        <option key={option.id} value={option.policyName ?? option.name}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Label>
+                  {multi(
+                    'Priority alternatives (any one qualifies)',
+                    criterion.alternatives,
+                    (alternatives) => update({ alternatives }),
+                  )}
+                  {multi(
+                    'Required for this priority (all must be held)',
+                    criterion.requiresAll,
+                    (requiresAll) => update({ requiresAll }),
+                  )}
+                  <Button
+                    type="button"
+                    className="min-h-11 rounded border border-border px-3 text-sm"
+                    onClick={() => {
+                      if (value.orderedPreference)
+                        onChange({
+                          ...value,
+                          orderedPreference: {
+                            ...value.orderedPreference,
+                            criteria: value.orderedPreference.criteria.filter(
+                              (_, i) => i !== index,
+                            ),
+                          },
+                        });
+                    }}
+                  >
+                    Remove priority {index + 1}
+                  </Button>
+                </div>
+              );
+            })}
+            <Button
+              type="button"
+              className="min-h-11 rounded border border-border px-3 text-sm"
+              onClick={() => {
+                if (value.orderedPreference)
+                  onChange({
+                    ...value,
+                    orderedPreference: {
+                      ...value.orderedPreference,
+                      criteria: [
+                        ...value.orderedPreference.criteria,
+                        { credential: '', alternatives: [], requiresAll: [] },
+                      ],
+                    },
+                  });
+              }}
+            >
+              Add priority qualification
+            </Button>
+          </>
+        )}
+      </fieldset>
       {CHANNELS.filter((c) => !visibleChannels || visibleChannels.includes(c.id)).map(
         ({ id: channel, label }) => (
           <fieldset key={channel} className="rounded border border-border p-4">
@@ -144,22 +285,24 @@ export function ConfiguredScoringEditor({
               <div key={group.id} className="mt-3 space-y-3 rounded border border-border p-3">
                 <div className="flex flex-wrap items-end gap-3">
                   <p className="flex-1 text-sm text-foreground">Group {gi + 1}</p>
-                  <Label className="text-sm text-foreground">
-                    Group cap (blank means uncapped)
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100000"
-                      step="1"
-                      value={group.cap ?? ''}
-                      onChange={(e) =>
-                        updateGroup(channel, gi, {
-                          cap: e.target.value === '' ? null : Number(e.target.value),
-                        })
-                      }
-                      className={inputClass}
-                    />
-                  </Label>
+                  {!group.preference && (
+                    <Label className="text-sm text-foreground">
+                      Group cap (blank means uncapped)
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100000"
+                        step="1"
+                        value={group.cap ?? ''}
+                        onChange={(e) =>
+                          updateGroup(channel, gi, {
+                            cap: e.target.value === '' ? null : Number(e.target.value),
+                          })
+                        }
+                        className={inputClass}
+                      />
+                    </Label>
+                  )}
                   <Button
                     type="button"
                     className="min-h-11 rounded border border-border px-3 text-sm"
@@ -170,6 +313,124 @@ export function ConfiguredScoringEditor({
                     Remove group
                   </Button>
                 </div>
+                {multi(
+                  'Qualifications that exclude this group (any held)',
+                  group.excludesAny ?? [],
+                  (excludesAny) =>
+                    updateGroup(channel, gi, {
+                      excludesAny: excludesAny.length ? excludesAny : undefined,
+                    }),
+                )}
+                {group.preference && (
+                  <div className="space-y-3">
+                    <p className="text-sm">
+                      Cumulative preferences · one credit per satisfied criterion
+                    </p>
+                    <Label className="block text-sm">
+                      Preference policy source
+                      <Input
+                        value={group.preference.sourceRef}
+                        onChange={(event) => {
+                          if (group.preference)
+                            updateGroup(channel, gi, {
+                              preference: { ...group.preference, sourceRef: event.target.value },
+                            });
+                        }}
+                        className={inputClass}
+                      />
+                    </Label>
+                    {group.preference.criteria.map((criterion, ci) => {
+                      const update = (patch: Partial<typeof criterion>) => {
+                        if (group.preference)
+                          updateGroup(channel, gi, {
+                            preference: {
+                              ...group.preference,
+                              criteria: group.preference.criteria.map((current, index) =>
+                                index === ci ? { ...current, ...patch } : current,
+                              ),
+                            },
+                          });
+                      };
+                      return (
+                        <div
+                          key={`${group.id}-preference-${ci}`}
+                          className="grid gap-3 border-t border-border pt-3 md:grid-cols-2"
+                        >
+                          <Label className="text-sm">
+                            Preference credential
+                            <NativeSelect
+                              value={criterion.credential}
+                              onChange={(event) => update({ credential: event.target.value })}
+                              className={inputClass}
+                            >
+                              <option value="">Select credential</option>
+                              {criterion.credential &&
+                                !options.some(
+                                  (option) =>
+                                    (option.policyName ?? option.name) === criterion.credential,
+                                ) && (
+                                  <option value={criterion.credential}>
+                                    {criterion.credential} · Catalog review required
+                                  </option>
+                                )}
+                              {options.map((option) => (
+                                <option key={option.id} value={option.policyName ?? option.name}>
+                                  {option.name}
+                                  {option.retiredOn ? ` · Retires ${option.retiredOn}` : ''}
+                                </option>
+                              ))}
+                            </NativeSelect>
+                          </Label>
+                          {multi(
+                            'Preference alternatives (any one qualifies)',
+                            criterion.alternatives,
+                            (alternatives) => update({ alternatives }),
+                          )}
+                          {multi(
+                            'Required for this preference (all must be held)',
+                            criterion.requiresAll,
+                            (requiresAll) => update({ requiresAll }),
+                          )}
+                          <Button
+                            type="button"
+                            className="min-h-11 justify-self-start rounded border border-border px-3 text-sm"
+                            onClick={() => {
+                              if (group.preference)
+                                updateGroup(channel, gi, {
+                                  preference: {
+                                    ...group.preference,
+                                    criteria: group.preference.criteria.filter(
+                                      (_, index) => index !== ci,
+                                    ),
+                                  },
+                                });
+                            }}
+                          >
+                            Remove preference {ci + 1}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                    <Button
+                      type="button"
+                      className="min-h-11 rounded border border-border px-3 text-sm"
+                      onClick={() => {
+                        if (group.preference)
+                          updateGroup(channel, gi, {
+                            preference: {
+                              ...group.preference,
+                              criteria: [
+                                ...group.preference.criteria,
+                                { credential: '', alternatives: [], requiresAll: [] },
+                              ],
+                            },
+                          });
+                      }}
+                    >
+                      Add preference criterion
+                    </Button>
+                  </div>
+                )}
                 {group.items.map((item, ii) => (
                   <div
                     key={`${group.id}-${ii}`}
@@ -383,20 +644,22 @@ export function ConfiguredScoringEditor({
                     </Button>
                   </div>
                 ))}
-                <Button
-                  type="button"
-                  className="min-h-11 rounded border border-border px-3 text-sm"
-                  onClick={() =>
-                    updateGroup(channel, gi, {
-                      items: [
-                        ...group.items,
-                        { credential: '', alternatives: [], requiresAll: [], points: 0 },
-                      ],
-                    })
-                  }
-                >
-                  Add scoring item
-                </Button>
+                {!group.preference && (
+                  <Button
+                    type="button"
+                    className="min-h-11 rounded border border-border px-3 text-sm"
+                    onClick={() =>
+                      updateGroup(channel, gi, {
+                        items: [
+                          ...group.items,
+                          { credential: '', alternatives: [], requiresAll: [], points: 0 },
+                        ],
+                      })
+                    }
+                  >
+                    Add scoring item
+                  </Button>
+                )}
               </div>
             ))}
             <Button
@@ -410,6 +673,26 @@ export function ConfiguredScoringEditor({
               }
             >
               Add group for {label.toLowerCase()}
+            </Button>
+            <Button
+              type="button"
+              className="mt-3 ml-3 min-h-11 rounded border border-border px-3 text-sm"
+              onClick={() =>
+                onChange({
+                  ...value,
+                  [channel]: [
+                    ...value[channel],
+                    {
+                      id: crypto.randomUUID(),
+                      cap: null,
+                      items: [],
+                      preference: { mode: 'BINARY_CUMULATIVE', sourceRef: '', criteria: [] },
+                    },
+                  ],
+                })
+              }
+            >
+              Add cumulative preferences for {label.toLowerCase()}
             </Button>
           </fieldset>
         ),

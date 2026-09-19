@@ -29,6 +29,7 @@ import {
 import { BidMembershipFields } from './BidMembershipFields';
 import { BidOpportunityPoolFields } from './BidOpportunityPoolFields';
 import { BidPolicySourceFields } from './BidPolicySourceFields';
+import { PendingPolicyReview } from './PendingPolicyReview';
 import {
   BidOrderingAuthorityRequestEditor,
   StageParticipantSourceEditor,
@@ -310,6 +311,8 @@ export function BidPolicyFields({
   };
   if (section === 'language' || section === 'timing')
     return <BidPolicySourceFields {...{ content, section, policy, updatePolicy, onChange }} />;
+  if (!policy && content.pendingPolicy)
+    return <PendingPolicyReview content={content} onChange={onChange} />;
   if (!policy)
     return (
       <FieldSection title="Operating policy not configured">
@@ -996,9 +999,15 @@ export function BidPolicyFields({
                   <OrderedChoices
                     label="Specialty tie break"
                     values={specialty.tieBreakChain}
-                    options={(['POINTS', 'RSC_SENIORITY', 'RANK_SENIORITY'] as const).map(
-                      (value) => ({ value, label: value.replaceAll('_', ' ') }),
-                    )}
+                    options={(
+                      [
+                        'POINTS',
+                        'RSC_SENIORITY',
+                        'RANK_SENIORITY',
+                        'TIME_IN_GRADE_BID_ORDINAL',
+                        'DEPARTMENT_SERVICE_BID_ORDINAL',
+                      ] as const
+                    ).map((value) => ({ value, label: value.replaceAll('_', ' ') }))}
                     onChange={(tieBreakChain) => update({ tieBreakChain })}
                   />
                   <Button

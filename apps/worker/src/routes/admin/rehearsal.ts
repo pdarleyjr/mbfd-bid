@@ -43,6 +43,7 @@ import {
   loadFrozenSessionBidPolicy,
 } from '../../lib/bid-policy.js';
 import { requiresCanonicalAnnualExecution } from '../../lib/canonical-annual-execution.js';
+import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -90,6 +91,9 @@ router.post('/:sessionId/mark-mock', requireStepUpAuth(), async (c) => {
   if (s === undefined) return c.json({ error: 'session_not_found' }, 404);
   if (s.isMock) {
     return c.json({ id: sessionId, is_mock: true, idempotent: true });
+  }
+  if (await requiresCanonicalBidMutation(c.env.DB, sessionId)) {
+    return c.json({ error: 'canonical_mutation_requires_command' }, 409);
   }
   if (s.currentPhase !== 'config') {
     return c.json(
@@ -320,57 +324,62 @@ router.post(
 
     const completedAt = new Date();
     const claims = c.get('claims');
-    // Closing a stale mock must not make the state transition if its durable
-    // audit receipt cannot be accepted. The receipt intentionally records
-    // the requested terminal projection before the guarded legacy update.
-    await c.env.DB.batch([
-      auditInsertStatement(c.env.DB, {
-        bidSessionId: sessionId,
-        actorType: 'admin',
-        actorId: claims.member_id,
-        action: 'mock_session_closed',
-        targetKind: 'bid_session',
-        targetId: sessionId,
-        reason: body.reason,
-        beforeState: before,
-        afterState: {
-          current_phase: 'complete',
-          current_bidder_id: null,
-          current_turn_started_at: null,
-          paused_at: null,
-          scheduled_resume_at: null,
-          completed_at: completedAt,
+    // Preserve unstarted managed-Mock cancellation, but close only the exact
+    // lifecycle reviewed above. The audit and close share one transaction:
+    // a concurrent canonical start or lifecycle edit must leave no close audit.
+    const result = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE bid_sessions SET current_phase='complete', current_bidder_id=NULL,
+          current_turn_started_at=NULL, paused_at=NULL, scheduled_resume_at=NULL,
+          completed_at=?
+         WHERE id=? AND is_mock=1 AND current_phase=? AND started_at=?
+           AND current_bidder_id IS ? AND current_turn_started_at IS ?
+           AND paused_at IS ? AND scheduled_resume_at IS ? AND completed_at IS ?
+           AND day_count=? AND frozen_at IS ? AND freeze_actor_id IS ?
+           AND freeze_reason IS ? AND mock_control_revision=?
+           AND NOT EXISTS (SELECT 1 FROM canonical_bid_session_state WHERE bid_session_id=?)`,
+      ).bind(
+        completedAt.getTime(),
+        sessionId,
+        before.currentPhase,
+        before.startedAt.getTime(),
+        before.currentBidderId,
+        before.currentTurnStartedAt?.getTime() ?? null,
+        before.pausedAt?.getTime() ?? null,
+        before.scheduledResumeAt?.getTime() ?? null,
+        before.completedAt?.getTime() ?? null,
+        before.dayCount,
+        before.frozenAt?.getTime() ?? null,
+        before.freezeActorId,
+        before.freezeReason,
+        before.mockControlRevision,
+        sessionId,
+      ),
+      auditInsertStatement(
+        c.env.DB,
+        {
+          bidSessionId: sessionId,
+          actorType: 'admin',
+          actorId: claims.member_id,
+          action: 'mock_session_closed',
+          targetKind: 'bid_session',
+          targetId: sessionId,
+          reason: body.reason,
+          beforeState: before,
+          afterState: {
+            current_phase: 'complete',
+            current_bidder_id: null,
+            current_turn_started_at: null,
+            paused_at: null,
+            scheduled_resume_at: null,
+            completed_at: completedAt,
+          },
         },
-      }),
-    ]);
-    const updated = await db
-      .update(bidSessions)
-      .set({
-        currentPhase: 'complete',
-        currentBidderId: null,
-        currentTurnStartedAt: null,
-        pausedAt: null,
-        scheduledResumeAt: null,
         completedAt,
-      })
-      .where(
-        and(
-          eq(bidSessions.id, sessionId),
-          eq(bidSessions.isMock, true),
-          ne(bidSessions.currentPhase, 'complete'),
-        ),
-      )
-      .returning();
-    const after = updated[0];
-    if (after === undefined) {
-      const current = await db
-        .select()
-        .from(bidSessions)
-        .where(eq(bidSessions.id, sessionId))
-        .get();
-      if (current?.isMock && current.currentPhase === 'complete') {
-        return c.json({ id: sessionId, state: 'complete', idempotent: true });
-      }
+        true,
+      ),
+    ]);
+    if (result[0]?.meta.changes !== 1) {
       return c.json({ error: 'mock_session_close_conflict' }, 409);
     }
 
@@ -1007,7 +1016,7 @@ router.post(
       if (!session.isMock) {
         return c.json({ error: 'not_a_mock_session' }, 403);
       }
-      if (await hasCanonicalSessionState(db, sessionId)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, sessionId)) {
         return c.json(
           {
             error: 'canonical_mutation_requires_command',
@@ -1030,7 +1039,7 @@ router.post(
         session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
         if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
         if (!session.isMock) return c.json({ error: 'not_a_mock_session' }, 403);
-        if (await hasCanonicalSessionState(db, sessionId)) {
+        if (await requiresCanonicalBidMutation(c.env.DB, sessionId)) {
           return c.json(
             {
               error: 'canonical_mutation_requires_command',
@@ -1377,12 +1386,12 @@ router.post(
         {
           error: 'not_mock_session',
           detail:
-            'manual-pick is mock-only — use /api/admin/bid-session/:id/bid-for-member for live sessions',
+            'manual-pick is mock-only — use /api/admin/bid-session/:id/commands/live for live sessions',
         },
         403,
       );
     }
-    if (await hasCanonicalSessionState(db, sessionId)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, sessionId)) {
       return c.json(
         {
           error: 'canonical_mutation_requires_command',
@@ -1460,12 +1469,12 @@ router.post(
           {
             error: 'not_mock_session',
             detail:
-              'manual-pick is mock-only — use /api/admin/bid-session/:id/bid-for-member for live sessions',
+              'manual-pick is mock-only — use /api/admin/bid-session/:id/commands/live for live sessions',
           },
           403,
         );
       }
-      if (await hasCanonicalSessionState(db, sessionId)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, sessionId)) {
         return c.json(
           {
             error: 'canonical_mutation_requires_command',

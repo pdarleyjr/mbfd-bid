@@ -408,7 +408,7 @@ describe.each([
           ? { count: 1, strategy: 'first_eligible', expected_mock_control_revision: 0 }
           : { member_id: MEMBER, position_id: 'A999', expected_mock_control_revision: 0 },
       );
-      expect(await response.json()).toMatchObject({ error: 'managed_canonical_required' });
+      expect(await response.json()).toMatchObject({ error: 'canonical_mutation_requires_command' });
       expect(response.status).toBe(409);
       expectNoAwardEvidence();
       expect(

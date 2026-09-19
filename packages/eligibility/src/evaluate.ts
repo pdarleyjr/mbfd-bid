@@ -3,6 +3,7 @@ import { driverEngineerSatisfied } from './criteria/driver-engineer.js';
 import { nonProbationarySatisfied } from './criteria/non-probationary.js';
 import { paramedicSatisfied } from './criteria/paramedic.js';
 import { rankSatisfied } from './criteria/rank.js';
+import { evaluateOrderedPreference } from './ordered-preference.js';
 import { configuredChannel } from './points/configured.js';
 import { computeMoPoints } from './points/mo-pool.js';
 import { computeSoPoints } from './points/so-pool.js';
@@ -104,6 +105,11 @@ function evaluateWithChannels(
     }
     return {
       eligible: true,
+      ...(configured.orderedPreference === undefined
+        ? {}
+        : {
+            orderedPreference: evaluateOrderedPreference(member, configured.orderedPreference),
+          }),
       reasons,
       points: total.total,
       soPoints: so.total,

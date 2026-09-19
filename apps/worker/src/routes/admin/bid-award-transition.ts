@@ -704,9 +704,12 @@ function lifecycleValues(mutation: TransitionMutation, now: number): unknown[] {
     mutation.assignmentId,
     mutation.planned.effectiveFrom,
     mutation.member.employment_status,
-    mutation.member.employment_status,
+    // A Bid assignment changes staffing only. Reasserting today's rank or
+    // employment status on this future date could undo an intervening reviewed
+    // promotion, retirement, or separation in the personnel ledger.
+    null,
     mutation.member.rank,
-    mutation.member.rank,
+    null,
     null,
     // The reason is substituted by the caller so the method remains useful for
     // the final guarded insert as well as ordinary per-award inserts.
@@ -828,6 +831,15 @@ function transitionGuard(
     );
   }
   for (const mutation of mutations) {
+    // The lifecycle evidence records these exact personnel facts. A competing
+    // personnel edit must invalidate the whole plan, not leave stale future
+    // rank/status projections attached to newly created assignments.
+    add(
+      'EXISTS (SELECT 1 FROM members WHERE id=? AND rank=? AND employment_status=?)',
+      mutation.member.id,
+      mutation.member.rank,
+      mutation.member.employment_status,
+    );
     if (mutation.closure !== null && mutation.priorAssignment !== null) {
       add(
         `EXISTS (

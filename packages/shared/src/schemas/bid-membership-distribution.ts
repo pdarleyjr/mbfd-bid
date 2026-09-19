@@ -8,7 +8,8 @@ export const BidMembershipDistributionSchema = z
     label: z.string().trim().min(1).max(160),
     sourceRef: z.string().trim().min(4).max(500),
     sourceDecisionId: z.string().trim().min(1).max(160),
-    membershipSource: z.literal('REVIEWED_EXISTING_MEMBERS'),
+    membershipSource: z.enum(['REVIEWED_EXISTING_MEMBERS', 'REVIEWED_QUALIFIED_POOL']),
+    requiredSpecialtyCode: z.string().trim().min(1).max(128).optional(),
     memberIds: z.array(z.number().int().positive()).min(1).max(1000),
     shifts: z.array(z.enum(['A', 'B', 'C'])).min(1),
     minimumPerShift: z.number().int().min(0).max(1000),
@@ -28,11 +29,18 @@ export const BidMembershipDistributionSchema = z
     if (
       value.minimumPerShift > value.maximumPerShift ||
       value.memberIds.length < value.shifts.length * value.minimumPerShift ||
-      value.memberIds.length > value.shifts.length * value.maximumPerShift
+      (value.membershipSource === 'REVIEWED_EXISTING_MEMBERS' &&
+        value.memberIds.length > value.shifts.length * value.maximumPerShift)
     )
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Reviewed memberships must fit the configured shift distribution',
+      });
+    if (value.membershipSource === 'REVIEWED_QUALIFIED_POOL' && !value.requiredSpecialtyCode)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requiredSpecialtyCode'],
+        message: 'A wider pool requires frozen specialty qualification evidence',
       });
   });
 

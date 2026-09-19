@@ -122,7 +122,8 @@ function TraceCard({ title, trace }: { title: string; trace: Trace }) {
                 <ol className="mt-2 space-y-1 text-sm">
                   {trace.comparison.steps.map((step, index) => (
                     <li key={`${step.key}-${index}`}>
-                      {words(step.key)}: {step.left} versus {step.right}; {words(step.direction)}.{' '}
+                      {step.criterion ?? words(step.key)}: {step.left} versus {step.right};{' '}
+                      {words(step.direction)}. {step.sourceRef ? `Source: ${step.sourceRef}. ` : ''}
                       {step.result === 0
                         ? 'Equal; continue.'
                         : step.result < 0

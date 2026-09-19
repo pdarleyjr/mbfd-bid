@@ -322,6 +322,134 @@ describe('managed Live creation from sealed versions and separate runtime author
     };
   }
 
+  it('rejects legacy mark-mock before any managed Live identity or audit mutation', async () => {
+    await completeEvidence();
+    const response = await request(`bid/${YEAR}/live-sessions`, await creationBody(), {
+      key: 'synthetic-live-boundary',
+    });
+    expect(response.status).toBe(201);
+    const created = (await response.json()) as { id: string };
+    const before = h.sqlite.serialize();
+    const rejected = await request(`rehearsal/${created.id}/mark-mock`, {});
+    expect({
+      status: rejected.status,
+      audits: h.sqlite
+        .prepare("SELECT count(*) AS n FROM audit_log WHERE action='mark_mock'")
+        .get(),
+    }).toEqual({ status: 409, audits: { n: 0 } });
+    expect(await rejected.json()).toMatchObject({ error: 'canonical_mutation_requires_command' });
+    deepStrictEqual(h.sqlite.serialize(), before);
+  });
+
+  it.each([false, true])(
+    'blocks legacy managed Live controls with canonical start=%s and preserves historical reads',
+    async (started) => {
+      await completeEvidence();
+      const response = await request(`bid/${YEAR}/live-sessions`, await creationBody(), {
+        key: 'synthetic-boundary-matrix',
+      });
+      expect(response.status, await response.clone().text()).toBe(201);
+      const { id } = (await response.json()) as { id: string };
+      if (started) {
+        const start = await request(`bid-session/${id}/start`, {});
+        expect(start.status, await start.clone().text()).toBe(200);
+        expect(
+          h.sqlite
+            .prepare('SELECT count(*) AS n FROM canonical_bid_session_state WHERE bid_session_id=?')
+            .get(id),
+        ).toEqual({ n: 1 });
+      }
+      const doAccess = vi.fn(() => {
+        throw new Error('Legacy boundary must not contact the DO');
+      });
+      h.env.BID_SESSION = { idFromName: doAccess, get: doAccess } as never;
+      const choices = [
+        {
+          path: 'force-pick',
+          body: {
+            member_id: ACTOR,
+            position_id: 'A101',
+            reason_code: 'force.cert_mandate',
+            reason: 'Synthetic boundary check',
+          },
+          command: 'live.force_selection',
+        },
+        {
+          path: 'bid-for-member',
+          body: {
+            member_id: ACTOR,
+            position_id: 'A101',
+            reason_code: 'bid_for_member.unreachable_phone',
+            reason: 'Synthetic boundary check',
+          },
+          command: 'live.record_selection',
+        },
+        {
+          path: 'skip',
+          body: {
+            member_id: ACTOR,
+            reason_code: 'skip.declined',
+            reason: 'Synthetic boundary check',
+          },
+          command: 'live.disposition',
+        },
+        {
+          path: 'amend-selection',
+          body: {
+            bid_id: 'synthetic-award',
+            position_id: 'A101',
+            expected_session_revision: 0,
+            reason: 'Synthetic boundary check',
+          },
+          command: 'live.amend_selection',
+        },
+        {
+          path: 'lock-position',
+          body: {
+            member_id: ACTOR,
+            position_id: 'A101',
+            reason_code: 'lock_position.probationary_placement',
+            reason: 'Synthetic boundary check',
+          },
+        },
+        {
+          path: 'force-a-day',
+          body: { member_id: ACTOR, a_day: 'G1', reason: 'Synthetic boundary check' },
+        },
+        {
+          path: 'pause',
+          body: { reason_code: 'session.pause_emergency', reason: 'Synthetic boundary check' },
+        },
+        { path: 'resume', body: {} },
+        {
+          path: 'day-end',
+          body: { scheduled_resume_at: '2027-02-01T12:00:00Z', reason: 'Synthetic boundary check' },
+        },
+        { path: 'day-start', body: {} },
+      ];
+      for (const choice of choices) {
+        const before = h.sqlite.serialize();
+        const rejected = await request(`bid-session/${id}/${choice.path}`, choice.body);
+        expect(rejected.status, `${choice.path}: ${await rejected.clone().text()}`).toBe(409);
+        expect(await rejected.json()).toMatchObject(
+          'command' in choice
+            ? { error: 'canonical_live_command_required', command: choice.command }
+            : { error: 'canonical_mutation_requires_command' },
+        );
+        deepStrictEqual(h.sqlite.serialize(), before);
+      }
+      const beforeRead = h.sqlite.serialize();
+      const historical = await app.fetch(
+        new Request(`http://x/api/admin/bid-session/${id}/policy-snapshot`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        }),
+        h.env,
+      );
+      expect(historical.status, await historical.clone().text()).toBe(200);
+      deepStrictEqual(h.sqlite.serialize(), beforeRead);
+      expect(doAccess).not.toHaveBeenCalled();
+    },
+  );
   it('reports the missing accepted baseline during Live preview without writing', async () => {
     const before = h.sqlite.serialize();
     const response = await request(`bid/${YEAR}/preview`, { kind: 'live', ...selection() });

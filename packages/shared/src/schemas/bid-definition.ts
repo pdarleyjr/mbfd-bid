@@ -9,6 +9,7 @@ import {
   FrozenLiveBidPolicySchema,
   FrozenRuleBookPositionSchema,
   FrozenRuleBookRuleSchema,
+  PendingLiveBidPolicySchema,
   StageParticipantSourceDefinitionsSchema,
 } from './bid-policy.js';
 
@@ -123,6 +124,22 @@ export const BidDefinitionSourceDecisionSchema = z
     sourceRef: z.string(),
     effectiveOn: CredentialEvaluationDateSchema,
     resolution: BidOrderingSourceDecisionResolutionSchema.optional(),
+    blockingClassification: z
+      .enum([
+        'BLOCKS_APPLICATION_RELEASE',
+        'BLOCKS_FINAL_2026_CONFIGURATION',
+        'BLOCKS_REAL_BID_ACTIVATION',
+      ])
+      .optional(),
+    affectedScopes: z.array(Identity).min(1).max(500).optional(),
+    membershipPopulation: z
+      .object({
+        kind: z.literal('MEMBERSHIP_POPULATION'),
+        distributionId: Identity,
+        choice: z.enum(['UNRESOLVED', 'CURRENT_SIX', 'WIDER_QUALIFIED_POOL']),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type BidDefinitionSourceDecision = z.infer<typeof BidDefinitionSourceDecisionSchema>;
@@ -137,6 +154,17 @@ export const BidDefinitionContentSchema = z
     bidYear: z.number().int().min(2024).max(2100),
     settings: BidConfigurationSettingsSchema.nullable(),
     notes: z.object({ bid: Notes, positions: Notes }).strict(),
+    /** Preserves source-complete procedures while operational identities await
+     * review. Never read by run preparation or treated as execution authority. */
+    pendingPolicy: z
+      .object({
+        policyText: z.string(),
+        executionPolicy: PendingLiveBidPolicySchema,
+        orderingAuthority: BidOrderingAuthorityRequestSchema.optional(),
+        stageParticipantSources: StageParticipantSourceDefinitionsSchema.optional(),
+      })
+      .strict()
+      .optional(),
     policy: z
       .object({
         policyText: z.string(),

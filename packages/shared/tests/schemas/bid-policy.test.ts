@@ -166,6 +166,52 @@ const completeV3Snapshot = {
 };
 
 describe('Bid configuration and session policy contracts', () => {
+  it('retains unresolved source procedures only in pending authoring and never accepts them as frozen execution', () => {
+    const pending = {
+      ...completeLivePolicy,
+      stages: completeLivePolicy.stages.map((stage) => ({ ...stage, memberIds: [] })),
+      actionPermissions: completeLivePolicy.actionPermissions.map((grant) => ({
+        ...grant,
+        actorMemberIds: [],
+      })),
+    };
+    const definition = {
+      v: 1,
+      bidYear: 2027,
+      settings: null,
+      notes: { bid: null, positions: null },
+      policy: null,
+      pendingPolicy: {
+        policyText: 'Synthetic source with unresolved operators',
+        executionPolicy: pending,
+      },
+      planning: null,
+      authoring: null,
+      positions: [],
+      rules: [],
+      participation: [],
+      staffingBindings: [],
+      sourceDecisions: [],
+    };
+    expect(BidDefinitionContentSchema.safeParse(definition).success).toBe(true);
+    expect(FrozenLiveBidPolicySchema.safeParse(pending).success).toBe(false);
+    expect(
+      BidDefinitionContentSchema.safeParse({
+        ...definition,
+        pendingPolicy: undefined,
+        policy: definition.pendingPolicy,
+      }).success,
+    ).toBe(false);
+    expect(
+      BidDefinitionContentSchema.safeParse({
+        ...definition,
+        pendingPolicy: {
+          ...definition.pendingPolicy,
+          executionPolicy: { ...pending, stages: [...pending.stages, pending.stages[0]] },
+        },
+      }).success,
+    ).toBe(false);
+  });
   it('keeps explicit-stage definitions readable while admitting typed participant sources', () => {
     const legacyDefinition = {
       v: 1,

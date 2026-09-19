@@ -13,6 +13,32 @@ export function evaluateMembershipDistributions(
       ? (snapshot.settings.livePolicy.annualOperations?.membershipDistributions ?? [])
       : [];
   const positions = new Map(snapshot.ruleBookMaterial.positions.map((p) => [p.id, p]));
+  for (const fill of Object.values(state.fills)) {
+    for (const id of fill.membershipIds ?? []) {
+      const policy = policies.find((entry) => entry.id === id);
+      if (
+        !policy ||
+        policy.membershipSource !== 'REVIEWED_QUALIFIED_POOL' ||
+        !policy.memberIds.includes(fill.memberId)
+      )
+        return { ok: false, code: 'MEMBERSHIP_POOL_SELECTION_INVALID' };
+      const member = snapshot.members.find((entry) => entry.memberId === fill.memberId);
+      const date = snapshot.credentialEvaluationOn;
+      if (
+        !member ||
+        member.pool === 'EXCLUDED' ||
+        !date ||
+        !member.specialtyQualifications?.some(
+          (qualification) =>
+            qualification.specialtyCode === policy.requiredSpecialtyCode &&
+            qualification.status === 'active' &&
+            qualification.effectiveOn <= date &&
+            (qualification.expiresOn === null || qualification.expiresOn >= date),
+        )
+      )
+        return { ok: false, code: 'MEMBERSHIP_QUALIFICATION_EVIDENCE_REQUIRED' };
+    }
+  }
   for (const policy of policies) {
     if (
       policy.memberIds.some(
@@ -25,7 +51,12 @@ export function evaluateMembershipDistributions(
     const groups = new Map<string, number>();
     const assigned = new Set<number>();
     for (const [positionId, fill] of Object.entries(state.fills)) {
-      if (!policy.memberIds.includes(fill.memberId)) continue;
+      if (
+        policy.membershipSource === 'REVIEWED_QUALIFIED_POOL'
+          ? !fill.membershipIds?.includes(policy.id)
+          : !policy.memberIds.includes(fill.memberId)
+      )
+        continue;
       if (assigned.has(fill.memberId))
         return { ok: false, code: 'MEMBERSHIP_MULTIPLE_ASSIGNMENTS' };
       assigned.add(fill.memberId);
@@ -49,7 +80,11 @@ export function evaluateMembershipDistributions(
         return { ok: false, code: 'MEMBERSHIP_A_DAY_MAXIMUM_REACHED' };
       groups.set(key, groupTotal);
     }
-    if (finalize && assigned.size !== policy.memberIds.length)
+    if (
+      finalize &&
+      policy.membershipSource === 'REVIEWED_EXISTING_MEMBERS' &&
+      assigned.size !== policy.memberIds.length
+    )
       return { ok: false, code: 'MEMBERSHIP_ASSIGNMENTS_INCOMPLETE' };
     if (
       finalize &&

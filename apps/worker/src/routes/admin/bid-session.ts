@@ -36,6 +36,7 @@ import {
   summarizeBidSessionPolicySnapshot,
 } from '../../lib/bid-policy.js';
 import { persistBidSessionCreation } from '../../lib/bid-session-creation.js';
+import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { computeFrozenStageOrder } from '../../lib/live-bid-policy.js';
 import { evaluateLiveBidReadiness } from '../../lib/live-bid-readiness.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
@@ -698,14 +699,14 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     if (s.currentPhase === 'paused' || s.currentPhase === 'complete') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
     const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-      if (await hasCanonicalCommandState(c.env, id)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, id)) {
         return c.json({ error: 'canonical_mutation_requires_command' }, 409);
       }
       const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
@@ -757,14 +758,14 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     if (s.currentPhase !== 'paused') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
     const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-      if (await hasCanonicalCommandState(c.env, id)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, id)) {
         return c.json({ error: 'canonical_mutation_requires_command' }, 409);
       }
       const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
@@ -806,14 +807,14 @@ router.post('/:id/day-end', requireStepUpAuth(), zValidator('json', DayEndSchema
   const db = getDb(c.env.DB);
   const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
   if (s === undefined) return c.json({ error: 'not_found' }, 404);
-  if (await hasCanonicalCommandState(c.env, id)) {
+  if (await requiresCanonicalBidMutation(c.env.DB, id)) {
     return c.json({ error: 'canonical_mutation_requires_command' }, 409);
   }
   if (s.currentPhase === 'complete') {
     return c.json({ error: 'invalid_state', current_phase: 'complete' }, 409);
   }
   const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
@@ -868,14 +869,14 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     if (s.currentPhase !== 'paused') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
     const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-      if (await hasCanonicalCommandState(c.env, id)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, id)) {
         return c.json({ error: 'canonical_mutation_requires_command' }, 409);
       }
       const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
@@ -921,7 +922,7 @@ router.patch(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);

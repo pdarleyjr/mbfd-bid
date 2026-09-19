@@ -183,6 +183,48 @@ function team() {
   ]);
 }
 describe('reviewed fixed membership distribution', () => {
+  it('supports a wider qualified pool with explicit elected overlays and no extra station award', () => {
+    const f = team();
+    if (f.snapshot.settings.v !== 3) throw new Error('V3 required');
+    const distribution =
+      f.snapshot.settings.livePolicy.annualOperations?.membershipDistributions?.[0];
+    if (!distribution) throw new Error('Distribution required');
+    distribution.membershipSource = 'REVIEWED_QUALIFIED_POOL';
+    distribution.requiredSpecialtyCode = 'SYNTHETIC_SWAT';
+    for (const member of f.snapshot.members)
+      member.specialtyQualifications = [
+        {
+          specialtyCode: 'SYNTHETIC_SWAT',
+          status: 'active',
+          effectiveOn: '2026-01-01',
+          expiresOn: null,
+        },
+      ];
+    expect(evaluateMembershipDistributions(f.snapshot, f.state, true)).toEqual({
+      ok: false,
+      code: 'MEMBERSHIP_SHIFT_MINIMUM_NOT_MET',
+    });
+    for (const fill of Object.values(f.state.fills)) fill.membershipIds = [distribution.id];
+    expect(evaluateMembershipDistributions(f.snapshot, f.state, true)).toEqual({ ok: true });
+    expect(Object.keys(f.state.fills)).toHaveLength(6);
+    const member = f.snapshot.members[0];
+    if (!member) throw new Error('Member required');
+    member.specialtyQualifications = [];
+    expect(evaluateMembershipDistributions(f.snapshot, f.state, false)).toEqual({
+      ok: false,
+      code: 'MEMBERSHIP_QUALIFICATION_EVIDENCE_REQUIRED',
+    });
+  });
+  it('rejects unconfigured overlay IDs even when no distribution exists', () => {
+    const f = team();
+    const fill = f.state.fills.p1;
+    if (!fill) throw new Error('Fill required');
+    fill.membershipIds = ['unconfigured'];
+    expect(evaluateMembershipDistributions(f.snapshot, f.state, false)).toEqual({
+      ok: false,
+      code: 'MEMBERSHIP_POOL_SELECTION_INVALID',
+    });
+  });
   it('allows exactly two ordinary awards per shift with one team member per group without mutation', () => {
     const f = team();
     const before = structuredClone(f);

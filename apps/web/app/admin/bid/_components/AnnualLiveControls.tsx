@@ -47,6 +47,13 @@ type FallbackReview = {
     }
 );
 type SpecialtyState = {
+  membership_distributions?: Array<{
+    id: string;
+    label: string;
+    membershipSource: string;
+    memberIds: number[];
+    sourceRef: string;
+  }>;
   sequence: number;
   term_participation?: Record<
     string,
@@ -204,6 +211,10 @@ export function AnnualLiveControls(props: Props) {
   const [amendTo, setAmendTo] = useState('');
   const [selectionPositionId, setSelectionPositionId] = useState('');
   const [selectionPoolId, setSelectionPoolId] = useState('');
+  const [membershipChoice, setMembershipChoice] = useState<{
+    memberId: number | null;
+    ids: string[];
+  }>({ memberId: null, ids: [] });
   const [amendPoolId, setAmendPoolId] = useState('');
   const poolSlots = new Set(state?.opportunity_pools?.flatMap((pool) => pool.positionIds) ?? []);
   const [fallbackKey, setFallbackKey] = useState('');
@@ -336,6 +347,12 @@ export function AnnualLiveControls(props: Props) {
 
   async function command(type: string, inputDetail: Record<string, unknown> = {}) {
     let detail = inputDetail;
+    if (
+      type === 'live.record_selection' &&
+      membershipChoice.memberId === inputDetail.memberId &&
+      membershipChoice.ids.length
+    )
+      detail = { ...detail, membershipIds: membershipChoice.ids };
     if (reason.trim().length < 1 || state === null) {
       setNotice('Enter an operator reason and wait for the current bid to load.');
       return;
@@ -1024,6 +1041,35 @@ export function AnnualLiveControls(props: Props) {
                 onChange={setSelectionADay}
               />
             ) : null}
+            {(state?.membership_distributions ?? [])
+              .filter(
+                (entry) =>
+                  entry.membershipSource === 'REVIEWED_QUALIFIED_POOL' &&
+                  entry.memberIds.includes(state?.current_bidder?.member_id ?? -1),
+              )
+              .map((entry) => (
+                <Label key={entry.id} className="flex min-h-11 items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={
+                      membershipChoice.memberId === state?.current_bidder?.member_id &&
+                      membershipChoice.ids.includes(entry.id)
+                    }
+                    onChange={(event) => {
+                      const memberId = state?.current_bidder?.member_id ?? null;
+                      const ids =
+                        membershipChoice.memberId === memberId ? membershipChoice.ids : [];
+                      setMembershipChoice({
+                        memberId,
+                        ids: event.target.checked
+                          ? [...ids, entry.id]
+                          : ids.filter((id) => id !== entry.id),
+                      });
+                    }}
+                  />
+                  Elect {entry.label} membership with this selection
+                </Label>
+              ))}
             <Button
               type="button"
               disabled={

@@ -3,6 +3,7 @@ import { BIDDING_RANKS } from '../constants/ranks.js';
 import { AnnualRuleProfileSchema } from './annual-rule-profile.js';
 import { BidMembershipDistributionSchema } from './bid-membership-distribution.js';
 import { BidOpportunityPoolsSchema } from './bid-opportunity-pool.js';
+import { BidOrdinalKeySchema, FrozenBidOrdinalEvidenceSchema } from './bid-ordinal.js';
 import { ConfiguredScoringSchema } from './configured-scoring.js';
 import { FrozenServiceCreditSchema } from './service-evidence.js';
 
@@ -81,7 +82,15 @@ export const FrozenAnnualSpecialtyPolicySchema = z
       )
       .max(100),
     tieBreakChain: z
-      .array(z.enum(['POINTS', 'RSC_SENIORITY', 'RANK_SENIORITY']))
+      .array(
+        z.enum([
+          'POINTS',
+          'RSC_SENIORITY',
+          'RANK_SENIORITY',
+          'TIME_IN_GRADE_BID_ORDINAL',
+          'DEPARTMENT_SERVICE_BID_ORDINAL',
+        ]),
+      )
       .min(1)
       .max(3),
   })
@@ -192,11 +201,18 @@ export const FrozenAnnualOperationsPolicySchema = z
                         .strict(),
                     ]),
                     currentlyAssignedOnly: z.boolean(),
+                    historyPredicate: z
+                      .object({
+                        kind: z.literal('NO_COMPLETED_DAYS_BID_TOUR'),
+                        sourceRef: z.string().trim().min(4).max(500),
+                      })
+                      .strict()
+                      .optional(),
                     comparator: z
                       .array(
                         z
                           .object({
-                            key: z.enum(['RSC_SENIORITY', 'RANK_SENIORITY']),
+                            key: BidOrdinalKeySchema,
                             direction: z.enum(['ASC', 'DESC']),
                           })
                           .strict(),
@@ -419,7 +435,7 @@ export type StageParticipantSource = z.infer<typeof StageParticipantSourceSchema
 
 export const StageParticipantOrderingRuleSchema = z
   .object({
-    key: z.enum(['RSC_SENIORITY', 'RANK_SENIORITY']),
+    key: BidOrdinalKeySchema,
     direction: z.enum(['ASC', 'DESC']),
   })
   .strict();
@@ -736,6 +752,64 @@ export const FrozenLiveBidPolicySchema = z
     }
   });
 export type FrozenLiveBidPolicy = z.infer<typeof FrozenLiveBidPolicySchema>;
+const PendingAnnualOperationsBase = FrozenAnnualOperationsPolicySchema.innerType();
+const PendingADayBase = PendingAnnualOperationsBase.shape.aDay;
+const PendingAnnualOperationsSchema = PendingAnnualOperationsBase.extend({
+  contact: PendingAnnualOperationsBase.shape.contact.innerType().extend({
+    minimumAttempts: PendingAnnualOperationsBase.shape.contact
+      .innerType()
+      .shape.minimumAttempts.nullable(),
+  }),
+  aDay: PendingADayBase.extend({
+    min: PendingADayBase.shape.min.nullable(),
+    max: PendingADayBase.shape.max.nullable(),
+    captainDcMax: PendingADayBase.shape.captainDcMax.nullable(),
+    specialtyMaximums: PendingADayBase.shape.specialtyMaximums.extend({
+      MARINE_FLOAT: PendingADayBase.shape.specialtyMaximums.shape.MARINE_FLOAT.nullable(),
+    }),
+  }),
+});
+/** Saved, unresolved authoring only. Runtime snapshots always use the strict
+ * Frozen schema above; empty identities confer no authority or participation. */
+export const PendingLiveBidPolicySchema = FrozenLiveBidPolicySchema.innerType()
+  .extend({
+    stages: z
+      .array(
+        FrozenLiveStageSchema.innerType().extend({
+          memberIds: z.array(z.number().int().positive()),
+        }),
+      )
+      .min(1),
+    actionPermissions: z
+      .array(
+        LiveActionPermissionSchema.extend({ actorMemberIds: z.array(z.number().int().positive()) }),
+      )
+      .min(HistoricalLiveBidActions.length)
+      .max(LiveBidActionSchema.options.length),
+    annualOperations: PendingAnnualOperationsSchema.optional(),
+  })
+  .superRefine((policy, ctx) => {
+    const frozen = FrozenLiveBidPolicySchema.safeParse(policy);
+    if (frozen.success) return;
+    for (const issue of frozen.error.issues) {
+      const unresolvedIds =
+        issue.code === 'too_small' &&
+        issue.path.length === 3 &&
+        ((issue.path[0] === 'stages' && issue.path[2] === 'memberIds') ||
+          (issue.path[0] === 'actionPermissions' && issue.path[2] === 'actorMemberIds'));
+      const unresolvedNumeric =
+        issue.code === 'invalid_type' &&
+        issue.received === 'null' &&
+        [
+          'annualOperations.contact.minimumAttempts',
+          'annualOperations.aDay.min',
+          'annualOperations.aDay.max',
+          'annualOperations.aDay.captainDcMax',
+          'annualOperations.aDay.specialtyMaximums.MARINE_FLOAT',
+        ].includes(issue.path.join('.'));
+      if (!unresolvedIds && !unresolvedNumeric) ctx.addIssue(issue);
+    }
+  });
 
 /** No actor can inherit live authority from a Hub-admin role or rank. */
 export function isLiveBidActionAuthorized(
@@ -763,6 +837,7 @@ export const FrozenBidPoolMemberSchema = z
     pool: z.enum(['OFC', 'FF', 'EXCLUDED']),
     rscSeniority: z.number().int().nonnegative(),
     rankSeniority: z.number().int().nonnegative().nullable(),
+    bidOrdinalEvidence: FrozenBidOrdinalEvidenceSchema.optional(),
     exclusionReason: z
       .enum([
         'ADMIN_ASSIGNED_NON_BIDDABLE',
@@ -829,6 +904,15 @@ export type FrozenSpecialtyQualification = z.infer<typeof FrozenSpecialtyQualifi
  * decisions without persisting names or source-system identifiers.
  */
 export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend({
+  bidTourEvidence: z
+    .object({
+      recordId: z.string().min(1),
+      effectiveOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      completedDaysTour: z.boolean().nullable(),
+      sourceRef: z.string().min(4),
+    })
+    .strict()
+    .optional(),
   /** Permission is frozen evidence, not an election to leave the retained assignment. */
   termParticipation: z
     .object({

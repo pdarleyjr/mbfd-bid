@@ -115,3 +115,10 @@ export {
 export type { BidOpportunityPool } from './schemas/bid-opportunity-pool.js';
 export { BidMembershipDistributionSchema } from './schemas/bid-membership-distribution.js';
 export type { BidMembershipDistribution } from './schemas/bid-membership-distribution.js';
+export {
+  BidOrdinalKeySchema,
+  FrozenBidOrdinalEvidenceSchema,
+  BidOrdinalImportSchema,
+  bidOrdinalValue,
+} from './schemas/bid-ordinal.js';
+export type { FrozenBidOrdinalEvidence } from './schemas/bid-ordinal.js';

@@ -289,3 +289,33 @@ describe('frozen simultaneous A-Day allocation', () => {
     expect(evaluate(legacy)).toEqual({ ok: false, code: 'A_DAY_EXECUTION_POLICY_MISSING' });
   });
 });
+
+describe('final2026 designated FF/DE A-Day source scope', () => {
+  // PDF p7 Procedure12 + MASTER Positions explicit FF/DE rows. The eight per
+  // shift include Combat Float DE707/708, excluding AirTech203 and Marine602/603.
+  const deIds = ['103', '104', '202', '303', '304', '402', '707', '708'].map(
+    (suffix) => `A${suffix}`,
+  );
+  const sourceConstraint = scope('final2026-designated-de', 2, deIds);
+  sourceConstraint.sourceRef = '2026 Bid Policy p7 Procedure12; final MASTER explicit FF/DE rows';
+  it.each(deIds)('rejects a third designated DE in one group at %s', (id) => {
+    const others = deIds.filter((candidate) => candidate !== id).slice(0, 2);
+    if (!others[0] || !others[1]) throw new Error('Two distinct source DE seats required');
+    const f = fixture(
+      [entry(1, { id: others[0] }), entry(2, { id: others[1] }), entry(3, { id })],
+      { constraints: [sourceConstraint] },
+    );
+    expect(evaluate(f)).toEqual({ ok: false, code: 'SCOPED_A_DAY_MAXIMUM' });
+  });
+  it.each(['A203', 'A602', 'A603'])(
+    'does not count DE-qualified specialty holder at %s as a designated DE seat',
+    (id) => {
+      const f = fixture([entry(1, { id: 'A103' }), entry(2, { id: 'A707' }), entry(3, { id })], {
+        constraints: [sourceConstraint],
+      });
+      for (const member of f.snapshot.members)
+        member.credentialNames = ['Driver Engineer Qualified'];
+      expect(evaluate(f)).toMatchObject({ ok: true });
+    },
+  );
+});

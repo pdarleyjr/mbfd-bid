@@ -17,6 +17,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { evaluateAssignmentTerms } from './assignment-terms.js';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
+import { type BidOrdinalDatasetRow, projectBidOrdinals } from './bid-ordinal-evidence.js';
 import { bidSourceDecisionReviewIssues } from './bid-source-decision-review.js';
 import { serviceCreditsAsOf } from './service-evidence.js';
 import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence.js';
@@ -386,6 +387,7 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
   rank: Exclude<FrozenBidEligibilityMember['rank'], 'CIVILIAN'>;
   rscSeniority: number;
   rankSeniority: number | undefined;
+  bidOrdinalEvidence?: FrozenBidEligibilityMember['bidOrdinalEvidence'];
   isProbationary: boolean;
   credentials: Array<{ name: string }>;
   memberId: number;
@@ -402,6 +404,7 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
     rank: member.rank,
     rscSeniority: member.rscSeniority,
     rankSeniority: member.rankSeniority ?? undefined,
+    ...(member.bidOrdinalEvidence ? { bidOrdinalEvidence: member.bidOrdinalEvidence } : {}),
     isProbationary: member.isProbationary,
     credentials: member.credentialNames.map((name) => ({ name })),
     memberId: member.memberId,
@@ -633,18 +636,25 @@ function validateAnnualPolicyReferences(
         (specialty) =>
           specialty.requiredCredentialNames.some((name) => !credentialNames.has(name)) ||
           specialty.points.some((entry) => !credentialNames.has(entry.credentialName)) ||
+          specialty.scoring?.orderedPreference?.criteria.some((item) =>
+            [item.credential, ...item.alternatives, ...item.requiresAll].some(
+              (name) => !credentialNames.has(name),
+            ),
+          ) ||
           (specialty.scoring &&
             Object.values({
               total: specialty.scoring.total,
               so: specialty.scoring.so,
               mo: specialty.scoring.mo,
             }).some((groups) =>
-              groups.some((group) =>
-                group.items.some((item) =>
-                  [item.credential, ...item.alternatives, ...item.requiresAll].some(
-                    (name) => !credentialNames.has(name),
+              groups.some(
+                (group) =>
+                  (group.excludesAny ?? []).some((name) => !credentialNames.has(name)) ||
+                  (group.preference?.criteria ?? group.items).some((item) =>
+                    [item.credential, ...item.alternatives, ...item.requiresAll].some(
+                      (name) => !credentialNames.has(name),
+                    ),
                   ),
-                ),
               ),
             )),
       )
@@ -961,6 +971,8 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
     acceptedBaseline,
     catalogRows,
     disputedRows,
+    ordinalDatasets,
+    bidTourRows,
   ] = await Promise.all([
     db
       .select({
@@ -1011,6 +1023,19 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
       JOIN credentials c ON c.id=r.credential_id
       WHERE r.applied_at IS NULL AND r.classification IN ('CONFLICT','EXPIRATION_REVIEW','REVOCATION_REVIEW')
     `),
+    db.all<BidOrdinalDatasetRow>(
+      sql`SELECT id,bid_year AS bidYear,source_sha256 AS sourceSha256,source_ref AS sourceRef,entries_json AS entriesJson FROM bid_ordinal_datasets WHERE bid_year=${bidYear} ORDER BY revision DESC LIMIT 1`,
+    ),
+    db.all<{
+      recordId: string;
+      memberId: number;
+      revision: number;
+      effectiveOn: string;
+      completedDaysTour: number | null;
+      sourceRef: string;
+    }>(
+      sql`SELECT id AS recordId,member_id AS memberId,revision,effective_on AS effectiveOn,completed_days_tour AS completedDaysTour,source_ref AS sourceRef FROM member_bid_tour_evidence`,
+    ),
   ]);
   return {
     staffingRows,
@@ -1020,6 +1045,8 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
     acceptedBaseline,
     catalogRows,
     disputedRows,
+    ordinalDatasets,
+    bidTourRows,
   };
 }
 export type BidEvaluationEvidence = Awaited<ReturnType<typeof loadBidEvaluationEvidence>>;
@@ -1458,8 +1485,12 @@ export async function prepareCapturedBidEvaluation(
     events: qualificationEvents,
   });
 
+  const bidOrdinals = projectBidOrdinals(evidence.ordinalDatasets?.[0], memberRows);
   const frozenMembers: FrozenBidEligibilityMember[] = memberRows
     .map<FrozenBidEligibilityMember>((member) => {
+      const bidTour = evidence.bidTourRows
+        ?.filter((row) => row.memberId === member.id && row.effectiveOn <= capturedOn)
+        .sort((a, b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.revision - a.revision)[0];
       const personnelState = personnelStateByMember.get(member.id);
       const administrativeAssignment = assignmentByMember.get(member.id);
       const termPosition = administrativeAssignment
@@ -1501,6 +1532,18 @@ export async function prepareCapturedBidEvaluation(
         personnelState?.employmentStatus === 'unknown' &&
         mockParticipantMemberIds.has(member.id);
       const eligibility = {
+        ...(bidTour
+          ? {
+              bidTourEvidence: {
+                recordId: bidTour.recordId,
+                effectiveOn: bidTour.effectiveOn,
+                sourceRef: bidTour.sourceRef,
+                completedDaysTour:
+                  bidTour.completedDaysTour === null ? null : bidTour.completedDaysTour === 1,
+              },
+            }
+          : {}),
+        ...(bidOrdinals.has(member.id) ? { bidOrdinalEvidence: bidOrdinals.get(member.id) } : {}),
         ...(termParticipation ? { termParticipation } : {}),
         ...(policy.settings.v === 3 &&
         policy.settings.livePolicy.annualOperations?.fallbackPolicies?.some((fallback) =>

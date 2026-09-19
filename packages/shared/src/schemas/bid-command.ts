@@ -98,6 +98,11 @@ const LiveCommandBase = z.object({
 export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.record_selection'),
+    membershipIds: z
+      .array(z.string().trim().min(1).max(80))
+      .max(20)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
     termDeparture: TermDepartureElectionSchema.optional(),
     pool: BidPoolSelectionSchema.optional(),
     fallback: FallbackSelectionSchema.optional(),
@@ -109,6 +114,11 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.amend_selection'),
+    membershipIds: z
+      .array(z.string().trim().min(1).max(80))
+      .max(20)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
     termDeparture: TermDepartureElectionSchema.optional(),
     pool: BidPoolSelectionSchema.optional(),
     aDay: ADayValueSchema.optional(),

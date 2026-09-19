@@ -374,6 +374,18 @@ export function reduceLiveBidCommand(
         ...state,
         live: {
           ...live,
+          specialtyResponses: [
+            ...(live.specialtyResponses ?? []),
+            {
+              specialtyId: specialty.specialtyId,
+              positionId: specialty.positionId,
+              requesterMemberId: specialty.suspendedBidderId,
+              memberId: command.memberId,
+              outcome: command.outcome,
+              reason: command.reason,
+              evidenceReference: command.evidenceReference,
+            },
+          ],
           specialty:
             nextCursor < specialty.candidateMemberIds.length
               ? { ...specialty, candidateCursor: nextCursor }
@@ -541,6 +553,7 @@ export function reduceLiveBidCommand(
     const fill: Fill = {
       ...prior,
       bidId,
+      ...(command.membershipIds === undefined ? {} : { membershipIds: command.membershipIds }),
       ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
     };
     const fills = { ...state.fills };
@@ -663,6 +676,9 @@ export function reduceLiveBidCommand(
           memberId,
           ordinal: entry.ordinal,
           bidId,
+          ...(command.type === 'live.record_selection' && command.membershipIds !== undefined
+            ? { membershipIds: command.membershipIds }
+            : {}),
           ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
         },
       },

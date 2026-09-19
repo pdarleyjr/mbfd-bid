@@ -417,3 +417,141 @@ describe('final July2026 source golden cases through the profile compiler', () =
     });
   });
 });
+
+describe('final2026 qualitative cumulative preferences through compiled rules', () => {
+  // PDF p4 Procedure7(a) explicitly separates backup preferred Scott/Cylinder
+  // from required DE. Points!CY5 OR-as-two is not a backup preference schedule.
+  const cumulative = (
+    id: string,
+    names: string[],
+    sourceRef: string,
+  ): ConfiguredScoring['total'][number] => ({
+    id,
+    cap: null,
+    items: [],
+    preference: {
+      mode: 'BINARY_CUMULATIVE',
+      sourceRef,
+      criteria: names.map((credential) => ({ credential, alternatives: [], requiresAll: [] })),
+    },
+  });
+  const backupScoring: ConfiguredScoring = {
+    ...specialOpsScoring,
+    total: [
+      ...specialOpsScoring.total,
+      { id: 'car-seat', cap: null, items: [item(carSeat)] },
+      cumulative(
+        'backup-preferences',
+        [scott, cylinder],
+        'PDF p4 Procedure7(a), backup preferred certificates',
+      ),
+    ],
+  };
+  const backup = compile(
+    profile('synthetic-backup-airtech', 'FF', [de], backupScoring, 'PDF p4 Procedure7(a)'),
+  );
+  it.each([
+    [[], 0],
+    [[scott], 1],
+    [[cylinder], 1],
+    [[scott, cylinder], 2],
+  ] as [string[], number][])(
+    'backup accepts DE with preferences %j and counts each once',
+    (held, credits) => {
+      expect(evaluateEligibility(syntheticMember([de, ...held]), backup)).toMatchObject({
+        eligible: true,
+        points: credits,
+      });
+    },
+  );
+  it('backup preferences never compensate for missing DE or wrong rank', () => {
+    expectRejected(
+      syntheticMember([scott, cylinder, ...operations, ...technicians, drone, carSeat]),
+      backup,
+    );
+    expectRejected(syntheticMember([de, scott, cylinder], 'LT'), backup);
+  });
+  it('combines numeric and binary credits without weakening the six-Operations gate', () => {
+    expect(
+      evaluateEligibility(
+        syntheticMember([
+          de,
+          scott,
+          cylinder,
+          ...operations.slice(1),
+          ...technicians,
+          drone,
+          carSeat,
+        ]),
+        backup,
+      ).points,
+    ).toBe(9);
+    expect(
+      evaluateEligibility(
+        syntheticMember([de, scott, cylinder, ...operations, ...technicians, drone, carSeat]),
+        backup,
+      ).points,
+    ).toBe(16);
+  });
+  // PDF p1 Procedure3(b), omitted by Rules & Points!A29:C35. Bullet order is
+  // not a lexicographic tier; each distinct completed criterion adds one credit.
+  const eventsCriteria = ['NFPA1123', 'NFPA1126', 'RN8312', 'RN8313'];
+  const inspector = 'Current State of Florida Fire Inspector';
+  const events = compile(
+    profile(
+      'synthetic-events-captain',
+      'CPT',
+      [inspector],
+      {
+        v: 1,
+        total: [cumulative('events', eventsCriteria, 'PDF p1 Procedure3(b)')],
+        so: [],
+        mo: [],
+      },
+      'PDF p1 Procedure3(b)',
+    ),
+  );
+  it.each([0, 1, 2, 3, 4])('Events Captain receives %s equal cumulative credits', (count) => {
+    expect(
+      evaluateEligibility(
+        syntheticMember([inspector, ...eventsCriteria.slice(0, count)], 'CPT'),
+        events,
+      ).points,
+    ).toBe(count);
+  });
+  it('requires current Inspector despite all Events preferences', () =>
+    expectRejected(syntheticMember(eventsCriteria, 'CPT'), events));
+  const preventionGroup = cumulative(
+    'prevention',
+    [
+      'Fire Inspector I',
+      'Fire Instructor I',
+      'Fire and Life Safety Educator I',
+      carSeat,
+      'RN8977 I',
+    ],
+    'PDF p1 Procedure3(c); Rules & Points!A50:C53 omit RN8977',
+  );
+  const rn = preventionGroup.preference?.criteria[4];
+  if (!rn) throw new Error('Synthetic RN8977 criterion required');
+  rn.requiresAll = ['RN8977 II'];
+  const prevention = compile(
+    profile(
+      'synthetic-prevention-lt',
+      'LT',
+      [inspector],
+      { v: 1, total: [preventionGroup], so: [], mo: [] },
+      'PDF p1 Procedure3(c)',
+    ),
+  );
+  it.each([
+    [[], 0],
+    [['RN8977 I'], 0],
+    [['RN8977 II'], 0],
+    [['RN8977 I', 'RN8977 II'], 1],
+  ] as [string[], number][])('RN8977 I and II form one combined criterion %j', (courses, credits) =>
+    expect(
+      evaluateEligibility(syntheticMember([inspector, ...courses], 'LT'), prevention).points,
+    ).toBe(credits),
+  );
+});

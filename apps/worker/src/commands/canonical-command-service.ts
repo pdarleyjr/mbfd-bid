@@ -25,6 +25,7 @@ import {
   loadFrozenSessionBidPolicy,
   resolveFrozenSessionBidTarget,
 } from '../lib/bid-policy.js';
+import { unresolvedSpecialtyPriority } from '../lib/canonical-specialty-priority.js';
 import { evaluateFrozenSimultaneousADays } from '../lib/frozen-a-day.js';
 import { reduceLiveBidCommand } from './live-bid-reducer.js';
 
@@ -834,6 +835,58 @@ export async function commitLiveBidCommand(
     );
     return { result, canonicalState: null };
   }
+  if (input.command.type === 'live.start_specialty_adjudication') {
+    const specialtyId = input.command.specialtyId;
+    const target =
+      current.currentBidderId === null
+        ? null
+        : await resolveFrozenSessionBidTarget(getDb(input.db), {
+            bidSessionId: input.command.bidSessionId,
+            memberId: current.currentBidderId,
+            positionId: input.command.positionId,
+          });
+    let code: string | null = null;
+    try {
+      if (
+        !target?.ok ||
+        target.snapshot.settings.v !== 3 ||
+        canonicalJson(target.snapshot.settings.livePolicy) !== canonicalJson(input.policy)
+      )
+        code = 'LIVE_SPECIALTY_POLICY_MISSING';
+      else {
+        const expected = unresolvedSpecialtyPriority({
+          snapshot: target.snapshot,
+          state: current,
+          memberId: target.member.memberId,
+          positionId: input.command.positionId,
+          rule: target.rule,
+        }).find((entry) => entry.specialtyId === specialtyId)?.candidateMemberIds;
+        if (
+          !expected?.length ||
+          canonicalJson(expected) !== canonicalJson(input.command.candidateMemberIds)
+        )
+          code = 'SPECIALTY_CANDIDATE_ORDER_INVALID';
+      }
+    } catch (error) {
+      code = error instanceof Error ? error.message : 'LIVE_SPECIALTY_POLICY_INVALID';
+    }
+    if (code !== null) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code,
+        currentSeq: current.lastSeq,
+      };
+      await insertRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
+  }
   const reduction = reduceLiveBidCommand(
     current,
     input.policy,
@@ -954,6 +1007,40 @@ export async function commitLiveBidCommand(
       reduction.state.fills[positionId] = { ...fill, termDeparture: termDeparture.election };
       reduction.payload.termDeparture = termDeparture.election;
     }
+    // Explicit reviewed fallback tiers have their own qualification and order
+    // authority. Ordinary awards cannot bypass an interrupting ranked pool.
+    if (fallbackReview === null && target.ok) {
+      let priorityCode: string | null = null;
+      try {
+        const pending = unresolvedSpecialtyPriority({
+          snapshot: target.snapshot,
+          state: current,
+          memberId: fill.memberId,
+          positionId,
+          rule: target.rule,
+        });
+        if (pending.some((entry) => entry.candidateMemberIds.length > 0))
+          priorityCode = 'SPECIALTY_HIGHER_PRIORITY_UNRESOLVED';
+      } catch (error) {
+        priorityCode = error instanceof Error ? error.message : 'LIVE_SPECIALTY_POLICY_INVALID';
+      }
+      if (priorityCode !== null) {
+        const rejected: LiveBidCommandResult = {
+          kind: 'rejected',
+          commandId: input.command.commandId,
+          code: priorityCode,
+          currentSeq: current.lastSeq,
+        };
+        await insertRejectedReceipt(
+          input.db,
+          input.command as unknown as MockFreezeCommand,
+          requestSha256,
+          rejected as unknown as MockFreezeCommandResult,
+          now,
+        );
+        return { result: rejected, canonicalState: null };
+      }
+    }
   }
   if (fallbackReview !== null)
     reduction.payload.fallback = {
@@ -968,6 +1055,7 @@ export async function commitLiveBidCommand(
   if (
     input.policy.annualOperations?.aDay.execution !== undefined ||
     input.policy.annualOperations?.membershipDistributions !== undefined ||
+    Object.values(reduction.state.fills).some((fill) => fill.membershipIds !== undefined) ||
     Object.values(reduction.state.fills).some((fill) => fill.aDay !== undefined)
   ) {
     const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);

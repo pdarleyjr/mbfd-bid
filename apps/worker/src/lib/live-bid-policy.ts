@@ -4,7 +4,7 @@ import type {
   FrozenLiveBidPolicy,
   StageParticipantOrdering,
 } from '@mbfd/shared';
-import { bidOrderingComparatorForStage } from '@mbfd/shared';
+import { bidOrderingComparatorForStage, bidOrdinalValue } from '@mbfd/shared';
 
 export interface FrozenStageOrderEntry {
   ordinal: number;
@@ -31,7 +31,7 @@ export type FrozenStageOrderResult =
 type StageMember = BidEvaluation['members'][number];
 
 function orderingValue(member: StageMember, key: StageParticipantOrdering[number]['key']) {
-  return key === 'RSC_SENIORITY' ? member.rscSeniority : member.rankSeniority;
+  return bidOrdinalValue(member, key);
 }
 
 export function sortWithFrozenOrdering(

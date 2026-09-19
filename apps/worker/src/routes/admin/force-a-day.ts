@@ -10,11 +10,11 @@ import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
-import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { aDayPicks, bidSessions } from '../../db/schema.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import { eligibilityMemberFromFrozen, loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
+import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -65,7 +65,7 @@ router.post('/:id/force-a-day', requireStepUpAuth(), async (c) => {
   const db = getDb(c.env.DB);
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
   if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-  if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+  if (await requiresCanonicalBidMutation(c.env.DB, sessionId)) {
     return c.json({ error: 'canonical_mutation_requires_command' }, 409);
   }
   if (session.currentPhase !== 'a_day_bid') {

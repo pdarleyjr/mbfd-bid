@@ -139,7 +139,46 @@ export function materializeBidDefinitionProfiles(
     };
   const profiles = [...authoring.profiles].sort((left, right) => compareId(left.id, right.id));
   const mappings = profileMappings(profiles, positions);
-  const result = compileAnnualRules(positions, profiles, MATERIALIZATION_RULE_BOOK_VERSION);
+  const allPositionIds = new Set(content.positions.map((position) => position.id));
+  const biddableIds = new Set(biddablePositionIds);
+  const scopeConflicts: AnnualRuleConflict[] = [];
+  const applicableProfiles: AnnualRuleProfile[] = [];
+  for (const profile of profiles) {
+    const ids =
+      profile.scope.kind === 'position'
+        ? [profile.scope.positionId]
+        : profile.scope.kind === 'family'
+          ? profile.scope.positionIds
+          : [];
+    for (const id of ids)
+      if (!allPositionIds.has(id))
+        scopeConflicts.push({
+          positionId: id,
+          field: 'scope',
+          profileIds: [profile.id],
+          reason: 'Scope references a position outside this Bid definition',
+        });
+    // Preserve closed-source authoring, but materialize only selectable seats.
+    if (profile.scope.kind === 'position' && !biddableIds.has(profile.scope.positionId)) continue;
+    if (profile.scope.kind === 'family') {
+      const positionIds = profile.scope.positionIds.filter((id) => biddableIds.has(id));
+      if (positionIds.length)
+        applicableProfiles.push({ ...profile, scope: { ...profile.scope, positionIds } });
+    } else applicableProfiles.push(profile);
+  }
+  if (scopeConflicts.length)
+    return {
+      ok: false,
+      code: 'profile_compilation_conflict',
+      conflicts: scopeConflicts,
+      profileMappings: mappings,
+      biddablePositionIds,
+    };
+  const result = compileAnnualRules(
+    positions,
+    applicableProfiles,
+    MATERIALIZATION_RULE_BOOK_VERSION,
+  );
   if (!result.ok)
     return {
       ok: false,

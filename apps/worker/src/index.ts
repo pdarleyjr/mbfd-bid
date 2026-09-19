@@ -12,7 +12,9 @@ import adminBidBoard from './routes/admin/bid-board.js';
 import adminBidConfiguration from './routes/admin/bid-configuration.js';
 import adminBidControls from './routes/admin/bid-controls.js';
 import adminBidDefinition from './routes/admin/bid-definition.js';
+import adminBidOrdinals from './routes/admin/bid-ordinals.js';
 import adminBidSession from './routes/admin/bid-session.js';
+import adminBidTourEvidence from './routes/admin/bid-tour-evidence.js';
 import adminBid from './routes/admin/bid.js';
 import adminCredentialImports from './routes/admin/credential-imports.js';
 import adminCredentials from './routes/admin/credentials.js';
@@ -34,6 +36,7 @@ import adminPostBidTransition from './routes/admin/post-bid-transition.js';
 import adminQualificationLifecycle from './routes/admin/qualification-lifecycle.js';
 import adminReadiness from './routes/admin/readiness.js';
 import adminRehearsal from './routes/admin/rehearsal.js';
+import adminResultDistribution from './routes/admin/result-distribution.js';
 import adminRuleBooks from './routes/admin/rule-books.js';
 import adminRules from './routes/admin/rules.js';
 import adminServiceEvidence from './routes/admin/service-evidence.js';
@@ -72,6 +75,8 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/department', adminDepartmentPeople)
   .route('/api/admin/organization', adminOrganization)
   .route('/api/admin/service-evidence', adminServiceEvidence)
+  .route('/api/admin/bid-ordinals', adminBidOrdinals)
+  .route('/api/admin/bid-tour-evidence', adminBidTourEvidence)
   .route('/api/admin/tenure-evidence', adminTenureEvidence)
   .route('/api/admin/post-award-obligations', adminPostAwardObligations)
   .route('/api/admin/credential-imports', adminCredentialImports)
@@ -92,6 +97,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/audit', adminAudit)
   .route('/api/admin/bid-award-transition', adminBidAwardTransition)
   .route('/api/admin/post-bid-transition', adminPostBidTransition)
+  .route('/api/admin/result-distribution', adminResultDistribution)
   .route('/api/admin/exports', adminExports)
   .route('/api/admin', adminPortal)
   .route('/api/admin/eligibility', adminEligibilityPreview)

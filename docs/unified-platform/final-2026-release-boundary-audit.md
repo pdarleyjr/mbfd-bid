@@ -1,0 +1,51 @@
+# Final 2026 release boundary audit
+
+Date: 2026-09-19. Local, synthetic verification only. No production database, session, credential, or deployment was used by this audit.
+
+The review compared the working candidate based on `2b1c35c3751e2ee413462e94d4af34dfb00d1230` with fetched main `ec4087a2166cffdfa8f4c96cb66d0db5ddc8ca0c`, including the uncommitted continuation. This is a focused review of the boundaries below, not a claim that every line of the broader PR or a final deployed artifact was independently audited. Release identity, hosted CI, browser acceptance, migration rehearsal, and deployment remain separate evidence.
+
+## Reproduced defects and corrections
+
+| Finding | Reproduction | Correction and verification |
+| --- | --- | --- |
+| A rejected Mock cancellation could leave a false closure audit. | Inject canonical initialization after the separately committed audit and before the lifecycle update. The database correctly rejected the update, but one `mock_session_closed` audit remained. | Closure and its audit now share one native D1 batch. The update checks the exact reviewed lifecycle and absence of canonical state; the audit requires that update to change one row. Canonical-start and lifecycle races return 409 without a closure audit, while audit failure rolls back closure. Unstarted Mock cancellation remains supported. |
+| New ordinal, tour, and distribution evidence could be overwritten by SQLite `INSERT OR REPLACE` with recursive triggers disabled. | Five direct SQL regressions failed because replacement succeeded despite UPDATE/DELETE guards. This was a database invariant failure; the public routes use ordinary INSERT and no public API replacement bypass was demonstrated. | Additive migration `0067_bid_evidence_insert_seals.sql` rejects occupied primary IDs, receipt keys, logical revision keys, and explicit rowid aliases before conflict handling. Original revisions remain intact and genuine next revisions remain possible. |
+| New import schemas accepted integers beyond JavaScript's exact numeric range. | Unsafe member ID and each ordinal domain passed schema validation; stage and specialty comparators treated them inconsistently. | Import and frozen ordinal schemas require safe positive integers; `bidOrdinalValue` returns unavailable for invalid new-domain values. Migration 0067 enforces numeric parity for direct inserts. Historical RSC/rank keys retain their prior behavior. |
+| A concurrent personnel edit could leave stale lifecycle evidence in a future assignment transition. | Change member rank or employment status immediately before the real D1 batch. The route returned 201 and persisted the stale plan. | The final transaction guard checks the exact member rank/status captured for every mutation. A race rejects the complete batch and preserves the independently committed personnel edit. |
+| Assignment-only lifecycle events could undo a previously scheduled promotion or retirement. | A reviewed promotion before the Bid assignment's effective date was projected back to FF by the later assignment event. | BID assignment events now leave `rank_after` and `employment_status_after` null. They describe the assignment without asserting an unrelated personnel transition. Promotion and retirement regressions retain the correct future projection. |
+| An ordinal file read could complete after the operator changed years. | The old closure could restore an old-year candidate after the year change cleared it. | Parent-owned UI fix binds file reads to an upload generation and checks candidate/year consistency. Deferred-read regression passes. |
+| A tour form could silently adopt a newer revision after background refresh. | Save previously read the latest query revision while retaining older draft inputs. | Parent-owned UI fix captures the reviewed base revision on edit and requires discarding/reviewing a changed base. Background-refresh regression passes. |
+| Backup CLI output could disclose a signed SQL download URL in workflow logs. | The real backup script with a synthetic Wrangler double leaked the export URL and failed the confidentiality assertion. | Export, SQL upload, recovery receipt upload, and bookmark lookup now capture all CLI streams privately and sanitize thrown failures. Public summaries retain safe artifact keys; recovery bookmarks and raw CLI responses remain private. Workflow scheduling and backup/recovery procedure are unchanged. |
+
+The narrow database and transition corrections were implemented only after reproducing the failures. Private red/green logs are in `tmp/unified-platform/final-2026-20260919/` with the `final-audit-` prefix. They contain synthetic fixtures.
+
+## Boundaries checked
+
+- **Authorization and CSRF:** Worker admin routes require verified bearer identity; unsafe admin operations revalidate federated authorization. Ordinal/tour imports and distribution reviews require fresh step-up. Real distribution reviews also require the frozen `publish` grant. Cookie-authenticated browser mutations pass through the same-origin/token CSRF proxy before a bearer token is forwarded. Synthetic CSRF tests reject foreign origin, missing/mismatched tokens, and unauthorized requests.
+- **Idempotency and revisions:** New import receipts bind actor, exact request, and key; immutable ordinal/tour revisions reject stale writers. Distribution receipts bind session operation, actor, package hash, completion sequence, channel, and expected revision. Its conditional insert, audit, and receipt are transactional; sequence races and injected failures leave no partial evidence. Retrying does not perform external delivery.
+- **Pending versus frozen material:** Managed run creation selects an exact saved version and expected context/source token. Preparation brackets evidence capture with source revision checks; creation repeats its guard in the transaction. New ordinal/tour inserts invalidate annual source revision. Existing runs use their frozen evidence and immutable pins rather than the current saved head. Unresolved authoring remains representable but does not gain Live authority.
+- **Ordering:** Time-in-grade and department-service Bid ordinal channels are distinct from legacy seniority and personnel dates. Imports reject duplicate member/employee/domain identities. Missing facts and unresolved ordering ties fail closed; no employee ID or maximum sentinel invents an order for the new channels. Ordered qualification preference is an explicit vector before cumulative credit, including the source-reviewed Investigator exclusion for IAAI candidates.
+- **Membership:** Existing membership and a reviewed qualified pool are explicit separate sources. Selected qualified overlays require frozen active specialty evidence. Canonical guards evaluate the resulting award set, including amendments; maximums apply during allocation and minimums at completion. A membership creates no extra seat or organizational assignment.
+- **Results and transition:** Results/downloads require admin access and derive names, positions, A-Day, overlays, and provenance from verified canonical completion and frozen material. Mock/historical unavailable states are explicit. Exports do not send email or write TargetSolutions. Transition verifies canonical completion, frozen action authority, exact canonical JSON, bindings, occupancy, term source rows, and captured personnel facts before one atomic batch. Assignment-only events preserve unrelated future personnel transitions.
+- **Legacy compatibility:** Historical reads remain. Managed legacy force/proxy/skip/amend and other mutation bypasses return explicit conflicts before writes; managed `/start` retains its verified canonical initialization. Unstarted Mock cancellation remains supported. Optional new frozen fields remain absent in historical material rather than being backfilled or guessed.
+
+## Verification evidence
+
+| Focused verification | Result |
+| --- | --- |
+| Independent ordered comparator, specialty ranking/canonical priority and managed mutation compatibility review | 7 eligibility and 34 Worker tests passed; no remaining priority bypass found in the bounded review |
+| Atomic Mock cancellation, concurrent canonical start/lifecycle changes, audit rollback and historical cancellation | 7 passed |
+| Routed pending policy and ordinal/tour evidence review, desktop and mobile | 6 passed using synthetic loopback fixtures |
+| New evidence seals, rowid aliases, safe integer rejection, append compatibility | 17 passed |
+| Ordinal/tour/distribution and canonical membership/A-Day/fallback suites | 37 passed, 11 explicitly skipped cases |
+| Pinned loaders, canonical command integrity, run-pin schema, source provenance | 207 passed |
+| Canonical term transition, historical award transition, Results | 36 passed |
+| Canonical specialty priority and exact replay | 8 passed |
+| Browser proxy/client/session CSRF | 12 passed |
+| Evidence editor races and pending policy review UI | 11 passed |
+| Backup guards with a synthetic CLI only | Temp-directory cleanup passed; production/staging success and nine failure paths passed, including signed URL, stderr, warning, information, and exception confidentiality |
+| Worker typecheck, shared build, scoped Biome, `git diff --check` | Passed |
+
+The first concurrent run of the expanded evidence suite hit two five-second timeouts in deep equality of serialized SQLite buffers. Replacing recursive object comparison with an exact length-and-byte comparison preserved the assertion and passed all 17 cases without increasing a timeout. Existing synthetic A-Day/membership/fallback fixtures now explicitly include empty specialty qualification facts when declaring an interrupting specialty; the consent fixture now uses a genuine lower-priority requester instead of a self-interruption. Their substantive rejection assertions were retained.
+
+No confirmed unresolved blocker remains within this audited scope after these corrections. This statement does not substitute for the parent release's final exact-candidate integration, migration rehearsal, build, browser, or production checks. Specialty candidate UNREACHABLE evidence is opportunity-specific and does not independently declare the entire member absent or deferred.

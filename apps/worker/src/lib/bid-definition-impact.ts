@@ -176,6 +176,7 @@ function specialties(evaluation: BidEvaluation) {
           'SPECIALTY_TIE_UNRESOLVED',
           'SPECIALTY_TIEBREAK_UNCONFIGURED',
           'SPECIALTY_SCORING_CONFIGURATION_INVALID',
+          'SPECIALTY_BID_ORDINAL_EVIDENCE_MISSING',
         ].includes(error.message)
           ? error.message
           : 'specialty_evaluation_invalid';
@@ -287,17 +288,23 @@ function traceSide(
   let comparison = null;
   if (other && other.pool !== 'EXCLUDED' && result.eligible) {
     const otherResult = evaluateEligibility(eligibilityMemberFromFrozen(other), rule);
-    if (otherResult.eligible)
+    if (
+      otherResult.eligible &&
+      score?.priority != null &&
+      scores.get(other.memberId)?.priority != null
+    )
       comparison = compareWithTrace(
         {
           ...result,
           rscSeniority: member.rscSeniority,
           rankSeniority: member.rankSeniority ?? Number.MAX_SAFE_INTEGER,
+          bidOrdinalEvidence: member.bidOrdinalEvidence,
         },
         {
           ...otherResult,
           rscSeniority: other.rscSeniority,
           rankSeniority: other.rankSeniority ?? Number.MAX_SAFE_INTEGER,
+          bidOrdinalEvidence: other.bidOrdinalEvidence,
         },
         rule.tieBreakChain,
       );
@@ -310,6 +317,9 @@ function traceSide(
     points: result.points,
     soPoints: result.soPoints,
     moPoints: result.moPoints,
+    ...(result.orderedPreference === undefined
+      ? {}
+      : { orderedPreference: result.orderedPreference }),
     breakdown: result.breakdown,
     channels,
     priority: score?.priority ?? null,
@@ -322,9 +332,11 @@ function traceSide(
           ? 'comparison_member_not_in_evaluation'
           : other.pool === 'EXCLUDED'
             ? 'comparison_member_excluded'
-            : comparison === null
-              ? 'comparison_requires_two_eligible_members'
-              : null,
+            : score?.eligible && score.priority === null
+              ? 'bid_ordering_evidence_missing'
+              : comparison === null
+                ? 'comparison_requires_two_eligible_members'
+                : null,
     stage: memberStage
       ? {
           id: memberStage.id,
@@ -338,6 +350,7 @@ function traceSide(
       credentialNames: member.credentialNames,
       scoringEvidence: member.scoringEvidence ?? null,
       serviceCredits: member.serviceCredits ?? [],
+      ...(member.bidOrdinalEvidence ? { bidOrdinalEvidence: member.bidOrdinalEvidence } : {}),
     },
   };
 }

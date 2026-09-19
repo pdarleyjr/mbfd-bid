@@ -61,6 +61,8 @@ const TIE_BREAK_LABELS: Record<TieBreakKey, string> = {
   mo_points: 'Marine-operations points',
   rsc_seniority: 'RSC seniority',
   rank_seniority: 'Rank seniority',
+  time_in_grade_bid_ordinal: 'Time-in-grade Bid ordinal',
+  department_service_bid_ordinal: 'Department-service Bid ordinal',
 };
 
 interface InitialRule {

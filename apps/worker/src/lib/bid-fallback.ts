@@ -52,13 +52,25 @@ export function evaluateBidFallback(input: {
       available.some((member) => member.currentBidPositionIds === undefined)
     )
       return { ok: false as const, code: 'FALLBACK_CURRENT_ASSIGNMENT_EVIDENCE_MISSING' };
-    const eligible = available.filter(
+    const qualified = available.filter(
       (member) =>
         (tier.mode !== 'FORCED' || member.termParticipation === undefined) &&
         (!tier.currentlyAssignedOnly ||
           member.currentBidPositionIds?.some((id) => policy.positionIds.includes(id))) &&
         evaluateEligibility(eligibilityMemberFromFrozen(member), rule).eligible,
     );
+    if (
+      tier.historyPredicate &&
+      qualified.some(
+        (member) =>
+          member.bidTourEvidence?.completedDaysTour === undefined ||
+          member.bidTourEvidence.completedDaysTour === null,
+      )
+    )
+      return { ok: false as const, code: 'FALLBACK_DAYS_TOUR_HISTORY_REQUIRED' };
+    const eligible = tier.historyPredicate
+      ? qualified.filter((member) => member.bidTourEvidence?.completedDaysTour === false)
+      : qualified;
     const ordered = sortWithFrozenOrdering(eligible, tier.comparator);
     if (!ordered.ok) return { ok: false as const, code: ordered.code.toUpperCase() };
     const responses = state.live?.fallbackResponses ?? [];

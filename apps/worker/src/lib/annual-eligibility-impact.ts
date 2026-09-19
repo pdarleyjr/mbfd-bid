@@ -1,4 +1,10 @@
-import { type Member, type PositionRule, compare, evaluateEligibility } from '@mbfd/eligibility';
+import {
+  type Member,
+  type PositionRule,
+  compare,
+  evaluateEligibility,
+  missingBidOrdinalKeys,
+} from '@mbfd/eligibility';
 
 export type ImpactMember = { memberId: number; evidence: Member };
 export type ImpactScore = {
@@ -22,8 +28,12 @@ export function evaluateImpactCohort(members: ImpactMember[], rule: PositionRule
     ...evaluateEligibility(member.evidence, rule),
     rscSeniority: member.evidence.rscSeniority,
     rankSeniority: member.evidence.rankSeniority ?? Number.MAX_SAFE_INTEGER,
+    bidOrdinalEvidence: member.evidence.bidOrdinalEvidence,
   }));
-  const ranked = evaluated
+  const missingOrderingEvidence = evaluated.some(
+    (result) => result.eligible && missingBidOrdinalKeys(result, rule.tieBreakChain).length > 0,
+  );
+  const ranked = (missingOrderingEvidence ? [] : evaluated)
     .filter((r) => r.eligible)
     .sort((a, b) => compare(a, b, rule.tieBreakChain));
   const priorities = new Map<number, number>();
@@ -44,7 +54,14 @@ export function evaluateImpactCohort(members: ImpactMember[], rule: PositionRule
         soPoints: result.soPoints,
         moPoints: result.moPoints,
         priority: priorities.get(result.memberId) ?? null,
-        reasons: result.reasons.filter((reason) => !reason.satisfied).map((reason) => reason.label),
+        reasons: [
+          ...result.reasons.filter((reason) => !reason.satisfied).map((reason) => reason.label),
+          ...(result.eligible && missingOrderingEvidence
+            ? [
+                'Bid priority unavailable: required reviewed Bid ordinal evidence is missing in this cohort.',
+              ]
+            : []),
+        ],
       } satisfies ImpactScore,
     ]),
   );

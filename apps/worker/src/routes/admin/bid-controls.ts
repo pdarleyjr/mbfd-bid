@@ -10,21 +10,15 @@ import {
   SkipSchema,
   isLiveBidActionAuthorized,
 } from '@mbfd/shared';
-import { eq, sql } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { eq } from 'drizzle-orm';
+import { type Context, Hono } from 'hono';
 import { ulid } from 'ulid';
-import {
-  hasCanonicalBidSessionState,
-  loadCanonicalBidSessionState,
-} from '../../commands/canonical-command-service.js';
+import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
-import { bidAwardAmendments, bidSessions, bids } from '../../db/schema.js';
+import { bidSessions } from '../../db/schema.js';
 import type { BidSessionState } from '../../durable/bid-session-state.js';
-import {
-  higherPriorityFrozenSpecialtyCandidates,
-  rankFrozenSpecialtyCandidates,
-} from '../../lib/annual-specialty-policy.js';
-import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
+import { rankFrozenSpecialtyCandidates } from '../../lib/annual-specialty-policy.js';
+import { auditInsertStatement } from '../../lib/audit.js';
 import { BidDefinitionSnapshotPinSchema } from '../../lib/bid-definition-pin.js';
 import { evaluateBidFallback } from '../../lib/bid-fallback.js';
 import { projectBidOpportunityPools } from '../../lib/bid-opportunity-pool.js';
@@ -35,6 +29,8 @@ import {
   loadFrozenSessionBidPolicy,
   resolveFrozenSessionBidTarget,
 } from '../../lib/bid-policy.js';
+import { unresolvedSpecialtyPriority } from '../../lib/canonical-specialty-priority.js';
+import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { adviseFrozenSpecialtyCoverage } from '../../lib/specialty-coverage-advisory.js';
@@ -47,10 +43,6 @@ type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
 function frozenPolicyFailureStatus(code: string): 409 | 422 {
   return code.startsWith('session_') ? 409 : 422;
-}
-
-function isBidCommandPhase(phase: string): boolean {
-  return phase === 'position_bid' || phase === 'a_day_bid';
 }
 
 async function loadLiveAdapterState(
@@ -123,6 +115,7 @@ function projectFrozenSpecialtyCoverage(input: {
         memberId: member.memberId,
         rscSeniority: member.rscSeniority,
         rankSeniority: member.rankSeniority,
+        bidOrdinalEvidence: member.bidOrdinalEvidence,
         credentialNames: member.credentialNames,
         scoringEvidence: member.scoringEvidence,
         specialtyQualifications: member.specialtyQualifications,
@@ -271,7 +264,11 @@ router.get('/:id/results', async (c) => {
         memberships:
           snapshot?.settings.v === 3
             ? (snapshot.settings.livePolicy.annualOperations?.membershipDistributions ?? [])
-                .filter((entry) => entry.memberIds.includes(fill.memberId))
+                .filter((entry) =>
+                  entry.membershipSource === 'REVIEWED_QUALIFIED_POOL'
+                    ? fill.membershipIds?.includes(entry.id)
+                    : entry.memberIds.includes(fill.memberId),
+                )
                 .map(({ id, label }) => ({ id, label }))
             : [],
         positionId,
@@ -340,18 +337,27 @@ router.get('/:id/specialty-live', async (c) => {
     );
     if (specialty === undefined || frozen.snapshot.credentialEvaluationOn === undefined)
       return c.json({ error: 'live_specialty_policy_missing' }, 409);
-    const ranked = rankFrozenSpecialtyCandidates({
-      policy: specialty,
-      evaluationOn: frozen.snapshot.credentialEvaluationOn,
-      members: frozen.snapshot.members.map((candidate) => ({
-        memberId: candidate.memberId,
-        rscSeniority: candidate.rscSeniority,
-        rankSeniority: candidate.rankSeniority,
-        credentialNames: candidate.credentialNames,
-        scoringEvidence: candidate.scoringEvidence,
-        specialtyQualifications: candidate.specialtyQualifications,
-      })),
-    });
+    let ranked: ReturnType<typeof rankFrozenSpecialtyCandidates>;
+    try {
+      ranked = rankFrozenSpecialtyCandidates({
+        policy: specialty,
+        evaluationOn: frozen.snapshot.credentialEvaluationOn,
+        members: frozen.snapshot.members.map((candidate) => ({
+          memberId: candidate.memberId,
+          rscSeniority: candidate.rscSeniority,
+          rankSeniority: candidate.rankSeniority,
+          bidOrdinalEvidence: candidate.bidOrdinalEvidence,
+          credentialNames: candidate.credentialNames,
+          scoringEvidence: candidate.scoringEvidence,
+          specialtyQualifications: candidate.specialtyQualifications,
+        })),
+      });
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : 'live_specialty_policy_invalid' },
+        409,
+      );
+    }
     const byMember = new Map(
       ranked.map((candidate, index) => [
         candidate.memberId,
@@ -403,6 +409,7 @@ router.get('/:id/specialty-live', async (c) => {
   return c.json({
     bid_session_id: sessionId,
     sequence: canonical.lastSeq,
+    membership_distributions: policy.annualOperations?.membershipDistributions ?? [],
     term_participation: Object.fromEntries(
       frozen.snapshot.members.flatMap((person) =>
         person.termParticipation ? [[String(person.memberId), person.termParticipation]] : [],
@@ -471,8 +478,8 @@ router.get('/:id/specialty-live', async (c) => {
 });
 
 // The adapter deliberately assigns actor/session identity.  It is the one
-// public entry point for real mutations; older force/skip routes remain
-// compatibility paths and cannot create canonical live state.
+// public entry point for real mutations; retired force/skip routes are
+// explicit compatibility responses and cannot mutate session state.
 router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
   const sessionId = c.req.param('id');
   const raw = await c.req.json().catch(() => null);
@@ -506,43 +513,19 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
     if (!evaluateEligibility(eligibilityMemberFromFrozen(requester), target.rule).eligible)
       return c.json({ error: 'live_specialty_requester_position_ineligible' }, 409);
     try {
-      const positionEligibleMemberIds = new Set(
-        frozen.snapshot.members
-          .filter((member) => {
-            const eligibilityMember = frozenEligibilityMemberForSession(
-              frozen.snapshot,
-              member.memberId,
-            );
-            return (
-              member.pool !== 'EXCLUDED' &&
-              eligibilityMember !== null &&
-              evaluateEligibility(eligibilityMemberFromFrozen(eligibilityMember), target.rule)
-                .eligible
-            );
-          })
-          .map((member) => member.memberId),
-      );
-      const candidates = higherPriorityFrozenSpecialtyCandidates({
-        policy: specialty,
-        evaluationOn: frozen.snapshot.credentialEvaluationOn,
-        members: frozen.snapshot.members
-          .filter((member) => member.pool !== 'EXCLUDED')
-          .map((member) => ({
-            memberId: member.memberId,
-            rscSeniority: member.rscSeniority,
-            rankSeniority: member.rankSeniority,
-            credentialNames: member.credentialNames,
-            scoringEvidence: member.scoringEvidence,
-            specialtyQualifications: member.specialtyQualifications,
-          })),
-        requesterMemberId: canonical.currentBidderId,
-        positionEligibleMemberIds,
-      });
+      const candidates =
+        unresolvedSpecialtyPriority({
+          snapshot: frozen.snapshot,
+          state: canonical,
+          memberId: canonical.currentBidderId,
+          positionId: typeof raw.positionId === 'string' ? raw.positionId : '',
+          rule: target.rule,
+        }).find((entry) => entry.specialtyId === specialty.id)?.candidateMemberIds ?? [];
       if (candidates.length === 0)
         return c.json({ error: 'live_specialty_no_higher_priority_candidate' }, 409);
       normalizedRaw = {
         ...raw,
-        candidateMemberIds: candidates.map((candidate) => candidate.memberId),
+        candidateMemberIds: candidates,
       };
     } catch (error) {
       return c.json(
@@ -600,561 +583,52 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
   return c.json(await response.json(), response.status as 200 | 400 | 409);
 });
 
-// POST /api/admin/bid-session/:id/force-pick
+/** All Real selection writes, including historical noncanonical sessions, use
+ * the sequenced canonical command endpoint. These retired URLs provide an
+ * explicit compatibility response only; historical reads remain available.
+ * Mock selections use the rehearsal/operator command path instead.
+ */
+async function retiredSelectionMutation(c: Context<Env>, command: string) {
+  const sessionId = c.req.param('id');
+  if (sessionId === undefined) return c.json({ error: 'session_not_found' }, 404);
+  const session = await getDb(c.env.DB)
+    .select({ isMock: bidSessions.isMock })
+    .from(bidSessions)
+    .where(eq(bidSessions.id, sessionId))
+    .get();
+  if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+  if (session.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
+  return c.json({ error: 'canonical_live_command_required', command }, 409);
+}
+
 router.post(
   '/:id/force-pick',
   requireStepUpAuth(),
   requireLiveBidAction('force'),
   zValidator('json', ForcePickSchema),
-  async (c) => {
-    const sessionId = c.req.param('id');
-    const forceSession = await getDb(c.env.DB)
-      .select({ isMock: bidSessions.isMock })
-      .from(bidSessions)
-      .where(eq(bidSessions.id, sessionId))
-      .get();
-    if (forceSession !== undefined && !forceSession.isMock)
-      return c.json(
-        { error: 'canonical_live_command_required', command: 'live.force_selection' },
-        409,
-      );
-    const body = c.req.valid('json');
-
-    if (!isReasonValidForAction('forced_pick', body.reason_code)) {
-      return c.json(
-        {
-          error: 'invalid_reason_for_action',
-          action: 'forced_pick',
-          reason_code: body.reason_code,
-        },
-        400,
-      );
-    }
-
-    const db = getDb(c.env.DB);
-    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-    if (session.isMock) {
-      return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-    }
-    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
-      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-    }
-    // A force-pick is an override of turn order, never an override of the
-    // frozen policy boundary. In particular, neither an excluded Division
-    // Chief nor an administratively assigned non-biddable position can be
-    // injected through this direct administrative route.
-    const target = await resolveFrozenSessionBidTarget(db, {
-      bidSessionId: sessionId,
-      memberId: body.member_id,
-      positionId: body.position_id,
-    });
-    if (!target.ok) {
-      return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
-    }
-    // A direct administrative pick cannot create a real Bid before the normal
-    // session-start gate has admitted it. `position_bid` and `a_day_bid` are
-    // the only active command phases; a config/paused/completed session must
-    // never gain a pending award through this legacy control path.
-    if (!isBidCommandPhase(session.currentPhase)) {
-      return c.json({ error: 'bid_session_not_active', current_phase: session.currentPhase }, 409);
-    }
-
-    // Idempotency: header overrides; otherwise generate a stable key.
-    const idemKey =
-      c.req.header('Idempotency-Key')?.trim() ||
-      `force:${sessionId}:${body.member_id}:${body.position_id}`;
-
-    const existing = await db.select().from(bids).where(eq(bids.idempotencyKey, idemKey)).get();
-    if (existing !== undefined) {
-      return c.json({ bid_id: existing.id, forced: true, idempotent_replay: true });
-    }
-
-    const bidId = ulid();
-    const claims = c.get('claims');
-    // A bridge-only administrator may not have a canonical Bid member row.
-    // Persist NULL rather than the synthetic id 0 so a strict FK cannot turn
-    // an otherwise authorized, active-session action into a 500.
-    const adminActorId = claims.member_id;
-    const now = new Date();
-
-    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
-      const current = await db
-        .select()
-        .from(bidSessions)
-        .where(eq(bidSessions.id, sessionId))
-        .get();
-      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
-      if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-      if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
-        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-      }
-      if (!isBidCommandPhase(current.currentPhase)) {
-        return c.json(
-          { error: 'bid_session_not_active', current_phase: current.currentPhase },
-          409,
-        );
-      }
-      // A different request can have acquired and released the permit after
-      // the fast-path read above. Recheck while holding this permit so a
-      // duplicate request is a replay rather than a D1 unique-key failure.
-      const existingAfterLease = await db
-        .select()
-        .from(bids)
-        .where(eq(bids.idempotencyKey, idemKey))
-        .get();
-      if (existingAfterLease !== undefined) {
-        return c.json({ bid_id: existingAfterLease.id, forced: true, idempotent_replay: true });
-      }
-
-      // Read and advance the legacy ordinal only after holding the session
-      // permit, so two direct D1 writers cannot both derive the same value.
-      const maxOrdRow = await db
-        .select({ m: sql<number | null>`max(${bids.ordinal})` })
-        .from(bids)
-        .where(eq(bids.bidSessionId, sessionId))
-        .get();
-      const ordinal = (maxOrdRow?.m ?? 0) + 1;
-      const results = await c.env.DB.batch([
-        c.env.DB.prepare(
-          `INSERT INTO bids
-               (id, bid_session_id, ordinal, member_id, position_id, picked_at, forced,
-                admin_actor_id, reason, idempotency_key, portal_sync_status, portal_sync_attempts)
-             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 'pending', 0)`,
-        ).bind(
-          bidId,
-          sessionId,
-          ordinal,
-          body.member_id,
-          body.position_id,
-          now.getTime(),
-          adminActorId,
-          body.reason,
-          idemKey,
-        ),
-        auditInsertStatement(
-          c.env.DB,
-          {
-            bidSessionId: sessionId,
-            actorType: 'admin',
-            actorId: adminActorId,
-            action: 'forced_pick',
-            targetKind: 'bid',
-            targetId: bidId,
-            reason: body.reason,
-            afterState: {
-              member_id: body.member_id,
-              position_id: body.position_id,
-              reason_code: body.reason_code,
-            },
-          },
-          now,
-        ),
-      ]);
-      if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
-        return c.json({ error: 'forced_pick_not_applied' }, 409);
-      }
-
-      return c.json({ bid_id: bidId, forced: true }, 201);
-    });
-    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
-    return mutation.value;
-  },
+  (c) => retiredSelectionMutation(c, 'live.force_selection'),
 );
-
-// POST /api/admin/bid-session/:id/skip
 router.post(
   '/:id/skip',
   requireStepUpAuth(),
   requireLiveBidAction('skip_defer'),
   zValidator('json', SkipSchema),
-  async (c) => {
-    const sessionId = c.req.param('id');
-    const skipSession = await getDb(c.env.DB)
-      .select({ isMock: bidSessions.isMock })
-      .from(bidSessions)
-      .where(eq(bidSessions.id, sessionId))
-      .get();
-    if (skipSession !== undefined && !skipSession.isMock)
-      return c.json({ error: 'canonical_live_command_required', command: 'live.disposition' }, 409);
-    const body = c.req.valid('json');
-
-    if (!isReasonValidForAction('skip', body.reason_code)) {
-      return c.json(
-        { error: 'invalid_reason_for_action', action: 'skip', reason_code: body.reason_code },
-        400,
-      );
-    }
-
-    const db = getDb(c.env.DB);
-    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-    if (session.isMock) {
-      return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-    }
-    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
-      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-    }
-
-    const frozenPolicy = await loadFrozenSessionBidPolicy(db, sessionId);
-    if (!frozenPolicy.ok) {
-      return c.json({ error: frozenPolicy.code }, frozenPolicyFailureStatus(frozenPolicy.code));
-    }
-    const frozenMember = frozenPolicy.snapshot.members.find(
-      (entry) => entry.memberId === body.member_id,
-    );
-    if (frozenMember === undefined) {
-      return c.json({ error: 'member_not_in_bid_pool' }, 422);
-    }
-    if (frozenMember.pool === 'EXCLUDED') {
-      return c.json({ error: 'member_excluded_from_bid_pool' }, 422);
-    }
-
-    const claims = c.get('claims');
-    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
-      const current = await db
-        .select()
-        .from(bidSessions)
-        .where(eq(bidSessions.id, sessionId))
-        .get();
-      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
-      if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-      if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
-        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-      }
-      await writeAuditLog(db, {
-        bidSessionId: sessionId,
-        actorType: 'admin',
-        actorId: claims.member_id,
-        action: 'skip',
-        targetKind: 'member',
-        targetId: String(body.member_id),
-        reason: body.reason,
-        afterState: { skipped_member_id: body.member_id, reason_code: body.reason_code },
-      });
-
-      return c.json({ skipped_member_id: body.member_id, reason_code: body.reason_code });
-    });
-    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
-    return mutation.value;
-  },
+  (c) => retiredSelectionMutation(c, 'live.disposition'),
 );
-
-// POST /api/admin/bid-session/:id/bid-for-member
 router.post(
   '/:id/bid-for-member',
   requireStepUpAuth(),
   requireLiveBidAction('record_selection'),
   zValidator('json', BidForMemberSchema),
-  async (c) => {
-    const sessionId = c.req.param('id');
-    const proxySession = await getDb(c.env.DB)
-      .select({ isMock: bidSessions.isMock })
-      .from(bidSessions)
-      .where(eq(bidSessions.id, sessionId))
-      .get();
-    if (proxySession !== undefined && !proxySession.isMock)
-      return c.json(
-        { error: 'canonical_live_command_required', command: 'live.record_selection' },
-        409,
-      );
-    const body = c.req.valid('json');
-
-    if (!isReasonValidForAction('admin_bid_for_member', body.reason_code)) {
-      return c.json(
-        {
-          error: 'invalid_reason_for_action',
-          action: 'admin_bid_for_member',
-          reason_code: body.reason_code,
-        },
-        400,
-      );
-    }
-
-    const db = getDb(c.env.DB);
-    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-    if (session.isMock) {
-      return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-    }
-    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
-      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-    }
-    const target = await resolveFrozenSessionBidTarget(db, {
-      bidSessionId: sessionId,
-      memberId: body.member_id,
-      positionId: body.position_id,
-    });
-    if (!target.ok) {
-      return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
-    }
-    if (!isBidCommandPhase(session.currentPhase)) {
-      return c.json({ error: 'bid_session_not_active', current_phase: session.currentPhase }, 409);
-    }
-
-    const frozenMember = frozenEligibilityMemberForSession(target.snapshot, body.member_id);
-    if (frozenMember === null) {
-      return c.json({ error: 'session_policy_snapshot_material_missing' }, 409);
-    }
-    const evalResult = evaluateEligibility(eligibilityMemberFromFrozen(frozenMember), target.rule);
-    if (!evalResult.eligible) {
-      return c.json({ error: 'ineligible', reasons: evalResult.reasons }, 422);
-    }
-
-    const idemKey =
-      c.req.header('Idempotency-Key')?.trim() ||
-      `proxy:${sessionId}:${body.member_id}:${body.position_id}`;
-    const existing = await db.select().from(bids).where(eq(bids.idempotencyKey, idemKey)).get();
-    if (existing !== undefined) {
-      return c.json({ bid_id: existing.id, forced: false, idempotent_replay: true });
-    }
-
-    const claims = c.get('claims');
-    // See force-pick: bridge-only admin identities are auditable by type but
-    // cannot be represented as a nonexistent member id 0.
-    const adminActorId = claims.member_id;
-    const bidId = ulid();
-
-    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
-      const current = await db
-        .select()
-        .from(bidSessions)
-        .where(eq(bidSessions.id, sessionId))
-        .get();
-      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
-      if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-      if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
-        return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-      }
-      if (!isBidCommandPhase(current.currentPhase)) {
-        return c.json(
-          { error: 'bid_session_not_active', current_phase: current.currentPhase },
-          409,
-        );
-      }
-      // Recheck after the permit is acquired. A concurrent same-key request
-      // may have committed between the optimistic fast-path lookup and this
-      // serialized D1 write.
-      const existingAfterLease = await db
-        .select()
-        .from(bids)
-        .where(eq(bids.idempotencyKey, idemKey))
-        .get();
-      if (existingAfterLease !== undefined) {
-        return c.json({ bid_id: existingAfterLease.id, forced: false, idempotent_replay: true });
-      }
-
-      const now = new Date();
-      const results = await c.env.DB.batch([
-        c.env.DB.prepare(
-          `INSERT INTO bids
-               (id, bid_session_id, ordinal, member_id, position_id, a_day, picked_at, forced,
-                admin_actor_id, reason, idempotency_key, portal_sync_status, portal_sync_attempts)
-             VALUES (?, ?, 0, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', 0)`,
-        ).bind(
-          bidId,
-          sessionId,
-          body.member_id,
-          body.position_id,
-          body.a_day ?? null,
-          now.getTime(),
-          adminActorId,
-          body.reason,
-          idemKey,
-        ),
-        auditInsertStatement(
-          c.env.DB,
-          {
-            bidSessionId: sessionId,
-            actorType: 'admin',
-            actorId: adminActorId,
-            action: 'admin_bid_for_member',
-            targetKind: 'bid',
-            targetId: bidId,
-            reason: body.reason,
-            afterState: {
-              member_id: body.member_id,
-              position_id: body.position_id,
-              a_day: body.a_day ?? null,
-              reason_code: body.reason_code,
-            },
-          },
-          now,
-        ),
-      ]);
-      if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
-        return c.json({ error: 'admin_bid_not_applied' }, 409);
-      }
-
-      return c.json({ bid_id: bidId, forced: false }, 201);
-    });
-    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
-    return mutation.value;
-  },
+  (c) => retiredSelectionMutation(c, 'live.record_selection'),
 );
-
-// POST /api/admin/bid-session/:id/amend-selection
-// The immediately latest award may be replaced while its turn is still the
-// most recent committed selection. The old row is retained and linked; this is
-// deliberately not a destructive undo endpoint.
 router.post(
   '/:id/amend-selection',
   requireStepUpAuth(),
   requireLiveBidAction('amend_selection'),
   zValidator('json', AmendSelectionSchema),
-  async (c) => {
-    const sessionId = c.req.param('id');
-    if (sessionId !== '')
-      return c.json(
-        { error: 'canonical_live_command_required', command: 'live.amend_selection' },
-        409,
-      );
-    const body = c.req.valid('json');
-    const db = getDb(c.env.DB);
-    const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
-    if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
-    if (session.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
-      return c.json({ error: 'canonical_mutation_requires_command' }, 409);
-    }
-    if (!isBidCommandPhase(session.currentPhase)) {
-      return c.json({ error: 'bid_session_not_active', current_phase: session.currentPhase }, 409);
-    }
-    const original = await db.select().from(bids).where(eq(bids.id, body.bid_id)).get();
-    if (original === undefined || original.bidSessionId !== sessionId) {
-      return c.json({ error: 'award_not_found' }, 404);
-    }
-    const target = await resolveFrozenSessionBidTarget(db, {
-      bidSessionId: sessionId,
-      memberId: original.memberId,
-      positionId: body.position_id,
-    });
-    if (!target.ok) return c.json({ error: target.code }, frozenPolicyFailureStatus(target.code));
-
-    const replacementBidId = ulid();
-    const idempotencyKey =
-      c.req.header('Idempotency-Key')?.trim() || `amend:${body.bid_id}:${body.position_id}`;
-    const actorMemberId = c.get('claims').member_id;
-    const mutation = await runWithNormalBidMutationLease(c.env, sessionId, async () => {
-      const current = await db
-        .select()
-        .from(bidSessions)
-        .where(eq(bidSessions.id, sessionId))
-        .get();
-      if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
-      if (current.mockControlRevision !== body.expected_session_revision) {
-        return c.json(
-          { error: 'stale_session_revision', current_revision: current.mockControlRevision },
-          409,
-        );
-      }
-      const existing = await db
-        .select()
-        .from(bids)
-        .where(eq(bids.idempotencyKey, idempotencyKey))
-        .get();
-      if (existing !== undefined) return c.json({ bid_id: existing.id, idempotent_replay: true });
-      const replaced = await db
-        .select({ id: bidAwardAmendments.id })
-        .from(bidAwardAmendments)
-        .where(eq(bidAwardAmendments.originalBidId, original.id))
-        .get();
-      if (replaced !== undefined) return c.json({ error: 'award_already_superseded' }, 409);
-      const laterCommitted = await c.env.DB.prepare(
-        'SELECT id FROM bids WHERE bid_session_id = ? AND picked_at > ? LIMIT 1',
-      )
-        .bind(sessionId, original.pickedAt.getTime())
-        .first<{ id: string }>();
-      if (laterCommitted !== null) return c.json({ error: 'award_sealed_by_next_selection' }, 409);
-      const positionTaken = await c.env.DB.prepare(
-        `SELECT b.id FROM bids b
-         WHERE b.bid_session_id = ? AND b.position_id = ?
-           AND b.id <> ?
-           AND NOT EXISTS (SELECT 1 FROM bid_award_amendments a WHERE a.original_bid_id = b.id)
-         LIMIT 1`,
-      )
-        .bind(sessionId, body.position_id, original.id)
-        .first<{ id: string }>();
-      if (positionTaken !== null) return c.json({ error: 'position_filled' }, 409);
-      const now = new Date();
-      const amendmentId = ulid();
-      const results = await c.env.DB.batch([
-        c.env.DB.prepare(
-          `UPDATE bid_sessions SET mock_control_revision = mock_control_revision + 1
-           WHERE id = ? AND mock_control_revision = ?`,
-        ).bind(sessionId, body.expected_session_revision),
-        c.env.DB.prepare(`UPDATE bids SET portal_sync_status = 'superseded' WHERE id = ?`).bind(
-          original.id,
-        ),
-        c.env.DB.prepare(
-          `INSERT INTO bids
-             (id, bid_session_id, ordinal, member_id, position_id, a_day, picked_at, forced,
-              admin_actor_id, reason, idempotency_key, portal_sync_status, portal_sync_attempts)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', 0)`,
-        ).bind(
-          replacementBidId,
-          sessionId,
-          original.ordinal,
-          original.memberId,
-          body.position_id,
-          original.aDay,
-          now.getTime(),
-          actorMemberId,
-          body.reason,
-          idempotencyKey,
-        ),
-        c.env.DB.prepare(
-          `INSERT INTO bid_award_amendments
-             (id, bid_session_id, original_bid_id, replacement_bid_id, actor_member_id,
-              expected_session_revision, reason, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(
-          amendmentId,
-          sessionId,
-          original.id,
-          replacementBidId,
-          actorMemberId,
-          body.expected_session_revision,
-          body.reason,
-          now.getTime(),
-        ),
-        auditInsertStatement(
-          c.env.DB,
-          {
-            bidSessionId: sessionId,
-            actorType: 'admin',
-            actorId: actorMemberId,
-            action: 'amend_selection',
-            targetKind: 'bid',
-            targetId: replacementBidId,
-            reason: body.reason,
-            beforeState: { bid_id: original.id, position_id: original.positionId },
-            afterState: {
-              bid_id: replacementBidId,
-              supersedes_bid_id: original.id,
-              position_id: body.position_id,
-            },
-          },
-          now,
-        ),
-      ]);
-      if (results.some((result) => result.meta.changes !== 1)) {
-        return c.json({ error: 'amendment_not_applied' }, 409);
-      }
-      return c.json(
-        {
-          bid_id: replacementBidId,
-          supersedes_bid_id: original.id,
-          revision: body.expected_session_revision + 1,
-        },
-        201,
-      );
-    });
-    if (!mutation.ok) return c.json({ error: mutation.error }, 409);
-    return mutation.value;
-  },
+  (c) => retiredSelectionMutation(c, 'live.amend_selection'),
 );
-
 // POST /api/admin/bid-session/:id/lock-position
 router.post(
   '/:id/lock-position',
@@ -1181,7 +655,7 @@ router.post(
     if (session.isMock) {
       return c.json({ error: 'mock_rehearsal_control_required' }, 409);
     }
-    if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, sessionId)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     if (session.currentPhase !== 'config') {
@@ -1208,7 +682,7 @@ router.post(
         .get();
       if (current === undefined) return c.json({ error: 'session_not_found' }, 404);
       if (current.isMock) return c.json({ error: 'mock_rehearsal_control_required' }, 409);
-      if (await hasCanonicalBidSessionState(c.env.DB, sessionId)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, sessionId)) {
         return c.json({ error: 'canonical_mutation_requires_command' }, 409);
       }
       if (current.currentPhase !== 'config') {

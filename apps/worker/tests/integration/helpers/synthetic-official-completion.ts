@@ -1,9 +1,11 @@
 import {
   BidDispositionSchema,
+  type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
   LiveBidActionSchema,
   type PostAwardObligation,
 } from '@mbfd/shared';
+import type { BidSessionState } from '../../../src/durable/bid-session-state.js';
 import { syntheticAnnualCompletionSource } from '../../fixtures/synthetic-annual-completion.js';
 import type { TestD1 } from './test-d1.js';
 // Synthetic persistence fixture only; not a replay or accepted operational session.
@@ -11,6 +13,7 @@ export function seedSyntheticOfficialCompletion(
   h: TestD1,
   postAward: PostAwardObligation[],
   withAwardEvent = true,
+  configure?: (snapshot: BidSessionPolicySnapshot, state: BidSessionState) => void,
 ) {
   const original = syntheticAnnualCompletionSource();
   if (!original.state.annual?.completion) throw new Error('Synthetic completion missing');
@@ -130,6 +133,8 @@ export function seedSyntheticOfficialCompletion(
       })),
     },
   });
+  configure?.(snapshot, source.state);
+  BidSessionPolicySnapshotSchema.parse(snapshot);
   h.sqlite
     .prepare(
       `INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES ('annual-real-2027','2027.1','2027.1',0,?,1000)`,

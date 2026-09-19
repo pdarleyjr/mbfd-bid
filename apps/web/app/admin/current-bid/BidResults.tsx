@@ -15,6 +15,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
+import { BidResultDistribution } from './BidResultDistribution';
 
 const SessionSchema = z.object({
   id: z.string().min(1),
@@ -208,6 +209,12 @@ function RunResults({
               </ul>
             ) : null}
           </section>
+          <BidResultDistribution
+            key={session.id}
+            sessionId={session.id}
+            isMock={session.isMock}
+            completionVerified={results.completion.verified}
+          />
           <details className="rounded border border-border p-3">
             <summary className="cursor-pointer font-semibold">
               Saved version and frozen source
