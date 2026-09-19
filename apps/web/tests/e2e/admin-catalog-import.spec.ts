@@ -93,17 +93,10 @@ test('catalog import requires error-free review and preserves exact retry after 
   await page.goto('/admin/credentials/import');
   // React briefly retains a hidden streamed copy until it attaches the page.
   await expect(page.getByRole('main').getByLabel('Catalog XLSX', { exact: true })).toHaveCount(1);
-  // SSR controls can be visible before React attaches the file-change handler.
-  // Confirm a harmless state-driven layout change before selecting the file;
-  // replaying an upload/preview would consume this test's first-review fixture.
-  const layout = page.getByRole('main').getByLabel('Import layout', { exact: true });
-  const metadata = page.getByRole('main').getByLabel('Leading metadata columns', { exact: true });
-  await expect(async () => {
-    await layout.selectOption('legacy_wide_matrix');
-    await expect(metadata).toBeVisible({ timeout: 500 });
-  }).toPass({ timeout: 10_000 });
-  await layout.selectOption('normalized');
-  await expect(metadata).toHaveCount(0);
+  // The import fieldset becomes interactive only after its handlers attach.
+  await expect(page.getByRole('main').getByLabel('Catalog XLSX', { exact: true })).toBeEnabled({
+    timeout: 15_000,
+  });
   await page
     .getByRole('main')
     .getByLabel('Catalog XLSX', { exact: true })

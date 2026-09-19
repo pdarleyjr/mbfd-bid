@@ -1,9 +1,11 @@
 import { type Page, expect, test } from '@playwright/test';
 
 async function expectCanonicalHubLogin(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/);
-  await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible();
-  await expect(page.getByLabel('Employee ID')).toBeVisible();
+  await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/, { timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByLabel('Employee ID')).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe('PIN gate', () => {
@@ -55,23 +57,16 @@ test.describe('Lobby protection', () => {
     context,
     page,
   }) => {
-    // This is a synthetic redirect contract check. Keep Bid's local redirect
-    // chain real and intercept only the external Hub boundary; no Hub account
-    // or live login page is required by a local browser test.
+    // Read-only redirect integration: observe the real outgoing authorization
+    // request and public Hub login page. No route fixtures, credential entry,
+    // or claim of authenticated Hub acceptance is involved.
     const authorizations: URL[] = [];
-    await page.route('https://staging.mbfdhub.com/auth/bid/authorize?**', async (route) => {
-      authorizations.push(new URL(route.request().url()));
-      await route.fulfill({
-        status: 302,
-        headers: { location: 'https://staging.mbfdhub.com/login' },
-      });
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.origin === 'https://staging.mbfdhub.com' && url.pathname === '/auth/bid/authorize') {
+        authorizations.push(url);
+      }
     });
-    await page.route('https://staging.mbfdhub.com/login', (route) =>
-      route.fulfill({
-        contentType: 'text/html',
-        body: '<!doctype html><html><body><h1>MBFD Hub</h1><p>Synthetic login destination fixture</p><label>Employee ID<input name="employee_id"></label></body></html>',
-      }),
-    );
     await context.clearCookies();
     await context.addCookies([
       {
@@ -83,8 +78,8 @@ test.describe('Lobby protection', () => {
       },
     ]);
     await page.goto('/lobby', { waitUntil: 'commit' });
-    // The local streamed /lobby -> /login -> /api/auth/start chain must finish
-    // before asserting the external fixture destination.
+    // Request events include HTTP redirect targets even when route handlers
+    // do not intercept later requests in the same redirect chain.
     await expect.poll(() => authorizations.length, { timeout: 15_000 }).toBe(1);
     const authorization = authorizations[0];
     expect(authorization?.origin).toBe('https://staging.mbfdhub.com');
@@ -95,7 +90,6 @@ test.describe('Lobby protection', () => {
     );
     expect(authorization?.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
     await expectCanonicalHubLogin(page);
-    await expect(page.getByText('Synthetic login destination fixture')).toBeVisible();
   });
 });
 
