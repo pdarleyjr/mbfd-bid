@@ -1,8 +1,19 @@
 # Final 2026 policy coverage matrix
 
-Review date: 2026-09-19. This is a sanitized implementation and source review of
-the working candidate, not a completion certificate. It contains no personnel
-identities, credential holdings, relationship facts or production mutations.
+Status updated: 2026-09-20. The software is deployed at merged `85823a5da3c79f6a72684342a9f030f4ad78c84b`
+and final authored configuration v2 is saved, with legacy v1 preserved. **V2 is not
+executable**: participant preview, Mock preparation and Managed Live readiness
+remain blocked. The [production release record](production-release-20260920.md)
+records the exact runtime identities, hashes, validation and bounded authenticated
+acceptance. This sanitized matrix contains no personnel identities, credential
+holdings, relationship facts or private staffing mappings.
+
+The policy-specific review below originated on 2026-09-19. Its bounded mechanism
+findings remain distinct from later release evidence and actual member eligibility.
+Staging schema and application parity are restored at the same merged release;
+health and unauthenticated smoke passed, while authenticated staging acceptance
+was not executed. Completing the next
+executable configuration requires a new immutable Save; do not overwrite v2.
 
 The source authority and hashes are recorded in
 [the source manifest](final-2026-source-manifest.json). The PDF governs policy
@@ -15,12 +26,12 @@ fallback and the designated FF/DE A-Day scope after fresh final-source verificat
 
 | Class | Meaning at this review |
 | --- | --- |
-| Implemented mechanism | Code exists in the local working candidate. This does not establish final-source configuration or release. |
-| Source proposal | Private source extraction/configuration material identifies requirements and candidate memberships. It has not established a saved, approved, complete final configuration. |
+| Implemented mechanism | Code is included in the recorded deployed release. This does not establish complete executable policy or actual personnel evidence. |
+| Authored source configuration | Final source configuration is saved as immutable production v2. Pending execution authority, settings and evidence remain incomplete; authoring is not execution readiness. |
 | Synthetic verification | Local tests exercise invented members, seats and evidence. Passing tests do not prove real personnel facts, production state, external delivery or source ambiguity resolution. |
-| Live proof | No final-source production installation, Real Bid creation/start, actual award, personnel mutation or production browser acceptance is established by this matrix. |
+| Production proof | Deployment, authored v2 Save/readback, 232 exact-identity ordinal entries and bounded authenticated browser acceptance are recorded separately. No final executable production Mock, Real creation/start, actual award or personnel test mutation is established. |
 
-The private source proposal covers 228 organizational positions and four closed
+The saved authored source configuration covers 228 organizational positions and four closed
 2026 Days opportunities, explicit profile memberships and exact catalog-name
 matches. Unresolved bindings and equivalences remain unresolved fields, rather
 than guessed IDs, dates, members or zero-valued preference weights. The public
@@ -29,7 +40,7 @@ matrix deliberately does not reproduce that private material.
 ## Policy-to-implementation coverage
 
 File paths below are repository relative. Tests listed establish bounded
-mechanism coverage; the final configuration and Live proof columns remain
+mechanism coverage; executable configuration and Real operation evidence remain
 separate for every row.
 
 | Requirement and source anchor | Implemented mechanism / evidence | Final-source configuration and outstanding behavior |
@@ -49,7 +60,7 @@ separate for every row.
 | Marine preferences and force; PDF pp5-6 Procedure8 plus user clarification2026-09-19 | Optional PSD and FF car-seat scoring is separated from minima; canonical changed awards are eligibility-checked, including force. Fallback MINIMUM_QUALIFIED supports the user's resolved restriction. | Every final Marine fallback tier must retain all minimum requirements. Generic EXPLICIT_REQUIREMENTS exists for other source-authorized cases and is not authority to weaken Marine minima. Marine force ambiguity is resolved by the user; supplemental requirements and mappings remain separate gaps. |
 | Marine post-award obligations; PDF p6 Procedure8(f)(i-iii), footnote3 | Existing `post-award-obligations.ts` and rule post-award requirements represent dated obligations and reviewed follow-up; authoring preserves optional fields. | Final Open-Water-only DRI PSD obligation needs an approved bid-start date and three-calendar-month deadline. PADI-to-DRI continuing education/training/renewal must not receive an invented deadline. Full deadline monitoring, reviewed loss/reassignment consequences and real-member acceptance are not verified here. |
 | Marine A-Day: four core roles all distinct, total core plus floats at most2/group; PDF p6 Procedure8(f)(iv-v) | `frozen-a-day.ts` with explicit position/member/rank scopes and the existing A-Day engine. Tests enforce core max1 separately from combined max2, and rebuild amendments before persistence. | Final core/floats scopes must be populated from reviewed source bindings. Generic `specialtyMaximums` alone is not the installed execution scope. Daily boat tasks, qualified vacation/overtime coverage and operational staffing are not demonstrated by these Bid allocation tests. |
-| SWAT: six medics, two/shift, separate groups, not rank/unit-specific; PDF pp6-7 Procedure9 | `bid-membership-distribution.ts` supports reviewed existing member overlays without extra seats. Canonical integration checks maxima, membership completeness and final per-shift minima. Authoring tests cover explicit members/shifts/limits, blank sources and saved missing references. | Whether only the current six are distributed or additional qualified volunteers may bid remains unresolved. A fixed-membership primitive cannot resolve this policy interpretation. Final training/deployability and membership facts require authority; no identities are inferred from credentials or labels. |
+| SWAT: six medics, two/shift, separate groups, not rank/unit-specific; PDF pp6-7 Procedure9 | `bid-membership-distribution.ts` supports reviewed existing member overlays without extra seats. Canonical integration checks maxima, membership completeness and final per-shift minima. Authoring tests cover explicit members/shifts/limits, blank sources and saved missing references. | The user authorized all reviewed qualified volunteers on 2026-09-20. Both population mechanisms exist; actual reviewed candidates, training/deployability and executable distribution binding remain pending. No identities are inferred from credentials or labels. |
 | Light-duty Days availability; PDF p7 Procedure10 | Explicit participation and availability can remove a Bid opportunity while retaining the organization seat. | Final affected positions require authorized, effective-dated facts. Case-by-case long-term decisions and the complete live availability path have not been verified in this bounded review. |
 | Combat/Rescue floats and specialty exceptions; PDF p7 Procedure11 | `bid-opportunity-pool.ts` models explicit capacity pools separate from daily unit assignment; validates equivalent selection rules, stage/policy scopes and concrete reservation order. | Final Combat/Rescue pool membership, Paramedic/specialty minima and exceptions need configuration. Daily Chief placement must not be inferred as a permanent station assignment. Canonical Department transition is locally tested; exact bindings and production acceptance remain separate. |
 | Eight FF/DE positions per shift; PDF p7 Procedure12 | Twenty-four source-designated positions are explicit: per-shift suffixes103,104,202,303,304,402,707,708. Source golden A-Day cases enforce maximum2 and include Combat Float DE707/708. | Scope interpretation is closed: AirTech203 and Marine Operator602/Engineer603 do not count merely because the holder is DE-qualified. Runtime scopes must use the reviewed source-to-runtime position map; no broad credential-holder inference. |
@@ -68,7 +79,7 @@ separate for every row.
 | Boundary | Implemented and tested behavior | Remaining acceptance |
 | --- | --- | --- |
 | Rule profiles and source review | Profile authoring uses the shared compiler; save compiles concrete rules, and review previews impact without creating a version or run. Source decisions retain explicit resolutions and provenance. | Review final profile-to-position materialization, exact credential semantics and scoped source decisions. Binary cumulative preferences resolve the prior missing-weight interpretation without arbitrary policy numbers. A source review report is not an installed configuration. |
-| Managed Live preflight and creation | `BidLiveReview.tsx`, `CurrentBidWorkspace.tsx`, `bid-client.ts` and tests enforce read-only review, explicit create confirmation, exact version/context/source pins, dirty/stale/locked denial and response identity checks. Durable pending requests retain the same idempotency key on refresh; definitive conflicts invalidate review/confirmation, uncertain outcomes preserve pending identity. | Real browser acceptance against the release candidate is separate. Creation does not start a Bid; neither action is proven live here. |
+| Managed Live preflight and creation | `BidLiveReview.tsx`, `CurrentBidWorkspace.tsx`, `bid-client.ts` and tests enforce read-only review, explicit create confirmation, exact version/context/source pins, dirty/stale/locked denial and response identity checks. Durable pending requests retain the same idempotency key on refresh; definitive conflicts invalidate review/confirmation, uncertain outcomes preserve pending identity. | Production v2 preflight denies creation with `bid_configuration_live_policy_required`; the UI denial was verified. Creation and start have not occurred. Resolving authored configuration into executable policy remains separate. |
 | Frozen execution and receipts | Canonical service validates source/version integrity, derives fallback order, checks changed awards and allocation before atomic persistence, rejects stale sequence/key reuse and returns stored receipts on exact retry. Contact tests establish no duplicate event on retry. | Exact release regression, restart/recovery rehearsal and production migration compatibility must pass. No test licenses rewriting historical snapshot meaning. |
 | Historical compatibility | Optional fallback/A-Day/membership/term absence remains distinct from an explicit empty configuration. Version1 ordering authority remains readable. Existing term history can lack the three new facts. | Compatibility is bounded by tested snapshots; full historical production-read acceptance is not certified by this matrix. |
 | Department application and official results | Result reads consume canonical awards and official completion evidence. Staffing binding/term evidence remains separately reviewed. | Canonical annual-award transition and departure protection now have local implementation and passing focused tests. The independently identified no-closure source-assignment race is corrected and locally regression-tested. A displayed award is not proof that Department staffing was applied. |
@@ -80,7 +91,7 @@ separate for every row.
 | Seniority evidence reconciliation | Approved mapping is resolved; complete identity-safe import and freeze of the two final workbook channels, rejecting absent/duplicate/tied facts. | Affected ordinary/reverse ordering only; no guessed personnel update. |
 | Backup AirTech binding | Identify the source-authorized backup opportunity or membership; minimum/preference and qualified-only fallback interpretation are resolved. | Backup assignment scope only; no invented physical seat. |
 | Approved DE scope materialization | Carry the24 explicit source-designated DE positions through the semantic runtime map. | Interpretation is resolved; affected configuration still requires exact IDs. |
-| SWAT membership model | Whether existing six only or additional qualified applicants may bid, plus approved member/training/deployability facts. | SWAT participant selection, distribution and any membership transition. |
+| SWAT membership model | Wider reviewed qualified-volunteer population authorized by the user; approved candidate/training/deployability facts and executable binding remain required. | SWAT participant selection, distribution and any membership transition. |
 | Missing Timeline | Effective Specialized Shift Positions Timeline or explicit authorized timing exception configuration. | Specialized-shift A-Day timing exceptions; ordinary simultaneous mechanism can be tested independently. |
 | Missing Chief supplemental requirements | Effective Special Operations/Marine requirements or authoritative confirmation that PDF minima are exhaustive. | Complete final Marine admission/assignment qualification; unrelated roles proceed independently. |
 | Missing Article5 | Actual incorporated text before adding discretionary powers. | Additional automated override/dispute authority only; not all deterministic selection. |
@@ -91,7 +102,7 @@ The expanded search scope and supporting-source provenance are in
 [the external reference register](final-2026-external-references.md). Absence is
 limited to that searched scope, not every possible remote system or filesystem.
 
-## Executed evidence and remaining release gates
+## Historical focused evidence and remaining execution gates
 
 On 2026-09-19 this reviewer ran a focused worker batch covering final-policy golden
 rules, frozen A-Day, contextual ordering, fallback, opportunity pools, assignment
@@ -111,12 +122,14 @@ Operations prerequisites, main Air Tech certificate AND, Captain5 Paramedic and
 certificates. They are not a complete final-policy acceptance suite or proof of
 every preference, operational exception or transition.
 
-Before calling the final policy complete, independently establish: resolved
-source decisions and missing evidence; reviewed personnel/catalog/topology
-mapping; saved final configuration with explicit scopes and closures; real operator/member acceptance; full exact-revision tests;
-browser workflow acceptance; migration and recovery rehearsal; immutable release
-identity; bounded live readback. Real Bid creation, start, awards and external
-delivery remain distinct actions and evidence gates.
+The final release subsequently passed exact-revision tests, clean full and impact
+browser suites, recovery/migration rehearsal, deployment and bounded production
+readback; see the [release record](production-release-20260920.md). Authored v2 is
+saved with explicit scopes and closures. Remaining execution work requires
+resolved source decisions and missing evidence, reviewed personnel/catalog/staffing
+bindings, complete executable settings and operator grants, participant preview,
+and a safe final-version production Mock. Real Bid creation, start, awards and
+external delivery remain distinct actions; no Real start is authorized here.
 
 ## Independent term and transition review update
 
@@ -175,3 +188,15 @@ corrected to retain closed source profiles without active rules. Mixed DE/FF and
 LT/FF pools were split into24 homogeneous capacity buckets; validation was not
 weakened. Six focused profile-materialization tests pass, including closed-profile
 preservation and rejection of targets outside the actual definition.
+
+## September 20 production configuration update
+
+The exact authored content above was subsequently saved through the normal
+production workflow as immutable v2, preserving legacy v1. Content hashes and
+all 232 imported ordinal entries were verified by readback. This supersedes
+earlier statements that the authored proposal had not been saved; it does not
+resolve operational settings, actual member qualifications, staffing bindings
+or human policy decisions. Production participant preview is unavailable,
+Mock preparation reports `bid_configuration_settings_invalid`, and Managed Live
+reports `bid_configuration_live_policy_required`. The earlier synthetic complete
+Mock remains software verification, not a production readiness certificate.
