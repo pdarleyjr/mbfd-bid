@@ -14,6 +14,7 @@ import {
   loadCanonicalBidSessionState,
 } from '../../src/commands/canonical-command-service.js';
 import { getDb } from '../../src/db/index.js';
+import type { BidSessionState } from '../../src/durable/bid-session-state.js';
 import { app } from '../../src/index.js';
 import { captureBidDefinitionSource } from '../../src/lib/bid-definition-source.js';
 import { loadFrozenSessionBidPolicy } from '../../src/lib/bid-policy.js';
@@ -413,8 +414,12 @@ it.skipIf(!sourcePath)(
         memberId?: number | undefined;
         positionId?: string | undefined;
       }[] = [];
-      async function command(type: string, fields: Record<string, unknown> = {}) {
-        const state = await loadCanonicalBidSessionState(h.env.DB, sessionId);
+      async function command(
+        type: string,
+        fields: Record<string, unknown> = {},
+        knownState?: BidSessionState,
+      ) {
+        const state = knownState ?? (await loadCanonicalBidSessionState(h.env.DB, sessionId));
         if (!state) throw new Error('Missing state');
         const response = await request(`bid-session/${sessionId}/commands/live`, {
           v: 1,
@@ -446,8 +451,13 @@ it.skipIf(!sourcePath)(
       }
       // Reuse the server's exact pure preflight for the next choice. This does
       // not commit any fill, bypass the canonical guard, or infer policy limits.
-      async function availableADay(memberId: number, positionId: string, forced = false) {
-        const state = await loadCanonicalBidSessionState(h.env.DB, sessionId);
+      async function availableADay(
+        memberId: number,
+        positionId: string,
+        forced = false,
+        knownState?: BidSessionState,
+      ) {
+        const state = knownState ?? (await loadCanonicalBidSessionState(h.env.DB, sessionId));
         if (!state || !frozenSnapshot) throw new Error('Frozen projection required');
         const position = frozenSnapshot.ruleBookMaterial.positions.find((p) => p.id === positionId);
         const choices =
@@ -603,13 +613,14 @@ it.skipIf(!sourcePath)(
             specialtyInterruptions++;
             const pendingState = await loadCanonicalBidSessionState(h.env.DB, sessionId);
             const candidate = pendingState?.live?.specialty?.candidateMemberIds[0];
-            if (candidate === undefined) throw new Error('Candidate required');
-            for (const aDay of await availableADay(candidate, positionId)) {
-              const result = await command('live.resolve_specialty_candidate', {
-                memberId: candidate,
-                outcome: 'ACCEPT',
-                aDay,
-              });
+            if (!pendingState || candidate === undefined) throw new Error('Candidate required');
+            // No command intervenes between this read, advisory choice, and submission.
+            for (const aDay of await availableADay(candidate, positionId, false, pendingState)) {
+              const result = await command(
+                'live.resolve_specialty_candidate',
+                { memberId: candidate, outcome: 'ACCEPT', aDay },
+                pendingState,
+              );
               if (result.kind === 'accepted') {
                 selected = true;
                 break;
@@ -617,14 +628,21 @@ it.skipIf(!sourcePath)(
               expect(result.code).toMatch(/A_DAY/);
             }
           }
-        } else
-          for (const aDay of await availableADay(memberId, positionId)) {
-            const result = await command('live.record_selection', {
-              memberId,
-              positionId,
-              ...(pool ? { pool: { poolId: pool.id } } : {}),
-              aDay,
-            });
+        }
+        // The loop's state is unchanged: preceding negative cases must reject.
+        // HTTP and canonical-service guards still independently reload and verify it.
+        else
+          for (const aDay of await availableADay(memberId, positionId, false, state)) {
+            const result = await command(
+              'live.record_selection',
+              {
+                memberId,
+                positionId,
+                ...(pool ? { pool: { poolId: pool.id } } : {}),
+                aDay,
+              },
+              state,
+            );
             if (result.kind === 'accepted') {
               selected = true;
               break;
