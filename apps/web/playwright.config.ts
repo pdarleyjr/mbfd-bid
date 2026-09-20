@@ -32,7 +32,9 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         ...process.env,
-        NODE_ENV: 'test',
+        // Match Next's build/runtime mode; the isolated API and signing key
+        // provide test separation without changing React's runtime environment.
+        NODE_ENV: process.env.E2E_USE_BUILT_WEB === '1' ? 'production' : 'development',
         ENV: 'staging',
         // An explicit controlled API wins. Otherwise browser tests use only
         // the loopback annual mock below and never fall back to shared staging.

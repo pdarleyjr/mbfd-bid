@@ -44,6 +44,14 @@ async function click(control: HTMLElement) {
 }
 
 describe('Administrator Guide workspace', () => {
+  it('renders one complete PDF manual download control', () => {
+    const container = renderGuide();
+    const downloads = container.querySelectorAll<HTMLAnchorElement>('a[download][href$=".pdf"]');
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0]?.textContent?.trim()).toBe('Download complete manual (PDF)');
+    expect(downloads[0]?.getAttribute('href')).toBe('/manual/MBFD-Bid-Administrator-Manual.pdf');
+  });
+
   it('renders the protected guide route content with category navigation', () => {
     const html = renderToStaticMarkup(<AdministratorGuidePage />);
     expect(html).toContain('Administrator Guide');
