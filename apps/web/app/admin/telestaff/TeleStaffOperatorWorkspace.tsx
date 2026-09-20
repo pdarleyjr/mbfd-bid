@@ -818,8 +818,8 @@ export function TeleStaffOperatorWorkspace() {
   async function certifyDeterministicStaffing() {
     if (detail === null) return;
     const confirmed = window.confirm(
-      'Confirm every clearly identified staffing position in this import?\n\n' +
-        'Repeated or unclear positions will remain unresolved unless the report identifies each seat. This action is available only in the test environment and does not change production staffing.',
+      'Create approved Department staffing positions for the confirmed matches in this import?\n\n' +
+        'This saves the report-to-position matches and approves those rows. Unclear positions remain unresolved. Personnel assignments are applied in a separate step.',
     );
     if (!confirmed) return;
 
@@ -872,7 +872,7 @@ export function TeleStaffOperatorWorkspace() {
     if (detail === null) return;
     if (
       !window.confirm(
-        'Resolve these exceptions in the test environment? Repeated positions will be deferred without assigning a seat. Incomplete records will be kept for review. Rows with unknown people or unclear position matches will be rejected. Department staffing will not change.',
+        'Save review decisions for these exceptions? Repeated positions will be deferred without assigning a seat. Incomplete records will be retained without creating positions. Rows with unknown people or unclear position matches will be rejected. Personnel assignments will not change.',
       )
     )
       return;
@@ -1384,7 +1384,7 @@ export function TeleStaffOperatorWorkspace() {
               aria-labelledby="telestaff-certification-heading"
             >
               <p className="text-xs font-semibold uppercase tracking-wider text-info">
-                Staging certification
+                Staffing position approval
               </p>
               <h3
                 id="telestaff-certification-heading"
@@ -1393,9 +1393,9 @@ export function TeleStaffOperatorWorkspace() {
                 Confirm staffing positions
               </h3>
               <p className="mt-2 text-sm text-foreground">
-                Confirm positions only when the report clearly identifies each seat. Repeated or
-                unclear positions remain unresolved until the report distinguishes them. This action
-                is available only in the test environment and does not change production staffing.
+                Creates approved Department staffing positions and saves their confirmed report
+                matches. Unclear positions remain unresolved. Personnel assignments are applied in a
+                separate step.
               </p>
               <Button
                 data-testid="telestaff-certify-deterministic"
@@ -1451,9 +1451,9 @@ export function TeleStaffOperatorWorkspace() {
             <section className="mt-4 rounded-lg border border-warning/40 bg-warning-surface p-4">
               <h3 className="font-semibold text-foreground">Safe exception resolution</h3>
               <p className="mt-2 text-sm text-foreground">
-                Defer repeated positions without assigning a seat, keep incomplete records for
-                review, and reject rows with unknown people or unclear position matches. Department
-                staffing will not change.
+                Save review decisions: defer repeated positions without assigning a seat, retain
+                incomplete records without creating positions, and reject rows with unknown people
+                or unclear position matches. Personnel assignments will not change.
               </p>
               <Button
                 data-testid="telestaff-resolve-safe-exceptions"
@@ -1462,7 +1462,7 @@ export function TeleStaffOperatorWorkspace() {
                 disabled={busy || detail.import.reconciliation.pendingSourceRows === 0}
                 className="mt-3 min-h-11 rounded border border-warning/40 px-4 text-sm font-semibold text-warning disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Resolve test-environment exceptions
+                Resolve import exceptions
               </Button>
               {safeExceptionResolution !== null && (
                 <p className="mt-3 text-sm text-warning">

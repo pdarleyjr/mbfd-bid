@@ -649,10 +649,18 @@ describe('TeleStaffOperatorWorkspace', () => {
     if (!importButton) throw new Error('Retained import control did not render.');
     await click(importButton);
     const resolveButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Resolve test-environment exceptions'),
+      button.textContent?.includes('Resolve import exceptions'),
     );
     if (!resolveButton) throw new Error('Safe resolution control did not render.');
     await click(resolveButton);
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Save review decisions for these exceptions?'),
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Personnel assignments will not change.'),
+    );
+    expect(container.textContent).not.toContain('test environment');
+    expect(container.textContent).not.toContain('test-environment');
 
     expect(container.textContent).toContain('No eligible exceptions remained');
     expect(container.textContent).not.toContain(
@@ -740,10 +748,22 @@ describe('TeleStaffOperatorWorkspace', () => {
       '[data-testid="telestaff-certify-deterministic"]',
     );
     expect(certifyButton?.textContent).toContain('Confirm clearly identified positions');
-    expect(container.textContent).toContain('report clearly identifies each seat');
+    expect(container.textContent).toContain('Creates approved Department staffing positions');
+    expect(container.textContent).toContain('saves their confirmed report matches');
+    expect(container.textContent).toContain(
+      'Personnel assignments are applied in a separate step.',
+    );
+    expect(container.textContent).not.toContain('test environment');
+    expect(container.textContent).not.toContain('does not change production staffing');
 
     if (!certifyButton) throw new Error('Certification control did not render.');
     await click(certifyButton);
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Create approved Department staffing positions'),
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('This saves the report-to-position matches and approves those rows.'),
+    );
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/admin/telestaff/imports/import-certify-1/certify-deterministic-staffing',
