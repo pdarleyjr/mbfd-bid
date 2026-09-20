@@ -186,7 +186,7 @@ describe('exact local identity before administrator authorization and writes', (
     expect(reachedGrant).not.toHaveBeenCalled();
 
     // Real Hono routes must reject identity before payload validation or persistence.
-    for (const path of ['/api/admin/bid-definition/2026/versions', '/api/admin/bid-ordinals']) {
+    for (const path of ['/api/admin/bid/2026/versions', '/api/admin/bid-ordinals']) {
       const denied = await app.fetch(
         new Request(`http://x${path}`, {
           method: 'POST',
