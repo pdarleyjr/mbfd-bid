@@ -256,7 +256,41 @@ export const FrozenAnnualOperationsPolicySchema = z
         /** Explicit execution policy for new versions; old snapshots are unchanged. */
         execution: z
           .object({
-            timing: z.literal('SIMULTANEOUS'),
+            timing: z.enum([
+              'SIMULTANEOUS',
+              'AFTER_POSITION_SELECTION',
+              'SEPARATE_STAGE',
+              'ADMIN_ASSIGNED',
+            ]),
+            /**
+             * A profile reference is preserved as annual authoring provenance;
+             * position ids are the frozen execution scope.  A profile may be
+             * renamed or removed after this version is sealed, so execution
+             * never has to rediscover its members or opportunities.
+             */
+            timingExceptions: z
+              .array(
+                z
+                  .object({
+                    id: z.string().trim().min(1).max(80),
+                    label: z.string().trim().min(1).max(160),
+                    timing: z.enum([
+                      'SIMULTANEOUS',
+                      'AFTER_POSITION_SELECTION',
+                      'SEPARATE_STAGE',
+                      'ADMIN_ASSIGNED',
+                    ]),
+                    sourceRef: z.string().trim().min(4).max(500),
+                    positionIds: z.array(z.string().trim().min(1).max(160)).max(500),
+                    profileIds: z.array(z.string().trim().min(1).max(160)).max(250),
+                  })
+                  .strict()
+                  .refine((rule) => rule.positionIds.length + rule.profileIds.length > 0, {
+                    message: 'A-Day timing exceptions require an opportunity or shared profile scope',
+                  }),
+              )
+              .max(100)
+              .optional(),
             officersPerGroup: z.number().int().min(0).max(1_000).nullable(),
             sourceRef: z.string().trim().min(4).max(500),
             constraints: z
@@ -322,12 +356,29 @@ export const FrozenAnnualOperationsPolicySchema = z
       });
     }
     const constraints = policy.aDay.execution?.constraints ?? [];
+    const timingExceptions = policy.aDay.execution?.timingExceptions ?? [];
     if (new Set(constraints.map((rule) => rule.id)).size !== constraints.length)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['aDay', 'execution', 'constraints'],
         message: 'A-Day constraint identities must be unique',
       });
+    if (new Set(timingExceptions.map((rule) => rule.id)).size !== timingExceptions.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['aDay', 'execution', 'timingExceptions'],
+        message: 'A-Day timing exception identities must be unique',
+      });
+    for (const [index, rule] of timingExceptions.entries()) {
+      for (const key of ['positionIds', 'profileIds'] as const) {
+        if (new Set(rule[key]).size !== rule[key].length)
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['aDay', 'execution', 'timingExceptions', index, key],
+            message: 'A-Day timing exception scope entries must be unique',
+          });
+      }
+    }
     for (const [index, rule] of constraints.entries()) {
       for (const key of ['positionIds', 'memberIds', 'ranks', 'shifts'] as const) {
         if (new Set<string | number>(rule[key]).size !== rule[key].length)

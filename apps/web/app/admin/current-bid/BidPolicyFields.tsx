@@ -706,6 +706,10 @@ export function BidPolicyFields({
             <BidADayExecutionFields
               value={ops.aDay.execution}
               opportunities={opportunities}
+              profiles={(content.authoring?.profiles ?? []).map((profile) => ({
+                value: profile.id,
+                label: `${profile.name} · ${profile.scope.kind} profile`,
+              }))}
               members={people.data ?? []}
               onChange={(execution) => {
                 const { execution: _previous, ...capacity } = ops.aDay;

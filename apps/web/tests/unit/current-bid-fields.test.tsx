@@ -916,6 +916,7 @@ describe('BidPolicyFields', () => {
     await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
     expect(ops(state.value()).aDay.execution).toStrictEqual({
       timing: 'SIMULTANEOUS',
+      timingExceptions: [],
       officersPerGroup: null,
       sourceRef: '',
       constraints: [],
@@ -932,6 +933,51 @@ describe('BidPolicyFields', () => {
     required(expected.policy).executionPolicy = structuredClone(live(expected));
     expect(state.value()).toStrictEqual(expected);
     expect(ops(state.value()).aDay).not.toHaveProperty('execution');
+  });
+
+  it('lets an administrator save each approved A-Day timing model without rewriting limits', async () => {
+    const state = policyEditor(baseContent(), 'a-day');
+    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await setValue(control(state.container, 'A-Day execution source'), 'Synthetic timing authority');
+
+    for (const timing of [
+      'SIMULTANEOUS',
+      'AFTER_POSITION_SELECTION',
+      'SEPARATE_STAGE',
+      'ADMIN_ASSIGNED',
+    ] as const) {
+      await setValue(control(state.container, 'A-Day selection timing'), timing);
+      expect(ops(state.value()).aDay.execution?.timing).toBe(timing);
+      expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
+    }
+  });
+
+  it('authors a source-backed specialized A-Day timing exception by opportunity', async () => {
+    const state = policyEditor(baseContent(), 'a-day');
+    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await setValue(control(state.container, 'A-Day execution source'), 'Synthetic timing authority');
+    await click(button(state.container, 'Add A-Day timing exception'));
+    const exception = group(state.container, 'A-Day timing exception 1');
+    await setValue(control(exception, 'Exception name'), 'Synthetic specialized assignment');
+    await setValue(control(exception, 'Exception source'), 'Synthetic timeline authority');
+    await setValue(control(exception, 'Exception timing'), 'AFTER_POSITION_SELECTION');
+    await click(
+      control(
+        group(exception, 'Exception opportunities'),
+        'Synthetic opportunity 1 · A · synthetic-seat-1',
+      ),
+    );
+    expect(ops(state.value()).aDay.execution?.timingExceptions).toStrictEqual([
+      {
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        label: 'Synthetic specialized assignment',
+        sourceRef: 'Synthetic timeline authority',
+        timing: 'AFTER_POSITION_SELECTION',
+        positionIds: ['synthetic-seat-1'],
+        profileIds: [],
+      },
+    ]);
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
   });
 
   it('authors an exact officer count while preserving the distinction between zero and no exact count', async () => {

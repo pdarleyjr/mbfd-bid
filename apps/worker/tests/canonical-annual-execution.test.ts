@@ -22,12 +22,17 @@ describe('legacy rehearsal canonical capability boundary', () => {
       expect(requiresCanonicalAnnualExecution(snapshot({ [field]: [] }))).toBe(true);
     },
   );
-  it('blocks simultaneous A-Day and frozen member term participation', () => {
-    expect(
-      requiresCanonicalAnnualExecution(
-        snapshot({ aDay: { execution: { timing: 'SIMULTANEOUS' } } }),
-      ),
-    ).toBe(true);
+  it.each([
+    'SIMULTANEOUS',
+    'AFTER_POSITION_SELECTION',
+    'SEPARATE_STAGE',
+    'ADMIN_ASSIGNED',
+  ] as const)('blocks every configured A-Day timing model: %s', (timing) => {
+    expect(requiresCanonicalAnnualExecution(snapshot({ aDay: { execution: { timing } } }))).toBe(
+      true,
+    );
+  });
+  it('blocks frozen member term participation', () => {
     expect(requiresCanonicalAnnualExecution(snapshot({}, { termParticipation: {} }))).toBe(true);
   });
 });

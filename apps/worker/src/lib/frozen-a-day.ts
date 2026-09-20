@@ -29,6 +29,8 @@ export function evaluateFrozenSimultaneousADays(
     return Object.values(state.fills).some((fill) => fill.aDay !== undefined)
       ? { ok: false, code: 'A_DAY_EXECUTION_POLICY_MISSING' }
       : { ok: true, aDay: state.aDay };
+  if (execution.timing !== 'SIMULTANEOUS')
+    return { ok: false, code: 'A_DAY_TIMING_WORKFLOW_UNAVAILABLE' };
   const positions = new Map(snapshot.ruleBookMaterial.positions.map((p) => [p.id, p]));
   const members = snapshot.members
     .filter((m) => m.pool !== 'EXCLUDED')
