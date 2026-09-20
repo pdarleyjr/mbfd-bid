@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Unstable_DevWorker, unstable_dev } from 'wrangler';
 import { signJwt } from '../../src/lib/jwt.js';
+import { waitForWranglerRuntime } from './helpers/wrangler-readiness.js';
 
 describe('A-Day REST routes (Plan 07 Task 13)', () => {
   let worker: Unstable_DevWorker;
@@ -18,6 +19,7 @@ describe('A-Day REST routes (Plan 07 Task 13)', () => {
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });
+    await waitForWranglerRuntime(worker, 'test-key-with-at-least-32-characters-long');
     memberJwt = await signJwt(
       {
         sub: 1,
@@ -37,7 +39,7 @@ describe('A-Day REST routes (Plan 07 Task 13)', () => {
   });
 
   afterAll(async () => {
-    await worker.stop();
+    await worker?.stop();
   });
 
   it('GET /api/bid/a-day-state returns 401 without JWT', async () => {

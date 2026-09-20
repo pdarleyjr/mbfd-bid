@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { JwtPayload } from '@mbfd/shared';
@@ -71,30 +71,13 @@ function makeD1Adapter(sqlite: Database.Database): D1Database {
   } as unknown as D1Database;
 }
 
-/** Apply migration SQL files in order (strips drizzle-kit statement-break markers). */
+/** Keep the route fixture on the real schema, including complete trigger bodies. */
 function applyMigrations(sqlite: Database.Database): void {
-  const files = [
-    '0001_init.sql',
-    '0002_members_certs.sql',
-    '0003_positions_rules.sql',
-    '0004_bid_audit_ai.sql',
-    '0005_audit_log_session_nullable.sql',
-    '0013_audit_chain_bookkeeping.sql',
-  ];
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((name) => name.endsWith('.sql'))
+    .sort();
   for (const file of files) {
-    const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .flatMap((chunk) => chunk.split(';'))
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !s.startsWith('--'));
-    for (const stmt of statements) {
-      try {
-        sqlite.exec(`${stmt};`);
-      } catch {
-        // ignore already-exists errors for idempotency
-      }
-    }
+    sqlite.exec(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8'));
   }
 }
 
@@ -120,6 +103,9 @@ function mkEnv(sqlite: Database.Database): WorkerEnv {
 function makeApp() {
   const sqlite = new Database(':memory:');
   applyMigrations(sqlite);
+  sqlite.exec(
+    "INSERT INTO members(id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,created_at,updated_at) VALUES(1,'14335','Synthetic','Administrator','DC','OFC',1,0,1,1)",
+  );
 
   const app = new Hono<{ Bindings: WorkerEnv; Variables: { claims: JwtPayload } }>();
   app.route('/admin/positions', positionsRouter);

@@ -25,6 +25,9 @@ type TenureRecord = {
   sourceRef: string;
   reason: string;
   actorSubject: string;
+  termMemberId?: number | null;
+  accumulatedServiceMonths?: number | null;
+  consecutiveBidCycles?: number | null;
 };
 export function TenureWorkspace() {
   const client = useQueryClient();
@@ -37,11 +40,40 @@ export function TenureWorkspace() {
   const [through, setThrough] = useState('');
   const [source, setSource] = useState('');
   const [reason, setReason] = useState('');
+  const [recordTerm, setRecordTerm] = useState(false);
+  const [termMember, setTermMember] = useState('');
+  const [serviceMonths, setServiceMonths] = useState('');
+  const [bidCycles, setBidCycles] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const expected = useRef<number | null>(null);
   const pending = useRef<{ fingerprint: string; key: string } | null>(null);
-  const dirty = !!(effective || status || member || from || through || source || reason);
+  const dirty = !!(
+    effective ||
+    status ||
+    member ||
+    from ||
+    through ||
+    source ||
+    reason ||
+    recordTerm
+  );
+  const validCount = (text: string, maximum: number) =>
+    text !== '' &&
+    Number.isSafeInteger(Number(text)) &&
+    Number(text) >= 0 &&
+    Number(text) <= maximum;
+  const termError = !recordTerm
+    ? null
+    : !termMember ||
+        !Number.isSafeInteger(Number(termMember)) ||
+        Number(termMember) <= 0 ||
+        !validCount(serviceMonths, 1200) ||
+        !validCount(bidCycles, 100)
+      ? 'Choose the reviewed holder and enter both service months and consecutive bid cycles. Zero must be entered explicitly.'
+      : status === 'PROTECTED' && termMember !== member
+        ? 'The service and bid-cycle holder must match the protected member.'
+        : null;
   useUnsavedChanges(dirty, 'tenure evidence');
   const seats = useQuery({
     queryKey: ['admin', 'current-roster', asOf],
@@ -89,12 +121,20 @@ export function TenureWorkspace() {
     setThrough('');
     setSource('');
     setReason('');
+    setRecordTerm(false);
+    setTermMember('');
+    setServiceMonths('');
+    setBidCycles('');
     expected.current = null;
     pending.current = null;
   }
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (expected.current === null) return;
+    if (termError) {
+      setMessage(termError);
+      return;
+    }
     setBusy(true);
     setMessage('');
     const body = {
@@ -107,6 +147,13 @@ export function TenureWorkspace() {
       protected_through: status === 'PROTECTED' ? through : null,
       source_ref: source,
       reason,
+      ...(recordTerm
+        ? {
+            term_member_id: Number(termMember),
+            accumulated_service_months: Number(serviceMonths),
+            consecutive_bid_cycles: Number(bidCycles),
+          }
+        : {}),
     };
     const fingerprint = JSON.stringify(body);
     if (pending.current?.fingerprint !== fingerprint)
@@ -274,6 +321,89 @@ export function TenureWorkspace() {
               </div>
             </div>
           )}
+          <fieldset className="space-y-4 rounded border border-border p-4">
+            <legend className="px-1 font-medium">Service and bid cycles</legend>
+            <Label className="flex items-center gap-3">
+              <Input
+                type="checkbox"
+                checked={recordTerm}
+                onChange={(event) => {
+                  edit();
+                  setRecordTerm(event.target.checked);
+                  if (!event.target.checked) {
+                    setTermMember('');
+                    setServiceMonths('');
+                    setBidCycles('');
+                  }
+                }}
+              />
+              Record service and bid cycles
+            </Label>
+            {recordTerm && (
+              <>
+                <p className="text-sm">
+                  Enter the actual totals supported by the source below. Service months determine
+                  when a member may leave; consecutive bid cycles determine annual reopening.
+                  Neither value is inferred from the protection dates.
+                </p>
+                <Label className="block">
+                  Reviewed service and cycle holder
+                  <NativeSelect
+                    required
+                    value={termMember}
+                    onChange={(event) => {
+                      edit();
+                      setTermMember(event.target.value);
+                    }}
+                  >
+                    <option value="">Choose member from reviewed evidence</option>
+                    {members.data?.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.firstName} {entry.lastName} · {entry.employeeId}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Label>
+                    Accumulated service months
+                    <Input
+                      required
+                      type="number"
+                      min={0}
+                      max={1200}
+                      step={1}
+                      value={serviceMonths}
+                      onChange={(event) => {
+                        edit();
+                        setServiceMonths(event.target.value);
+                      }}
+                    />
+                  </Label>
+                  <Label>
+                    Consecutive bid cycles
+                    <Input
+                      required
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={bidCycles}
+                      onChange={(event) => {
+                        edit();
+                        setBidCycles(event.target.value);
+                      }}
+                    />
+                  </Label>
+                </div>
+                {termError && (
+                  <p role="alert" className="text-warning">
+                    {termError}
+                  </p>
+                )}
+              </>
+            )}
+          </fieldset>
           <Label className="block">
             Authoritative source reference
             <Input
@@ -303,7 +433,7 @@ export function TenureWorkspace() {
             />
           </Label>
           <div className="flex flex-wrap gap-3">
-            <Button className={buttonClass} type="submit">
+            <Button className={buttonClass} type="submit" disabled={termError !== null}>
               {busy ? 'Saving…' : 'Record reviewed tenure'}
             </Button>
             <Button className={buttonClass} type="button" disabled={!dirty} onClick={clear}>
@@ -344,6 +474,22 @@ export function TenureWorkspace() {
             {r.status === 'PROTECTED' && (
               <p>
                 Member {r.memberId} · {r.protectedFrom} through {r.protectedThrough}
+              </p>
+            )}
+            {r.termMemberId == null &&
+            r.accumulatedServiceMonths == null &&
+            r.consecutiveBidCycles == null ? (
+              <p>Service and bid-cycle evidence not recorded.</p>
+            ) : r.termMemberId == null ||
+              r.accumulatedServiceMonths == null ||
+              r.consecutiveBidCycles == null ? (
+              <p className="text-warning">
+                Service and bid-cycle evidence is incomplete and requires review.
+              </p>
+            ) : (
+              <p>
+                Member {r.termMemberId} · {r.accumulatedServiceMonths} accumulated service months ·{' '}
+                {r.consecutiveBidCycles} consecutive bid cycles
               </p>
             )}
             <p className="mt-2 break-words">{r.sourceRef}</p>

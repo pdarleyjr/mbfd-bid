@@ -9,6 +9,34 @@ export function configuredChannel(
   const itemized: PointsBreakdown['itemized'] = [];
   let total = 0;
   for (const group of groups) {
+    const excluding = (group.excludesAny ?? []).filter((name) => held.has(name));
+    if (excluding.length) {
+      for (const item of group.preference?.criteria ?? group.items)
+        itemized.push({
+          credential: item.credential,
+          awarded: 0,
+          reason: `Scoring group ${group.id} excluded by held qualification: ${excluding.join(', ')}${group.preference ? `; ${group.preference.sourceRef}` : ''}`,
+        });
+      continue;
+    }
+    if (group.preference) {
+      for (const criterion of group.preference.criteria) {
+        const possessed = [criterion.credential, ...criterion.alternatives].some((name) =>
+          held.has(name),
+        );
+        const missing = criterion.requiresAll.filter((name) => !held.has(name));
+        const awarded = possessed && missing.length === 0 ? 1 : 0;
+        total += awarded;
+        itemized.push({
+          credential: criterion.credential,
+          awarded,
+          reason: `Binary cumulative preference credit; ${group.preference.sourceRef}${
+            missing.length ? `; missing prerequisites: ${missing.join(', ')}` : ''
+          }`,
+        });
+      }
+      continue;
+    }
     let subtotal = 0;
     for (const item of group.items) {
       const tokens = [item.credential, ...item.alternatives];

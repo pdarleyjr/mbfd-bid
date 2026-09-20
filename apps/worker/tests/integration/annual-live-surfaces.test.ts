@@ -16,6 +16,7 @@ const actions = [
   'resolve_tie',
   'alter_order',
   'pause_resume',
+  'create_live_session',
   'approve_transition',
   'approve_final_results',
   'publish',
@@ -26,7 +27,7 @@ async function token(role: 'admin' | 'member', memberId: number): Promise<string
   return signJwt(
     {
       sub: memberId,
-      emp: `annual-${memberId}`,
+      emp: String(memberId),
       role,
       rank: role === 'admin' ? 'CHIEF' : 'FF',
       first_name: 'Annual',
@@ -41,6 +42,9 @@ describe('annual live operator and presentation surfaces', () => {
   let h: TestD1;
   beforeEach(async () => {
     h = await setupTestD1();
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (99,'99','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     const policy = {
       v: 1,
       policyRevision: 'annual-live-1',
@@ -277,6 +281,85 @@ describe('annual live operator and presentation surfaces', () => {
         ],
         suspended_turn: true,
         resume: { member_id: 1, queue_cursor: 1 },
+      },
+    });
+  });
+
+  it('returns a read-only specialty coverage advisory from frozen policy material and canonical fills', async () => {
+    const initial = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${SESSION}/specialty-live`, {
+        headers: { Authorization: `Bearer ${await token('admin', 99)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(initial.status).toBe(200);
+    expect(await initial.json()).toMatchObject({
+      specialty_coverage: {
+        availability: 'AVAILABLE',
+        source: 'FROZEN_SESSION_SNAPSHOT',
+        status: 'FEASIBLE',
+        total_specialty_seat_count: 1,
+        filled_specialty_seat_count: 1,
+        remaining_specialty_seat_count: 0,
+        maximum_remaining_covered_count: 0,
+        guaranteed_uncovered_seat_count: 0,
+      },
+    });
+  });
+
+  it('marks specialty coverage unavailable when frozen policy names one opportunity as two specialty seats', async () => {
+    const conflictSession = '01HZZ000000000ANNUALCONFLICT1';
+    const row = await h.db.run(
+      'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+      [SESSION],
+    );
+    const snapshot = JSON.parse(String(row.results[0]?.snapshot_json)) as {
+      settings: {
+        livePolicy: {
+          annualOperations?: { specialties?: Array<Record<string, unknown>> };
+        };
+      };
+    };
+    const specialties = snapshot.settings.livePolicy.annualOperations?.specialties;
+    if (specialties === undefined || specialties[0] === undefined)
+      throw new Error('Annual specialty fixture missing');
+    specialties.push({ ...specialties[0], id: 'marine-duplicate' });
+    const canonicalRow = await h.db.run(
+      'SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?',
+      [SESSION],
+    );
+    const canonical = JSON.parse(String(canonicalRow.results[0]?.state_json)) as Record<
+      string,
+      unknown
+    >;
+    canonical.bidSessionId = conflictSession;
+    await h.db.run(
+      "INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,is_mock) VALUES (?,2027,3,'position_bid',2,180,2,0,0)",
+      [conflictSession],
+    );
+    await h.db.run(
+      "INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES (?,'2027.1','2027.1',1,?,1)",
+      [conflictSession, JSON.stringify(snapshot)],
+    );
+    await h.db.run(
+      "INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) VALUES (?,8,?,'c8',1,1)",
+      [conflictSession, JSON.stringify(canonical)],
+    );
+
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${conflictSession}/specialty-live`, {
+        headers: { Authorization: `Bearer ${await token('admin', 99)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      specialty_coverage: {
+        availability: 'UNAVAILABLE',
+        source: 'FROZEN_SESSION_SNAPSHOT',
+        code: 'SPECIALTY_COVERAGE_AMBIGUOUS_POSITION',
       },
     });
   });

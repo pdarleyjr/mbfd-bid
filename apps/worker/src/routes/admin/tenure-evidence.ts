@@ -14,6 +14,9 @@ const BodySchema = z
   .object({
     staffing_position_id: z.string().min(1),
     expected_revision: z.number().int().nonnegative(),
+    term_member_id: z.number().int().positive().nullable().optional(),
+    accumulated_service_months: z.number().int().min(0).max(1_200).nullable().optional(),
+    consecutive_bid_cycles: z.number().int().min(0).max(100).nullable().optional(),
     effective_on: z.string().refine(isIsoCalendarDate),
     status: z.enum(['PROTECTED', 'UNPROTECTED', 'UNKNOWN']),
     member_id: z.number().int().positive().nullable(),
@@ -23,6 +26,15 @@ const BodySchema = z
     reason: z.string().trim().min(4).max(500),
   })
   .strict()
+  .refine(
+    (body) =>
+      body.term_member_id == null
+        ? body.accumulated_service_months == null && body.consecutive_bid_cycles == null
+        : body.accumulated_service_months != null &&
+          body.consecutive_bid_cycles != null &&
+          (body.status !== 'PROTECTED' || body.member_id === body.term_member_id),
+    'Term service and cycles must identify the same reviewed holder',
+  )
   .refine(
     (b) =>
       b.status === 'PROTECTED'
@@ -40,7 +52,7 @@ router.get('/', async (c) => {
 });
 router.get('/history/:seat', async (c) => {
   const rows = await c.env.DB.prepare(
-    'SELECT id,revision,effective_on AS effectiveOn,status,member_id AS memberId,protected_from AS protectedFrom,protected_through AS protectedThrough,source_ref AS sourceRef,reason,actor_subject AS actorSubject FROM staffing_tenure_evidence WHERE staffing_position_id=? ORDER BY revision DESC',
+    'SELECT id,revision,effective_on AS effectiveOn,status,member_id AS memberId,protected_from AS protectedFrom,protected_through AS protectedThrough,source_ref AS sourceRef,reason,actor_subject AS actorSubject,term_member_id AS termMemberId,accumulated_service_months AS accumulatedServiceMonths,consecutive_bid_cycles AS consecutiveBidCycles FROM staffing_tenure_evidence WHERE staffing_position_id=? ORDER BY revision DESC',
   )
     .bind(c.req.param('seat'))
     .all();
@@ -71,7 +83,7 @@ router.post('/', requireStepUpAuth(), async (c) => {
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        'INSERT INTO staffing_tenure_evidence (id,staffing_position_id,revision,effective_on,status,member_id,protected_from,protected_through,source_ref,actor_subject,reason,idempotency_key,request_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO staffing_tenure_evidence (id,staffing_position_id,revision,effective_on,status,member_id,protected_from,protected_through,source_ref,actor_subject,reason,idempotency_key,request_json,created_at,term_member_id,accumulated_service_months,consecutive_bid_cycles) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       ).bind(
         id,
         body.staffing_position_id,
@@ -87,6 +99,9 @@ router.post('/', requireStepUpAuth(), async (c) => {
         key,
         request,
         Date.now(),
+        body.term_member_id ?? null,
+        body.accumulated_service_months ?? null,
+        body.consecutive_bid_cycles ?? null,
       ),
       auditInsertStatement(c.env.DB, {
         bidSessionId: null,

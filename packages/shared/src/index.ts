@@ -64,3 +64,61 @@ export type {
 } from './schemas/a-day.js';
 export { HistoricalBidSchema, HistoricalBidReceiptSchema } from './schemas/historical-bid.js';
 export type { HistoricalBid, HistoricalBidReceipt } from './schemas/historical-bid.js';
+
+export type {
+  DepartmentRosterPosition,
+  DepartmentRosterProjection,
+} from './schemas/department-roster.js';
+export type {
+  DepartmentEmploymentStatus,
+  DepartmentPerson,
+  DepartmentPeopleListResponse,
+  DepartmentPersonDetailResponse,
+  DepartmentQualificationEvidence,
+} from './schemas/department-people.js';
+export type {
+  DepartmentRetirementImpact,
+  DepartmentRetirementTarget,
+  DepartmentRetirementAssignment,
+  DepartmentRetirementOrganizationVersion,
+  DepartmentRetirementOrganizationLink,
+  DepartmentRetirementBlocker,
+} from './schemas/department-retirement.js';
+export {
+  BidDefinitionContentSchema,
+  BidDefinitionRuleSchema,
+  BidDefinitionAuthoringSchema,
+  BidDefinitionProvenanceSchema,
+  BidDefinitionSourceDecisionSchema,
+  BidOrderingAuthorityRequestSchema,
+  BidOrderingSourceDecisionResolutionSchema,
+} from './schemas/bid-definition.js';
+export type {
+  BidDefinitionContent,
+  BidDefinitionRule,
+  BidDefinitionIssue,
+  BidDefinitionSourceDecision,
+  BidOrderingAuthorityRequest,
+  BidOrderingSourceDecisionResolution,
+} from './schemas/bid-definition.js';
+export { BidImpactResponseSchema } from './schemas/bid-impact.js';
+export type { BidImpactResponse } from './schemas/bid-impact.js';
+export { BidStageParticipantPreviewResponseSchema } from './schemas/bid-stage-participant-preview.js';
+export type { BidStageParticipantPreviewResponse } from './schemas/bid-stage-participant-preview.js';
+export { BidProfileReviewResponseSchema } from './schemas/bid-profile-review.js';
+export type { BidProfileReviewResponse } from './schemas/bid-profile-review.js';
+export {
+  BidOpportunityPoolSchema,
+  BidOpportunityPoolsSchema,
+  BidPoolSelectionSchema,
+} from './schemas/bid-opportunity-pool.js';
+export type { BidOpportunityPool } from './schemas/bid-opportunity-pool.js';
+export { BidMembershipDistributionSchema } from './schemas/bid-membership-distribution.js';
+export type { BidMembershipDistribution } from './schemas/bid-membership-distribution.js';
+export {
+  BidOrdinalKeySchema,
+  FrozenBidOrdinalEvidenceSchema,
+  BidOrdinalImportSchema,
+  bidOrdinalValue,
+} from './schemas/bid-ordinal.js';
+export type { FrozenBidOrdinalEvidence } from './schemas/bid-ordinal.js';

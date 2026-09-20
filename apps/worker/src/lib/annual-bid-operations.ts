@@ -4,15 +4,7 @@
  * its data, while this layer supplies replay-safe policy decisions.
  */
 
-export const ANNUAL_2026_STAGE_ORDER = [
-  'D_CAPTAIN',
-  'D_LIEUTENANT',
-  'ABC_CAPTAIN',
-  'ABC_LIEUTENANT',
-  'ABC_FIREFIGHTER',
-] as const;
-
-export type AnnualStageId = (typeof ANNUAL_2026_STAGE_ORDER)[number] | string;
+export type AnnualStageId = string;
 export type ContactMethod = 'PHONE' | 'TEXT';
 export type PreferenceSheetStatus = 'DRAFT' | 'SUBMITTED' | 'REVIEWED' | 'FROZEN';
 export type ContactTimingMode = 'HARD_MINIMUM' | 'TARGET' | 'OPERATOR_DISCRETION';
@@ -140,9 +132,9 @@ export function initializeAnnualOperations(input: {
 
 export function validateAnnualOperationsReadiness(input: {
   operations: AnnualOperationsPolicy | undefined;
-  bidYear: number;
   isMock: boolean;
-  configuredStageIds: readonly string[];
+  /** Frozen stage ids sorted by the explicit configured stage.order. */
+  configuredStageOrder: readonly string[];
   missingTopologyIds: readonly string[];
 }): { ok: true } | { ok: false; code: string; detail?: string } {
   if (input.operations === undefined)
@@ -150,16 +142,13 @@ export function validateAnnualOperationsReadiness(input: {
   if (input.operations.stageOrder.length === 0)
     return { ok: false, code: 'ANNUAL_STAGE_ORDER_MISSING' };
   if (
-    input.bidYear === 2026 &&
-    (input.operations.stageOrder.length !== ANNUAL_2026_STAGE_ORDER.length ||
-      input.operations.stageOrder.some(
-        (stageId, index) => stageId !== ANNUAL_2026_STAGE_ORDER[index],
-      ))
+    input.operations.stageOrder.length !== input.configuredStageOrder.length ||
+    new Set(input.configuredStageOrder).size !== input.configuredStageOrder.length ||
+    input.operations.stageOrder.some(
+      (stageId, index) => stageId !== input.configuredStageOrder[index],
+    )
   )
-    return { ok: false, code: 'ANNUAL_2026_STAGE_ORDER_INVALID' };
-  const configured = new Set(input.configuredStageIds);
-  if (input.operations.stageOrder.some((stageId) => !configured.has(stageId)))
-    return { ok: false, code: 'ANNUAL_STAGE_POPULATION_INCOMPLETE' };
+    return { ok: false, code: 'ANNUAL_STAGE_ORDER_MISMATCH' };
   if (!input.isMock && input.missingTopologyIds.length > 0)
     return {
       ok: false,
@@ -186,15 +175,40 @@ export function recordContactAttempt(
   return { ok: true, state: { ...state, contactAttempts: [...state.contactAttempts, attempt] } };
 }
 
-export function declareUnreachable(
+/** Shared gate for every ordinary and specialty unreachable command. */
+export function validateUnreachableContact(
   state: AnnualOperationsState,
   policy: AnnualOperationsPolicy | undefined,
-  input: { memberId: number; actorMemberId: number },
-): { ok: true; state: AnnualOperationsState } | { ok: false; code: string } {
+  input: { memberId: number; nowMs?: number },
+): { ok: true } | { ok: false; code: string } {
   if (policy === undefined) return { ok: false, code: 'CONTACT_POLICY_MISSING' };
   const attempts = state.contactAttempts.filter((attempt) => attempt.memberId === input.memberId);
   if (attempts.length < policy.contact.minimumAttempts)
     return { ok: false, code: 'CONTACT_ATTEMPTS_INCOMPLETE' };
+  if (policy.contact.timingMode === 'HARD_MINIMUM') {
+    const firstAttempt = attempts.length
+      ? Math.min(...attempts.map((attempt) => attempt.atMs))
+      : null;
+    if (
+      firstAttempt === null ||
+      input.nowMs === undefined ||
+      !Number.isSafeInteger(input.nowMs) ||
+      policy.contact.durationSeconds === null ||
+      input.nowMs < firstAttempt ||
+      input.nowMs - firstAttempt < policy.contact.durationSeconds * 1_000
+    )
+      return { ok: false, code: 'CONTACT_MINIMUM_TIME_INCOMPLETE' };
+  }
+  return { ok: true };
+}
+
+export function declareUnreachable(
+  state: AnnualOperationsState,
+  policy: AnnualOperationsPolicy | undefined,
+  input: { memberId: number; actorMemberId: number; nowMs?: number },
+): { ok: true; state: AnnualOperationsState } | { ok: false; code: string } {
+  const contact = validateUnreachableContact(state, policy, input);
+  if (!contact.ok) return contact;
   if (state.unresolvedMemberIds.includes(input.memberId))
     return { ok: false, code: 'MEMBER_ALREADY_UNRESOLVED' };
   return {

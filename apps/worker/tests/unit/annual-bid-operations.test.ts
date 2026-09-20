@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ANNUAL_2026_STAGE_ORDER,
   declareUnreachable,
   evaluateNextPreference,
   evaluateSpecialtyEligibility,
@@ -10,11 +9,12 @@ import {
   upsertPreferenceSheet,
   validateAnnualOperationsReadiness,
   validateSpecialtyADayMaximum,
+  validateUnreachableContact,
 } from '../../src/lib/annual-bid-operations.js';
 
 const operations = {
   v: 1 as const,
-  stageOrder: [...ANNUAL_2026_STAGE_ORDER],
+  stageOrder: ['D_CAPTAIN', 'D_LIEUTENANT', 'ABC_CAPTAIN', 'ABC_LIEUTENANT', 'ABC_FIREFIGHTER'],
   requiredTopologyPositionIds: ['MARINE_A_CAPTAIN'],
   contact: {
     minimumAttempts: 3,
@@ -31,25 +31,122 @@ const operations = {
 };
 
 describe('annual bid operations', () => {
-  it('requires the exact configurable 2026 stage ordering and complete topology before real use', () => {
+  it('requires an explicit valid clock for HARD_MINIMUM contact validation', () => {
+    const annual = {
+      ...initializeAnnualOperations({ preferenceSheets: [] }),
+      contactAttempts: [{ memberId: 1, actorMemberId: 99, method: 'PHONE' as const, atMs: 10_000 }],
+    };
+    const hardMinimum = {
+      ...operations,
+      contact: { minimumAttempts: 1, timingMode: 'HARD_MINIMUM' as const, durationSeconds: 60 },
+    };
+    for (const input of [
+      { memberId: 1 },
+      { memberId: 1, nowMs: Number.NaN },
+      { memberId: 1, nowMs: 9_999 },
+    ]) {
+      expect(validateUnreachableContact(annual, hardMinimum, input)).toEqual({
+        ok: false,
+        code: 'CONTACT_MINIMUM_TIME_INCOMPLETE',
+      });
+    }
+    expect(validateUnreachableContact(annual, hardMinimum, { memberId: 1, nowMs: 70_000 })).toEqual(
+      { ok: true },
+    );
+  });
+  it('preserves the original five-stage configuration and requires complete topology before real use', () => {
     expect(
       validateAnnualOperationsReadiness({
         operations,
-        bidYear: 2026,
         isMock: false,
-        configuredStageIds: [...ANNUAL_2026_STAGE_ORDER],
+        configuredStageOrder: operations.stageOrder,
         missingTopologyIds: [],
       }),
     ).toEqual({ ok: true });
     expect(
       validateAnnualOperationsReadiness({
         operations,
-        bidYear: 2026,
         isMock: false,
-        configuredStageIds: [...ANNUAL_2026_STAGE_ORDER],
+        configuredStageOrder: operations.stageOrder,
         missingTopologyIds: ['MARINE_A_CAPTAIN'],
       }),
     ).toMatchObject({ ok: false, code: 'ANNUAL_TOPOLOGY_INCOMPLETE' });
+  });
+
+  it.each([false, true])('honors explicitly changed stages in Mock=%s', (isMock) => {
+    for (const stageOrder of [
+      ['ABC_CAPTAIN', 'D_CAPTAIN', 'D_LIEUTENANT', 'ABC_LIEUTENANT', 'ABC_FIREFIGHTER'],
+      ['D_CAPTAIN', 'D_LIEUTENANT', 'ABC_CAPTAIN', 'ABC_LIEUTENANT'],
+      [...operations.stageOrder, 'TRAINED_VOLUNTEERS'],
+    ]) {
+      expect(
+        validateAnnualOperationsReadiness({
+          operations: { ...operations, stageOrder },
+          isMock,
+          configuredStageOrder: stageOrder,
+          missingTopologyIds: [],
+        }),
+      ).toEqual({ ok: true });
+    }
+  });
+
+  it.each([
+    { annual: ['FIRST', 'SECOND'], configured: ['SECOND', 'FIRST'] },
+    { annual: ['FIRST'], configured: ['FIRST', 'SECOND'] },
+    { annual: ['FIRST', 'SECOND'], configured: ['FIRST'] },
+    { annual: ['FIRST', 'FIRST'], configured: ['FIRST', 'FIRST'] },
+    { annual: ['FIRST', 'SECOND'], configured: ['FIRST', 'FIRST'] },
+    { annual: ['FIRST'], configured: [] },
+  ])(
+    'rejects inconsistent or duplicate stages: $annual / $configured',
+    ({ annual, configured }) => {
+      expect(
+        validateAnnualOperationsReadiness({
+          operations: { ...operations, stageOrder: annual },
+          isMock: true,
+          configuredStageOrder: configured,
+          missingTopologyIds: [],
+        }),
+      ).toEqual({ ok: false, code: 'ANNUAL_STAGE_ORDER_MISMATCH' });
+    },
+  );
+
+  it('keeps missing policy, missing stages and contact timing gates', () => {
+    const input = {
+      isMock: false,
+      configuredStageOrder: operations.stageOrder,
+      missingTopologyIds: [],
+    };
+    expect(validateAnnualOperationsReadiness({ ...input, operations: undefined })).toEqual({
+      ok: false,
+      code: 'ANNUAL_OPERATIONS_POLICY_MISSING',
+    });
+    expect(
+      validateAnnualOperationsReadiness({
+        ...input,
+        operations: { ...operations, stageOrder: [] },
+      }),
+    ).toEqual({
+      ok: false,
+      code: 'ANNUAL_STAGE_ORDER_MISSING',
+    });
+    expect(
+      validateAnnualOperationsReadiness({
+        ...input,
+        operations: {
+          ...operations,
+          contact: { ...operations.contact, timingMode: 'HARD_MINIMUM', durationSeconds: null },
+        },
+      }),
+    ).toEqual({ ok: false, code: 'CONTACT_TIMER_POLICY_MISSING' });
+    expect(
+      validateAnnualOperationsReadiness({
+        ...input,
+        isMock: true,
+        operations,
+        missingTopologyIds: ['MARINE_A_CAPTAIN'],
+      }),
+    ).toEqual({ ok: true });
   });
 
   it('keeps frozen preference sheets as decision support and selects the next valid combination', () => {

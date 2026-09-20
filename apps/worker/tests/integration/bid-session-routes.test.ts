@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Unstable_DevWorker, unstable_dev } from 'wrangler';
 import { signJwt } from '../../src/lib/jwt.js';
+import { waitForWranglerRuntime } from './helpers/wrangler-readiness.js';
 
 describe('bid REST routes (Plan 04 Task 8)', () => {
   let worker: Unstable_DevWorker;
@@ -17,6 +18,7 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
       },
       durableObjects: [{ name: 'BID_SESSION', class_name: 'BidSessionDO' }],
     });
+    await waitForWranglerRuntime(worker, 'test-key-with-at-least-32-characters-long');
     memberJwt = await signJwt(
       {
         sub: 17,
@@ -35,7 +37,7 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
     );
   });
   afterAll(async () => {
-    await worker.stop();
+    await worker?.stop();
   });
 
   it('GET /api/ws/session/:id rejects a request without the exact browser origin before auth', async () => {

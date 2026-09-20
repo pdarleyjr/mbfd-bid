@@ -1,6 +1,6 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono } from 'hono';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { signJwt } from '../../src/lib/jwt.js';
 import bidAwardTransitionRouter from '../../src/routes/admin/bid-award-transition.js';
@@ -24,7 +24,7 @@ async function adminJwt(fresh = true): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'synthetic-admin',
+      emp: 'EMP100',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Synthetic',
@@ -219,12 +219,18 @@ describe('Bid award transition administration', () => {
   let h: TestD1;
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     h = await setupTestD1();
     await seedCompletedBid(h);
   });
 
   afterEach(async () => {
-    await teardownTestD1(h);
+    try {
+      await teardownTestD1(h);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('previews the frozen award transition without writing assignments, events, or audit rows', async () => {
@@ -406,7 +412,7 @@ describe('Bid award transition administration', () => {
           kind: 'ADMIN_REASSIGNMENT',
           effective_on: EFFECTIVE_ON,
           origin: 'BID',
-          actor_subject: '0',
+          actor_subject: '100',
           reason: body.reason,
         }),
       ]),
@@ -423,7 +429,7 @@ describe('Bid award transition administration', () => {
       expect.objectContaining({
         action: 'bid_award_transition',
         actor_type: 'admin',
-        actor_id: 0,
+        actor_id: 100,
         target_kind: 'bid_session',
         target_id: SESSION_ID,
         reason: body.reason,

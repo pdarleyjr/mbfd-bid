@@ -18,6 +18,16 @@ const MIGRATIONS_DIR = resolve(__dirname, '../migrations');
 function makeD1Adapter(sqlite: Database.Database): D1Database {
   return {
     prepare: (query: string) => {
+      // This route fixture keeps the member-list dataset independently empty.
+      // Its explicit authentication lookup models only this known local actor;
+      // identity reconciliation itself uses real D1 in its boundary tests.
+      if (query === 'SELECT id FROM members WHERE employee_id = ? LIMIT 1') {
+        return {
+          bind: (employeeId: string) => ({
+            first: async () => (employeeId === '14335' ? { id: 1 } : null),
+          }),
+        };
+      }
       const stmt = sqlite.prepare(query);
       let boundArgs: unknown[] = [];
       const bound = {

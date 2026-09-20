@@ -6,6 +6,7 @@ import {
   PauseSessionSchema,
   ResumeSessionSchema,
   TimerConfigSchema,
+  isLiveBidActionAuthorized,
 } from '@mbfd/shared';
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -24,6 +25,8 @@ import {
 } from '../../lib/admin-configuration-receipt.js';
 import { initializeAnnualOperations } from '../../lib/annual-bid-operations.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
+import { LIVE_CREATION_ACTION } from '../../lib/bid-definition-live.js';
+import { loadBidDefinitionHead } from '../../lib/bid-definition-version.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
@@ -32,6 +35,8 @@ import {
   prepareBidSessionPolicySnapshot,
   summarizeBidSessionPolicySnapshot,
 } from '../../lib/bid-policy.js';
+import { persistBidSessionCreation } from '../../lib/bid-session-creation.js';
+import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { computeFrozenStageOrder } from '../../lib/live-bid-policy.js';
 import { evaluateLiveBidReadiness } from '../../lib/live-bid-readiness.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
@@ -167,6 +172,13 @@ router.post(
   async (c) => {
     const body = c.req.valid('json');
     const db = getDb(c.env.DB);
+    if (await loadBidDefinitionHead(c.env.DB, body.bid_year))
+      return c.json({
+        dry_run: true,
+        would_allow_start: false,
+        error: 'managed_bid_version_required',
+        bid_year: body.bid_year,
+      });
     const prepared = await prepareBidSessionPolicySnapshot(db, body.bid_year, Date.now(), 'live');
     if (!prepared.ok) {
       return c.json({
@@ -176,6 +188,13 @@ router.post(
         policy_error: prepared.code,
       });
     }
+    const operatorAuthorized =
+      prepared.snapshot.settings.v === 3 &&
+      isLiveBidActionAuthorized(
+        prepared.snapshot.settings.livePolicy,
+        LIVE_CREATION_ACTION,
+        actorIdFromClaims(c.get('claims')),
+      );
     const readiness = await evaluateLiveBidReadiness({
       db,
       env: c.env,
@@ -184,7 +203,7 @@ router.post(
       bidSessionId: `readiness-preview-${body.bid_year}`,
       bidYear: body.bid_year,
       frozenPolicy: { ok: true, snapshot: prepared.snapshot, coverage: prepared.coverage },
-      operatorAuthorized: true,
+      operatorAuthorized,
     });
     return c.json({
       dry_run: true,
@@ -198,6 +217,7 @@ router.post(
 router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), async (c) => {
   const body = c.req.valid('json');
   const db = getDb(c.env.DB);
+  const actorId = actorIdFromClaims(c.get('claims'));
   const requestedMode = body.mode ?? (body.is_mock === true ? 'mock' : 'live');
   const key = c.req.header('Idempotency-Key');
   if (key !== undefined && (!key || key.trim() !== key || key.length > 256))
@@ -221,6 +241,8 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     )
       return c.json({ error: 'reviewed_configuration_revisions_required' }, 400);
   }
+  if (await loadBidDefinitionHead(c.env.DB, body.bid_year))
+    return c.json({ error: 'managed_bid_version_required', bid_year: body.bid_year }, 409);
   const year = await db.select().from(bidYears).where(eq(bidYears.year, body.bid_year)).get();
   if (year === undefined) {
     return c.json({ error: 'bid_year_not_found', bid_year: body.bid_year }, 400);
@@ -242,6 +264,20 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       },
       409,
     );
+  }
+  // A legacy year has no saved-definition path, but its Live creation is
+  // still separately consequential. A post-Bid transition grant cannot
+  // materialize a new Live session.
+  if (
+    requestedMode === 'live' &&
+    (policy.snapshot.settings.v !== 3 ||
+      !isLiveBidActionAuthorized(
+        policy.snapshot.settings.livePolicy,
+        LIVE_CREATION_ACTION,
+        actorId,
+      ))
+  ) {
+    return c.json({ error: 'live_action_forbidden', action: LIVE_CREATION_ACTION }, 403);
   }
   if (
     (body.expected_duration_days !== undefined &&
@@ -289,14 +325,15 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
   // No mutable-staffing fallback is allowed after this point.
   let creation: D1Result[];
   try {
-    creation = await c.env.DB.batch([
-      c.env.DB.prepare(
-        `INSERT INTO bid_sessions (
-          id, bid_year, started_at, current_phase, turn_timer_seconds,
-          expected_duration_days, day_count, is_mock
-        )
-        SELECT ?, ?, ?, 'config', ?, ?, 0, ?
-        WHERE EXISTS (
+    creation = await persistBidSessionCreation(c.env.DB, {
+      id,
+      year: body.bid_year,
+      capturedAtMs: now.getTime(),
+      isMock: requestedMode === 'mock',
+      snapshot: policy.snapshot,
+      snapshotJson: JSON.stringify(policy.snapshot),
+      guard: {
+        sql: `EXISTS (
           SELECT 1
           FROM rule_books
           WHERE version = ?
@@ -313,73 +350,54 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
             AND rule_book_version = ?
             AND position_template_version = ?
             AND configuration_revision = ?
-        ) AND (? IS NULL OR (SELECT revision FROM annual_source_revision WHERE id=1)=?)`,
-      ).bind(
-        id,
-        body.bid_year,
-        now.getTime(),
-        settings.turnTimerSeconds,
-        settings.expectedDurationDays,
-        requestedMode === 'mock' ? 1 : 0,
-        policy.snapshot.ruleBookVersion,
-        policy.snapshot.ruleBookRevision,
-        requestedMode,
-        requestedMode,
-        body.bid_year,
-        policy.snapshot.ruleBookVersion,
-        policy.snapshot.positionTemplateVersion,
-        configurationRevision,
-        body.expected_source_revision ?? null,
-        body.expected_source_revision ?? null,
-      ),
-      c.env.DB.prepare(
-        `INSERT INTO bid_session_policy_snapshots (
-          bid_session_id, rule_book_version, position_template_version,
-          rule_book_revision, snapshot_json, captured_at
-        )
-        SELECT ?, ?, ?, ?, ?, ?
-        WHERE EXISTS (SELECT 1 FROM bid_sessions WHERE id = ?)`,
-      ).bind(
-        id,
-        policy.snapshot.ruleBookVersion,
-        policy.snapshot.positionTemplateVersion,
-        policy.snapshot.ruleBookRevision,
-        JSON.stringify(policy.snapshot),
-        now.getTime(),
-        id,
-      ),
-      auditInsertStatement(
-        c.env.DB,
-        {
-          bidSessionId: id,
-          actorType: 'admin',
-          actorId: actorIdFromClaims(c.get('claims')),
-          action: 'session_start',
-          targetKind: 'bid_session',
-          targetId: id,
-          afterState: {
-            bid_year: body.bid_year,
-            current_phase: 'config',
-            is_mock: requestedMode === 'mock',
-            rule_book_version: policy.snapshot.ruleBookVersion,
-            rule_book_revision: policy.snapshot.ruleBookRevision,
-            position_template_version: policy.snapshot.positionTemplateVersion,
-            configuration_revision: policy.snapshot.configurationRevision,
-            settings,
-            pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
-          },
-        },
-        now,
-        true,
-      ),
-      ...(key ? [configurationReceiptStatement(c.env.DB, receiptInput, responseBody)] : []),
-    ]);
+        ) AND (? IS NULL OR (SELECT revision FROM annual_source_revision WHERE id=1)=?) AND NOT EXISTS(SELECT 1 FROM bid_definition_heads WHERE bid_year=?)`,
+        parameters: [
+          policy.snapshot.ruleBookVersion,
+          policy.snapshot.ruleBookRevision,
+          requestedMode,
+          requestedMode,
+          body.bid_year,
+          policy.snapshot.ruleBookVersion,
+          policy.snapshot.positionTemplateVersion,
+          configurationRevision,
+          body.expected_source_revision ?? null,
+          body.expected_source_revision ?? null,
+          body.bid_year,
+        ],
+      },
+      actorId,
+      ...(key ? { receipt: receiptInput } : {}),
+      response: responseBody,
+    });
   } catch {
     const prior = key ? await loadConfigurationReceipt(c.env.DB, receiptInput) : null;
     if (prior)
       return prior.ok
         ? c.json({ ...prior.response, replayed: true }, 201)
         : c.json({ error: prior.error }, 409);
+    if (await loadBidDefinitionHead(c.env.DB, body.bid_year))
+      return c.json({ error: 'managed_bid_version_required', bid_year: body.bid_year }, 409);
+    // The mandatory audit guard now rolls a lost designation race back by
+    // throwing. Preserve the legacy conflict code for a proved changed source.
+    const current = await c.env.DB.prepare(`SELECT 1 AS unchanged FROM bid_years y
+      JOIN rule_books b ON b.version=y.rule_book_version
+      WHERE y.year=? AND y.rule_book_version=? AND y.position_template_version=?
+      AND y.configuration_revision=? AND b.revision=?
+      AND ((?='mock' AND b.status IN ('draft','active')) OR (?='live' AND b.status='active'))
+      AND (? IS NULL OR (SELECT revision FROM annual_source_revision WHERE id=1)=?)`)
+      .bind(
+        body.bid_year,
+        policy.snapshot.ruleBookVersion,
+        policy.snapshot.positionTemplateVersion,
+        configurationRevision,
+        policy.snapshot.ruleBookRevision,
+        requestedMode,
+        requestedMode,
+        body.expected_source_revision ?? null,
+        body.expected_source_revision ?? null,
+      )
+      .first();
+    if (!current) return c.json({ error: 'bid_configuration_changed' }, 409);
     return c.json({ error: 'bid_configuration_changed_or_creation_failed' }, 409);
   }
   if (
@@ -681,14 +699,14 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     if (s.currentPhase === 'paused' || s.currentPhase === 'complete') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
     const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-      if (await hasCanonicalCommandState(c.env, id)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, id)) {
         return c.json({ error: 'canonical_mutation_requires_command' }, 409);
       }
       const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
@@ -740,14 +758,14 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     if (s.currentPhase !== 'paused') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
     const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-      if (await hasCanonicalCommandState(c.env, id)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, id)) {
         return c.json({ error: 'canonical_mutation_requires_command' }, 409);
       }
       const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
@@ -789,14 +807,14 @@ router.post('/:id/day-end', requireStepUpAuth(), zValidator('json', DayEndSchema
   const db = getDb(c.env.DB);
   const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
   if (s === undefined) return c.json({ error: 'not_found' }, 404);
-  if (await hasCanonicalCommandState(c.env, id)) {
+  if (await requiresCanonicalBidMutation(c.env.DB, id)) {
     return c.json({ error: 'canonical_mutation_requires_command' }, 409);
   }
   if (s.currentPhase === 'complete') {
     return c.json({ error: 'invalid_state', current_phase: 'complete' }, 409);
   }
   const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
@@ -851,14 +869,14 @@ router.post(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     if (s.currentPhase !== 'paused') {
       return c.json({ error: 'invalid_state', current_phase: s.currentPhase }, 409);
     }
     const mutation = await runWithNormalBidMutationLease(c.env, id, async () => {
-      if (await hasCanonicalCommandState(c.env, id)) {
+      if (await requiresCanonicalBidMutation(c.env.DB, id)) {
         return c.json({ error: 'canonical_mutation_requires_command' }, 409);
       }
       const current = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
@@ -904,7 +922,7 @@ router.patch(
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
-    if (await hasCanonicalCommandState(c.env, id)) {
+    if (await requiresCanonicalBidMutation(c.env.DB, id)) {
       return c.json({ error: 'canonical_mutation_requires_command' }, 409);
     }
     const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);

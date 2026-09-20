@@ -26,13 +26,38 @@ const ScoringItemSchema = z
     completionCredit: CompletionCredit.optional(),
   })
   .strict();
+const PreferenceCriterionSchema = z
+  .object({
+    credential: CredentialToken,
+    alternatives: z.array(CredentialToken).max(50),
+    requiresAll: z.array(CredentialToken).max(50),
+  })
+  .strict();
 const ScoringGroupSchema = z
   .object({
     id: z.string().trim().min(1).max(100),
     cap: z.number().int().min(0).max(100000).nullable(),
     items: z.array(ScoringItemSchema).max(200),
+    excludesAny: z.array(CredentialToken).min(1).max(50).optional(),
+    preference: z
+      .object({
+        mode: z.literal('BINARY_CUMULATIVE'),
+        sourceRef: z.string().trim().min(4).max(1000),
+        criteria: z.array(PreferenceCriterionSchema).min(1).max(200),
+      })
+      .strict()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((group, ctx) => {
+    if (group.preference && (group.items.length > 0 || group.cap !== null))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['preference'],
+        message:
+          'Cumulative preferences count every criterion once and cannot include points or a cap',
+      });
+  });
 const ChannelSchema = z
   .array(ScoringGroupSchema)
   .max(100)
@@ -47,12 +72,15 @@ const ChannelSchema = z
           message: 'Scoring group IDs must be unique',
         });
       ids.add(group.id);
-      for (const [itemIndex, item] of group.items.entries()) {
+      const items = group.preference?.criteria ?? group.items;
+      for (const [itemIndex, item] of items.entries()) {
         for (const token of [item.credential, ...item.alternatives]) {
           if (awardedTokens.has(token))
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
-              path: [index, 'items', itemIndex],
+              path: group.preference
+                ? [index, 'preference', 'criteria', itemIndex]
+                : [index, 'items', itemIndex],
               message: 'A credential cannot earn duplicate credit in one ranking channel',
             });
           awardedTokens.add(token);
@@ -63,6 +91,19 @@ const ChannelSchema = z
 
 /** Explicit version pins the new semantics; omitted material retains legacy readers. */
 export const ConfiguredScoringSchema = z
-  .object({ v: z.literal(1), total: ChannelSchema, so: ChannelSchema, mo: ChannelSchema })
+  .object({
+    v: z.literal(1),
+    total: ChannelSchema,
+    so: ChannelSchema,
+    mo: ChannelSchema,
+    orderedPreference: z
+      .object({
+        mode: z.literal('ORDERED_QUALIFICATIONS'),
+        sourceRef: z.string().trim().min(4).max(1000),
+        criteria: z.array(PreferenceCriterionSchema).min(1).max(20),
+      })
+      .strict()
+      .optional(),
+  })
   .strict();
 export type ConfiguredScoring = z.infer<typeof ConfiguredScoringSchema>;

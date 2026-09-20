@@ -20,6 +20,11 @@ import { createAnnualPlanSuccessor } from '../../lib/annual-plan-successor.js';
 import { type AnnualRulePosition, compileAnnualRules } from '../../lib/annual-rule-compiler.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import {
+  assertLegacyBidWrite,
+  legacyBidWriteCondition,
+  runLegacyBidWriteBatch,
+} from '../../lib/bid-definition-legacy-write.js';
+import {
   loadBidEligibilityEvidence,
   projectAnnualMemberEvidence,
 } from '../../lib/bid-eligibility-evidence.js';
@@ -105,6 +110,7 @@ router.post('/', requireStepUpAuth(), async (c) => {
       return c.json({ error: 'idempotency_key_reused' }, 409);
     return c.json({ ...JSON.parse(receipt.response_json), replayed: true });
   }
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: body.year });
   if (Number(body.effective_on.slice(0, 4)) !== body.year)
     return c.json({ error: 'effective_year_mismatch' }, 400);
   const existing = await c.env.DB.prepare(
@@ -233,21 +239,28 @@ router.post('/', requireStepUpAuth(), async (c) => {
     // session state are deliberately not copied as approved future facts.
   }
   statements.push(
-    auditInsertStatement(c.env.DB, {
-      bidSessionId: null,
-      actorType: 'admin',
-      actorId: c.get('claims').member_id,
-      action: 'bid_configuration_set',
-      targetKind: 'bid_year',
-      targetId: String(body.year),
-      reason: body.reason,
-      afterState: response,
-      clientMeta: { annual_plan_key: key },
-    }),
+    auditInsertStatement(
+      c.env.DB,
+      {
+        bidSessionId: null,
+        actorType: 'admin',
+        actorId: c.get('claims').member_id,
+        action: 'bid_configuration_set',
+        targetKind: 'bid_year',
+        targetId: String(body.year),
+        reason: body.reason,
+        afterState: response,
+        clientMeta: { annual_plan_key: key },
+      },
+      new Date(),
+      false,
+      legacyBidWriteCondition({ kind: 'year', year: body.year }),
+    ),
   );
   try {
-    await c.env.DB.batch(statements);
+    await runLegacyBidWriteBatch(c.env.DB, { kind: 'year', year: body.year }, statements);
   } catch {
+    await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: body.year });
     return c.json({ error: 'annual_plan_changed_retry_or_resume' }, 409);
   }
   return c.json({ ...response, replayed: false }, 201);
@@ -282,6 +295,7 @@ router.post('/:year/adopt', requireStepUpAuth(), async (c) => {
     return prior.ok
       ? c.json({ ...prior.response, replayed: true })
       : c.json({ error: prior.error }, 409);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: year });
   const existing = await c.env.DB.prepare(`SELECT y.rule_book_version AS book,
     y.position_template_version AS template,y.config_json AS settingsJson,
     y.annual_policy_document_id AS policyId FROM bid_years y WHERE y.year=?`)
@@ -318,7 +332,7 @@ router.post('/:year/adopt', requireStepUpAuth(), async (c) => {
   };
   const request = JSON.stringify({ year, operation: intent.operation, body });
   try {
-    await c.env.DB.batch([
+    await runLegacyBidWriteBatch(c.env.DB, { kind: 'year', year: year }, [
       c.env.DB.prepare(`INSERT INTO annual_plan_receipts (idempotency_key,actor_subject,request_json,response_json,created_at)
         SELECT ?,CASE WHEN EXISTS(SELECT 1 FROM bid_years y JOIN rule_books b ON b.version=y.rule_book_version
           WHERE y.year=? AND y.status='configuring' AND b.status='draft' AND b.version=? AND b.revision=?
@@ -357,24 +371,30 @@ router.post('/:year/adopt', requireStepUpAuth(), async (c) => {
       c.env.DB.prepare(
         'UPDATE rule_book_position_participation SET authoritative_source_ref=? WHERE rule_book_version=?',
       ).bind(`inherited-unreviewed:adopted-year:${year}`, existing.book),
-      auditInsertStatement(c.env.DB, {
-        bidSessionId: null,
-        actorType: 'admin',
-        actorId: c.get('claims').member_id,
-        action: 'bid_configuration_set',
-        targetKind: 'bid_year',
-        targetId: String(year),
-        reason: body.reason,
-        beforeState: {
-          ruleBookVersion: existing.book,
-          templateVersion: existing.template,
-          settings: oldSettings,
-          annualPolicyDocumentId: existing.policyId,
-          participation: previousParticipation.results,
+      auditInsertStatement(
+        c.env.DB,
+        {
+          bidSessionId: null,
+          actorType: 'admin',
+          actorId: c.get('claims').member_id,
+          action: 'bid_configuration_set',
+          targetKind: 'bid_year',
+          targetId: String(year),
+          reason: body.reason,
+          beforeState: {
+            ruleBookVersion: existing.book,
+            templateVersion: existing.template,
+            settings: oldSettings,
+            annualPolicyDocumentId: existing.policyId,
+            participation: previousParticipation.results,
+          },
+          afterState: { ...response, settings },
+          clientMeta: { annual_plan_key: key, operation: intent.operation },
         },
-        afterState: { ...response, settings },
-        clientMeta: { annual_plan_key: key, operation: intent.operation },
-      }),
+        new Date(),
+        false,
+        legacyBidWriteCondition({ kind: 'year', year: year }),
+      ),
     ]);
   } catch {
     const replay = await replayAnnualPlanMutation(c.env.DB, intent);
@@ -382,6 +402,7 @@ router.post('/:year/adopt', requireStepUpAuth(), async (c) => {
       return replay.ok
         ? c.json({ ...replay.response, replayed: true })
         : c.json({ error: replay.error }, 409);
+    await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: year });
     return c.json(
       { error: 'adoption_requires_current_exclusive_unpublished_draft_without_real_session' },
       409,
@@ -494,6 +515,7 @@ router.post('/:year/seats', requireStepUpAuth(), async (c) => {
     return prior.ok
       ? c.json({ ...prior.response, replayed: true })
       : c.json({ error: prior.error }, 409);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: year });
   const plan =
     await c.env.DB.prepare(`SELECT y.position_template_version AS template,y.rule_book_version AS book,p.effective_on AS effectiveOn
     FROM bid_years y JOIN annual_plan_reviews p ON p.bid_year=y.year WHERE y.year=?`)
@@ -673,6 +695,7 @@ router.post('/:year/seats/remove', requireStepUpAuth(), async (c) => {
     return prior.ok
       ? c.json({ ...prior.response, replayed: true })
       : c.json({ error: prior.error }, 409);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: year });
   const plan = await c.env.DB.prepare(
     'SELECT y.position_template_version AS template,y.rule_book_version AS book FROM bid_years y JOIN annual_plan_reviews p ON p.bid_year=y.year WHERE y.year=?',
   )
@@ -757,6 +780,7 @@ router.post('/:year/review', requireStepUpAuth(), async (c) => {
     return prior.ok
       ? c.json({ ...prior.response, replayed: true })
       : c.json({ error: prior.error }, 409);
+  await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: year });
   const prepared = await prepareBidSessionPolicySnapshot(getDb(c.env.DB), year, Date.now(), 'mock');
   if (!prepared.ok)
     return c.json({ error: 'comparable_source_preparation_required', detail: prepared.code }, 409);
@@ -877,6 +901,7 @@ router.post('/:year/profiles', requireStepUpAuth(), async (c) => {
         ? c.json({ ...prior.response, replayed: true })
         : c.json({ error: prior.error }, 409);
   }
+  if (!body.preview) await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: year });
   const plan =
     await c.env.DB.prepare(`SELECT y.position_template_version AS template,y.rule_book_version AS book,y.configuration_revision AS configRevision,b.revision AS ruleRevision,
     (SELECT revision FROM annual_source_revision WHERE id=1) AS sourceRevision
@@ -928,10 +953,15 @@ router.post('/:year/profiles', requireStepUpAuth(), async (c) => {
       tokens.push(obligation.credential);
     for (const group of profile.requirements.anyOfCredentials ?? []) tokens.push(...group);
     if (profile.scoring)
+      for (const criterion of profile.scoring.orderedPreference?.criteria ?? [])
+        tokens.push(criterion.credential, ...criterion.alternatives, ...criterion.requiresAll);
+    if (profile.scoring)
       for (const channel of [profile.scoring.total, profile.scoring.so, profile.scoring.mo])
-        for (const group of channel)
-          for (const item of group.items)
+        for (const group of channel) {
+          tokens.push(...(group.excludesAny ?? []));
+          for (const item of group.preference?.criteria ?? group.items)
             tokens.push(item.credential, ...item.alternatives, ...item.requiresAll);
+        }
     for (const token of tokens) if (!active.has(token)) unknown.add(token);
   }
   if (unknown.size)

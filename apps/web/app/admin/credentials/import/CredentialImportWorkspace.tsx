@@ -12,7 +12,7 @@ import { TableCell } from '@/components/ui/table';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { annualPost, buttonClass, fieldClass } from '../../annual-plan/annual-plan-client';
 type Preview = {
   previewKey: string;
@@ -29,6 +29,8 @@ type Preview = {
 };
 export function CredentialImportWorkspace() {
   const client = useQueryClient();
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
   const [file, setFile] = useState<File | null>(null);
   const [mode, setMode] = useState('normalized');
   const [metadata, setMetadata] = useState('');
@@ -130,7 +132,7 @@ export function CredentialImportWorkspace() {
         </p>
       </header>
       <form onSubmit={inspect}>
-        <fieldset disabled={busy} className="space-y-4">
+        <fieldset disabled={!ready || busy} className="space-y-4">
           <Label className="block">
             Catalog XLSX
             <Input

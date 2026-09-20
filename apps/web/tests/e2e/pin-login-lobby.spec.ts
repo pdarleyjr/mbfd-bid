@@ -1,9 +1,11 @@
 import { type Page, expect, test } from '@playwright/test';
 
 async function expectCanonicalHubLogin(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/);
-  await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible();
-  await expect(page.getByLabel('Employee ID')).toBeVisible();
+  await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/, { timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByLabel('Employee ID')).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe('PIN gate', () => {
@@ -55,6 +57,16 @@ test.describe('Lobby protection', () => {
     context,
     page,
   }) => {
+    // Read-only redirect integration: observe the real outgoing authorization
+    // request and public Hub login page. No route fixtures, credential entry,
+    // or claim of authenticated Hub acceptance is involved.
+    const authorizations: URL[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.origin === 'https://staging.mbfdhub.com' && url.pathname === '/auth/bid/authorize') {
+        authorizations.push(url);
+      }
+    });
     await context.clearCookies();
     await context.addCookies([
       {
@@ -66,6 +78,17 @@ test.describe('Lobby protection', () => {
       },
     ]);
     await page.goto('/lobby', { waitUntil: 'commit' });
+    // Request events include HTTP redirect targets even when route handlers
+    // do not intercept later requests in the same redirect chain.
+    await expect.poll(() => authorizations.length, { timeout: 15_000 }).toBe(1);
+    const authorization = authorizations[0];
+    expect(authorization?.origin).toBe('https://staging.mbfdhub.com');
+    expect(authorization?.pathname).toBe('/auth/bid/authorize');
+    expect(authorization?.searchParams.get('client_id')).toBe('bid');
+    expect(authorization?.searchParams.get('redirect_uri')).toBe(
+      'https://staging.bid.mbfdhub.com/api/auth/callback',
+    );
+    expect(authorization?.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
     await expectCanonicalHubLogin(page);
   });
 });

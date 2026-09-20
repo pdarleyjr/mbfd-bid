@@ -1,4 +1,5 @@
 'use client';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRouter } from 'next/navigation';
 import {
   type ReactNode,
@@ -76,6 +77,7 @@ export function ManualPickProvider({
   mockControlRevision,
   children,
 }: ProviderProps) {
+  const csrfFetch = useMemo(() => createCsrfAwareFetch(fetch, () => window.location.origin), []);
   const [pickMode, setPickModeInternal] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -130,20 +132,23 @@ export function ManualPickProvider({
             ? command
             : { key: newIdempotencyKey(), revision: expectedRevision };
         commandKeys.current.set(logicalKey, request);
-        const res = await fetch(`/api/admin/rehearsal/${bidSessionId}/manual-pick`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            'Idempotency-Key': request.key,
+        const res = await csrfFetch(
+          `/api/admin/rehearsal/${encodeURIComponent(bidSessionId)}/manual-pick`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': request.key,
+            },
+            body: JSON.stringify({
+              member_id: input.memberId,
+              position_id: input.positionId,
+              ...(input.force === true ? { force: true } : {}),
+              expected_mock_control_revision: request.revision,
+            }),
           },
-          body: JSON.stringify({
-            member_id: input.memberId,
-            position_id: input.positionId,
-            ...(input.force === true ? { force: true } : {}),
-            expected_mock_control_revision: request.revision,
-          }),
-        });
+        );
         if (!res.ok) {
           const text = await res.text();
           let parsed: ManualPickResponse = {};
@@ -178,7 +183,7 @@ export function ManualPickProvider({
         setSubmitting(false);
       }
     },
-    [bidSessionId, isMock, router],
+    [bidSessionId, isMock, router, csrfFetch],
   );
 
   const value = useMemo<ManualPickValue>(
@@ -205,6 +210,12 @@ export function ManualPickProvider({
  * payload isn't shaped like an error JSON.
  */
 function humanizePickError(status: number, body: ManualPickResponse, raw: string): string {
+  if (
+    body.error === 'managed_canonical_required' ||
+    body.error === 'canonical_mutation_requires_command'
+  ) {
+    return 'This Mock uses reviewed annual policy. Use Start session on its session controls page, then Open session operator console to record selections.';
+  }
   if (body.error === 'position_already_filled') {
     return 'That position is already filled. Reset the mock session to clear picks, or choose a different position.';
   }

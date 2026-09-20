@@ -129,7 +129,7 @@ export function validateOfficerInvariant(
     }
     shortfall += need;
   }
-  if (shortfall > remaining) {
+  if (!state.allocationIncomplete && shortfall > remaining) {
     return {
       shift,
       group,

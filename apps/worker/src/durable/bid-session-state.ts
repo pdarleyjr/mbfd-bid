@@ -15,6 +15,8 @@ export type CurrentPhase = 'config' | 'position_bid' | 'a_day_bid' | 'paused' | 
  * serialized as arrays so the whole BidSessionState round-trips through JSON.
  */
 export interface PersistedADayState {
+  constraints?: import('@mbfd/a-day').ADayState['constraints'];
+  allocationIncomplete?: boolean;
   /** Group capacities keyed by shift then group. */
   groupCaps: Readonly<
     Record<'A' | 'B' | 'C', Readonly<Record<'G1' | 'G2' | 'G3' | 'G4', GroupCapacityConfig>>>
@@ -34,6 +36,15 @@ export interface PersistedADayState {
 }
 
 export interface Fill {
+  /** Voluntary overlays selected from frozen qualified populations. */
+  membershipIds?: readonly string[];
+  termDeparture?: import('@mbfd/shared').TermDepartureElection & {
+    commandId: string;
+    actorMemberId: number;
+    recordedAtMs: number;
+  };
+  /** Present for frozen policies selecting position and A-Day together. */
+  aDay?: import('@mbfd/a-day').ADayValue;
   memberId: number;
   ordinal: number;
   bidId: string;
@@ -42,6 +53,24 @@ export interface Fill {
 /** Durable, reconstructible live-only projection.  Policy itself remains in
  * the immutable snapshot; this stores only progress and supersession facts. */
 export interface LiveBidProgress {
+  specialtyResponses?: readonly {
+    specialtyId: string;
+    positionId: string;
+    requesterMemberId: number;
+    memberId: number;
+    outcome: 'DECLINE' | 'PASS' | 'UNREACHABLE';
+    reason: string;
+    evidenceReference: string | null;
+  }[];
+  fallbackResponses?: readonly {
+    policyId: string;
+    tierId: string;
+    positionId: string;
+    memberId: number;
+    outcome: 'DECLINE' | 'UNREACHABLE';
+    reason: string;
+    evidenceReference: string | null;
+  }[];
   currentStageId: string | null;
   completedStageIds: readonly string[];
   pausedPhase: CurrentPhase | null;

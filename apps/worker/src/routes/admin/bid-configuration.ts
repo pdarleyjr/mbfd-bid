@@ -11,6 +11,11 @@ import {
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import {
+  assertLegacyBidWrite,
+  legacyBidWriteCondition,
+  runLegacyBidWriteBatch,
+} from '../../lib/bid-definition-legacy-write.js';
 
 import { getDb } from '../../db/index.js';
 import { annualBidPolicyDocuments, bidYears, ruleBooks } from '../../db/schema.js';
@@ -151,6 +156,7 @@ router.put(
     const parsedYear = YearParamSchema.safeParse(c.req.param('year'));
     if (!parsedYear.success) return c.json({ error: 'invalid_bid_year' }, 400);
     const body = c.req.valid('json');
+    await assertLegacyBidWrite(c.env.DB, { kind: 'year', year: parsedYear.data });
     const baseSettings = BidConfigurationSettingsV2Schema.parse({
       v: 2,
       expectedDurationDays: body.settings.expected_duration_days,
@@ -336,20 +342,30 @@ router.put(
       configJson: JSON.stringify(settings),
       configurationRevision: year.configurationRevision + 1,
     };
-    const results = await c.env.DB.batch([
-      mutationStatement,
-      auditInsertStatement(c.env.DB, {
-        bidSessionId: null,
-        actorType: 'admin',
-        actorId: actorIdFromClaims(c.get('claims')),
-        action: 'bid_configuration_set',
-        targetKind: 'bid_year',
-        targetId: String(parsedYear.data),
-        reason: body.reason,
-        beforeState: configurationResponse(year, currentBook),
-        afterState: configurationResponse(anticipated, candidateBook),
-      }),
-    ]);
+    const results = await runLegacyBidWriteBatch(
+      c.env.DB,
+      { kind: 'year', year: parsedYear.data },
+      [
+        mutationStatement,
+        auditInsertStatement(
+          c.env.DB,
+          {
+            bidSessionId: null,
+            actorType: 'admin',
+            actorId: actorIdFromClaims(c.get('claims')),
+            action: 'bid_configuration_set',
+            targetKind: 'bid_year',
+            targetId: String(parsedYear.data),
+            reason: body.reason,
+            beforeState: configurationResponse(year, currentBook),
+            afterState: configurationResponse(anticipated, candidateBook),
+          },
+          new Date(),
+          false,
+          legacyBidWriteCondition({ kind: 'year', year: parsedYear.data }),
+        ),
+      ],
+    );
     if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
       const current = await db
         .select()

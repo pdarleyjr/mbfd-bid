@@ -24,7 +24,8 @@ beforeEach(async () => {
        (id, employee_id, first_name, last_name, rank, bid_category, rsc_seniority,
         is_probationary, employment_status, created_at, updated_at)
        VALUES (7, '70007', 'Published', 'Member', 'FF', 'FF', 1, 0, 'active', ${now}, ${now}),
-              (8, '80008', 'Other', 'Member', 'FF', 'FF', 2, 0, 'active', ${now}, ${now});
+              (8, '80008', 'Other', 'Member', 'FF', 'FF', 2, 0, 'active', ${now}, ${now}),
+              (9, '90009', 'No', 'Result', 'FF', 'FF', 3, 0, 'active', ${now}, ${now});
      INSERT INTO bid_sessions
        (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count)
        VALUES ('annual-2030', 2030, ${now}, 'complete', 180, 2, 1);

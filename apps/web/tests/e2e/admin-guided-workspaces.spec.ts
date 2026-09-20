@@ -114,18 +114,22 @@ test('Credential members open immediately in an accessible panel; menus collapse
   const mobile = page.getByRole('button', { name: 'Open admin navigation' });
   if (await mobile.isVisible()) await mobile.click();
   await page
-    .getByRole('button', { name: 'Collapse People menu', exact: true })
+    .getByRole('button', { name: 'Collapse Department menu', exact: true })
     .locator('visible=true')
     .click();
   await expect(
-    page.getByRole('button', { name: 'Expand People menu', exact: true }).locator('visible=true'),
+    page
+      .getByRole('button', { name: 'Expand Department menu', exact: true })
+      .locator('visible=true'),
   ).toHaveAttribute('aria-expanded', 'false');
   await page
-    .getByRole('button', { name: 'Expand People menu', exact: true })
+    .getByRole('button', { name: 'Expand Department menu', exact: true })
     .locator('visible=true')
     .click();
   await expect(
-    page.getByRole('button', { name: 'Collapse People menu', exact: true }).locator('visible=true'),
+    page
+      .getByRole('button', { name: 'Collapse Department menu', exact: true })
+      .locator('visible=true'),
   ).toHaveAttribute('aria-expanded', 'true');
   if (await page.getByRole('button', { name: 'Close admin navigation' }).isVisible())
     await page.getByRole('button', { name: 'Close admin navigation' }).click();

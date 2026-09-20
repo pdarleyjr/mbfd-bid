@@ -27,6 +27,7 @@ const LIVE_ACTIONS = [
   'resolve_tie',
   'alter_order',
   'pause_resume',
+  'create_live_session',
   'approve_transition',
   'approve_final_results',
   'publish',
@@ -146,7 +147,7 @@ async function freshAdminAuthorization(): Promise<string> {
   const token = await signJwt(
     {
       sub: 0,
-      emp: 'synthetic-admin',
+      emp: 'synthetic-policy-001',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Synthetic',

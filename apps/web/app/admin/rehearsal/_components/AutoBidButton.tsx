@@ -1,8 +1,9 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRouter } from 'next/navigation';
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 
 interface Props {
   sessionId: string;
@@ -32,6 +33,12 @@ function newIdempotencyKey(): string {
 }
 
 function errorText(status: number, body: AutoBidResponse, raw: string): string {
+  if (
+    body.error === 'managed_canonical_required' ||
+    body.error === 'canonical_mutation_requires_command'
+  ) {
+    return 'This Mock uses reviewed annual policy. Use Start session on its session controls page, then Open session operator console to record selections.';
+  }
   if (body.error === 'stale_mock_control_revision') {
     return 'The mock board changed. It has been refreshed; review it before trying again.';
   }
@@ -50,6 +57,7 @@ export function AutoBidButton({
   count,
   mockControlRevision,
 }: Props): ReactElement {
+  const csrfFetch = useMemo(() => createCsrfAwareFetch(fetch, () => window.location.origin), []);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [tone, setTone] = useState<'ok' | 'warn' | 'err' | null>(null);
@@ -110,19 +118,22 @@ export function AutoBidButton({
               : { key: newIdempotencyKey(), revision: knownRevision };
           pendingCommand.current = command;
           try {
-            const res = await fetch(`/api/admin/rehearsal/${sessionId}/auto-bid`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Idempotency-Key': command.key,
+            const res = await csrfFetch(
+              `/api/admin/rehearsal/${encodeURIComponent(sessionId)}/auto-bid`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Idempotency-Key': command.key,
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                  count,
+                  strategy,
+                  expected_mock_control_revision: command.revision,
+                }),
               },
-              credentials: 'include',
-              body: JSON.stringify({
-                count,
-                strategy,
-                expected_mock_control_revision: command.revision,
-              }),
-            });
+            );
             if (!res.ok && res.status !== 207) {
               const raw = await res.text();
               let body: AutoBidResponse = {} as AutoBidResponse;

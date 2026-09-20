@@ -1,4 +1,8 @@
-import type { FrozenLiveBidPolicy, LiveBidCommand } from '@mbfd/shared';
+import {
+  type FrozenLiveBidPolicy,
+  FrozenLiveBidPolicySchema,
+  type LiveBidCommand,
+} from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import { reduceLiveBidCommand } from '../../src/commands/live-bid-reducer.js';
 import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
@@ -39,6 +43,7 @@ const policy: FrozenLiveBidPolicy = {
       'resolve_tie',
       'alter_order',
       'pause_resume',
+      'create_live_session',
       'approve_transition',
       'approve_final_results',
       'publish',
@@ -83,7 +88,377 @@ function command(
     ...extra,
   } as LiveBidCommand;
 }
+
+type UnreachablePath = 'declaration' | 'disposition' | 'specialty';
+function contactPolicy(
+  contact: NonNullable<FrozenLiveBidPolicy['annualOperations']>['contact'],
+): FrozenLiveBidPolicy {
+  return {
+    ...policy,
+    annualOperations: {
+      v: 1,
+      stageOrder: ['d'],
+      requiredTopologyPositionIds: ['p1'],
+      contact,
+      specialties: [
+        {
+          id: 'synthetic-contact-specialty',
+          label: 'Synthetic contact specialty',
+          mode: 'INTERRUPTING',
+          opportunityPositionIds: ['p1'],
+          requiredCredentialNames: [],
+          requiredSpecialtyCodes: [],
+          points: [],
+          tieBreakChain: ['RSC_SENIORITY'],
+        },
+      ],
+      aDay: {
+        combatGroups: ['G1', 'G2', 'G3', 'G4'],
+        min: 1,
+        max: 2,
+        captainDcMax: 1,
+        specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 1, SWAT: 1 },
+      },
+    },
+  };
+}
+
+function unreachableScenario(
+  path: UnreachablePath,
+  configured: FrozenLiveBidPolicy,
+  attempts: Array<{ memberId: number; atMs: number }>,
+) {
+  let current = state();
+  if (path === 'specialty') {
+    const started = reduceLiveBidCommand(
+      current,
+      configured,
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'synthetic-contact-specialty',
+        positionId: 'p1',
+        candidateMemberIds: [2],
+      }),
+      500,
+      'synthetic-contact-start',
+    );
+    if (!started.ok) throw new Error(started.code);
+    current = started.state;
+  }
+  for (const [index, attempt] of attempts.entries()) {
+    const recorded = reduceLiveBidCommand(
+      current,
+      configured,
+      command('live.record_contact_attempt', {
+        expectedSeq: current.lastSeq,
+        commandId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        memberId: attempt.memberId,
+        method: index % 2 === 0 ? 'PHONE' : 'TEXT',
+      }),
+      attempt.atMs,
+      `synthetic-contact-${index}`,
+    );
+    if (!recorded.ok) throw new Error(recorded.code);
+    current = recorded.state;
+  }
+  const input =
+    path === 'specialty'
+      ? command('live.resolve_specialty_candidate', {
+          memberId: 2,
+          outcome: 'UNREACHABLE',
+          evidenceReference: 'synthetic-contact-evidence',
+          expectedSeq: current.lastSeq,
+        })
+      : path === 'disposition'
+        ? command('live.disposition', {
+            disposition: 'UNREACHABLE',
+            evidenceReference: 'synthetic-contact-evidence',
+            expectedSeq: current.lastSeq,
+          })
+        : command('live.declare_unreachable', {
+            memberId: 1,
+            evidenceReference: 'synthetic-contact-evidence',
+            expectedSeq: current.lastSeq,
+          });
+  return { current, input };
+}
+
+describe.each(['declaration', 'disposition', 'specialty'] as const)(
+  'canonical unreachable contact gate: %s',
+  (path) => {
+    const targetId = path === 'specialty' ? 2 : 1;
+    const otherId = targetId === 1 ? 2 : 1;
+    it('rejects one millisecond before HARD_MINIMUM and accepts the exact boundary from this member first attempt', () => {
+      const configured = contactPolicy({
+        minimumAttempts: 2,
+        timingMode: 'HARD_MINIMUM',
+        durationSeconds: 60,
+      });
+      const { current, input } = unreachableScenario(path, configured, [
+        { memberId: otherId, atMs: 1_000 },
+        { memberId: targetId, atMs: 10_000 },
+        { memberId: targetId, atMs: 11_000 },
+      ]);
+      const original = structuredClone(current);
+      expect(
+        reduceLiveBidCommand(current, configured, input, 69_999, 'synthetic-too-early'),
+      ).toMatchObject({ ok: false, code: 'CONTACT_MINIMUM_TIME_INCOMPLETE' });
+      expect(current).toEqual(original);
+      const accepted = reduceLiveBidCommand(
+        current,
+        configured,
+        input,
+        70_000,
+        'synthetic-boundary',
+      );
+      if (!accepted.ok) throw new Error(accepted.code);
+      expect(accepted.state.lastSeq).toBe(current.lastSeq + 1);
+      if (path === 'declaration')
+        expect(accepted.state.annual?.unresolvedMemberIds).toContain(targetId);
+      if (path === 'disposition') expect(accepted.state.currentBidderId).toBe(2);
+      if (path === 'specialty') expect(accepted.state.live?.specialty).toBeNull();
+    });
+
+    it('does not enforce TARGET duration as a hard minimum after the required attempts', () => {
+      const configured = contactPolicy({
+        minimumAttempts: 2,
+        timingMode: 'TARGET',
+        durationSeconds: 60,
+      });
+      const { current, input } = unreachableScenario(path, configured, [
+        { memberId: targetId, atMs: 10_000 },
+        { memberId: targetId, atMs: 11_000 },
+      ]);
+      expect(
+        reduceLiveBidCommand(current, configured, input, 11_000, 'synthetic-target'),
+      ).toMatchObject({ ok: true });
+    });
+
+    it('never borrows contact attempts from another member', () => {
+      const configured = contactPolicy({
+        minimumAttempts: 2,
+        timingMode: 'OPERATOR_DISCRETION',
+        durationSeconds: null,
+      });
+      const { current, input } = unreachableScenario(path, configured, [
+        { memberId: otherId, atMs: 10_000 },
+        { memberId: otherId, atMs: 11_000 },
+      ]);
+      expect(
+        reduceLiveBidCommand(current, configured, input, 100_000, 'synthetic-wrong-member'),
+      ).toMatchObject({ ok: false, code: 'CONTACT_ATTEMPTS_INCOMPLETE' });
+    });
+
+    it('honors an explicit zero-attempt OPERATOR_DISCRETION source policy', () => {
+      const configured = contactPolicy({
+        minimumAttempts: 0,
+        timingMode: 'OPERATOR_DISCRETION',
+        durationSeconds: null,
+      });
+      expect(FrozenLiveBidPolicySchema.parse(configured)).toMatchObject({
+        annualOperations: { contact: { minimumAttempts: 0, timingMode: 'OPERATOR_DISCRETION' } },
+      });
+      const { current, input } = unreachableScenario(path, configured, []);
+      expect(
+        reduceLiveBidCommand(current, configured, input, 10_000, 'synthetic-zero-attempts'),
+      ).toMatchObject({ ok: true });
+    });
+  },
+);
+describe.each(['DECLINE', 'UNREACHABLE'] as const)(
+  'fallback %s disposition safeguards',
+  (outcome) => {
+    const disposition = outcome === 'DECLINE' ? 'DECLINED' : 'UNREACHABLE';
+    const configured: FrozenLiveBidPolicy = {
+      ...contactPolicy({
+        minimumAttempts: 0,
+        timingMode: 'OPERATOR_DISCRETION',
+        durationSeconds: null,
+      }),
+      dispositions: policy.dispositions.map((rule) => ({
+        ...rule,
+        requiresEvidence: true,
+        requiresReason: true,
+      })),
+    };
+    const input = (extra: Record<string, unknown> = {}) =>
+      command('live.record_fallback_response', {
+        fallback: { policyId: 'synthetic-fallback', tierId: 'synthetic-voluntary' },
+        positionId: 'p1',
+        memberId: 1,
+        outcome,
+        evidenceReference: 'synthetic-contact-record',
+        ...extra,
+      });
+
+    it.each([{ evidenceReference: null }, { reason: '   ' }])(
+      'does not exhaust a candidate without configured response support: %j',
+      (missing) => {
+        const current = state();
+        const before = structuredClone(current);
+        expect(
+          reduceLiveBidCommand(current, configured, input(missing), 10_000, 'synthetic-bid', true),
+        ).toEqual({ ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' });
+        expect(current).toEqual(before);
+      },
+    );
+
+    it('rejects a missing frozen disposition instead of recording an exhaustion response', () => {
+      const incomplete = {
+        ...configured,
+        dispositions: configured.dispositions.filter((rule) => rule.disposition !== disposition),
+      };
+      expect(
+        reduceLiveBidCommand(state(), incomplete, input(), 10_000, 'synthetic-bid', true),
+      ).toEqual({ ok: false, code: 'LIVE_DISPOSITION_POLICY_INCOMPLETE' });
+    });
+
+    it('records a supported response without advancing the bidder or awarding the position', () => {
+      const current = state();
+      const result = reduceLiveBidCommand(
+        current,
+        configured,
+        input(),
+        10_000,
+        'synthetic-bid',
+        true,
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        state: {
+          currentBidderId: current.currentBidderId,
+          fills: current.fills,
+          lastSeq: current.lastSeq + 1,
+          live: {
+            fallbackResponses: [
+              {
+                policyId: 'synthetic-fallback',
+                tierId: 'synthetic-voluntary',
+                positionId: 'p1',
+                memberId: 1,
+                outcome,
+                reason: 'operator reason',
+                evidenceReference: 'synthetic-contact-record',
+              },
+            ],
+          },
+        },
+      });
+    });
+  },
+);
+
 describe('live canonical reducer', () => {
+  it.each(['selection', 'disposition'] as const)(
+    'skips an ahead-of-turn forced award when the ordinary bidder advances by %s',
+    (advanceBy) => {
+      const configured: FrozenLiveBidPolicy = {
+        ...policy,
+        stages: policy.stages.map((stage) => ({
+          ...stage,
+          memberIds: [1, 2, 3],
+          opportunityPositionIds: ['p1', 'p2', 'p3'],
+        })),
+      };
+      const initial = state();
+      initial.bidOrder = [
+        ...initial.bidOrder,
+        { ordinal: 3, memberId: 3, pool: 'FF', stageId: 'd' },
+      ];
+      const forced = reduceLiveBidCommand(
+        initial,
+        configured,
+        command('live.force_selection', { memberId: 2, positionId: 'p2' }),
+        100,
+        'forced-two',
+      );
+      if (!forced.ok) throw new Error(forced.code);
+      expect(forced.state).toMatchObject({ currentBidderId: 1, queueCursor: 0 });
+      const advanced = reduceLiveBidCommand(
+        forced.state,
+        configured,
+        advanceBy === 'selection'
+          ? command('live.record_selection', {
+              expectedSeq: forced.state.lastSeq,
+              memberId: 1,
+              positionId: 'p1',
+            })
+          : command('live.disposition', {
+              expectedSeq: forced.state.lastSeq,
+              disposition: 'PASS',
+            }),
+        101,
+        'ordinary-one',
+      );
+      if (!advanced.ok) throw new Error(advanced.code);
+      expect(advanced.state).toMatchObject({
+        currentBidderId: 3,
+        queueCursor: 2,
+        currentPhase: 'position_bid',
+        turnStartedAtMs: 101,
+      });
+      expect(advanced.state.bidOrder).toEqual(initial.bidOrder);
+      expect(advanced.state.fills.p2).toEqual({ memberId: 2, ordinal: 2, bidId: 'forced-two' });
+      const last = reduceLiveBidCommand(
+        advanced.state,
+        configured,
+        command('live.record_selection', {
+          expectedSeq: advanced.state.lastSeq,
+          memberId: 3,
+          positionId: 'p3',
+        }),
+        102,
+        'ordinary-three',
+      );
+      if (!last.ok) throw new Error(last.code);
+      expect(last.state).toMatchObject({ currentBidderId: null, currentPhase: 'complete' });
+      expect(last.state.fills.p2).toEqual(forced.state.fills.p2);
+    },
+  );
+
+  it('retains an ordinary unreachable disposition as unresolved after queue exhaustion and blocks completion', () => {
+    const configured = contactPolicy({
+      minimumAttempts: 0,
+      timingMode: 'OPERATOR_DISCRETION',
+      durationSeconds: null,
+    });
+    const { current, input } = unreachableScenario('disposition', configured, []);
+    const unreachable = reduceLiveBidCommand(current, configured, input, 100, 'unreachable-one');
+    if (!unreachable.ok) throw new Error(unreachable.code);
+    expect(unreachable.state).toMatchObject({
+      currentBidderId: 2,
+      annual: { unresolvedMemberIds: [1] },
+      live: { dispositions: [{ memberId: 1, disposition: 'UNREACHABLE' }] },
+    });
+    const selected = reduceLiveBidCommand(
+      unreachable.state,
+      configured,
+      command('live.record_selection', {
+        expectedSeq: unreachable.state.lastSeq,
+        memberId: 2,
+        positionId: 'p1',
+      }),
+      101,
+      'ordinary-two',
+    );
+    if (!selected.ok) throw new Error(selected.code);
+    expect(selected.state).toMatchObject({
+      currentBidderId: null,
+      currentPhase: 'complete',
+      annual: { unresolvedMemberIds: [1], completion: null },
+    });
+    const before = structuredClone(selected.state);
+    expect(
+      reduceLiveBidCommand(
+        selected.state,
+        configured,
+        command('live.complete_session', { expectedSeq: selected.state.lastSeq }),
+        102,
+        'completion-rejected',
+      ),
+    ).toMatchObject({ ok: false, code: 'UNRESOLVED_MEMBERS_BLOCK_COMPLETION' });
+    expect(selected.state).toEqual(before);
+  });
+
   it('suspends the exact normal bidder for frozen specialty adjudication and resumes without queue rewind', () => {
     const specialtyPolicy: FrozenLiveBidPolicy = {
       ...policy,

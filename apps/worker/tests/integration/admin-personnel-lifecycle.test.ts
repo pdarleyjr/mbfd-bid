@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
@@ -11,7 +11,7 @@ async function adminJwt(fresh = true): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'synthetic-admin',
+      emp: 'synthetic-001',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Synthetic',
@@ -30,6 +30,8 @@ describe('personnel lifecycle administration', () => {
   let h: TestD1;
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     h = await setupTestD1();
     await h.db.run(
       `INSERT INTO members
@@ -61,7 +63,11 @@ describe('personnel lifecycle administration', () => {
   });
 
   afterEach(async () => {
-    await teardownTestD1(h);
+    try {
+      await teardownTestD1(h);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('previews a permanent assignment change without writing D1 or changing an established session', async () => {

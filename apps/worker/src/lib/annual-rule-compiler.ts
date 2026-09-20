@@ -3,7 +3,12 @@ import type { AnnualRuleProfile } from '@mbfd/shared';
 
 export type AnnualRulePosition = { id: string; station: string; shift: string; rank: Rank };
 const SPECIFICITY = { department: 0, rank: 1, station_shift: 2, family: 3, position: 4 } as const;
-function matches(profile: AnnualRuleProfile, position: AnnualRulePosition) {
+/** Shared with profile-review mapping so source evidence uses the exact same
+ * explicit scope semantics as compilation. Family names never infer members. */
+export function annualRuleProfileMatchesPosition(
+  profile: AnnualRuleProfile,
+  position: AnnualRulePosition,
+) {
   const scope = profile.scope;
   switch (scope.kind) {
     case 'department':
@@ -62,7 +67,7 @@ export function compileAnnualRules(
   }
   for (const position of positions) {
     const selected = profiles
-      .filter((p) => matches(p, position))
+      .filter((p) => annualRuleProfileMatchesPosition(p, position))
       .sort(
         (a, b) => SPECIFICITY[a.scope.kind] - SPECIFICITY[b.scope.kind] || a.id.localeCompare(b.id),
       );

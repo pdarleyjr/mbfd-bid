@@ -53,8 +53,11 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
   await expect(
     page.getByRole('heading', { name: 'Docs & Administrator Manual', exact: true }),
   ).toBeVisible();
-  const pdf = page.locator('a[download][href$=".pdf"]');
+  const pdf = page.getByRole('link', { name: 'Download complete manual (PDF)', exact: true });
+  await expect(pdf).toHaveCount(1);
   await expect(pdf).toBeVisible();
+  await expect(pdf).toHaveAttribute('download', '');
+  await expect(pdf).toHaveAttribute('href', '/manual/MBFD-Bid-Administrator-Manual.pdf');
   const response = await page.request.get('/manual/MBFD-Bid-Administrator-Manual.pdf');
   expect(response.status()).toBe(200);
   expect((await response.body()).subarray(0, 5).toString()).toBe('%PDF-');
@@ -163,7 +166,7 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
     return route.fulfill({ json: detail() });
   });
   await page.goto('/admin/targetsolutions');
-  await page.getByText('How to use this page', { exact: true }).click();
+  await page.getByRole('button', { name: 'How to use this page', exact: true }).click();
   await expect(page.getByText('Controls on this page:', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close panel', exact: true }).click();
   await page.locator('input[type=file]').setInputFiles({

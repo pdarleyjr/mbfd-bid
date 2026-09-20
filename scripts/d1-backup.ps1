@@ -49,7 +49,10 @@ Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString(
   if ($Env -eq 'production') {
     # Capture output privately: neither recovery values nor raw CLI errors
     # belong in the public workflow log. This operation only reads D1.
-    $bookmarkOutput = & pnpm --dir apps/worker exec wrangler d1 time-travel info $DbName --env $Env --json 2>&1
+    try {
+      $bookmarkOutput = & pnpm --dir apps/worker exec wrangler d1 time-travel info $DbName --env $Env --json *>&1
+    }
+    catch { throw 'Production Time Travel lookup failed; no backup success recorded.' }
     if ($LASTEXITCODE -ne 0) { throw "Production Time Travel lookup failed (exit $LASTEXITCODE); no backup success recorded." }
     try {
       $bookmark = ($bookmarkOutput | Out-String | ConvertFrom-Json -ErrorAction Stop).bookmark
@@ -62,7 +65,12 @@ Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString(
   }
 
   Write-Host "[d1-backup] exporting D1 $DbName ($Env) -> $file"
-  & pnpm --dir apps/worker exec wrangler d1 export $DbName --env $Env --remote --output $file
+  # Wrangler may emit a signed SQL download URL, including on failure.
+  # Capture every CLI stream privately; public logs contain only our summaries.
+  try {
+    $exportOutput = & pnpm --dir apps/worker exec wrangler d1 export $DbName --env $Env --remote --output $file *>&1
+  }
+  catch { throw 'wrangler d1 export failed; no backup success recorded.' }
   if ($LASTEXITCODE -ne 0) { throw "wrangler d1 export failed (exit $LASTEXITCODE)" }
 
   $size = (Get-Item $file).Length
@@ -73,7 +81,10 @@ Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString(
 
   $result.Key = "d1/$day/$DbName-$now.sql"
   Write-Host "[d1-backup] uploading -> r2://$BucketName/$($result.Key)"
-  & pnpm --dir apps/worker exec wrangler r2 object put "$BucketName/$($result.Key)" --file=$file --remote
+  try {
+    $uploadOutput = & pnpm --dir apps/worker exec wrangler r2 object put "$BucketName/$($result.Key)" --file=$file --remote *>&1
+  }
+  catch { throw 'wrangler r2 object put failed; no backup success recorded.' }
   if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object put failed (exit $LASTEXITCODE)" }
 
   if ($Env -eq 'production') {
@@ -90,7 +101,10 @@ Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString(
       bookmark_captured_at = $bookmarkCapturedAt
       source_commit = $env:GITHUB_SHA
     } | ConvertTo-Json | Set-Content -LiteralPath $receiptFile -Encoding utf8NoBOM
-    & pnpm --dir apps/worker exec wrangler r2 object put "$BucketName/$($result.ReceiptKey)" --file=$receiptFile --remote
+    try {
+      $receiptOutput = & pnpm --dir apps/worker exec wrangler r2 object put "$BucketName/$($result.ReceiptKey)" --file=$receiptFile --remote *>&1
+    }
+    catch { throw 'Private recovery receipt upload failed; no backup success recorded.' }
     if ($LASTEXITCODE -ne 0) { throw "Private recovery receipt upload failed (exit $LASTEXITCODE); no backup success recorded." }
     Write-Host "[d1-backup] private recovery receipt -> r2://$BucketName/$($result.ReceiptKey)"
   }

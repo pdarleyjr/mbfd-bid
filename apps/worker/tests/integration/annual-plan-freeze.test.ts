@@ -138,6 +138,10 @@ describe('atomic annual freeze with synthetic completed Mock evidence', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated, nonparticipating test operator.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (9001,'synthetic-admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     h.sqlite.pragma('foreign_keys = ON');
     token = await signJwt(
       {
@@ -316,28 +320,20 @@ describe('atomic annual freeze with synthetic completed Mock evidence', () => {
   it.each(['missing', 'different'])(
     'rejects a Mock with %s staffing provenance even when all other rehearsal material matches',
     async (variant) => {
-      // Inject only the historical read result; never rewrite an immutable snapshot.
+      // Corrupt only this isolated historical fixture. The shared frozen loader
+      // now owns the read, so the test must exercise persisted evidence rather
+      // than override one superseded query path.
       const original = h.sqlite
         .prepare('SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?')
         .get(mockId) as { snapshot_json: string };
       const historical = JSON.parse(original.snapshot_json);
       if (variant === 'missing') historical.staffingBaseline = undefined;
       else historical.staffingBaseline.baselineAcceptanceId = 'synthetic-previous-baseline';
-      const database = {
-        ...h.env.DB,
-        prepare(sql: string) {
-          const statement = h.env.DB.prepare(sql);
-          if (sql.includes('SELECT s.is_mock,s.bid_year,p.snapshot_json')) {
-            const first = statement.first.bind(statement);
-            statement.first = (async () => {
-              const row = await first<Record<string, unknown>>();
-              return row ? { ...row, snapshot_json: JSON.stringify(historical) } : null;
-            }) as D1PreparedStatement['first'];
-          }
-          return statement;
-        },
-      } as D1Database;
-      const result = await freezeAnnualPlan(database, {
+      h.sqlite.exec('DROP TRIGGER bid_session_policy_snapshots_immutable');
+      h.sqlite
+        .prepare('UPDATE bid_session_policy_snapshots SET snapshot_json=? WHERE bid_session_id=?')
+        .run(JSON.stringify(historical), mockId);
+      const result = await freezeAnnualPlan(h.env.DB, {
         year: 2027,
         key: 'staffing-provenance',
         actorSubject: '9001',
@@ -355,7 +351,7 @@ describe('atomic annual freeze with synthetic completed Mock evidence', () => {
         h.sqlite
           .prepare('SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?')
           .get(mockId),
-      ).toEqual(original);
+      ).toEqual({ snapshot_json: JSON.stringify(historical) });
     },
   );
   it.each([2, 4, 6, 9])(

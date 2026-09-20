@@ -11,7 +11,7 @@ async function adminJwt(): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'admin',
+      emp: '100101',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'A',
@@ -109,7 +109,7 @@ describe('POST /api/admin/rehearsal/:sessionId/close-mock', () => {
   });
 
   it('leaves a stale mock open when the close audit receipt fails', async () => {
-    h.failNextBatchAt(0);
+    h.failNextBatchAt(1);
     const response = await closeMock(h);
 
     expect(response.status).toBe(500);
@@ -123,6 +123,58 @@ describe('POST /api/admin/rehearsal/:sessionId/close-mock', () => {
       ),
     ).resolves.toEqual({ results: [{ n: 0 }] });
   });
+
+  it.each(['canonical-start', 'lifecycle-change'] as const)(
+    'does not close or record a false audit after a concurrent %s',
+    async (race) => {
+      await h.db.run('DELETE FROM bids WHERE bid_session_id = ?', [mockSessionId]);
+      const batch = h.env.DB.batch.bind(h.env.DB);
+      h.env.DB.batch = async (statements) => {
+        if (race === 'canonical-start') {
+          h.sqlite
+            .prepare(`INSERT INTO canonical_bid_session_state
+            (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at)
+            VALUES (?,1,?,'synthetic-concurrent-start',1,1)`)
+            .run(
+              mockSessionId,
+              JSON.stringify({
+                bidSessionId: mockSessionId,
+                currentPhase: 'position_bid',
+                lastSeq: 1,
+              }),
+            );
+        } else {
+          h.sqlite.prepare('UPDATE bid_sessions SET paused_at=123 WHERE id=?').run(mockSessionId);
+        }
+        return batch(statements);
+      };
+      const response = await closeMock(h);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ error: 'mock_session_close_conflict' });
+      expect(
+        h.sqlite
+          .prepare('SELECT current_phase,paused_at FROM bid_sessions WHERE id=?')
+          .get(mockSessionId),
+      ).toEqual({
+        current_phase: 'position_bid',
+        paused_at: race === 'lifecycle-change' ? 123 : null,
+      });
+      expect(
+        h.sqlite
+          .prepare(
+            "SELECT count(*) AS count FROM audit_log WHERE bid_session_id=? AND action='mock_session_closed'",
+          )
+          .get(mockSessionId),
+      ).toEqual({ count: 0 });
+      if (race === 'canonical-start') {
+        expect(
+          h.sqlite
+            .prepare('SELECT current_seq FROM canonical_bid_session_state WHERE bid_session_id=?')
+            .get(mockSessionId),
+        ).toEqual({ current_seq: 1 });
+      }
+    },
+  );
 
   it('is idempotent once the mock is closed', async () => {
     await closeMock(h);

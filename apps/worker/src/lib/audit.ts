@@ -2,6 +2,7 @@ import { eq, isNull, sql } from 'drizzle-orm';
 import { ulid } from 'ulid';
 import type { DB } from '../db/index.js';
 import { auditLog } from '../db/schema.js';
+import type { BidWriteCondition } from './bid-definition-legacy-write.js';
 
 export type AuditAction =
   | 'pick'
@@ -41,6 +42,7 @@ export type AuditAction =
   | 'portal_writeback_clear'
   | 'rehearsal_finding'
   | 'export_generate'
+  | 'result_distribution_review'
   | 'setting_change'
   | 'portal_writeback_attempt'
   | 'portal_writeback_outcome';
@@ -73,6 +75,7 @@ export function auditInsertStatement(
   entry: AuditEntry,
   createdAt: Date = new Date(),
   requirePreviousChange = false,
+  condition?: BidWriteCondition,
 ): D1PreparedStatement {
   const id = ulid();
   const sessionPredicate =
@@ -80,6 +83,7 @@ export function auditInsertStatement(
   const parameters: unknown[] = [
     id,
     entry.bidSessionId,
+    ...(condition?.parameters ?? []),
     entry.actorType,
     entry.actorId ?? null,
     entry.action,
@@ -93,15 +97,22 @@ export function auditInsertStatement(
     Math.floor(createdAt.getTime() / 1_000),
   ];
   if (entry.bidSessionId !== null) parameters.push(entry.bidSessionId);
+  // A rejected condition must raise even when a previous conditional write did
+  // nothing: other statements in this transaction may already have changed rows.
+  if (requirePreviousChange && condition) parameters.push(...condition.parameters);
+  const actor = condition ? `CASE WHEN (${condition.sql}) THEN ? ELSE NULL END` : '?';
+  const having = requirePreviousChange
+    ? ` HAVING changes() = 1${condition ? ` OR NOT (${condition.sql})` : ''}`
+    : '';
 
   return d1
     .prepare(
       `INSERT INTO audit_log
          (id, bid_session_id, seq, actor_type, actor_id, action, target_kind,
           target_id, before_state, after_state, reason, ai_advisory_id, client_meta, created_at)
-       SELECT ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, COALESCE(MAX(seq), 0) + 1, ${actor}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
          FROM audit_log
-        WHERE ${sessionPredicate}${requirePreviousChange ? ' HAVING changes() = 1' : ''}`,
+        WHERE ${sessionPredicate}${having}`,
     )
     .bind(...parameters);
 }

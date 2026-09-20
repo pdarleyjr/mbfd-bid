@@ -15,6 +15,17 @@ import { AutoBidButton } from '../../app/admin/rehearsal/_components/AutoBidButt
 import { CloseStaleMockButton } from '../../app/admin/rehearsal/_components/CloseStaleMockButton';
 
 const roots: Root[] = [];
+const csrfToken = 'csrf_00000000-0000-0000-0000-000000000001';
+const csrfBootstrap = vi.fn();
+function installFetch(mutations: typeof fetch) {
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/auth/csrf') {
+      csrfBootstrap(init);
+      return new Response(JSON.stringify({ token: csrfToken }));
+    }
+    return mutations(input, init);
+  });
+}
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
   value: true,
@@ -27,6 +38,7 @@ afterEach(() => {
   });
   document.body.replaceChildren();
   refresh.mockReset();
+  csrfBootstrap.mockClear();
   vi.unstubAllGlobals();
 });
 
@@ -47,7 +59,86 @@ async function click(button: HTMLButtonElement): Promise<void> {
   });
 }
 
+function ManualProbe() {
+  const controls = useManualPick();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void controls.submitPick({ memberId: 60, positionId: 'A101' })}
+      >
+        Submit mock pick
+      </button>
+      <output>{controls.lastError}</output>
+    </>
+  );
+}
+
 describe('mock rehearsal command UI', () => {
+  it.each(['auto', 'manual'] as const)(
+    'directs %s users to session start and the operator console for managed policy',
+    async (mode) => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'managed_canonical_required' }), { status: 409 }),
+      );
+      installFetch(fetchMock);
+      const container = render(
+        mode === 'auto' ? (
+          <AutoBidButton
+            sessionId="synthetic-mock"
+            strategy="first_eligible"
+            count={1}
+            mockControlRevision={0}
+          />
+        ) : (
+          <ManualPickProvider bidSessionId="synthetic-mock" isMock mockControlRevision={0}>
+            <ManualProbe />
+          </ManualPickProvider>
+        ),
+      );
+      const button = container.querySelector('button');
+      if (!(button instanceof HTMLButtonElement)) throw new Error('Mock command control missing');
+      await click(button);
+      expect(container.textContent).toContain('Use Start session on its session controls page');
+      expect(container.textContent).toContain('Open session operator console');
+      expect(container.textContent).not.toContain('managed_canonical_required');
+      expect(refresh).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves a manual pick key and revision after an uncertain transport failure with CSRF enabled', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      if (fetchMock.mock.calls.length === 1) throw new Error('Synthetic network interruption');
+      return new Response(JSON.stringify({ bid_id: 'synthetic-bid', mock_control_revision: 5 }), {
+        status: 201,
+      });
+    });
+    installFetch(fetchMock);
+    const container = render(
+      <ManualPickProvider bidSessionId="synthetic-mock" isMock mockControlRevision={4}>
+        <ManualProbe />
+      </ManualPickProvider>,
+    );
+    const button = container.querySelector('button');
+    if (!(button instanceof HTMLButtonElement)) throw new Error('Mock command control missing');
+    await click(button);
+    expect(container.textContent).toContain('Synthetic network interruption');
+    await click(button);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = fetchMock.mock.calls[0]?.[1];
+    const retry = fetchMock.mock.calls[1]?.[1];
+    expect(new Headers(retry?.headers).get('Idempotency-Key')).toBe(
+      new Headers(first?.headers).get('Idempotency-Key'),
+    );
+    expect(new Headers(retry?.headers).get('Idempotency-Key')).toBeTruthy();
+    expect(new Headers(retry?.headers).get('X-MBFD-CSRF')).toBe(csrfToken);
+    expect(retry?.body).toBe(first?.body);
+    expect(JSON.parse(String(retry?.body))).toMatchObject({ expected_mock_control_revision: 4 });
+    expect(csrfBootstrap).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it('closes a stale legacy mock through the audited application endpoint', async () => {
     const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
       async () =>
@@ -56,7 +147,7 @@ describe('mock rehearsal command UI', () => {
           headers: { 'content-type': 'application/json' },
         }),
     );
-    vi.stubGlobal('fetch', fetchMock);
+    installFetch(fetchMock);
     const container = render(<CloseStaleMockButton sessionId="legacy-mock-1" />);
     const button = container.querySelector('button');
     if (!(button instanceof HTMLButtonElement))
@@ -64,14 +155,18 @@ describe('mock rehearsal command UI', () => {
 
     await click(button);
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/rehearsal/legacy-mock-1/close-mock', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        reason: 'Staging remediation: close stale legacy mock before controlled rehearsal.',
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/admin/rehearsal/legacy-mock-1/close-mock',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          reason: 'Staging remediation: close stale legacy mock before controlled rehearsal.',
+        }),
       }),
-    });
+    );
+    expect(csrfBootstrap).toHaveBeenCalledOnce();
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('X-MBFD-CSRF')).toBe(csrfToken);
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('audit history retained');
   });
@@ -90,7 +185,7 @@ describe('mock rehearsal command UI', () => {
         );
       },
     );
-    vi.stubGlobal('fetch', fetchMock);
+    installFetch(fetchMock);
     vi.stubGlobal('crypto', { randomUUID: () => 'auto-command-key' });
 
     const container = render(
@@ -113,6 +208,9 @@ describe('mock rehearsal command UI', () => {
     const retryHeaders = new Headers(fetchMock.mock.calls[1]?.[1]?.headers);
     expect(firstHeaders.get('Idempotency-Key')).toBe('auto-command-key');
     expect(retryHeaders.get('Idempotency-Key')).toBe('auto-command-key');
+    expect(firstHeaders.get('X-MBFD-CSRF')).toBe(csrfToken);
+    expect(retryHeaders.get('X-MBFD-CSRF')).toBe(csrfToken);
+    expect(csrfBootstrap).toHaveBeenCalledOnce();
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
       count: 1,
       strategy: 'first_eligible',
@@ -130,7 +228,7 @@ describe('mock rehearsal command UI', () => {
           headers: { 'content-type': 'application/json' },
         }),
     );
-    vi.stubGlobal('fetch', fetchMock);
+    installFetch(fetchMock);
     vi.stubGlobal('crypto', { randomUUID: () => 'manual-command-key' });
 
     function Probe() {
@@ -162,6 +260,8 @@ describe('mock rehearsal command UI', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/admin/rehearsal/mock-session-2/manual-pick');
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
     expect(headers.get('Idempotency-Key')).toBe('manual-command-key');
+    expect(headers.get('X-MBFD-CSRF')).toBe(csrfToken);
+    expect(csrfBootstrap).toHaveBeenCalledOnce();
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       member_id: 60,
       position_id: 'A101',

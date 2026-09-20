@@ -1,29 +1,12 @@
 import { z } from 'zod';
+import { AuditActionSchema } from './audit-event.js';
+import { LiveBidCommandSchema } from './bid-command.js';
 
-const auditActionEnum = z.enum([
-  'pick',
-  'forced_pick',
-  'pause',
-  'resume',
-  'skip',
-  'override_rule',
-  'override_cert',
-  'lock_position',
-  'unlock_position',
-  'grant_extension',
-  'admin_bid_for_member',
-  'session_start',
-  'session_complete',
-  'members_import',
-  'credentials_import',
-  'targetsolutions_mapping',
-  'targetsolutions_apply',
-  'positions_clone',
-  'rule_book_clone',
-  'bid_configuration_set',
-  'bid_award_transition',
-  'telestaff_apply',
-  'qualification_lifecycle',
+const liveActions = LiveBidCommandSchema.options.map((command) => command.shape.type.value);
+const auditActionEnum = z.union([
+  AuditActionSchema,
+  z.enum(liveActions as [(typeof liveActions)[number], ...(typeof liveActions)[number][]]),
+  z.literal('mock.freeze'),
 ]);
 
 export const AuditQuerySchema = z

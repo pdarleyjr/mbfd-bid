@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Table } from '@/components/ui/table';
 import { TableHeader } from '@/components/ui/table';
 import { TableRow } from '@/components/ui/table';
@@ -47,18 +46,39 @@ const AUDIT_ACTIONS = [
   'positions_clone',
   'rule_book_clone',
   'dissent',
+  'live.record_selection',
+  'live.force_selection',
+  'live.amend_selection',
+  'live.record_fallback_response',
+  'live.record_contact_attempt',
+  'live.declare_unreachable',
+  'live.complete_session',
+  'live.checkpoint',
 ] as const;
 
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ action?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    action?: string;
+    from?: string;
+    to?: string;
+    offset?: string;
+    bid_session_id?: string;
+    target_id?: string;
+  }>;
 }) {
   await requireAdmin();
   const sp = await searchParams;
 
   const qs = new URLSearchParams();
   qs.set('limit', '100');
+  const requestedOffset = Number(sp.offset ?? 0);
+  const offset =
+    Number.isSafeInteger(requestedOffset) && requestedOffset >= 0 ? requestedOffset : 0;
+  qs.set('offset', String(offset));
+  if (sp.bid_session_id) qs.set('bid_session_id', sp.bid_session_id);
+  if (sp.target_id) qs.set('target_id', sp.target_id);
   if (sp.action !== undefined && sp.action !== '') qs.set('action', sp.action);
   if (sp.from !== undefined && sp.from !== '') qs.set('from', sp.from);
   if (sp.to !== undefined && sp.to !== '') qs.set('to', sp.to);
@@ -82,11 +102,18 @@ export default async function AuditPage({
   const exportQs = new URLSearchParams(qs);
   exportQs.set('format', 'csv');
   exportQs.delete('limit');
+  exportQs.delete('offset');
+  const pageLink = (pageOffset: number) => {
+    const query = new URLSearchParams(qs);
+    query.delete('limit');
+    query.set('offset', String(pageOffset));
+    return `/admin/audit?${query.toString()}`;
+  };
 
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <h1 className="font-heading text-2xl text-foreground">Audit Log</h1>
+        <h1 className="font-heading text-2xl text-foreground">History</h1>
         <a
           href={`/api/admin/audit/export?${exportQs.toString()}`}
           className="rounded border border-border px-3 py-1 text-sm text-foreground hover:border-border"
@@ -98,18 +125,25 @@ export default async function AuditPage({
       <form method="get" className="mt-4 flex flex-wrap items-end gap-3">
         <Label className="block">
           <span className="block text-xs text-muted-foreground">Action</span>
-          <NativeSelect
+          <Input
             name="action"
+            list="history-actions"
             defaultValue={sp.action ?? ''}
             className="mt-1 rounded bg-card px-3 py-1.5 text-sm text-foreground"
-          >
-            <option value="">All</option>
+          />
+          <datalist id="history-actions">
             {AUDIT_ACTIONS.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
+              <option key={a} value={a} />
             ))}
-          </NativeSelect>
+          </datalist>
+        </Label>
+        <Label>
+          Run
+          <Input name="bid_session_id" defaultValue={sp.bid_session_id ?? ''} />
+        </Label>
+        <Label>
+          Record
+          <Input name="target_id" defaultValue={sp.target_id ?? ''} />
         </Label>
         <Label className="block">
           <span className="block text-xs text-muted-foreground">From (ISO)</span>
@@ -139,10 +173,8 @@ export default async function AuditPage({
 
       {fetchError && (
         <div className="mt-6 rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
-          Could not load audit log: {fetchError}.{' '}
-          <span className="text-warning">
-            Check the Worker logs and JWT validity. The page is rendering with an empty list.
-          </span>
+          Could not load audit log: {fetchError}. Try loading History again. No records are shown
+          while the request is unavailable.
         </div>
       )}
       {!fetchError && entries.length === 0 && (
@@ -151,8 +183,14 @@ export default async function AuditPage({
         </div>
       )}
       <p className="mt-4 text-sm text-muted-foreground">
-        Showing {entries.length} of {total} matches.
+        Showing {entries.length ? offset + 1 : 0}–{offset + entries.length} of {total} matches.
       </p>
+      <nav aria-label="History pages" className="mt-3 flex gap-4 text-sm">
+        {offset > 0 && <a href={pageLink(Math.max(0, offset - 100))}>Previous 100</a>}
+        {offset + entries.length < total && entries.length > 0 && (
+          <a href={pageLink(offset + 100)}>Next 100</a>
+        )}
+      </nav>
 
       <Table className="mt-4 w-full border border-border text-xs text-foreground">
         <TableHeader className="bg-card text-left text-foreground">
@@ -162,6 +200,7 @@ export default async function AuditPage({
             <TableHead className="p-2">Actor</TableHead>
             <TableHead className="p-2">Action</TableHead>
             <TableHead className="p-2">Target</TableHead>
+            <TableHead className="p-2">Run</TableHead>
             <TableHead className="p-2">Reason</TableHead>
           </TableRow>
         </TableHeader>
@@ -179,6 +218,13 @@ export default async function AuditPage({
               <TableCell className="p-2 font-mono">{e.action}</TableCell>
               <TableCell className="p-2">
                 {e.targetKind !== null ? `${e.targetKind}:${e.targetId ?? ''}` : '—'}
+              </TableCell>
+              <TableCell className="p-2">
+                {e.bidSessionId ? (
+                  <a href={`/admin/sessions/${encodeURIComponent(e.bidSessionId)}`}>View run</a>
+                ) : (
+                  '—'
+                )}
               </TableCell>
               <TableCell className="p-2">{e.reason ?? '—'}</TableCell>
             </TableRow>

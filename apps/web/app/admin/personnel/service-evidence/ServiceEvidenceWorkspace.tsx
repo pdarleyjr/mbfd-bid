@@ -24,9 +24,11 @@ type RecordRow = {
   reason: string;
   actorSubject: string;
 };
-export function ServiceEvidenceWorkspace() {
+export function ServiceEvidenceWorkspace({ initialMemberId }: { initialMemberId?: number }) {
   const client = useQueryClient();
-  const [member, setMember] = useState('');
+  const [member, setMember] = useState(() =>
+    initialMemberId === undefined ? '' : String(initialMemberId),
+  );
   const [service, setService] = useState('');
   const [effective, setEffective] = useState('');
   const [months, setMonths] = useState('');
@@ -62,9 +64,10 @@ export function ServiceEvidenceWorkspace() {
     staleTime: 30_000,
     queryFn: () => annualGet<{ types: { id: string; name: string }[] }>('service-evidence/types'),
   });
+  const selectedMember = members.data?.find((row) => String(row.id) === member);
   const records = useQuery({
     queryKey: ['admin', 'service-evidence', 'records', member],
-    enabled: !!member,
+    enabled: selectedMember !== undefined,
     staleTime: 30_000,
     queryFn: () => annualGet<{ records: RecordRow[] }>(`service-evidence?member_id=${member}`),
   });
@@ -80,7 +83,8 @@ export function ServiceEvidenceWorkspace() {
   }
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    if (expected === null) return;
+    if (expected === null || selectedMember === undefined || records.isPending || records.isError)
+      return;
     setBusy(true);
     setMessage('');
     const body = {
@@ -130,6 +134,15 @@ export function ServiceEvidenceWorkspace() {
           onChange={(e) => setMember(e.target.value)}
         >
           <option value="">Choose member</option>
+          {member && selectedMember === undefined && (
+            <option value={member} disabled>
+              {members.isPending
+                ? 'Loading linked member…'
+                : members.isError
+                  ? 'Linked member unavailable'
+                  : `Member ${member} not found`}
+            </option>
+          )}
           {members.data?.map((m) => (
             <option key={m.id} value={m.id}>
               {m.firstName} {m.lastName} · {m.employeeId}
@@ -137,6 +150,19 @@ export function ServiceEvidenceWorkspace() {
           ))}
         </NativeSelect>
       </Label>
+      {member && members.isPending && (
+        <output className="block text-sm">Loading the member linked from Department…</output>
+      )}
+      {member && members.isSuccess && selectedMember === undefined && (
+        <p role="alert" className="text-warning">
+          Member {member} was not found. Choose an existing member to review service evidence.
+        </p>
+      )}
+      {selectedMember !== undefined && records.isPending && (
+        <output className="block text-sm">
+          Loading service evidence for {selectedMember.firstName} {selectedMember.lastName}…
+        </output>
+      )}
       {(members.isError || types.isError || records.isError) && (
         <p role="alert" className="text-warning">
           Reference data could not be refreshed. Your edits remain in the form.
@@ -148,7 +174,13 @@ export function ServiceEvidenceWorkspace() {
       </details>
       <form onSubmit={save} className="space-y-4">
         <fieldset
-          disabled={!member || records.isPending || records.isError || busy}
+          disabled={
+            selectedMember === undefined ||
+            members.isError ||
+            records.isPending ||
+            records.isError ||
+            busy
+          }
           className="space-y-4"
         >
           <Label className="block">

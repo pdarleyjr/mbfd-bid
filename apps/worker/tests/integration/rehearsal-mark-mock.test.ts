@@ -56,6 +56,10 @@ describe('POST /api/admin/rehearsal/:sessionId/mark-mock (Task R3)', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated synthetic administrator.
+    await h.db.run(
+      "INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at) VALUES (900001,'admin','Synthetic','Admin','CHIEF','EXCLUDED',0,0,'retired',0,0)",
+    );
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count) VALUES (?, 2026, ?, 'config', 180, 2, 0);",

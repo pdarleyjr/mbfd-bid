@@ -42,6 +42,11 @@ export function ServiceRequirementsEditor({
               }
             >
               <option value="">Choose category</option>
+              {entry.serviceCode && !types.data?.types.some((t) => t.id === entry.serviceCode) && (
+                <option value={entry.serviceCode}>
+                  {entry.serviceCode} · Saved category; review catalog
+                </option>
+              )}
               {types.data?.types.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}

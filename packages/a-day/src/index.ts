@@ -10,6 +10,7 @@ export type {
   OfficerInvariantSnapshot,
   ADayPick,
   ADayState,
+  ADayScopedConstraint,
   PickRejectionCode,
   PickValidation,
   Phase2BidOrderStrategy,

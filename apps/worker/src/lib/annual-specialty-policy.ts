@@ -1,10 +1,19 @@
-import { configuredChannel } from '@mbfd/eligibility';
-import type { FrozenAnnualSpecialtyPolicy } from '@mbfd/shared';
+import {
+  compareOrderedPreferences,
+  configuredChannel,
+  evaluateOrderedPreference,
+} from '@mbfd/eligibility';
+import {
+  type FrozenAnnualSpecialtyPolicy,
+  type FrozenBidOrdinalEvidence,
+  bidOrdinalValue,
+} from '@mbfd/shared';
 
 export interface FrozenSpecialtyCandidateFact {
   readonly memberId: number;
   readonly rscSeniority: number;
   readonly rankSeniority: number | null;
+  readonly bidOrdinalEvidence?: FrozenBidOrdinalEvidence | undefined;
   readonly credentialNames: readonly string[];
   readonly scoringEvidence?:
     | { evaluationOn: string; completedCredentialNames: string[] }
@@ -52,7 +61,14 @@ export function rankFrozenSpecialtyCandidates(input: {
     throw new Error('SPECIALTY_SCORING_CONFIGURATION_INVALID');
   if (
     input.policy.tieBreakChain.some(
-      (entry) => !['POINTS', 'RSC_SENIORITY', 'RANK_SENIORITY'].includes(entry),
+      (entry) =>
+        ![
+          'POINTS',
+          'RSC_SENIORITY',
+          'RANK_SENIORITY',
+          'TIME_IN_GRADE_BID_ORDINAL',
+          'DEPARTMENT_SERVICE_BID_ORDINAL',
+        ].includes(entry),
     )
   )
     throw new Error('SPECIALTY_TIEBREAK_UNCONFIGURED');
@@ -92,18 +108,44 @@ export function rankFrozenSpecialtyCandidates(input: {
             (total, credential) => total + (pointsByCredential.get(credential) ?? 0),
             0,
           );
-    return [{ member, points }];
+    const orderedPreference = input.policy.scoring?.orderedPreference;
+    return [
+      {
+        member,
+        points,
+        orderedPreference:
+          orderedPreference === undefined
+            ? undefined
+            : evaluateOrderedPreference(
+                { credentials: [...credentials].map((name) => ({ name })) },
+                orderedPreference,
+              ),
+      },
+    ];
   });
+  for (const { member } of candidates) {
+    for (const key of input.policy.tieBreakChain) {
+      if (key !== 'TIME_IN_GRADE_BID_ORDINAL' && key !== 'DEPARTMENT_SERVICE_BID_ORDINAL') continue;
+      const value = bidOrdinalValue(member, key);
+      if (value === null || !Number.isSafeInteger(value) || value <= 0)
+        throw new Error('SPECIALTY_BID_ORDINAL_EVIDENCE_MISSING');
+    }
+  }
   return candidates
     .sort((left, right) => {
+      const ordered = compareOrderedPreferences(left.orderedPreference, right.orderedPreference);
+      if (ordered !== 0) return ordered;
       for (const rule of input.policy.tieBreakChain) {
         const difference =
           rule === 'POINTS'
             ? right.points - left.points
-            : rule === 'RSC_SENIORITY'
-              ? left.member.rscSeniority - right.member.rscSeniority
-              : (left.member.rankSeniority ?? Number.MAX_SAFE_INTEGER) -
-                (right.member.rankSeniority ?? Number.MAX_SAFE_INTEGER);
+            : rule === 'TIME_IN_GRADE_BID_ORDINAL' || rule === 'DEPARTMENT_SERVICE_BID_ORDINAL'
+              ? Number(bidOrdinalValue(left.member, rule)) -
+                Number(bidOrdinalValue(right.member, rule))
+              : rule === 'RSC_SENIORITY'
+                ? left.member.rscSeniority - right.member.rscSeniority
+                : (left.member.rankSeniority ?? Number.MAX_SAFE_INTEGER) -
+                  (right.member.rankSeniority ?? Number.MAX_SAFE_INTEGER);
         if (difference !== 0) return difference;
       }
       // An exact policy-chain tie is a policy failure, not an implicit member-id tiebreak.

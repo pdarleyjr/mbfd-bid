@@ -24,6 +24,20 @@ export interface GroupCapacityConfig {
    * Enforced as exact-match, not a range.
    */
   officersRequired: number;
+  /** Absent retains historical exact-five semantics. */
+  officerMode?: 'EXACT' | 'NONE';
+}
+
+/** Frozen, explicitly scoped constraints; labels never infer membership. */
+export interface ADayScopedConstraint {
+  shifts?: readonly Shift[];
+  id: string;
+  label: string;
+  sourceRef: string;
+  maximum: number;
+  positionIds: readonly string[];
+  memberIds: readonly number[];
+  ranks: readonly Rank[];
 }
 
 /** Capacity rules for one weekday on D-shift. Missing key = no cap. */
@@ -92,6 +106,9 @@ export interface ADayPick {
  * via initADayState(); evolved by applyPick().
  */
 export interface ADayState {
+  constraints?: readonly ADayScopedConstraint[];
+  /** Simultaneous position selection has not assigned every future shift yet. */
+  allocationIncomplete?: boolean;
   /** Group capacities keyed by shift then group. */
   groupCaps: Readonly<
     Record<Exclude<Shift, 'D'>, Readonly<Record<ADayGroupId, GroupCapacityConfig>>>
@@ -128,7 +145,8 @@ export type PickRejectionCode =
   | 'WEEKDAY_FULL'
   | 'OFFICER_INVARIANT_VIOLATED'
   | 'INVALID_A_DAY_FOR_SHIFT'
-  | 'UNKNOWN_MEMBER';
+  | 'UNKNOWN_MEMBER'
+  | 'SCOPED_A_DAY_MAXIMUM';
 
 /**
  * Discriminated union returned by canPick(). The DO uses the `ok` flag to

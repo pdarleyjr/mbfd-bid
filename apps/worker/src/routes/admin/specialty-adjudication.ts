@@ -3,7 +3,6 @@ import type { JwtPayload } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { hasCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions } from '../../db/schema.js';
 import {
@@ -11,6 +10,7 @@ import {
   eligibilityMemberFromFrozen,
   loadFrozenSessionBidPolicy,
 } from '../../lib/bid-policy.js';
+import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import {
   type SpecialtyTestEligibility,
   type SpecialtyTestFrozenCandidateFacts,
@@ -141,7 +141,7 @@ async function guardSyntheticSpecialtySession(
         body: { error: 'specialty_synthetic_test_mode_only', is_mock: false },
       };
     }
-    if (await hasCanonicalBidSessionState(env.DB, sessionId)) {
+    if (await requiresCanonicalBidMutation(env.DB, sessionId)) {
       return {
         ok: false,
         status: 409,

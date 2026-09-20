@@ -3,7 +3,10 @@ import { CompactSign } from 'jose';
 
 test('seat creation retains its generated identity through response loss and refreshes the dated projection', async ({
   page,
-}) => {
+}, testInfo) => {
+  // Desktop/mobile projects share the loopback fixture. Identify this attempt's
+  // seat without hiding a duplicate created by its own idempotent retry.
+  const positionName = `Synthetic Firefighter ${testInfo.project.name} ${testInfo.retry} ${testInfo.repeatEachIndex}`;
   const key = process.env.JWT_SIGNING_KEY;
   if (!key) throw new Error('Explicit local synthetic signing key required');
   await page.route('**/*', (route) =>
@@ -79,10 +82,7 @@ test('seat creation retains its generated identity through response loss and ref
   await page.goto('/admin/staffing-structure?as_of=2027-01-01');
   await page.getByRole('main').getByLabel('Station', { exact: true }).fill('7');
   await page.getByRole('main').getByLabel('Unit', { exact: true }).fill('Synthetic Engine 7');
-  await page
-    .getByRole('main')
-    .getByLabel('Position', { exact: true })
-    .fill('Synthetic Firefighter');
+  await page.getByRole('main').getByLabel('Position', { exact: true }).fill(positionName);
   await page
     .getByRole('main')
     .getByLabel('Reason', { exact: true })
@@ -90,7 +90,7 @@ test('seat creation retains its generated identity through response loss and ref
   await page.getByRole('button', { name: 'Create authorized seat', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page.getByRole('main').getByLabel('Position', { exact: true })).toHaveValue(
-    'Synthetic Firefighter',
+    positionName,
   );
   await page.getByRole('button', { name: 'Create authorized seat', exact: true }).click();
   await expect(
@@ -100,8 +100,16 @@ test('seat creation retains its generated identity through response loss and ref
         exact: true,
       }),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Retire seat', exact: true })).toHaveCount(1);
-  await expect(page.getByRole('cell').filter({ hasText: 'Synthetic Engine 7' })).toBeVisible();
+  const createdSeat = page.getByRole('row').filter({
+    has: page.getByRole('cell', { name: `Synthetic Engine 7 ${positionName} · FF`, exact: true }),
+  });
+  await expect(createdSeat).toHaveCount(1);
+  await expect(createdSeat.getByRole('button', { name: 'Retire seat', exact: true })).toHaveCount(
+    1,
+  );
+  await expect(
+    createdSeat.getByRole('cell').filter({ hasText: 'Synthetic Engine 7' }),
+  ).toBeVisible();
   expect(attempts).toHaveLength(2);
   expect(attempts[0]?.key).not.toBe('');
   expect(attempts[0]?.csrf).toMatch(/^csrf_/);

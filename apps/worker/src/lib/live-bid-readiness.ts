@@ -10,7 +10,15 @@ import { bidSessions } from '../db/schema.js';
 import type { WorkerEnv } from '../types/env.js';
 import { validateAnnualOperationsReadiness } from './annual-bid-operations.js';
 import { evaluateAuthoritativeStaffingBaseline } from './authoritative-staffing-baseline.js';
-import { type FrozenSessionBidPolicy, loadConfiguredBidYearPolicy } from './bid-policy.js';
+import { snapshotMatchesBidDefinition } from './bid-definition-context.js';
+import { BidDefinitionSnapshotPinSchema } from './bid-definition-pin.js';
+import { loadBidDefinitionVersionFromDb } from './bid-definition-version.js';
+import {
+  type FrozenSessionBidPolicy,
+  loadConfiguredBidYearPolicy,
+  validateAnnualPolicySourceReferences,
+} from './bid-policy.js';
+import { computeBidEvaluationStageOrder } from './live-bid-policy.js';
 
 export interface LiveBidReadinessInput {
   db: DB;
@@ -72,9 +80,14 @@ export async function evaluateLiveBidReadiness(
   input: LiveBidReadinessInput,
 ): Promise<LiveReadinessReport> {
   const { db, env, bidSessionId, bidYear, frozenPolicy, operatorAuthorized } = input;
+  const snapshot = frozenPolicy.snapshot;
+  const managedPin =
+    'bidDefinition' in snapshot
+      ? BidDefinitionSnapshotPinSchema.safeParse(snapshot.bidDefinition)
+      : null;
   const [baseline, currentPolicy, conflicts] = await Promise.all([
     evaluateAuthoritativeStaffingBaseline(db, bidYear),
-    loadConfiguredBidYearPolicy(db, bidYear, 'live'),
+    managedPin !== null ? Promise.resolve(null) : loadConfiguredBidYearPolicy(db, bidYear, 'live'),
     db
       .select({ id: bidSessions.id, phase: bidSessions.currentPhase })
       .from(bidSessions)
@@ -89,7 +102,6 @@ export async function evaluateLiveBidReadiness(
       .all(),
   ]);
 
-  const snapshot = frozenPolicy.snapshot;
   const frozenBaseline = snapshot.staffingBaseline;
   const baselineMatches =
     baseline.status === 'PASS' &&
@@ -97,27 +109,53 @@ export async function evaluateLiveBidReadiness(
     baseline.baselineAcceptanceId === frozenBaseline.baselineAcceptanceId &&
     baseline.importId === frozenBaseline.importId &&
     baseline.sourceHash === frozenBaseline.sourceHash;
+  const managedVersion = managedPin?.success
+    ? await loadBidDefinitionVersionFromDb(db, bidYear, managedPin.data.versionId)
+    : null;
   const configMatches =
-    currentPolicy.ok &&
-    currentPolicy.policy.ruleBookVersion === snapshot.ruleBookVersion &&
-    currentPolicy.policy.ruleBookRevision === snapshot.ruleBookRevision &&
-    currentPolicy.policy.positionTemplateVersion === snapshot.positionTemplateVersion &&
-    currentPolicy.policy.configurationRevision === snapshot.configurationRevision;
+    managedPin !== null
+      ? Boolean(
+          managedPin.success &&
+            managedPin.data.bidYear === bidYear &&
+            managedVersion?.ok &&
+            managedVersion.sha256 === managedPin.data.versionSha256 &&
+            snapshotMatchesBidDefinition(snapshot, managedVersion),
+        )
+      : Boolean(
+          currentPolicy?.ok &&
+            currentPolicy.policy.ruleBookVersion === snapshot.ruleBookVersion &&
+            currentPolicy.policy.ruleBookRevision === snapshot.ruleBookRevision &&
+            currentPolicy.policy.positionTemplateVersion === snapshot.positionTemplateVersion &&
+            currentPolicy.policy.configurationRevision === snapshot.configurationRevision,
+        );
   const biddablePositions = snapshot.ruleBookMaterial.positions.filter(
     (position) => position.bidParticipation === 'BIDDABLE',
   );
   const participatingMembers = snapshot.members.filter((member) => member.pool !== 'EXCLUDED');
+  const stageOrder =
+    snapshot.settings.v === 3
+      ? computeBidEvaluationStageOrder(snapshot, snapshot.settings.livePolicy)
+      : null;
+  const referenceIssues =
+    snapshot.settings.v === 3
+      ? validateAnnualPolicySourceReferences(snapshot, snapshot.settings.livePolicy)
+      : ['live_policy_missing'];
   const ruleIds = new Set(snapshot.ruleBookMaterial.rules.map((rule) => rule.positionId));
   const rulesCoverBiddablePositions =
     biddablePositions.length > 0 && biddablePositions.every((position) => ruleIds.has(position.id));
   const annualOperations =
     snapshot.settings.v === 3 ? snapshot.settings.livePolicy.annualOperations : undefined;
+  const orderingAuthority =
+    snapshot.settings.v === 3 ? snapshot.settings.livePolicy.orderingAuthority : undefined;
   const annualReadiness = validateAnnualOperationsReadiness({
     operations: annualOperations,
-    bidYear,
     isMock: false,
-    configuredStageIds:
-      snapshot.settings.v === 3 ? snapshot.settings.livePolicy.stages.map((stage) => stage.id) : [],
+    configuredStageOrder:
+      snapshot.settings.v === 3
+        ? [...snapshot.settings.livePolicy.stages]
+            .sort((left, right) => left.order - right.order)
+            .map((stage) => stage.id)
+        : [],
     // Exact specialty seats are frozen configuration. Current staffing never
     // creates a topology id; missing configured ids therefore block a real run.
     missingTopologyIds: annualOperations
@@ -134,9 +172,11 @@ export async function evaluateLiveBidReadiness(
       'annual_configuration',
       'frozen_policy_snapshot',
       'participant_population',
+      'execution_policy_references',
       'position_catalog',
       'qualification_rule_readiness',
       'annual_operations_policy',
+      'ordering_authority',
       'no_conflicting_active_real_bid',
       'audit_infrastructure',
       'runtime_bindings',
@@ -155,9 +195,9 @@ export async function evaluateLiveBidReadiness(
         'annual_configuration',
         configMatches,
         configMatches
-          ? `Active annual configuration revision ${snapshot.configurationRevision} matches the frozen session.`
-          : `The designated active annual configuration no longer matches the frozen session${
-              currentPolicy.ok ? '' : ` (${currentPolicy.code})`
+          ? `${managedPin !== null ? 'Immutable Bid version' : 'Active annual configuration revision'} ${snapshot.configurationRevision} matches the frozen session.`
+          : `The governing Bid configuration does not match the frozen session${
+              currentPolicy && !currentPolicy.ok ? ` (${currentPolicy.code})` : ''
             }.`,
       ),
       check(
@@ -169,8 +209,17 @@ export async function evaluateLiveBidReadiness(
       ),
       check(
         'participant_population',
-        participatingMembers.length > 0,
-        `${participatingMembers.length} frozen participants are eligible for the session.`,
+        participatingMembers.length > 0 && stageOrder?.ok === true,
+        stageOrder?.ok
+          ? `${participatingMembers.length} frozen participants have a complete deterministic stage order.`
+          : `Participant order is blocked: ${stageOrder?.code ?? 'live_policy_missing'}.`,
+      ),
+      check(
+        'execution_policy_references',
+        referenceIssues.length === 0,
+        referenceIssues.length === 0
+          ? 'Execution references agree with the frozen Bid evidence.'
+          : `Execution references require review: ${referenceIssues.join(', ')}.`,
       ),
       check(
         'position_catalog',
@@ -194,6 +243,13 @@ export async function evaluateLiveBidReadiness(
                 ? ` (${annualReadiness.detail})`
                 : ''
             }.`,
+      ),
+      check(
+        'ordering_authority',
+        orderingAuthority !== undefined,
+        orderingAuthority === undefined
+          ? 'Bid ordering authority unresolved. Live operation is not authorized until the governing comparator is reconciled.'
+          : `Frozen governing comparator is bound to resolved source decision ${orderingAuthority.sourceDecision.issueId}.`,
       ),
       check(
         'no_conflicting_active_real_bid',

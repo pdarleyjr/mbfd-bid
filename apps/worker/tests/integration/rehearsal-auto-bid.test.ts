@@ -72,7 +72,7 @@ async function adminJwt(): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'admin',
+      emp: '201201',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'A',
@@ -794,12 +794,9 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
     expect((session.results[0] as { current_phase: string }).current_phase).not.toBe('config');
   });
 
-  it('passes adminActorId=null (not 0) so bids.admin_actor_id FK is satisfied', async () => {
-    // Production D1 enforces foreign_keys = ON. The synthetic "Bid Admin"
-    // identity has sub=0 — there's no members row with id=0, so any
-    // INSERT INTO bids (admin_actor_id, ...) VALUES (0, ...) blows up with
-    // a FOREIGN KEY constraint failure. Verify the handler sends NULL
-    // instead by enabling FKs locally before calling auto-bid.
+  it('never uses the Hub subject as an unmapped bids.admin_actor_id foreign key', async () => {
+    // The JWT subject remains 0 while its exact employee ID maps to local
+    // member 201. Enforce FKs to prove that no award uses the unmapped subject.
     h.sqlite.pragma('foreign_keys = ON');
 
     const snapMap = new Map<string, unknown>([[sessionId, { currentBidderId: 201 }]]);
@@ -824,7 +821,7 @@ describe('POST /api/admin/rehearsal/:sessionId/auto-bid (Task R5)', () => {
       }),
       env,
     );
-    // Should not 500 — the FK column accepts NULL for the admin actor.
+    // The award must retain a valid local actor or an explicitly nullable actor.
     expect(res.status).toBe(200);
     const body = (await res.json()) as { picksMade: number; stoppedReason: string };
     expect(body.picksMade).toBe(2);

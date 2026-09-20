@@ -39,11 +39,19 @@ function renderGuide(): HTMLElement {
 
 async function click(control: HTMLElement) {
   await act(async () => {
-    control.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    control.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
 }
 
 describe('Administrator Guide workspace', () => {
+  it('renders one complete PDF manual download control', () => {
+    const container = renderGuide();
+    const downloads = container.querySelectorAll<HTMLAnchorElement>('a[download][href$=".pdf"]');
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0]?.textContent?.trim()).toBe('Download complete manual (PDF)');
+    expect(downloads[0]?.getAttribute('href')).toBe('/manual/MBFD-Bid-Administrator-Manual.pdf');
+  });
+
   it('renders the protected guide route content with category navigation', () => {
     const html = renderToStaticMarkup(<AdministratorGuidePage />);
     expect(html).toContain('Administrator Guide');
@@ -65,6 +73,17 @@ describe('Administrator Guide workspace', () => {
     expect(container.textContent).toContain('Live Presentation');
     expect(container.textContent).not.toContain('TeleStaff is a controlled reconciliation');
 
+    // Search may return several relevant topics. Select the intended procedure
+    // before testing its disclosure instead of depending on catalog ordering.
+    const presentation = container.querySelector<HTMLAnchorElement>('a[href="#live-presentation"]');
+    if (!presentation) throw new Error('Presentation topic did not render.');
+    presentation.addEventListener('click', (event) => event.preventDefault(), { once: true });
+    await click(presentation);
+    const hide = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'Hide details',
+    );
+    if (!hide) throw new Error('Selected presentation procedure did not expand.');
+    await click(hide);
     const details = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent === 'Show how to use it',
     );

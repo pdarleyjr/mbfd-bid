@@ -3,7 +3,12 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { D1Database } from '@cloudflare/workers-types';
 import { DEFAULT_GROUP_CAPACITY } from '@mbfd/a-day';
-import type { FrozenLiveBidPolicy, LiveBidCommand, MockFreezeCommand } from '@mbfd/shared';
+import {
+  BidSessionPolicySnapshotSchema,
+  type FrozenLiveBidPolicy,
+  type LiveBidCommand,
+  type MockFreezeCommand,
+} from '@mbfd/shared';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -521,6 +526,7 @@ describe('commitLiveBidCommand canonical authority', () => {
         'resolve_tie',
         'alter_order',
         'pause_resume',
+        'create_live_session',
         'approve_transition',
         'approve_final_results',
         'publish',
@@ -537,6 +543,84 @@ describe('commitLiveBidCommand canonical authority', () => {
     sqlite.pragma('foreign_keys = ON');
     applyMigrationsStrict(sqlite);
     seedMockSession(sqlite, sessionId);
+    sqlite.exec(`
+      INSERT INTO position_templates (version,effective_year,notes)
+        VALUES ('synthetic-live-2030',2030,'Synthetic canonical eligibility fixture');
+      INSERT INTO rule_books (version,effective_year,status,revision,notes)
+        VALUES ('synthetic-live-2030',2030,'draft',1,'Synthetic frozen rules');
+    `);
+    const snapshot = BidSessionPolicySnapshotSchema.parse({
+      v: 3,
+      ruleBookVersion: 'synthetic-live-2030',
+      ruleBookRevision: 1,
+      positionTemplateVersion: 'synthetic-live-2030',
+      configurationRevision: 1,
+      capturedAtMs: 1_700_000_000_000,
+      credentialEvaluationOn: '2030-01-01',
+      settings: {
+        v: 3,
+        expectedDurationDays: 2,
+        turnTimerSeconds: 180,
+        credentialEvaluationOn: '2030-01-01',
+        personnelEvaluationOn: '2030-01-01',
+        livePolicy: policy,
+      },
+      members: [
+        {
+          memberId: 42,
+          pool: 'FF',
+          rscSeniority: 1,
+          rankSeniority: 1,
+          exclusionReason: null,
+          authoritativeAssignmentId: null,
+          rank: 'FF',
+          isProbationary: false,
+          credentialNames: ['Synthetic required qualification'],
+        },
+      ],
+      ruleBookMaterial: {
+        v: 1,
+        positions: [
+          {
+            id: 'D101',
+            templateVersion: 'synthetic-live-2030',
+            bidParticipation: 'BIDDABLE',
+            isExcludedFromCount: false,
+            shift: 'D',
+            station: 'Synthetic station',
+            unit: 'Synthetic unit',
+            rankRequired: 'FF',
+            positionName: 'Synthetic qualified seat',
+          },
+        ],
+        rules: [
+          {
+            positionId: 'D101',
+            ruleBookVersion: 'synthetic-live-2030',
+            templateVersion: 'synthetic-live-2030',
+            requiredCriteriaJson: JSON.stringify({
+              rank: ['FF'],
+              credentials: ['Synthetic required qualification'],
+              custom: ['non_probationary'],
+            }),
+            pointsPreferenceJson: JSON.stringify({ max: 0, items: [] }),
+            tieBreakChainJson: JSON.stringify(['rsc_seniority']),
+          },
+        ],
+      },
+    });
+    sqlite
+      .prepare(`INSERT INTO bid_session_policy_snapshots
+      (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at)
+      VALUES (?,?,?,?,?,?)`)
+      .run(
+        sessionId,
+        'synthetic-live-2030',
+        'synthetic-live-2030',
+        1,
+        JSON.stringify(snapshot),
+        1_700_000_000_000,
+      );
   });
 
   afterEach(() => sqlite.close());

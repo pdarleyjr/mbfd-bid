@@ -11,6 +11,14 @@ export interface Member {
   rank: Rank;
   rscSeniority: number;
   rankSeniority: number | undefined;
+  bidOrdinalEvidence?:
+    | {
+        datasetId: string;
+        sourceSha256: string;
+        timeInGrade: number;
+        departmentService: number;
+      }
+    | undefined;
   isProbationary: boolean;
   credentials: Credential[];
   memberId?: number;
@@ -60,12 +68,38 @@ export interface RequiredCriteria {
 export interface PointsPreference {
   max: number;
   items: PointsItem[];
-  scoring?: { v: 1; total: ScoringGroup[]; so: ScoringGroup[]; mo: ScoringGroup[] };
+  scoring?: {
+    v: 1;
+    total: ScoringGroup[];
+    so: ScoringGroup[];
+    mo: ScoringGroup[];
+    orderedPreference?: OrderedQualificationPreference | undefined;
+  };
+}
+
+export interface OrderedQualificationPreference {
+  mode: 'ORDERED_QUALIFICATIONS';
+  sourceRef: string;
+  criteria: { credential: string; alternatives: string[]; requiresAll: string[] }[];
+}
+
+export interface OrderedPreferenceResult {
+  sourceRef: string;
+  criteria: (OrderedQualificationPreference['criteria'][number] & { value: 0 | 1 })[];
 }
 
 export interface ScoringGroup {
   id: string;
   cap: number | null;
+  excludesAny?: string[] | undefined;
+  /** Source-backed cumulative preferences count satisfied criteria, without policy weights. */
+  preference?:
+    | {
+        mode: 'BINARY_CUMULATIVE';
+        sourceRef: string;
+        criteria: { credential: string; alternatives: string[]; requiresAll: string[] }[];
+      }
+    | undefined;
   items: {
     credential: string;
     alternatives: string[];
@@ -82,7 +116,14 @@ export interface ScoringGroup {
   }[];
 }
 
-export type TieBreakKey = 'points' | 'so_points' | 'mo_points' | 'rsc_seniority' | 'rank_seniority';
+export type TieBreakKey =
+  | 'points'
+  | 'so_points'
+  | 'mo_points'
+  | 'rsc_seniority'
+  | 'rank_seniority'
+  | 'time_in_grade_bid_ordinal'
+  | 'department_service_bid_ordinal';
 
 export interface PositionRule {
   positionId: string;
@@ -106,6 +147,7 @@ export interface PointsBreakdown {
 }
 
 export interface EligibilityResult {
+  orderedPreference?: OrderedPreferenceResult | undefined;
   eligible: boolean;
   reasons: EligibilityReason[];
   points: number;

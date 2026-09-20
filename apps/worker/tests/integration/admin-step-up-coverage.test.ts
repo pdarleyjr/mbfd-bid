@@ -9,7 +9,7 @@ async function staleAdminJwt(): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'admin',
+      emp: 'EMP1',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Bid',

@@ -10,6 +10,10 @@ export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: path.resolve(__dirname, './tests/e2e/global-setup.ts'),
   fullyParallel: true,
+  // The 521-member authoritative impact fixture executes the real Worker
+  // evaluator. It has a separate one-worker config so normal E2E retains its
+  // parallel coverage without resource-starving the deterministic fixture.
+  grepInvert: /\[bid-impact\]/,
   retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: 'http://localhost:3000',
@@ -28,7 +32,9 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         ...process.env,
-        NODE_ENV: 'test',
+        // Match Next's build/runtime mode; the isolated API and signing key
+        // provide test separation without changing React's runtime environment.
+        NODE_ENV: process.env.E2E_USE_BUILT_WEB === '1' ? 'production' : 'development',
         ENV: 'staging',
         // An explicit controlled API wins. Otherwise browser tests use only
         // the loopback annual mock below and never fall back to shared staging.

@@ -3,6 +3,7 @@ import { driverEngineerSatisfied } from './criteria/driver-engineer.js';
 import { nonProbationarySatisfied } from './criteria/non-probationary.js';
 import { paramedicSatisfied } from './criteria/paramedic.js';
 import { rankSatisfied } from './criteria/rank.js';
+import { evaluateOrderedPreference } from './ordered-preference.js';
 import { configuredChannel } from './points/configured.js';
 import { computeMoPoints } from './points/mo-pool.js';
 import { computeSoPoints } from './points/so-pool.js';
@@ -10,6 +11,34 @@ import { computePoints } from './points/sum.js';
 import type { EligibilityReason, EligibilityResult, Member, PositionRule } from './types.js';
 
 export function evaluateEligibility(member: Member, rule: PositionRule): EligibilityResult {
+  return evaluateWithChannels(member, rule);
+}
+
+export type EligibilityChannels = Record<
+  'total' | 'so' | 'mo',
+  {
+    total: number;
+    itemized: EligibilityResult['breakdown']['itemized'];
+  }
+>;
+
+/** Diagnostics are produced during the same calculation, without a second
+ * scoring implementation or changes to the established runtime result shape. */
+export function evaluateEligibilityWithTrace(member: Member, rule: PositionRule) {
+  const channels: EligibilityChannels = {
+    total: { total: 0, itemized: [] },
+    so: { total: 0, itemized: [] },
+    mo: { total: 0, itemized: [] },
+  };
+  const result = evaluateWithChannels(member, rule, channels);
+  return { result, channels };
+}
+
+function evaluateWithChannels(
+  member: Member,
+  rule: PositionRule,
+  channels?: EligibilityChannels,
+): EligibilityResult {
   const reasons: EligibilityReason[] = [];
 
   reasons.push(rankSatisfied(member, rule.requiredCriteria.rank));
@@ -69,8 +98,18 @@ export function evaluateEligibility(member: Member, rule: PositionRule): Eligibi
     const total = configuredChannel(member, configured.total);
     const so = configuredChannel(member, configured.so);
     const mo = configuredChannel(member, configured.mo);
+    if (channels) {
+      channels.total = total;
+      channels.so = so;
+      channels.mo = mo;
+    }
     return {
       eligible: true,
+      ...(configured.orderedPreference === undefined
+        ? {}
+        : {
+            orderedPreference: evaluateOrderedPreference(member, configured.orderedPreference),
+          }),
       reasons,
       points: total.total,
       soPoints: so.total,
@@ -84,8 +123,31 @@ export function evaluateEligibility(member: Member, rule: PositionRule): Eligibi
     };
   }
   const breakdown = computePoints(member, rule);
-  const soPoints = computeSoPoints(member);
-  const moPoints = computeMoPoints(member);
+  const soPoints = computeSoPoints(
+    member,
+    channels
+      ? (credential) => {
+          channels.so.itemized.push({ credential, awarded: 1 });
+        }
+      : undefined,
+  );
+  const moPoints = computeMoPoints(
+    member,
+    channels
+      ? (credential, reason) => {
+          channels.mo.itemized.push({
+            credential,
+            awarded: 1,
+            ...(reason === undefined ? {} : { reason }),
+          });
+        }
+      : undefined,
+  );
+  if (channels) {
+    channels.total = { total: breakdown.total, itemized: breakdown.itemized };
+    channels.so.total = soPoints;
+    channels.mo.total = moPoints;
+  }
 
   return {
     eligible: true,

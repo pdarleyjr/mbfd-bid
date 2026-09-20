@@ -1,11 +1,13 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ForcePickSheet } from './ForcePickSheet';
 
 export function SessionControls({ sessionId }: { sessionId: string }) {
+  const csrfFetch = useMemo(() => createCsrfAwareFetch(fetch, () => window.location.origin), []);
   const router = useRouter();
   const [showForce, setShowForce] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -15,12 +17,15 @@ export function SessionControls({ sessionId }: { sessionId: string }) {
     setBusy(true);
     setToast(null);
     try {
-      const res = await fetch(`/api/admin/bid-session/${sessionId}/${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: body !== undefined ? JSON.stringify(body) : '{}',
-      });
+      const res = await csrfFetch(
+        `/api/admin/bid-session/${encodeURIComponent(sessionId)}/${path}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: body !== undefined ? JSON.stringify(body) : '{}',
+        },
+      );
       if (!res.ok) {
         const errBody = (await res.json().catch(() => ({}))) as { error?: string };
         setToast(`Action failed: ${errBody.error ?? res.status}`);
@@ -28,6 +33,8 @@ export function SessionControls({ sessionId }: { sessionId: string }) {
       }
       setToast(`OK: ${path}`);
       router.refresh();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Session action failed.');
     } finally {
       setBusy(false);
     }

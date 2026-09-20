@@ -93,6 +93,10 @@ test('catalog import requires error-free review and preserves exact retry after 
   await page.goto('/admin/credentials/import');
   // React briefly retains a hidden streamed copy until it attaches the page.
   await expect(page.getByRole('main').getByLabel('Catalog XLSX', { exact: true })).toHaveCount(1);
+  // The import fieldset becomes interactive only after its handlers attach.
+  await expect(page.getByRole('main').getByLabel('Catalog XLSX', { exact: true })).toBeEnabled({
+    timeout: 15_000,
+  });
   await page
     .getByRole('main')
     .getByLabel('Catalog XLSX', { exact: true })

@@ -76,6 +76,10 @@ describe('POST /api/admin/rehearsal/:sessionId/commands/freeze', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated synthetic administrator.
+    await h.db.run(
+      "INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at) VALUES (900001,'admin','Synthetic','Admin','CHIEF','EXCLUDED',0,0,'retired',0,0)",
+    );
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES (?, 2026, ?, 'position_bid', 180, 2, 0, 1);",
@@ -125,7 +129,7 @@ describe('POST /api/admin/rehearsal/:sessionId/commands/freeze', () => {
           commandId: COMMAND_ID,
           bidSessionId: mockSessionId,
           expectedSeq: 7,
-          actor: { id: 0, role: 'admin' },
+          actor: { id: 900001, role: 'admin' },
           reason: 'Mock exercise pause',
         },
       },

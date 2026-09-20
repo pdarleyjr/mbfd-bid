@@ -8,6 +8,8 @@ describe('SessionOperatorLinks', () => {
     const html = renderToString(<SessionOperatorLinks sessionId="opaque session / 7" />);
 
     expect(html).toContain('Open session exports');
+    expect(html).toContain('Open session operator console');
+    expect(html).toContain('/admin/bid?session_id=opaque+session+%2F+7');
     expect(html).toContain('Review current-to-new transition');
     expect(html).toContain('/admin/exports?session_id=opaque+session+%2F+7');
     expect(html).toContain('/admin/award-transition?session_id=opaque+session+%2F+7');

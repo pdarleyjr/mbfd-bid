@@ -14,6 +14,7 @@ const actions = [
   'resolve_tie',
   'alter_order',
   'pause_resume',
+  'create_live_session',
   'approve_transition',
   'approve_final_results',
   'publish',
@@ -73,7 +74,7 @@ function policy(grant: boolean) {
         })),
         actionPermissions: actions.map((action) => ({
           action,
-          actorMemberIds: grant && action === 'force' ? [42] : [99],
+          actorMemberIds: grant ? [42] : [99],
         })),
         specialtyCatalogReference: null,
         aDayPolicyReference: null,
@@ -131,21 +132,26 @@ describe('real force-pick legacy boundary', () => {
     );
   });
   afterEach(async () => teardownTestD1(h));
-  async function request(grant: boolean) {
+  async function request(
+    grant: boolean,
+    path = 'force-pick',
+    payload: unknown = {
+      member_id: 42,
+      position_id: 'A205',
+      reason_code: 'force.cert_mandate',
+      reason: 'test reason',
+    },
+    requestedSession = sessionId,
+  ) {
     await h.db.run(
       'INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES (?,?,?,0,?,1)',
       [sessionId, '2026.1', '2026.1', JSON.stringify(policy(grant))],
     );
     return app.fetch(
-      new Request(`http://x/api/admin/bid-session/${sessionId}/force-pick`, {
+      new Request(`http://x/api/admin/bid-session/${requestedSession}/${path}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${await jwt()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          member_id: 42,
-          position_id: 'A205',
-          reason_code: 'force.cert_mandate',
-          reason: 'test reason',
-        }),
+        body: JSON.stringify(payload),
       }),
       { ...h.env, JWT_SIGNING_KEY: key },
     );
@@ -158,6 +164,85 @@ describe('real force-pick legacy boundary', () => {
       (await h.db.run('SELECT count(*) AS n FROM bids WHERE bid_session_id=?', [sessionId]))
         .results,
     ).toEqual([{ n: 0 }]);
+  });
+  it.each([
+    [
+      'force-pick',
+      'live.force_selection',
+      {
+        member_id: 42,
+        position_id: 'A205',
+        reason_code: 'force.cert_mandate',
+        reason: 'Synthetic historical boundary',
+      },
+    ],
+    [
+      'bid-for-member',
+      'live.record_selection',
+      {
+        member_id: 42,
+        position_id: 'A205',
+        reason_code: 'bid_for_member.unreachable_phone',
+        reason: 'Synthetic historical boundary',
+      },
+    ],
+    [
+      'skip',
+      'live.disposition',
+      { member_id: 42, reason_code: 'skip.declined', reason: 'Synthetic historical boundary' },
+    ],
+    [
+      'amend-selection',
+      'live.amend_selection',
+      {
+        bid_id: 'historical-award',
+        position_id: 'A205',
+        expected_session_revision: 0,
+        reason: 'Synthetic historical boundary',
+      },
+    ],
+  ] as const)(
+    'makes historical Real %s explicitly canonical-only without legacy writes',
+    async (path, command, payload) => {
+      const response = await request(true, path, payload);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ error: 'canonical_live_command_required', command });
+      for (const table of [
+        'bids',
+        'bid_award_amendments',
+        'audit_log',
+        'bid_command_events',
+        'bid_audit_outbox',
+      ])
+        expect(h.sqlite.prepare(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+    },
+  );
+  it('returns the Mock compatibility boundary for amendment without creating an award', async () => {
+    h.sqlite.prepare('UPDATE bid_sessions SET is_mock=1 WHERE id=?').run(sessionId);
+    const response = await request(true, 'amend-selection', {
+      bid_id: 'historical-award',
+      position_id: 'A205',
+      expected_session_revision: 0,
+      reason: 'Synthetic Mock boundary',
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'mock_rehearsal_control_required' });
+    expect(h.sqlite.prepare('SELECT count(*) AS n FROM bids').get()).toEqual({ n: 0 });
+  });
+  it('returns404 for amendment of a missing session instead of the former unconditional kill switch', async () => {
+    const response = await request(
+      true,
+      'amend-selection',
+      {
+        bid_id: 'historical-award',
+        position_id: 'A205',
+        expected_session_revision: 0,
+        reason: 'Synthetic missing boundary',
+      },
+      'missing-session',
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'session_not_found' });
   });
   it('A rejects an authorized legacy route with no bid/audit/event/outbox side effects', async () => {
     const res = await request(true);

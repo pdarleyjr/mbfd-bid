@@ -20,7 +20,7 @@ function memberLookupDb(rows: Record<string, number> = {}): D1Database {
   } as unknown as D1Database;
 }
 
-function mkEnv(memberRows: Record<string, number> = {}): WorkerEnv {
+function mkEnv(memberRows: Record<string, number> = { '14335': 1 }): WorkerEnv {
   return {
     ENV: 'staging',
     PORTAL_BASE_URL: 'https://portal.example',
@@ -141,7 +141,7 @@ describe('requireAdmin middleware', () => {
     expect(await res.json()).toEqual({ memberId: 64 });
   });
 
-  it('does not infer a local Bid member when the exact employee ID is absent', async () => {
+  it('fails closed when the exact employee ID is absent', async () => {
     const app = new Hono<{ Bindings: WorkerEnv; Variables: { claims: JwtPayload } }>();
     app.use('*', requireAdmin);
     app.get('/me', (c) => c.json({ memberId: c.get('claims').member_id }));
@@ -153,7 +153,7 @@ describe('requireAdmin middleware', () => {
       mkEnv({ unrelated: 64 }),
     );
 
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ memberId: 67 });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'member_identity_unavailable' });
   });
 });
