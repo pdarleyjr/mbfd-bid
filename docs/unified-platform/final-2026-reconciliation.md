@@ -2,6 +2,12 @@
 
 This is an implementation work record, not a production-readiness assertion.
 
+Historical snapshot: the starting identities and pre-release findings below are
+retained as recorded on 2026-09-19. For the deployed 2026-09-20 release, authored
+production v2 and remaining execution blockers, use the
+[current status](final-2026-release-status.md) and
+[production release record](production-release-20260920.md).
+
 ## Verified starting identities
 
 | Identity | SHA | Tree |

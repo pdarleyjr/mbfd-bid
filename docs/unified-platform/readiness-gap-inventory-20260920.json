@@ -1,0 +1,380 @@
+{
+  "generatedAt": "2026-09-20T17:12:07.850Z",
+  "originalOpen": 44,
+  "preparedSourceResolutions": 7,
+  "catalogIdentitiesCreated": 7,
+  "remainingUnresolved": 30,
+  "additionalUserPolicyChoiceResolved": "SWAT WIDER_QUALIFIED_POOL; typeddecisionstillopenfor executablebindingandrealmemberfacts",
+  "sourceProgressIncludingUserChoice": 15,
+  "endpointObservations": {
+    "participant": {
+      "httpStatus": 409,
+      "error": "stage_participant_preview_unavailable"
+    },
+    "mock": {
+      "httpStatus": 200,
+      "policyError": "bid_configuration_settings_invalid",
+      "wouldAllowCreateMock": false
+    },
+    "live": {
+      "httpStatus": 200,
+      "policyError": "bid_configuration_live_policy_required",
+      "wouldAllowCreateLive": false
+    }
+  },
+  "limitation": "Endpoints fail fast before deeper per-issue checks. Column flags document currentglobalOPENguard from inspected schema/code, not44independentproductionfailures.",
+  "rows": [
+    {
+      "issueId": "aday-general-limits",
+      "group": "C",
+      "title": "Overall A-Day limits",
+      "progress": "UNRESOLVED",
+      "human": "YES_OPERATING_VALUES",
+      "scope": "A-Day operating limits"
+    },
+    {
+      "issueId": "article5",
+      "group": "A",
+      "title": "Referenced Article5",
+      "progress": "RESOLVED_IN_UNSAVED_DRAFT",
+      "human": "NO_CURRENT_POLICY_QUESTION",
+      "scope": "Specified dispute process without additional discretion"
+    },
+    {
+      "issueId": "backup-airtech-binding",
+      "group": "C",
+      "title": "Backup AirTech opportunity binding",
+      "progress": "UNRESOLVED",
+      "human": "YES_BINDING_CHOICE",
+      "scope": "Optional backup AirTech scope"
+    },
+    {
+      "issueId": "chief-supplement",
+      "group": "D",
+      "title": "Marine Chief supplemental requirements",
+      "progress": "UNRESOLVED",
+      "human": "YES_SOURCE_AUTHORITY",
+      "scope": "Marine admission authority"
+    },
+    {
+      "issueId": "contact-and-return",
+      "group": "C",
+      "title": "Contact and same-day return policy",
+      "progress": "UNRESOLVED",
+      "human": "YES_OPERATING_VALUES",
+      "scope": "Contact and same-day return"
+    },
+    {
+      "issueId": "credential-442af59635c2",
+      "group": "A",
+      "title": "Catalog binding: PADI Public Safety Diver",
+      "progress": "CATALOG_CREATED_DEFINITION_UNSAVED",
+      "human": "NO",
+      "scope": "Source-specific catalog identity"
+    },
+    {
+      "issueId": "credential-5f8958dbc0ca",
+      "group": "A",
+      "title": "Catalog binding: RN8977 Youth Fire Setter Prevention and Intervention course II",
+      "progress": "CATALOG_CREATED_DEFINITION_UNSAVED",
+      "human": "NO",
+      "scope": "Source-specific catalog identity"
+    },
+    {
+      "issueId": "credential-646879422773",
+      "group": "A",
+      "title": "Catalog binding: RN8312 Assembly Occupancies",
+      "progress": "CATALOG_CREATED_DEFINITION_UNSAVED",
+      "human": "NO",
+      "scope": "Source-specific catalog identity"
+    },
+    {
+      "issueId": "credential-7a19bd0253d8",
+      "group": "A",
+      "title": "Catalog binding: NFPA1126 Indoor Pyrotechnics",
+      "progress": "CATALOG_CREATED_DEFINITION_UNSAVED",
+      "human": "NO",
+      "scope": "Source-specific catalog identity"
+    },
+    {
+      "issueId": "credential-7e8c0bc46024",
+      "group": "A",
+      "title": "Catalog binding: RN8977 Youth Fire Setter Prevention and Intervention course I",
+      "progress": "CATALOG_CREATED_DEFINITION_UNSAVED",
+      "human": "NO",
+      "scope": "Source-specific catalog identity"
+    },
+    {
+      "issueId": "credential-c85df9cf783c",
+      "group": "A",
+      "title": "Catalog binding: DRI Public Safety Diver",
+      "progress": "CATALOG_CREATED_DEFINITION_UNSAVED",
+      "human": "NO",
+      "scope": "Source-specific catalog identity"
+    },
+    {
+      "issueId": "credential-f5597276eeae",
+      "group": "A",
+      "title": "Catalog binding: NFPA1123 Outdoor Fireworks",
+      "progress": "CATALOG_CREATED_DEFINITION_UNSAVED",
+      "human": "NO",
+      "scope": "Source-specific catalog identity"
+    },
+    {
+      "issueId": "days-vacancy-fallback",
+      "group": "E",
+      "title": "Days vacant-position fallback",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_RECORD_RECONCILIATION",
+      "scope": "Completed Days tour evidence"
+    },
+    {
+      "issueId": "dc-stage",
+      "group": "C",
+      "title": "DivisionChief opportunity treatment",
+      "progress": "UNRESOLVED",
+      "human": "YES_OPERATIONAL_TREATMENT",
+      "scope": "DivisionChief pre-Bid treatment"
+    },
+    {
+      "issueId": "investigator-tier",
+      "group": "A",
+      "title": "IAAI preference tier execution",
+      "progress": "RESOLVED_IN_UNSAVED_DRAFT",
+      "human": "NO",
+      "scope": "Investigator preference execution"
+    },
+    {
+      "issueId": "light-duty-and-terms",
+      "group": "E",
+      "title": "Days occupancy and protected-term evidence",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_RECORD_RECONCILIATION",
+      "scope": "Protected tenure and light-duty facts"
+    },
+    {
+      "issueId": "marine-obligation",
+      "group": "C",
+      "title": "Marine three-month follow-up",
+      "progress": "UNRESOLVED",
+      "human": "YES_START_DATE_PLUS_AFFECTED_MEMBER_FACTS",
+      "scope": "Marine follow-up timing"
+    },
+    {
+      "issueId": "operator-grants",
+      "group": "C",
+      "title": "Reviewed operator authority",
+      "progress": "UNRESOLVED",
+      "human": "YES_INTENDED_OPERATOR_GRANTS",
+      "scope": "Operator authorization"
+    },
+    {
+      "issueId": "participant-evidence",
+      "group": "B",
+      "title": "Resolve source-filtered stage participants",
+      "progress": "UNRESOLVED",
+      "human": "ONLY_REMAINING_IDENTITY_OR_STATUS_FACTS",
+      "scope": "Stage population and ordering"
+    },
+    {
+      "issueId": "procedure2-fallback",
+      "group": "E",
+      "title": "Generic specialty fallback tiers",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EVIDENCE_REVIEW",
+      "scope": "Fallback training/certification facts"
+    },
+    {
+      "issueId": "qualifier-0a04b45896b6",
+      "group": "E",
+      "title": "Qualification evidence: Current FL Fire Inspector",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-0a95249afa77",
+      "group": "A",
+      "title": "Qualification evidence: FL Fire Instructor I",
+      "progress": "RESOLVED_IN_UNSAVED_DRAFT",
+      "human": "NO",
+      "scope": "Scoped preference qualifier correction"
+    },
+    {
+      "issueId": "qualifier-14c76e06b10a",
+      "group": "E",
+      "title": "Qualification evidence: Passing IADRS Watermanship Test",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-19b6088d869f",
+      "group": "E",
+      "title": "Qualification evidence: Current FL Fire Service Instructor III",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-20be4020898b",
+      "group": "E",
+      "title": "Qualification evidence: Current Paramedic certification",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-3b65c0658310",
+      "group": "E",
+      "title": "Qualification evidence: Scott SCBA Technician",
+      "progress": "UNRESOLVED",
+      "human": "CONDITIONAL_ON_ACTIVATING_BACKUP_AIRTECH",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-54ec03da3fcd",
+      "group": "A",
+      "title": "Qualification evidence: Incident Safety Officer course certificate",
+      "progress": "RESOLVED_IN_UNSAVED_DRAFT",
+      "human": "NO",
+      "scope": "Scoped preference qualifier correction"
+    },
+    {
+      "issueId": "qualifier-7cedb87be4fa",
+      "group": "E",
+      "title": "Qualification evidence: Current FL Paramedic",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-7e3f772ebd33",
+      "group": "E",
+      "title": "Qualification evidence: Valid MMC with OUPV / Six Pack endorsement",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-925e98e0b750",
+      "group": "E",
+      "title": "Qualification evidence: 40-hour Incident Safety Officer course",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-9c0218240f18",
+      "group": "E",
+      "title": "Qualification evidence: Current FL Fire Service Instructor II",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-a89261e43b41",
+      "group": "E",
+      "title": "Qualification evidence: Current FL Fire Service Instructor I",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-c7e3904c9e90",
+      "group": "E",
+      "title": "Qualification evidence: Valid Scott SCBA Technician Certificate",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-d55f2d596c49",
+      "group": "A",
+      "title": "Qualification evidence: FL Fire Inspector I",
+      "progress": "RESOLVED_IN_UNSAVED_DRAFT",
+      "human": "NO",
+      "scope": "Scoped preference qualifier correction"
+    },
+    {
+      "issueId": "qualifier-da7953699aa8",
+      "group": "A",
+      "title": "Qualification evidence: Current FL Fire Instructor",
+      "progress": "RESOLVED_IN_UNSAVED_DRAFT",
+      "human": "NO_CURRENT_2026_QUESTION_UNLESS_FUTURE_ROLE_ACTIVATED",
+      "scope": "Inactive future Training minimum"
+    },
+    {
+      "issueId": "qualifier-df864c16f5d8",
+      "group": "E",
+      "title": "Qualification evidence: Current State Fire Investigator certification",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "qualifier-f73effd0bbd8",
+      "group": "E",
+      "title": "Qualification evidence: Current FL Fire Inspector certification",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_EXACT_EVIDENCE_REVIEW",
+      "scope": "Member qualification detail"
+    },
+    {
+      "issueId": "relations",
+      "group": "E",
+      "title": "Relationship separation",
+      "progress": "UNRESOLVED",
+      "human": "ONLY_IF_ACTUAL_RESTRICTION_FACTS_MISSING",
+      "scope": "Authorized relationship restrictions"
+    },
+    {
+      "issueId": "rescue-service",
+      "group": "E",
+      "title": "Reviewed cumulative Rescue1220 service",
+      "progress": "UNRESOLVED",
+      "human": "AFTER_DATED_HISTORY_RECONCILIATION",
+      "scope": "Cumulative Rescue1220 service"
+    },
+    {
+      "issueId": "schedule",
+      "group": "C",
+      "title": "Missing bid Timeline and settings",
+      "progress": "UNRESOLVED",
+      "human": "YES_OPERATING_VALUES_AND_TIMELINE",
+      "scope": "Execution dates and specialized Timeline"
+    },
+    {
+      "issueId": "source-division-B214-C214",
+      "group": "D",
+      "title": "Source division contradiction",
+      "progress": "UNRESOLVED",
+      "human": "YES_TWO_SOURCE_ROWS",
+      "scope": "Final source division contradiction"
+    },
+    {
+      "issueId": "staffing-bindings",
+      "group": "B",
+      "title": "Exact Department staffing bindings",
+      "progress": "UNRESOLVED",
+      "human": "ONLY_DATES_AND_NARROW_RESIDUALS",
+      "scope": "Department staffing identity"
+    },
+    {
+      "issueId": "swat-population",
+      "group": "E",
+      "title": "SWAT candidate population",
+      "progress": "UNRESOLVED",
+      "human": "NO_POPULATION_QUESTION; ONLY_REVIEWED_MEMBER_FACTS",
+      "scope": "Reviewed SWAT qualified-volunteer evidence"
+    },
+    {
+      "issueId": "vacancies-and-publication",
+      "group": "A",
+      "title": "Operational source acceptance",
+      "progress": "RESOLVED_IN_UNSAVED_DRAFT",
+      "human": "NO_POLICY_QUESTION",
+      "scope": "Specified operational policy"
+    }
+  ]
+}

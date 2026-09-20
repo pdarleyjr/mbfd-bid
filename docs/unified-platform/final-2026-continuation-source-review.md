@@ -5,6 +5,11 @@ it contains no member identities, credentials held by individuals, raw workbook
 rows or private relationship facts. It is not a release or Real-activation
 certificate.
 
+The source findings below retain their original review date. Subsequent software
+deployment and production Save of authored v2 are recorded in the
+[production release record](production-release-20260920.md); neither makes the
+pending execution inputs in this source review authoritative or complete.
+
 ## Fresh source verification
 
 All four final inputs were freshly hashed and match
