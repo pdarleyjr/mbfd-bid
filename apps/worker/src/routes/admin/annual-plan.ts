@@ -17,6 +17,7 @@ import {
 } from '../../lib/annual-plan-mutation.js';
 import { loadAnnualPlanReview } from '../../lib/annual-plan-review.js';
 import { createAnnualPlanSuccessor } from '../../lib/annual-plan-successor.js';
+import { createAnnualBidFromSavedStructure } from '../../lib/annual-bid-structure-clone.js';
 import { type AnnualRulePosition, compileAnnualRules } from '../../lib/annual-rule-compiler.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import {
@@ -56,6 +57,21 @@ const StartSchema = z
   })
   .strict();
 
+const CarryForwardStructureSchema = z
+  .object({
+    source_year: z.number().int().min(2024).max(2100),
+    source_version_id: z.string().min(1).max(200),
+    source_version_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    target_year: z.number().int().min(2024).max(2100),
+    effective_on: z.string().refine(isIsoCalendarDate),
+    credential_evaluation_on: z.string().refine(isIsoCalendarDate),
+    expected_duration_days: z.number().int().min(1).max(7),
+    turn_timer_seconds: z.number().int().min(30).max(600),
+    reason: z.string().trim().min(4).max(500),
+    accept_carry_forward: z.literal(true),
+  })
+  .strict();
+
 router.get('/', async (c) => {
   const plans =
     await c.env.DB.prepare(`SELECT y.year, y.status, y.rule_book_version AS ruleBookVersion,
@@ -89,6 +105,45 @@ router.get('/official-sources', async (c) => {
         ? 'No verified official completion is available. Start a blank plan or resume an existing draft.'
         : null,
   });
+});
+
+/**
+ * Starts a genuinely new year from a selected immutable Current-Bid version.
+ * It deliberately creates a pending, non-executable policy draft rather than
+ * reusing people, grants, approvals, credentials, or an active session.
+ */
+router.post('/from-bid-definition', requireStepUpAuth(), async (c) => {
+  const parsed = CarryForwardStructureSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  const key = c.req.header('Idempotency-Key');
+  if (!key || key !== key.trim() || key.length > 256)
+    return c.json({ error: 'idempotency_key_required' }, 400);
+  const body = parsed.data;
+  const result = await createAnnualBidFromSavedStructure(c.env.DB, {
+    sourceYear: body.source_year,
+    sourceVersionId: body.source_version_id,
+    sourceVersionSha256: body.source_version_sha256,
+    targetYear: body.target_year,
+    effectiveOn: body.effective_on,
+    credentialEvaluationOn: body.credential_evaluation_on,
+    expectedDurationDays: body.expected_duration_days,
+    turnTimerSeconds: body.turn_timer_seconds,
+    reason: body.reason,
+    key,
+    actorSubject: String(c.get('claims').sub),
+    actorId: c.get('claims').member_id,
+  });
+  return result.ok
+    ? c.json({ ...result.response, replayed: result.replayed }, result.replayed ? 200 : 201)
+    : c.json(
+        {
+          error: result.error,
+          ...('issues' in result && result.issues !== undefined ? { issues: result.issues } : {}),
+        },
+        result.error === 'target_year_must_follow_source' || result.error === 'effective_year_mismatch'
+          ? 400
+          : 409,
+      );
 });
 
 router.post('/', requireStepUpAuth(), async (c) => {
