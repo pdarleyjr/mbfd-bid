@@ -602,8 +602,15 @@ function validateAnnualPolicyReferences(
     )
       errors.push('fallback_position_reference_invalid');
     const aDayConstraints = annual.aDay.execution?.constraints ?? [];
+    const aDayTimingExceptions = annual.aDay.execution?.timingExceptions ?? [];
     if (aDayConstraints.some((rule) => rule.positionIds.some((id) => !biddablePositionIds.has(id))))
       errors.push('a_day_constraint_position_reference_invalid');
+    if (
+      aDayTimingExceptions.some((exception) =>
+        exception.positionIds.some((id) => !biddablePositionIds.has(id)),
+      )
+    )
+      errors.push('a_day_timing_exception_position_reference_invalid');
     if (
       snapshot !== null &&
       aDayConstraints.some((rule) => rule.memberIds.some((id) => !participantIds.has(id)))

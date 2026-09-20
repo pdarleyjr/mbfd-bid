@@ -47,6 +47,7 @@ function fixture(
     officers?: number | null;
     constraints?: Execution['constraints'];
     timing?: Execution['timing'];
+    combatGroups?: ('G1' | 'G2' | 'G3' | 'G4')[];
     legacy?: boolean;
   } = {},
 ) {
@@ -89,7 +90,7 @@ function fixture(
       specialties: [],
       contact: { minimumAttempts: 0, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
       aDay: {
-        combatGroups: ['G1', 'G2', 'G3', 'G4'],
+        combatGroups: options.combatGroups ?? ['G1', 'G2', 'G3', 'G4'],
         min: options.min ?? 0,
         max: options.max ?? 10,
         captainDcMax: 1,
@@ -187,8 +188,8 @@ function evaluate(
 }
 
 describe('frozen simultaneous A-Day allocation', () => {
-  it.each(['AFTER_POSITION_SELECTION', 'SEPARATE_STAGE', 'ADMIN_ASSIGNED'] as const)(
-    'fails closed until the %s workflow is implemented',
+  it.each(['AFTER_POSITION_SELECTION'] as const)(
+    'keeps the legacy simultaneous adapter fail-closed for %s',
     (timing) => {
       expect(evaluate(fixture([entry(1)], { timing }))).toEqual({
         ok: false,
@@ -196,6 +197,11 @@ describe('frozen simultaneous A-Day allocation', () => {
       });
     },
   );
+  it('makes an annually unavailable combat group unpickable without changing established group ids', () => {
+    expect(
+      evaluate(fixture([entry(1, { aDay: 'G4' })], { combatGroups: ['G1', 'G2', 'G3'] })),
+    ).toEqual({ ok: false, code: 'GROUP_FULL' });
+  });
   it.each([false, true])(
     'requires an A-Day and enforces group capacity even forced=%s',
     (forced) => {

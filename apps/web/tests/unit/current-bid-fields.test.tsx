@@ -935,7 +935,7 @@ describe('BidPolicyFields', () => {
     expect(ops(state.value()).aDay).not.toHaveProperty('execution');
   });
 
-  it('lets an administrator save each approved A-Day timing model without rewriting limits', async () => {
+  it('lets an administrator save each policy-supported A-Day timing model without rewriting limits', async () => {
     const state = policyEditor(baseContent(), 'a-day');
     await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
     await setValue(control(state.container, 'A-Day execution source'), 'Synthetic timing authority');
@@ -943,8 +943,6 @@ describe('BidPolicyFields', () => {
     for (const timing of [
       'SIMULTANEOUS',
       'AFTER_POSITION_SELECTION',
-      'SEPARATE_STAGE',
-      'ADMIN_ASSIGNED',
     ] as const) {
       await setValue(control(state.container, 'A-Day selection timing'), timing);
       expect(ops(state.value()).aDay.execution?.timing).toBe(timing);

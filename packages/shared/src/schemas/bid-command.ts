@@ -138,6 +138,16 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
     memberId: z.number().int().positive(),
     positionId: z.string().min(1),
   }).strict(),
+  /**
+   * A Timeline-controlled A-Day choice is a canonical command of its own.
+   * It carries the normal command envelope; the Worker owns identity,
+   * authorization, sequence and frozen-policy validation.
+   */
+  LiveCommandBase.extend({
+    type: z.literal('live.record_a_day'),
+    memberId: z.number().int().positive(),
+    aDay: ADayValueSchema,
+  }).strict(),
   LiveCommandBase.extend({ type: z.literal('live.pause') }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.record_fallback_response'),

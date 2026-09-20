@@ -192,6 +192,37 @@ function requestOpenOrderingAuthority(candidate: BidDefinitionContent) {
 }
 
 describe('Bid definition policy normalization and validation', () => {
+  it('rejects an A-Day timing exception whose frozen opportunity or profile provenance is absent', () => {
+    const candidate = definition();
+    changeBothPolicies(candidate, (policy) => {
+      if (!policy.annualOperations) throw new Error('Synthetic annual operations required');
+      policy.annualOperations.aDay.execution = {
+        timing: 'SIMULTANEOUS',
+        sourceRef: 'Synthetic A-Day timing authority',
+        officersPerGroup: null,
+        constraints: [],
+        timingExceptions: [
+          {
+            id: 'missing-timing-scope',
+            label: 'Synthetic missing specialized scope',
+            timing: 'AFTER_POSITION_SELECTION',
+            sourceRef: 'Synthetic Timeline authority',
+            positionIds: ['synthetic-seat-missing'],
+            profileIds: ['synthetic-missing-profile'],
+          },
+        ],
+      };
+    });
+    const result = canonicalBidDefinition(candidate);
+    expect(result).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: 'a_day_timing_exception_position_missing' }),
+        expect.objectContaining({ code: 'a_day_timing_exception_profile_missing' }),
+      ]),
+    });
+  });
+
   it.each([
     [
       'omits an execution-policy stage',

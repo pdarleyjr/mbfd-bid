@@ -268,6 +268,28 @@ export function BidPolicyFields({
     value: p.id,
     label: `${p.positionName} · ${p.shift} · ${p.id}`,
   }));
+  const profileOpportunityIds = (profile: NonNullable<BidDefinitionContent['authoring']>['profiles'][number]) => {
+    const scope = profile.scope;
+    switch (scope.kind) {
+      case 'department':
+        return content.positions.map((position) => position.id);
+      case 'rank':
+        return content.positions
+          .filter((position) => position.rankRequired === scope.rank)
+          .map((position) => position.id);
+      case 'station_shift':
+        return content.positions
+          .filter(
+            (position) =>
+              position.station === scope.station && position.shift === scope.shift,
+          )
+          .map((position) => position.id);
+      case 'family':
+        return scope.positionIds;
+      case 'position':
+        return [scope.positionId];
+    }
+  };
   const updatePolicy = (
     next: Policy,
     policyDocument: BidDefinitionContent['policy'] = content.policy,
@@ -709,12 +731,28 @@ export function BidPolicyFields({
               profiles={(content.authoring?.profiles ?? []).map((profile) => ({
                 value: profile.id,
                 label: `${profile.name} · ${profile.scope.kind} profile`,
+                positionIds: profileOpportunityIds(profile),
               }))}
               members={people.data ?? []}
               onChange={(execution) => {
                 const { execution: _previous, ...capacity } = ops.aDay;
                 changeOps({ ...ops, aDay: execution ? { ...capacity, execution } : capacity });
               }}
+            />
+            <ReferencePicker
+              label="Available combat A-Day groups"
+              values={ops.aDay.combatGroups}
+              options={['G1', 'G2', 'G3', 'G4'].map((group) => ({
+                value: group,
+                label: group,
+              }))}
+              onChange={(combatGroups) =>
+                changeOps({
+                  ...ops,
+                  aDay: { ...ops.aDay, combatGroups: combatGroups as typeof ops.aDay.combatGroups },
+                })
+              }
+              help="Choose the groups available for this annual Bid. The four established identifiers remain stable; a group not selected here is unavailable to the frozen execution engine."
             />
             <NumberField
               label="Minimum group size"

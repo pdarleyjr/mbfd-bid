@@ -25,8 +25,6 @@ describe('legacy rehearsal canonical capability boundary', () => {
   it.each([
     'SIMULTANEOUS',
     'AFTER_POSITION_SELECTION',
-    'SEPARATE_STAGE',
-    'ADMIN_ASSIGNED',
   ] as const)('blocks every configured A-Day timing model: %s', (timing) => {
     expect(requiresCanonicalAnnualExecution(snapshot({ aDay: { execution: { timing } } }))).toBe(
       true,

@@ -18,12 +18,11 @@ type ADay = NonNullable<FrozenLiveBidPolicy['annualOperations']>['aDay'];
 type Execution = NonNullable<ADay['execution']>;
 type Constraint = Execution['constraints'][number];
 type TimingException = NonNullable<Execution['timingExceptions']>[number];
+type ProfileOption = ReferenceOption & { positionIds: readonly string[] };
 
 const timingOptions: { value: Execution['timing']; label: string }[] = [
   { value: 'SIMULTANEOUS', label: 'With position selection' },
   { value: 'AFTER_POSITION_SELECTION', label: 'After position selection' },
-  { value: 'SEPARATE_STAGE', label: 'In a separate stage' },
-  { value: 'ADMIN_ASSIGNED', label: 'Assigned by an authorized administrator' },
 ];
 
 const rankOptions: { value: Constraint['ranks'][number]; label: string }[] = [
@@ -45,7 +44,7 @@ export function BidADayExecutionFields({
 }: {
   value: ADay['execution'];
   opportunities: ReferenceOption[];
-  profiles: ReferenceOption[];
+  profiles: ProfileOption[];
   members: ReferenceOption[];
   onChange(value: ADay['execution']): void;
 }) {
@@ -133,12 +132,20 @@ export function BidADayExecutionFields({
                   label="Exception shared profiles"
                   values={exception.profileIds}
                   options={profiles}
-                  onChange={(profileIds) => update({ profileIds })}
-                  help="A profile reference records annual authoring provenance; frozen opportunity ids remain explicit."
+                  onChange={(profileIds) => {
+                    const profilePositions = profiles
+                      .filter((profile) => profileIds.includes(profile.value))
+                      .flatMap((profile) => profile.positionIds);
+                    update({
+                      profileIds,
+                      positionIds: [...new Set([...exception.positionIds, ...profilePositions])].sort(),
+                    });
+                  }}
+                  help="Selecting a profile records provenance and expands its current opportunity scope into this immutable exception."
                 />
-                {!exception.positionIds.length && !exception.profileIds.length ? (
+                {!exception.positionIds.length ? (
                   <p className="text-sm text-destructive">
-                    Select at least one opportunity or shared profile before saving this exception.
+                    Select at least one affected opportunity before saving this exception.
                   </p>
                 ) : null}
                 <Button

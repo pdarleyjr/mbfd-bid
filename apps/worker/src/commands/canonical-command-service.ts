@@ -2,6 +2,7 @@ import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types'
 import { evaluateEligibility } from '@mbfd/eligibility';
 import {
   BID_EVENT_VERSION,
+  type BidSessionPolicySnapshot,
   type FrozenLiveBidPolicy,
   type LiveBidCommand,
   type LiveBidCommandResult,
@@ -26,7 +27,7 @@ import {
   resolveFrozenSessionBidTarget,
 } from '../lib/bid-policy.js';
 import { unresolvedSpecialtyPriority } from '../lib/canonical-specialty-priority.js';
-import { evaluateFrozenSimultaneousADays } from '../lib/frozen-a-day.js';
+import { evaluateFrozenADays } from '../lib/frozen-a-day.js';
 import { reduceLiveBidCommand } from './live-bid-reducer.js';
 
 interface CanonicalStateRow {
@@ -887,6 +888,56 @@ export async function commitLiveBidCommand(
       return { result, canonicalState: null };
     }
   }
+  const requiresFrozenADayEvaluation =
+    input.command.type === 'live.record_a_day' ||
+    input.policy.annualOperations?.aDay.execution !== undefined ||
+    input.policy.annualOperations?.membershipDistributions !== undefined ||
+    Object.values(current.fills).some((fill) => fill.membershipIds !== undefined) ||
+    Object.values(current.fills).some((fill) => fill.aDay !== undefined);
+  let frozenADaySnapshot: Extract<BidSessionPolicySnapshot, { v: 3 }> | null = null;
+  if (requiresFrozenADayEvaluation) {
+    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    if (
+      !frozen.ok ||
+      frozen.snapshot.settings.v !== 3 ||
+      canonicalJson(frozen.snapshot.settings.livePolicy) !== canonicalJson(input.policy)
+    ) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE',
+        currentSeq: current.lastSeq,
+      };
+      await insertRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
+    if (
+      input.command.type === 'live.record_a_day' &&
+      frozen.snapshot.settings.livePolicy.annualOperations?.aDay.execution === undefined
+    ) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code: 'A_DAY_TIMING_WORKFLOW_UNAVAILABLE',
+        currentSeq: current.lastSeq,
+      };
+      await insertRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
+    frozenADaySnapshot = frozen.snapshot;
+  }
   const reduction = reduceLiveBidCommand(
     current,
     input.policy,
@@ -894,6 +945,12 @@ export async function commitLiveBidCommand(
     now,
     newId(),
     fallbackReview !== null,
+    frozenADaySnapshot?.members
+      .filter((member) => member.pool !== 'EXCLUDED')
+      .map((member) => ({
+        ...eligibilityMemberFromFrozen(member),
+        employeeId: String(member.memberId),
+      })),
   );
   if (!reduction.ok) {
     const result: LiveBidCommandResult = {
@@ -1052,24 +1109,16 @@ export async function commitLiveBidCommand(
       exhausted: fallbackReview.exhausted,
       eligibleMemberIds: fallbackReview.eligibleMemberIds,
     };
-  if (
-    input.policy.annualOperations?.aDay.execution !== undefined ||
-    input.policy.annualOperations?.membershipDistributions !== undefined ||
-    Object.values(reduction.state.fills).some((fill) => fill.membershipIds !== undefined) ||
-    Object.values(reduction.state.fills).some((fill) => fill.aDay !== undefined)
-  ) {
-    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+  if (requiresFrozenADayEvaluation) {
     const allocation =
-      frozen.ok &&
-      frozen.snapshot.settings.v === 3 &&
-      canonicalJson(frozen.snapshot.settings.livePolicy) === canonicalJson(input.policy)
-        ? evaluateFrozenSimultaneousADays(frozen.snapshot, reduction.state, {
+      frozenADaySnapshot === null
+        ? { ok: false as const, code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE' }
+        : evaluateFrozenADays(frozenADaySnapshot, reduction.state, {
             nowMs: now,
             actorId: input.command.actor.id,
             forced: input.command.type === 'live.force_selection',
             finalize: input.command.type === 'live.complete_session',
-          })
-        : { ok: false as const, code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE' };
+          });
     if (!allocation.ok) {
       const rejected: LiveBidCommandResult = {
         kind: 'rejected',
@@ -1087,6 +1136,23 @@ export async function commitLiveBidCommand(
       return { result: rejected, canonicalState: null };
     }
     reduction.state.aDay = allocation.aDay;
+    if (
+      allocation.hasDeferredSelections &&
+      reduction.state.currentPhase === 'complete' &&
+      allocation.nextDeferredMemberId !== null
+    ) {
+      reduction.state = {
+        ...reduction.state,
+        currentPhase: 'a_day_bid',
+        currentBidderId: allocation.nextDeferredMemberId,
+        turnStartedAtMs: now,
+      };
+      reduction.payload.aDayPhaseTransition = {
+        from: 'position_bid',
+        to: 'a_day_bid',
+        nextMemberId: allocation.nextDeferredMemberId,
+      };
+    }
     if ('aDay' in input.command) reduction.payload.aDay = input.command.aDay ?? null;
   }
   const eventId = newId();

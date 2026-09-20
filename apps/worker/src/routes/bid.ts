@@ -27,6 +27,7 @@ import { refreshFederatedSession } from '../lib/federated-session.js';
 import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-eligibility.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
+import { requiresCanonicalAnnualExecution } from '../lib/canonical-annual-execution.js';
 import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
 import { computeOnDeck } from '../lib/on-deck.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
@@ -759,6 +760,8 @@ async function fetchSessionSnapshot(
   c: BidContext,
   bidSessionId: string,
 ): Promise<BidSessionState | null> {
+  const canonical = await loadCanonicalBidSessionState(c.env.DB, bidSessionId);
+  if (canonical !== null) return canonical;
   const doId = c.env.BID_SESSION.idFromName(bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);
   const snap = await stub.fetch(`${new URL(c.req.url).origin}/snapshot`);
@@ -845,6 +848,10 @@ bid.post('/bid/a-day-pick', async (c) => {
       },
       403,
     );
+  }
+  const frozenPolicy = await loadFrozenSessionBidPolicy(getDb(c.env.DB), parsed.data.bidSessionId);
+  if (frozenPolicy.ok && requiresCanonicalAnnualExecution(frozenPolicy.snapshot)) {
+    return c.json({ error: 'canonical_a_day_command_required' }, 409);
   }
   // A-Day self-service is rehearsal-only. A live A-Day change must use a
   // separately authorized operator command once the annual A-Day policy has
