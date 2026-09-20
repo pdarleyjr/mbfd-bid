@@ -216,6 +216,74 @@ test('Results show only the selected run and retain membership without creating 
   assertNoWrites(state);
 });
 
+test('New Annual Bid uses the saved version through the administrator workflow and carries no people', async ({
+  page,
+}) => {
+  const state = await installCurrentBidFixtures(page);
+  const created: Array<{ body: Record<string, unknown>; key: string | undefined }> = [];
+  await page.route('**/api/admin/annual-plan/from-bid-definition', async (route) => {
+    created.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      key: route.request().headers()['idempotency-key'],
+    });
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        targetYear: 2028,
+        notice: 'Synthetic non-executable annual draft created.',
+        reviewItems: ['synthetic annual review'],
+      }),
+    });
+  });
+  await page.route('**/api/admin/bid/2028/current', (route) =>
+    route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not_found"}' }),
+  );
+
+  await openBid(page);
+  await enter(workspace(page).getByRole('button', { name: 'New Annual Bid', exact: true }));
+  const panel = page.getByRole('dialog', { name: 'Start a new annual Bid from saved structure' });
+  await expect(panel).toBeVisible();
+  await panel.getByLabel('New Bid year', { exact: true }).fill('2028');
+  await panel
+    .getByLabel('Personnel and staffing evaluation date', { exact: true })
+    .fill('2028-10-05');
+  await panel.getByLabel('Credential evaluation date', { exact: true }).fill('2028-10-05');
+  await panel.getByLabel('Expected duration (days)', { exact: true }).fill('3');
+  await panel.getByLabel('Informational turn timer (seconds)', { exact: true }).fill('180');
+  await panel
+    .getByLabel('Carry-forward reason or authorization', { exact: true })
+    .fill('Synthetic annual carry-forward acceptance via the administrator UI.');
+  await panel.getByRole('checkbox', { name: /I will complete the new annual review/ }).check();
+  await panel
+    .getByRole('button', { name: 'Create non-executable annual draft', exact: true })
+    .click();
+
+  await expect.poll(() => created).toHaveLength(1);
+  const sourceVersion = state.current.version;
+  if (!sourceVersion) throw new Error('Synthetic Current Bid must be saved');
+  expect(created[0]).toEqual({
+    key: expect.stringMatching(UUID),
+    body: {
+      source_year: BID_YEAR,
+      source_version_id: sourceVersion.id,
+      source_version_sha256: sourceVersion.contentSha256,
+      target_year: 2028,
+      effective_on: '2028-10-05',
+      credential_evaluation_on: '2028-10-05',
+      expected_duration_days: 3,
+      turn_timer_seconds: 180,
+      reason: 'Synthetic annual carry-forward acceptance via the administrator UI.',
+      accept_carry_forward: true,
+    },
+  });
+  expect(created[0]?.body).not.toHaveProperty('content');
+  expect(created[0]?.body).not.toHaveProperty('memberIds');
+  await expect(page).toHaveURL(/\/admin\/current-bid\?year=2028/);
+  expect(state.consoleErrors).toEqual([]);
+  expect(state.pageErrors).toEqual([]);
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1857, height: 970 },

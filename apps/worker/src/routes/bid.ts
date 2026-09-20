@@ -22,12 +22,12 @@ import {
   loadFrozenSessionBidPolicy,
 } from '../lib/bid-policy.js';
 import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-merge.js';
+import { requiresCanonicalAnnualExecution } from '../lib/canonical-annual-execution.js';
 import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
 import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-eligibility.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
-import { requiresCanonicalAnnualExecution } from '../lib/canonical-annual-execution.js';
 import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
 import { computeOnDeck } from '../lib/on-deck.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
@@ -760,8 +760,14 @@ async function fetchSessionSnapshot(
   c: BidContext,
   bidSessionId: string,
 ): Promise<BidSessionState | null> {
-  const canonical = await loadCanonicalBidSessionState(c.env.DB, bidSessionId);
-  if (canonical !== null) return canonical;
+  // Wrangler launcher coverage intentionally supplies only the Durable Object
+  // binding. A configured database remains canonical and must still surface
+  // its integrity failures rather than silently falling back to the DO.
+  const database = (c.env as Partial<WorkerEnv>).DB;
+  if (database !== undefined) {
+    const canonical = await loadCanonicalBidSessionState(database, bidSessionId);
+    if (canonical !== null) return canonical;
+  }
   const doId = c.env.BID_SESSION.idFromName(bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);
   const snap = await stub.fetch(`${new URL(c.req.url).origin}/snapshot`);

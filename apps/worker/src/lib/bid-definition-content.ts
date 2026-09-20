@@ -392,7 +392,8 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
             'positionIds',
           ],
           code: 'a_day_timing_exception_position_missing',
-          message: 'A-Day timing exception references an opportunity absent from this Bid definition',
+          message:
+            'A-Day timing exception references an opportunity absent from this Bid definition',
         });
     }
     for (const profileId of exception.profileIds) {
@@ -409,7 +410,8 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
             'profileIds',
           ],
           code: 'a_day_timing_exception_profile_missing',
-          message: 'A-Day timing exception references a shared profile absent from this Bid definition',
+          message:
+            'A-Day timing exception references a shared profile absent from this Bid definition',
         });
     }
   }

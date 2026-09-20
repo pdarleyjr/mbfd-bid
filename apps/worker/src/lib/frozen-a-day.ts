@@ -173,8 +173,7 @@ export function evaluateFrozenADays(
   const persistedDeferred = (state.aDay?.picks ?? [])
     .filter((pick) => deferredMemberIds.has(pick.memberId))
     .sort(
-      (left, right) =>
-        phase2Order.indexOf(left.memberId) - phase2Order.indexOf(right.memberId),
+      (left, right) => phase2Order.indexOf(left.memberId) - phase2Order.indexOf(right.memberId),
     );
   for (const pick of persistedDeferred) {
     if (nextBidder(engine) !== pick.memberId)
@@ -221,9 +220,7 @@ export function evaluateFrozenSimultaneousADays(
   if (
     execution !== undefined &&
     (execution.timing !== 'SIMULTANEOUS' ||
-      (execution.timingExceptions ?? []).some(
-        (exception) => exception.timing !== 'SIMULTANEOUS',
-      ))
+      (execution.timingExceptions ?? []).some((exception) => exception.timing !== 'SIMULTANEOUS'))
   )
     return { ok: false, code: 'A_DAY_TIMING_WORKFLOW_UNAVAILABLE' };
   const evaluated = evaluateFrozenADays(snapshot, state, input);

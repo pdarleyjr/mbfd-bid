@@ -415,7 +415,9 @@ export function AnnualLiveControls(props: Props) {
       return;
     }
     if (awardsPosition && !requiresADayWithAward && detail.aDay) {
-      setNotice('This position selects A-Day after position selection; do not record an A-Day now.');
+      setNotice(
+        'This position selects A-Day after position selection; do not record an A-Day now.',
+      );
       return;
     }
     const departure = awardsPosition
@@ -611,15 +613,15 @@ export function AnnualLiveControls(props: Props) {
             ? 'Specialty and contact'
             : panel === 'a-day'
               ? 'Record controlled A-Day selection'
-            : panel === 'fallback'
-              ? 'Fallback awards'
-              : panel === 'presentation'
-                ? 'Department presentation'
-                : panel === 'amendment'
-                  ? 'Correct a recorded selection'
-                  : panel === 'order'
-                    ? 'Remaining bid order'
-                    : 'Record selection'
+              : panel === 'fallback'
+                ? 'Fallback awards'
+                : panel === 'presentation'
+                  ? 'Department presentation'
+                  : panel === 'amendment'
+                    ? 'Correct a recorded selection'
+                    : panel === 'order'
+                      ? 'Remaining bid order'
+                      : 'Record selection'
         }
         description="Actions follow this session’s approved policy and your operator authority. Enter a reason and review the selected member or position before recording an action."
       >
@@ -718,9 +720,7 @@ export function AnnualLiveControls(props: Props) {
                 <Button
                   type="button"
                   disabled={
-                    busy ||
-                    !deferredADay ||
-                    !pendingADay.eligible_a_days.includes(deferredADay)
+                    busy || !deferredADay || !pendingADay.eligible_a_days.includes(deferredADay)
                   }
                   onClick={() =>
                     void command('live.record_a_day', {
@@ -860,7 +860,9 @@ export function AnnualLiveControls(props: Props) {
                                     tierId: fallback.tierId,
                                   },
                                   ...(fallback.pool ? { pool: fallback.pool } : {}),
-                                  ...(fallbackRequiresSimultaneousADay ? { aDay: fallbackADay } : {}),
+                                  ...(fallbackRequiresSimultaneousADay
+                                    ? { aDay: fallbackADay }
+                                    : {}),
                                 },
                               );
                             }}

@@ -1,7 +1,7 @@
 import {
   BidConfigurationSettingsV2Schema,
-  PendingLiveBidPolicySchema,
   type BidDefinitionContent,
+  PendingLiveBidPolicySchema,
 } from '@mbfd/shared';
 
 const copiedReference = (sourceVersionId: string) =>
@@ -24,10 +24,7 @@ function sourceExecutionPolicy(content: BidDefinitionContent): SourceExecutionPo
  * ordinary review UI remains responsible for turning it into an executable
  * policy only after new annual decisions have been recorded.
  */
-function pendingPolicyForNewAnnualBid(
-  source: BidDefinitionContent,
-  sourceVersionId: string,
-) {
+function pendingPolicyForNewAnnualBid(source: BidDefinitionContent, sourceVersionId: string) {
   const policy = sourceExecutionPolicy(source);
   if (policy === null) return null;
   const { orderingAuthority: _sourceOrderingAuthority, ...policyWithoutOrderingAuthority } = policy;
@@ -89,7 +86,8 @@ export function carryForwardBidDefinitionStructure(input: {
   const reference = copiedReference(input.sourceVersionId);
   const pending = pendingPolicyForNewAnnualBid(input.source, input.sourceVersionId);
   const participantSources =
-    input.source.policy?.stageParticipantSources ?? input.source.pendingPolicy?.stageParticipantSources;
+    input.source.policy?.stageParticipantSources ??
+    input.source.pendingPolicy?.stageParticipantSources;
   const reusableParticipantSources = (participantSources ?? []).filter(
     (definition) => definition.participantSource.type === 'FILTER',
   );

@@ -20,7 +20,7 @@ import {
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { type MouseEvent as ReactMouseEvent, useEffect, useState } from 'react';
 
 type AdminSubNavLink = { href: string; label: string };
 
@@ -148,7 +148,31 @@ function NavigationIcon({ href }: { href: string }) {
   return <Icon aria-hidden="true" className="h-5 w-5 shrink-0" strokeWidth={1.6} />;
 }
 
-export function AdminSideNav({ compact = false }: { compact?: boolean }) {
+function navigateInternalLink(
+  event: ReactMouseEvent<HTMLAnchorElement>,
+  onInternalNavigation: ((href: string) => void) | undefined,
+) {
+  if (
+    !onInternalNavigation ||
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey ||
+    event.altKey
+  )
+    return;
+  event.preventDefault();
+  onInternalNavigation(event.currentTarget.href);
+}
+
+export function AdminSideNav({
+  compact = false,
+  onInternalNavigation,
+}: {
+  compact?: boolean;
+  onInternalNavigation?: (href: string) => void;
+}) {
   const pathname = usePathname();
   const search = useSearchParams();
   const year = search.get('year');
@@ -191,6 +215,7 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
             <div className="flex items-center">
               <Link
                 href={contextualHref(link.href) as Route}
+                onClick={(event) => navigateInternalLink(event, onInternalNavigation)}
                 className={[
                   'admin-navigation-link group relative flex min-h-[44px] min-w-0 flex-1 items-center gap-3 rounded-md py-2 text-sm font-medium transition-colors duration-fast ease-out-quart focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
                   compact ? 'justify-center px-2' : 'px-3',
@@ -251,6 +276,7 @@ export function AdminSideNav({ compact = false }: { compact?: boolean }) {
                     <Link
                       key={sub.href}
                       href={contextualHref(sub.href) as Route}
+                      onClick={(event) => navigateInternalLink(event, onInternalNavigation)}
                       className={[
                         'flex min-h-11 items-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-fast ease-out-quart',
                         subActive

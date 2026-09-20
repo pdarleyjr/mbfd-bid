@@ -268,7 +268,9 @@ export function BidPolicyFields({
     value: p.id,
     label: `${p.positionName} · ${p.shift} · ${p.id}`,
   }));
-  const profileOpportunityIds = (profile: NonNullable<BidDefinitionContent['authoring']>['profiles'][number]) => {
+  const profileOpportunityIds = (
+    profile: NonNullable<BidDefinitionContent['authoring']>['profiles'][number],
+  ) => {
     const scope = profile.scope;
     switch (scope.kind) {
       case 'department':
@@ -280,8 +282,7 @@ export function BidPolicyFields({
       case 'station_shift':
         return content.positions
           .filter(
-            (position) =>
-              position.station === scope.station && position.shift === scope.shift,
+            (position) => position.station === scope.station && position.shift === scope.shift,
           )
           .map((position) => position.id);
       case 'family':

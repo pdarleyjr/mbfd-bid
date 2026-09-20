@@ -1,6 +1,6 @@
 import { BidConfigurationSettingsV2Schema, type BidDefinitionContent } from '@mbfd/shared';
-import { bytesToHex } from '@noble/hashes/utils';
 import { sha256 } from '@noble/hashes/sha256';
+import { bytesToHex } from '@noble/hashes/utils';
 import { auditInsertStatement } from './audit.js';
 import {
   carriedForwardStructureReviewItems,
@@ -8,8 +8,8 @@ import {
 } from './bid-definition-carry-forward.js';
 import { loadCurrentBidDefinition } from './bid-definition-facade.js';
 import { assertLegacyBidWrite, runLegacyBidWriteBatch } from './bid-definition-legacy-write.js';
-import { loadBidDefinitionVersion } from './bid-definition-version.js';
 import { saveBidDefinition } from './bid-definition-store.js';
+import { loadBidDefinitionVersion } from './bid-definition-version.js';
 
 type StartInput = {
   sourceYear: number;
@@ -147,12 +147,21 @@ async function replayOrCreateAnnualPlan(database: D1Database, input: StartInput)
       database
         .prepare(`INSERT INTO annual_plan_receipts (idempotency_key,actor_subject,request_json,response_json,created_at)
           SELECT ?,CASE WHEN NOT EXISTS(SELECT 1 FROM bid_years WHERE year=?) THEN ? ELSE NULL END,?,?,?`)
-        .bind(input.key, input.targetYear, input.actorSubject, request, JSON.stringify(response), Date.now()),
+        .bind(
+          input.key,
+          input.targetYear,
+          input.actorSubject,
+          request,
+          JSON.stringify(response),
+          Date.now(),
+        ),
       database
         .prepare('INSERT INTO position_templates (version,effective_year,notes) VALUES (?,?,?)')
         .bind(setupVersion, input.targetYear, 'Annual Bid structure carry-forward staging'),
       database
-        .prepare("INSERT INTO rule_books (version,effective_year,status,revision,notes) VALUES (?,?,'draft',0,?)")
+        .prepare(
+          "INSERT INTO rule_books (version,effective_year,status,revision,notes) VALUES (?,?,'draft',0,?)",
+        )
         .bind(setupVersion, input.targetYear, 'Annual Bid structure carry-forward staging'),
       database
         .prepare(`INSERT INTO bid_years

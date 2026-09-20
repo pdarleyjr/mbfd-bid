@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
+import { createAnnualBidFromSavedStructure } from '../../lib/annual-bid-structure-clone.js';
 import { freezeAnnualPlan } from '../../lib/annual-plan-freeze.js';
 import {
   AnnualPlanExpectedSchema,
@@ -17,7 +18,6 @@ import {
 } from '../../lib/annual-plan-mutation.js';
 import { loadAnnualPlanReview } from '../../lib/annual-plan-review.js';
 import { createAnnualPlanSuccessor } from '../../lib/annual-plan-successor.js';
-import { createAnnualBidFromSavedStructure } from '../../lib/annual-bid-structure-clone.js';
 import { type AnnualRulePosition, compileAnnualRules } from '../../lib/annual-rule-compiler.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import {
@@ -140,7 +140,8 @@ router.post('/from-bid-definition', requireStepUpAuth(), async (c) => {
           error: result.error,
           ...('issues' in result && result.issues !== undefined ? { issues: result.issues } : {}),
         },
-        result.error === 'target_year_must_follow_source' || result.error === 'effective_year_mismatch'
+        result.error === 'target_year_must_follow_source' ||
+          result.error === 'effective_year_mismatch'
           ? 400
           : 409,
       );

@@ -15,13 +15,13 @@ import { FieldSection } from './BidFields';
 import { BidImpactReview } from './BidImpactReview';
 import { BidLiveReview } from './BidLiveReview';
 import { BidMockReview } from './BidMockReview';
-import { NewAnnualBidFromStructure } from './NewAnnualBidFromStructure';
 import { BidOpportunityFields } from './BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
 import { BidProfileReview } from './BidProfileReview';
 import { BidResults } from './BidResults';
 import { BidRuleProfiles } from './BidRuleProfiles';
 import { BidVersionHistory } from './BidVersionHistory';
+import { NewAnnualBidFromStructure } from './NewAnnualBidFromStructure';
 import { StageParticipantPreview } from './StageParticipantPreview';
 import {
   type BidLiveResult,

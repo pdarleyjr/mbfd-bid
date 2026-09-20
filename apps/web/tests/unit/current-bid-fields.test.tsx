@@ -938,12 +938,12 @@ describe('BidPolicyFields', () => {
   it('lets an administrator save each policy-supported A-Day timing model without rewriting limits', async () => {
     const state = policyEditor(baseContent(), 'a-day');
     await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
-    await setValue(control(state.container, 'A-Day execution source'), 'Synthetic timing authority');
+    await setValue(
+      control(state.container, 'A-Day execution source'),
+      'Synthetic timing authority',
+    );
 
-    for (const timing of [
-      'SIMULTANEOUS',
-      'AFTER_POSITION_SELECTION',
-    ] as const) {
+    for (const timing of ['SIMULTANEOUS', 'AFTER_POSITION_SELECTION'] as const) {
       await setValue(control(state.container, 'A-Day selection timing'), timing);
       expect(ops(state.value()).aDay.execution?.timing).toBe(timing);
       expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
@@ -953,7 +953,10 @@ describe('BidPolicyFields', () => {
   it('authors a source-backed specialized A-Day timing exception by opportunity', async () => {
     const state = policyEditor(baseContent(), 'a-day');
     await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
-    await setValue(control(state.container, 'A-Day execution source'), 'Synthetic timing authority');
+    await setValue(
+      control(state.container, 'A-Day execution source'),
+      'Synthetic timing authority',
+    );
     await click(button(state.container, 'Add A-Day timing exception'));
     const exception = group(state.container, 'A-Day timing exception 1');
     await setValue(control(exception, 'Exception name'), 'Synthetic specialized assignment');

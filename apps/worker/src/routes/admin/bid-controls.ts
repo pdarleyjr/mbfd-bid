@@ -414,14 +414,12 @@ router.get('/:id/specialty-live', async (c) => {
       exception.positionIds.map((positionId) => [positionId, exception.timing] as const),
     ),
   );
-  let aDayCurrent:
-    | {
-        member_id: number;
-        position_id: string;
-        shift: 'A' | 'B' | 'C' | 'D';
-        eligible_a_days: readonly string[];
-      }
-    | null = null;
+  let aDayCurrent: {
+    member_id: number;
+    position_id: string;
+    shift: 'A' | 'B' | 'C' | 'D';
+    eligible_a_days: readonly string[];
+  } | null = null;
   if (canonical.currentPhase === 'a_day_bid' && canonical.aDay !== null) {
     const membersById = new Map(
       frozen.snapshot.members

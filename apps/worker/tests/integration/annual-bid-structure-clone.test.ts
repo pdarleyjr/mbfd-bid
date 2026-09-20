@@ -1,8 +1,8 @@
 import {
+  type BidDefinitionContent,
   BidDispositionSchema,
   FrozenLiveBidPolicySchema,
   LiveBidActionSchema,
-  type BidDefinitionContent,
 } from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index.js';
@@ -130,7 +130,7 @@ describe('new annual Bid from saved Current-Bid structure', () => {
       `synthetic-source-save-${++counter}`,
     );
     expect(saved.status, await saved.clone().text()).toBe(201);
-    return { ...(await saved.json() as { versionId: string; contentSha256: string }), content };
+    return { ...((await saved.json()) as { versionId: string; contentSha256: string }), content };
   }
 
   it('seeds a separate target year, clears people and authority, and replays safely', async () => {
@@ -146,9 +146,12 @@ describe('new annual Bid from saved Current-Bid structure', () => {
     });
     const undefinedPaths = (value: unknown, path = '$'): string[] => {
       if (value === undefined) return [path];
-      if (Array.isArray(value)) return value.flatMap((entry, index) => undefinedPaths(entry, `${path}[${index}]`));
+      if (Array.isArray(value))
+        return value.flatMap((entry, index) => undefinedPaths(entry, `${path}[${index}]`));
       if (value && typeof value === 'object')
-        return Object.entries(value).flatMap(([key, entry]) => undefinedPaths(entry, `${path}.${key}`));
+        return Object.entries(value).flatMap(([key, entry]) =>
+          undefinedPaths(entry, `${path}.${key}`),
+        );
       return [];
     };
     expect(undefinedPaths(draft)).toEqual([]);
@@ -171,7 +174,11 @@ describe('new annual Bid from saved Current-Bid structure', () => {
       replayed: boolean;
       bidDefinition: { versionNumber: number };
     };
-    expect(response).toMatchObject({ targetYear: TARGET_YEAR, replayed: false, bidDefinition: { versionNumber: 1 } });
+    expect(response).toMatchObject({
+      targetYear: TARGET_YEAR,
+      replayed: false,
+      bidDefinition: { versionNumber: 1 },
+    });
 
     const target = await request(`bid/${TARGET_YEAR}/current`);
     expect(target.status, await target.clone().text()).toBe(200);
@@ -191,14 +198,24 @@ describe('new annual Bid from saved Current-Bid structure', () => {
       },
     });
     expect(current.content.positions.map((position) => position.id)).toEqual([SEAT]);
-    expect(h.sqlite.prepare('SELECT count(*) AS n FROM bid_sessions WHERE bid_year=?').get(TARGET_YEAR)).toEqual({
+    expect(
+      h.sqlite.prepare('SELECT count(*) AS n FROM bid_sessions WHERE bid_year=?').get(TARGET_YEAR),
+    ).toEqual({
       n: 0,
     });
-    expect(h.sqlite.prepare('SELECT count(*) AS n FROM bid_definition_versions WHERE bid_year=?').get(TARGET_YEAR)).toEqual({
+    expect(
+      h.sqlite
+        .prepare('SELECT count(*) AS n FROM bid_definition_versions WHERE bid_year=?')
+        .get(TARGET_YEAR),
+    ).toEqual({
       n: 1,
     });
 
-    const replay = await request('annual-plan/from-bid-definition', body, 'synthetic-carry-forward');
+    const replay = await request(
+      'annual-plan/from-bid-definition',
+      body,
+      'synthetic-carry-forward',
+    );
     expect(replay.status, await replay.clone().text()).toBe(200);
     expect(await replay.json()).toEqual({ ...response, replayed: true });
     expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
@@ -222,13 +239,23 @@ describe('new annual Bid from saved Current-Bid structure', () => {
     const response = await request('annual-plan/from-bid-definition', body, 'stale-carry-forward');
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: 'saved_source_bid_version_unavailable' });
-    expect(h.sqlite.prepare('SELECT count(*) AS n FROM bid_years WHERE year=2028').get()).toEqual({ n: 0 });
+    expect(h.sqlite.prepare('SELECT count(*) AS n FROM bid_years WHERE year=2028').get()).toEqual({
+      n: 0,
+    });
     expect(
       h.sqlite
-        .prepare("SELECT count(*) AS n FROM annual_plan_receipts WHERE idempotency_key='stale-carry-forward'")
+        .prepare(
+          "SELECT count(*) AS n FROM annual_plan_receipts WHERE idempotency_key='stale-carry-forward'",
+        )
         .get(),
     ).toEqual({ n: 0 });
-    expect(h.sqlite.prepare('SELECT count(*) AS n FROM annual_bid_structure_clone_state WHERE target_year=2028').get()).toEqual({
+    expect(
+      h.sqlite
+        .prepare(
+          'SELECT count(*) AS n FROM annual_bid_structure_clone_state WHERE target_year=2028',
+        )
+        .get(),
+    ).toEqual({
       n: 0,
     });
   });

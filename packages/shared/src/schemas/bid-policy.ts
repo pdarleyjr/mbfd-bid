@@ -48,10 +48,7 @@ export type LiveBidAction = z.infer<typeof LiveBidActionSchema>;
  * policy.  Keeping this vocabulary small prevents a configuration from
  * promising a workflow the canonical engine cannot represent.
  */
-export const ADayExecutionTimingSchema = z.enum([
-  'SIMULTANEOUS',
-  'AFTER_POSITION_SELECTION',
-]);
+export const ADayExecutionTimingSchema = z.enum(['SIMULTANEOUS', 'AFTER_POSITION_SELECTION']);
 export type ADayExecutionTiming = z.infer<typeof ADayExecutionTimingSchema>;
 
 /** Historical frozen policies predate the explicit Managed-Live creation

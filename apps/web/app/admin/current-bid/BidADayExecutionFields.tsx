@@ -100,10 +100,7 @@ export function BidADayExecutionFields({
                 ),
               });
             return (
-              <fieldset
-                key={exception.id}
-                className="space-y-4 rounded border border-border p-4"
-              >
+              <fieldset key={exception.id} className="space-y-4 rounded border border-border p-4">
                 <legend className="px-1 font-medium">A-Day timing exception {index + 1}</legend>
                 <TextField
                   label="Exception name"
@@ -138,7 +135,9 @@ export function BidADayExecutionFields({
                       .flatMap((profile) => profile.positionIds);
                     update({
                       profileIds,
-                      positionIds: [...new Set([...exception.positionIds, ...profilePositions])].sort(),
+                      positionIds: [
+                        ...new Set([...exception.positionIds, ...profilePositions]),
+                      ].sort(),
                     });
                   }}
                   help="Selecting a profile records provenance and expands its current opportunity scope into this immutable exception."
@@ -153,7 +152,9 @@ export function BidADayExecutionFields({
                   onClick={() =>
                     onChange({
                       ...value,
-                      timingExceptions: (value.timingExceptions ?? []).filter((_, i) => i !== index),
+                      timingExceptions: (value.timingExceptions ?? []).filter(
+                        (_, i) => i !== index,
+                      ),
                     })
                   }
                 >

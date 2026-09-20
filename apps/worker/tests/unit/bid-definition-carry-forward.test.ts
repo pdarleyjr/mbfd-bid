@@ -1,9 +1,9 @@
 import {
+  type BidDefinitionContent,
   BidDefinitionContentSchema,
   BidDispositionSchema,
   FrozenLiveBidPolicySchema,
   LiveBidActionSchema,
-  type BidDefinitionContent,
 } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import { carryForwardBidDefinitionStructure } from '../../src/lib/bid-definition-carry-forward.js';
@@ -200,12 +200,15 @@ describe('saved Bid structure carry-forward', () => {
         },
       },
       sourceDecisions: [
-        expect.objectContaining({ status: 'OPEN', blockingClassification: 'BLOCKS_FINAL_2026_CONFIGURATION' }),
+        expect.objectContaining({
+          status: 'OPEN',
+          blockingClassification: 'BLOCKS_FINAL_2026_CONFIGURATION',
+        }),
       ],
     });
-    expect(result.pendingPolicy?.executionPolicy.annualOperations?.aDay.execution?.constraints).toHaveLength(
-      1,
-    );
+    expect(
+      result.pendingPolicy?.executionPolicy.annualOperations?.aDay.execution?.constraints,
+    ).toHaveLength(1);
     expect(result.pendingPolicy?.executionPolicy.annualOperations).not.toHaveProperty(
       'membershipDistributions',
     );

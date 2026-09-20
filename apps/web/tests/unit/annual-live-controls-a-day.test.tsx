@@ -60,7 +60,12 @@ function state(simultaneous = true, active = false) {
   return {
     sequence: 4,
     a_day_selection: simultaneous ? 'SIMULTANEOUS' : null,
-    current_phase: 'position_bid' as 'config' | 'position_bid' | 'a_day_bid' | 'paused' | 'complete',
+    current_phase: 'position_bid' as
+      | 'config'
+      | 'position_bid'
+      | 'a_day_bid'
+      | 'paused'
+      | 'complete',
     a_day_timing_by_position: {} as Record<string, 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION'>,
     a_day_current: null as {
       member_id: number;

@@ -419,7 +419,11 @@ describe.each([
           memberId: MEMBER,
           aDay: 'G2',
         });
-        expect(stale.result).toMatchObject({ kind: 'rejected', code: 'STALE_SEQUENCE', currentSeq: 9 });
+        expect(stale.result).toMatchObject({
+          kind: 'rejected',
+          code: 'STALE_SEQUENCE',
+          currentSeq: 9,
+        });
         expect(
           h.sqlite
             .prepare('SELECT COUNT(*) AS n FROM bid_command_events WHERE bid_session_id=?')

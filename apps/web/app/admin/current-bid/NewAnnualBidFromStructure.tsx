@@ -45,7 +45,9 @@ export function NewAnnualBidFromStructure({
   const [effectiveOn, setEffectiveOn] = useState('');
   const [credentialEvaluationOn, setCredentialEvaluationOn] = useState('');
   const initial = defaults(content?.settings ?? null);
-  const [expectedDurationDays, setExpectedDurationDays] = useState(String(initial.expectedDurationDays));
+  const [expectedDurationDays, setExpectedDurationDays] = useState(
+    String(initial.expectedDurationDays),
+  );
   const [turnTimerSeconds, setTurnTimerSeconds] = useState(String(initial.turnTimerSeconds));
   const [reason, setReason] = useState('');
   const [accepted, setAccepted] = useState(false);
@@ -111,8 +113,8 @@ export function NewAnnualBidFromStructure({
         <form onSubmit={submit} className="space-y-4">
           <p className="text-sm text-muted-foreground">
             It does not copy participants, explicit inclusions or exclusions, credentials, operator
-            permissions, source approvals, current occupants, active sessions, or prior annual dates.
-            Every copied item is marked for new annual review.
+            permissions, source approvals, current occupants, active sessions, or prior annual
+            dates. Every copied item is marked for new annual review.
           </p>
           <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
             <Label className="block">

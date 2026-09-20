@@ -92,9 +92,30 @@ function expectFinalIntegrity(sqlite: Database.Database): void {
   );
 }
 
-describe('integration migration chain 0038 through 0067', () => {
+function expectAnnualBidStructureCloneStateIntegrity(sqlite: Database.Database): void {
+  const triggers = sqlite
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' ORDER BY name")
+    .all()
+    .map((row) => (row as { name: string }).name);
+  expect(triggers).toEqual(
+    expect.arrayContaining([
+      'annual_bid_structure_clone_state_no_update',
+      'annual_bid_structure_clone_state_no_delete',
+      'annual_bid_structure_clone_state_no_replace',
+    ]),
+  );
+  expect(
+    sqlite
+      .prepare(
+        "SELECT name FROM sqlite_schema WHERE type = 'table' AND name='annual_bid_structure_clone_state'",
+      )
+      .all(),
+  ).toHaveLength(1);
+}
+
+describe('integration migration chain 0038 through 0068', () => {
   it('is gap-free and applies from a fresh database through the final candidate', () => {
-    expect(migrationFiles().slice(-30)).toEqual([
+    expect(migrationFiles().slice(-31)).toEqual([
       '0038_live_policy_participation_and_amendments.sql',
       '0039_restore_rule_book_participation_guards.sql',
       '0040_annual_bid_operations.sql',
@@ -125,13 +146,15 @@ describe('integration migration chain 0038 through 0067', () => {
       '0065_bid_ordinal_evidence.sql',
       '0066_bid_tour_evidence.sql',
       '0067_bid_evidence_insert_seals.sql',
+      '0068_annual_bid_structure_clone_state.sql',
     ]);
 
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
-    const applied = applyThrough(sqlite, '0067_bid_evidence_insert_seals.sql');
-    expect(applied.at(-1)).toBe('0067_bid_evidence_insert_seals.sql');
+    const applied = applyThrough(sqlite, '0068_annual_bid_structure_clone_state.sql');
+    expect(applied.at(-1)).toBe('0068_annual_bid_structure_clone_state.sql');
     expectFinalIntegrity(sqlite);
+    expectAnnualBidStructureCloneStateIntegrity(sqlite);
 
     // A D1 migration ledger would record every applied filename; a second
     // discovery sees no pending migration rather than replaying SQL files.
