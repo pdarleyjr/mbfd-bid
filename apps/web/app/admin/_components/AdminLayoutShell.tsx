@@ -8,10 +8,17 @@ import { FeatureHelp } from '@/components/admin/FeatureHelp';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
-import { usePathname } from 'next/navigation';
-import { type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'mbfd-admin-sidebar-collapsed';
+
+function RouteCommitObserver({ onCommit }: { onCommit: (route: string) => void }) {
+  const pathname = usePathname();
+  const search = useSearchParams().toString();
+  useEffect(() => onCommit(`${pathname}?${search}`), [pathname, search, onCommit]);
+  return null;
+}
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -40,8 +47,7 @@ export function AdminLayoutShell({
   children,
   userName,
 }: { children: ReactNode; userName?: string }) {
-  const pathname = usePathname();
-  const previousPath = useRef(pathname);
+  const previousRoute = useRef<string | null>(null);
   const mobileToggle = useRef<HTMLButtonElement>(null);
   const mobileNavigation = useRef<HTMLDivElement>(null);
   const mainContent = useRef<HTMLElement>(null);
@@ -50,35 +56,45 @@ export function AdminLayoutShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
-  useEffect(() => {
-    if (previousPath.current === pathname) return;
-    previousPath.current = pathname;
-    if (mainContent.current) mainContent.current.scrollTop = 0;
-    if (mobileNavOpen) {
-      navigationAccepted.current = true;
-      setMobileNavOpen(false);
-    }
-    if (navigationAccepted.current) {
-      // Closing the sheet schedules another effect. Do not cancel this one-shot
-      // handoff during that state change; it belongs to the accepted new route.
-      requestAnimationFrame(() => {
-        mainContent.current?.focus();
-      });
-    }
-  }, [pathname, mobileNavOpen]);
+  const routeCommitted = useCallback(
+    (route: string) => {
+      const previous = previousRoute.current;
+      previousRoute.current = route;
+      if (previous === null || previous === route) return;
+      if (mainContent.current) mainContent.current.scrollTop = 0;
+      if (mobileNavOpen) {
+        navigationAccepted.current = true;
+        setMobileNavOpen(false);
+      }
+      if (navigationAccepted.current) {
+        // Closing the sheet schedules another effect. Do not cancel this one-shot
+        // handoff during that state change; it belongs to the accepted new route.
+        requestAnimationFrame(() => {
+          mainContent.current?.focus();
+        });
+      }
+    },
+    [mobileNavOpen],
+  );
 
   useEffect(() => {
     if (!mobileNavOpen) return;
     const selected = (event: MouseEvent) => {
-      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)
+        return;
       const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
       if (
         !(link instanceof HTMLAnchorElement) ||
         !mobileNavigation.current?.contains(link) ||
-        link.target === '_blank'
+        (link.target && link.target !== '_self') ||
+        link.hasAttribute('download') ||
+        link.origin !== window.location.origin
       )
         return;
       // Rejected unsaved-edit navigation stops propagation before this listener.
+      // Keep the initiating Link mounted until Next commits the destination.
+      // An exact same-URL selection has no route transition to wait for.
+      if (link.href !== window.location.href) return;
       navigationAccepted.current = true;
       setMobileNavOpen(false);
     };
@@ -109,6 +125,9 @@ export function AdminLayoutShell({
   const compact = collapsed && hydrated;
   return (
     <div className="admin-frame flex min-h-0 flex-1 overflow-hidden print:h-auto print:overflow-visible">
+      <Suspense>
+        <RouteCommitObserver onCommit={routeCommitted} />
+      </Suspense>
       <aside
         data-testid="admin-sidebar"
         data-collapsed={compact}
