@@ -24,7 +24,7 @@ async function adminJwt(fresh = true): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'synthetic-admin',
+      emp: 'EMP100',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Synthetic',
@@ -412,7 +412,7 @@ describe('Bid award transition administration', () => {
           kind: 'ADMIN_REASSIGNMENT',
           effective_on: EFFECTIVE_ON,
           origin: 'BID',
-          actor_subject: '0',
+          actor_subject: '100',
           reason: body.reason,
         }),
       ]),
@@ -429,7 +429,7 @@ describe('Bid award transition administration', () => {
       expect.objectContaining({
         action: 'bid_award_transition',
         actor_type: 'admin',
-        actor_id: 0,
+        actor_id: 100,
         target_kind: 'bid_session',
         target_id: SESSION_ID,
         reason: body.reason,

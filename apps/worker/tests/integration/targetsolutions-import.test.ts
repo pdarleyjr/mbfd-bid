@@ -18,7 +18,7 @@ describe('TargetSolutions reviewed import', () => {
     const token = await signJwt(
       {
         sub: 0,
-        emp: 'synthetic-import-admin',
+        emp: '0012',
         role: 'admin',
         rank: 'CHIEF',
         first_name: 'Test',

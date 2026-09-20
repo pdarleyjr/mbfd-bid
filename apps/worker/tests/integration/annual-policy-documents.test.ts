@@ -31,7 +31,7 @@ async function adminRequest(h: TestD1, path: string, init: RequestInit = {}): Pr
   const token = await signJwt(
     {
       sub: 0,
-      emp: 'annual-policy-admin',
+      emp: 'policy-operator-1',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Annual',

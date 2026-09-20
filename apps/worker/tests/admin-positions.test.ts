@@ -103,6 +103,9 @@ function mkEnv(sqlite: Database.Database): WorkerEnv {
 function makeApp() {
   const sqlite = new Database(':memory:');
   applyMigrations(sqlite);
+  sqlite.exec(
+    "INSERT INTO members(id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,created_at,updated_at) VALUES(1,'14335','Synthetic','Administrator','DC','OFC',1,0,1,1)",
+  );
 
   const app = new Hono<{ Bindings: WorkerEnv; Variables: { claims: JwtPayload } }>();
   app.route('/admin/positions', positionsRouter);

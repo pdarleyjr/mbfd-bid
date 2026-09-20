@@ -21,7 +21,7 @@ describe('reviewed pre-bid successor', () => {
       },
       h.env.JWT_SIGNING_KEY,
     );
-    h.sqlite.exec(`INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,created_at,updated_at) VALUES (0,'synthetic-admin','Synthetic','Admin','CHIEF','FF',1,1,1);
+    h.sqlite.exec(`INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,created_at,updated_at) VALUES (9001,'synthetic-admin','Synthetic','Admin','CHIEF','EXCLUDED',0,1,1);
       INSERT INTO position_templates (version,effective_year) VALUES ('2027.1',2027);
       INSERT INTO rule_books (version,effective_year,status,revision) VALUES ('2027.1',2027,'draft',2);
       INSERT INTO bid_years (year,status,rule_book_version,position_template_version,configuration_revision,config_json)

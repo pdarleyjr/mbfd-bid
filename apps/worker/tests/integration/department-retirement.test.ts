@@ -193,7 +193,7 @@ describe('Department retirement dependency reads', () => {
     const token = await signJwt(
       {
         sub: 0,
-        emp: 'synthetic-admin',
+        emp: 'synthetic-one',
         role: 'admin',
         rank: 'CHIEF',
         first_name: 'Synthetic',

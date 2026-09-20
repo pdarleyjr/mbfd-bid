@@ -33,7 +33,7 @@ async function token(role: 'admin' | 'member' = 'admin'): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'synthetic-admin',
+      emp: 'synthetic-one',
       role,
       rank: 'CHIEF',
       first_name: 'Synthetic',
@@ -176,8 +176,11 @@ describe('Year-round Department roster', () => {
     }
   });
 
-  it('reports an empty Department without fabricating a source update time', async () => {
+  it('reports an empty operational Department with only the authenticated excluded operator', async () => {
     const empty = await setupTestD1();
+    await empty.db.run(
+      "INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at) VALUES (900001,'synthetic-one','Synthetic','Admin','CHIEF','EXCLUDED',0,0,'retired',0,0)",
+    );
     try {
       const response = await app.fetch(
         new Request(`http://x${DEPARTMENT_PATH}?as_of=${AS_OF}`, {
@@ -188,7 +191,7 @@ describe('Year-round Department roster', () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({
         asOf: AS_OF,
-        updatedAt: null,
+        updatedAt: 0,
         positions: [],
         summary: { totalPositions: 0, occupiedPositions: 0, vacantPositions: 0 },
         unassignedMembers: [],

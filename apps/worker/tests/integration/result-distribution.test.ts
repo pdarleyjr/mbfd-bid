@@ -13,7 +13,7 @@ describe('manual final result distribution', () => {
     return signJwt(
       {
         sub,
-        emp: `synthetic-${sub}`,
+        emp: sub === 99 ? 'synthetic-reviewer' : `synthetic-${sub}`,
         role,
         rank: 'CHIEF',
         first_name: 'Synthetic',
@@ -62,6 +62,10 @@ describe('manual final result distribution', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2027-02-03T15:00:00Z'));
     h = await setupTestD1();
+    // Explicit local identity for the authenticated synthetic administrator.
+    await h.db.run(
+      "INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at) VALUES (900001,'synthetic-0','Synthetic','Unprivileged Admin','CHIEF','EXCLUDED',0,0,'retired',0,0)",
+    );
     seedSyntheticOfficialCompletion(h, []);
     token = await jwt();
     h.env.BID_SESSION = {

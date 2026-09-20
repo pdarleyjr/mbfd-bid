@@ -151,6 +151,10 @@ describe('GET /api/admin/rule-books', () => {
   let h: TestD1;
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated synthetic administrator.
+    await h.db.run(
+      "INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at) VALUES (900001,'admin','Synthetic','Admin','CHIEF','EXCLUDED',0,0,'retired',0,0)",
+    );
     await h.db.run(`INSERT INTO rule_books (version, effective_year, status) VALUES
       ('2026.1', 2026, 'active'),
       ('2026.2', 2026, 'draft'),
@@ -188,6 +192,10 @@ describe('POST /api/admin/rule-books', () => {
   let h: TestD1;
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated synthetic administrator.
+    await h.db.run(
+      "INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at) VALUES (900001,'admin','Synthetic','Admin','CHIEF','EXCLUDED',0,0,'retired',0,0)",
+    );
     await h.db.run(`INSERT INTO rule_books (version, effective_year, status) VALUES
       ('2026.1', 2026, 'active');`);
   });
@@ -323,7 +331,7 @@ describe('POST /api/admin/rule-books', () => {
     expect(audit.results[0]).toMatchObject({
       action: 'rule_book_clone',
       actor_type: 'admin',
-      actor_id: 0,
+      actor_id: 900001,
       target_kind: 'rule_book',
       target_id: '2026.2',
       reason,
@@ -366,6 +374,10 @@ describe('POST /api/admin/rule-books/:version/publish', () => {
   let h: TestD1;
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated synthetic administrator.
+    await h.db.run(
+      "INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at) VALUES (900001,'admin','Synthetic','Admin','CHIEF','EXCLUDED',0,0,'retired',0,0)",
+    );
     await h.db.run(
       "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
     );
@@ -704,6 +716,10 @@ describe('POL-015 draft rule-book lifecycle', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated synthetic administrator.
+    await h.db.run(
+      "INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at) VALUES (900001,'admin','Synthetic','Admin','CHIEF','EXCLUDED',0,0,'retired',0,0)",
+    );
     await h.db.run(
       "INSERT INTO position_templates (version, effective_year) VALUES ('2026.1', 2026);",
     );

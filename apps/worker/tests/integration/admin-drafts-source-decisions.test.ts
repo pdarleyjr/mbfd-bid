@@ -7,6 +7,10 @@ describe('private drafts and source decisions', () => {
   let h: TestD1;
   beforeEach(async () => {
     h = await setupTestD1();
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (7001,'synthetic-0','Synthetic','First Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0),
+        (7002,'synthetic-1','Synthetic','Second Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
   });
   afterEach(async () => {
     await teardownTestD1(h);

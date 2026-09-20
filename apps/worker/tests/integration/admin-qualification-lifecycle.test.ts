@@ -11,7 +11,7 @@ async function adminJwt(): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'synthetic-qualification-admin',
+      emp: 'synthetic-qualification-001',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Synthetic',
@@ -208,7 +208,7 @@ describe('admin qualification lifecycle', () => {
       expect.objectContaining({
         action: 'qualification_lifecycle',
         actor_type: 'admin',
-        actor_id: 0,
+        actor_id: 1,
         target_kind: 'credential',
         reason: gained.reason,
       }),

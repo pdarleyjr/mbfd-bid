@@ -77,7 +77,7 @@ describe('personnel preview and commit authority parity', () => {
     token = await signJwt(
       {
         sub: 0,
-        emp: 'synthetic-admin',
+        emp: 'synthetic-one',
         role: 'admin',
         rank: 'CHIEF',
         first_name: 'Synthetic',

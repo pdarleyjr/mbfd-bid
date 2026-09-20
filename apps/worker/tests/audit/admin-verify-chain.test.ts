@@ -10,8 +10,12 @@ import { signJwt } from '../../src/lib/jwt.js';
 import adminAudit from '../../src/routes/admin/audit.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 
-const noLocalIdentityDb = {
-  prepare: () => ({ bind: () => ({ first: async () => null }) }),
+const localAdminIdentityDb = {
+  prepare: () => ({
+    bind: (employeeId: string) => ({
+      first: async () => (employeeId === 'admin' ? { id: 1 } : null),
+    }),
+  }),
 } as unknown as D1Database;
 
 type FakeR2 = WorkerEnv['R2_AUDIT'] & { _objects: Map<string, Uint8Array> };
@@ -69,7 +73,7 @@ function makeEnv(r2: FakeR2): WorkerEnv {
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'a'.repeat(64),
     PORTAL_BID_READER: 'tok',
-    DB: noLocalIdentityDb,
+    DB: localAdminIdentityDb,
     KV: {} as never,
     BID_SESSION: {} as never,
     AUDIT_SIGNING_PRIVKEY: '',

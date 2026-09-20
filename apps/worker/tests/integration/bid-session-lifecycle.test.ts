@@ -405,6 +405,10 @@ describe('POST /api/admin/bid-session', () => {
   let h: TestD1;
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local operator; excluded from the bidding roster under test.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (900001,'admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'configuring');");
     await seedActiveSinglePositionPolicy(h, Date.now());
     await h.db.run(
@@ -620,6 +624,10 @@ describe('POST /api/admin/bid-session/:id/start', () => {
   let sessionId: string;
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local operator; excluded from the bidding roster under test.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (900001,'admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'configuring');");
     sessionId = '01HZZ0000000000000000SESS01';
     const now = Date.now();
@@ -969,6 +977,10 @@ describe('POST /api/admin/bid-session/:id/pause', () => {
   let sessionId: string;
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local operator; excluded from the bidding roster under test.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (900001,'admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await seedActiveSinglePositionPolicy(h, Date.now());
     sessionId = '01HZZ0000000000000000SESS02';
@@ -1029,6 +1041,10 @@ describe('POST /api/admin/bid-session/:id/resume', () => {
   let sessionId: string;
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local operator; excluded from the bidding roster under test.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (900001,'admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await seedActiveSinglePositionPolicy(h, Date.now());
     sessionId = '01HZZ0000000000000000SESS03';
@@ -1071,6 +1087,10 @@ describe('POST /api/admin/bid-session/:id/day-end and day-start', () => {
   let sessionId: string;
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local operator; excluded from the bidding roster under test.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (900001,'admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     sessionId = '01HZZ0000000000000000SESS04';
     await h.db.run(
@@ -1141,6 +1161,10 @@ describe('canonical command authority', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local operator; excluded from the bidding roster under test.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (900001,'admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await h.db.run(
       "INSERT INTO bid_sessions (id, bid_year, started_at, current_phase, turn_timer_seconds, expected_duration_days, day_count, is_mock) VALUES (?, 2026, ?, 'position_bid', 180, 2, 1, 1);",

@@ -22,6 +22,7 @@ Source decisions carry an explicit classification and affected scopes. A saved p
 
 ## Corrected candidate behavior
 
+- Authenticated Hub identities resolve to Department records by exact employee ID before local permissions, audit attribution or diagnostic WebSocket ownership are used. An unmatched account cannot inherit another person's numeric local ID. Existing matched accounts retain their normal sign-in flow.
 - Legacy force, bid-for-member, skip and amendment writes have explicit canonical-only boundaries; unreachable implementations are removed. Related lock, Mock and lifecycle routes reject managed/canonical bypasses. Historical reads and canonical start remain available.
 - Approved Rank Seniority and Straight Seniority channels are distinct source-certified time-in-grade and department-service Bid ordinals. Immutable annual evidence uses stable employee identity, unique positive ordinals and revision checks. It does not replace personnel dates or legacy RSC. CPT and LT use time in grade; FF uses department service; reverse operations reverse the same domain. Missing mappings remain blocking.
 - Main Air Tech requires both named technician qualifications plus the DE minimum. Backup Air Tech keeps separate minima and cumulative preferences. Both use minimum-qualified reverse fallback. Marine forcing is also minimum-qualified-only by the user's explicit decision.

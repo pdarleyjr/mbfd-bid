@@ -1,3 +1,4 @@
+import { deepStrictEqual } from 'node:assert/strict';
 import { WEBSOCKET_TICKET_AUDIENCE } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { SignJWT } from 'jose';
@@ -190,6 +191,106 @@ describe('WebSocket identity handoff', () => {
   afterEach(async () => {
     await teardownTestD1(h);
   });
+
+  it.each(['member', 'admin'] as const)(
+    'maps a diagnostic %s bearer identity to the exact local employee before forwarding',
+    async (role) => {
+      h.sqlite.exec(`
+        INSERT INTO members(id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,created_at,updated_at)
+        VALUES(42,'SYNTHETIC-LOCAL','Synthetic','Local','FF','FF',1,0,1,1);
+        UPDATE bid_sessions SET is_mock=1;
+      `);
+      const doFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response('upstream'));
+      const namespace = {
+        idFromName: vi.fn(() => ({}) as DurableObjectId),
+        get: vi.fn(() => ({ fetch: doFetch })),
+      };
+      const jwt = await signJwt(
+        {
+          sub: 700,
+          hub_user_id: 700,
+          member_id: 900,
+          emp: 'SYNTHETIC-LOCAL',
+          role,
+          rank: 'FF',
+          first_name: 'Synthetic',
+          last_name: 'Hub',
+          security_version: 1,
+          fresh_auth_at: Math.floor(Date.now() / 1000),
+          authz_checked_at: Math.floor(Date.now() / 1000),
+        },
+        h.env.JWT_SIGNING_KEY,
+      );
+      const router = new Hono<{ Bindings: WorkerEnv }>().route('/api/ws', ws);
+      const response = await router.request(
+        `/api/ws/session/${sessionId}`,
+        {
+          headers: {
+            Origin: 'https://staging.bid.mbfdhub.com',
+            Upgrade: 'websocket',
+            Authorization: `Bearer ${jwt}`,
+          },
+        },
+        { ...h.env, BID_SESSION: namespace as unknown as DurableObjectNamespace },
+      );
+      expect(response.status).toBe(200);
+      expect(doFetch).toHaveBeenCalledOnce();
+      expect(
+        parseVerifiedWebSocketIdentity(new Headers(doFetch.mock.calls[0]?.[1]?.headers)),
+      ).toEqual({ memberId: 42, role });
+    },
+  );
+
+  it.each(['member', 'admin'] as const)(
+    'rejects an unmatched diagnostic %s with a colliding local ID before contacting the DO',
+    async (role) => {
+      h.sqlite.exec(`
+        INSERT INTO members(id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,created_at,updated_at)
+        VALUES(42,'SYNTHETIC-OTHER','Synthetic','Other','FF','FF',1,0,1,1);
+        UPDATE bid_sessions SET is_mock=1;
+      `);
+      const doFetch = vi.fn(async () => new Response('upstream'));
+      const namespace = {
+        idFromName: vi.fn(() => ({}) as DurableObjectId),
+        get: vi.fn(() => ({ fetch: doFetch })),
+      };
+      const jwt = await signJwt(
+        {
+          sub: 700,
+          hub_user_id: 700,
+          member_id: 42,
+          emp: 'SYNTHETIC-UNMATCHED',
+          role,
+          rank: 'FF',
+          first_name: 'Synthetic',
+          last_name: 'Hub',
+          security_version: 1,
+          fresh_auth_at: Math.floor(Date.now() / 1000),
+          authz_checked_at: Math.floor(Date.now() / 1000),
+        },
+        h.env.JWT_SIGNING_KEY,
+      );
+      const before = h.sqlite.serialize();
+      const router = new Hono<{ Bindings: WorkerEnv }>().route('/api/ws', ws);
+      const response = await router.request(
+        `/api/ws/session/${sessionId}`,
+        {
+          headers: {
+            Origin: 'https://staging.bid.mbfdhub.com',
+            Upgrade: 'websocket',
+            Authorization: `Bearer ${jwt}`,
+          },
+        },
+        { ...h.env, BID_SESSION: namespace as unknown as DurableObjectNamespace },
+      );
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'member_identity_unavailable' });
+      expect(namespace.idFromName).not.toHaveBeenCalled();
+      expect(namespace.get).not.toHaveBeenCalled();
+      expect(doFetch).not.toHaveBeenCalled();
+      deepStrictEqual(h.sqlite.serialize(), before);
+    },
+  );
 
   it('serializes verified claims and rejects malformed internal identity headers', () => {
     const headers = new Headers(verifiedWebSocketIdentityHeaders({ memberId: 42, role: 'member' }));

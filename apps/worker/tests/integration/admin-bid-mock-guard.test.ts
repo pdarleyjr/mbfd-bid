@@ -47,6 +47,10 @@ describe('generic admin bid commands on mock sessions', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated, nonparticipating test operator.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (900001,'admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await h.db.run(
       `INSERT INTO bid_sessions (

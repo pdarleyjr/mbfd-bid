@@ -12,7 +12,11 @@ const authEnv = {
   JWT_SIGNING_KEY: KEY,
   PORTAL_BASE_URL: 'https://portal.example',
   DB: {
-    prepare: () => ({ bind: () => ({ first: async () => null }) }),
+    prepare: () => ({
+      bind: (employeeId: string) => ({
+        first: async () => (employeeId === 'admin' ? { id: 1 } : null),
+      }),
+    }),
   },
 } as unknown as WorkerEnv;
 

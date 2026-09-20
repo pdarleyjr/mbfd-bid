@@ -8,7 +8,11 @@ const env = {
   PORTAL_BASE_URL: 'https://portal.example',
   JWT_SIGNING_KEY: 'retired-ai-route-test-key'.repeat(3),
   DB: {
-    prepare: () => ({ bind: () => ({ first: async () => null }) }),
+    prepare: () => ({
+      bind: (employeeId: string) => ({
+        first: async () => (employeeId === 'admin' ? { id: 1 } : null),
+      }),
+    }),
   },
 } as unknown as WorkerEnv;
 

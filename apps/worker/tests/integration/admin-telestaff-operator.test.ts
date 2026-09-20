@@ -55,7 +55,7 @@ async function jwt(options: { fresh?: boolean; role?: 'admin' | 'member' } = {})
   return signJwt(
     {
       sub: role === 'admin' ? 1 : 2,
-      emp: role === 'admin' ? 'operator' : 'member',
+      emp: role === 'admin' ? 'SYNTHETIC-AUTH-OPERATOR' : 'member',
       role,
       rank: role === 'admin' ? 'CHIEF' : 'FF',
       first_name: 'Synthetic',
@@ -150,6 +150,10 @@ describe('admin TeleStaff operator workflow', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    // Keep authentication separate from the imported employee scenarios below.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (900001,'SYNTHETIC-AUTH-OPERATOR','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
   });
 
   afterEach(async () => {
@@ -640,7 +644,7 @@ describe('admin TeleStaff operator workflow', () => {
       rank_before: 'FF',
       rank_after: 'FF',
       origin: 'TELESTAFF',
-      actor_subject: 'admin:1',
+      actor_subject: 'admin:900001',
     });
     expect(lifecycleRow?.reason).toContain('TeleStaff');
     expect(lifecycleRow?.idempotency_key).toBe(`telestaff:apply:${sourceRow.id}`);
@@ -665,7 +669,7 @@ describe('admin TeleStaff operator workflow', () => {
     const auditRow = audit.results[0];
     expect(auditRow).toMatchObject({
       actor_type: 'admin',
-      actor_id: 1,
+      actor_id: 900001,
       action: 'telestaff_apply',
       target_kind: 'assignment_import',
       target_id: staged.import.id,

@@ -540,7 +540,7 @@ describe.each(['VOLUNTARY', 'FORCED', 'EMPTY', 'LEGACY'] as const)(
         const token = await signJwt(
           {
             sub: MEMBER,
-            emp: 'synthetic-reader',
+            emp: 'synthetic-command-editor',
             role: 'admin',
             rank: 'FF',
             first_name: 'Synthetic',

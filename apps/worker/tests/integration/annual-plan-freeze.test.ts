@@ -138,6 +138,10 @@ describe('atomic annual freeze with synthetic completed Mock evidence', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    // Explicit local identity for the authenticated, nonparticipating test operator.
+    h.sqlite.exec(`INSERT INTO members
+      (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,employment_status,created_at,updated_at)
+      VALUES (9001,'synthetic-admin','Synthetic','Operator','CHIEF','EXCLUDED',0,0,'inactive',0,0);`);
     h.sqlite.pragma('foreign_keys = ON');
     token = await signJwt(
       {

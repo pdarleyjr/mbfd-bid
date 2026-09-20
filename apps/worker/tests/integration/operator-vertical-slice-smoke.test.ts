@@ -26,7 +26,7 @@ async function adminJwt(): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'vertical-slice-admin',
+      emp: 'VERTICAL-100',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Synthetic',

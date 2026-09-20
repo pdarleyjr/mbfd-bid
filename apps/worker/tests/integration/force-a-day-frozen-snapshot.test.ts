@@ -46,7 +46,7 @@ async function freshAdmin(): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'synthetic-admin',
+      emp: 'mutable-member',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Synthetic',

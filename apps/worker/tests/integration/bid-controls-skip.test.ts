@@ -8,7 +8,7 @@ async function adminJwt(): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: 'admin',
+      emp: '50050',
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'B',

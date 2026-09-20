@@ -8,8 +8,12 @@ import adminExports from '../../src/routes/admin/exports.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from '../integration/helpers/test-d1.js';
 
-const noLocalIdentityDb = {
-  prepare: () => ({ bind: () => ({ first: async () => null }) }),
+const localAdminIdentityDb = {
+  prepare: () => ({
+    bind: (employeeId: string) => ({
+      first: async () => (employeeId === 'admin' ? { id: 1 } : null),
+    }),
+  }),
 } as unknown as D1Database;
 
 function inMemR2(): R2Bucket & { _objects: Map<string, Uint8Array> } {
@@ -45,7 +49,7 @@ function makeEnv(r2: R2Bucket): WorkerEnv {
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'a'.repeat(64),
     PORTAL_BID_READER: 'tok',
-    DB: noLocalIdentityDb,
+    DB: localAdminIdentityDb,
     KV: {} as never,
     BID_SESSION: {} as never,
     AUDIT_SIGNING_PRIVKEY: '',
@@ -184,6 +188,9 @@ describe('/api/admin/exports audit-before-R2 boundary', () => {
 
   beforeEach(async () => {
     h = await setupTestD1();
+    h.sqlite.exec(
+      "INSERT INTO members(id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,created_at,updated_at) VALUES(1,'admin','Synthetic','Administrator','DC','OFC',1,0,1,1)",
+    );
     r2 = inMemR2();
     await h.db.run("INSERT INTO bid_years (year, status) VALUES (2026, 'live');");
     await h.db.run(

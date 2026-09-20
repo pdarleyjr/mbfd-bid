@@ -5,6 +5,7 @@ import { bidSessions } from '../db/schema.js';
 import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
 import { verifyJwt } from '../lib/jwt.js';
+import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
 import { isExpectedPublicWebOrigin } from '../lib/public-web-origin.js';
 import { verifiedWebSocketIdentityHeaders } from '../lib/websocket-identity.js';
 import { verifyWebSocketTicket } from '../lib/websocket-ticket.js';
@@ -78,7 +79,12 @@ ws.get('/session/:id', async (c) => {
             { error: refreshed.category },
             refreshed.category === 'invalid_identity' ? 401 : 503,
           );
-        identity = { memberId: refreshed.claims.member_id, role: refreshed.claims.role };
+        try {
+          const localClaims = await withLocalMemberIdentity(c.env.DB, refreshed.claims);
+          identity = { memberId: localClaims.member_id, role: localClaims.role };
+        } catch {
+          return c.json({ error: 'member_identity_unavailable' }, 503);
+        }
       } catch {
         return c.json({ error: 'invalid_token' }, 401);
       }

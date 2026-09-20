@@ -16,7 +16,7 @@ async function token(role: 'admin' | 'member' = 'admin') {
   return signJwt(
     {
       sub: 0,
-      emp: 'synthetic-admin',
+      emp: 'synthetic-001',
       role,
       rank: 'CHIEF',
       first_name: 'Synthetic',

@@ -22,7 +22,7 @@ describe('read-only canonical session results and completion', () => {
     h = await setupTestD1();
     const claims = {
       sub: 0,
-      emp: 'synthetic-admin',
+      emp: 'synthetic-101',
       rank: 'CHIEF' as const,
       first_name: 'Synthetic',
       last_name: 'Admin',
