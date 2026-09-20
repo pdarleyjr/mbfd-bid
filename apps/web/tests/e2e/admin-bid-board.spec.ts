@@ -199,8 +199,10 @@ test('independent board views preserve source boundaries at phone, tablet and de
         .locator('#admin-mobile-navigation')
         .getByRole('link', { name: 'Bid', exact: true })
         .click();
-      await expect(page.locator('#admin-mobile-navigation')).toBeHidden();
+      // Confirm a destination commit before treating the closing sheet as a
+      // successful navigation; a rejected unsaved-change navigation stays open.
       await expect(page).toHaveURL(/\/admin\/current-bid(?:\?|$)/, { timeout: 15_000 });
+      await expect(page.locator('#admin-mobile-navigation')).toBeHidden();
       // The unified navigation opens Current Bid. The retained historical
       // board route below still independently exercises its three sources.
       await page.goto('/admin/bid-board');

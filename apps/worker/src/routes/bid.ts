@@ -22,6 +22,7 @@ import {
   loadFrozenSessionBidPolicy,
 } from '../lib/bid-policy.js';
 import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-merge.js';
+import { requiresCanonicalAnnualExecution } from '../lib/canonical-annual-execution.js';
 import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
 import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-eligibility.js';
@@ -759,6 +760,14 @@ async function fetchSessionSnapshot(
   c: BidContext,
   bidSessionId: string,
 ): Promise<BidSessionState | null> {
+  // Wrangler launcher coverage intentionally supplies only the Durable Object
+  // binding. A configured database remains canonical and must still surface
+  // its integrity failures rather than silently falling back to the DO.
+  const database = (c.env as Partial<WorkerEnv>).DB;
+  if (database !== undefined) {
+    const canonical = await loadCanonicalBidSessionState(database, bidSessionId);
+    if (canonical !== null) return canonical;
+  }
   const doId = c.env.BID_SESSION.idFromName(bidSessionId);
   const stub = c.env.BID_SESSION.get(doId);
   const snap = await stub.fetch(`${new URL(c.req.url).origin}/snapshot`);
@@ -845,6 +854,10 @@ bid.post('/bid/a-day-pick', async (c) => {
       },
       403,
     );
+  }
+  const frozenPolicy = await loadFrozenSessionBidPolicy(getDb(c.env.DB), parsed.data.bidSessionId);
+  if (frozenPolicy.ok && requiresCanonicalAnnualExecution(frozenPolicy.snapshot)) {
+    return c.json({ error: 'canonical_a_day_command_required' }, 409);
   }
   // A-Day self-service is rehearsal-only. A live A-Day change must use a
   // separately authorized operator command once the annual A-Day policy has

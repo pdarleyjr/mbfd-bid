@@ -40,6 +40,17 @@ export const LiveBidActionSchema = z.enum([
 ]);
 export type LiveBidAction = z.infer<typeof LiveBidActionSchema>;
 
+/**
+ * The July 2026 policy has one ordinary A-Day workflow and one defined
+ * exception: Specialized Shift Positions may select later under the approved
+ * Timeline.  A separate generic "stage" is the same state transition, and an
+ * administrative assignment is an exceptional force action, not a timing
+ * policy.  Keeping this vocabulary small prevents a configuration from
+ * promising a workflow the canonical engine cannot represent.
+ */
+export const ADayExecutionTimingSchema = z.enum(['SIMULTANEOUS', 'AFTER_POSITION_SELECTION']);
+export type ADayExecutionTiming = z.infer<typeof ADayExecutionTimingSchema>;
+
 /** Historical frozen policies predate the explicit Managed-Live creation
  * action. They remain readable, but that omitted grant is always denied. */
 const HistoricalLiveBidActions = LiveBidActionSchema.options.filter(
@@ -249,14 +260,43 @@ export const FrozenAnnualOperationsPolicySchema = z
       }),
     aDay: z
       .object({
-        combatGroups: z.tuple([z.literal('G1'), z.literal('G2'), z.literal('G3'), z.literal('G4')]),
+        /** The established group identifiers are stable; annual availability is not. */
+        combatGroups: z
+          .array(z.enum(['G1', 'G2', 'G3', 'G4']))
+          .min(1)
+          .max(4)
+          .refine((groups) => new Set(groups).size === groups.length, {
+            message: 'A-Day combat groups must be unique',
+          }),
         min: z.number().int().min(0).max(1_000),
         max: z.number().int().min(0).max(1_000),
         captainDcMax: z.number().int().min(0).max(1_000),
         /** Explicit execution policy for new versions; old snapshots are unchanged. */
         execution: z
           .object({
-            timing: z.literal('SIMULTANEOUS'),
+            timing: ADayExecutionTimingSchema,
+            /**
+             * A profile reference is preserved as annual authoring provenance;
+             * position ids are the frozen execution scope.  A profile may be
+             * renamed or removed after this version is sealed, so execution
+             * never has to rediscover its members or opportunities.
+             */
+            timingExceptions: z
+              .array(
+                z
+                  .object({
+                    id: z.string().trim().min(1).max(80),
+                    label: z.string().trim().min(1).max(160),
+                    timing: ADayExecutionTimingSchema,
+                    sourceRef: z.string().trim().min(4).max(500),
+                    /** Execution never resolves a profile dynamically. */
+                    positionIds: z.array(z.string().trim().min(1).max(160)).min(1).max(500),
+                    profileIds: z.array(z.string().trim().min(1).max(160)).max(250),
+                  })
+                  .strict(),
+              )
+              .max(100)
+              .optional(),
             officersPerGroup: z.number().int().min(0).max(1_000).nullable(),
             sourceRef: z.string().trim().min(4).max(500),
             constraints: z
@@ -322,12 +362,42 @@ export const FrozenAnnualOperationsPolicySchema = z
       });
     }
     const constraints = policy.aDay.execution?.constraints ?? [];
+    const timingExceptions = policy.aDay.execution?.timingExceptions ?? [];
     if (new Set(constraints.map((rule) => rule.id)).size !== constraints.length)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['aDay', 'execution', 'constraints'],
         message: 'A-Day constraint identities must be unique',
       });
+    if (new Set(timingExceptions.map((rule) => rule.id)).size !== timingExceptions.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['aDay', 'execution', 'timingExceptions'],
+        message: 'A-Day timing exception identities must be unique',
+      });
+    for (const [index, rule] of timingExceptions.entries()) {
+      for (const key of ['positionIds', 'profileIds'] as const) {
+        if (new Set(rule[key]).size !== rule[key].length)
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['aDay', 'execution', 'timingExceptions', index, key],
+            message: 'A-Day timing exception scope entries must be unique',
+          });
+      }
+    }
+    const timingExceptionByPosition = new Map<string, number>();
+    for (const [index, rule] of timingExceptions.entries()) {
+      for (const positionId of rule.positionIds) {
+        const existing = timingExceptionByPosition.get(positionId);
+        if (existing !== undefined)
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['aDay', 'execution', 'timingExceptions', index, 'positionIds'],
+            message: `Opportunity ${positionId} is already governed by A-Day timing exception ${existing + 1}`,
+          });
+        else timingExceptionByPosition.set(positionId, index);
+      }
+    }
     for (const [index, rule] of constraints.entries()) {
       for (const key of ['positionIds', 'memberIds', 'ranks', 'shifts'] as const) {
         if (new Set<string | number>(rule[key]).size !== rule[key].length)

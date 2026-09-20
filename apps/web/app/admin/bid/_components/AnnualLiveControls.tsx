@@ -65,7 +65,16 @@ type SpecialtyState = {
       voluntaryOnly: true;
     }
   >;
-  a_day_selection?: 'SIMULTANEOUS' | null;
+  current_phase?: 'config' | 'position_bid' | 'a_day_bid' | 'paused' | 'complete';
+  a_day_selection?: 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION' | null;
+  a_day_timing_by_position?: Record<string, 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION'>;
+  a_day_combat_groups?: readonly ('G1' | 'G2' | 'G3' | 'G4')[];
+  a_day_current?: {
+    member_id: number;
+    position_id: string;
+    shift: 'A' | 'B' | 'C' | 'D';
+    eligible_a_days: readonly string[];
+  } | null;
   fallbacks?: FallbackReview[];
   opportunity_pools?: Array<{
     id: string;
@@ -142,9 +151,14 @@ function name(candidate: Candidate): string {
   return `${candidate.rank ?? ''} ${candidate.first_name} ${candidate.last_name}`.trim();
 }
 
-function aDayOptions(position: PositionMeta | undefined): readonly string[] {
-  if (position?.shift === 'D') return WeekdaySchema.options;
-  if (position) return ADayGroupIdSchema.options;
+function aDayOptions(
+  position: PositionMeta | undefined,
+  shift?: 'A' | 'B' | 'C' | 'D',
+  combatGroups?: readonly string[],
+): readonly string[] {
+  const effectiveShift = position?.shift ?? shift;
+  if (effectiveShift === 'D') return WeekdaySchema.options;
+  if (effectiveShift !== undefined) return combatGroups ?? ADayGroupIdSchema.options;
   return [...ADayGroupIdSchema.options, ...WeekdaySchema.options];
 }
 
@@ -162,11 +176,15 @@ function useAwardADay(identity: string) {
 function ADayChoice({
   label,
   position,
+  shift,
+  combatGroups,
   value,
   onChange,
 }: {
   label: string;
   position: PositionMeta | undefined;
+  shift?: 'A' | 'B' | 'C' | 'D';
+  combatGroups?: readonly string[] | undefined;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -180,7 +198,7 @@ function ADayChoice({
         className="mt-1 block w-full"
       >
         <option value="">Select A-Day</option>
-        {aDayOptions(position).map((option) => (
+        {aDayOptions(position, shift, combatGroups).map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
@@ -194,7 +212,7 @@ export function AnnualLiveControls(props: Props) {
   const csrfFetch = useMemo(() => createCsrfAwareFetch(fetch, () => window.location.origin), []);
   const [state, setState] = useState<SpecialtyState | null>(null);
   const [panel, setPanel] = useState<
-    'selection' | 'specialty' | 'fallback' | 'presentation' | 'amendment' | 'order' | null
+    'selection' | 'a-day' | 'specialty' | 'fallback' | 'presentation' | 'amendment' | 'order' | null
   >(null);
   const pendingCommand = useRef<{
     fingerprint: string;
@@ -234,7 +252,13 @@ export function AnnualLiveControls(props: Props) {
       fallbackPosition?.shift,
     ]),
   );
-  const simultaneousADay = state?.a_day_selection === 'SIMULTANEOUS';
+  const aDayTimingForPosition = (positionId: string | undefined) =>
+    positionId === undefined
+      ? null
+      : (state?.a_day_timing_by_position?.[positionId] ?? state?.a_day_selection ?? null);
+  const requiresSimultaneousADay = (positionId: string | undefined) =>
+    aDayTimingForPosition(positionId) === 'SIMULTANEOUS';
+  const fallbackRequiresSimultaneousADay = requiresSimultaneousADay(fallback?.positionId);
   const termMemberId =
     panel === 'selection'
       ? state?.current_bidder?.member_id
@@ -266,9 +290,14 @@ export function AnnualLiveControls(props: Props) {
   const selectionPosition = props.positions?.find(
     (position) => position.id === selectionPositionId,
   );
+  const selectionRequiresSimultaneousADay = requiresSimultaneousADay(selectionPositionId);
   const amendmentPosition = props.positions?.find((position) => position.id === amendTo);
+  const amendmentRequiresSimultaneousADay = requiresSimultaneousADay(amendTo);
   const specialtyPosition = props.positions?.find(
     (position) => position.id === state?.active?.requested_position_id,
+  );
+  const specialtyRequiresSimultaneousADay = requiresSimultaneousADay(
+    state?.active?.requested_position_id,
   );
   const [selectionADay, setSelectionADay] = useAwardADay(
     JSON.stringify([
@@ -289,6 +318,16 @@ export function AnnualLiveControls(props: Props) {
       specialtyPosition?.shift,
     ]),
   );
+  const [deferredADay, setDeferredADay] = useAwardADay(
+    JSON.stringify([
+      props.bidSessionId,
+      state?.sequence,
+      state?.a_day_current?.member_id,
+      state?.a_day_current?.position_id,
+      state?.a_day_current?.shift,
+    ]),
+  );
+  const pendingADay = state?.a_day_current ?? null;
   const orderSequence = useRef<number | null>(null);
   const [order, setOrder] = useState<number[]>(() => {
     const cursor = props.bidOrder.findIndex((entry) => entry.memberId === props.currentBidderId);
@@ -362,8 +401,23 @@ export function AnnualLiveControls(props: Props) {
       type === 'live.force_selection' ||
       type === 'live.amend_selection' ||
       (type === 'live.resolve_specialty_candidate' && detail.outcome === 'ACCEPT');
-    if (simultaneousADay && awardsPosition && !detail.aDay) {
+    const awardPositionId =
+      typeof detail.positionId === 'string'
+        ? detail.positionId
+        : typeof detail.toPositionId === 'string'
+          ? detail.toPositionId
+          : type === 'live.resolve_specialty_candidate'
+            ? state.active?.requested_position_id
+            : undefined;
+    const requiresADayWithAward = awardsPosition && requiresSimultaneousADay(awardPositionId);
+    if (requiresADayWithAward && !detail.aDay) {
       setNotice('Select an A-Day before recording this award.');
+      return;
+    }
+    if (awardsPosition && !requiresADayWithAward && detail.aDay) {
+      setNotice(
+        'This position selects A-Day after position selection; do not record an A-Day now.',
+      );
       return;
     }
     const departure = awardsPosition
@@ -522,6 +576,7 @@ export function AnnualLiveControls(props: Props) {
         {(
           [
             ['selection', 'Record selection'],
+            ['a-day', 'Record A-Day'],
             ['specialty', 'Specialty and contact'],
             ['fallback', 'Fallback awards'],
             ['presentation', 'Presentation'],
@@ -556,15 +611,17 @@ export function AnnualLiveControls(props: Props) {
         title={
           panel === 'specialty'
             ? 'Specialty and contact'
-            : panel === 'fallback'
-              ? 'Fallback awards'
-              : panel === 'presentation'
-                ? 'Department presentation'
-                : panel === 'amendment'
-                  ? 'Correct a recorded selection'
-                  : panel === 'order'
-                    ? 'Remaining bid order'
-                    : 'Record selection'
+            : panel === 'a-day'
+              ? 'Record controlled A-Day selection'
+              : panel === 'fallback'
+                ? 'Fallback awards'
+                : panel === 'presentation'
+                  ? 'Department presentation'
+                  : panel === 'amendment'
+                    ? 'Correct a recorded selection'
+                    : panel === 'order'
+                      ? 'Remaining bid order'
+                      : 'Record selection'
         }
         description="Actions follow this session’s approved policy and your operator authority. Enter a reason and review the selected member or position before recording an action."
       >
@@ -634,6 +691,50 @@ export function AnnualLiveControls(props: Props) {
         </div>
 
         <div className="mt-4 space-y-4">
+          <article hidden={panel !== 'a-day'} className="rounded border border-border p-3">
+            <h3 className="font-semibold text-foreground">Controlled A-Day selection</h3>
+            <p className="text-xs text-muted-foreground">
+              This action is available only after the frozen Timeline-controlled position phase has
+              completed. Capacity and constraints are rechecked by the canonical server command.
+            </p>
+            {state?.current_phase !== 'a_day_bid' || pendingADay === null ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                No controlled A-Day selection is awaiting an authorized operator.
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-sm">
+                  Current member: {memberName(pendingADay.member_id)} · opportunity{' '}
+                  {pendingADay.position_id} · {pendingADay.shift}-shift.
+                </p>
+                <ADayChoice
+                  label="Controlled A-Day"
+                  position={props.positions?.find(
+                    (position) => position.id === pendingADay.position_id,
+                  )}
+                  shift={pendingADay.shift}
+                  combatGroups={state?.a_day_combat_groups}
+                  value={deferredADay}
+                  onChange={setDeferredADay}
+                />
+                <Button
+                  type="button"
+                  disabled={
+                    busy || !deferredADay || !pendingADay.eligible_a_days.includes(deferredADay)
+                  }
+                  onClick={() =>
+                    void command('live.record_a_day', {
+                      memberId: pendingADay.member_id,
+                      aDay: deferredADay,
+                    })
+                  }
+                  className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
+                >
+                  Commit controlled A-Day
+                </Button>
+              </>
+            )}
+          </article>
           <article hidden={panel !== 'fallback'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Review fallback award</h3>
             <p className="text-xs text-muted-foreground">
@@ -726,10 +827,11 @@ export function AnnualLiveControls(props: Props) {
                             </Button>
                           ))}
                         </div>
-                        {simultaneousADay ? (
+                        {fallbackRequiresSimultaneousADay ? (
                           <ADayChoice
                             label="Fallback award A-Day"
                             position={fallbackPosition}
+                            combatGroups={state?.a_day_combat_groups}
                             value={fallbackADay}
                             onChange={setFallbackADay}
                           />
@@ -737,12 +839,12 @@ export function AnnualLiveControls(props: Props) {
                         <div className="flex flex-wrap gap-2">
                           <Button
                             type="button"
-                            disabled={busy || (simultaneousADay && !fallbackADay)}
+                            disabled={busy || (fallbackRequiresSimultaneousADay && !fallbackADay)}
                             onClick={() => {
                               if (
                                 fallback.mode === 'FORCED' &&
                                 !window.confirm(
-                                  `Confirm forced award to ${memberName(fallbackMemberId)} for ${fallback.positionId} under ${fallback.tierLabel}${simultaneousADay ? `, A-Day ${fallbackADay}` : ''}?`,
+                                  `Confirm forced award to ${memberName(fallbackMemberId)} for ${fallback.positionId} under ${fallback.tierLabel}${fallbackRequiresSimultaneousADay ? `, A-Day ${fallbackADay}` : ''}?`,
                                 )
                               )
                                 return;
@@ -758,7 +860,9 @@ export function AnnualLiveControls(props: Props) {
                                     tierId: fallback.tierId,
                                   },
                                   ...(fallback.pool ? { pool: fallback.pool } : {}),
-                                  ...(simultaneousADay ? { aDay: fallbackADay } : {}),
+                                  ...(fallbackRequiresSimultaneousADay
+                                    ? { aDay: fallbackADay }
+                                    : {}),
                                 },
                               );
                             }}
@@ -920,10 +1024,11 @@ export function AnnualLiveControls(props: Props) {
                     Current contact: {name(currentCandidate)} · remaining{' '}
                     {state.active.remaining_candidate_ids.length}
                   </strong>
-                  {simultaneousADay ? (
+                  {specialtyRequiresSimultaneousADay ? (
                     <ADayChoice
                       label="Specialty award A-Day"
                       position={specialtyPosition}
+                      combatGroups={state?.a_day_combat_groups}
                       value={specialtyADay}
                       onChange={setSpecialtyADay}
                     />
@@ -949,13 +1054,16 @@ export function AnnualLiveControls(props: Props) {
                       key={outcome}
                       type="button"
                       disabled={
-                        busy || (outcome === 'ACCEPT' && simultaneousADay && !specialtyADay)
+                        busy ||
+                        (outcome === 'ACCEPT' &&
+                          specialtyRequiresSimultaneousADay &&
+                          !specialtyADay)
                       }
                       onClick={() =>
                         void command('live.resolve_specialty_candidate', {
                           memberId: currentCandidate.member_id,
                           outcome,
-                          ...(outcome === 'ACCEPT' && simultaneousADay
+                          ...(outcome === 'ACCEPT' && specialtyRequiresSimultaneousADay
                             ? { aDay: specialtyADay }
                             : {}),
                         })
@@ -1033,10 +1141,11 @@ export function AnnualLiveControls(props: Props) {
                 ) : null}
               </Label>
             ) : null}
-            {simultaneousADay ? (
+            {selectionRequiresSimultaneousADay ? (
               <ADayChoice
                 label="Selection A-Day"
                 position={selectionPosition}
+                combatGroups={state?.a_day_combat_groups}
                 value={selectionADay}
                 onChange={setSelectionADay}
               />
@@ -1077,14 +1186,14 @@ export function AnnualLiveControls(props: Props) {
                 state === null ||
                 state.current_bidder === null ||
                 !selectionPositionId ||
-                (simultaneousADay && !selectionADay)
+                (selectionRequiresSimultaneousADay && !selectionADay)
               }
               onClick={() =>
                 void command('live.record_selection', {
                   memberId: state?.current_bidder?.member_id,
                   positionId: selectionPositionId,
                   ...(selectionPoolId ? { pool: { poolId: selectionPoolId } } : {}),
-                  ...(simultaneousADay ? { aDay: selectionADay } : {}),
+                  ...(selectionRequiresSimultaneousADay ? { aDay: selectionADay } : {}),
                 })
               }
               className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
@@ -1161,17 +1270,20 @@ export function AnnualLiveControls(props: Props) {
                 </NativeSelect>
               </Label>
             ) : null}
-            {simultaneousADay ? (
+            {amendmentRequiresSimultaneousADay ? (
               <ADayChoice
                 label="Corrected selection A-Day"
                 position={amendmentPosition}
+                combatGroups={state?.a_day_combat_groups}
                 value={amendADay}
                 onChange={setAmendADay}
               />
             ) : null}
             <Button
               type="button"
-              disabled={busy || !amendFrom || !amendTo || (simultaneousADay && !amendADay)}
+              disabled={
+                busy || !amendFrom || !amendTo || (amendmentRequiresSimultaneousADay && !amendADay)
+              }
               onClick={() =>
                 void command('live.amend_selection', {
                   memberId:
@@ -1181,7 +1293,7 @@ export function AnnualLiveControls(props: Props) {
                   fromPositionId: amendFrom,
                   toPositionId: amendTo,
                   ...(amendPoolId ? { pool: { poolId: amendPoolId } } : {}),
-                  ...(simultaneousADay ? { aDay: amendADay } : {}),
+                  ...(amendmentRequiresSimultaneousADay ? { aDay: amendADay } : {}),
                 })
               }
               className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"

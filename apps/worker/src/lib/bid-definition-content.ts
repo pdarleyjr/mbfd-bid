@@ -372,6 +372,49 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
     });
   }
   content.rules = content.rules.map((rule, index) => normalizeRule(rule, ['rules', index], issues));
+  const timingExceptions =
+    content.settings?.v === 3
+      ? (content.settings.livePolicy.annualOperations?.aDay.execution?.timingExceptions ?? [])
+      : [];
+  const knownProfileIds = new Set(content.authoring?.profiles.map((profile) => profile.id) ?? []);
+  for (const [index, exception] of timingExceptions.entries()) {
+    for (const positionId of exception.positionIds) {
+      if (!positionIds.has(positionId))
+        issues.push({
+          path: [
+            'settings',
+            'livePolicy',
+            'annualOperations',
+            'aDay',
+            'execution',
+            'timingExceptions',
+            index,
+            'positionIds',
+          ],
+          code: 'a_day_timing_exception_position_missing',
+          message:
+            'A-Day timing exception references an opportunity absent from this Bid definition',
+        });
+    }
+    for (const profileId of exception.profileIds) {
+      if (!knownProfileIds.has(profileId))
+        issues.push({
+          path: [
+            'settings',
+            'livePolicy',
+            'annualOperations',
+            'aDay',
+            'execution',
+            'timingExceptions',
+            index,
+            'profileIds',
+          ],
+          code: 'a_day_timing_exception_profile_missing',
+          message:
+            'A-Day timing exception references a shared profile absent from this Bid definition',
+        });
+    }
+  }
   if (content.authoring) {
     unique(
       content.authoring.compiled,

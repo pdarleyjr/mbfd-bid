@@ -7,6 +7,7 @@ import type { FrozenLiveBidPolicy } from '@mbfd/shared';
 import { useId } from 'react';
 import {
   CheckField,
+  ChoiceField,
   NumberField,
   type ReferenceOption,
   ReferencePicker,
@@ -16,6 +17,13 @@ import {
 type ADay = NonNullable<FrozenLiveBidPolicy['annualOperations']>['aDay'];
 type Execution = NonNullable<ADay['execution']>;
 type Constraint = Execution['constraints'][number];
+type TimingException = NonNullable<Execution['timingExceptions']>[number];
+type ProfileOption = ReferenceOption & { positionIds: readonly string[] };
+
+const timingOptions: { value: Execution['timing']; label: string }[] = [
+  { value: 'SIMULTANEOUS', label: 'With position selection' },
+  { value: 'AFTER_POSITION_SELECTION', label: 'After position selection' },
+];
 
 const rankOptions: { value: Constraint['ranks'][number]; label: string }[] = [
   { value: 'CHIEF', label: 'Chief' },
@@ -30,11 +38,13 @@ const rankOptions: { value: Constraint['ranks'][number]; label: string }[] = [
 export function BidADayExecutionFields({
   value,
   opportunities,
+  profiles,
   members,
   onChange,
 }: {
   value: ADay['execution'];
   opportunities: ReferenceOption[];
+  profiles: ProfileOption[];
   members: ReferenceOption[];
   onChange(value: ADay['execution']): void;
 }) {
@@ -49,6 +59,7 @@ export function BidADayExecutionFields({
             enabled
               ? {
                   timing: 'SIMULTANEOUS',
+                  timingExceptions: [],
                   officersPerGroup: null,
                   sourceRef: '',
                   constraints: [],
@@ -66,9 +77,114 @@ export function BidADayExecutionFields({
           <TextField
             label="A-Day execution source"
             value={value.sourceRef}
-            help="Identify the approved policy or decision governing simultaneous selection."
+            help="Identify the approved policy or decision governing this A-Day timing model."
             onChange={(sourceRef) => onChange({ ...value, sourceRef })}
           />
+          <ChoiceField
+            label="A-Day selection timing"
+            value={value.timing}
+            options={timingOptions}
+            onChange={(timing) => onChange({ ...value, timing })}
+          />
+          <p className="text-sm text-muted-foreground">
+            Add a source-backed exception when an approved Timeline uses different timing for an
+            identified opportunity or shared rule profile. Saved exceptions stay part of this
+            version; they do not change an active Bid.
+          </p>
+          {(value.timingExceptions ?? []).map((exception, index) => {
+            const update = (patch: Partial<TimingException>) =>
+              onChange({
+                ...value,
+                timingExceptions: (value.timingExceptions ?? []).map((entry, i) =>
+                  i === index ? { ...entry, ...patch } : entry,
+                ),
+              });
+            return (
+              <fieldset key={exception.id} className="space-y-4 rounded border border-border p-4">
+                <legend className="px-1 font-medium">A-Day timing exception {index + 1}</legend>
+                <TextField
+                  label="Exception name"
+                  value={exception.label}
+                  onChange={(label) => update({ label })}
+                />
+                <TextField
+                  label="Exception source"
+                  value={exception.sourceRef}
+                  onChange={(sourceRef) => update({ sourceRef })}
+                />
+                <ChoiceField
+                  label="Exception timing"
+                  value={exception.timing}
+                  options={timingOptions}
+                  onChange={(timing) => update({ timing })}
+                />
+                <ReferencePicker
+                  label="Exception opportunities"
+                  values={exception.positionIds}
+                  options={opportunities}
+                  onChange={(positionIds) => update({ positionIds })}
+                  help="Choose the specialized opportunities governed by this Timeline exception."
+                />
+                <ReferencePicker
+                  label="Exception shared profiles"
+                  values={exception.profileIds}
+                  options={profiles}
+                  onChange={(profileIds) => {
+                    const profilePositions = profiles
+                      .filter((profile) => profileIds.includes(profile.value))
+                      .flatMap((profile) => profile.positionIds);
+                    update({
+                      profileIds,
+                      positionIds: [
+                        ...new Set([...exception.positionIds, ...profilePositions]),
+                      ].sort(),
+                    });
+                  }}
+                  help="Selecting a profile records provenance and expands its current opportunity scope into this immutable exception."
+                />
+                {!exception.positionIds.length ? (
+                  <p className="text-sm text-destructive">
+                    Select at least one affected opportunity before saving this exception.
+                  </p>
+                ) : null}
+                <Button
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      ...value,
+                      timingExceptions: (value.timingExceptions ?? []).filter(
+                        (_, i) => i !== index,
+                      ),
+                    })
+                  }
+                >
+                  Remove A-Day timing exception {index + 1}
+                </Button>
+              </fieldset>
+            );
+          })}
+          <Button
+            type="button"
+            disabled={(value.timingExceptions ?? []).length >= 100}
+            onClick={() =>
+              onChange({
+                ...value,
+                timingExceptions: [
+                  ...(value.timingExceptions ?? []),
+                  {
+                    id: crypto.randomUUID(),
+                    label: '',
+                    sourceRef: '',
+                    timing: 'SIMULTANEOUS',
+                    positionIds: [],
+                    profileIds: [],
+                  },
+                ],
+              })
+            }
+          >
+            Add A-Day timing exception
+          </Button>
           <div className="space-y-1">
             <Label htmlFor={officerId}>Exact officers per combat group</Label>
             <Input

@@ -1,4 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
+import { type ADayState, COMBAT_GROUPS, WEEKDAYS, canPick } from '@mbfd/a-day';
 import { evaluateEligibility } from '@mbfd/eligibility';
 import {
   AmendSelectionSchema,
@@ -16,6 +17,7 @@ import { ulid } from 'ulid';
 import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions } from '../../db/schema.js';
+import { hydrateADayState } from '../../durable/bid-session-aday-handlers.js';
 import type { BidSessionState } from '../../durable/bid-session-state.js';
 import { rankFrozenSpecialtyCandidates } from '../../lib/annual-specialty-policy.js';
 import { auditInsertStatement } from '../../lib/audit.js';
@@ -406,9 +408,44 @@ router.get('/:id/specialty-live', async (c) => {
     policy,
     canonical.fills,
   );
+  const aDayExecution = policy.annualOperations?.aDay.execution;
+  const aDayTimingByPosition = Object.fromEntries(
+    (aDayExecution?.timingExceptions ?? []).flatMap((exception) =>
+      exception.positionIds.map((positionId) => [positionId, exception.timing] as const),
+    ),
+  );
+  let aDayCurrent: {
+    member_id: number;
+    position_id: string;
+    shift: 'A' | 'B' | 'C' | 'D';
+    eligible_a_days: readonly string[];
+  } | null = null;
+  if (canonical.currentPhase === 'a_day_bid' && canonical.aDay !== null) {
+    const membersById = new Map(
+      frozen.snapshot.members
+        .filter((candidate) => candidate.pool !== 'EXCLUDED')
+        .map((candidate) => [
+          candidate.memberId,
+          { ...eligibilityMemberFromFrozen(candidate), employeeId: String(candidate.memberId) },
+        ]),
+    );
+    const aDayState: ADayState = hydrateADayState(canonical.aDay, membersById);
+    const memberId = canonical.currentBidderId;
+    const phase1 = memberId === null ? undefined : aDayState.phase1ByMember.get(memberId);
+    if (memberId !== null && phase1 !== undefined) {
+      const candidates = phase1.shift === 'D' ? WEEKDAYS : COMBAT_GROUPS;
+      aDayCurrent = {
+        member_id: memberId,
+        position_id: phase1.positionId,
+        shift: phase1.shift,
+        eligible_a_days: candidates.filter((aDay) => canPick(aDayState, memberId, aDay).ok),
+      };
+    }
+  }
   return c.json({
     bid_session_id: sessionId,
     sequence: canonical.lastSeq,
+    current_phase: canonical.currentPhase,
     membership_distributions: policy.annualOperations?.membershipDistributions ?? [],
     term_participation: Object.fromEntries(
       frozen.snapshot.members.flatMap((person) =>
@@ -442,7 +479,10 @@ router.get('/:id/specialty-live', async (c) => {
     })),
     specialty_coverage: specialtyCoverage,
     opportunity_pools: opportunityPools,
-    a_day_selection: policy.annualOperations?.aDay.execution?.timing ?? null,
+    a_day_selection: aDayExecution?.timing ?? null,
+    a_day_timing_by_position: aDayTimingByPosition,
+    a_day_combat_groups: policy.annualOperations?.aDay.combatGroups ?? [],
+    a_day_current: aDayCurrent,
     fallbacks: (policy.annualOperations?.fallbackPolicies ?? []).flatMap((fallback) =>
       fallback.positionIds
         .filter(
@@ -545,7 +585,7 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
       ? command.data.outcome === 'UNREACHABLE'
         ? 'mark_unreachable'
         : 'skip_defer'
-      : command.data.type === 'live.record_selection'
+      : command.data.type === 'live.record_selection' || command.data.type === 'live.record_a_day'
         ? 'record_selection'
         : command.data.type === 'live.amend_selection'
           ? 'amend_selection'

@@ -65,6 +65,11 @@ describe('Administrator Guide content contract', () => {
     expect(GUIDE_SECTIONS.find((section) => section.id === 'current-bid-versions')).toMatchObject({
       route: '/admin/current-bid?view=versions',
     });
+    expect(GUIDE_SECTIONS.find((section) => section.id === 'current-bid-new-annual')).toMatchObject(
+      {
+        route: '/admin/current-bid',
+      },
+    );
     expect(GUIDE_SECTIONS.find((section) => section.id === 'current-bid-mock')).toMatchObject({
       route: '/admin/current-bid?view=mock',
     });
@@ -92,11 +97,24 @@ describe('Administrator Guide content contract', () => {
     );
   });
 
+  it('documents the saved-version-only and non-executable boundary for the next annual Bid', () => {
+    const annual = GUIDE_SECTIONS.find((section) => section.id === 'current-bid-new-annual');
+    expect(annual?.controls).toContain('New Annual Bid');
+    expect(annual?.steps.join(' ')).toContain('exact immutable saved version');
+    expect(annual?.important).toContain('never copies occupants');
+    expect(annual?.important).toContain('intentionally non-executable');
+    expect(filterGuideSections('carry forward').map((section) => section.id)).toContain(
+      'current-bid-new-annual',
+    );
+  });
+
   it('documents explicit policy scopes, fallback evidence and simultaneous award controls', () => {
     const rules = GUIDE_SECTIONS.find((section) => section.id === 'current-bid-execution-rules');
     expect(rules?.steps.join(' ')).toContain('Department seniority and time in grade');
     expect(rules?.steps.join(' ')).toContain('slots in reservation order');
     expect(rules?.steps.join(' ')).toContain('force action does not waive qualification rules');
+    expect(rules?.steps.join(' ')).toContain('Specialized Timeline');
+    expect(rules?.steps.join(' ')).toContain('overlapping scopes are rejected');
     const live = GUIDE_SECTIONS.find((section) => section.id === 'live-bid');
     expect(live?.steps.join(' ')).toContain('reason and required evidence');
     expect(live?.steps.join(' ')).toContain('Selection A-Day with the award');

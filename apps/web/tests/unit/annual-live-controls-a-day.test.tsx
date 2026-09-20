@@ -60,6 +60,19 @@ function state(simultaneous = true, active = false) {
   return {
     sequence: 4,
     a_day_selection: simultaneous ? 'SIMULTANEOUS' : null,
+    current_phase: 'position_bid' as
+      | 'config'
+      | 'position_bid'
+      | 'a_day_bid'
+      | 'paused'
+      | 'complete',
+    a_day_timing_by_position: {} as Record<string, 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION'>,
+    a_day_current: null as {
+      member_id: number;
+      position_id: string;
+      shift: 'A' | 'B' | 'C' | 'D';
+      eligible_a_days: readonly string[];
+    } | null,
     current_bidder: candidate,
     term_participation: {} as Record<
       string,
@@ -450,6 +463,40 @@ describe('simultaneous A-Day live awards', () => {
     await settle(() => button('Commit selection').click());
     expect(commands).toHaveLength(1);
     expect(commands[0]).not.toHaveProperty('aDay');
+  });
+
+  it('uses a source-backed position timing exception instead of the global default', async () => {
+    live = { ...state(true), a_day_timing_by_position: { abc: 'AFTER_POSITION_SELECTION' } };
+    await mount('Record selection');
+    await choose('Position selected by current bidder', 'abc');
+    expect(container.querySelector('select[aria-label="Selection A-Day"]')).toBeNull();
+    await settle(() => button('Commit selection').click());
+    expect(commands[0]).toMatchObject({ type: 'live.record_selection', positionId: 'abc' });
+    expect(commands[0]).not.toHaveProperty('aDay');
+  });
+
+  it('records a Timeline-controlled A-Day as its own canonical operator command', async () => {
+    live = {
+      ...state(false),
+      current_phase: 'a_day_bid',
+      a_day_current: {
+        member_id: 17,
+        position_id: 'abc',
+        shift: 'A',
+        eligible_a_days: ['G1', 'G3'],
+      },
+    };
+    await mount('Record A-Day');
+    expect(button('Commit controlled A-Day').disabled).toBe(true);
+    await choose('Controlled A-Day', 'G2');
+    expect(button('Commit controlled A-Day').disabled).toBe(true);
+    await choose('Controlled A-Day', 'G3');
+    await settle(() => button('Commit controlled A-Day').click());
+    expect(commands[0]).toMatchObject({
+      type: 'live.record_a_day',
+      memberId: 17,
+      aDay: 'G3',
+    });
   });
 
   it('retries the same A-Day with the same command identity and gives a changed choice a new identity', async () => {

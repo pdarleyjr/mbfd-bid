@@ -21,6 +21,7 @@ import { BidProfileReview } from './BidProfileReview';
 import { BidResults } from './BidResults';
 import { BidRuleProfiles } from './BidRuleProfiles';
 import { BidVersionHistory } from './BidVersionHistory';
+import { NewAnnualBidFromStructure } from './NewAnnualBidFromStructure';
 import { StageParticipantPreview } from './StageParticipantPreview';
 import {
   type BidLiveResult,
@@ -510,17 +511,28 @@ export function CurrentBidWorkspace({
                   : ''}
           </span>
         </div>
-        <Button
-          type="button"
-          onClick={() => {
-            selectView('versions');
-            if (!versionsLoaded) void browseVersions();
-          }}
-          disabled={busy}
-        >
-          <History aria-hidden="true" size={16} />
-          Version history
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <NewAnnualBidFromStructure
+            sourceYear={year}
+            sourceVersion={draft?.base.version ?? null}
+            content={draft?.base.content ?? null}
+            disabled={locked || dirty || stale}
+            onCreated={(targetYear) =>
+              router.push(`/admin/current-bid?year=${targetYear}` as Route)
+            }
+          />
+          <Button
+            type="button"
+            onClick={() => {
+              selectView('versions');
+              if (!versionsLoaded) void browseVersions();
+            }}
+            disabled={busy}
+          >
+            <History aria-hidden="true" size={16} />
+            Version history
+          </Button>
+        </div>
       </div>
       <nav aria-label="Bid workspace" className="flex flex-wrap gap-2 border-b border-border pb-3">
         {views.map((item) => (

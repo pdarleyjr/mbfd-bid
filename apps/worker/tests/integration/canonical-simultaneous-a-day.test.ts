@@ -30,7 +30,10 @@ const digest = (text: string) => createHash('sha256').update(text, 'utf8').diges
 // Synthetic, schema-valid execution inputs only. The real store seals the
 // definition; manually inserting a valid snapshot here does not publish a Bid
 // or establish that this private draft is authorized to start Live execution.
-function syntheticPolicy(maximum: number) {
+function syntheticPolicy(
+  maximum: number,
+  timing: 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION' = 'SIMULTANEOUS',
+) {
   return FrozenLiveBidPolicySchema.parse({
     v: 1,
     policyRevision: 'synthetic-command-integrity-policy',
@@ -87,7 +90,7 @@ function syntheticPolicy(maximum: number) {
         captainDcMax: 1,
         specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 1, SWAT: 1 },
         execution: {
-          timing: 'SIMULTANEOUS',
+          timing,
           officersPerGroup: null,
           sourceRef: 'synthetic:aday-command-policy',
           constraints: [
@@ -109,13 +112,18 @@ function syntheticPolicy(maximum: number) {
 }
 
 describe.each([
-  { commandType: 'live.record_selection', maximum: 0 },
-  { commandType: 'live.record_selection', maximum: 1 },
-  { commandType: 'live.force_selection', maximum: 0 },
-  { commandType: 'live.force_selection', maximum: 1 },
+  { commandType: 'live.record_selection', maximum: 0, timing: 'SIMULTANEOUS' as const },
+  { commandType: 'live.record_selection', maximum: 1, timing: 'SIMULTANEOUS' as const },
+  { commandType: 'live.force_selection', maximum: 0, timing: 'SIMULTANEOUS' as const },
+  { commandType: 'live.force_selection', maximum: 1, timing: 'SIMULTANEOUS' as const },
+  {
+    commandType: 'live.record_selection',
+    maximum: 1,
+    timing: 'AFTER_POSITION_SELECTION' as const,
+  },
 ] as const)(
-  'canonical simultaneous A-Day $commandType maximum=$maximum',
-  ({ commandType, maximum }) => {
+  'canonical A-Day $timing $commandType maximum=$maximum',
+  ({ commandType, maximum, timing }) => {
     let h: TestD1;
     let snapshot: PinnedBidSessionPolicySnapshot;
     let policy: FrozenLiveBidPolicy;
@@ -132,7 +140,7 @@ describe.each([
         turnTimerSeconds: 180,
         credentialEvaluationOn: '2027-01-01',
         personnelEvaluationOn: '2027-01-01',
-        livePolicy: syntheticPolicy(maximum),
+        livePolicy: syntheticPolicy(maximum, timing),
       };
       h.sqlite.exec(`
       INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,created_at,updated_at)
@@ -319,6 +327,7 @@ describe.each([
     }
 
     it('rejects omitted simultaneous A-Day before canonical award persistence', async () => {
+      if (timing === 'AFTER_POSITION_SELECTION') return;
       const result = await commit();
       expect(result.result).toMatchObject({
         kind: 'rejected',
@@ -328,6 +337,100 @@ describe.each([
     });
 
     it('validates the frozen constraint before committing record or force selection', async () => {
+      if (timing === 'AFTER_POSITION_SELECTION') {
+        const premature = await commit({
+          v: 1,
+          type: 'live.record_selection',
+          commandId: KEY,
+          bidSessionId: SESSION,
+          expectedSeq: 7,
+          actor: { id: MEMBER, role: 'admin' },
+          reason: 'Synthetic deferred A-Day position selection proof',
+          evidenceReference: 'synthetic:timeline',
+          memberId: MEMBER,
+          positionId: SEAT,
+          aDay: 'G1',
+        });
+        expect(premature.result).toMatchObject({
+          kind: 'rejected',
+          code: 'A_DAY_DEFERRED_SELECTION_REQUIRED',
+        });
+        expectNoAwardEvidence();
+
+        const selected = await commit({
+          v: 1,
+          type: 'live.record_selection',
+          commandId: 'ab61c19-0b60-4dcc-aa6b-eec70a733e65',
+          bidSessionId: SESSION,
+          expectedSeq: 7,
+          actor: { id: MEMBER, role: 'admin' },
+          reason: 'Synthetic deferred A-Day position selection proof',
+          evidenceReference: 'synthetic:timeline',
+          memberId: MEMBER,
+          positionId: SEAT,
+        });
+        expect(selected.result).toMatchObject({ kind: 'accepted', seq: 8 });
+        expect(selected.canonicalState).toMatchObject({
+          currentPhase: 'a_day_bid',
+          currentBidderId: MEMBER,
+          fills: { [SEAT]: { memberId: MEMBER } },
+        });
+        state = selected.canonicalState ?? state;
+        const aDay = await commit({
+          v: 1,
+          type: 'live.record_a_day',
+          commandId: 'ba61c19-0b60-4dcc-aa6b-eec70a733e65',
+          bidSessionId: SESSION,
+          expectedSeq: 8,
+          actor: { id: MEMBER, role: 'admin' },
+          reason: 'Synthetic controlled A-Day selection proof',
+          evidenceReference: 'synthetic:timeline',
+          memberId: MEMBER,
+          aDay: 'G1',
+        });
+        expect(aDay.result).toMatchObject({ kind: 'accepted', seq: 9 });
+        expect(aDay.canonicalState).toMatchObject({
+          currentPhase: 'complete',
+          currentBidderId: null,
+          aDay: { picks: [expect.objectContaining({ memberId: MEMBER, aDay: 'G1' })] },
+        });
+        const replay = await commit({
+          v: 1,
+          type: 'live.record_a_day',
+          commandId: 'ba61c19-0b60-4dcc-aa6b-eec70a733e65',
+          bidSessionId: SESSION,
+          expectedSeq: 8,
+          actor: { id: MEMBER, role: 'admin' },
+          reason: 'Synthetic controlled A-Day selection proof',
+          evidenceReference: 'synthetic:timeline',
+          memberId: MEMBER,
+          aDay: 'G1',
+        });
+        expect(replay).toEqual(aDay);
+        const stale = await commit({
+          v: 1,
+          type: 'live.record_a_day',
+          commandId: 'ca61c19-0b60-4dcc-aa6b-eec70a733e65',
+          bidSessionId: SESSION,
+          expectedSeq: 8,
+          actor: { id: MEMBER, role: 'admin' },
+          reason: 'Synthetic stale controlled A-Day rejection proof',
+          evidenceReference: 'synthetic:timeline',
+          memberId: MEMBER,
+          aDay: 'G2',
+        });
+        expect(stale.result).toMatchObject({
+          kind: 'rejected',
+          code: 'STALE_SEQUENCE',
+          currentSeq: 9,
+        });
+        expect(
+          h.sqlite
+            .prepare('SELECT COUNT(*) AS n FROM bid_command_events WHERE bid_session_id=?')
+            .get(SESSION),
+        ).toEqual({ n: 2 });
+        return;
+      }
       const result = await commit({
         v: 1,
         type: commandType,

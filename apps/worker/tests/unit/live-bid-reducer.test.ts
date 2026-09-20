@@ -89,6 +89,42 @@ function command(
   } as LiveBidCommand;
 }
 
+const aDayMembers = [1, 2].map((memberId) => ({
+  employeeId: String(memberId),
+  firstName: 'Synthetic',
+  lastName: `Member ${memberId}`,
+  rank: 'FF' as const,
+  rscSeniority: memberId,
+  rankSeniority: memberId,
+  isProbationary: false,
+  credentials: [],
+}));
+const noOfficerCap = { min: 0, max: 10, officersRequired: 0, officerMode: 'NONE' as const };
+
+function delayedADayState(): BidSessionState {
+  const current = state();
+  return {
+    ...current,
+    currentPhase: 'a_day_bid',
+    currentBidderId: 1,
+    aDay: {
+      groupCaps: {
+        A: { G1: noOfficerCap, G2: noOfficerCap, G3: noOfficerCap, G4: noOfficerCap },
+        B: { G1: noOfficerCap, G2: noOfficerCap, G3: noOfficerCap, G4: noOfficerCap },
+        C: { G1: noOfficerCap, G2: noOfficerCap, G3: noOfficerCap, G4: noOfficerCap },
+      },
+      weekdayCaps: {},
+      picks: [],
+      bidOrder: [1, 2],
+      cursor: 0,
+      phase1: [
+        [1, { positionId: 'p1', shift: 'A' }],
+        [2, { positionId: 'p2', shift: 'A' }],
+      ],
+    },
+  };
+}
+
 type UnreachablePath = 'declaration' | 'disposition' | 'specialty';
 function contactPolicy(
   contact: NonNullable<FrozenLiveBidPolicy['annualOperations']>['contact'],
@@ -348,6 +384,51 @@ describe.each(['DECLINE', 'UNREACHABLE'] as const)(
 );
 
 describe('live canonical reducer', () => {
+  it('records a delayed A-Day only through the sequenced canonical reducer', () => {
+    const first = reduceLiveBidCommand(
+      delayedADayState(),
+      policy,
+      command('live.record_a_day', { memberId: 1, aDay: 'G1' }),
+      100,
+      'synthetic-delayed-a-day',
+      false,
+      aDayMembers,
+    );
+    if (!first.ok) throw new Error(first.code);
+    expect(first).toMatchObject({
+      ok: true,
+      state: { currentPhase: 'a_day_bid', currentBidderId: 2, lastSeq: 1 },
+      payload: { operation: 'record_a_day', memberId: 1, aDay: 'G1', nextMemberId: 2 },
+    });
+    expect(first.state.aDay?.picks).toEqual([
+      expect.objectContaining({ memberId: 1, aDay: 'G1', forced: false }),
+    ]);
+    const staleMember = reduceLiveBidCommand(
+      first.state,
+      policy,
+      command('live.record_a_day', { expectedSeq: 1, memberId: 1, aDay: 'G2' }),
+      101,
+      'synthetic-delayed-a-day-stale-member',
+      false,
+      aDayMembers,
+    );
+    expect(staleMember).toEqual({ ok: false, code: 'NOT_YOUR_TURN' });
+    const final = reduceLiveBidCommand(
+      first.state,
+      policy,
+      command('live.record_a_day', { expectedSeq: 1, memberId: 2, aDay: 'G2' }),
+      102,
+      'synthetic-delayed-a-day-final',
+      false,
+      aDayMembers,
+    );
+    expect(final).toMatchObject({
+      ok: true,
+      state: { currentPhase: 'complete', currentBidderId: null, lastSeq: 2 },
+      payload: { completed: true },
+    });
+  });
+
   it.each(['selection', 'disposition'] as const)(
     'skips an ahead-of-turn forced award when the ordinary bidder advances by %s',
     (advanceBy) => {

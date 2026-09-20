@@ -20,7 +20,7 @@ export interface AnnualOperationsPolicy {
     readonly durationSeconds: number | null;
   };
   readonly aDay: {
-    readonly combatGroups: readonly ['G1', 'G2', 'G3', 'G4'];
+    readonly combatGroups: readonly ('G1' | 'G2' | 'G3' | 'G4')[];
     readonly min: number;
     readonly max: number;
     readonly captainDcMax: number;

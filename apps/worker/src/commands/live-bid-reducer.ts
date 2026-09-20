@@ -1,4 +1,6 @@
+import type { Member } from '@mbfd/eligibility';
 import type { FrozenLiveBidPolicy, LiveBidAction, LiveBidCommand } from '@mbfd/shared';
+import { handleSubmitADayPick } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, Fill, LiveBidProgress } from '../durable/bid-session-state.js';
 import {
   checkpointAnnualOperations,
@@ -30,6 +32,8 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
       return command.disposition === 'UNREACHABLE' ? 'mark_unreachable' : 'skip_defer';
     case 'live.force_selection':
       return 'force';
+    case 'live.record_a_day':
+      return 'record_selection';
     case 'live.record_fallback_response':
       return command.outcome === 'UNREACHABLE' ? 'mark_unreachable' : 'skip_defer';
     case 'live.pause':
@@ -96,6 +100,8 @@ export function reduceLiveBidCommand(
   bidId: string,
   /** Supplied only by the canonical boundary after frozen fallback evaluation. */
   fallbackAuthorized = false,
+  /** Loaded only by the canonical boundary from the immutable session snapshot. */
+  aDayMembers?: readonly Member[],
 ): LiveReduction {
   const permitted = policy.actionPermissions.some(
     (grant) =>
@@ -140,6 +146,33 @@ export function reduceLiveBidCommand(
       },
       eventType: 'live_command_applied',
       payload: { operation: 'resume', stageId: currentStageId },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.record_a_day') {
+    if (aDayMembers === undefined) return { ok: false, code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE' };
+    const picked = handleSubmitADayPick(
+      state,
+      {
+        senderMemberId: command.memberId,
+        aDay: command.aDay,
+        idempotencyKey: command.commandId,
+        members: aDayMembers,
+      },
+      now,
+    );
+    if (picked.kind === 'rejected') return { ok: false, code: picked.code };
+    return {
+      ok: true,
+      state: picked.newState,
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'record_a_day',
+        memberId: command.memberId,
+        aDay: command.aDay,
+        nextMemberId: picked.nextMemberId,
+        completed: picked.nextMemberId === null,
+      },
       supersedesBidId: null,
     };
   }

@@ -11,7 +11,7 @@ export function requiresCanonicalAnnualExecution(snapshot: BidSessionPolicySnaps
     operations?.fallbackPolicies !== undefined ||
     operations?.assignmentTerms !== undefined ||
     operations?.membershipDistributions !== undefined ||
-    operations?.aDay.execution?.timing === 'SIMULTANEOUS' ||
+    operations?.aDay.execution !== undefined ||
     snapshot.members.some((member) => member.termParticipation !== undefined)
   );
 }
