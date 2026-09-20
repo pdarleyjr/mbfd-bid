@@ -185,7 +185,7 @@ function reviewActionLabel(action: ReviewDecision): string {
 function reviewStateCopy(state: string): string {
   switch (state) {
     case 'CURRENT_RECORD_NEWER_THAN_SOURCE_OBSERVATION':
-      return 'Newer protected canonical record';
+      return 'Newer protected staffing record';
     case 'NEW_TOPOLOGY_REVIEW_REQUIRED':
       return 'New topology review required';
     case 'AMBIGUOUS_MAPPING_REVIEW_REQUIRED':
@@ -217,11 +217,12 @@ function sourceObservationTimeCopy(
   basis: SourceObservationTimeBasis | undefined,
 ): string {
   if (sourceObservedAt === null || sourceObservedAt === undefined || basis === 'date_only') {
-    return 'Date-only source evidence; no exact time was fabricated.';
+    return 'Report date only; exact time not provided.';
   }
   const timestamp = new Date(sourceObservedAt);
   if (!Number.isFinite(timestamp.getTime())) return 'Exact source time is unavailable.';
-  const label = basis === 'source_metadata' ? 'Source metadata' : 'Administrator confirmed';
+  const label =
+    basis === 'source_metadata' ? 'Time supplied in report' : 'Time confirmed by administrator';
   return `${label}: ${timestamp.toISOString()}`;
 }
 
@@ -230,9 +231,9 @@ function sourceKindLabel(sourceKind: ImportSummary['sourceKind'] | Preview['sour
     case 'official':
       return 'Official source';
     case 'synthetic_test':
-      return 'Synthetic test source — cannot affect canonical staffing';
+      return 'Test report — cannot change Department staffing';
     case 'legacy_unclassified':
-      return 'Legacy unclassified source — cannot affect canonical staffing';
+      return 'Older report with unconfirmed source — cannot change Department staffing';
   }
 }
 
@@ -386,8 +387,9 @@ export function UnknownEmployeeOnboardingPanel(props: {
     >
       <h3 className="font-semibold text-foreground">Unknown employee onboarding</h3>
       <p className="mt-2 text-sm text-foreground">
-        Source identity is held in reviewed browser memory only. Confirm canonical personnel data;
-        rank, category, and seniority are never inferred from TeleStaff.
+        Names and employee IDs from this upload stay on this page until you review them; they are
+        not saved in the import history. Confirm personnel details before adding anyone. Rank,
+        category, and seniority are not inferred from TeleStaff.
       </p>
       <div className="mt-4 space-y-4">
         {props.employees.map((employee) => {
@@ -734,8 +736,8 @@ export function TeleStaffOperatorWorkspace() {
       setPreview(null);
       setNotice(
         response.status === 202
-          ? 'The sanitized import was retained for review; it cannot affect canonical staffing.'
-          : 'The sanitized import is staged for reconciliation review.',
+          ? 'The import was saved for review; it cannot change Department staffing.'
+          : 'The import is ready for review.',
       );
     } catch {
       setError('stage_unavailable');
@@ -768,7 +770,7 @@ export function TeleStaffOperatorWorkspace() {
         return;
       }
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
-      setNotice('Controlled review resolution recorded. Canonical staffing remains unchanged.');
+      setNotice('Review decision saved. Department staffing remains unchanged.');
     } catch {
       setError('review_unavailable');
     } finally {
@@ -804,7 +806,7 @@ export function TeleStaffOperatorWorkspace() {
       }
       setRecordedApply({ importId: detail.import.id, date: canonicalEffectiveOn });
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
-      setNotice('Canonical staffing was updated only for reviewed, deterministic observations.');
+      setNotice('Department staffing was updated for reviewed assignments with confirmed matches.');
       await refreshProjections();
     } catch {
       setError('canonical_apply_unavailable');
@@ -816,8 +818,8 @@ export function TeleStaffOperatorWorkspace() {
   async function certifyDeterministicStaffing() {
     if (detail === null) return;
     const confirmed = window.confirm(
-      'Certify every deterministic staffing position in this import?\n\n' +
-        'Repeated or ambiguous source topology will remain unresolved unless the source provides a safe seat discriminator. This uses the staging portal only: no direct D1 writes and no production mutation.',
+      'Create approved Department staffing positions for the confirmed matches in this import?\n\n' +
+        'This saves the report-to-position matches and approves those rows. Unclear positions remain unresolved. Personnel assignments are applied in a separate step.',
     );
     if (!confirmed) return;
 
@@ -856,8 +858,8 @@ export function TeleStaffOperatorWorkspace() {
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice(
         result.idempotent
-          ? 'No duplicate canonical staffing was created; the prior deterministic certification was confirmed.'
-          : 'Deterministic staffing certification was recorded with the server-calculated result below.',
+          ? 'The previous position review was confirmed; no duplicate staffing positions were created.'
+          : 'Staffing positions were confirmed. The results are shown below.',
       );
     } catch {
       setError('staffing_certification_unavailable');
@@ -870,7 +872,7 @@ export function TeleStaffOperatorWorkspace() {
     if (detail === null) return;
     if (
       !window.confirm(
-        'Resolve only safe staging exceptions? Repeated topology will be deferred without a seat, incomplete evidence retained without canonical staffing, and unknown-person or ambiguous source observations rejected. No direct D1 writes or production mutation.',
+        'Save review decisions for these exceptions? Repeated positions will be deferred without assigning a seat. Incomplete records will be retained without creating positions. Rows with unknown people or unclear position matches will be rejected. Personnel assignments will not change.',
       )
     )
       return;
@@ -918,8 +920,8 @@ export function TeleStaffOperatorWorkspace() {
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
       setNotice(
         result.idempotent
-          ? 'No eligible safe exceptions remained; canonical staffing was not changed.'
-          : 'Safe terminal review resolutions were recorded; canonical staffing was not changed.',
+          ? 'No eligible exceptions remained; Department staffing was not changed.'
+          : 'Exception review decisions were saved; Department staffing was not changed.',
       );
     } catch {
       setError('safe_exception_resolution_unavailable');
@@ -932,7 +934,7 @@ export function TeleStaffOperatorWorkspace() {
     if (detail === null) return;
     if (
       !window.confirm(
-        'Accept every currently safe deterministic TeleStaff observation? Newer protected canonical assignments, unresolved topology, incomplete evidence, and unknown personnel will not be accepted.',
+        'Accept every TeleStaff row with a confirmed match? Rows affecting newer protected assignments, unclear positions, incomplete records, or unknown personnel will not be accepted.',
       )
     )
       return;
@@ -973,7 +975,7 @@ export function TeleStaffOperatorWorkspace() {
       }
       setDeterministicReview(result);
       await Promise.all([loadImport(detail.import.id, reviewOffset), loadImports()]);
-      setNotice('Safe deterministic observations now have terminal review decisions.');
+      setNotice('Review decisions were saved for rows with confirmed matches.');
     } catch {
       setError('deterministic_review_unavailable');
     } finally {
@@ -989,7 +991,7 @@ export function TeleStaffOperatorWorkspace() {
     if (!baselineConfirmationRequired) {
       setBaselineConfirmationRequired(true);
       setNotice(
-        `Review the committed official import, then confirm the ${baselineYear} staffing baseline acceptance below.`,
+        `Review the applied official import, then confirm the ${baselineYear} staffing baseline below.`,
       );
       return;
     }
@@ -1040,7 +1042,7 @@ export function TeleStaffOperatorWorkspace() {
         result.idempotent
           ? `The existing ${baselineYear} staffing baseline acceptance was confirmed.`
           : result.supersededAcceptanceId === null
-            ? `The ${baselineYear} staffing baseline was accepted with the server-calculated completeness result below.`
+            ? `The ${baselineYear} staffing baseline was accepted. Its completeness check is shown below.`
             : `The selected import is now the ${baselineYear} staffing baseline. The previous acceptance remains preserved as superseded history.`,
       );
     } catch {
@@ -1065,12 +1067,11 @@ export function TeleStaffOperatorWorkspace() {
               Manual source review
             </p>
             <h2 id="telestaff-import-heading" className="mt-1 font-heading text-xl text-foreground">
-              Sanitized TeleStaff reconciliation
+              Review TeleStaff staffing
             </h2>
             <p className="mt-2 max-w-3xl text-sm text-foreground">
-              Select the declared source kind and an explicit source snapshot date. The snapshot
-              date records when the source was observed; it is not a canonical assignment effective
-              date.
+              Choose the report type and the date it reflects. You will choose a separate effective
+              date before applying reviewed assignments to Department staffing.
             </p>
           </div>
           <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">
@@ -1079,8 +1080,8 @@ export function TeleStaffOperatorWorkspace() {
         </div>
 
         <div className="mt-4 border-l-4 border-warning/40 bg-warning-surface px-4 py-3 text-sm text-warning">
-          No raw HTML, names, or employee IDs are retained. The server stores only sanitized,
-          irreversible reconciliation evidence; it never contacts or writes back to TeleStaff.
+          The import history does not retain the original HTML, names, or employee IDs. It keeps a
+          privacy-protected review record. This page does not send changes to TeleStaff.
         </div>
 
         <form
@@ -1089,7 +1090,7 @@ export function TeleStaffOperatorWorkspace() {
           className="mt-5 grid gap-4 border-t border-border pt-5 lg:grid-cols-2"
         >
           <Label className="block">
-            <span className="text-sm text-foreground">Source kind declaration</span>
+            <span className="text-sm text-foreground">Report type</span>
             <NativeSelect
               name="source_kind"
               required
@@ -1107,17 +1108,19 @@ export function TeleStaffOperatorWorkspace() {
               className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             >
               <option value="" disabled>
-                Select the source declaration
+                Select the report type
               </option>
               <option value="official">Official TeleStaff source</option>
-              <option value="synthetic_test">Synthetic test source — never canonical</option>
+              <option value="synthetic_test">
+                Test report — cannot change Department staffing
+              </option>
             </NativeSelect>
             <span
               id="telestaff-source-kind-help"
               className="mt-1 block text-xs text-muted-foreground"
             >
-              This declaration is retained with the sanitized import provenance. Only an official
-              source can reach the separately controlled canonical-apply review.
+              The report type is saved with the import. Only an official report can be reviewed and
+              applied to Department staffing.
             </span>
           </Label>
           <Label className="block">
@@ -1134,7 +1137,7 @@ export function TeleStaffOperatorWorkspace() {
             />
           </Label>
           <Label className="block">
-            <span className="text-sm text-foreground">Source snapshot as of</span>
+            <span className="text-sm text-foreground">Report date</span>
             <Input
               type="date"
               required
@@ -1147,7 +1150,7 @@ export function TeleStaffOperatorWorkspace() {
             />
           </Label>
           <Label className="block">
-            <span className="text-sm text-foreground">Source observation time basis</span>
+            <span className="text-sm text-foreground">How was the report time determined?</span>
             <NativeSelect
               name="source_observation_time_basis"
               value={sourceObservationTimeBasis}
@@ -1159,15 +1162,13 @@ export function TeleStaffOperatorWorkspace() {
               }}
               className="mt-1 min-h-11 w-full rounded border border-border bg-card px-3 text-foreground"
             >
-              <option value="date_only">date_only — report has no exact time</option>
-              <option value="source_metadata">source_metadata — supplied by the source</option>
-              <option value="administrator_confirmed">
-                administrator_confirmed — verified by operator
-              </option>
+              <option value="date_only">No exact time in report</option>
+              <option value="source_metadata">Time supplied in report</option>
+              <option value="administrator_confirmed">Time confirmed by administrator</option>
             </NativeSelect>
           </Label>
           <Label className="block">
-            <span className="text-sm text-foreground">Exact source observation time</span>
+            <span className="text-sm text-foreground">Exact report time</span>
             <Input
               name="source_observed_at"
               type="text"
@@ -1187,8 +1188,8 @@ export function TeleStaffOperatorWorkspace() {
               id="telestaff-source-time-help"
               className="mt-1 block text-xs text-muted-foreground"
             >
-              Optional only with source_metadata or administrator_confirmed. Enter strict RFC3339
-              with a timezone; date-only evidence intentionally has no exact timestamp.
+              If an exact time is supplied or confirmed, enter it with a time zone using the format
+              shown. Otherwise, choose “No exact time in report.”
             </span>
           </Label>
           <div className="flex flex-wrap gap-3 lg:col-span-2">
@@ -1197,7 +1198,7 @@ export function TeleStaffOperatorWorkspace() {
               disabled={busy || file === null || sourceKind === '' || sourceSnapshotAsOf === ''}
               className="min-h-11 rounded bg-info px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy ? 'Previewing…' : 'Preview sanitized reconciliation'}
+              {busy ? 'Previewing…' : 'Preview staffing changes'}
             </Button>
             <Button
               type="button"
@@ -1219,19 +1220,19 @@ export function TeleStaffOperatorWorkspace() {
         {preview !== null && (
           <section
             className="mt-5 rounded-lg border border-border bg-card p-4"
-            aria-label="Sanitized preview"
+            aria-label="Import preview"
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="font-semibold text-foreground">Sanitized preview</h3>
+              <h3 className="font-semibold text-foreground">Import preview</h3>
               <span className="font-mono text-xs text-foreground">
                 {sourceKindLabel(preview.sourceKind)} · Snapshot {preview.sourceSnapshotAsOf}
               </span>
             </div>
             <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-              <PreviewMetric label="Normalized rows" value={preview.normalizedDataRowCount} />
-              <PreviewMetric label="Unique source identities" value={preview.uniqueEmployeeCount} />
+              <PreviewMetric label="Report rows" value={preview.normalizedDataRowCount} />
+              <PreviewMetric label="People in report" value={preview.uniqueEmployeeCount} />
               <PreviewMetric
-                label="Incomplete topology"
+                label="Incomplete position details"
                 value={preview.incompleteTopologyCount}
                 tone="amber"
               />
@@ -1242,8 +1243,8 @@ export function TeleStaffOperatorWorkspace() {
               />
             </dl>
             <p className="mt-3 text-xs text-muted-foreground">
-              Parser {preview.parserVersion}; source format {preview.sourceFormat}. This is
-              aggregate evidence only—review staging separately before any canonical action.
+              This preview shows totals only. Review the individual rows before applying any
+              staffing changes.
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               {sourceObservationTimeCopy(
@@ -1283,8 +1284,8 @@ export function TeleStaffOperatorWorkspace() {
               Reconciliation decisions
             </h2>
             <p className="mt-2 max-w-3xl text-sm text-foreground">
-              Decisions are constrained by the server. Ambiguous and new topology rows never choose
-              a canonical slot automatically, and an absent source row never deletes an assignment.
+              New or unclear positions require review before a seat can be assigned. An assignment
+              is not deleted just because it is missing from the report.
             </p>
           </div>
           {detail !== null && (
@@ -1298,8 +1299,7 @@ export function TeleStaffOperatorWorkspace() {
 
         {detail === null ? (
           <p className="mt-5 rounded border border-border bg-card px-4 py-3 text-sm text-foreground">
-            Stage a sanitized official export, or select a retained import below, to load its review
-            queue.
+            Upload an official report for review, or select a saved import below.
           </p>
         ) : (
           <>
@@ -1323,7 +1323,7 @@ export function TeleStaffOperatorWorkspace() {
             </dl>
             <p className="mt-3 text-xs text-muted-foreground">
               Snapshot {detail.import.sourceSnapshotAsOf ?? 'unavailable'} ·{' '}
-              {detail.pagination.totalRows} sanitized source row(s) in this import.{' '}
+              {detail.pagination.totalRows} report row(s) in this import.{' '}
               {sourceObservationTimeCopy(
                 detail.import.sourceObservedAt,
                 detail.import.sourceObservationTimeBasis,
@@ -1335,11 +1335,11 @@ export function TeleStaffOperatorWorkspace() {
               download
               className="mt-3 inline-flex min-h-10 items-center rounded border border-info/40 px-3 text-sm font-semibold text-info hover:border-info/40 hover:text-foreground"
             >
-              Download sanitized reconciliation CSV
+              Download review summary (CSV)
             </a>
             <p className="mt-2 text-xs text-muted-foreground">
-              The download contains only aggregate evidence and safe review classifications; it
-              omits raw HTML, source locators, mappings, names, employee IDs, and HMAC values.
+              The download contains totals and review outcomes. It excludes the original report,
+              names, employee IDs, and private matching details.
             </p>
 
             <aside
@@ -1348,9 +1348,9 @@ export function TeleStaffOperatorWorkspace() {
             >
               <h3 className="font-semibold text-foreground">Recommended order</h3>
               <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-foreground">
-                <li>Certify deterministic staffing positions.</li>
-                <li>Resolve safe exceptions that cannot select a canonical seat.</li>
-                <li>Accept all safe deterministic observations.</li>
+                <li>Confirm clearly identified staffing positions.</li>
+                <li>Resolve exceptions that cannot be assigned a seat.</li>
+                <li>Accept rows with confirmed matches.</li>
                 <li>Confirm zero pending rows, choose the effective date, and apply.</li>
               </ol>
               <p className="mt-2 text-xs text-success">
@@ -1384,19 +1384,18 @@ export function TeleStaffOperatorWorkspace() {
               aria-labelledby="telestaff-certification-heading"
             >
               <p className="text-xs font-semibold uppercase tracking-wider text-info">
-                Staging certification
+                Staffing position approval
               </p>
               <h3
                 id="telestaff-certification-heading"
                 className="mt-1 font-semibold text-foreground"
               >
-                Deterministic staffing positions
+                Confirm staffing positions
               </h3>
               <p className="mt-2 text-sm text-foreground">
-                The approved staging operation certifies every complete source topology that can be
-                resolved without inventing seat identity. Repeated or ambiguous observations remain
-                unresolved unless the source provides a safe seat discriminator. It uses the
-                authenticated staging API—never a direct D1 write or a production mutation.
+                Creates approved Department staffing positions and saves their confirmed report
+                matches. Unclear positions remain unresolved. Personnel assignments are applied in a
+                separate step.
               </p>
               <Button
                 data-testid="telestaff-certify-deterministic"
@@ -1407,7 +1406,7 @@ export function TeleStaffOperatorWorkspace() {
                 }
                 className="mt-3 min-h-11 rounded bg-info px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Certify deterministic staffing positions
+                Confirm clearly identified positions
               </Button>
 
               {certification !== null && (
@@ -1428,7 +1427,7 @@ export function TeleStaffOperatorWorkspace() {
                     value={certification.createdSourceMappings}
                   />
                   <PreviewMetric
-                    label="Existing/idempotent matches"
+                    label="Already confirmed matches"
                     value={certification.existingIdempotentMatches}
                   />
                   <PreviewMetric
@@ -1437,12 +1436,12 @@ export function TeleStaffOperatorWorkspace() {
                     tone="amber"
                   />
                   <PreviewMetric
-                    label="Skipped collisions"
+                    label="Conflicting matches skipped"
                     value={certification.skippedCollisions}
                   />
                   <PreviewMetric label="Failures" value={certification.failures.length} />
                   <PreviewMetric
-                    label="Replay result"
+                    label="Review result"
                     value={certification.idempotent ? 'Confirmed' : 'Created'}
                   />
                 </dl>
@@ -1452,9 +1451,9 @@ export function TeleStaffOperatorWorkspace() {
             <section className="mt-4 rounded-lg border border-warning/40 bg-warning-surface p-4">
               <h3 className="font-semibold text-foreground">Safe exception resolution</h3>
               <p className="mt-2 text-sm text-foreground">
-                Resolves only non-materializable evidence: defer repeated topology without a seat,
-                retain incomplete observations, and reject unknown-person or ambiguous source
-                observations. It cannot create canonical staffing.
+                Save review decisions: defer repeated positions without assigning a seat, retain
+                incomplete records without creating positions, and reject rows with unknown people
+                or unclear position matches. Personnel assignments will not change.
               </p>
               <Button
                 data-testid="telestaff-resolve-safe-exceptions"
@@ -1463,7 +1462,7 @@ export function TeleStaffOperatorWorkspace() {
                 disabled={busy || detail.import.reconciliation.pendingSourceRows === 0}
                 className="mt-3 min-h-11 rounded border border-warning/40 px-4 text-sm font-semibold text-warning disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Resolve safe staging exceptions
+                Resolve import exceptions
               </Button>
               {safeExceptionResolution !== null && (
                 <p className="mt-3 text-sm text-warning">
@@ -1477,7 +1476,7 @@ export function TeleStaffOperatorWorkspace() {
             </section>
 
             <section className="mt-4 rounded-lg border border-info/40 bg-info-surface p-4">
-              <h3 className="font-semibold text-foreground">Deterministic observation review</h3>
+              <h3 className="font-semibold text-foreground">Review confirmed matches</h3>
               <p className="mt-2 text-sm text-foreground">
                 Accept all currently safe mapped observations, including rows beyond the first
                 review page. Newer protected assignments and unresolved evidence are excluded.
@@ -1489,7 +1488,7 @@ export function TeleStaffOperatorWorkspace() {
                 disabled={busy || detail.import.reconciliation.pendingSourceRows === 0}
                 className="mt-3 min-h-11 rounded border border-info/40 px-4 text-sm font-semibold text-info disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Accept safe deterministic observations
+                Accept rows with confirmed matches
               </Button>
               {deterministicReview !== null && (
                 <p
@@ -1515,8 +1514,8 @@ export function TeleStaffOperatorWorkspace() {
                         {reviewStateCopy(row.reviewState)}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Identity resolved: {row.hasResolvedMember ? 'yes' : 'no'} · Approved mapping
-                        context: {row.hasStaffingPositionSourceMapping ? 'yes' : 'no'} · A/R day:{' '}
+                        Person matched: {row.hasResolvedMember ? 'yes' : 'no'} · Position match
+                        approved: {row.hasStaffingPositionSourceMapping ? 'yes' : 'no'} · A/R day:{' '}
                         {row.hasSourceARDay ? 'present' : 'missing'}
                       </p>
                     </div>
@@ -1526,8 +1525,8 @@ export function TeleStaffOperatorWorkspace() {
                   </div>
                   {row.reviewState === 'CURRENT_RECORD_NEWER_THAN_SOURCE_OBSERVATION' && (
                     <p className="mt-3 border-l-2 border-warning/40 pl-3 text-xs text-warning">
-                      A newer protected canonical record exists. This interface does not claim that
-                      record is approved; approval provenance requires dedicated audit data.
+                      A newer staffing record is protected from replacement. Check its approval
+                      history before deciding how to handle this row.
                     </p>
                   )}
                   {row.allowedReviewActions.length > 0 && row.reviewStatus === 'pending' && (
@@ -1586,19 +1585,19 @@ export function TeleStaffOperatorWorkspace() {
         aria-labelledby="telestaff-apply-heading"
       >
         <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
-          Controlled canonical action
+          Update Department staffing
         </p>
         <h2 id="telestaff-apply-heading" className="mt-1 font-heading text-xl text-foreground">
           Apply reviewed observations
         </h2>
         <p className="mt-2 max-w-3xl text-sm text-foreground">
-          A canonical effective date is always chosen explicitly and is never inferred from the
-          source snapshot. The server rechecks mappings, current assignments, terminal review state,
-          and source type immediately before mutation.
+          Choose when the reviewed assignments should take effect. The report date does not set this
+          date. Position matches, current assignments, completed reviews, and the report type are
+          checked again before any staffing changes are applied.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <Label className="block">
-            <span className="text-sm text-foreground">Canonical effective date</span>
+            <span className="text-sm text-foreground">Assignment effective date</span>
             <Input
               type="date"
               value={canonicalEffectiveOn}
@@ -1612,7 +1611,7 @@ export function TeleStaffOperatorWorkspace() {
             disabled={!readyForApply}
             className="min-h-11 rounded bg-destructive px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Apply to canonical staffing
+            Apply to Department staffing
           </Button>
         </div>
       </section>
@@ -1622,22 +1621,22 @@ export function TeleStaffOperatorWorkspace() {
         aria-labelledby="telestaff-baseline-heading"
       >
         <p className="text-xs font-semibold uppercase tracking-wider text-warning">
-          Annual baseline lifecycle
+          Annual staffing baseline
         </p>
         <h2 id="telestaff-baseline-heading" className="mt-1 font-heading text-xl text-foreground">
           {baselineYear} staffing baseline
         </h2>
         <p className="mt-2 max-w-3xl text-sm text-foreground">
-          A baseline can be accepted only from the selected committed official import. The server
-          rechecks authoritative-source completeness and records an idempotent acceptance receipt.
-          If an earlier baseline exists, the confirmation replaces it atomically while preserving
-          the complete acceptance history.
+          Choose an official import that has already been applied. Its completeness is checked
+          before it becomes the staffing baseline. Confirming a new baseline replaces the previous
+          choice while preserving its history. Repeating the same confirmation does not create a
+          duplicate record.
         </p>
         {baselineConfirmationRequired ? (
           <p className="mt-3 rounded border border-warning/40 bg-warning-surface px-3 py-2 text-sm text-warning">
-            This writes an acceptance receipt to production D1 and supersedes the previous baseline
-            for this year if one exists. The previous receipt is retained for audit history, and no
-            TeleStaff writeback or Bid session is started.
+            This saves the selected import as this year’s production staffing baseline and replaces
+            the previous choice, if any. The previous acceptance stays in the history. It does not
+            send changes to TeleStaff or start a Bid session.
           </p>
         ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -1691,10 +1690,10 @@ export function TeleStaffOperatorWorkspace() {
         aria-labelledby="telestaff-history-heading"
       >
         <h2 id="telestaff-history-heading" className="font-heading text-xl text-foreground">
-          Sanitized import history
+          Import history
         </h2>
         <p className="mt-2 text-sm text-foreground">
-          Select a retained import to inspect its metadata-only reconciliation state.
+          Select a saved import to review its status and decisions.
         </p>
         <div className="mt-4 space-y-2">
           {imports.length === 0 ? (

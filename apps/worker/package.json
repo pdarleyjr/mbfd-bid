@@ -15,6 +15,7 @@
     "deploy:production": "wrangler deploy --env production",
     "test": "vitest run --config vitest.config.ts && pnpm run test:wrangler-launchers",
     "test:wrangler-launchers": "vitest run --config vitest.wrangler.config.ts",
+    "test:runtime": "vitest run --config vitest.do-eviction.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",

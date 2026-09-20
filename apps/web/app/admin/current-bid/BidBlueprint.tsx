@@ -354,7 +354,7 @@ export function BidBlueprint({
                             type="button"
                             data-bid-visual-node
                             aria-pressed={selected?.id === node.id}
-                            aria-label={`${node.label}. ${statusLabel(node.status)}.${node.impact ? ` ${serverFactLabel(node.impact)}.` : ''} ${summaryFor(node)}`}
+                            aria-label={`${node.label}. ${statusLabel(node.status)}.${node.impact ? ` ${serverFactLabel(node.impact)}.` : ''} ${node.id === 'policy:bid' ? 'Read policy details in the inspector.' : summaryFor(node)}`}
                             className={`absolute min-h-[76px] w-44 rounded border p-2 text-left text-sm shadow-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring ${statusClass[node.status]} ${selected?.id === node.id ? 'ring-2 ring-ring' : ''}`}
                             style={{ left: point.x, top: point.y }}
                             onClick={() => setSelectedId(node.id)}

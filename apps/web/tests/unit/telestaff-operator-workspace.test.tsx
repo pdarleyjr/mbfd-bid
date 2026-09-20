@@ -226,7 +226,7 @@ describe('TeleStaffOperatorWorkspace', () => {
       '2026-09-12',
     );
     const apply = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Apply to canonical staffing',
+      (button) => button.textContent === 'Apply to Department staffing',
     );
     if (!apply) throw new Error('Canonical apply control missing');
     await click(apply);
@@ -293,7 +293,7 @@ describe('TeleStaffOperatorWorkspace', () => {
 
     expect(container.textContent).toContain('Source Person');
     expect(container.textContent).toContain('E-1234');
-    expect(container.textContent).toContain('reviewed browser memory only');
+    expect(container.textContent).toContain('not saved in the import history');
     await setValue(requiredControl(container, '[name="first_name-row-1"]'), 'Canonical');
     await setValue(requiredControl(container, '[name="last_name-row-1"]'), 'Member');
     await setValue(requiredControl(container, '[name="rank-row-1"]'), 'FF');
@@ -416,31 +416,39 @@ describe('TeleStaffOperatorWorkspace', () => {
   it('requires a deliberate source-kind declaration before an HTML preview', () => {
     const markup = renderToStaticMarkup(<TeleStaffOperatorWorkspace />);
 
-    expect(markup).toContain('Source snapshot as of');
+    expect(markup).toContain('Report date');
     expect(markup).toContain('type="date"');
     expect(markup).toContain('type="file"');
     expect(markup).toContain('accept="text/html,.html,.htm"');
-    expect(markup).toContain('Preview sanitized reconciliation');
+    expect(markup).toContain('Preview staffing changes');
     expect(markup).toContain('data-testid="telestaff-preview-form"');
-    expect(markup).toContain('Source kind declaration');
+    expect(markup).toContain('Report type');
     expect(markup).toContain('name="source_kind"');
     expect(markup).toContain('value="official"');
     expect(markup).toContain('value="synthetic_test"');
-    expect(markup).toContain('Select the source declaration');
-    expect(markup).toContain('No raw HTML, names, or employee IDs are retained');
-    expect(markup).toContain('Exact source observation time');
+    expect(markup).toContain('Select the report type');
+    expect(markup).toContain(
+      'The import history does not retain the original HTML, names, or employee IDs',
+    );
+    expect(markup).toContain('Exact report time');
     expect(markup).toContain('source_observed_at');
     expect(markup).toContain('date_only');
     expect(markup).toContain('source_metadata');
     expect(markup).toContain('administrator_confirmed');
+    expect(markup).toContain('<option value="source_metadata">Time supplied in report</option>');
+    expect(markup).toContain(
+      '<option value="administrator_confirmed">Time confirmed by administrator</option>',
+    );
+    expect(markup).toContain('Review TeleStaff staffing');
+    expect(markup).not.toContain('idempotent acceptance receipt');
   });
 
   it('keeps canonical application unavailable until a reviewed import is loaded', () => {
     const markup = renderToStaticMarkup(<TeleStaffOperatorWorkspace />);
 
-    expect(markup).toContain('Apply to canonical staffing');
+    expect(markup).toContain('Apply to Department staffing');
     expect(markup).toContain('disabled=""');
-    expect(markup).toContain('canonical effective date');
+    expect(markup).toContain('Assignment effective date');
   });
 
   it("offers the selected import's sanitized reconciliation CSV download only after it is loaded", async () => {
@@ -496,7 +504,7 @@ describe('TeleStaffOperatorWorkspace', () => {
     const exportLink = container.querySelector<HTMLAnchorElement>(
       '[data-testid="telestaff-reconciliation-export"]',
     );
-    expect(exportLink?.textContent).toContain('Download sanitized reconciliation CSV');
+    expect(exportLink?.textContent).toContain('Download review summary (CSV)');
     expect(exportLink?.getAttribute('href')).toBe(
       '/api/admin/telestaff/imports/import-safe-1/reconciliation.csv',
     );
@@ -641,14 +649,22 @@ describe('TeleStaffOperatorWorkspace', () => {
     if (!importButton) throw new Error('Retained import control did not render.');
     await click(importButton);
     const resolveButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Resolve safe staging exceptions'),
+      button.textContent?.includes('Resolve import exceptions'),
     );
     if (!resolveButton) throw new Error('Safe resolution control did not render.');
     await click(resolveButton);
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Save review decisions for these exceptions?'),
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Personnel assignments will not change.'),
+    );
+    expect(container.textContent).not.toContain('test environment');
+    expect(container.textContent).not.toContain('test-environment');
 
-    expect(container.textContent).toContain('No eligible safe exceptions remained');
+    expect(container.textContent).toContain('No eligible exceptions remained');
     expect(container.textContent).not.toContain(
-      'Safe terminal review resolutions were recorded; canonical staffing was not changed.',
+      'Exception review decisions were saved; Department staffing was not changed.',
     );
   });
 
@@ -731,11 +747,23 @@ describe('TeleStaffOperatorWorkspace', () => {
     const certifyButton = container.querySelector<HTMLButtonElement>(
       '[data-testid="telestaff-certify-deterministic"]',
     );
-    expect(certifyButton?.textContent).toContain('Certify deterministic staffing positions');
-    expect(container.textContent).toContain('every complete source topology');
+    expect(certifyButton?.textContent).toContain('Confirm clearly identified positions');
+    expect(container.textContent).toContain('Creates approved Department staffing positions');
+    expect(container.textContent).toContain('saves their confirmed report matches');
+    expect(container.textContent).toContain(
+      'Personnel assignments are applied in a separate step.',
+    );
+    expect(container.textContent).not.toContain('test environment');
+    expect(container.textContent).not.toContain('does not change production staffing');
 
     if (!certifyButton) throw new Error('Certification control did not render.');
     await click(certifyButton);
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Create approved Department staffing positions'),
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('This saves the report-to-position matches and approves those rows.'),
+    );
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/admin/telestaff/imports/import-certify-1/certify-deterministic-staffing',
@@ -918,7 +946,7 @@ describe('TeleStaffOperatorWorkspace', () => {
     await click(baselineButton);
     expect(baselineButton.textContent).toContain('Confirm 2026 staffing baseline');
     expect(container.textContent).toContain(
-      'This writes an acceptance receipt to production D1 and supersedes the previous baseline for this year',
+      'This saves the selected import as this year’s production staffing baseline and replaces',
     );
     expect(
       fetchMock.mock.calls.find(([input]) => String(input).endsWith('/baseline-acceptance')),

@@ -264,16 +264,18 @@ export async function loadDepartmentRosterProjection(
       return field === value;
     }),
   );
+  // D1 limits compound SELECT terms. VALUES keeps all source maxima in one
+  // read snapshot without a UNION chain; MAX still ignores empty sources.
   const sourceUpdate = await db
-    .prepare(`SELECT MAX(changed_at) AS updatedAt FROM (
-    SELECT MAX(updated_at) AS changed_at FROM staffing_positions
-    UNION ALL SELECT MAX(updated_at) FROM member_assignments
-    UNION ALL SELECT MAX(${mixedEpochMillisecondsSql('updated_at')}) FROM members
-    UNION ALL SELECT MAX(created_at) FROM personnel_lifecycle_events
-    UNION ALL SELECT MAX(created_at) FROM organization_unit_versions
-    UNION ALL SELECT MAX(created_at) FROM organization_staffing_links
-    UNION ALL SELECT MAX(created_at) FROM temporary_operational_overlays
-  )`)
+    .prepare(`WITH source_updates(changed_at) AS (VALUES
+    ((SELECT MAX(updated_at) FROM staffing_positions)),
+    ((SELECT MAX(updated_at) FROM member_assignments)),
+    ((SELECT MAX(${mixedEpochMillisecondsSql('updated_at')}) FROM members)),
+    ((SELECT MAX(created_at) FROM personnel_lifecycle_events)),
+    ((SELECT MAX(created_at) FROM organization_unit_versions)),
+    ((SELECT MAX(created_at) FROM organization_staffing_links)),
+    ((SELECT MAX(created_at) FROM temporary_operational_overlays))
+  ) SELECT MAX(changed_at) AS updatedAt FROM source_updates`)
     .first<{ updatedAt: number | null }>();
   const updatedAt = sourceUpdate?.updatedAt ?? null;
 
