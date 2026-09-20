@@ -46,6 +46,7 @@ function fixture(
     max?: number;
     officers?: number | null;
     constraints?: Execution['constraints'];
+    timing?: Execution['timing'];
     legacy?: boolean;
   } = {},
 ) {
@@ -97,7 +98,7 @@ function fixture(
           ? {}
           : {
               execution: {
-                timing: 'SIMULTANEOUS',
+                timing: options.timing ?? 'SIMULTANEOUS',
                 officersPerGroup: options.officers ?? null,
                 sourceRef: 'synthetic:aday-policy',
                 constraints: options.constraints ?? [],
@@ -186,6 +187,15 @@ function evaluate(
 }
 
 describe('frozen simultaneous A-Day allocation', () => {
+  it.each(['AFTER_POSITION_SELECTION', 'SEPARATE_STAGE', 'ADMIN_ASSIGNED'] as const)(
+    'fails closed until the %s workflow is implemented',
+    (timing) => {
+      expect(evaluate(fixture([entry(1)], { timing }))).toEqual({
+        ok: false,
+        code: 'A_DAY_TIMING_WORKFLOW_UNAVAILABLE',
+      });
+    },
+  );
   it.each([false, true])(
     'requires an A-Day and enforces group capacity even forced=%s',
     (forced) => {
