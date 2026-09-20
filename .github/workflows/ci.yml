@@ -79,6 +79,8 @@ jobs:
       - name: Verify production release workflow guard
         run: node scripts/test-deploy-production-migration-guard.mjs
       - run: pnpm test
+      - name: Verify Workers D1 and Durable Object runtime
+        run: pnpm --filter @mbfd/worker test:runtime
 
   e2e:
     name: Playwright E2E

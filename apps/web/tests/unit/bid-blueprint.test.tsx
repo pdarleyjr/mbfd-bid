@@ -77,11 +77,11 @@ function control(label: string) {
   );
 }
 
-async function render() {
+async function render(renderedContent: BidDefinitionContent = content) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  await act(async () => root?.render(<BidBlueprint content={content} />));
+  await act(async () => root?.render(<BidBlueprint content={renderedContent} />));
 }
 
 async function click(element: HTMLElement) {
@@ -97,6 +97,42 @@ async function keydown(element: HTMLElement, key: string) {
 }
 
 describe('Bid Blueprint', () => {
+  it('keeps the policy control name concise while preserving the full policy in the inspector', async () => {
+    const fullPolicy = 'Synthetic policy clause with operational details. '.repeat(300);
+    await render({
+      ...content,
+      policy: {
+        policyText: fullPolicy,
+        executionPolicy: {
+          v: 1,
+          policyRevision: 'synthetic-accessibility-policy',
+          stages: [],
+          dispositions: [],
+          actionPermissions: [],
+          specialtyCatalogReference: 'Synthetic reference',
+          aDayPolicyReference: null,
+          transitionPolicyReference: null,
+          publicationPolicyReference: null,
+        },
+      },
+    });
+    await click(control('Policy'));
+    const policyControl = required(
+      [...container.querySelectorAll<HTMLButtonElement>('button[data-bid-visual-node]')].find(
+        (button) => button.getAttribute('aria-label')?.startsWith('Policy & language.'),
+      ),
+    );
+    expect(policyControl.getAttribute('aria-label')).toContain(
+      'Read policy details in the inspector.',
+    );
+    expect(policyControl.getAttribute('aria-label')?.length).toBeLessThan(160);
+    expect(policyControl.getAttribute('aria-label')).not.toContain('Synthetic policy clause');
+    await click(policyControl);
+    expect(
+      required(container.querySelector('section[aria-label="Blueprint inspector"]')).textContent,
+    ).toContain(fullPolicy);
+  });
+
   it('distinguishes authored structure from server facts and exposes keyboard-operable tab panels', async () => {
     await render();
 
