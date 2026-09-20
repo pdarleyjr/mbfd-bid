@@ -65,10 +65,8 @@ export function AdminLayoutShell({
       if (mobileNavOpen) {
         navigationAccepted.current = true;
         setMobileNavOpen(false);
-      }
-      if (navigationAccepted.current) {
-        // Closing the sheet schedules another effect. Do not cancel this one-shot
-        // handoff during that state change; it belongs to the accepted new route.
+        // Only this open sheet owns the handoff. Later workspace query changes
+        // must preserve focus; finalFocus still needs the accepted-close marker.
         requestAnimationFrame(() => {
           mainContent.current?.focus();
         });

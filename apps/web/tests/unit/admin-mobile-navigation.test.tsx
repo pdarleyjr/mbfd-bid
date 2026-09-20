@@ -66,6 +66,9 @@ function renderShell(dirty = false): HTMLElement {
     root.render(
       <AdminLayoutShell>
         <h1>Admin content</h1>
+        <button type="button" data-testid="workspace-action">
+          Edit Bid
+        </button>
         {dirty && <DraftGuard />}
       </AdminLayoutShell>,
     );
@@ -105,13 +108,44 @@ async function commitRoute(pathname: string, search = '') {
     roots[0]?.render(
       <AdminLayoutShell>
         <h1>Committed destination</h1>
+        <button type="button" data-testid="workspace-action">
+          Edit Bid
+        </button>
       </AdminLayoutShell>,
     );
     await new Promise((resolve) => setTimeout(resolve, 50));
   });
+  // Flush the committed route's focus frame before starting the next interaction.
+  await act(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
 }
 
 describe('AdminLayoutShell mobile navigation', () => {
+  it.each(['route', 'same URL'])(
+    'does not steal workspace focus on later query changes after a %s close',
+    async (closeType) => {
+      const container = renderShell();
+      await openNavigation(container);
+      if (closeType === 'route') {
+        await click(mobileLink('/admin/current-rosters'));
+        await commitRoute('/admin/current-rosters');
+      } else {
+        await click(mobileLink('/admin/personnel'));
+      }
+      expect(document.querySelector('#admin-mobile-navigation')).toBeNull();
+      expect(document.activeElement).toBe(container.querySelector('main'));
+      const action = container.querySelector<HTMLButtonElement>('[data-testid="workspace-action"]');
+      if (!action) throw new Error('Workspace action missing');
+      action.focus();
+      await commitRoute(route.pathname, 'view=edit');
+      expect(action.isConnected).toBe(true);
+      expect(document.activeElement).toBe(action);
+      await commitRoute(route.pathname, 'view=history');
+      expect(document.activeElement).toBe(action);
+    },
+  );
+
   it.each([
     ['/admin/current-rosters', '/admin/current-rosters', ''],
     ['/admin/personnel?view=history', '/admin/personnel', 'view=history'],
