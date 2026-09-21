@@ -499,8 +499,10 @@ function Invoke-BoundOversizedInsertReplay {
     try {
       # `/raw` accepts the same D1 single/batch parameter contract as `/query`
       # and returns the same per-query success envelope, while avoiding object
-      # result serialization for these write-only replay calls.
-      $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/raw') -Headers $Headers -ContentType 'application/json' -Body $body -ErrorAction Stop
+      # result serialization for these write-only replay calls. Keep a readable
+      # HTTP response for non-2xx replies so only a safe error category—not the
+      # provider body, SQL, or values—can be emitted.
+      $response = Invoke-WebRequest -Method Post -Uri ($ApiUri -replace '/import$', '/raw') -Headers $Headers -ContentType 'application/json' -Body $body -SkipHttpErrorCheck -ErrorAction Stop
     } catch {
       $category = 'transport_failure'
       $detail = $null
@@ -520,6 +522,20 @@ function Invoke-BoundOversizedInsertReplay {
       } catch {}
       Write-Host "[d1-restore] bound replay request failure category=$category request_bytes=$requestBytes batch_queries=$($batch.Count)"
       throw "D1 bound oversized-insert replay request failed (category=$category)."
+    }
+    $statusCode = 0
+    try { $statusCode = [int]$response.StatusCode } catch {}
+    if ($statusCode -lt 200 -or $statusCode -gt 299) {
+      $category = Get-SafeImportFailureCategory $response.Content
+      $category = if ($category -eq 'opaque') { "http_status_$statusCode" } else { "$category`_http_status_$statusCode" }
+      Write-Host "[d1-restore] bound replay request failure category=$category request_bytes=$requestBytes batch_queries=$($batch.Count)"
+      throw "D1 bound oversized-insert replay request failed (category=$category)."
+    }
+    try {
+      $response = $response.Content | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+      Write-Host "[d1-restore] bound replay response failure category=invalid_response request_bytes=$requestBytes batch_queries=$($batch.Count)"
+      throw 'D1 bound oversized-insert replay returned an invalid response.'
     }
     if ($response.success -ne $true) {
       $category = Get-SafeImportFailureCategory $response.errors
