@@ -34,6 +34,23 @@ describe('Administrator Guide content contract', () => {
     expect(filterGuideSections('CSV').map((section) => section.id)).toContain('current-rosters');
   });
 
+  it('keeps the 2026 quick start concise while preserving Mock and Live safety boundaries', () => {
+    const quickStart = GUIDE_SECTIONS.find((section) => section.id === '2026-bid-quick-start');
+
+    expect(quickStart).toMatchObject({
+      category: 'Bid',
+      route: '/admin/current-bid?year=2026',
+      routeLabel: 'Bid — 2026 readiness',
+    });
+    expect(quickStart?.steps.join(' ')).toContain('time-in-grade order');
+    expect(quickStart?.steps.join(' ')).toContain('department-service order');
+    expect(quickStart?.steps.join(' ')).toContain('A Mock is a rehearsal');
+    expect(quickStart?.important).toContain('Creating and starting a Live Bid remain separate');
+    expect(filterGuideSections('2026 quick start').map((section) => section.id)).toContain(
+      '2026-bid-quick-start',
+    );
+  });
+
   it('documents the production effect and audit history of annual TeleStaff baseline replacement', () => {
     const teleStaff = GUIDE_SECTIONS.find((section) => section.id === 'telestaff');
 

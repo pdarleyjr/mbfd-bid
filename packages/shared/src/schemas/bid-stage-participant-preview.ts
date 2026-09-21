@@ -19,6 +19,16 @@ const PreviewMemberSchema = z
   })
   .strict();
 
+/**
+ * A captured name is returned only for a member explicitly named by a saved
+ * filter exception. It lets the administrator review an inclusion or
+ * exclusion without having to translate an internal member id. The server
+ * still resolves membership from its one captured Department evaluation.
+ */
+const PreviewExceptionMemberSchema = z
+  .object({ memberId: MemberIdSchema, displayName: z.string().nullable() })
+  .strict();
+
 const DefinitionIdentitySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('LEGACY_SOURCE'), sourceToken: DigestSchema }).strict(),
   z
@@ -81,6 +91,7 @@ const StageSchema = z
     /** This sequence is presentation-only and can never be used as Bid order. */
     displayOrder: z.literal('MEMBER_ID_ASC'),
     matchedMembers: z.array(PreviewMemberSchema).min(1),
+    exceptionMembers: z.array(PreviewExceptionMemberSchema).max(20_000).optional(),
   })
   .strict()
   .superRefine((stage, context) => {
@@ -99,6 +110,17 @@ const StageSchema = z
         code: z.ZodIssueCode.custom,
         path: ['matchedMemberIds', index],
         message: 'MEMBER_ID_ASC display order requires strictly increasing member ids',
+      });
+    }
+    const exceptionIds = stage.exceptionMembers?.map((member) => member.memberId) ?? [];
+    for (let index = 1; index < exceptionIds.length; index += 1) {
+      const prior = exceptionIds[index - 1];
+      const current = exceptionIds[index];
+      if (prior === undefined || current === undefined || prior < current) continue;
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['exceptionMembers', index],
+        message: 'named filter exceptions must have strictly increasing member ids',
       });
     }
   });

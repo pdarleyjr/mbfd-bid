@@ -145,18 +145,29 @@ function previewStages(input: {
       rscSeniority: number;
       rankSeniority: number | null;
     }>;
+    exceptionMembers?: Array<{ memberId: number; displayName: string | null }>;
   }>;
   for (const membership of input.membership.stages) {
     const stage = stageById.get(membership.stageId);
     if (stage === undefined)
       return { ok: false as const, error: 'stage_authoring_compilation_invalid' as const };
+    const participantSource = membership.definition.participantSource;
+    const exceptionMemberIds =
+      participantSource.type === 'FILTER'
+        ? [
+            ...new Set([
+              ...(participantSource.includeMemberIds ?? []),
+              ...(participantSource.excludeMemberIds ?? []),
+            ]),
+          ].sort((left, right) => left - right)
+        : [];
     stages.push({
       stageId: stage.id,
       label: stage.label,
       order: stage.order,
       source: {
         sourceRef: membership.definition.sourceRef,
-        participantSource: membership.definition.participantSource,
+        participantSource,
         ordering: membership.definition.ordering,
       },
       matchedMemberIds: [...membership.matchedMemberIds],
@@ -168,6 +179,14 @@ function previewStages(input: {
         rscSeniority: member.rscSeniority,
         rankSeniority: member.rankSeniority,
       })),
+      ...(exceptionMemberIds.length
+        ? {
+            exceptionMembers: exceptionMemberIds.map((memberId) => ({
+              memberId,
+              displayName: input.displayNames.get(memberId) ?? null,
+            })),
+          }
+        : {}),
     });
   }
   return {
