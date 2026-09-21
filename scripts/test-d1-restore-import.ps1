@@ -50,8 +50,12 @@ foreach ($scenario in @('success', 'init-fails')) {
   $caught = $null
   $captured = [System.Collections.Generic.List[string]]::new()
   try {
+    if ($scenario -eq 'init-fails') {
+      $env:TEMP = $null
+    }
     & (Join-Path $PSScriptRoot 'd1-restore.ps1') -Env rehearsal -DbName synthetic-db -BucketName synthetic-bucket -SnapshotKey synthetic.sql -PollAttempts 1 -PollIntervalSeconds 0 *>&1 | ForEach-Object { $captured.Add("$_") }
   } catch { $caught = $_ }
+  $env:TEMP = $testRoot
   $outputText = ($captured -join "`n") + ($caught | Out-String)
   $shouldPass = $scenario -eq 'success'
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome."
