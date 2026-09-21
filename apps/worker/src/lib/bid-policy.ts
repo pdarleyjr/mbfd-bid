@@ -611,6 +611,10 @@ function validateAnnualPolicyReferences(
       )
     )
       errors.push('a_day_timing_exception_position_reference_invalid');
+    // Profile-only timing scopes are authoring conveniences.  Saved execution
+    // policy must already contain the server-materialized, immutable positions.
+    if (aDayTimingExceptions.some((exception) => exception.positionIds.length === 0))
+      errors.push('a_day_timing_exception_scope_unmaterialized');
     if (
       snapshot !== null &&
       aDayConstraints.some((rule) => rule.memberIds.some((id) => !participantIds.has(id)))

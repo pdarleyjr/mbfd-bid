@@ -254,6 +254,53 @@ describe('Bid definition policy normalization and validation', () => {
     expect(canonical.ok, JSON.stringify(canonical)).toBe(true);
   });
 
+  it('rejects a profile-only timing scope at the immutable execution boundary', () => {
+    const candidate = definition();
+    candidate.authoring = {
+      profiles: [
+        {
+          id: 'synthetic-a-day-profile',
+          name: 'Synthetic all-biddable A-Day profile',
+          sourceRef: 'Synthetic A-Day profile authority',
+          scope: { kind: 'department' },
+          requirements: { credentials: [], custom: [] },
+        },
+      ],
+      compiled: [],
+      reconciliation: 'RULES_CHANGED_AFTER_COMPILATION',
+    };
+    changeBothPolicies(candidate, (policy) => {
+      if (!policy.annualOperations) throw new Error('Synthetic annual operations required');
+      policy.annualOperations.aDay.execution = {
+        timing: 'SIMULTANEOUS',
+        sourceRef: 'Synthetic A-Day timing authority',
+        officersPerGroup: null,
+        constraints: [],
+        timingExceptions: [
+          {
+            id: 'unmaterialized-timing-scope',
+            label: 'Synthetic unmaterialized scope',
+            timing: 'AFTER_POSITION_SELECTION',
+            sourceRef: 'Synthetic Timeline authority',
+            positionIds: [],
+            profileIds: ['synthetic-a-day-profile'],
+          },
+        ],
+      };
+    });
+
+    expect(FrozenLiveBidPolicySchema.safeParse(candidate.policy?.executionPolicy).success).toBe(
+      true,
+    );
+    const result = canonicalBidDefinition(candidate);
+    expect(result).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: 'a_day_timing_exception_scope_unmaterialized' }),
+      ]),
+    });
+  });
+
   it('rejects overlapping A-Day profile scopes before save instead of assigning timing by browser order', () => {
     const candidate = definition();
     candidate.authoring = {
