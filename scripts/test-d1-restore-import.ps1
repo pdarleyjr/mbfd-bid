@@ -83,7 +83,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
-    Assert-True ($outputText -match '\[d1-restore\] sanitized statements=\d+ max_chars=\d+ over_cap=\d+') 'The restore output omitted content-free statement-size metrics.'
+    Assert-True ($outputText -match '\[d1-restore\] sanitized statements=\d+ max_chars=\d+ over_cap=\d+ inserts=\d+ creates=\d+ other=\d+') 'The restore output omitted content-free statement-size metrics.'
     Assert-True ($state.RestoreText.StartsWith("PRAGMA foreign_keys = OFF;`nPRAGMA defer_foreign_keys = TRUE;")) 'The restore file did not scope foreign-key suspension to the import.'
     Assert-True ($state.RestoreText.EndsWith("PRAGMA foreign_keys = ON;`n")) 'The restore file did not re-enable foreign-key enforcement.'
     Assert-True ($state.RestoreText -notmatch '(?m)^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') 'The restore file retained outer transaction wrappers.'
