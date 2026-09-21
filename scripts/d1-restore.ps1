@@ -54,7 +54,14 @@ if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNull
   throw 'D1 restore requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the execution environment.'
 }
 
-$tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "d1-restore-$(Get-Random)")
+$tempRoot = [System.Environment]::GetEnvironmentVariable('TEMP', 'Process')
+if ([string]::IsNullOrWhiteSpace($tempRoot)) {
+  $tempRoot = [System.IO.Path]::GetTempPath()
+}
+if ([string]::IsNullOrWhiteSpace($tempRoot)) {
+  throw 'No temporary directory is available for the D1 restore snapshot.'
+}
+$tmp = New-Item -ItemType Directory -Force -Path (Join-Path $tempRoot "d1-restore-$(Get-Random)")
 try {
   $file = Join-Path $tmp 'snapshot.sql'
   $restoreFile = Join-Path $tmp 'restore.sql'
