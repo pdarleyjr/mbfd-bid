@@ -15,7 +15,7 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'init-fails')) {
+foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails')) {
   $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); UploadText = $null; PollCount = 0 }
   function global:pnpm {
     $commandText = $args -join ' '
@@ -42,6 +42,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
       if ($scenario -eq 'ingest-legacy-complete') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ success = $true; error = $null } } }
       if ($scenario -eq 'ingest-missing-state') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ safe_flag = 'synthetic-private-ingest-detail' } } }
       if ($scenario -eq 'ingest-error') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'error'; error = 'synthetic-private-error: cannot start a transaction within a transaction' } } }
+      if ($scenario -eq 'ingest-structured-error') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'error'; error = [pscustomobject]@{ message = 'synthetic-private-error: unsupported SQL statement'; code = 777 } } } }
       return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ at_bookmark = '00000001-00000002-00000003-0123456789abcdef' } }
     }
     if ($action -eq 'poll') {
@@ -76,6 +77,9 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   }
   if ($scenario -eq 'ingest-error') {
     Assert-True ($outputText -match 'category=transaction_wrapper' -and $outputText -notmatch 'synthetic-private-error') 'The import-error diagnostic did not emit only a bounded category.'
+  }
+  if ($scenario -eq 'ingest-structured-error') {
+    Assert-True ($outputText -match 'category=provider_unsupported_sql_statement' -and $outputText -notmatch 'synthetic-private-error') 'The structured import-error diagnostic did not emit only a bounded category.'
   }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
