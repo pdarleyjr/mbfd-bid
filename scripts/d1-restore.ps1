@@ -62,6 +62,61 @@ function Get-SafeExecutorFailureCategory {
   return 'opaque'
 }
 
+function Get-SanitizedRestoreMetrics {
+  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][int]$Cap)
+
+  # Measure only SQL statement boundaries and character counts. The snapshot
+  # content stays private: this function never returns a statement or value.
+  $reader = [System.IO.StreamReader]::new($Path)
+  try {
+    $statementCount = 0
+    $maxStatementChars = 0
+    $overCapCount = 0
+    $statementChars = 0
+    $quote = [char]0
+    while (($codePoint = $reader.Read()) -ne -1) {
+      $character = [char]$codePoint
+      $statementChars++
+      if ($quote -ne [char]0) {
+        if ($character -eq $quote) {
+          if (($quote -eq [char]39 -or $quote -eq [char]34) -and $reader.Peek() -eq [int][char]$quote) {
+            [void]$reader.Read()
+            $statementChars++
+            continue
+          }
+          $quote = [char]0
+        }
+        continue
+      }
+      if ($character -eq [char]39 -or $character -eq [char]34 -or $character -eq [char]96) {
+        $quote = $character
+        continue
+      }
+      if ($character -eq [char]91) {
+        $quote = [char]93
+        continue
+      }
+      if ($character -ne [char]59) { continue }
+      $statementCount++
+      if ($statementChars -gt $maxStatementChars) { $maxStatementChars = $statementChars }
+      if ($statementChars -gt $Cap) { $overCapCount++ }
+      $statementChars = 0
+    }
+    if ($statementChars -gt 0) {
+      $statementCount++
+      if ($statementChars -gt $maxStatementChars) { $maxStatementChars = $statementChars }
+      if ($statementChars -gt $Cap) { $overCapCount++ }
+    }
+    return [pscustomobject]@{
+      StatementCount = $statementCount
+      MaxStatementChars = $maxStatementChars
+      OverCapCount = $overCapCount
+    }
+  } finally {
+    $reader.Dispose()
+  }
+}
+
 function Split-LargeInsertStatement {
   param([Parameter(Mandatory)][string]$Statement)
 
@@ -253,6 +308,8 @@ try {
     "PRAGMA foreign_keys = ON;`n",
     [System.Text.UTF8Encoding]::new($false)
   )
+  $metrics = Get-SanitizedRestoreMetrics -Path $restoreFile -Cap 8000
+  Write-Host "[d1-restore] sanitized statements=$($metrics.StatementCount) max_chars=$($metrics.MaxStatementChars) over_cap=$($metrics.OverCapCount)"
 
   $executeOutput = & pnpm --dir apps/worker exec wrangler d1 execute $DbName --remote --file=$restoreFile *>&1
   if ($LASTEXITCODE -ne 0) {

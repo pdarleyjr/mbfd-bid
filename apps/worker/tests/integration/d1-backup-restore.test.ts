@@ -74,6 +74,8 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).not.toContain('Invoke-RestMethod');
     expect(src).not.toContain('/d1/database/');
     expect(src).toContain('Get-SafeExecutorFailureCategory');
+    expect(src).toContain('Get-SanitizedRestoreMetrics');
+    expect(src).toContain('sanitized statements=$($metrics.StatementCount)');
     expect(src).toContain('category=$category');
     expect(src).toContain('PRAGMA foreign_keys = OFF;');
     expect(src).toContain('PRAGMA foreign_keys = ON;');
