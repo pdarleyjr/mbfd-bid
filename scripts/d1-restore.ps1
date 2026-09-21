@@ -115,9 +115,21 @@ try {
   try {
     $destination = [System.IO.StreamWriter]::new($restoreFile, $true, [System.Text.UTF8Encoding]::new($false))
     try {
+      $skippingReservedD1TableStatement = $false
       while (($line = $source.ReadLine()) -ne $null) {
         # D1's import API owns the transaction. Wrangler SQL exports wrap the
         # dump in an outer transaction, which D1 rejects during import.
+        if ($skippingReservedD1TableStatement) {
+          if ($line -match ';\s*$') { $skippingReservedD1TableStatement = $false }
+          continue
+        }
+        # _cf_KV is reserved by D1 and cannot be re-created or populated from
+        # an export. Omit only its exact CREATE/INSERT statements; all other
+        # SQL is copied byte-for-line into the private restore file.
+        if ($line -match '(?i)^\s*(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|INSERT\s+INTO)\s+(?:"_cf_KV"|\[_cf_KV\]|`_cf_KV`|_cf_KV)(?:\s|\(|;|$)') {
+          if ($line -notmatch ';\s*$') { $skippingReservedD1TableStatement = $true }
+          continue
+        }
         if ($line -match '^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') { continue }
         $destination.WriteLine($line)
       }
