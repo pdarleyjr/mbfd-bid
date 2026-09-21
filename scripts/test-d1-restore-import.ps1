@@ -95,6 +95,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   }
   if ($scenario -eq 'bound-replay-transport-failure') {
     Assert-True ($outputText -match 'D1 bound oversized-insert replay request failed \(category=transport_failure\)\.' -and $outputText -notmatch 'synthetic-bound-replay-provider-detail') 'The bound-replay transport failure did not emit a bounded category.'
+    Assert-True ($outputText -match '\[d1-restore\] bound replay request failure category=transport_failure request_bytes=\d+ batch_queries=\d+') 'The bound-replay transport failure did not record only its request size and query count.'
   }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
