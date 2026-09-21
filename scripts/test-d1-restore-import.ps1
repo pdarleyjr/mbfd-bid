@@ -41,7 +41,9 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   function global:Invoke-RestMethod {
     param([string]$Method, [string]$Uri, [hashtable]$Headers, [string]$ContentType, [string]$Body)
     $payload = $Body | ConvertFrom-Json
-    if ($null -ne $payload.batch) {
+    if ($null -ne $payload.batch -or ($null -ne $payload.sql -and $null -ne $payload.params)) {
+      $boundQueries = if ($null -ne $payload.batch) { @($payload.batch) } else { @($payload) }
+      $requestShape = if ($null -ne $payload.batch) { 'batch' } else { 'single' }
       if ($scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
       if ($scenario -eq 'bound-replay-http-400') {
         $exception = [System.Exception]::new('synthetic-bound-replay-provider-detail')
@@ -55,8 +57,8 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
         $errorRecord.ErrorDetails = [System.Management.Automation.ErrorDetails]::new('request body too large')
         throw $errorRecord
       }
-      $state.BoundPayloads.Add($payload)
-      return [pscustomobject]@{ success = $true; result = @($payload.batch | ForEach-Object { [pscustomobject]@{ success = $true } }) }
+      $state.BoundPayloads.Add([pscustomobject]@{ Shape = $requestShape; Queries = $boundQueries })
+      return [pscustomobject]@{ success = $true; result = @($boundQueries | ForEach-Object { [pscustomobject]@{ success = $true } }) }
     }
     $action = $payload.action
     if ($action -eq 'init') {
@@ -132,18 +134,20 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     $expectedBoundStatementCount = if ($scenario -eq 'bound-replay-batched') { 40 } else { 1 }
     if ($scenario -eq 'bound-replay-batched') {
       Assert-True ($state.BoundPayloads.Count -gt 1) 'The restore path did not split many bound oversized inserts into independently sized replay batches.'
+      Assert-True (@($state.BoundPayloads | Where-Object { $_.Shape -ne 'batch' }).Count -eq 0) 'The restore path did not use the D1 batch envelope for multi-statement replay.'
       Assert-True ($outputText -match '\[d1-restore\] bound oversized inserts replayed=40 params=\d+ batches=\d+') 'The restore output did not record batched oversized-insert replay metrics.'
     } else {
       Assert-True ($state.BoundPayloads.Count -eq 1) 'The restore path did not submit the expected bound oversized-insert batch.'
+      Assert-True ($state.BoundPayloads[0].Shape -eq 'single') 'The restore path did not use D1''s documented single-query envelope for a singleton replay.'
     }
-    $boundQueries = @($state.BoundPayloads | ForEach-Object { @($_.batch | Where-Object { $null -ne $_.params }) })
+    $boundQueries = @($state.BoundPayloads | ForEach-Object { @($_.Queries | Where-Object { $null -ne $_.params }) })
     Assert-True ($boundQueries.Count -eq $expectedBoundStatementCount -and @($boundQueries | Where-Object { @($_.params).Count -lt 1 -or @($_.params).Count -gt 100 }).Count -eq 0) 'The bound oversized-insert replay did not contain bounded parameter lists.'
     Assert-True (@($boundQueries | Where-Object { $_.sql.Length -ge 1000 -or @($_.params | Where-Object { [System.Text.Encoding]::UTF8.GetByteCount($_) -gt 64KB }).Count -gt 0 }).Count -eq 0) 'The oversized text literal was not split into bounded text parameters.'
     Assert-True (@($boundQueries | Where-Object { $_.sql -notmatch '\?\s*\|\|\s*\?' }).Count -eq 0) 'The bound oversized-insert replay did not concatenate split parameters inside the original statement.'
     if ($scenario -eq 'bound-replay-unicode') {
       Assert-True ((@($boundQueries[0].params) -join '') -ceq $state.ExpectedBoundValue) 'The bounded replay split a Unicode surrogate pair or changed the source text.'
     }
-    Assert-True (@($state.BoundPayloads | ForEach-Object { @($_.batch | Where-Object { $_.sql -match '(?i)^\s*PRAGMA\s+' }) }).Count -eq 0) 'The bound oversized-insert replay mixed connection-scoped pragma state with parameterized writes.'
+    Assert-True (@($state.BoundPayloads | ForEach-Object { @($_.Queries | Where-Object { $_.sql -match '(?i)^\s*PRAGMA\s+' }) }).Count -eq 0) 'The bound oversized-insert replay mixed connection-scoped pragma state with parameterized writes.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
     Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-unicode')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }

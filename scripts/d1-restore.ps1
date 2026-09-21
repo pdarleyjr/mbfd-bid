@@ -483,7 +483,14 @@ function Invoke-BoundOversizedInsertReplay {
     return @($batch)
   }
   function Get-BoundReplayBody([object[]]$ReplayStatements) {
-    return @{ batch = @(New-BoundReplayBatch $ReplayStatements) } | ConvertTo-Json -Depth 5 -Compress
+    $batch = @(New-BoundReplayBatch $ReplayStatements)
+    # D1 documents a single-query envelope as well as a batch envelope. Avoid
+    # the batch-only provider path for one atomic INSERT; both forms return the
+    # normal result array used by the validation below.
+    if ($batch.Count -eq 1) {
+      return @{ sql = $batch[0].sql; params = @($batch[0].params) } | ConvertTo-Json -Depth 5 -Compress
+    }
+    return @{ batch = $batch } | ConvertTo-Json -Depth 5 -Compress
   }
   function Invoke-BoundReplayBatch([object[]]$ReplayStatements) {
     $batch = @(New-BoundReplayBatch $ReplayStatements)
