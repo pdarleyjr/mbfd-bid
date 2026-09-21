@@ -1,0 +1,102 @@
+name: D1 recovery rehearsal
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_env:
+        description: Source backup environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - staging
+          - production
+      snapshot_key:
+        description: Exact sanitized R2 SQL snapshot key produced by D1 backup
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d1-recovery-rehearsal-${{ inputs.source_env }}
+  cancel-in-progress: false
+
+env:
+  PNPM_VERSION: 9.12.0
+  NODE_VERSION: 22.x
+
+jobs:
+  restore-and-migrate-copy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: ${{ inputs.source_env }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SOURCE_ENV: ${{ inputs.source_env }}
+      SNAPSHOT_KEY: ${{ inputs.snapshot_key }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '${{ env.NODE_VERSION }}'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Restore backup into a disposable D1 and rehearse the pending migration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bucket = if ($env:SOURCE_ENV -eq 'production') { 'mbfd-bid-prod-backups' } else { 'mbfd-bid-staging-backups' }
+          $database = "mbfd-bid-$($env:SOURCE_ENV)-rehearsal-$env:GITHUB_RUN_ID"
+          $created = $false
+
+          function Invoke-D1Rows([string]$sql) {
+            $raw = & pnpm --dir apps/worker exec wrangler d1 execute $database --remote --command $sql --json *>&1
+            if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 verification query failed.' }
+            $text = $raw | Out-String
+            $jsonStart = $text.IndexOf('[')
+            if ($jsonStart -lt 0) { throw 'Disposable D1 verification query returned no JSON.' }
+            return (($text.Substring($jsonStart) | ConvertFrom-Json -ErrorAction Stop)[0].results)
+          }
+
+          try {
+            $create = & pnpm --dir apps/worker exec wrangler d1 create $database --location enam *>&1
+            if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 creation failed.' }
+            $created = $true
+
+            ./scripts/d1-restore.ps1 -Env $env:SOURCE_ENV -DbName $database -BucketName $bucket -SnapshotKey $env:SNAPSHOT_KEY
+
+            $beforeLedger = Invoke-D1Rows 'SELECT COUNT(*) AS migration_count, MAX(name) AS latest_migration FROM d1_migrations;'
+            $beforeCounts = Invoke-D1Rows "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%') AS table_count, (SELECT COUNT(*) FROM members) AS members_count, (SELECT COUNT(*) FROM bid_years) AS bid_years_count, (SELECT COUNT(*) FROM bid_sessions) AS bid_sessions_count, (SELECT COUNT(*) FROM audit_log) AS audit_log_count, (SELECT COUNT(*) FROM annual_plan_receipts) AS annual_plan_receipts_count;"
+            $beforeQuick = Invoke-D1Rows 'PRAGMA quick_check;'
+            $beforeForeignKeys = Invoke-D1Rows 'PRAGMA foreign_key_check;'
+            if ($beforeLedger[0].migration_count -ne 67 -or $beforeLedger[0].latest_migration -ne '0067_bid_evidence_insert_seals.sql' -or $beforeQuick[0].quick_check -ne 'ok' -or $beforeForeignKeys.Count -ne 0) {
+              throw 'Restored source snapshot did not satisfy the pre-migration integrity gate.'
+            }
+
+            $apply = & pnpm --dir apps/worker exec wrangler d1 migrations apply $database --remote *>&1
+            if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 migration apply failed.' }
+
+            $afterLedger = Invoke-D1Rows 'SELECT COUNT(*) AS migration_count, MAX(name) AS latest_migration FROM d1_migrations;'
+            $afterCounts = Invoke-D1Rows "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%') AS table_count, (SELECT COUNT(*) FROM members) AS members_count, (SELECT COUNT(*) FROM bid_years) AS bid_years_count, (SELECT COUNT(*) FROM bid_sessions) AS bid_sessions_count, (SELECT COUNT(*) FROM audit_log) AS audit_log_count, (SELECT COUNT(*) FROM annual_plan_receipts) AS annual_plan_receipts_count, (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'annual_bid_structure_clone_state') AS clone_state_table_count;"
+            $afterQuick = Invoke-D1Rows 'PRAGMA quick_check;'
+            $afterForeignKeys = Invoke-D1Rows 'PRAGMA foreign_key_check;'
+            $coreCountsPreserved = ($beforeCounts[0].members_count -eq $afterCounts[0].members_count) -and ($beforeCounts[0].bid_years_count -eq $afterCounts[0].bid_years_count) -and ($beforeCounts[0].bid_sessions_count -eq $afterCounts[0].bid_sessions_count) -and ($beforeCounts[0].audit_log_count -eq $afterCounts[0].audit_log_count) -and ($beforeCounts[0].annual_plan_receipts_count -eq $afterCounts[0].annual_plan_receipts_count)
+            $tableDeltaCorrect = ($afterCounts[0].table_count -eq ($beforeCounts[0].table_count + 1)) -and ($afterCounts[0].clone_state_table_count -eq 1)
+            $postIntegrity = ($afterQuick[0].quick_check -eq 'ok') -and ($afterForeignKeys.Count -eq 0)
+            if ($afterLedger[0].migration_count -ne 68 -or $afterLedger[0].latest_migration -ne '0068_annual_bid_structure_clone_state.sql' -or -not $coreCountsPreserved -or -not $tableDeltaCorrect -or -not $postIntegrity) {
+              throw 'Disposable D1 post-migration verification failed.'
+            }
+            Write-Host "[d1-rehearsal] PASS: restored ledger 67, applied 0068, preserved aggregate core counts, and passed quick/foreign-key integrity checks."
+          } finally {
+            if ($created) {
+              $delete = & pnpm --dir apps/worker exec wrangler d1 delete $database --skip-confirmation *>&1
+              if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 cleanup failed.' }
+              Write-Host '[d1-rehearsal] disposable database removed.'
+            }
+          }
