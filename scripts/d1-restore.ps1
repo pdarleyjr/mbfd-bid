@@ -66,7 +66,16 @@ function Get-SafeImportFailureCategory {
   param([object]$ErrorValue)
   # The provider error can include SQL fragments or data values. Keep it in
   # memory only long enough to emit one deliberately bounded category.
-  $detail = [string]$ErrorValue
+  $detail = if ($ErrorValue -is [string]) { $ErrorValue } else { '' }
+  if ([string]::IsNullOrWhiteSpace($detail) -and $null -ne $ErrorValue) {
+    foreach ($propertyName in @('message', 'error', 'detail')) {
+      $property = $ErrorValue.PSObject.Properties[$propertyName]
+      if ($null -ne $property -and $property.Value -is [string]) {
+        $detail = $property.Value
+        break
+      }
+    }
+  }
   if ([string]::IsNullOrWhiteSpace($detail)) { return 'opaque' }
   if ($detail -match '(?i)statement\s+too\s+long|sqlite_toobig') { return 'statement_too_long' }
   if ($detail -match '(?i)cannot\s+start\s+a\s+transaction|within\s+a\s+transaction') { return 'transaction_wrapper' }
@@ -76,6 +85,13 @@ function Get-SafeImportFailureCategory {
   if ($detail -match '(?i)too\s+many\s+sql\s+variables') { return 'sql_variable_limit' }
   if ($detail -match '(?i)not\s+authorized|forbidden|permission\s+denied') { return 'authorization' }
   if ($detail -match '(?i)database\s+(?:is\s+)?(?:locked|busy)') { return 'transient_busy' }
+  $safeTokens = @(
+    [regex]::Matches($detail.ToLowerInvariant(), '[a-z0-9_]+') |
+      ForEach-Object { $_.Value } |
+      Where-Object { $_ -in @('authorization', 'busy', 'column', 'constraint', 'database', 'foreign', 'import', 'internal', 'invalid', 'key', 'limit', 'locked', 'malformed', 'memory', 'parse', 'permission', 'quota', 'schema', 'size', 'sql', 'statement', 'syntax', 'table', 'timeout', 'token', 'transaction', 'unicode', 'unsupported', 'utf8', 'variable') } |
+      Select-Object -Unique -First 4
+  )
+  if ($safeTokens.Count -gt 0) { return "provider_$($safeTokens -join '_')" }
   return 'opaque'
 }
 
