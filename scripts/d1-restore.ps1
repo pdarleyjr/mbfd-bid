@@ -428,28 +428,58 @@ function Invoke-BoundOversizedInsertReplay {
   )
 
   if ($Statements.Count -eq 0) { return }
-  $batch = [System.Collections.Generic.List[object]]::new()
-  $batch.Add(@{ sql = 'PRAGMA foreign_keys = OFF;' })
-  $batch.Add(@{ sql = 'PRAGMA defer_foreign_keys = TRUE;' })
+  # D1 permits a 2 MB bound value, while REST API work must complete within a
+  # bounded batch call. Keep aggregate JSON requests small and accept one
+  # larger singleton only when the one value itself requires it.
+  $maxReplayRequestBytes = 512KB
+  function New-BoundReplayBatch([object[]]$ReplayStatements) {
+    $batch = [System.Collections.Generic.List[object]]::new()
+    $batch.Add(@{ sql = 'PRAGMA foreign_keys = OFF;' })
+    $batch.Add(@{ sql = 'PRAGMA defer_foreign_keys = TRUE;' })
+    foreach ($statement in $ReplayStatements) {
+      $batch.Add(@{ sql = $statement.Sql; params = @($statement.Params) })
+    }
+    $batch.Add(@{ sql = 'PRAGMA foreign_keys = ON;' })
+    return @($batch)
+  }
+  function Get-BoundReplayBody([object[]]$ReplayStatements) {
+    return @{ batch = @(New-BoundReplayBatch $ReplayStatements) } | ConvertTo-Json -Depth 5 -Compress
+  }
+  function Invoke-BoundReplayBatch([object[]]$ReplayStatements) {
+    $batch = @(New-BoundReplayBatch $ReplayStatements)
+    $body = Get-BoundReplayBody $ReplayStatements
+    try {
+      $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/query') -Headers $Headers -ContentType 'application/json' -Body $body -ErrorAction Stop
+    } catch {
+      throw 'D1 bound oversized-insert replay request failed.'
+    }
+    if ($response.success -ne $true) {
+      $category = Get-SafeImportFailureCategory $response.errors
+      throw "D1 bound oversized-insert replay reported failure (category=$category)."
+    }
+    $results = @($response.result)
+    if ($results.Count -ne $batch.Count -or @($results | Where-Object { $_.success -ne $true }).Count -gt 0) {
+      throw 'D1 bound oversized-insert replay returned an incomplete result set.'
+    }
+  }
+
+  $pending = [System.Collections.Generic.List[object]]::new()
+  $replayBatches = [System.Collections.Generic.List[object[]]]::new()
   foreach ($statement in $Statements) {
-    $batch.Add(@{ sql = $statement.Sql; params = @($statement.Params) })
+    $candidate = @($pending.ToArray() + @($statement))
+    $candidateBody = Get-BoundReplayBody $candidate
+    if ($pending.Count -gt 0 -and (Get-Utf8ByteCount $candidateBody) -gt $maxReplayRequestBytes) {
+      $replayBatches.Add($pending.ToArray())
+      $pending = [System.Collections.Generic.List[object]]::new()
+    }
+    $pending.Add($statement)
   }
-  $batch.Add(@{ sql = 'PRAGMA foreign_keys = ON;' })
-  try {
-    $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/query') -Headers $Headers -ContentType 'application/json' -Body (@{ batch = @($batch) } | ConvertTo-Json -Depth 5 -Compress) -ErrorAction Stop
-  } catch {
-    throw 'D1 bound oversized-insert replay request failed.'
-  }
-  if ($response.success -ne $true) {
-    $category = Get-SafeImportFailureCategory $response.errors
-    throw "D1 bound oversized-insert replay reported failure (category=$category)."
-  }
-  $results = @($response.result)
-  if ($results.Count -ne $batch.Count -or @($results | Where-Object { $_.success -ne $true }).Count -gt 0) {
-    throw 'D1 bound oversized-insert replay returned an incomplete result set.'
+  if ($pending.Count -gt 0) { $replayBatches.Add($pending.ToArray()) }
+  foreach ($replayBatch in $replayBatches) {
+    Invoke-BoundReplayBatch $replayBatch
   }
   $paramCount = @($Statements | ForEach-Object { @($_.Params).Count } | Measure-Object -Sum).Sum
-  Write-Host "[d1-restore] bound oversized inserts replayed=$($Statements.Count) params=$paramCount"
+  Write-Host "[d1-restore] bound oversized inserts replayed=$($Statements.Count) params=$paramCount batches=$($replayBatches.Count)"
 }
 
 if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
