@@ -85,7 +85,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     $state.StagedReplayRequests.Add([pscustomobject]@{ Kind = $kind; Uri = $Uri; Sql = "$($payload.sql)"; Params = $params; Bytes = [System.Text.Encoding]::UTF8.GetByteCount($Body) })
     if ($kind -eq 'insert_apply' -and $scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
     if ($kind -eq 'insert_apply' -and $scenario -eq 'bound-replay-http-400') {
-      return [pscustomobject]@{ StatusCode = 400; Content = '{"errors":[{"message":"synthetic-bound-replay-provider-detail request body too large"}]}' }
+      return [pscustomobject]@{ StatusCode = 400; Content = '{"errors":[{"code":9001,"message":"synthetic-bound-replay-provider-detail"}]}' }
     }
     return [pscustomobject]@{ StatusCode = 200; Content = (@{ success = $true; result = @([pscustomobject]@{ success = $true }) } | ConvertTo-Json -Depth 5 -Compress) }
   }
@@ -118,7 +118,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True ($outputText -match '\[d1-restore\] staged replay request failure operation=insert_apply category=transport_failure request_bytes=\d+') 'The staged-replay transport failure did not record only its request size.'
   }
   if ($scenario -eq 'bound-replay-http-400') {
-    Assert-True ($outputText -match '\[d1-restore\] staged replay request failure operation=insert_apply category=[a-z0-9_]+_http_status_400 request_bytes=\d+' -and $outputText -notmatch 'synthetic-bound-replay-provider-detail') 'The HTTP failure did not classify a response body without exposing it.'
+    Assert-True ($outputText -match '\[d1-restore\] staged replay request failure operation=insert_apply category=provider_code_9001_http_status_400 request_bytes=\d+' -and $outputText -notmatch 'synthetic-bound-replay-provider-detail') 'The HTTP failure did not classify the safe provider code without exposing its response body.'
   }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {

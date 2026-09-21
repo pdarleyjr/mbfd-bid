@@ -102,6 +102,32 @@ function Get-SafeImportFailureCategory {
   return 'opaque'
 }
 
+function Get-SafeProviderErrorCode {
+  param([object]$ErrorValue)
+
+  # Do not publish a provider message: it can echo SQL text or a restored
+  # value. A bounded numeric API error code is sufficient to distinguish an
+  # otherwise opaque replay rejection in a disposable rehearsal.
+  $parsed = $ErrorValue
+  if ($ErrorValue -is [string]) {
+    try { $parsed = $ErrorValue | ConvertFrom-Json -ErrorAction Stop } catch { return $null }
+  }
+  if ($null -eq $parsed) { return $null }
+  foreach ($collectionName in @('errors', 'messages')) {
+    $collection = $parsed.PSObject.Properties[$collectionName]
+    if ($null -eq $collection) { continue }
+    foreach ($entry in @($collection.Value)) {
+      $code = $entry.PSObject.Properties['code']
+      if ($null -eq $code) { continue }
+      $numeric = 0
+      if ([int]::TryParse("$($code.Value)", [ref]$numeric) -and $numeric -ge 1000 -and $numeric -le 999999) {
+        return "provider_code_$numeric"
+      }
+    }
+  }
+  return $null
+}
+
 function Get-SanitizedRestoreMetrics {
   param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][int]$Cap)
 
@@ -519,6 +545,10 @@ function Invoke-StagedOversizedInsertReplay {
     try { $statusCode = [int]$response.StatusCode } catch {}
     if ($statusCode -lt 200 -or $statusCode -gt 299) {
       $category = Get-SafeImportFailureCategory $response.Content
+      if ($category -eq 'opaque') {
+        $providerCode = Get-SafeProviderErrorCode $response.Content
+        if ($null -ne $providerCode) { $category = $providerCode }
+      }
       $category = if ($category -eq 'opaque') { "http_status_$statusCode" } else { "$category`_http_status_$statusCode" }
       Write-Host "[d1-restore] staged replay request failure operation=$Operation category=$category request_bytes=$requestBytes"
       throw "D1 staged oversized-insert replay request failed (operation=$Operation category=$category)."
