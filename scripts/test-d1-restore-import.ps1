@@ -65,7 +65,7 @@ foreach ($scenario in @('success', 'executor-fails', 'temp-fallback')) {
     Assert-True ($state.RestoreText.IndexOf('CREATE TABLE referenced_later') -lt $state.RestoreText.IndexOf('INSERT INTO synthetic VALUES (1)')) 'The restore file did not emit all table declarations before data INSERTs.'
     $syntheticInserts = [regex]::Matches($state.RestoreText, '(?ms)^\s*INSERT INTO synthetic VALUES .*?;\s*$')
     Assert-True ($syntheticInserts.Count -ge 3) 'The restore file did not split the oversized INSERT batch.'
-    Assert-True ((($syntheticInserts | ForEach-Object { $_.Value.Length } | Measure-Object -Maximum).Maximum) -le 48000) 'The restore upload emitted an INSERT batch above the safe statement-size cap.'
+    Assert-True ((($syntheticInserts | ForEach-Object { $_.Value.Length } | Measure-Object -Maximum).Maximum) -le 8000) 'The restore file emitted an INSERT batch above the safe statement-size cap.'
     Assert-True ([regex]::Matches($state.RestoreText, 'synthetic-row-payload-0123456789abcdef0123456789abcdef').Count -eq 1600) 'The restore file lost rows while splitting an oversized INSERT batch.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 execute synthetic-db --remote --file=') 'The restore path did not use the Worker runtime to download then execute the sanitized restore file.'
   }

@@ -68,7 +68,9 @@ function Split-LargeInsertStatement {
   # D1 rejects a single SQL statement that exceeds its statement-size limit.
   # Split only standard INSERT ... VALUES batches; unsupported statement forms
   # are returned unchanged rather than risking a semantic rewrite.
-  $maxChars = 48000
+  # Keep batches materially below D1's statement ceiling. The file executor
+  # may segment an import internally, so leave headroom for its SQL envelope.
+  $maxChars = 8000
   if ($Statement.Length -le $maxChars) { return @($Statement) }
   if ($Statement -notmatch '(?is)^(?<header>\s*INSERT\s+INTO\b.*?\bVALUES\s*)(?<values>\(.*\))\s*;\s*$') {
     return @($Statement)
