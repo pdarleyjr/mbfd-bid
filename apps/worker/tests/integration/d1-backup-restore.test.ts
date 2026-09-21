@@ -73,6 +73,8 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).not.toContain('& pnpm exec wrangler');
     expect(src).toContain('/d1/database/$databaseId/import');
     expect(src).toContain("-replace '/import$', '/raw'");
+    expect(src).toContain('Invoke-WebRequest -Method Post');
+    expect(src).toContain('-SkipHttpErrorCheck');
     expect(src).toContain("action = 'init'");
     expect(src).toContain("action = 'ingest'");
     expect(src).toContain("action = 'poll'");

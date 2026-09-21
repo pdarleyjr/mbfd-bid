@@ -16,7 +16,7 @@ $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
 foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-unicode', 'bound-replay-transport-failure', 'bound-replay-http-400')) {
-  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new(); BoundReplayUris = [System.Collections.Generic.List[string]]::new(); ExpectedBoundValue = $null }
+  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new(); BoundReplayUris = [System.Collections.Generic.List[string]]::new(); BoundReplayMethod = $null; ExpectedBoundValue = $null }
   function global:pnpm {
     $commandText = $args -join ' '
     $state.Calls.Add($commandText)
@@ -42,24 +42,8 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     param([string]$Method, [string]$Uri, [hashtable]$Headers, [string]$ContentType, [string]$Body)
     $payload = $Body | ConvertFrom-Json
     if ($null -ne $payload.batch -or ($null -ne $payload.sql -and $null -ne $payload.params)) {
-      $state.BoundReplayUris.Add($Uri)
-      $boundQueries = if ($null -ne $payload.batch) { @($payload.batch) } else { @($payload) }
-      $requestShape = if ($null -ne $payload.batch) { 'batch' } else { 'single' }
-      if ($scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
-      if ($scenario -eq 'bound-replay-http-400') {
-        $exception = [System.Exception]::new('synthetic-bound-replay-provider-detail')
-        $exception | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = 400 })
-        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-          $exception,
-          'SyntheticBoundReplayHttp400',
-          [System.Management.Automation.ErrorCategory]::InvalidData,
-          $null
-        )
-        $errorRecord.ErrorDetails = [System.Management.Automation.ErrorDetails]::new('request body too large')
-        throw $errorRecord
-      }
-      $state.BoundPayloads.Add([pscustomobject]@{ Shape = $requestShape; Queries = $boundQueries })
-      return [pscustomobject]@{ success = $true; result = @($boundQueries | ForEach-Object { [pscustomobject]@{ success = $true } }) }
+      $state.BoundReplayMethod = 'rest'
+      throw 'Bound replay must use a status-readable HTTP response.'
     }
     $action = $payload.action
     if ($action -eq 'init') {
@@ -82,9 +66,25 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     throw "Unexpected REST action: $action"
   }
   function global:Invoke-WebRequest {
-    param([string]$Method, [string]$Uri, [string]$InFile)
-    $state.RestoreText = [System.IO.File]::ReadAllText($InFile)
-    return [pscustomobject]@{ StatusCode = 200 }
+    param([string]$Method, [string]$Uri, [hashtable]$Headers, [string]$ContentType, [string]$Body, [string]$InFile, [switch]$SkipHttpErrorCheck)
+    if (-not [string]::IsNullOrWhiteSpace($InFile)) {
+      $state.RestoreText = [System.IO.File]::ReadAllText($InFile)
+      return [pscustomobject]@{ StatusCode = 200 }
+    }
+    $payload = $Body | ConvertFrom-Json
+    if ($null -eq $payload.batch -and ($null -eq $payload.sql -or $null -eq $payload.params)) {
+      throw "Unexpected WebRequest payload: $Uri"
+    }
+    $state.BoundReplayMethod = 'web'
+    $state.BoundReplayUris.Add($Uri)
+    $boundQueries = if ($null -ne $payload.batch) { @($payload.batch) } else { @($payload) }
+    $requestShape = if ($null -ne $payload.batch) { 'batch' } else { 'single' }
+    if ($scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
+    if ($scenario -eq 'bound-replay-http-400') {
+      return [pscustomobject]@{ StatusCode = 400; Content = '{"errors":[{"message":"synthetic-bound-replay-provider-detail request body too large"}]}' }
+    }
+    $state.BoundPayloads.Add([pscustomobject]@{ Shape = $requestShape; Queries = $boundQueries })
+    return [pscustomobject]@{ StatusCode = 200; Content = (@{ success = $true; result = @($boundQueries | ForEach-Object { [pscustomobject]@{ success = $true } }) } | ConvertTo-Json -Depth 5 -Compress) }
   }
   function global:Start-Sleep { param([int]$Seconds) }
 
@@ -150,6 +150,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     }
     Assert-True (@($state.BoundPayloads | ForEach-Object { @($_.Queries | Where-Object { $_.sql -match '(?i)^\s*PRAGMA\s+' }) }).Count -eq 0) 'The bound oversized-insert replay mixed connection-scoped pragma state with parameterized writes.'
     Assert-True (@($state.BoundReplayUris | Where-Object { $_ -notmatch '/raw$' }).Count -eq 0) 'The bound oversized-insert replay did not use the documented D1 raw-query endpoint.'
+    Assert-True ($state.BoundReplayMethod -eq 'web') 'The bound oversized-insert replay did not use a status-readable HTTP response.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
     Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-unicode')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
