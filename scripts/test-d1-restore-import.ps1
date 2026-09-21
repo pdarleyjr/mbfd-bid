@@ -16,7 +16,7 @@ $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
 foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-unicode', 'bound-replay-transport-failure', 'bound-replay-http-400')) {
-  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new(); ExpectedBoundValue = $null }
+  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new(); BoundReplayUris = [System.Collections.Generic.List[string]]::new(); ExpectedBoundValue = $null }
   function global:pnpm {
     $commandText = $args -join ' '
     $state.Calls.Add($commandText)
@@ -42,6 +42,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     param([string]$Method, [string]$Uri, [hashtable]$Headers, [string]$ContentType, [string]$Body)
     $payload = $Body | ConvertFrom-Json
     if ($null -ne $payload.batch -or ($null -ne $payload.sql -and $null -ne $payload.params)) {
+      $state.BoundReplayUris.Add($Uri)
       $boundQueries = if ($null -ne $payload.batch) { @($payload.batch) } else { @($payload) }
       $requestShape = if ($null -ne $payload.batch) { 'batch' } else { 'single' }
       if ($scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
@@ -148,6 +149,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
       Assert-True ((@($boundQueries[0].params) -join '') -ceq $state.ExpectedBoundValue) 'The bounded replay split a Unicode surrogate pair or changed the source text.'
     }
     Assert-True (@($state.BoundPayloads | ForEach-Object { @($_.Queries | Where-Object { $_.sql -match '(?i)^\s*PRAGMA\s+' }) }).Count -eq 0) 'The bound oversized-insert replay mixed connection-scoped pragma state with parameterized writes.'
+    Assert-True (@($state.BoundReplayUris | Where-Object { $_ -notmatch '/raw$' }).Count -eq 0) 'The bound oversized-insert replay did not use the documented D1 raw-query endpoint.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
     Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-unicode')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
