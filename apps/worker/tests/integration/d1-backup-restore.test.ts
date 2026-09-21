@@ -72,6 +72,7 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(2);
     expect(src).not.toContain('& pnpm exec wrangler');
     expect(src).toContain('/d1/database/$databaseId/import');
+    expect(src).toContain("-replace '/import$', '/query'");
     expect(src).toContain("action = 'init'");
     expect(src).toContain("action = 'ingest'");
     expect(src).toContain("action = 'poll'");
@@ -79,6 +80,10 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('Get-SafePropertyNames');
     expect(src).toContain('Get-SafeImportFailureCategory');
     expect(src).toContain('Get-SanitizedRestoreMetrics');
+    expect(src).toContain('Split-RestoreImportAndBoundInserts');
+    expect(src).toContain('Convert-OversizedInsertToBoundRequest');
+    expect(src).toContain('Invoke-BoundOversizedInsertReplay');
+    expect(src).toContain('bound oversized inserts replayed=');
     expect(src).toContain('sanitized statements=$($metrics.StatementCount)');
     expect(src).toContain('inserts=$($metrics.OverCapInsertCount)');
     expect(src).toContain('category=$category');

@@ -16,7 +16,7 @@ $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
 foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback')) {
-  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0 }
+  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new() }
   function global:pnpm {
     $commandText = $args -join ' '
     $state.Calls.Add($commandText)
@@ -24,7 +24,8 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     if ($commandText -match 'r2 object get') {
       $filePath = ($args | Where-Object { $_ -like '--file=*' }).Substring(7)
       $largeRows = (1..1600 | ForEach-Object { "($_, 'synthetic-row-payload-0123456789abcdef0123456789abcdef')" }) -join ','
-      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY);`nINSERT INTO synthetic VALUES (1);`nINSERT INTO synthetic VALUES $largeRows;`nCREATE TABLE referenced_later (id INTEGER PRIMARY KEY);`nCOMMIT;`n")
+      $deferredPayload = ('synthetic-bound-private-payload-' * 4000)
+      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY, note TEXT);`nINSERT INTO synthetic VALUES (1, 'small');`nINSERT INTO synthetic VALUES $largeRows;`nINSERT INTO synthetic VALUES (900001, '$deferredPayload');`nCREATE TABLE referenced_later (id INTEGER PRIMARY KEY);`nCOMMIT;`n")
       return
     }
     if ($commandText -match 'd1 info') { return '{"uuid":"01234567-89ab-cdef-0123-456789abcdef"}' }
@@ -32,7 +33,12 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   }
   function global:Invoke-RestMethod {
     param([string]$Method, [string]$Uri, [hashtable]$Headers, [string]$ContentType, [string]$Body)
-    $action = ($Body | ConvertFrom-Json).action
+    $payload = $Body | ConvertFrom-Json
+    if ($null -ne $payload.batch) {
+      $state.BoundPayloads.Add($payload)
+      return [pscustomobject]@{ success = $true; result = @($payload.batch | ForEach-Object { [pscustomobject]@{ success = $true } }) }
+    }
+    $action = $payload.action
     if ($action -eq 'init') {
       if ($scenario -eq 'init-fails') { return [pscustomobject]@{ success = $false; result = [pscustomobject]@{} } }
       return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ upload_url = 'https://synthetic.invalid/private-upload'; filename = 'private.sql' } }
@@ -71,7 +77,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   $outputText = ($captured -join "`n") + ($caught | Out-String)
   $shouldPass = $scenario -in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback')
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome."
-  Assert-True (-not ($outputText -match 'synthetic-private-token|0123456789abcdef0123456789abcdef|synthetic\.invalid|private-upload|private\.sql')) "$scenario leaked private restore material."
+  Assert-True (-not ($outputText -match 'synthetic-private-token|0123456789abcdef0123456789abcdef|synthetic\.invalid|private-upload|private\.sql|synthetic-bound-private-payload')) "$scenario leaked private restore material."
   if ($scenario -eq 'ingest-missing-state') {
     Assert-True ($outputText -match 'result=safe_flag' -and $outputText -notmatch 'synthetic-private-ingest-detail') 'The missing-state diagnostic did not expose only safe response shape.'
   }
@@ -88,12 +94,17 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True ($state.RestoreText.EndsWith("PRAGMA foreign_keys = ON;`n")) 'The restore file did not re-enable foreign-key enforcement.'
     Assert-True ($state.RestoreText -notmatch '(?m)^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') 'The restore file retained outer transaction wrappers.'
     Assert-True ($state.RestoreText -notmatch '(?i)_cf_KV|synthetic-reserved') 'The restore file retained D1-reserved table SQL.'
+    Assert-True ($state.RestoreText -notmatch 'synthetic-bound-private-payload') 'The restore import file retained an oversized text literal instead of parameterizing it.'
     Assert-True ($state.RestoreText -match 'CREATE TABLE synthetic' -and $state.RestoreText -match 'INSERT INTO synthetic') 'The restore file lost SQL while removing transaction wrappers.'
-    Assert-True ($state.RestoreText.IndexOf('CREATE TABLE referenced_later') -lt $state.RestoreText.IndexOf('INSERT INTO synthetic VALUES (1)')) 'The restore file did not emit all table declarations before data INSERTs.'
+    Assert-True ($state.RestoreText.IndexOf('CREATE TABLE referenced_later') -lt $state.RestoreText.IndexOf('INSERT INTO synthetic VALUES (1,')) 'The restore file did not emit all table declarations before data INSERTs.'
     $syntheticInserts = [regex]::Matches($state.RestoreText, '(?ms)^\s*INSERT INTO synthetic VALUES .*?;\s*$')
     Assert-True ($syntheticInserts.Count -ge 3) 'The restore file did not split the oversized INSERT batch.'
     Assert-True ((($syntheticInserts | ForEach-Object { $_.Value.Length } | Measure-Object -Maximum).Maximum) -le 8000) 'The restore file emitted an INSERT batch above the safe statement-size cap.'
     Assert-True ([regex]::Matches($state.RestoreText, 'synthetic-row-payload-0123456789abcdef0123456789abcdef').Count -eq 1600) 'The restore file lost rows while splitting an oversized INSERT batch.'
+    Assert-True ($state.BoundPayloads.Count -eq 1) 'The restore path did not submit one bound oversized-insert batch.'
+    $boundQueries = @($state.BoundPayloads[0].batch | Where-Object { $null -ne $_.params })
+    Assert-True ($boundQueries.Count -eq 1 -and @($boundQueries[0].params).Count -eq 1) 'The bound oversized-insert batch did not contain exactly one parameterized text literal.'
+    Assert-True ($boundQueries[0].sql.Length -lt 1000 -and @($boundQueries[0].params)[0].Length -gt 100000) 'The oversized text literal was not moved out of the SQL statement.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
     Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
