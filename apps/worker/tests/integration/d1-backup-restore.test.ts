@@ -1,7 +1,7 @@
 // Plan 09 Task 6 — D1 backup/restore script regression test.
 //
 // The scripts shell out to `wrangler d1 export` / `wrangler r2 object put` /
-// the D1 SQL-file executor, so the test verifies the FORMAT of the
+// the D1 asynchronous import API, so the test verifies the FORMAT of the
 // script invocation rather than the live call (Phase A forbids touching prod).
 // We assert:
 //
@@ -10,8 +10,8 @@
 //   2. The R2 key it produces follows the `d1/<YYYY-MM-DD>/<dbname>-<HHMM>.sql`
 //      schema documented in Plan 09 § D4.
 //   3. The restore script accepts `-SnapshotKey`, resolves the target database
-//      without a hard-coded production name, and uses a sanitized SQL file
-//      with the official Wrangler executor.
+//      without a hard-coded production name, and uses the asynchronous import
+//      protocol for sanitized SQL that exceeds the file executor limit.
 //
 // Running the actual scripts would call `wrangler` against the live API. We
 // avoid that by reading the script source and validating shape.
@@ -65,15 +65,19 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toMatch(/string\]\$SnapshotKey/);
   });
 
-  it('restore script downloads from R2 and uses the sanitized Wrangler SQL-file executor', () => {
+  it('restore script downloads from R2 and uses the bounded asynchronous import protocol', () => {
     const src = readFileSync(RESTORE_SCRIPT, 'utf-8');
     expect(src).toContain('pnpm --dir apps/worker exec wrangler r2 object get');
+    expect(src).toContain('pnpm --dir apps/worker exec wrangler d1 info $DbName --json');
     expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(2);
     expect(src).not.toContain('& pnpm exec wrangler');
-    expect(src).toContain('wrangler d1 execute $DbName --remote --file=$restoreFile');
-    expect(src).not.toContain('Invoke-RestMethod');
-    expect(src).not.toContain('/d1/database/');
-    expect(src).toContain('Get-SafeExecutorFailureCategory');
+    expect(src).toContain('/d1/database/$databaseId/import');
+    expect(src).toContain("action = 'init'");
+    expect(src).toContain("action = 'ingest'");
+    expect(src).toContain("action = 'poll'");
+    expect(src).toContain("$ingest.result.status -eq 'complete'");
+    expect(src).toContain('Get-SafePropertyNames');
+    expect(src).toContain('Get-SafeImportFailureCategory');
     expect(src).toContain('Get-SanitizedRestoreMetrics');
     expect(src).toContain('sanitized statements=$($metrics.StatementCount)');
     expect(src).toContain('category=$category');

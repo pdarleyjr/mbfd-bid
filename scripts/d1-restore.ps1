@@ -5,9 +5,9 @@
 
 .DESCRIPTION
     Downloads a previously uploaded snapshot from R2 and restores it through
-    Wrangler's D1 SQL-file executor. The restore normalizes the export before
-    execution: it removes the export's outer transaction and reserved D1
-    table, emits ordinary table declarations before data, and splits oversized
+    D1's asynchronous import API. The restore normalizes the export before
+    upload: it removes the export's outer transaction and reserved D1 table,
+    emits ordinary table declarations before data, and splits oversized
     INSERT ... VALUES batches. THIS WILL APPEND ROWS — for a true overwrite,
     use a freshly created throwaway database or an explicitly authorized D1
     restore.
@@ -29,6 +29,12 @@
     Object key of the snapshot inside the bucket. Example:
     `d1/2026-05-17/mbfd-bid-staging-2026-05-17-0600.sql`.
 
+.PARAMETER PollAttempts
+    Maximum asynchronous D1-import status checks before failing closed.
+
+.PARAMETER PollIntervalSeconds
+    Delay between asynchronous D1-import status checks.
+
 .EXAMPLE
     ./scripts/d1-restore.ps1 `
       -Env restore_test `
@@ -40,17 +46,40 @@ param(
   [Parameter(Mandatory)][string]$Env,
   [Parameter(Mandatory)][string]$DbName,
   [Parameter(Mandatory)][string]$BucketName,
-  [Parameter(Mandatory)][string]$SnapshotKey
+  [Parameter(Mandatory)][string]$SnapshotKey,
+  [ValidateRange(1, 720)][int]$PollAttempts = 120,
+  [ValidateRange(0, 60)][int]$PollIntervalSeconds = 5
 )
 $ErrorActionPreference = 'Stop'
 
-function Get-SafeExecutorFailureCategory {
-  param([object[]]$Output)
+function Get-SafePropertyNames {
+  param([object]$Value)
+  if ($null -eq $Value) { return 'none' }
+  $names = @(
+    $Value.PSObject.Properties.Name |
+      ForEach-Object { if ($_ -match '^[A-Za-z0-9_]{1,64}$') { $_ } else { 'nonstandard' } } |
+      Sort-Object -Unique
+  )
+  if ($names.Count -eq 0) { return 'none' }
+  return ($names -join ',')
+}
 
-  # Wrangler can include the rejected SQL or data values in its diagnostic.
-  # Hold the output in memory only long enough to emit one fixed-vocabulary
-  # category; never write provider output to the job log.
-  $detail = $Output | Out-String
+function Get-SafeImportFailureCategory {
+  param([object]$ErrorValue)
+
+  # Provider output can include SQL fragments or data values. Hold it only in
+  # memory long enough to emit one fixed-vocabulary category.
+  $detail = if ($ErrorValue -is [string]) { $ErrorValue } else { '' }
+  if ([string]::IsNullOrWhiteSpace($detail) -and $null -ne $ErrorValue) {
+    foreach ($propertyName in @('message', 'error', 'detail')) {
+      $property = $ErrorValue.PSObject.Properties[$propertyName]
+      if ($null -ne $property -and $property.Value -is [string]) {
+        $detail = $property.Value
+        break
+      }
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace($detail)) { return 'opaque' }
   if ($detail -match '(?i)statement\s+too\s+long|sqlite_toobig') { return 'statement_too_long' }
   if ($detail -match '(?i)cannot\s+start\s+a\s+transaction|within\s+a\s+transaction') { return 'transaction_wrapper' }
   if ($detail -match '(?i)foreign\s+key') { return 'foreign_key' }
@@ -59,6 +88,13 @@ function Get-SafeExecutorFailureCategory {
   if ($detail -match '(?i)too\s+many\s+sql\s+variables') { return 'sql_variable_limit' }
   if ($detail -match '(?i)not\s+authorized|forbidden|permission\s+denied') { return 'authorization' }
   if ($detail -match '(?i)database\s+(?:is\s+)?(?:locked|busy)') { return 'transient_busy' }
+  $safeTokens = @(
+    [regex]::Matches($detail.ToLowerInvariant(), '[a-z0-9_]+') |
+      ForEach-Object { $_.Value } |
+      Where-Object { $_ -in @('authorization', 'busy', 'column', 'constraint', 'database', 'foreign', 'import', 'internal', 'invalid', 'key', 'limit', 'locked', 'malformed', 'memory', 'parse', 'permission', 'quota', 'schema', 'size', 'sql', 'statement', 'syntax', 'table', 'timeout', 'token', 'transaction', 'unicode', 'unsupported', 'utf8', 'variable') } |
+      Select-Object -Unique -First 4
+  )
+  if ($safeTokens.Count -gt 0) { return "provider_$($safeTokens -join '_')" }
   return 'opaque'
 }
 
@@ -210,6 +246,7 @@ try {
   $restoreFile = Join-Path $tmp 'restore.sql'
   $tablePreambleFile = Join-Path $tmp 'tables.sql'
   $remainingSqlFile = Join-Path $tmp 'remaining.sql'
+  $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
 
   Write-Host "[d1-restore] downloading r2://$BucketName/$SnapshotKey"
   $downloadOutput = & pnpm --dir apps/worker exec wrangler r2 object get "$BucketName/$SnapshotKey" --file=$file --remote *>&1
@@ -311,11 +348,70 @@ try {
   $metrics = Get-SanitizedRestoreMetrics -Path $restoreFile -Cap 8000
   Write-Host "[d1-restore] sanitized statements=$($metrics.StatementCount) max_chars=$($metrics.MaxStatementChars) over_cap=$($metrics.OverCapCount)"
 
-  $executeOutput = & pnpm --dir apps/worker exec wrangler d1 execute $DbName --remote --file=$restoreFile *>&1
-  if ($LASTEXITCODE -ne 0) {
-    $category = Get-SafeExecutorFailureCategory $executeOutput
-    throw "wrangler d1 execute import failed (category=$category; exit $LASTEXITCODE)."
+  $databaseInfoOutput = & pnpm --dir apps/worker exec wrangler d1 info $DbName --json *>&1
+  if ($LASTEXITCODE -ne 0) { throw 'D1 database lookup failed; import not started.' }
+  try {
+    $databaseId = (($databaseInfoOutput | Out-String) | ConvertFrom-Json -ErrorAction Stop).uuid
+  } catch {
+    throw 'D1 database lookup returned invalid JSON; import not started.'
   }
+  if ($databaseId -isnot [string] -or $databaseId -notmatch '^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$') {
+    throw 'D1 database lookup omitted a valid database identifier; import not started.'
+  }
+
+  $apiUri = "https://api.cloudflare.com/client/v4/accounts/$($env:CLOUDFLARE_ACCOUNT_ID)/d1/database/$databaseId/import"
+  $etag = (Get-FileHash -LiteralPath $restoreFile -Algorithm MD5).Hash.ToLowerInvariant()
+  try {
+    $init = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'init'; etag = $etag } | ConvertTo-Json -Compress) -ErrorAction Stop
+  } catch {
+    throw 'D1 import initialization failed.'
+  }
+  if ($init.success -ne $true -or $init.result.upload_url -isnot [string] -or [string]::IsNullOrWhiteSpace($init.result.filename)) {
+    throw 'D1 import initialization returned no usable upload target.'
+  }
+  try {
+    Invoke-WebRequest -Method Put -Uri $init.result.upload_url -InFile $restoreFile -ErrorAction Stop | Out-Null
+  } catch {
+    throw 'D1 import upload failed.'
+  }
+  try {
+    $ingest = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'ingest'; etag = $etag; filename = $init.result.filename } | ConvertTo-Json -Compress) -ErrorAction Stop
+  } catch {
+    throw 'D1 import ingest request failed.'
+  }
+  if ($ingest.success -ne $true) { throw 'D1 import ingest request failed.' }
+
+  $completed = $ingest.result.status -eq 'complete' -or $ingest.result.success -eq $true
+  if (-not $completed) {
+    if ($ingest.result.status -eq 'error' -or $ingest.result.success -eq $false) {
+      $category = Get-SafeImportFailureCategory $ingest.result.error
+      throw "D1 import reported failure (category=$category)."
+    }
+    $bookmark = $ingest.result.at_bookmark
+    if ([string]::IsNullOrWhiteSpace($bookmark)) {
+      $topShape = Get-SafePropertyNames $ingest
+      $resultShape = Get-SafePropertyNames $ingest.result
+      throw "D1 import ingest request returned neither completion nor a status bookmark (top=$topShape; result=$resultShape)."
+    }
+    for ($attempt = 1; $attempt -le $PollAttempts; $attempt++) {
+      if ($PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
+      try {
+        $poll = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'poll'; current_bookmark = $bookmark } | ConvertTo-Json -Compress) -ErrorAction Stop
+      } catch {
+        throw 'D1 import status poll failed.'
+      }
+      if ($poll.success -ne $true) { throw 'D1 import status poll reported failure.' }
+      if ($poll.result.status -eq 'error' -or $poll.result.success -eq $false) {
+        $category = Get-SafeImportFailureCategory $poll.result.error
+        throw "D1 import reported failure (category=$category)."
+      }
+      if ($poll.result.status -eq 'complete' -or $poll.result.success -eq $true) {
+        $completed = $true
+        break
+      }
+    }
+  }
+  if (-not $completed) { throw 'D1 import did not complete before the bounded polling window expired.' }
 
   Write-Host "[d1-restore] import complete into $DbName ($Env)"
 } finally {
