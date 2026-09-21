@@ -445,6 +445,7 @@ function Invoke-BoundOversizedInsertReplay {
   function Invoke-BoundReplayBatch([object[]]$ReplayStatements) {
     $batch = @(New-BoundReplayBatch $ReplayStatements)
     $body = Get-BoundReplayBody $ReplayStatements
+    $requestBytes = Get-Utf8ByteCount $body
     try {
       $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/query') -Headers $Headers -ContentType 'application/json' -Body $body -ErrorAction Stop
     } catch {
@@ -453,6 +454,7 @@ function Invoke-BoundOversizedInsertReplay {
         $statusCode = [int]$_.Exception.Response.StatusCode
         if ($statusCode -ge 100 -and $statusCode -le 599) { $category = "http_status_$statusCode" }
       } catch {}
+      Write-Host "[d1-restore] bound replay request failure category=$category request_bytes=$requestBytes batch_queries=$($batch.Count)"
       throw "D1 bound oversized-insert replay request failed (category=$category)."
     }
     if ($response.success -ne $true) {
