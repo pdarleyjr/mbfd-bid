@@ -104,13 +104,13 @@ jobs:
             $rehearsalConfigPath = Join-Path $tempRoot "mbfd-bid-rehearsal-$env:GITHUB_RUN_ID.toml"
             $migrationDirectory = (Resolve-Path -LiteralPath 'apps/worker/migrations').Path.Replace('\', '/')
             [System.IO.File]::WriteAllText($rehearsalConfigPath, @"
-name = "mbfd-bid-rehearsal"
-[[d1_databases]]
-binding = "REHEARSAL_DB"
-database_name = "$database"
-database_id = "$databaseId"
-migrations_dir = "$migrationDirectory"
-"@, [System.Text.UTF8Encoding]::new($false))
+          name = "mbfd-bid-rehearsal"
+          [[d1_databases]]
+          binding = "REHEARSAL_DB"
+          database_name = "$database"
+          database_id = "$databaseId"
+          migrations_dir = "$migrationDirectory"
+          "@, [System.Text.UTF8Encoding]::new($false))
 
             ./scripts/d1-restore.ps1 -Env $env:SOURCE_ENV -DbName $database -BucketName $bucket -SnapshotKey $env:SNAPSHOT_KEY
 
