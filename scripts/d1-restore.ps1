@@ -44,6 +44,24 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+function Get-SafeExecutorFailureCategory {
+  param([object[]]$Output)
+
+  # Wrangler can include the rejected SQL or data values in its diagnostic.
+  # Hold the output in memory only long enough to emit one fixed-vocabulary
+  # category; never write provider output to the job log.
+  $detail = $Output | Out-String
+  if ($detail -match '(?i)statement\s+too\s+long|sqlite_toobig') { return 'statement_too_long' }
+  if ($detail -match '(?i)cannot\s+start\s+a\s+transaction|within\s+a\s+transaction') { return 'transaction_wrapper' }
+  if ($detail -match '(?i)foreign\s+key') { return 'foreign_key' }
+  if ($detail -match '(?i)no\s+such\s+(?:table|column)') { return 'schema_reference' }
+  if ($detail -match '(?i)syntax\s+error|parse\s+error') { return 'sql_syntax' }
+  if ($detail -match '(?i)too\s+many\s+sql\s+variables') { return 'sql_variable_limit' }
+  if ($detail -match '(?i)not\s+authorized|forbidden|permission\s+denied') { return 'authorization' }
+  if ($detail -match '(?i)database\s+(?:is\s+)?(?:locked|busy)') { return 'transient_busy' }
+  return 'opaque'
+}
+
 function Split-LargeInsertStatement {
   param([Parameter(Mandatory)][string]$Statement)
 
@@ -230,7 +248,10 @@ try {
   }
 
   $executeOutput = & pnpm --dir apps/worker exec wrangler d1 execute $DbName --remote --file=$restoreFile *>&1
-  if ($LASTEXITCODE -ne 0) { throw "wrangler d1 execute import failed (exit $LASTEXITCODE)." }
+  if ($LASTEXITCODE -ne 0) {
+    $category = Get-SafeExecutorFailureCategory $executeOutput
+    throw "wrangler d1 execute import failed (category=$category; exit $LASTEXITCODE)."
+  }
 
   Write-Host "[d1-restore] import complete into $DbName ($Env)"
 } finally {
