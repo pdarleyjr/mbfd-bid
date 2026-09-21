@@ -497,7 +497,10 @@ function Invoke-BoundOversizedInsertReplay {
     $body = Get-BoundReplayBody $ReplayStatements
     $requestBytes = Get-Utf8ByteCount $body
     try {
-      $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/query') -Headers $Headers -ContentType 'application/json' -Body $body -ErrorAction Stop
+      # `/raw` accepts the same D1 single/batch parameter contract as `/query`
+      # and returns the same per-query success envelope, while avoiding object
+      # result serialization for these write-only replay calls.
+      $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/raw') -Headers $Headers -ContentType 'application/json' -Body $body -ErrorAction Stop
     } catch {
       $category = 'transport_failure'
       $detail = $null
