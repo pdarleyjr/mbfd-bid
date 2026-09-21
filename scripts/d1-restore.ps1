@@ -94,7 +94,7 @@ try {
     $source.Dispose()
   }
 
-  $databaseInfoOutput = & pnpm exec wrangler d1 info $DbName --json *>&1
+  $databaseInfoOutput = & pnpm --dir apps/worker exec wrangler d1 info $DbName --json *>&1
   if ($LASTEXITCODE -ne 0) { throw 'D1 database lookup failed; import not started.' }
   try {
     $databaseId = (($databaseInfoOutput | Out-String) | ConvertFrom-Json -ErrorAction Stop).uuid
