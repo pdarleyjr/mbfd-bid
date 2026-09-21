@@ -62,6 +62,23 @@ function Get-SafePropertyNames {
   return ($names -join ',')
 }
 
+function Get-SafeImportFailureCategory {
+  param([object]$ErrorValue)
+  # The provider error can include SQL fragments or data values. Keep it in
+  # memory only long enough to emit one deliberately bounded category.
+  $detail = [string]$ErrorValue
+  if ([string]::IsNullOrWhiteSpace($detail)) { return 'opaque' }
+  if ($detail -match '(?i)statement\s+too\s+long|sqlite_toobig') { return 'statement_too_long' }
+  if ($detail -match '(?i)cannot\s+start\s+a\s+transaction|within\s+a\s+transaction') { return 'transaction_wrapper' }
+  if ($detail -match '(?i)foreign\s+key') { return 'foreign_key' }
+  if ($detail -match '(?i)no\s+such\s+(?:table|column)') { return 'schema_reference' }
+  if ($detail -match '(?i)syntax\s+error|parse\s+error') { return 'sql_syntax' }
+  if ($detail -match '(?i)too\s+many\s+sql\s+variables') { return 'sql_variable_limit' }
+  if ($detail -match '(?i)not\s+authorized|forbidden|permission\s+denied') { return 'authorization' }
+  if ($detail -match '(?i)database\s+(?:is\s+)?(?:locked|busy)') { return 'transient_busy' }
+  return 'opaque'
+}
+
 if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
   throw 'D1 restore requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the execution environment.'
 }
@@ -149,7 +166,10 @@ try {
   # that case it returns status=complete instead of a running-import bookmark.
   $completed = $ingest.result.status -eq 'complete'
   if (-not $completed) {
-    if ($ingest.result.status -eq 'error') { throw 'D1 import reported failure.' }
+    if ($ingest.result.status -eq 'error') {
+      $category = Get-SafeImportFailureCategory $ingest.result.error
+      throw "D1 import reported failure (category=$category)."
+    }
     $bookmark = $ingest.result.at_bookmark
     if ([string]::IsNullOrWhiteSpace($bookmark)) {
       $topShape = Get-SafePropertyNames $ingest
@@ -165,7 +185,10 @@ try {
         throw 'D1 import status poll failed.'
       }
       if ($poll.success -ne $true) { throw 'D1 import status poll reported failure.' }
-      if ($poll.result.status -eq 'error') { throw 'D1 import reported failure.' }
+      if ($poll.result.status -eq 'error') {
+        $category = Get-SafeImportFailureCategory $poll.result.error
+        throw "D1 import reported failure (category=$category)."
+      }
       if ($poll.result.status -eq 'complete') {
         $completed = $true
         break
