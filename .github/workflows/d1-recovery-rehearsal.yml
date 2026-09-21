@@ -64,6 +64,21 @@ jobs:
             return (($text.Substring($jsonStart) | ConvertFrom-Json -ErrorAction Stop)[0].results)
           }
 
+          function Get-SafeMigrationFailureCategory([object]$value) {
+            # Wrangler may include SQL or source data in its diagnostics. Keep
+            # that private and publish only a fixed, non-content category.
+            $detail = $value | Out-String
+            if ($detail -match '(?i)foreign\s+key') { return 'foreign_key' }
+            if ($detail -match '(?i)already\s+exists|duplicate\s+(?:column|table|index|trigger)') { return 'already_exists' }
+            if ($detail -match '(?i)no\s+such\s+(?:table|column)') { return 'schema_reference' }
+            if ($detail -match '(?i)constraint\s+failed|sqlite_constraint') { return 'constraint' }
+            if ($detail -match '(?i)syntax\s+error|parse\s+error') { return 'sql_syntax' }
+            if ($detail -match '(?i)statement\s+too\s+long|sqlite_toobig') { return 'statement_too_long' }
+            if ($detail -match '(?i)not\s+authorized|forbidden|permission\s+denied') { return 'authorization' }
+            if ($detail -match '(?i)database\s+(?:is\s+)?(?:locked|busy)') { return 'transient_busy' }
+            return 'opaque'
+          }
+
           try {
             $create = & pnpm --dir apps/worker exec wrangler d1 create $database --location enam *>&1
             if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 creation failed.' }
@@ -80,7 +95,10 @@ jobs:
             }
 
             $apply = & pnpm --dir apps/worker exec wrangler d1 migrations apply $database --remote *>&1
-            if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 migration apply failed.' }
+            if ($LASTEXITCODE -ne 0) {
+              $category = Get-SafeMigrationFailureCategory $apply
+              throw "Disposable D1 migration apply failed (category=$category)."
+            }
 
             $afterLedger = Invoke-D1Rows 'SELECT COUNT(*) AS migration_count, MAX(name) AS latest_migration FROM d1_migrations;'
             $afterCounts = Invoke-D1Rows "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%') AS table_count, (SELECT COUNT(*) FROM members) AS members_count, (SELECT COUNT(*) FROM bid_years) AS bid_years_count, (SELECT COUNT(*) FROM bid_sessions) AS bid_sessions_count, (SELECT COUNT(*) FROM audit_log) AS audit_log_count, (SELECT COUNT(*) FROM annual_plan_receipts) AS annual_plan_receipts_count, (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'annual_bid_structure_clone_state') AS clone_state_table_count;"
