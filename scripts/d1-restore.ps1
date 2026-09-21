@@ -7,8 +7,9 @@
     Downloads a previously uploaded snapshot from R2 and restores it through
     D1's asynchronous import API. The restore normalizes the export before
     upload: it removes the export's outer transaction and reserved D1 table,
-    emits ordinary table declarations before data, and splits oversized
-    INSERT ... VALUES batches. THIS WILL APPEND ROWS — for a true overwrite,
+    emits ordinary table declarations before data, splits oversized
+    INSERT ... VALUES batches, and replays a singleton oversized text literal
+    through D1's bound-query API. THIS WILL APPEND ROWS — for a true overwrite,
     use a freshly created throwaway database or an explicitly authorized D1
     restore.
 
@@ -250,6 +251,207 @@ function Split-LargeInsertStatement {
   return $chunks.ToArray()
 }
 
+function Get-Utf8ByteCount {
+  param([Parameter(Mandatory)][string]$Value)
+
+  return [System.Text.Encoding]::UTF8.GetByteCount($Value)
+}
+
+function Convert-OversizedInsertToBoundRequest {
+  param(
+    [Parameter(Mandatory)][string]$Statement,
+    [Parameter(Mandatory)][int]$MaxSqlBytes
+  )
+
+  # D1 limits SQL text to 100 KB, but allows a text value/row up to 2 MB.
+  # Preserve the original SQL spelling and types except for only the text
+  # literals needed to bring this INSERT below the SQL-text limit. The values
+  # stay in memory and the JSON request body; no SQL or values are logged.
+  if ($Statement -notmatch '(?is)^\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\b') {
+    return $null
+  }
+
+  $literals = [System.Collections.Generic.List[object]]::new()
+  $index = 0
+  while ($index -lt $Statement.Length) {
+    $character = $Statement[$index]
+    if ($character -eq [char]39) {
+      $start = $index
+      $value = [System.Text.StringBuilder]::new()
+      $index++
+      $closed = $false
+      while ($index -lt $Statement.Length) {
+        $current = $Statement[$index]
+        if ($current -eq [char]39) {
+          if ($index + 1 -lt $Statement.Length -and $Statement[$index + 1] -eq [char]39) {
+            [void]$value.Append([char]39)
+            $index += 2
+            continue
+          }
+          $index++
+          $closed = $true
+          break
+        }
+        [void]$value.Append($current)
+        $index++
+      }
+      if (-not $closed) { return $null }
+      $literals.Add([pscustomobject]@{
+        Start = $start
+        Length = $index - $start
+        Value = $value.ToString()
+      })
+      continue
+    }
+    if ($character -eq [char]34 -or $character -eq [char]96 -or $character -eq [char]91) {
+      $closing = if ($character -eq [char]91) { [char]93 } else { $character }
+      $index++
+      $closed = $false
+      while ($index -lt $Statement.Length) {
+        if ($Statement[$index] -eq $closing) {
+          if ($closing -ne [char]93 -and $index + 1 -lt $Statement.Length -and $Statement[$index + 1] -eq $closing) {
+            $index += 2
+            continue
+          }
+          $index++
+          $closed = $true
+          break
+        }
+        $index++
+      }
+      if (-not $closed) { return $null }
+      continue
+    }
+    $index++
+  }
+
+  $remainingBytes = Get-Utf8ByteCount $Statement
+  $selected = [System.Collections.Generic.HashSet[int]]::new()
+  foreach ($literal in @($literals | Sort-Object -Property @{ Expression = { $_.Length }; Descending = $true }, @{ Expression = { $_.Start }; Descending = $false })) {
+    if ($remainingBytes -le $MaxSqlBytes) { break }
+    if ($literal.Length -le 2) { continue }
+    [void]$selected.Add($literal.Start)
+    $remainingBytes -= (Get-Utf8ByteCount ($Statement.Substring($literal.Start, $literal.Length))) - 1
+  }
+  if ($selected.Count -eq 0 -or $remainingBytes -gt $MaxSqlBytes -or $selected.Count -gt 100) {
+    return $null
+  }
+
+  $sql = [System.Text.StringBuilder]::new()
+  $params = [System.Collections.Generic.List[string]]::new()
+  $cursor = 0
+  foreach ($literal in @($literals | Sort-Object Start)) {
+    [void]$sql.Append($Statement.Substring($cursor, $literal.Start - $cursor))
+    if ($selected.Contains($literal.Start)) {
+      [void]$sql.Append('?')
+      $params.Add($literal.Value)
+    } else {
+      [void]$sql.Append($Statement.Substring($literal.Start, $literal.Length))
+    }
+    $cursor = $literal.Start + $literal.Length
+  }
+  [void]$sql.Append($Statement.Substring($cursor))
+  if ((Get-Utf8ByteCount $sql.ToString()) -gt $MaxSqlBytes) { return $null }
+
+  return [pscustomobject]@{
+    Sql = $sql.ToString()
+    Params = $params.ToArray()
+  }
+}
+
+function Split-RestoreImportAndBoundInserts {
+  param(
+    [Parameter(Mandatory)][string]$SourcePath,
+    [Parameter(Mandatory)][string]$ImportPath,
+    [Parameter(Mandatory)][int]$MaxSqlBytes
+  )
+
+  $deferred = [System.Collections.Generic.List[object]]::new()
+  $source = [System.IO.StreamReader]::new($SourcePath)
+  $destination = [System.IO.StreamWriter]::new($ImportPath, $false, [System.Text.UTF8Encoding]::new($false))
+  try {
+    $statement = [System.Text.StringBuilder]::new()
+    $quote = [char]0
+    while (($codePoint = $source.Read()) -ne -1) {
+      $character = [char]$codePoint
+      [void]$statement.Append($character)
+      if ($quote -ne [char]0) {
+        if ($character -eq $quote) {
+          if (($quote -eq [char]39 -or $quote -eq [char]34) -and $source.Peek() -eq [int][char]$quote) {
+            [void]$statement.Append([char]$source.Read())
+            continue
+          }
+          $quote = [char]0
+        }
+        continue
+      }
+      if ($character -eq [char]39 -or $character -eq [char]34 -or $character -eq [char]96) {
+        $quote = $character
+        continue
+      }
+      if ($character -eq [char]91) {
+        $quote = [char]93
+        continue
+      }
+      if ($character -ne [char]59) { continue }
+
+      $completedStatement = $statement.ToString()
+      if ((Get-Utf8ByteCount $completedStatement) -gt $MaxSqlBytes) {
+        $bound = Convert-OversizedInsertToBoundRequest -Statement $completedStatement -MaxSqlBytes $MaxSqlBytes
+        if ($null -eq $bound) {
+          throw 'Restore contains an oversized SQL statement that cannot be losslessly replayed with bound text parameters.'
+        }
+        $deferred.Add($bound)
+      } else {
+        $destination.Write($completedStatement)
+      }
+      $statement.Clear() | Out-Null
+    }
+    if ($statement.Length -gt 0) {
+      if (-not [string]::IsNullOrWhiteSpace($statement.ToString())) {
+        throw 'Restore snapshot ended before a SQL statement terminator.'
+      }
+      $destination.Write($statement.ToString())
+    }
+  } finally {
+    $destination.Dispose()
+    $source.Dispose()
+  }
+  return $deferred.ToArray()
+}
+
+function Invoke-BoundOversizedInsertReplay {
+  param(
+    [Parameter(Mandatory)][string]$ApiUri,
+    [Parameter(Mandatory)][hashtable]$Headers,
+    [Parameter(Mandatory)][object[]]$Statements
+  )
+
+  if ($Statements.Count -eq 0) { return }
+  $batch = [System.Collections.Generic.List[object]]::new()
+  $batch.Add(@{ sql = 'PRAGMA foreign_keys = OFF;' })
+  $batch.Add(@{ sql = 'PRAGMA defer_foreign_keys = TRUE;' })
+  foreach ($statement in $Statements) {
+    $batch.Add(@{ sql = $statement.Sql; params = @($statement.Params) })
+  }
+  $batch.Add(@{ sql = 'PRAGMA foreign_keys = ON;' })
+  try {
+    $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/query') -Headers $Headers -ContentType 'application/json' -Body (@{ batch = @($batch) } | ConvertTo-Json -Depth 5 -Compress) -ErrorAction Stop
+  } catch {
+    throw 'D1 bound oversized-insert replay request failed.'
+  }
+  if ($response.success -ne $true) {
+    $category = Get-SafeImportFailureCategory $response.errors
+    throw "D1 bound oversized-insert replay reported failure (category=$category)."
+  }
+  $results = @($response.result)
+  if ($results.Count -ne $batch.Count -or @($results | Where-Object { $_.success -ne $true }).Count -gt 0) {
+    throw 'D1 bound oversized-insert replay returned an incomplete result set.'
+  }
+  $paramCount = @($Statements | ForEach-Object { @($_.Params).Count } | Measure-Object -Sum).Sum
+  Write-Host "[d1-restore] bound oversized inserts replayed=$($Statements.Count) params=$paramCount"
+}
+
 if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
   throw 'D1 restore requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the execution environment.'
 }
@@ -265,6 +467,7 @@ $tmp = New-Item -ItemType Directory -Force -Path (Join-Path $tempRoot "d1-restor
 try {
   $file = Join-Path $tmp 'snapshot.sql'
   $restoreFile = Join-Path $tmp 'restore.sql'
+  $importFile = Join-Path $tmp 'import.sql'
   $tablePreambleFile = Join-Path $tmp 'tables.sql'
   $remainingSqlFile = Join-Path $tmp 'remaining.sql'
   $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
@@ -368,6 +571,10 @@ try {
   )
   $metrics = Get-SanitizedRestoreMetrics -Path $restoreFile -Cap 8000
   Write-Host "[d1-restore] sanitized statements=$($metrics.StatementCount) max_chars=$($metrics.MaxStatementChars) over_cap=$($metrics.OverCapCount) inserts=$($metrics.OverCapInsertCount) creates=$($metrics.OverCapCreateCount) other=$($metrics.OverCapOtherCount)"
+  # The D1 SQL text ceiling is 100 KB. Keep a 10 KB UTF-8 headroom for the
+  # import transport and replay only necessary singleton text literals through
+  # bound parameters after the normalized file import succeeds.
+  $boundStatements = @(Split-RestoreImportAndBoundInserts -SourcePath $restoreFile -ImportPath $importFile -MaxSqlBytes 90000)
 
   $databaseInfoOutput = & pnpm --dir apps/worker exec wrangler d1 info $DbName --json *>&1
   if ($LASTEXITCODE -ne 0) { throw 'D1 database lookup failed; import not started.' }
@@ -381,7 +588,7 @@ try {
   }
 
   $apiUri = "https://api.cloudflare.com/client/v4/accounts/$($env:CLOUDFLARE_ACCOUNT_ID)/d1/database/$databaseId/import"
-  $etag = (Get-FileHash -LiteralPath $restoreFile -Algorithm MD5).Hash.ToLowerInvariant()
+  $etag = (Get-FileHash -LiteralPath $importFile -Algorithm MD5).Hash.ToLowerInvariant()
   try {
     $init = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'init'; etag = $etag } | ConvertTo-Json -Compress) -ErrorAction Stop
   } catch {
@@ -391,7 +598,7 @@ try {
     throw 'D1 import initialization returned no usable upload target.'
   }
   try {
-    Invoke-WebRequest -Method Put -Uri $init.result.upload_url -InFile $restoreFile -ErrorAction Stop | Out-Null
+    Invoke-WebRequest -Method Put -Uri $init.result.upload_url -InFile $importFile -ErrorAction Stop | Out-Null
   } catch {
     throw 'D1 import upload failed.'
   }
@@ -433,6 +640,8 @@ try {
     }
   }
   if (-not $completed) { throw 'D1 import did not complete before the bounded polling window expired.' }
+
+  Invoke-BoundOversizedInsertReplay -ApiUri $apiUri -Headers $headers -Statements $boundStatements
 
   Write-Host "[d1-restore] import complete into $DbName ($Env)"
 } finally {
