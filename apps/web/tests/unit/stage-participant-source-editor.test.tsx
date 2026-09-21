@@ -82,6 +82,16 @@ function button(scope: HTMLElement, text: string): HTMLButtonElement {
   if (!result) throw new Error(`Expected button '${text}'`);
   return result;
 }
+function fieldset(scope: HTMLElement, legend: string): HTMLFieldSetElement {
+  const found = [...scope.querySelectorAll('fieldset')].filter(
+    (element) => element.querySelector('legend')?.textContent?.trim() === legend,
+  );
+  if (found.length !== 1)
+    throw new Error(`Expected one fieldset '${legend}', found ${found.length}`);
+  const result = found[0];
+  if (!result) throw new Error(`Expected fieldset '${legend}'`);
+  return result;
+}
 async function click(element: Pick<HTMLElement, 'click'>) {
   await act(async () => element.click());
 }
@@ -195,6 +205,76 @@ describe('StageParticipantSourceEditor', () => {
     expect(container.textContent).toContain(
       'No browser roster lookup or Live operation occurs here.',
     );
+  });
+
+  it('records named Department include and exclude exceptions without resolving a roster in the browser', async () => {
+    const onSave = vi.fn();
+    const container = render(
+      <StageParticipantSourceEditor
+        stageId="stage-one"
+        savedDefinition={undefined}
+        orderingAuthority={orderingAuthority}
+        memberOptions={[
+          { value: '901', label: 'Synthetic Department member 901' },
+          { value: '999', label: 'Synthetic Department member 999' },
+        ]}
+        onSave={onSave}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    await setValue(control(container, 'Participant source type'), 'FILTER');
+    await setValue(control(container, 'Source reference'), 'Synthetic participant authority');
+    await click(control(container, 'FF'));
+    await click(
+      control(fieldset(container, 'Filter inclusions'), 'Synthetic Department member 901'),
+    );
+    await click(
+      control(fieldset(container, 'Filter exclusions'), 'Synthetic Department member 999'),
+    );
+    await click(button(container, 'Save participant source'));
+
+    expect(onSave).toHaveBeenCalledWith({
+      stageId: 'stage-one',
+      sourceRef: 'Synthetic participant authority',
+      participantSource: {
+        type: 'FILTER',
+        active: true,
+        bidParticipation: 'BIDDABLE',
+        ranks: ['FF'],
+        includeMemberIds: [901],
+        excludeMemberIds: [999],
+      },
+      ordering: orderingAuthority.comparator,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not save a filter that includes and excludes the same Department member', async () => {
+    const onSave = vi.fn();
+    const container = render(
+      <StageParticipantSourceEditor
+        stageId="stage-one"
+        savedDefinition={undefined}
+        orderingAuthority={orderingAuthority}
+        memberOptions={[{ value: '901', label: 'Synthetic Department member 901' }]}
+        onSave={onSave}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    await setValue(control(container, 'Participant source type'), 'FILTER');
+    await setValue(control(container, 'Source reference'), 'Synthetic participant authority');
+    await click(control(container, 'FF'));
+    await click(
+      control(fieldset(container, 'Filter inclusions'), 'Synthetic Department member 901'),
+    );
+    await click(
+      control(fieldset(container, 'Filter exclusions'), 'Synthetic Department member 901'),
+    );
+
+    expect(button(container, 'Save participant source').disabled).toBe(true);
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it('does not replace a saved source with an incomplete edit and removes it only explicitly', async () => {

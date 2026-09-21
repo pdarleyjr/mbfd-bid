@@ -305,6 +305,36 @@ describe('Bid configuration and session policy contracts', () => {
       ]).success,
     ).toBe(false);
     expect(
+      StageParticipantSourceDefinitionsSchema.safeParse([
+        {
+          ...stageParticipantSources[0],
+          participantSource: {
+            type: 'FILTER',
+            active: true,
+            bidParticipation: 'BIDDABLE',
+            ranks: ['CPT'],
+            includeMemberIds: [11],
+            excludeMemberIds: [12],
+          },
+        },
+      ]).success,
+    ).toBe(true);
+    expect(
+      StageParticipantSourceDefinitionsSchema.safeParse([
+        {
+          ...stageParticipantSources[0],
+          participantSource: {
+            type: 'FILTER',
+            active: true,
+            bidParticipation: 'BIDDABLE',
+            ranks: ['CPT'],
+            includeMemberIds: [11],
+            excludeMemberIds: [11],
+          },
+        },
+      ]).success,
+    ).toBe(false);
+    expect(
       BidDefinitionContentSchema.safeParse({
         ...authorityDefinition,
         policy: {

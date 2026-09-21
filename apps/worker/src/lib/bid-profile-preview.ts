@@ -11,7 +11,10 @@ import { captureBidDefinitionControl } from './bid-definition-source.js';
 import { SaveBidDefinitionSchema } from './bid-definition-store.js';
 import { loadBidDefinitionVersion } from './bid-definition-version.js';
 import { eligibilityMemberFromFrozen, loadBidEvaluationEvidence } from './bid-policy.js';
-import { materializeBidDefinitionProfiles } from './bid-profile-review.js';
+import {
+  compileADayTimingExceptionScopes,
+  materializeBidDefinitionProfiles,
+} from './bid-profile-review.js';
 
 const canonical = (value: unknown) => canonicalize(value as JsonValue);
 
@@ -111,7 +114,23 @@ export async function previewBidProfiles(
             },
       ),
     };
-  const compiled = canonicalBidDefinition(materialized.content);
+  const timing = compileADayTimingExceptionScopes(materialized.content);
+  if (!timing.ok)
+    return {
+      ok: true as const,
+      response: BidProfileReviewResponseSchema.parse({
+        valid: false,
+        kind: 'PROFILE_COMPILATION_CONFLICT',
+        v: 1,
+        bidYear: year,
+        source,
+        capturedAtMs,
+        runtimeSourceToken: control.token,
+        profileMappings: materialized.profileMappings,
+        conflicts: timing.conflicts,
+      }),
+    };
+  const compiled = canonicalBidDefinition(timing.content);
   if (!compiled.ok)
     return {
       ok: true as const,

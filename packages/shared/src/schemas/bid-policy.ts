@@ -289,11 +289,15 @@ export const FrozenAnnualOperationsPolicySchema = z
                     label: z.string().trim().min(1).max(160),
                     timing: ADayExecutionTimingSchema,
                     sourceRef: z.string().trim().min(4).max(500),
-                    /** Execution never resolves a profile dynamically. */
-                    positionIds: z.array(z.string().trim().min(1).max(160)).min(1).max(500),
+                    /** Candidate review resolves profile provenance to this frozen scope. */
+                    positionIds: z.array(z.string().trim().min(1).max(160)).max(500),
                     profileIds: z.array(z.string().trim().min(1).max(160)).max(250),
                   })
-                  .strict(),
+                  .strict()
+                  .refine((rule) => rule.positionIds.length + rule.profileIds.length > 0, {
+                    message:
+                      'A-Day timing exceptions require an opportunity or shared profile scope',
+                  }),
               )
               .max(100)
               .optional(),
@@ -473,34 +477,56 @@ export type FrozenAnnualOperationsPolicy = z.infer<typeof FrozenAnnualOperations
  * be resolved against a pinned Bid evaluation; it never means "look up whoever
  * is currently active" during a running session.
  */
-export const StageParticipantSourceSchema = z.discriminatedUnion('type', [
-  z
-    .object({
-      type: z.literal('EXPLICIT_MEMBERS'),
-      memberIds: z
-        .array(z.number().int().positive())
-        .min(1)
-        .max(10_000)
-        .refine((memberIds) => new Set(memberIds).size === memberIds.length, {
-          message: 'explicit stage member ids must be unique',
-        }),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal('FILTER'),
-      active: z.literal(true),
-      bidParticipation: z.literal('BIDDABLE'),
-      ranks: z
-        .array(z.enum(BIDDING_RANKS))
-        .min(1)
-        .max(BIDDING_RANKS.length)
-        .refine((ranks) => new Set(ranks).size === ranks.length, {
-          message: 'stage filter ranks must be unique',
-        }),
-    })
-    .strict(),
-]);
+const StageParticipantMemberIdsSchema = z
+  .array(z.number().int().positive())
+  .max(10_000)
+  .refine((memberIds) => new Set(memberIds).size === memberIds.length, {
+    message: 'stage member ids must be unique',
+  });
+
+export const StageParticipantSourceSchema = z
+  .discriminatedUnion('type', [
+    z
+      .object({
+        type: z.literal('EXPLICIT_MEMBERS'),
+        memberIds: z
+          .array(z.number().int().positive())
+          .min(1)
+          .max(10_000)
+          .refine((memberIds) => new Set(memberIds).size === memberIds.length, {
+            message: 'explicit stage member ids must be unique',
+          }),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal('FILTER'),
+        active: z.literal(true),
+        bidParticipation: z.literal('BIDDABLE'),
+        ranks: z
+          .array(z.enum(BIDDING_RANKS))
+          .min(1)
+          .max(BIDDING_RANKS.length)
+          .refine((ranks) => new Set(ranks).size === ranks.length, {
+            message: 'stage filter ranks must be unique',
+          }),
+        /** Explicit exceptions are still resolved only from a pinned evaluation. */
+        includeMemberIds: StageParticipantMemberIdsSchema.optional(),
+        excludeMemberIds: StageParticipantMemberIdsSchema.optional(),
+      })
+      .strict(),
+  ])
+  .superRefine((source, ctx) => {
+    if (source.type !== 'FILTER') return;
+    const included = new Set(source.includeMemberIds ?? []);
+    const overlap = (source.excludeMemberIds ?? []).find((memberId) => included.has(memberId));
+    if (overlap !== undefined)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['excludeMemberIds'],
+        message: 'stage filter member exceptions cannot include and exclude the same member',
+      });
+  });
 export type StageParticipantSource = z.infer<typeof StageParticipantSourceSchema>;
 
 export const StageParticipantOrderingRuleSchema = z
@@ -880,6 +906,7 @@ export const PendingLiveBidPolicySchema = FrozenLiveBidPolicySchema.innerType()
       if (!unresolvedIds && !unresolvedNumeric) ctx.addIssue(issue);
     }
   });
+export type PendingLiveBidPolicy = z.infer<typeof PendingLiveBidPolicySchema>;
 
 /** No actor can inherit live authority from a Hub-admin role or rank. */
 export function isLiveBidActionAuthorized(

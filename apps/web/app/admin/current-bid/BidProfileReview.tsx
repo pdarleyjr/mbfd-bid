@@ -27,6 +27,11 @@ export function BidProfileReview({
   );
   const stamp = JSON.stringify({ content, expected });
   const result = review?.stamp === stamp ? review.result : null;
+  const reviewedADayTimingExceptions =
+    result?.valid && result.materialized.content.settings?.v === 3
+      ? (result.materialized.content.settings.livePolicy.annualOperations?.aDay.execution
+          ?.timingExceptions ?? [])
+      : [];
   async function preview() {
     setBusy(true);
     setError(null);
@@ -102,6 +107,21 @@ export function BidProfileReview({
               </li>
             ))}
           </ul>
+          {reviewedADayTimingExceptions.some((exception) => exception.profileIds.length) ? (
+            <section aria-label="Reviewed A-Day timing scopes" className="space-y-1">
+              <p className="font-medium">Reviewed A-Day timing scopes</p>
+              <ul>
+                {reviewedADayTimingExceptions
+                  .filter((exception) => exception.profileIds.length)
+                  .map((exception) => (
+                    <li key={exception.id}>
+                      {exception.label}: {exception.positionIds.length} opportunities.{' '}
+                      {exception.positionIds.join(', ')}
+                    </li>
+                  ))}
+              </ul>
+            </section>
+          ) : null}
           <p className="text-sm text-muted-foreground">
             A-Day availability, selections and awards are evaluated during a run.
           </p>

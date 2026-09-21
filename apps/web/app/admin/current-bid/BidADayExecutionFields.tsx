@@ -18,7 +18,6 @@ type ADay = NonNullable<FrozenLiveBidPolicy['annualOperations']>['aDay'];
 type Execution = NonNullable<ADay['execution']>;
 type Constraint = Execution['constraints'][number];
 type TimingException = NonNullable<Execution['timingExceptions']>[number];
-type ProfileOption = ReferenceOption & { positionIds: readonly string[] };
 
 const timingOptions: { value: Execution['timing']; label: string }[] = [
   { value: 'SIMULTANEOUS', label: 'With position selection' },
@@ -44,7 +43,7 @@ export function BidADayExecutionFields({
 }: {
   value: ADay['execution'];
   opportunities: ReferenceOption[];
-  profiles: ProfileOption[];
+  profiles: ReferenceOption[];
   members: ReferenceOption[];
   onChange(value: ADay['execution']): void;
 }) {
@@ -52,7 +51,7 @@ export function BidADayExecutionFields({
   return (
     <div className="space-y-4 sm:col-span-2">
       <CheckField
-        label="Choose A-Day at the same time as the assignment"
+        label="Configure A-Day selection"
         value={value !== undefined}
         onChange={(enabled) =>
           onChange(
@@ -70,7 +69,7 @@ export function BidADayExecutionFields({
       />
       {value === undefined ? (
         <p className="text-sm text-muted-foreground">
-          Simultaneous A-Day selection has not been configured for this Bid.
+          A-Day selection timing has not been configured for this Bid.
         </p>
       ) : (
         <>
@@ -129,22 +128,13 @@ export function BidADayExecutionFields({
                   label="Exception shared profiles"
                   values={exception.profileIds}
                   options={profiles}
-                  onChange={(profileIds) => {
-                    const profilePositions = profiles
-                      .filter((profile) => profileIds.includes(profile.value))
-                      .flatMap((profile) => profile.positionIds);
-                    update({
-                      profileIds,
-                      positionIds: [
-                        ...new Set([...exception.positionIds, ...profilePositions]),
-                      ].sort(),
-                    });
-                  }}
-                  help="Selecting a profile records provenance and expands its current opportunity scope into this immutable exception."
+                  onChange={(profileIds) => update({ profileIds })}
+                  help="The server compiles shared-profile scope during candidate review and save; use the reviewed result as the authoritative scope."
                 />
-                {!exception.positionIds.length ? (
+                {!exception.positionIds.length && !exception.profileIds.length ? (
                   <p className="text-sm text-destructive">
-                    Select at least one affected opportunity before saving this exception.
+                    Select at least one affected opportunity or shared profile before saving this
+                    exception.
                   </p>
                 ) : null}
                 <Button
