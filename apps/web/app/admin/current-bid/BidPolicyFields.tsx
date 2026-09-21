@@ -268,29 +268,6 @@ export function BidPolicyFields({
     value: p.id,
     label: `${p.positionName} · ${p.shift} · ${p.id}`,
   }));
-  const profileOpportunityIds = (
-    profile: NonNullable<BidDefinitionContent['authoring']>['profiles'][number],
-  ) => {
-    const scope = profile.scope;
-    switch (scope.kind) {
-      case 'department':
-        return content.positions.map((position) => position.id);
-      case 'rank':
-        return content.positions
-          .filter((position) => position.rankRequired === scope.rank)
-          .map((position) => position.id);
-      case 'station_shift':
-        return content.positions
-          .filter(
-            (position) => position.station === scope.station && position.shift === scope.shift,
-          )
-          .map((position) => position.id);
-      case 'family':
-        return scope.positionIds;
-      case 'position':
-        return [scope.positionId];
-    }
-  };
   const updatePolicy = (
     next: Policy,
     policyDocument: BidDefinitionContent['policy'] = content.policy,
@@ -479,6 +456,7 @@ export function BidPolicyFields({
                       orderingAuthority={orderingAuthorityRequest}
                       orderingAuthorityAvailable={orderingAuthorityAvailable}
                       executionStageReady={stage.memberIds.length > 0}
+                      memberOptions={people.data ?? []}
                       onSave={saveStageParticipantSource}
                       onRemove={() => removeStageParticipantSource(stage.id)}
                     />
@@ -731,8 +709,7 @@ export function BidPolicyFields({
               opportunities={opportunities}
               profiles={(content.authoring?.profiles ?? []).map((profile) => ({
                 value: profile.id,
-                label: `${profile.name} · ${profile.scope.kind} profile`,
-                positionIds: profileOpportunityIds(profile),
+                label: `${profile.name} · ${profile.sourceRef}`,
               }))}
               members={people.data ?? []}
               onChange={(execution) => {

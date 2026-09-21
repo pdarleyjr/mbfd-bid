@@ -1,5 +1,6 @@
 import {
   type BidDefinitionContent,
+  BidDefinitionContentSchema,
   BidDispositionSchema,
   type FrozenLiveBidPolicy,
   FrozenLiveBidPolicySchema,
@@ -8,6 +9,10 @@ import {
 } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import { canonicalBidDefinition } from '../src/lib/bid-definition-content.js';
+import {
+  compileADayTimingExceptionScopes,
+  materializePendingBidProfiles,
+} from '../src/lib/bid-profile-review.js';
 
 // Explicit synthetic policy and identities; no Department evidence or annual
 // normative approval is inferred from these pure definition tests.
@@ -192,6 +197,174 @@ function requestOpenOrderingAuthority(candidate: BidDefinitionContent) {
 }
 
 describe('Bid definition policy normalization and validation', () => {
+  it('compiles profile-only A-Day timing authoring to identical concrete scopes at the candidate boundary', () => {
+    const candidate = definition();
+    candidate.authoring = {
+      profiles: [
+        {
+          id: 'synthetic-a-day-profile',
+          name: 'Synthetic all-biddable A-Day profile',
+          sourceRef: 'Synthetic A-Day profile authority',
+          scope: { kind: 'department' },
+          requirements: { credentials: [], custom: [] },
+        },
+      ],
+      compiled: [],
+      reconciliation: 'RULES_CHANGED_AFTER_COMPILATION',
+    };
+    changeBothPolicies(candidate, (policy) => {
+      if (!policy.annualOperations) throw new Error('Synthetic annual operations required');
+      policy.annualOperations.aDay.execution = {
+        timing: 'SIMULTANEOUS',
+        sourceRef: 'Synthetic A-Day timing authority',
+        officersPerGroup: null,
+        constraints: [],
+        timingExceptions: [
+          {
+            id: 'synthetic-profile-scope',
+            label: 'Synthetic profile scope',
+            timing: 'AFTER_POSITION_SELECTION',
+            sourceRef: 'Synthetic Timeline authority',
+            positionIds: [],
+            profileIds: ['synthetic-a-day-profile'],
+          },
+        ],
+      };
+    });
+
+    expect(BidDefinitionContentSchema.safeParse(candidate).success).toBe(true);
+    const compiled = materializePendingBidProfiles(candidate);
+    expect(compiled).toMatchObject({ ok: true });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled));
+    const expectedScope = [
+      'synthetic-seat-a',
+      'synthetic-seat-b',
+      'synthetic-seat-c',
+      'synthetic-seat-d',
+    ];
+    expect(
+      compiled.content.settings?.v === 3
+        ? compiled.content.settings.livePolicy.annualOperations?.aDay.execution?.timingExceptions
+        : undefined,
+    ).toMatchObject([{ positionIds: expectedScope, profileIds: ['synthetic-a-day-profile'] }]);
+    expect(
+      compiled.content.policy?.executionPolicy.annualOperations?.aDay.execution?.timingExceptions,
+    ).toMatchObject([{ positionIds: expectedScope, profileIds: ['synthetic-a-day-profile'] }]);
+    const canonical = canonicalBidDefinition(compiled.content);
+    expect(canonical.ok, JSON.stringify(canonical)).toBe(true);
+  });
+
+  it('rejects a profile-only timing scope at the immutable execution boundary', () => {
+    const candidate = definition();
+    candidate.authoring = {
+      profiles: [
+        {
+          id: 'synthetic-a-day-profile',
+          name: 'Synthetic all-biddable A-Day profile',
+          sourceRef: 'Synthetic A-Day profile authority',
+          scope: { kind: 'department' },
+          requirements: { credentials: [], custom: [] },
+        },
+      ],
+      compiled: [],
+      reconciliation: 'RULES_CHANGED_AFTER_COMPILATION',
+    };
+    changeBothPolicies(candidate, (policy) => {
+      if (!policy.annualOperations) throw new Error('Synthetic annual operations required');
+      policy.annualOperations.aDay.execution = {
+        timing: 'SIMULTANEOUS',
+        sourceRef: 'Synthetic A-Day timing authority',
+        officersPerGroup: null,
+        constraints: [],
+        timingExceptions: [
+          {
+            id: 'unmaterialized-timing-scope',
+            label: 'Synthetic unmaterialized scope',
+            timing: 'AFTER_POSITION_SELECTION',
+            sourceRef: 'Synthetic Timeline authority',
+            positionIds: [],
+            profileIds: ['synthetic-a-day-profile'],
+          },
+        ],
+      };
+    });
+
+    expect(FrozenLiveBidPolicySchema.safeParse(candidate.policy?.executionPolicy).success).toBe(
+      true,
+    );
+    const result = canonicalBidDefinition(candidate);
+    expect(result).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: 'a_day_timing_exception_scope_unmaterialized' }),
+      ]),
+    });
+  });
+
+  it('rejects overlapping A-Day profile scopes before save instead of assigning timing by browser order', () => {
+    const candidate = definition();
+    candidate.authoring = {
+      profiles: [
+        {
+          id: 'synthetic-a-day-left',
+          name: 'Synthetic left A-Day profile',
+          sourceRef: 'Synthetic left A-Day authority',
+          scope: { kind: 'department' },
+          requirements: { credentials: [], custom: [] },
+        },
+        {
+          id: 'synthetic-a-day-right',
+          name: 'Synthetic right A-Day profile',
+          sourceRef: 'Synthetic right A-Day authority',
+          scope: { kind: 'department' },
+          requirements: { credentials: [], custom: [] },
+        },
+      ],
+      compiled: [],
+      reconciliation: 'RULES_CHANGED_AFTER_COMPILATION',
+    };
+    changeBothPolicies(candidate, (policy) => {
+      if (!policy.annualOperations) throw new Error('Synthetic annual operations required');
+      policy.annualOperations.aDay.execution = {
+        timing: 'SIMULTANEOUS',
+        sourceRef: 'Synthetic A-Day timing authority',
+        officersPerGroup: null,
+        constraints: [],
+        timingExceptions: [
+          {
+            id: 'synthetic-left-scope',
+            label: 'Synthetic left scope',
+            timing: 'SIMULTANEOUS',
+            sourceRef: 'Synthetic Timeline authority',
+            positionIds: [],
+            profileIds: ['synthetic-a-day-left'],
+          },
+          {
+            id: 'synthetic-right-scope',
+            label: 'Synthetic right scope',
+            timing: 'AFTER_POSITION_SELECTION',
+            sourceRef: 'Synthetic Timeline authority',
+            positionIds: [],
+            profileIds: ['synthetic-a-day-right'],
+          },
+        ],
+      };
+    });
+
+    const compiled = compileADayTimingExceptionScopes(candidate);
+    expect(compiled.ok).toBe(false);
+    if (compiled.ok) throw new Error('Synthetic overlapping A-Day scope unexpectedly compiled');
+    expect(compiled.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          positionId: 'synthetic-seat-a',
+          field: 'aDay.timingExceptions[1].positionIds',
+          profileIds: ['synthetic-a-day-left', 'synthetic-a-day-right'],
+        }),
+      ]),
+    );
+  });
+
   it('rejects an A-Day timing exception whose frozen opportunity or profile provenance is absent', () => {
     const candidate = definition();
     changeBothPolicies(candidate, (policy) => {

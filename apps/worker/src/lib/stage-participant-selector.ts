@@ -175,12 +175,48 @@ function selectPinnedMembers(input: {
   }
   const ranks = participantSource.ranks;
   const selectedRanks = new Set<string>(ranks);
+  const exceptionMemberIds = [
+    ...(participantSource.includeMemberIds ?? []),
+    ...(participantSource.excludeMemberIds ?? []),
+  ];
+  for (const memberId of exceptionMemberIds) {
+    const member = input.membersById.get(memberId);
+    if (member === undefined)
+      return {
+        ok: false,
+        code: 'stage_authoring_member_not_in_pinned_evaluation',
+        stageId: definition.stageId,
+        memberIds: [memberId],
+      };
+    if (!isPinnedBidParticipant(member))
+      return {
+        ok: false,
+        code: 'stage_authoring_member_not_participant',
+        stageId: definition.stageId,
+        memberIds: [memberId],
+      };
+  }
+  const excludedMemberIds = new Set(participantSource.excludeMemberIds ?? []);
+  const selectedMemberIds = new Set(
+    input.pinnedMembers
+      .filter((member) => isPinnedBidParticipant(member) && selectedRanks.has(member.rank))
+      .map((member) => member.memberId),
+  );
+  for (const memberId of participantSource.includeMemberIds ?? []) selectedMemberIds.add(memberId);
   const members = input.pinnedMembers.filter(
     (member) => isPinnedBidParticipant(member) && selectedRanks.has(member.rank),
   );
-  if (members.length === 0)
+  const resolved = members
+    .filter((member) => selectedMemberIds.has(member.memberId))
+    .filter((member) => !excludedMemberIds.has(member.memberId));
+  for (const memberId of participantSource.includeMemberIds ?? []) {
+    const member = input.membersById.get(memberId);
+    if (member !== undefined && !excludedMemberIds.has(memberId) && !resolved.includes(member))
+      resolved.push(member);
+  }
+  if (resolved.length === 0)
     return { ok: false, code: 'stage_authoring_empty_resolution', stageId: definition.stageId };
-  return { ok: true, members };
+  return { ok: true, members: resolved };
 }
 
 /**

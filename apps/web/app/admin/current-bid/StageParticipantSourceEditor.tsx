@@ -14,7 +14,7 @@ import {
   bidOrderingComparatorForStage,
 } from '@mbfd/shared';
 import { useEffect, useId, useMemo, useState } from 'react';
-import { CheckField, TextField } from './BidFields';
+import { CheckField, type ReferenceOption, ReferencePicker, TextField } from './BidFields';
 
 type ParticipantSourceType = 'EXPLICIT_MEMBERS' | 'FILTER';
 type ComparatorRule = BidOrderingComparator[number];
@@ -33,6 +33,8 @@ type ParticipantSourceDraft = {
   type: ParticipantSourceType;
   explicitMemberIds: string;
   ranks: string[];
+  includeMemberIds: string[];
+  excludeMemberIds: string[];
 };
 
 function sameOrdering(
@@ -51,6 +53,14 @@ function parseExplicitMemberIds(value: string): number[] | undefined {
     : undefined;
 }
 
+function parseSelectedMemberIds(values: readonly string[]): number[] | undefined {
+  if (values.some((value) => !/^\d+$/.test(value))) return undefined;
+  const memberIds = values.map(Number);
+  return memberIds.every((memberId) => Number.isSafeInteger(memberId) && memberId > 0)
+    ? memberIds
+    : undefined;
+}
+
 function sourceDraft(
   definition: StageParticipantSourceDefinition | undefined,
 ): ParticipantSourceDraft {
@@ -60,6 +70,8 @@ function sourceDraft(
       type: 'FILTER',
       explicitMemberIds: '',
       ranks: [...definition.participantSource.ranks],
+      includeMemberIds: (definition.participantSource.includeMemberIds ?? []).map(String),
+      excludeMemberIds: (definition.participantSource.excludeMemberIds ?? []).map(String),
     };
   return {
     sourceRef: definition?.sourceRef ?? '',
@@ -69,6 +81,8 @@ function sourceDraft(
         ? definition.participantSource.memberIds.join(', ')
         : '',
     ranks: [],
+    includeMemberIds: [],
+    excludeMemberIds: [],
   };
 }
 
@@ -86,12 +100,19 @@ function stageSourceCandidate(input: {
             ? undefined
             : { type: 'EXPLICIT_MEMBERS' as const, memberIds };
         })()
-      : {
-          type: 'FILTER' as const,
-          active: true as const,
-          bidParticipation: 'BIDDABLE' as const,
-          ranks: input.draft.ranks,
-        };
+      : (() => {
+          const includeMemberIds = parseSelectedMemberIds(input.draft.includeMemberIds);
+          const excludeMemberIds = parseSelectedMemberIds(input.draft.excludeMemberIds);
+          if (includeMemberIds === undefined || excludeMemberIds === undefined) return undefined;
+          return {
+            type: 'FILTER' as const,
+            active: true as const,
+            bidParticipation: 'BIDDABLE' as const,
+            ranks: input.draft.ranks,
+            ...(includeMemberIds.length ? { includeMemberIds } : {}),
+            ...(excludeMemberIds.length ? { excludeMemberIds } : {}),
+          };
+        })();
   if (!participantSource) return undefined;
   const parsed = StageParticipantSourceDefinitionSchema.safeParse({
     stageId: input.stageId,
@@ -114,6 +135,7 @@ export function StageParticipantSourceEditor({
   orderingAuthority,
   orderingAuthorityAvailable = true,
   executionStageReady = true,
+  memberOptions = [],
   onSave,
   onRemove,
 }: {
@@ -124,6 +146,8 @@ export function StageParticipantSourceEditor({
   orderingAuthorityAvailable?: boolean;
   /** The current frozen execution-stage schema still requires real member refs. */
   executionStageReady?: boolean;
+  /** Server-loaded Department identities only; browser selection never resolves membership. */
+  memberOptions?: ReferenceOption[];
   onSave(definition: StageParticipantSourceDefinition): void;
   onRemove(): void;
 }) {
@@ -181,7 +205,14 @@ export function StageParticipantSourceEditor({
       <ParticipantSourceTypeField
         value={draft.type}
         onChange={(type) =>
-          setDraft((current) => ({ ...current, type, explicitMemberIds: '', ranks: [] }))
+          setDraft((current) => ({
+            ...current,
+            type,
+            explicitMemberIds: '',
+            ranks: [],
+            includeMemberIds: [],
+            excludeMemberIds: [],
+          }))
         }
       />
       <TextField
@@ -200,10 +231,30 @@ export function StageParticipantSourceEditor({
           help="Comma-separated positive Department member IDs. IDs must be unique; they are not resolved in this browser."
         />
       ) : (
-        <FilterRanks
-          values={draft.ranks}
-          onChange={(ranks) => setDraft((current) => ({ ...current, ranks }))}
-        />
+        <>
+          <FilterRanks
+            values={draft.ranks}
+            onChange={(ranks) => setDraft((current) => ({ ...current, ranks }))}
+          />
+          <ReferencePicker
+            label="Filter inclusions"
+            values={draft.includeMemberIds}
+            options={memberOptions}
+            onChange={(includeMemberIds) =>
+              setDraft((current) => ({ ...current, includeMemberIds }))
+            }
+            help="Add named Department members who must be included even when the rank filter does not match. Server compilation checks them only against the pinned evaluation."
+          />
+          <ReferencePicker
+            label="Filter exclusions"
+            values={draft.excludeMemberIds}
+            options={memberOptions}
+            onChange={(excludeMemberIds) =>
+              setDraft((current) => ({ ...current, excludeMemberIds }))
+            }
+            help="Exclude named Department members from this filter. The same member cannot be both included and excluded."
+          />
+        </>
       )}
       {orderingAuthority && orderingAuthorityAvailable ? (
         <p className="text-sm text-muted-foreground">

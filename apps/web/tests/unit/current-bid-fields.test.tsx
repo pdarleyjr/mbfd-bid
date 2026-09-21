@@ -913,7 +913,7 @@ describe('BidPolicyFields', () => {
     expect(state.changes).toEqual([]);
     await setValue(control(state.container, 'Maximum group size'), '31');
     expect(ops(state.value()).aDay).not.toHaveProperty('execution');
-    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await click(control(state.container, 'Configure A-Day selection'));
     expect(ops(state.value()).aDay.execution).toStrictEqual({
       timing: 'SIMULTANEOUS',
       timingExceptions: [],
@@ -927,7 +927,7 @@ describe('BidPolicyFields', () => {
       'Synthetic approved timing policy',
     );
     expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
-    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await click(control(state.container, 'Configure A-Day selection'));
     const expected = structuredClone(original);
     ops(expected).aDay.max = 31;
     required(expected.policy).executionPolicy = structuredClone(live(expected));
@@ -937,7 +937,7 @@ describe('BidPolicyFields', () => {
 
   it('lets an administrator save each policy-supported A-Day timing model without rewriting limits', async () => {
     const state = policyEditor(baseContent(), 'a-day');
-    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await click(control(state.container, 'Configure A-Day selection'));
     await setValue(
       control(state.container, 'A-Day execution source'),
       'Synthetic timing authority',
@@ -952,7 +952,7 @@ describe('BidPolicyFields', () => {
 
   it('authors a source-backed specialized A-Day timing exception by opportunity', async () => {
     const state = policyEditor(baseContent(), 'a-day');
-    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await click(control(state.container, 'Configure A-Day selection'));
     await setValue(
       control(state.container, 'A-Day execution source'),
       'Synthetic timing authority',
@@ -981,9 +981,36 @@ describe('BidPolicyFields', () => {
     expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
   });
 
+  it('records a shared A-Day profile without deriving its opportunity scope in the browser', async () => {
+    const state = policyEditor(baseContent(), 'a-day');
+    await click(control(state.container, 'Configure A-Day selection'));
+    await setValue(
+      control(state.container, 'A-Day execution source'),
+      'Synthetic timing authority',
+    );
+    await click(button(state.container, 'Add A-Day timing exception'));
+    const exception = group(state.container, 'A-Day timing exception 1');
+    await setValue(control(exception, 'Exception name'), 'Synthetic profile exception');
+    await setValue(control(exception, 'Exception source'), 'Synthetic Timeline authority');
+    await click(
+      control(
+        group(exception, 'Exception shared profiles'),
+        'Synthetic historical profile · Synthetic profile authority',
+      ),
+    );
+
+    expect(ops(state.value()).aDay.execution?.timingExceptions).toEqual([
+      expect.objectContaining({
+        profileIds: ['synthetic-profile'],
+        positionIds: [],
+      }),
+    ]);
+    expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
+  });
+
   it('authors an exact officer count while preserving the distinction between zero and no exact count', async () => {
     const state = policyEditor(baseContent(), 'a-day');
-    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await click(control(state.container, 'Configure A-Day selection'));
     await setValue(control(state.container, 'A-Day execution source'), 'Synthetic officer policy');
     expect(ops(state.value()).aDay.execution?.officersPerGroup).toBeNull();
     await setValue(control(state.container, 'Exact officers per combat group'), '5');
@@ -999,7 +1026,7 @@ describe('BidPolicyFields', () => {
   it('authors named A-Day limits using explicit shift and union scopes without inferring membership from the name', async () => {
     const original = baseContent();
     const state = policyEditor(original, 'a-day');
-    await click(control(state.container, 'Choose A-Day at the same time as the assignment'));
+    await click(control(state.container, 'Configure A-Day selection'));
     await setValue(
       control(state.container, 'A-Day execution source'),
       'Synthetic execution authority',

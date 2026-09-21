@@ -122,7 +122,11 @@ function normalizeStageParticipantSourceAuthoring(
   for (const source of sources) {
     if (source.participantSource.type === 'EXPLICIT_MEMBERS')
       source.participantSource.memberIds.sort((a, b) => a - b);
-    else source.participantSource.ranks.sort(compareId);
+    else {
+      source.participantSource.ranks.sort(compareId);
+      source.participantSource.includeMemberIds?.sort((left, right) => left - right);
+      source.participantSource.excludeMemberIds?.sort((left, right) => left - right);
+    }
   }
   sources.sort((a, b) => compareId(a.stageId, b.stageId));
 }

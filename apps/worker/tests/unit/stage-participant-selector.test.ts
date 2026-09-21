@@ -240,6 +240,75 @@ describe('adaptive stage participant compiler', () => {
     expect(result.executionPolicy.stages[0]?.memberIds).not.toContain(10003);
   });
 
+  it('applies named filter inclusions and exclusions only to the pinned evaluation before freezing provenance', () => {
+    const definitions = sources();
+    const captains = definitions[0];
+    const firefighters = definitions[1];
+    if (!captains || !firefighters) throw new Error('Synthetic stage sources required');
+    definitions[0] = {
+      ...captains,
+      participantSource: {
+        type: 'FILTER',
+        active: true,
+        bidParticipation: 'BIDDABLE',
+        ranks: ['CPT'],
+        includeMemberIds: [10004],
+        excludeMemberIds: [10001],
+      },
+    };
+    definitions[1] = {
+      ...firefighters,
+      participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [10001] },
+    };
+
+    const result = compileStageParticipantsFromPinnedEvaluation({
+      pinnedEvaluation: pinnedEvaluation(),
+      executionPolicy: executionPolicy(),
+      stageParticipantSources: definitions,
+      orderingAuthority: orderingAuthority(),
+    });
+
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    expect(result.executionPolicy.stages.map((stage) => [stage.id, stage.memberIds])).toEqual([
+      ['CAPTAINS', [10004, 10002]],
+      ['FIREFIGHTERS', [10001]],
+    ]);
+    expect(result.provenance[0]?.participantSource).toMatchObject({
+      type: 'FILTER',
+      includeMemberIds: [10004],
+      excludeMemberIds: [10001],
+    });
+  });
+
+  it('fails closed when a named filter exception is absent from the pinned evaluation', () => {
+    const definitions = sources();
+    const captains = definitions[0];
+    if (!captains) throw new Error('Synthetic captain source required');
+    definitions[0] = {
+      ...captains,
+      participantSource: {
+        type: 'FILTER',
+        active: true,
+        bidParticipation: 'BIDDABLE',
+        ranks: ['CPT'],
+        includeMemberIds: [99999],
+      },
+    };
+
+    expect(
+      resolveStageParticipantMembership({
+        pinnedEvaluation: pinnedEvaluation(),
+        executionPolicy: executionPolicy(),
+        stageParticipantSources: definitions,
+      }),
+    ).toMatchObject({
+      ok: false,
+      code: 'stage_authoring_member_not_in_pinned_evaluation',
+      stageId: 'CAPTAINS',
+      memberIds: [99999],
+    });
+  });
+
   it('resolves typed membership for preview but refuses to compile an unresolved comparator into execution order', () => {
     const rankRequested = sources();
     const captains = rankRequested[0];
