@@ -15,7 +15,7 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'ingest-complete', 'ingest-missing-state', 'ingest-error', 'init-fails')) {
+foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'init-fails')) {
   $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); UploadText = $null; PollCount = 0 }
   function global:pnpm {
     $commandText = $args -join ' '
@@ -38,11 +38,16 @@ foreach ($scenario in @('success', 'ingest-complete', 'ingest-missing-state', 'i
     }
     if ($action -eq 'ingest') {
       if ($scenario -eq 'ingest-complete') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'complete' } } }
+      if ($scenario -eq 'ingest-legacy-complete') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ success = $true; error = $null } } }
       if ($scenario -eq 'ingest-missing-state') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ safe_flag = 'synthetic-private-ingest-detail' } } }
       if ($scenario -eq 'ingest-error') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'error'; error = 'synthetic-private-error: cannot start a transaction within a transaction' } } }
       return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ at_bookmark = '00000001-00000002-00000003-0123456789abcdef' } }
     }
-    if ($action -eq 'poll') { $state.PollCount++; return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'complete' } } }
+    if ($action -eq 'poll') {
+      $state.PollCount++
+      if ($scenario -eq 'poll-legacy-complete') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ success = $true; error = $null } } }
+      return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'complete' } }
+    }
     throw "Unexpected REST action: $action"
   }
   function global:Invoke-WebRequest {
@@ -62,7 +67,7 @@ foreach ($scenario in @('success', 'ingest-complete', 'ingest-missing-state', 'i
   } catch { $caught = $_ }
   $env:TEMP = $testRoot
   $outputText = ($captured -join "`n") + ($caught | Out-String)
-  $shouldPass = $scenario -in @('success', 'ingest-complete')
+  $shouldPass = $scenario -in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete')
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome."
   Assert-True (-not ($outputText -match 'synthetic-private-token|0123456789abcdef0123456789abcdef|synthetic\.invalid|private-upload|private\.sql')) "$scenario leaked private restore material."
   if ($scenario -eq 'ingest-missing-state') {
@@ -77,7 +82,7 @@ foreach ($scenario in @('success', 'ingest-complete', 'ingest-missing-state', 'i
     Assert-True ($state.UploadText -notmatch '(?m)^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') 'The restore upload retained D1-incompatible outer transaction wrappers.'
     Assert-True ($state.UploadText -match 'CREATE TABLE synthetic' -and $state.UploadText -match 'INSERT INTO synthetic') 'The restore upload lost SQL while removing transaction wrappers.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
-    Assert-True (($scenario -eq 'ingest-complete' -and $state.PollCount -eq 0) -or ($scenario -eq 'success' -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
+    Assert-True (($scenario -in @('ingest-complete', 'ingest-legacy-complete') -and $state.PollCount -eq 0) -or ($scenario -in @('success', 'poll-legacy-complete') -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
 }
 
