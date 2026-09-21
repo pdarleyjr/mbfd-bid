@@ -68,7 +68,7 @@ try {
   $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
 
   Write-Host "[d1-restore] downloading r2://$BucketName/$SnapshotKey"
-  $downloadOutput = & pnpm exec wrangler r2 object get "$BucketName/$SnapshotKey" --file=$file --remote *>&1
+  $downloadOutput = & pnpm --dir apps/worker exec wrangler r2 object get "$BucketName/$SnapshotKey" --file=$file --remote *>&1
   if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object get failed (exit $LASTEXITCODE)" }
 
   $size = (Get-Item $file).Length
