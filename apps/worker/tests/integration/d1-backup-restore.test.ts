@@ -83,9 +83,9 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('Get-SafeImportFailureCategory');
     expect(src).toContain('Get-SanitizedRestoreMetrics');
     expect(src).toContain('Split-RestoreImportAndBoundInserts');
-    expect(src).toContain('Convert-OversizedInsertToBoundRequest');
-    expect(src).toContain('Invoke-BoundOversizedInsertReplay');
-    expect(src).toContain('bound oversized inserts replayed=');
+    expect(src).toContain('Convert-OversizedInsertToStagedRequest');
+    expect(src).toContain('Invoke-StagedOversizedInsertReplay');
+    expect(src).toContain('staged oversized inserts replayed=');
     expect(src).toContain('sanitized statements=$($metrics.StatementCount)');
     expect(src).toContain('inserts=$($metrics.OverCapInsertCount)');
     expect(src).toContain('category=$category');

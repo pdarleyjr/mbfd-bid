@@ -8,8 +8,8 @@
     D1's asynchronous import API. The restore normalizes the export before
     upload: it removes the export's outer transaction and reserved D1 table,
     emits ordinary table declarations before data, splits oversized
-    INSERT ... VALUES batches, and replays a singleton oversized text literal
-    through D1's bound-query API. THIS WILL APPEND ROWS — for a true overwrite,
+    INSERT ... VALUES batches, and replays oversized text values through small,
+    staged D1 bound-query requests. THIS WILL APPEND ROWS — for a true overwrite,
     use a freshly created throwaway database or an explicitly authorized D1
     restore.
 
@@ -298,7 +298,7 @@ function Split-BoundTextParameter {
   return $chunks.ToArray()
 }
 
-function Convert-OversizedInsertToBoundRequest {
+function Convert-OversizedInsertToStagedRequest {
   param(
     [Parameter(Mandatory)][string]$Statement,
     [Parameter(Mandatory)][int]$MaxSqlBytes
@@ -307,7 +307,8 @@ function Convert-OversizedInsertToBoundRequest {
   # D1 limits SQL text to 100 KB, but allows a text value/row up to 2 MB.
   # Preserve the original SQL spelling and types except for only the text
   # literals needed to bring this INSERT below the SQL-text limit. The values
-  # stay in memory and the JSON request body; no SQL or values are logged.
+  # remain in memory and are later staged in small bound requests; no SQL or
+  # values are logged.
   if ($Statement -notmatch '(?is)^\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\b') {
     return $null
   }
@@ -374,20 +375,28 @@ function Convert-OversizedInsertToBoundRequest {
     [void]$selected.Add($literal.Start)
     $remainingBytes -= (Get-Utf8ByteCount ($Statement.Substring($literal.Start, $literal.Length))) - 1
   }
-  if ($selected.Count -eq 0 -or $remainingBytes -gt $MaxSqlBytes -or $selected.Count -gt 100) {
+  if ($selected.Count -eq 0 -or $remainingBytes -gt $MaxSqlBytes) {
     return $null
   }
 
   $sql = [System.Text.StringBuilder]::new()
-  $params = [System.Collections.Generic.List[string]]::new()
+  $values = [System.Collections.Generic.List[object]]::new()
+  $valueIndex = 0
   $cursor = 0
   foreach ($literal in @($literals | Sort-Object Start)) {
     [void]$sql.Append($Statement.Substring($cursor, $literal.Start - $cursor))
     if ($selected.Contains($literal.Start)) {
-      $chunks = @(Split-BoundTextParameter -Value $literal.Value)
-      if ($params.Count + $chunks.Count -gt 100) { return $null }
-      [void]$sql.Append((@($chunks | ForEach-Object { '?' }) -join ' || '))
-      foreach ($chunk in $chunks) { $params.Add($chunk) }
+      # Keep each HTTP request far below the opaque provider failure observed
+      # for a single large parameterized INSERT. Text reconstruction happens
+      # within D1 from generated helper-table chunks.
+      $chunks = @(Split-BoundTextParameter -Value $literal.Value -MaxBytes 12KB)
+      $marker = "CAST(NULL AS TEXT) /* d1_restore_value_$valueIndex */"
+      [void]$sql.Append($marker)
+      $values.Add([pscustomobject]@{
+        Marker = $marker
+        Chunks = $chunks
+      })
+      $valueIndex++
     } else {
       [void]$sql.Append($Statement.Substring($literal.Start, $literal.Length))
     }
@@ -398,7 +407,7 @@ function Convert-OversizedInsertToBoundRequest {
 
   return [pscustomobject]@{
     Sql = $sql.ToString()
-    Params = $params.ToArray()
+    Values = $values.ToArray()
   }
 }
 
@@ -440,9 +449,9 @@ function Split-RestoreImportAndBoundInserts {
 
       $completedStatement = $statement.ToString()
       if ((Get-Utf8ByteCount $completedStatement) -gt $MaxSqlBytes) {
-        $bound = Convert-OversizedInsertToBoundRequest -Statement $completedStatement -MaxSqlBytes $MaxSqlBytes
+        $bound = Convert-OversizedInsertToStagedRequest -Statement $completedStatement -MaxSqlBytes $MaxSqlBytes
         if ($null -eq $bound) {
-          throw 'Restore contains an oversized SQL statement that cannot be losslessly replayed with bound text parameters.'
+          throw 'Restore contains an oversized SQL statement that cannot be losslessly replayed through staged text chunks.'
         }
         $deferred.Add($bound)
       } else {
@@ -463,7 +472,7 @@ function Split-RestoreImportAndBoundInserts {
   return $deferred.ToArray()
 }
 
-function Invoke-BoundOversizedInsertReplay {
+function Invoke-StagedOversizedInsertReplay {
   param(
     [Parameter(Mandatory)][string]$ApiUri,
     [Parameter(Mandatory)][hashtable]$Headers,
@@ -471,37 +480,20 @@ function Invoke-BoundOversizedInsertReplay {
   )
 
   if ($Statements.Count -eq 0) { return }
-  # D1 permits a 2 MB bound value, while REST API work must complete within a
-  # bounded batch call. Keep aggregate JSON requests small and accept one
-  # larger singleton only when the one value itself requires it.
-  $maxReplayRequestBytes = 512KB
-  function New-BoundReplayBatch([object[]]$ReplayStatements) {
-    $batch = [System.Collections.Generic.List[object]]::new()
-    foreach ($statement in $ReplayStatements) {
-      $batch.Add(@{ sql = $statement.Sql; params = @($statement.Params) })
-    }
-    return @($batch)
-  }
-  function Get-BoundReplayBody([object[]]$ReplayStatements) {
-    $batch = @(New-BoundReplayBatch $ReplayStatements)
-    # D1 documents a single-query envelope as well as a batch envelope. Avoid
-    # the batch-only provider path for one atomic INSERT; both forms return the
-    # normal result array used by the validation below.
-    if ($batch.Count -eq 1) {
-      return @{ sql = $batch[0].sql; params = @($batch[0].params) } | ConvertTo-Json -Depth 5 -Compress
-    }
-    return @{ batch = $batch } | ConvertTo-Json -Depth 5 -Compress
-  }
-  function Invoke-BoundReplayBatch([object[]]$ReplayStatements) {
-    $batch = @(New-BoundReplayBatch $ReplayStatements)
-    $body = Get-BoundReplayBody $ReplayStatements
+  function Invoke-StagedRawRequest {
+    param(
+      [Parameter(Mandatory)][string]$Sql,
+      [AllowEmptyCollection()][string[]]$Params = @(),
+      [Parameter(Mandatory)][ValidateSet('helper_create', 'helper_chunk', 'insert_apply', 'helper_cleanup')][string]$Operation
+    )
+    $payload = @{ sql = $Sql }
+    if ($Params.Count -gt 0) { $payload.params = @($Params) }
+    $body = $payload | ConvertTo-Json -Depth 5 -Compress
     $requestBytes = Get-Utf8ByteCount $body
     try {
-      # `/raw` accepts the same D1 single/batch parameter contract as `/query`
-      # and returns the same per-query success envelope, while avoiding object
-      # result serialization for these write-only replay calls. Keep a readable
-      # HTTP response for non-2xx replies so only a safe error category—not the
-      # provider body, SQL, or values—can be emitted.
+      # `/raw` accepts the documented single-query parameter contract. Keep a
+      # readable HTTP response for non-2xx replies so only a safe error
+      # category—not the provider body, SQL, or values—can be emitted.
       $response = Invoke-WebRequest -Method Post -Uri ($ApiUri -replace '/import$', '/raw') -Headers $Headers -ContentType 'application/json' -Body $body -SkipHttpErrorCheck -ErrorAction Stop
     } catch {
       $category = 'transport_failure'
@@ -520,50 +512,106 @@ function Invoke-BoundOversizedInsertReplay {
           }
         }
       } catch {}
-      Write-Host "[d1-restore] bound replay request failure category=$category request_bytes=$requestBytes batch_queries=$($batch.Count)"
-      throw "D1 bound oversized-insert replay request failed (category=$category)."
+      Write-Host "[d1-restore] staged replay request failure operation=$Operation category=$category request_bytes=$requestBytes"
+      throw "D1 staged oversized-insert replay request failed (operation=$Operation category=$category)."
     }
     $statusCode = 0
     try { $statusCode = [int]$response.StatusCode } catch {}
     if ($statusCode -lt 200 -or $statusCode -gt 299) {
       $category = Get-SafeImportFailureCategory $response.Content
       $category = if ($category -eq 'opaque') { "http_status_$statusCode" } else { "$category`_http_status_$statusCode" }
-      Write-Host "[d1-restore] bound replay request failure category=$category request_bytes=$requestBytes batch_queries=$($batch.Count)"
-      throw "D1 bound oversized-insert replay request failed (category=$category)."
+      Write-Host "[d1-restore] staged replay request failure operation=$Operation category=$category request_bytes=$requestBytes"
+      throw "D1 staged oversized-insert replay request failed (operation=$Operation category=$category)."
     }
     try {
       $response = $response.Content | ConvertFrom-Json -ErrorAction Stop
     } catch {
-      Write-Host "[d1-restore] bound replay response failure category=invalid_response request_bytes=$requestBytes batch_queries=$($batch.Count)"
-      throw 'D1 bound oversized-insert replay returned an invalid response.'
+      Write-Host "[d1-restore] staged replay response failure operation=$Operation category=invalid_response request_bytes=$requestBytes"
+      throw 'D1 staged oversized-insert replay returned an invalid response.'
     }
     if ($response.success -ne $true) {
       $category = Get-SafeImportFailureCategory $response.errors
-      throw "D1 bound oversized-insert replay reported failure (category=$category)."
+      throw "D1 staged oversized-insert replay reported failure (operation=$Operation category=$category)."
     }
     $results = @($response.result)
-    if ($results.Count -ne $batch.Count -or @($results | Where-Object { $_.success -ne $true }).Count -gt 0) {
-      throw 'D1 bound oversized-insert replay returned an incomplete result set.'
+    if ($results.Count -ne 1 -or $results[0].success -ne $true) {
+      throw "D1 staged oversized-insert replay returned an incomplete result set (operation=$Operation)."
     }
+    return $response
   }
 
-  $pending = [System.Collections.Generic.List[object]]::new()
-  $replayBatches = [System.Collections.Generic.List[object[]]]::new()
-  foreach ($statement in $Statements) {
-    $candidate = @($pending.ToArray() + @($statement))
-    $candidateBody = Get-BoundReplayBody $candidate
-    if ($pending.Count -gt 0 -and (Get-Utf8ByteCount $candidateBody) -gt $maxReplayRequestBytes) {
-      $replayBatches.Add($pending.ToArray())
-      $pending = [System.Collections.Generic.List[object]]::new()
+  $helperTables = [System.Collections.Generic.List[string]]::new()
+  $replayed = 0
+  $valueCount = 0
+  $chunkCount = 0
+  $helperCount = 0
+  $operationFailure = $null
+  $cleanupFailure = $null
+  $nonce = [guid]::NewGuid().ToString('N')
+  try {
+    $statementIndex = 0
+    foreach ($statement in $Statements) {
+      $replaySql = $statement.Sql
+      $valueIndex = 0
+      foreach ($value in @($statement.Values)) {
+        $helper = "__mbfd_restore_chunks_$nonce`_$statementIndex`_$valueIndex"
+        $helperTables.Add($helper)
+        $helperCount++
+        Invoke-StagedRawRequest -Sql "CREATE TABLE `"$helper`" (chunk_index INTEGER PRIMARY KEY, chunk_value TEXT NOT NULL);" -Operation helper_create | Out-Null
+        $chunkIndex = 0
+        $allChunks = @($value.Chunks)
+        while ($chunkIndex -lt $allChunks.Count) {
+          # Bound the replay request below the provider failure observed near
+          # 100 KB while amortizing the per-request overhead. Three 12 KB
+          # chunks are materially below that threshold and use six parameters.
+          $rowSql = [System.Collections.Generic.List[string]]::new()
+          $rowParams = [System.Collections.Generic.List[string]]::new()
+          for ($row = 0; $row -lt 3 -and $chunkIndex -lt $allChunks.Count; $row++) {
+            $rowSql.Add('(?, ?)')
+            $rowParams.Add("$chunkIndex")
+            $rowParams.Add($allChunks[$chunkIndex])
+            $chunkIndex++
+            $chunkCount++
+          }
+          Invoke-StagedRawRequest -Sql "INSERT INTO `"$helper`" (chunk_index, chunk_value) VALUES $($rowSql -join ', ');" -Params ($rowParams.ToArray()) -Operation helper_chunk | Out-Null
+        }
+        $assembledValue = "(SELECT group_concat(chunk_value, '') FROM (SELECT chunk_value FROM `"$helper`" ORDER BY chunk_index))"
+        if (-not $replaySql.Contains($value.Marker, [System.StringComparison]::Ordinal)) {
+          throw 'D1 staged oversized-insert replay lost an internal value marker.'
+        }
+        $replaySql = $replaySql.Replace($value.Marker, $assembledValue)
+        $valueIndex++
+        $valueCount++
+      }
+      if ((Get-Utf8ByteCount $replaySql) -gt 90KB) {
+        throw 'D1 staged oversized-insert replay would exceed the safe final SQL-text budget.'
+      }
+      Invoke-StagedRawRequest -Sql $replaySql -Operation insert_apply | Out-Null
+      foreach ($helper in @($helperTables.ToArray())) {
+        Invoke-StagedRawRequest -Sql "DROP TABLE IF EXISTS `"$helper`";" -Operation helper_cleanup | Out-Null
+        [void]$helperTables.Remove($helper)
+      }
+      $replayed++
+      $statementIndex++
     }
-    $pending.Add($statement)
+  } catch {
+    $operationFailure = $_
+  } finally {
+    $helpersForCleanup = @($helperTables.ToArray())
+    [array]::Reverse($helpersForCleanup)
+    foreach ($helper in $helpersForCleanup) {
+      try {
+        Invoke-StagedRawRequest -Sql "DROP TABLE IF EXISTS `"$helper`";" -Operation helper_cleanup | Out-Null
+      } catch {
+        if ($null -eq $cleanupFailure) { $cleanupFailure = $_ }
+      }
+    }
   }
-  if ($pending.Count -gt 0) { $replayBatches.Add($pending.ToArray()) }
-  foreach ($replayBatch in $replayBatches) {
-    Invoke-BoundReplayBatch $replayBatch
-  }
-  $paramCount = @($Statements | ForEach-Object { @($_.Params).Count } | Measure-Object -Sum).Sum
-  Write-Host "[d1-restore] bound oversized inserts replayed=$($Statements.Count) params=$paramCount batches=$($replayBatches.Count)"
+  if ($null -ne $operationFailure) { throw $operationFailure }
+  if ($null -ne $cleanupFailure) { throw 'D1 staged oversized-insert replay helper cleanup failed.' }
+  if ($replayed -ne $Statements.Count) { throw 'D1 staged oversized-insert replay did not apply every deferred statement.' }
+  if ($valueCount -eq 0 -or $chunkCount -eq 0) { throw 'D1 staged oversized-insert replay omitted required text chunks.' }
+  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount chunks=$chunkCount helpers=$helperCount"
 }
 
 if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
@@ -755,7 +803,7 @@ try {
   }
   if (-not $completed) { throw 'D1 import did not complete before the bounded polling window expired.' }
 
-  Invoke-BoundOversizedInsertReplay -ApiUri $apiUri -Headers $headers -Statements $boundStatements
+  Invoke-StagedOversizedInsertReplay -ApiUri $apiUri -Headers $headers -Statements $boundStatements
 
   Write-Host "[d1-restore] import complete into $DbName ($Env)"
 } finally {
