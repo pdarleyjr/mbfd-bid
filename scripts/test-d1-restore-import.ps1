@@ -15,7 +15,7 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'bound-replay-batched', 'bound-replay-transport-failure')) {
+foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-transport-failure')) {
   $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new() }
   function global:pnpm {
     $commandText = $args -join ' '
@@ -30,7 +30,8 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
       } else {
         "INSERT INTO synthetic VALUES (900001, '$deferredPayload');"
       }
-      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY, note TEXT);`nINSERT INTO synthetic VALUES (1, 'small');`nINSERT INTO synthetic VALUES $largeRows;`n$deferredInserts`nCREATE TABLE referenced_later (id INTEGER PRIMARY KEY);`nCOMMIT;`n")
+      $largeInsert = if ($scenario -eq 'split-replace-batch') { 'INSERT OR REPLACE INTO synthetic VALUES' } else { 'INSERT INTO synthetic VALUES' }
+      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY, note TEXT);`nINSERT INTO synthetic VALUES (1, 'small');`n$largeInsert $largeRows;`n$deferredInserts`nCREATE TABLE referenced_later (id INTEGER PRIMARY KEY);`nCOMMIT;`n")
       return
     }
     if ($commandText -match 'd1 info') { return '{"uuid":"01234567-89ab-cdef-0123-456789abcdef"}' }
@@ -81,7 +82,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   } catch { $caught = $_ }
   $env:TEMP = $testRoot
   $outputText = ($captured -join "`n") + ($caught | Out-String)
-  $shouldPass = $scenario -in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'bound-replay-batched')
+  $shouldPass = $scenario -in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched')
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome."
   Assert-True (-not ($outputText -match 'synthetic-private-token|0123456789abcdef0123456789abcdef|synthetic\.invalid|private-upload|private\.sql|synthetic-bound-private-payload')) "$scenario leaked private restore material."
   if ($scenario -eq 'ingest-missing-state') {
@@ -107,7 +108,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True ($state.RestoreText -notmatch 'synthetic-bound-private-payload') 'The restore import file retained an oversized text literal instead of parameterizing it.'
     Assert-True ($state.RestoreText -match 'CREATE TABLE synthetic' -and $state.RestoreText -match 'INSERT INTO synthetic') 'The restore file lost SQL while removing transaction wrappers.'
     Assert-True ($state.RestoreText.IndexOf('CREATE TABLE referenced_later') -lt $state.RestoreText.IndexOf('INSERT INTO synthetic VALUES (1,')) 'The restore file did not emit all table declarations before data INSERTs.'
-    $syntheticInserts = [regex]::Matches($state.RestoreText, '(?ms)^\s*INSERT INTO synthetic VALUES .*?;\s*$')
+    $syntheticInserts = [regex]::Matches($state.RestoreText, '(?ms)^\s*INSERT(?: OR (?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))? INTO synthetic VALUES .*?;\s*$')
     Assert-True ($syntheticInserts.Count -ge 3) 'The restore file did not split the oversized INSERT batch.'
     Assert-True ((($syntheticInserts | ForEach-Object { $_.Value.Length } | Measure-Object -Maximum).Maximum) -le 8000) 'The restore file emitted an INSERT batch above the safe statement-size cap.'
     Assert-True ([regex]::Matches($state.RestoreText, 'synthetic-row-payload-0123456789abcdef0123456789abcdef').Count -eq 1600) 'The restore file lost rows while splitting an oversized INSERT batch.'
@@ -123,7 +124,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True (@($boundQueries | Where-Object { $_.sql.Length -ge 1000 -or @($_.params)[0].Length -le 100000 }).Count -eq 0) 'The oversized text literal was not moved out of the SQL statement.'
     Assert-True (@($state.BoundPayloads | ForEach-Object { @($_.batch | Where-Object { $_.sql -match '(?i)^\s*PRAGMA\s+' }) }).Count -eq 0) 'The bound oversized-insert replay mixed connection-scoped pragma state with parameterized writes.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
-    Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'bound-replay-batched')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
+    Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
 }
 

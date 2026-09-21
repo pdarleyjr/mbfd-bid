@@ -185,7 +185,7 @@ function Split-LargeInsertStatement {
   # may segment an import internally, so leave headroom for its SQL envelope.
   $maxChars = 8000
   if ($Statement.Length -le $maxChars) { return @($Statement) }
-  if ($Statement -notmatch '(?is)^(?<header>\s*INSERT\s+INTO\b.*?\bVALUES\s*)(?<values>\(.*\))\s*;\s*$') {
+  if ($Statement -notmatch '(?is)^(?<header>\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\b.*?\bVALUES\s*)(?<values>\(.*\))\s*;\s*$') {
     return @($Statement)
   }
 
@@ -565,7 +565,7 @@ try {
           }
           continue
         }
-        if ($line -match '(?i)^\s*INSERT\s+INTO\b') {
+        if ($line -match '(?i)^\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\b') {
           $pendingInsert = [System.Text.StringBuilder]::new()
           [void]$pendingInsert.AppendLine($line)
           if ($line -match ';\s*$') {
