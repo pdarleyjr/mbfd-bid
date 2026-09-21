@@ -15,7 +15,7 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'ingest-complete', 'init-fails')) {
+foreach ($scenario in @('success', 'ingest-complete', 'ingest-missing-state', 'init-fails')) {
   $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); UploadText = $null; PollCount = 0 }
   function global:pnpm {
     $commandText = $args -join ' '
@@ -38,6 +38,7 @@ foreach ($scenario in @('success', 'ingest-complete', 'init-fails')) {
     }
     if ($action -eq 'ingest') {
       if ($scenario -eq 'ingest-complete') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'complete' } } }
+      if ($scenario -eq 'ingest-missing-state') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ safe_flag = 'synthetic-private-ingest-detail' } } }
       return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ at_bookmark = '00000001-00000002-00000003-0123456789abcdef' } }
     }
     if ($action -eq 'poll') { $state.PollCount++; return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'complete' } } }
@@ -60,9 +61,12 @@ foreach ($scenario in @('success', 'ingest-complete', 'init-fails')) {
   } catch { $caught = $_ }
   $env:TEMP = $testRoot
   $outputText = ($captured -join "`n") + ($caught | Out-String)
-  $shouldPass = $scenario -ne 'init-fails'
+  $shouldPass = $scenario -in @('success', 'ingest-complete')
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome."
   Assert-True (-not ($outputText -match 'synthetic-private-token|0123456789abcdef0123456789abcdef|synthetic\.invalid|private-upload|private\.sql')) "$scenario leaked private restore material."
+  if ($scenario -eq 'ingest-missing-state') {
+    Assert-True ($outputText -match 'result=safe_flag' -and $outputText -notmatch 'synthetic-private-ingest-detail') 'The missing-state diagnostic did not expose only safe response shape.'
+  }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
     Assert-True ($state.UploadText.StartsWith("PRAGMA defer_foreign_keys = TRUE;")) 'The restore upload did not scope deferred foreign-key checks.'

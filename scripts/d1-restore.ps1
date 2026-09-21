@@ -50,6 +50,18 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+function Get-SafePropertyNames {
+  param([object]$Value)
+  if ($null -eq $Value) { return 'none' }
+  $names = @(
+    $Value.PSObject.Properties.Name |
+      ForEach-Object { if ($_ -match '^[A-Za-z0-9_]{1,64}$') { $_ } else { 'nonstandard' } } |
+      Sort-Object -Unique
+  )
+  if ($names.Count -eq 0) { return 'none' }
+  return ($names -join ',')
+}
+
 if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
   throw 'D1 restore requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the execution environment.'
 }
@@ -140,7 +152,9 @@ try {
     if ($ingest.result.status -eq 'error') { throw 'D1 import reported failure.' }
     $bookmark = $ingest.result.at_bookmark
     if ([string]::IsNullOrWhiteSpace($bookmark)) {
-      throw 'D1 import ingest request returned neither completion nor a status bookmark.'
+      $topShape = Get-SafePropertyNames $ingest
+      $resultShape = Get-SafePropertyNames $ingest.result
+      throw "D1 import ingest request returned neither completion nor a status bookmark (top=$topShape; result=$resultShape)."
     }
 
     for ($attempt = 1; $attempt -le $PollAttempts; $attempt++) {
