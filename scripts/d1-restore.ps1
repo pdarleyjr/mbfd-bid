@@ -163,8 +163,8 @@ try {
 
   # A D1 export can interleave data for an early table with the declarations
   # of tables it references. Emit all ordinary table declarations first, then
-  # replay the remaining SQL in its original order. Foreign-key checks remain
-  # deferred only for the import and are verified cleanly by the caller.
+  # replay the remaining SQL in its original order. Foreign-key enforcement is
+  # suspended only within the import file and is verified cleanly by the caller.
   $source = [System.IO.StreamReader]::new($file)
   try {
     $tablePreamble = [System.IO.StreamWriter]::new($tablePreambleFile, $false, [System.Text.UTF8Encoding]::new($false))
@@ -235,7 +235,7 @@ try {
   }
   [System.IO.File]::WriteAllText(
     $restoreFile,
-    "PRAGMA defer_foreign_keys = TRUE;`n",
+    "PRAGMA foreign_keys = OFF;`nPRAGMA defer_foreign_keys = TRUE;`n",
     [System.Text.UTF8Encoding]::new($false)
   )
   $restoreDestination = [System.IO.StreamWriter]::new($restoreFile, $true, [System.Text.UTF8Encoding]::new($false))
@@ -246,6 +246,11 @@ try {
   } finally {
     $restoreDestination.Dispose()
   }
+  [System.IO.File]::AppendAllText(
+    $restoreFile,
+    "PRAGMA foreign_keys = ON;`n",
+    [System.Text.UTF8Encoding]::new($false)
+  )
 
   $executeOutput = & pnpm --dir apps/worker exec wrangler d1 execute $DbName --remote --file=$restoreFile *>&1
   if ($LASTEXITCODE -ne 0) {

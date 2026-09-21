@@ -57,7 +57,8 @@ foreach ($scenario in @('success', 'executor-fails', 'temp-fallback')) {
   }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
-    Assert-True ($state.RestoreText.StartsWith("PRAGMA defer_foreign_keys = TRUE;")) 'The restore file did not scope deferred foreign-key checks.'
+    Assert-True ($state.RestoreText.StartsWith("PRAGMA foreign_keys = OFF;`nPRAGMA defer_foreign_keys = TRUE;")) 'The restore file did not scope foreign-key suspension to the import.'
+    Assert-True ($state.RestoreText.EndsWith("PRAGMA foreign_keys = ON;`n")) 'The restore file did not re-enable foreign-key enforcement.'
     Assert-True ($state.RestoreText -notmatch '(?m)^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') 'The restore file retained outer transaction wrappers.'
     Assert-True ($state.RestoreText -notmatch '(?i)_cf_KV|synthetic-reserved') 'The restore file retained D1-reserved table SQL.'
     Assert-True ($state.RestoreText -match 'CREATE TABLE synthetic' -and $state.RestoreText -match 'INSERT INTO synthetic') 'The restore file lost SQL while removing transaction wrappers.'

@@ -75,6 +75,8 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).not.toContain('/d1/database/');
     expect(src).toContain('Get-SafeExecutorFailureCategory');
     expect(src).toContain('category=$category');
+    expect(src).toContain('PRAGMA foreign_keys = OFF;');
+    expect(src).toContain('PRAGMA foreign_keys = ON;');
     expect(src).toContain('PRAGMA defer_foreign_keys = TRUE;');
     expect(src).toContain('[System.IO.StreamReader]::new($file)');
     expect(src).toContain('BEGIN(?:\\s+TRANSACTION)?|COMMIT');
