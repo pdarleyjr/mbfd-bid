@@ -23,7 +23,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     $global:LASTEXITCODE = 0
     if ($commandText -match 'r2 object get') {
       $filePath = ($args | Where-Object { $_ -like '--file=*' }).Substring(7)
-      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY);`nINSERT INTO synthetic VALUES (1);`nCOMMIT;`n")
+      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY);`nINSERT INTO synthetic VALUES (1);`nCOMMIT;`n")
       return
     }
     if ($commandText -match 'd1 info') { return '{"uuid":"01234567-89ab-cdef-0123-456789abcdef"}' }
@@ -80,6 +80,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   if ($shouldPass) {
     Assert-True ($state.UploadText.StartsWith("PRAGMA defer_foreign_keys = TRUE;")) 'The restore upload did not scope deferred foreign-key checks.'
     Assert-True ($state.UploadText -notmatch '(?m)^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') 'The restore upload retained D1-incompatible outer transaction wrappers.'
+    Assert-True ($state.UploadText -notmatch '(?i)_cf_KV|synthetic-reserved') 'The restore upload retained D1-reserved table SQL.'
     Assert-True ($state.UploadText -match 'CREATE TABLE synthetic' -and $state.UploadText -match 'INSERT INTO synthetic') 'The restore upload lost SQL while removing transaction wrappers.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
     Assert-True (($scenario -in @('ingest-complete', 'ingest-legacy-complete') -and $state.PollCount -eq 0) -or ($scenario -in @('success', 'poll-legacy-complete') -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
