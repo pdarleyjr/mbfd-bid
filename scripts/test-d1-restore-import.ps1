@@ -63,7 +63,7 @@ foreach ($scenario in @('success', 'init-fails')) {
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
     Assert-True ($state.UploadText.StartsWith("PRAGMA defer_foreign_keys = TRUE;")) 'The restore upload did not scope deferred foreign-key checks.'
-    Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match 'r2 object get' -and $state.Calls[1] -match 'd1 info') 'The restore path did not download then resolve the target database.'
+    Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match 'd1 info') 'The restore path did not download from the Worker runtime then resolve the target database.'
   }
 }
 
