@@ -80,6 +80,7 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('Get-SafeImportFailureCategory');
     expect(src).toContain('Get-SanitizedRestoreMetrics');
     expect(src).toContain('sanitized statements=$($metrics.StatementCount)');
+    expect(src).toContain('inserts=$($metrics.OverCapInsertCount)');
     expect(src).toContain('category=$category');
     expect(src).toContain('PRAGMA foreign_keys = OFF;');
     expect(src).toContain('PRAGMA foreign_keys = ON;');

@@ -108,11 +108,16 @@ function Get-SanitizedRestoreMetrics {
     $statementCount = 0
     $maxStatementChars = 0
     $overCapCount = 0
+    $overCapInsertCount = 0
+    $overCapCreateCount = 0
+    $overCapOtherCount = 0
     $statementChars = 0
+    $statementPrefix = [System.Text.StringBuilder]::new()
     $quote = [char]0
     while (($codePoint = $reader.Read()) -ne -1) {
       $character = [char]$codePoint
       $statementChars++
+      if ($statementPrefix.Length -lt 64) { [void]$statementPrefix.Append($character) }
       if ($quote -ne [char]0) {
         if ($character -eq $quote) {
           if (($quote -eq [char]39 -or $quote -eq [char]34) -and $reader.Peek() -eq [int][char]$quote) {
@@ -135,18 +140,34 @@ function Get-SanitizedRestoreMetrics {
       if ($character -ne [char]59) { continue }
       $statementCount++
       if ($statementChars -gt $maxStatementChars) { $maxStatementChars = $statementChars }
-      if ($statementChars -gt $Cap) { $overCapCount++ }
+      if ($statementChars -gt $Cap) {
+        $overCapCount++
+        $prefix = $statementPrefix.ToString()
+        if ($prefix -match '(?i)^\s*INSERT\b|^\s*REPLACE\b') { $overCapInsertCount++ }
+        elseif ($prefix -match '(?i)^\s*CREATE\b') { $overCapCreateCount++ }
+        else { $overCapOtherCount++ }
+      }
       $statementChars = 0
+      $statementPrefix.Clear() | Out-Null
     }
     if ($statementChars -gt 0) {
       $statementCount++
       if ($statementChars -gt $maxStatementChars) { $maxStatementChars = $statementChars }
-      if ($statementChars -gt $Cap) { $overCapCount++ }
+      if ($statementChars -gt $Cap) {
+        $overCapCount++
+        $prefix = $statementPrefix.ToString()
+        if ($prefix -match '(?i)^\s*INSERT\b|^\s*REPLACE\b') { $overCapInsertCount++ }
+        elseif ($prefix -match '(?i)^\s*CREATE\b') { $overCapCreateCount++ }
+        else { $overCapOtherCount++ }
+      }
     }
     return [pscustomobject]@{
       StatementCount = $statementCount
       MaxStatementChars = $maxStatementChars
       OverCapCount = $overCapCount
+      OverCapInsertCount = $overCapInsertCount
+      OverCapCreateCount = $overCapCreateCount
+      OverCapOtherCount = $overCapOtherCount
     }
   } finally {
     $reader.Dispose()
@@ -346,7 +367,7 @@ try {
     [System.Text.UTF8Encoding]::new($false)
   )
   $metrics = Get-SanitizedRestoreMetrics -Path $restoreFile -Cap 8000
-  Write-Host "[d1-restore] sanitized statements=$($metrics.StatementCount) max_chars=$($metrics.MaxStatementChars) over_cap=$($metrics.OverCapCount)"
+  Write-Host "[d1-restore] sanitized statements=$($metrics.StatementCount) max_chars=$($metrics.MaxStatementChars) over_cap=$($metrics.OverCapCount) inserts=$($metrics.OverCapInsertCount) creates=$($metrics.OverCapCreateCount) other=$($metrics.OverCapOtherCount)"
 
   $databaseInfoOutput = & pnpm --dir apps/worker exec wrangler d1 info $DbName --json *>&1
   if ($LASTEXITCODE -ne 0) { throw 'D1 database lookup failed; import not started.' }
