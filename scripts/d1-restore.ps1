@@ -79,6 +79,80 @@ function Get-SafeImportFailureCategory {
   return 'opaque'
 }
 
+function Split-LargeInsertStatement {
+  param([Parameter(Mandatory)][string]$Statement)
+
+  # D1 rejects a single SQL statement that exceeds its statement-size limit.
+  # Split only standard INSERT ... VALUES batches; unsupported statement forms
+  # are returned unchanged rather than risking a semantic rewrite.
+  $maxChars = 48000
+  if ($Statement.Length -le $maxChars) { return @($Statement) }
+  if ($Statement -notmatch '(?is)^(?<header>\s*INSERT\s+INTO\b.*?\bVALUES\s*)(?<values>\(.*\))\s*;\s*$') {
+    return @($Statement)
+  }
+
+  $header = $Matches.header
+  $values = $Matches.values
+  $tuples = [System.Collections.Generic.List[string]]::new()
+  $quote = [char]0
+  $depth = 0
+  $tupleStart = -1
+  for ($index = 0; $index -lt $values.Length; $index++) {
+    $character = $values[$index]
+    if ($quote -ne [char]0) {
+      if ($character -eq $quote) {
+        if (($quote -eq [char]39 -or $quote -eq [char]34) -and $index + 1 -lt $values.Length -and $values[$index + 1] -eq $quote) {
+          $index++
+          continue
+        }
+        $quote = [char]0
+      }
+      continue
+    }
+    if ($character -eq [char]39 -or $character -eq [char]34 -or $character -eq [char]96) {
+      $quote = $character
+      continue
+    }
+    if ($character -eq [char]91) {
+      $quote = [char]93
+      continue
+    }
+    if ($character -eq [char]40) {
+      if ($depth -eq 0) { $tupleStart = $index }
+      $depth++
+      continue
+    }
+    if ($character -eq [char]41) {
+      $depth--
+      if ($depth -lt 0) { return @($Statement) }
+      if ($depth -eq 0 -and $tupleStart -ge 0) {
+        $tuples.Add($values.Substring($tupleStart, $index - $tupleStart + 1))
+        $tupleStart = -1
+      }
+      continue
+    }
+    if ($depth -eq 0 -and $character -ne [char]44 -and -not [char]::IsWhiteSpace($character)) { return @($Statement) }
+  }
+  if ($quote -ne [char]0 -or $depth -ne 0 -or $tuples.Count -eq 0) { return @($Statement) }
+
+  $chunks = [System.Collections.Generic.List[string]]::new()
+  $current = [System.Text.StringBuilder]::new($header)
+  foreach ($tuple in $tuples) {
+    $separator = if ($current.Length -gt $header.Length) { ',' } else { '' }
+    if ($current.Length -gt $header.Length -and $current.Length + $separator.Length + $tuple.Length + 2 -gt $maxChars) {
+      [void]$current.Append(";`n")
+      $chunks.Add($current.ToString())
+      $current = [System.Text.StringBuilder]::new($header)
+      $separator = ''
+    }
+    [void]$current.Append($separator)
+    [void]$current.Append($tuple)
+  }
+  [void]$current.Append(";`n")
+  $chunks.Add($current.ToString())
+  return $chunks.ToArray()
+}
+
 if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
   throw 'D1 restore requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the execution environment.'
 }
@@ -116,6 +190,7 @@ try {
     $destination = [System.IO.StreamWriter]::new($restoreFile, $true, [System.Text.UTF8Encoding]::new($false))
     try {
       $skippingReservedD1TableStatement = $false
+      $pendingInsert = $null
       while (($line = $source.ReadLine()) -ne $null) {
         # D1's import API owns the transaction. Wrangler SQL exports wrap the
         # dump in an outer transaction, which D1 rejects during import.
@@ -131,8 +206,26 @@ try {
           continue
         }
         if ($line -match '^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') { continue }
+        if ($null -ne $pendingInsert) {
+          [void]$pendingInsert.AppendLine($line)
+          if ($line -match ';\s*$') {
+            foreach ($chunk in (Split-LargeInsertStatement $pendingInsert.ToString())) { $destination.Write($chunk) }
+            $pendingInsert = $null
+          }
+          continue
+        }
+        if ($line -match '(?i)^\s*INSERT\s+INTO\b') {
+          $pendingInsert = [System.Text.StringBuilder]::new()
+          [void]$pendingInsert.AppendLine($line)
+          if ($line -match ';\s*$') {
+            foreach ($chunk in (Split-LargeInsertStatement $pendingInsert.ToString())) { $destination.Write($chunk) }
+            $pendingInsert = $null
+          }
+          continue
+        }
         $destination.WriteLine($line)
       }
+      if ($null -ne $pendingInsert) { throw 'Restore snapshot ended inside an INSERT statement.' }
     } finally {
       $destination.Dispose()
     }
