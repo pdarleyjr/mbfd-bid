@@ -15,7 +15,7 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-transport-failure')) {
+foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-transport-failure', 'bound-replay-http-400')) {
   $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new() }
   function global:pnpm {
     $commandText = $args -join ' '
@@ -42,6 +42,18 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     $payload = $Body | ConvertFrom-Json
     if ($null -ne $payload.batch) {
       if ($scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
+      if ($scenario -eq 'bound-replay-http-400') {
+        $exception = [System.Exception]::new('synthetic-bound-replay-provider-detail')
+        $exception | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = 400 })
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+          $exception,
+          'SyntheticBoundReplayHttp400',
+          [System.Management.Automation.ErrorCategory]::InvalidData,
+          $null
+        )
+        $errorRecord.ErrorDetails = [System.Management.Automation.ErrorDetails]::new('request body too large')
+        throw $errorRecord
+      }
       $state.BoundPayloads.Add($payload)
       return [pscustomobject]@{ success = $true; result = @($payload.batch | ForEach-Object { [pscustomobject]@{ success = $true } }) }
     }
@@ -97,6 +109,10 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   if ($scenario -eq 'bound-replay-transport-failure') {
     Assert-True ($outputText -match 'D1 bound oversized-insert replay request failed \(category=transport_failure\)\.' -and $outputText -notmatch 'synthetic-bound-replay-provider-detail') 'The bound-replay transport failure did not emit a bounded category.'
     Assert-True ($outputText -match '\[d1-restore\] bound replay request failure category=transport_failure request_bytes=\d+ batch_queries=\d+') 'The bound-replay transport failure did not record only its request size and query count.'
+  }
+  if ($scenario -eq 'bound-replay-http-400') {
+    Assert-True ($outputText -match 'D1 bound oversized-insert replay request failed \(category=request_too_large_http_status_400\)\.' -and $outputText -notmatch 'synthetic-bound-replay-provider-detail') 'The HTTP failure did not classify a response body without exposing it.'
+    Assert-True ($outputText -match '\[d1-restore\] bound replay request failure category=request_too_large_http_status_400 request_bytes=\d+ batch_queries=\d+') 'The HTTP failure did not record only fixed-vocabulary diagnostics.'
   }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {

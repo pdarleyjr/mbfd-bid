@@ -82,6 +82,9 @@ function Get-SafeImportFailureCategory {
   }
   if ([string]::IsNullOrWhiteSpace($detail)) { return 'opaque' }
   if ($detail -match '(?i)statement\s+too\s+long|sqlite_toobig') { return 'statement_too_long' }
+  if ($detail -match '(?i)request\s+(?:body|entity|payload).{0,40}(?:too\s+large|exceed)|(?:body|entity|payload).{0,40}(?:too\s+large|exceed)') { return 'request_too_large' }
+  if ($detail -match '(?i)invalid\s+(?:json|request|parameter)|malformed\s+(?:json|request)') { return 'invalid_request' }
+  if ($detail -match '(?i)bind(?:ing)?\s+(?:parameter|value)|invalid\s+(?:parameter|binding)') { return 'parameter_binding' }
   if ($detail -match '(?i)cannot\s+start\s+a\s+transaction|within\s+a\s+transaction') { return 'transaction_wrapper' }
   if ($detail -match '(?i)foreign\s+key') { return 'foreign_key' }
   if ($detail -match '(?i)no\s+such\s+(?:table|column)') { return 'schema_reference' }
@@ -450,9 +453,20 @@ function Invoke-BoundOversizedInsertReplay {
       $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/query') -Headers $Headers -ContentType 'application/json' -Body $body -ErrorAction Stop
     } catch {
       $category = 'transport_failure'
+      $detail = $null
+      try { $detail = $_.ErrorDetails.Message } catch {}
+      if (-not [string]::IsNullOrWhiteSpace($detail)) {
+        $category = Get-SafeImportFailureCategory $detail
+      }
       try {
         $statusCode = [int]$_.Exception.Response.StatusCode
-        if ($statusCode -ge 100 -and $statusCode -le 599) { $category = "http_status_$statusCode" }
+        if ($statusCode -ge 100 -and $statusCode -le 599) {
+          $category = if ($category -eq 'transport_failure' -or $category -eq 'opaque') {
+            "http_status_$statusCode"
+          } else {
+            "$category`_http_status_$statusCode"
+          }
+        }
       } catch {}
       Write-Host "[d1-restore] bound replay request failure category=$category request_bytes=$requestBytes batch_queries=$($batch.Count)"
       throw "D1 bound oversized-insert replay request failed (category=$category)."
