@@ -184,6 +184,8 @@ $tmp = New-Item -ItemType Directory -Force -Path (Join-Path $tempRoot "d1-restor
 try {
   $file = Join-Path $tmp 'snapshot.sql'
   $restoreFile = Join-Path $tmp 'restore.sql'
+  $tablePreambleFile = Join-Path $tmp 'tables.sql'
+  $remainingSqlFile = Join-Path $tmp 'remaining.sql'
   $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
 
   Write-Host "[d1-restore] downloading r2://$BucketName/$SnapshotKey"
@@ -193,19 +195,17 @@ try {
   $size = (Get-Item $file).Length
   Write-Host "[d1-restore] downloaded $size bytes"
 
-  # A D1 export replays table data in table order. Defer relationship checks
-  # only while the asynchronous import runs; its caller must still run a clean
-  # foreign_key_check before accepting the restored database.
-  [System.IO.File]::WriteAllText(
-    $restoreFile,
-    "PRAGMA defer_foreign_keys = TRUE;`n",
-    [System.Text.UTF8Encoding]::new($false)
-  )
+  # A D1 export can interleave data for an early table with the declarations
+  # of tables it references. Emit all ordinary table declarations first, then
+  # replay the remaining SQL in its original order. Foreign-key checks remain
+  # deferred only for the import and are verified cleanly by the caller.
   $source = [System.IO.StreamReader]::new($file)
   try {
-    $destination = [System.IO.StreamWriter]::new($restoreFile, $true, [System.Text.UTF8Encoding]::new($false))
+    $tablePreamble = [System.IO.StreamWriter]::new($tablePreambleFile, $false, [System.Text.UTF8Encoding]::new($false))
+    $remainingSql = [System.IO.StreamWriter]::new($remainingSqlFile, $false, [System.Text.UTF8Encoding]::new($false))
     try {
       $skippingReservedD1TableStatement = $false
+      $pendingTable = $null
       $pendingInsert = $null
       while (($line = $source.ReadLine()) -ne $null) {
         # D1's import API owns the transaction. Wrangler SQL exports wrap the
@@ -222,10 +222,27 @@ try {
           continue
         }
         if ($line -match '^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') { continue }
+        if ($null -ne $pendingTable) {
+          [void]$pendingTable.AppendLine($line)
+          if ($line -match ';\s*$') {
+            $tablePreamble.Write($pendingTable.ToString())
+            $pendingTable = $null
+          }
+          continue
+        }
+        if ($line -match '(?i)^\s*CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\b') {
+          $pendingTable = [System.Text.StringBuilder]::new()
+          [void]$pendingTable.AppendLine($line)
+          if ($line -match ';\s*$') {
+            $tablePreamble.Write($pendingTable.ToString())
+            $pendingTable = $null
+          }
+          continue
+        }
         if ($null -ne $pendingInsert) {
           [void]$pendingInsert.AppendLine($line)
           if ($line -match ';\s*$') {
-            foreach ($chunk in (Split-LargeInsertStatement $pendingInsert.ToString())) { $destination.Write($chunk) }
+            foreach ($chunk in (Split-LargeInsertStatement $pendingInsert.ToString())) { $remainingSql.Write($chunk) }
             $pendingInsert = $null
           }
           continue
@@ -234,19 +251,34 @@ try {
           $pendingInsert = [System.Text.StringBuilder]::new()
           [void]$pendingInsert.AppendLine($line)
           if ($line -match ';\s*$') {
-            foreach ($chunk in (Split-LargeInsertStatement $pendingInsert.ToString())) { $destination.Write($chunk) }
+            foreach ($chunk in (Split-LargeInsertStatement $pendingInsert.ToString())) { $remainingSql.Write($chunk) }
             $pendingInsert = $null
           }
           continue
         }
-        $destination.WriteLine($line)
+        $remainingSql.WriteLine($line)
       }
+      if ($null -ne $pendingTable) { throw 'Restore snapshot ended inside a CREATE TABLE statement.' }
       if ($null -ne $pendingInsert) { throw 'Restore snapshot ended inside an INSERT statement.' }
     } finally {
-      $destination.Dispose()
+      $remainingSql.Dispose()
+      $tablePreamble.Dispose()
     }
   } finally {
     $source.Dispose()
+  }
+  [System.IO.File]::WriteAllText(
+    $restoreFile,
+    "PRAGMA defer_foreign_keys = TRUE;`n",
+    [System.Text.UTF8Encoding]::new($false)
+  )
+  $restoreDestination = [System.IO.StreamWriter]::new($restoreFile, $true, [System.Text.UTF8Encoding]::new($false))
+  try {
+    foreach ($part in @($tablePreambleFile, $remainingSqlFile)) {
+      $restoreDestination.Write([System.IO.File]::ReadAllText($part, [System.Text.UTF8Encoding]::new($false)))
+    }
+  } finally {
+    $restoreDestination.Dispose()
   }
 
   $databaseInfoOutput = & pnpm --dir apps/worker exec wrangler d1 info $DbName --json *>&1

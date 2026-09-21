@@ -24,7 +24,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     if ($commandText -match 'r2 object get') {
       $filePath = ($args | Where-Object { $_ -like '--file=*' }).Substring(7)
       $largeRows = (1..1600 | ForEach-Object { "($_, 'synthetic-row-payload-0123456789abcdef0123456789abcdef')" }) -join ','
-      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY);`nINSERT INTO synthetic VALUES (1);`nINSERT INTO synthetic VALUES $largeRows;`nCOMMIT;`n")
+      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY);`nINSERT INTO synthetic VALUES (1);`nINSERT INTO synthetic VALUES $largeRows;`nCREATE TABLE referenced_later (id INTEGER PRIMARY KEY);`nCOMMIT;`n")
       return
     }
     if ($commandText -match 'd1 info') { return '{"uuid":"01234567-89ab-cdef-0123-456789abcdef"}' }
@@ -87,6 +87,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True ($state.UploadText -notmatch '(?m)^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') 'The restore upload retained D1-incompatible outer transaction wrappers.'
     Assert-True ($state.UploadText -notmatch '(?i)_cf_KV|synthetic-reserved') 'The restore upload retained D1-reserved table SQL.'
     Assert-True ($state.UploadText -match 'CREATE TABLE synthetic' -and $state.UploadText -match 'INSERT INTO synthetic') 'The restore upload lost SQL while removing transaction wrappers.'
+    Assert-True ($state.UploadText.IndexOf('CREATE TABLE referenced_later') -lt $state.UploadText.IndexOf('INSERT INTO synthetic VALUES (1)')) 'The restore upload did not emit all table declarations before data INSERTs.'
     $syntheticInserts = [regex]::Matches($state.UploadText, '(?ms)^\s*INSERT INTO synthetic VALUES .*?;\s*$')
     Assert-True ($syntheticInserts.Count -ge 3) 'The restore upload did not split the oversized INSERT batch.'
     Assert-True ((($syntheticInserts | ForEach-Object { $_.Value.Length } | Measure-Object -Maximum).Maximum) -le 48000) 'The restore upload emitted an INSERT batch above the safe statement-size cap.'
