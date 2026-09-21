@@ -126,23 +126,31 @@ try {
   } catch {
     throw 'D1 import ingest request failed.'
   }
-  if ($ingest.success -ne $true -or $ingest.result.at_bookmark -isnot [string]) {
-    throw 'D1 import ingest request returned no status bookmark.'
-  }
+  if ($ingest.success -ne $true) { throw 'D1 import ingest request failed.' }
 
-  $completed = $false
-  for ($attempt = 1; $attempt -le $PollAttempts; $attempt++) {
-    if ($PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
-    try {
-      $poll = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'poll'; current_bookmark = $ingest.result.at_bookmark } | ConvertTo-Json -Compress) -ErrorAction Stop
-    } catch {
-      throw 'D1 import status poll failed.'
+  # D1 may finish a small import before the ingest response is returned. In
+  # that case it returns status=complete instead of a running-import bookmark.
+  $completed = $ingest.result.status -eq 'complete'
+  if (-not $completed) {
+    if ($ingest.result.status -eq 'error') { throw 'D1 import reported failure.' }
+    $bookmark = $ingest.result.at_bookmark
+    if ([string]::IsNullOrWhiteSpace($bookmark)) {
+      throw 'D1 import ingest request returned neither completion nor a status bookmark.'
     }
-    if ($poll.success -ne $true) { throw 'D1 import status poll reported failure.' }
-    if ($poll.result.status -eq 'error') { throw 'D1 import reported failure.' }
-    if ($poll.result.status -eq 'complete') {
-      $completed = $true
-      break
+
+    for ($attempt = 1; $attempt -le $PollAttempts; $attempt++) {
+      if ($PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
+      try {
+        $poll = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'poll'; current_bookmark = $bookmark } | ConvertTo-Json -Compress) -ErrorAction Stop
+      } catch {
+        throw 'D1 import status poll failed.'
+      }
+      if ($poll.success -ne $true) { throw 'D1 import status poll reported failure.' }
+      if ($poll.result.status -eq 'error') { throw 'D1 import reported failure.' }
+      if ($poll.result.status -eq 'complete') {
+        $completed = $true
+        break
+      }
     }
   }
   if (-not $completed) { throw 'D1 import did not complete before the bounded polling window expired.' }
