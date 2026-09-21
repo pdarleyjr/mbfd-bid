@@ -54,6 +54,7 @@ jobs:
           $bucket = if ($env:SOURCE_ENV -eq 'production') { 'mbfd-bid-prod-backups' } else { 'mbfd-bid-staging-backups' }
           $database = "mbfd-bid-$($env:SOURCE_ENV)-rehearsal-$env:GITHUB_RUN_ID"
           $created = $false
+          $rehearsalConfigPath = $null
 
           function Invoke-D1Rows([string]$sql) {
             $raw = & pnpm --dir apps/worker exec wrangler d1 execute $database --remote --command $sql --json *>&1
@@ -84,6 +85,33 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 creation failed.' }
             $created = $true
 
+            # `migrations apply` requires a D1 binding, while the disposable
+            # database intentionally is not a persistent project binding.
+            # Generate an exact, runner-temporary binding from the created DB
+            # UUID, then remove it in finally. It never refers to live D1.
+            $info = & pnpm --dir apps/worker exec wrangler d1 info $database --json *>&1
+            if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 identifier lookup failed.' }
+            try {
+              $databaseId = (($info | Out-String) | ConvertFrom-Json -ErrorAction Stop).uuid
+            } catch {
+              throw 'Disposable D1 identifier lookup returned invalid JSON.'
+            }
+            if ($databaseId -isnot [string] -or $databaseId -notmatch '^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$') {
+              throw 'Disposable D1 identifier lookup omitted a valid UUID.'
+            }
+            $tempRoot = $env:RUNNER_TEMP
+            if ([string]::IsNullOrWhiteSpace($tempRoot)) { $tempRoot = [System.IO.Path]::GetTempPath() }
+            $rehearsalConfigPath = Join-Path $tempRoot "mbfd-bid-rehearsal-$env:GITHUB_RUN_ID.toml"
+            $migrationDirectory = (Resolve-Path -LiteralPath 'apps/worker/migrations').Path.Replace('\', '/')
+            [System.IO.File]::WriteAllText($rehearsalConfigPath, @"
+name = "mbfd-bid-rehearsal"
+[[d1_databases]]
+binding = "REHEARSAL_DB"
+database_name = "$database"
+database_id = "$databaseId"
+migrations_dir = "$migrationDirectory"
+"@, [System.Text.UTF8Encoding]::new($false))
+
             ./scripts/d1-restore.ps1 -Env $env:SOURCE_ENV -DbName $database -BucketName $bucket -SnapshotKey $env:SNAPSHOT_KEY
 
             $beforeLedger = Invoke-D1Rows 'SELECT COUNT(*) AS migration_count, MAX(name) AS latest_migration FROM d1_migrations;'
@@ -94,9 +122,7 @@ jobs:
               throw 'Restored source snapshot did not satisfy the pre-migration integrity gate.'
             }
 
-            # Keep the temporary database target explicit while selecting the
-            # source environment's canonical migrations directory/config.
-            $apply = & pnpm --dir apps/worker exec wrangler d1 migrations apply $database --remote --env $env:SOURCE_ENV *>&1
+            $apply = & pnpm --dir apps/worker exec wrangler d1 migrations apply REHEARSAL_DB --remote --config $rehearsalConfigPath *>&1
             if ($LASTEXITCODE -ne 0) {
               $category = Get-SafeMigrationFailureCategory $apply
               throw "Disposable D1 migration apply failed (category=$category)."
@@ -114,6 +140,9 @@ jobs:
             }
             Write-Host "[d1-rehearsal] PASS: restored ledger 67, applied 0068, preserved aggregate core counts, and passed quick/foreign-key integrity checks."
           } finally {
+            if ($null -ne $rehearsalConfigPath -and (Test-Path -LiteralPath $rehearsalConfigPath)) {
+              Remove-Item -LiteralPath $rehearsalConfigPath -Force
+            }
             if ($created) {
               $delete = & pnpm --dir apps/worker exec wrangler d1 delete $database --skip-confirmation *>&1
               if ($LASTEXITCODE -ne 0) { throw 'Disposable D1 cleanup failed.' }
