@@ -15,8 +15,8 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'init-fails')) {
-  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); UploadText = $null }
+foreach ($scenario in @('success', 'ingest-complete', 'init-fails')) {
+  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); UploadText = $null; PollCount = 0 }
   function global:pnpm {
     $commandText = $args -join ' '
     $state.Calls.Add($commandText)
@@ -36,8 +36,11 @@ foreach ($scenario in @('success', 'init-fails')) {
       if ($scenario -eq 'init-fails') { return [pscustomobject]@{ success = $false; result = [pscustomobject]@{} } }
       return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ upload_url = 'https://synthetic.invalid/private-upload'; filename = 'private.sql' } }
     }
-    if ($action -eq 'ingest') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ at_bookmark = '00000001-00000002-00000003-0123456789abcdef' } } }
-    if ($action -eq 'poll') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'complete' } } }
+    if ($action -eq 'ingest') {
+      if ($scenario -eq 'ingest-complete') { return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'complete' } } }
+      return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ at_bookmark = '00000001-00000002-00000003-0123456789abcdef' } }
+    }
+    if ($action -eq 'poll') { $state.PollCount++; return [pscustomobject]@{ success = $true; result = [pscustomobject]@{ status = 'complete' } } }
     throw "Unexpected REST action: $action"
   }
   function global:Invoke-WebRequest {
@@ -57,13 +60,14 @@ foreach ($scenario in @('success', 'init-fails')) {
   } catch { $caught = $_ }
   $env:TEMP = $testRoot
   $outputText = ($captured -join "`n") + ($caught | Out-String)
-  $shouldPass = $scenario -eq 'success'
+  $shouldPass = $scenario -ne 'init-fails'
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome."
   Assert-True (-not ($outputText -match 'synthetic-private-token|0123456789abcdef0123456789abcdef|synthetic\.invalid|private-upload|private\.sql')) "$scenario leaked private restore material."
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
     Assert-True ($state.UploadText.StartsWith("PRAGMA defer_foreign_keys = TRUE;")) 'The restore upload did not scope deferred foreign-key checks.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
+    Assert-True (($scenario -eq 'ingest-complete' -and $state.PollCount -eq 0) -or ($scenario -eq 'success' -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
 }
 
