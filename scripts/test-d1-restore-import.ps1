@@ -15,8 +15,8 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-transport-failure', 'bound-replay-http-400')) {
-  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new() }
+foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-unicode', 'bound-replay-transport-failure', 'bound-replay-http-400')) {
+  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new(); ExpectedBoundValue = $null }
   function global:pnpm {
     $commandText = $args -join ' '
     $state.Calls.Add($commandText)
@@ -24,7 +24,8 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     if ($commandText -match 'r2 object get') {
       $filePath = ($args | Where-Object { $_ -like '--file=*' }).Substring(7)
       $largeRows = (1..1600 | ForEach-Object { "($_, 'synthetic-row-payload-0123456789abcdef0123456789abcdef')" }) -join ','
-      $deferredPayload = ('synthetic-bound-private-payload-' * 4000)
+      $deferredPayload = if ($scenario -eq 'bound-replay-unicode') { '🙂' * 40000 } else { 'synthetic-bound-private-payload-' * 4000 }
+      if ($scenario -eq 'bound-replay-unicode') { $state.ExpectedBoundValue = $deferredPayload }
       $deferredInserts = if ($scenario -eq 'bound-replay-batched') {
         (1..40 | ForEach-Object { "INSERT INTO synthetic VALUES ($(900000 + $_), '$deferredPayload$_');" }) -join "`n"
       } else {
@@ -94,7 +95,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   } catch { $caught = $_ }
   $env:TEMP = $testRoot
   $outputText = ($captured -join "`n") + ($caught | Out-String)
-  $shouldPass = $scenario -in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched')
+  $shouldPass = $scenario -in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-unicode')
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome."
   Assert-True (-not ($outputText -match 'synthetic-private-token|0123456789abcdef0123456789abcdef|synthetic\.invalid|private-upload|private\.sql|synthetic-bound-private-payload')) "$scenario leaked private restore material."
   if ($scenario -eq 'ingest-missing-state') {
@@ -131,16 +132,20 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     $expectedBoundStatementCount = if ($scenario -eq 'bound-replay-batched') { 40 } else { 1 }
     if ($scenario -eq 'bound-replay-batched') {
       Assert-True ($state.BoundPayloads.Count -gt 1) 'The restore path did not split many bound oversized inserts into independently sized replay batches.'
-      Assert-True ($outputText -match '\[d1-restore\] bound oversized inserts replayed=40 params=40 batches=\d+') 'The restore output did not record batched oversized-insert replay metrics.'
+      Assert-True ($outputText -match '\[d1-restore\] bound oversized inserts replayed=40 params=\d+ batches=\d+') 'The restore output did not record batched oversized-insert replay metrics.'
     } else {
       Assert-True ($state.BoundPayloads.Count -eq 1) 'The restore path did not submit the expected bound oversized-insert batch.'
     }
     $boundQueries = @($state.BoundPayloads | ForEach-Object { @($_.batch | Where-Object { $null -ne $_.params }) })
-    Assert-True ($boundQueries.Count -eq $expectedBoundStatementCount -and @($boundQueries | Where-Object { @($_.params).Count -ne 1 }).Count -eq 0) 'The bound oversized-insert replay did not contain the expected parameterized text literals.'
-    Assert-True (@($boundQueries | Where-Object { $_.sql.Length -ge 1000 -or @($_.params)[0].Length -le 100000 }).Count -eq 0) 'The oversized text literal was not moved out of the SQL statement.'
+    Assert-True ($boundQueries.Count -eq $expectedBoundStatementCount -and @($boundQueries | Where-Object { @($_.params).Count -lt 1 -or @($_.params).Count -gt 100 }).Count -eq 0) 'The bound oversized-insert replay did not contain bounded parameter lists.'
+    Assert-True (@($boundQueries | Where-Object { $_.sql.Length -ge 1000 -or @($_.params | Where-Object { [System.Text.Encoding]::UTF8.GetByteCount($_) -gt 64KB }).Count -gt 0 }).Count -eq 0) 'The oversized text literal was not split into bounded text parameters.'
+    Assert-True (@($boundQueries | Where-Object { $_.sql -notmatch '\?\s*\|\|\s*\?' }).Count -eq 0) 'The bound oversized-insert replay did not concatenate split parameters inside the original statement.'
+    if ($scenario -eq 'bound-replay-unicode') {
+      Assert-True ((@($boundQueries[0].params) -join '') -ceq $state.ExpectedBoundValue) 'The bounded replay split a Unicode surrogate pair or changed the source text.'
+    }
     Assert-True (@($state.BoundPayloads | ForEach-Object { @($_.batch | Where-Object { $_.sql -match '(?i)^\s*PRAGMA\s+' }) }).Count -eq 0) 'The bound oversized-insert replay mixed connection-scoped pragma state with parameterized writes.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
-    Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
+    Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-unicode')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
 }
 

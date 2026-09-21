@@ -260,6 +260,44 @@ function Get-Utf8ByteCount {
   return [System.Text.Encoding]::UTF8.GetByteCount($Value)
 }
 
+function Split-BoundTextParameter {
+  param(
+    [Parameter(Mandatory)][string]$Value,
+    [ValidateRange(4, 2000000)][int]$MaxBytes = 64KB
+  )
+
+  # Keep each bound string well below D1's documented 2 MB value ceiling and
+  # below the size that triggered an opaque provider-internal replay failure.
+  # Splitting happens on UTF-16 boundaries without separating a surrogate pair;
+  # SQLite concatenates the parameters inside the original single INSERT.
+  if ((Get-Utf8ByteCount $Value) -le $MaxBytes) { return @($Value) }
+  $chunks = [System.Collections.Generic.List[string]]::new()
+  $offset = 0
+  while ($offset -lt $Value.Length) {
+    $remaining = $Value.Length - $offset
+    $lower = 1
+    $upper = [Math]::Min($remaining, $MaxBytes)
+    $best = 0
+    while ($lower -le $upper) {
+      $length = $lower + [int](($upper - $lower) / 2)
+      $bytes = Get-Utf8ByteCount ($Value.Substring($offset, $length))
+      if ($bytes -le $MaxBytes) {
+        $best = $length
+        $lower = $length + 1
+      } else {
+        $upper = $length - 1
+      }
+    }
+    if ($best -lt $remaining -and [char]::IsHighSurrogate($Value[$offset + $best - 1])) {
+      $best--
+    }
+    if ($best -le 0) { throw 'A bound text value could not be split at a valid Unicode boundary.' }
+    $chunks.Add($Value.Substring($offset, $best))
+    $offset += $best
+  }
+  return $chunks.ToArray()
+}
+
 function Convert-OversizedInsertToBoundRequest {
   param(
     [Parameter(Mandatory)][string]$Statement,
@@ -346,8 +384,10 @@ function Convert-OversizedInsertToBoundRequest {
   foreach ($literal in @($literals | Sort-Object Start)) {
     [void]$sql.Append($Statement.Substring($cursor, $literal.Start - $cursor))
     if ($selected.Contains($literal.Start)) {
-      [void]$sql.Append('?')
-      $params.Add($literal.Value)
+      $chunks = @(Split-BoundTextParameter -Value $literal.Value)
+      if ($params.Count + $chunks.Count -gt 100) { return $null }
+      [void]$sql.Append((@($chunks | ForEach-Object { '?' }) -join ' || '))
+      foreach ($chunk in $chunks) { $params.Add($chunk) }
     } else {
       [void]$sql.Append($Statement.Substring($literal.Start, $literal.Length))
     }
