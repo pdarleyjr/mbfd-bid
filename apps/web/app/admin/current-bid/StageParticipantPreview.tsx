@@ -38,16 +38,62 @@ const explanations: Record<string, string> = {
 
 const explain = (code: string) => explanations[code] ?? words(code);
 
-function sourceLabel(stage: ValidPreview['stages'][number]) {
+const rankLabels: Record<string, string> = {
+  CHIEF: 'Chief',
+  DEP_CHIEF: 'Deputy Chief',
+  DC: 'Division Chief',
+  CPT: 'Captain',
+  LT: 'Lieutenant',
+  FF: 'Firefighter',
+};
+
+function sourceBaseLabel(stage: ValidPreview['stages'][number]) {
   const source = stage.source.participantSource;
-  if (source.type === 'EXPLICIT_MEMBERS') return `Explicit members (${source.memberIds.length})`;
-  return `Active ${source.bidParticipation.toLowerCase()} filter: ${source.ranks.join(', ')}`;
+  if (source.type === 'EXPLICIT_MEMBERS') return 'Explicit reviewed member list';
+  return `Active · Biddable · ${source.ranks.map((rank) => rankLabels[rank] ?? rank).join(', ')}`;
 }
 
-function comparatorLabel(stage: ValidPreview['stages'][number]) {
+function technicalComparatorLabel(stage: ValidPreview['stages'][number]) {
   return stage.source.ordering
     .map((rule) => `${words(rule.key)} ${words(rule.direction)}`)
     .join(' → ');
+}
+
+function memberLabel(memberId: number, names: ReadonlyMap<number, string | null>): string {
+  return names.get(memberId) ?? `Member ID ${memberId}`;
+}
+
+function exceptionNames(stage: ValidPreview['stages'][number], memberIds: readonly number[]) {
+  const names = new Map<number, string | null>([
+    ...stage.matchedMembers.map((member) => [member.memberId, member.displayName] as const),
+    ...(stage.exceptionMembers ?? []).map(
+      (member) => [member.memberId, member.displayName] as const,
+    ),
+  ]);
+  return memberIds.length
+    ? memberIds.map((memberId) => memberLabel(memberId, names)).join(', ')
+    : 'None';
+}
+
+function bidOrderLabel(stage: ValidPreview['stages'][number], year: number): string {
+  const primary = stage.source.ordering[0]?.key;
+  const source = stage.source.participantSource;
+  const ranks = source.type === 'FILTER' ? source.ranks : [];
+  const captainOrLieutenantStage =
+    ranks.length > 0 && ranks.every((rank) => rank === 'CPT' || rank === 'LT');
+  const firefighterStage = ranks.length > 0 && ranks.every((rank) => rank === 'FF');
+  if (year === 2026 && captainOrLieutenantStage)
+    return primary === 'TIME_IN_GRADE_BID_ORDINAL'
+      ? 'Time-in-grade Bid order'
+      : 'Review required: 2026 Captains and Lieutenants use time-in-grade Bid order';
+  if (year === 2026 && firefighterStage)
+    return primary === 'DEPARTMENT_SERVICE_BID_ORDINAL'
+      ? 'Department-service Bid order'
+      : 'Review required: 2026 Firefighters use Department-service Bid order';
+  if (primary === 'TIME_IN_GRADE_BID_ORDINAL') return 'Time-in-grade Bid order';
+  if (primary === 'DEPARTMENT_SERVICE_BID_ORDINAL') return 'Department-service Bid order';
+  if (primary === 'RANK_SENIORITY') return 'Recorded rank seniority evidence';
+  return 'Recorded seniority evidence';
 }
 
 function definitionLabel(definition: ValidPreview['definition']) {
@@ -226,33 +272,50 @@ export function StageParticipantPreview({
 
           {current.stages.map((stage) => (
             <FieldSection key={stage.stageId} title={`Preview-resolved members · ${stage.label}`}>
-              <p className="text-sm">Source: {stage.source.sourceRef}</p>
-              <p className="text-sm">
-                Selector: {sourceLabel(stage)} · Declared comparator: {comparatorLabel(stage)}
-              </p>
-              <p className="text-sm">
-                Matched participant IDs: {stage.matchedMemberIds.join(', ')} ·{' '}
-                {stage.matchedMemberIds.length} matched
-              </p>
-              <p className="text-sm">
-                Display-only member-ID order. Captured{' '}
-                {new Date(current.capturedAtMs).toLocaleString()}.
-              </p>
-              <p className="text-sm">
+              <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(10rem,max-content)_minmax(0,1fr)]">
+                <dt className="font-medium">Base: </dt>
+                <dd>{sourceBaseLabel(stage)}</dd>
+                <dt className="font-medium">Explicit includes: </dt>
+                <dd>
+                  {stage.source.participantSource.type === 'FILTER'
+                    ? exceptionNames(stage, stage.source.participantSource.includeMemberIds ?? [])
+                    : 'Not used for an explicit member list'}
+                </dd>
+                <dt className="font-medium">Explicit exclusions: </dt>
+                <dd>
+                  {stage.source.participantSource.type === 'FILTER'
+                    ? exceptionNames(stage, stage.source.participantSource.excludeMemberIds ?? [])
+                    : 'Not used for an explicit member list'}
+                </dd>
+                <dt className="font-medium">Resolved participants: </dt>
+                <dd>{stage.matchedMembers.length}</dd>
+                <dt className="font-medium">Bid order: </dt>
+                <dd>{bidOrderLabel(stage, year)}</dd>
+              </dl>
+              <p className="mt-3 text-sm">
                 {current.orderingAuthority.status === 'UNRESOLVED'
-                  ? 'Ordering: awaiting authoritative annual-policy comparator decision.'
-                  : 'Ordering: authoritative annual-policy comparator resolved for later server preparation.'}
+                  ? 'The governing Bid-order decision still needs review before a run can be prepared.'
+                  : 'The governing Bid-order decision is resolved for later server preparation.'}
               </p>
               <details>
                 <summary className="min-h-11 content-center cursor-pointer">
-                  Matched members ({stage.matchedMembers.length})
+                  Details and captured evidence
                 </summary>
+                <p className="mt-2 text-sm">Policy source: {stage.source.sourceRef}</p>
+                <p className="mt-2 text-sm">
+                  Matched participant IDs: {stage.matchedMemberIds.join(', ')}. Display-only
+                  member-ID order, captured {new Date(current.capturedAtMs).toLocaleString()}.
+                </p>
+                <p className="mt-2 text-sm">
+                  Comparator evidence: {technicalComparatorLabel(stage)}
+                </p>
                 <ul className="mt-2 space-y-1 text-sm">
                   {stage.matchedMembers.map((member) => (
                     <li key={member.memberId}>
                       {member.displayName ?? 'Name unavailable from captured evidence'} · ID{' '}
-                      {member.memberId} · {member.rank} · RSC seniority {member.rscSeniority} · Rank
-                      seniority {member.rankSeniority ?? 'not captured'}
+                      {member.memberId} · {rankLabels[member.rank] ?? member.rank} · Recorded
+                      seniority {member.rscSeniority} · Recorded rank seniority{' '}
+                      {member.rankSeniority ?? 'not captured'}
                     </li>
                   ))}
                 </ul>

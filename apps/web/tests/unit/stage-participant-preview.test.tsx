@@ -35,7 +35,14 @@ function content(note = 'Synthetic source') {
         {
           stageId: 'synthetic-stage',
           sourceRef: 'Synthetic participant authority',
-          participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [10002, 10001] },
+          participantSource: {
+            type: 'FILTER',
+            active: true,
+            bidParticipation: 'BIDDABLE',
+            ranks: ['CPT'],
+            includeMemberIds: [10001],
+            excludeMemberIds: [10003],
+          },
           ordering: [{ key: 'RSC_SENIORITY', direction: 'ASC' }],
         },
       ],
@@ -80,7 +87,14 @@ function preview(): Extract<BidStageParticipantPreviewResponse, { valid: true }>
         order: 0,
         source: {
           sourceRef: 'Synthetic participant authority',
-          participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [10002, 10001] },
+          participantSource: {
+            type: 'FILTER',
+            active: true,
+            bidParticipation: 'BIDDABLE',
+            ranks: ['CPT'],
+            includeMemberIds: [10001],
+            excludeMemberIds: [10003],
+          },
           ordering: [{ key: 'RSC_SENIORITY', direction: 'ASC' }],
         },
         matchedMemberIds: [10001, 10002],
@@ -100,6 +114,10 @@ function preview(): Extract<BidStageParticipantPreviewResponse, { valid: true }>
             rscSeniority: 4,
             rankSeniority: null,
           },
+        ],
+        exceptionMembers: [
+          { memberId: 10001, displayName: 'Synthetic First' },
+          { memberId: 10003, displayName: 'Synthetic Third' },
         ],
       },
     ],
@@ -194,9 +212,16 @@ describe('StageParticipantPreview', () => {
     expect(container.textContent).toContain('Preview-resolved members · Synthetic stage');
     expect(container.textContent).toContain('Synthetic participant authority');
     expect(container.textContent).toContain('Matched participant IDs: 10001, 10002');
+    expect(container.textContent).toContain('Base: Active · Biddable · Captain');
+    expect(container.textContent).toContain('Explicit includes: Synthetic First');
+    expect(container.textContent).toContain('Explicit exclusions: Synthetic Third');
+    expect(container.textContent).toContain('Resolved participants: 2');
+    expect(container.textContent).toContain('Bid order: Recorded seniority evidence');
     expect(container.textContent).toContain('Display-only member-ID order');
-    expect(container.textContent).toContain('Synthetic First · ID 10001 · FF');
-    expect(container.textContent).toContain('Synthetic Second · ID 10002 · LT');
+    expect(container.textContent).toContain('Synthetic First · ID 10001 · Firefighter');
+    expect(container.textContent).toContain('Synthetic Second · ID 10002 · Lieutenant');
+    expect(container.textContent).not.toContain('RSC seniority');
+    expect(container.textContent).not.toContain('Rank seniority');
     expect(container.textContent).toContain('Governing comparator decision is awaiting resolution');
     expect(container.textContent).toContain('does not create, approve, or authorize a Bid run');
     expect(container.textContent?.toLowerCase()).not.toContain('frozen');
@@ -210,5 +235,16 @@ describe('StageParticipantPreview', () => {
     await mount({ bidYear: YEAR, policy: {} } as unknown as BidDefinitionContent);
     expect(container.querySelector('button')).toBeNull();
     expect(requests).toEqual([]);
+  });
+
+  it('calls out the 2026 officer Bid-order rule instead of surfacing a technical comparator', async () => {
+    await mount();
+    await settle(() => button('Preview participant membership').click());
+    await rerender({ year: 2026 });
+
+    expect(container.textContent).toContain(
+      'Review required: 2026 Captains and Lieutenants use time-in-grade Bid order',
+    );
+    expect(container.textContent).not.toContain('rsc_seniority asc');
   });
 });

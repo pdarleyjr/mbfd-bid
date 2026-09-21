@@ -75,6 +75,29 @@ describe('stage participant membership preview response', () => {
     expect(BidStageParticipantPreviewResponseSchema.safeParse(invalid).success).toBe(false);
   });
 
+  it('permits named filter exceptions only as a deterministic captured display list', () => {
+    const withExceptions = response();
+    withExceptions.stages[0].source.participantSource = {
+      type: 'FILTER',
+      active: true,
+      bidParticipation: 'BIDDABLE',
+      ranks: ['FF'],
+      includeMemberIds: [1],
+      excludeMemberIds: [2],
+    };
+    withExceptions.stages[0].exceptionMembers = [
+      { memberId: 1, displayName: 'Synthetic First' },
+      { memberId: 2, displayName: 'Synthetic Second' },
+    ];
+    expect(BidStageParticipantPreviewResponseSchema.safeParse(withExceptions).success).toBe(true);
+
+    withExceptions.stages[0].exceptionMembers = [
+      { memberId: 2, displayName: 'Synthetic Second' },
+      { memberId: 1, displayName: 'Synthetic First' },
+    ];
+    expect(BidStageParticipantPreviewResponseSchema.safeParse(withExceptions).success).toBe(false);
+  });
+
   it('rejects impossible readiness or partial-membership states', () => {
     const falseReady = response();
     falseReady.executionReady = true;

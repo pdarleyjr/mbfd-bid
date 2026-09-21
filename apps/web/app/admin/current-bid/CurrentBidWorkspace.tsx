@@ -18,6 +18,7 @@ import { BidMockReview } from './BidMockReview';
 import { BidOpportunityFields } from './BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
 import { BidProfileReview } from './BidProfileReview';
+import { BidReadinessSummary } from './BidReadinessSummary';
 import { BidResults } from './BidResults';
 import { BidRuleProfiles } from './BidRuleProfiles';
 import { BidVersionHistory } from './BidVersionHistory';
@@ -547,6 +548,29 @@ export function CurrentBidWorkspace({
           </Button>
         ))}
       </nav>
+      {draft && !loading && year === 2026 && (
+        <BidReadinessSummary
+          year={year}
+          policyReady={
+            draft.content.policy !== null &&
+            draft.content.sourceDecisions.every((decision) => decision.status === 'RESOLVED')
+          }
+          positionsReady={draft.base.coverage.valid}
+          participantStagesConfigured={
+            (draft.content.policy?.stageParticipantSources?.length ?? 0) > 0
+          }
+          aDayConfigured={
+            draft.content.settings?.v === 3 &&
+            draft.content.settings.livePolicy.annualOperations?.aDay.execution !== undefined
+          }
+          onOpenEdit={(nextSection) => {
+            setSection(nextSection);
+            selectView('edit');
+          }}
+          onOpenMock={() => selectView('mock')}
+          onOpenLive={() => selectView('live')}
+        />
+      )}
       {error && (
         <div
           role="alert"

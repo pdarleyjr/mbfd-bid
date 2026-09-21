@@ -251,7 +251,14 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
       {
         stageId: 'EARLIER',
         sourceRef: 'Synthetic Earlier-stage roster',
-        participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [10003, 10002] },
+        participantSource: {
+          type: 'FILTER',
+          active: true,
+          bidParticipation: 'BIDDABLE',
+          ranks: ['FF'],
+          includeMemberIds: [10003],
+          excludeMemberIds: [10001],
+        },
         ordering: comparator,
       },
       {
@@ -514,6 +521,7 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
         matchedMemberIds: number[];
         displayOrder: string;
         matchedMembers: Array<{ memberId: number; displayName: string | null }>;
+        exceptionMembers?: Array<{ memberId: number; displayName: string | null }>;
       }>;
       executionReady: boolean;
       executionIssues: string[];
@@ -537,6 +545,10 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
         displayOrder: 'MEMBER_ID_ASC',
         matchedMembers: [
           { memberId: 10002, displayName: 'Synthetic Second' },
+          { memberId: 10003, displayName: 'Synthetic Third' },
+        ],
+        exceptionMembers: [
+          { memberId: 10001, displayName: 'Synthetic Editor' },
           { memberId: 10003, displayName: 'Synthetic Third' },
         ],
       },
@@ -592,9 +604,9 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
     const earlier = content.policy?.stageParticipantSources?.find(
       (source) => source.stageId === 'EARLIER',
     );
-    if (!earlier || earlier.participantSource.type !== 'EXPLICIT_MEMBERS')
-      throw new Error('Synthetic Earlier-stage explicit source required');
-    earlier.participantSource.memberIds = [10004, 10002];
+    if (!earlier || earlier.participantSource.type !== 'FILTER')
+      throw new Error('Synthetic Earlier-stage filter source required');
+    earlier.participantSource.includeMemberIds = [10003, 10004];
     const before = h.sqlite.serialize();
     const response = await post(`bid/${year}/preview`, {
       kind: 'stage-participant-membership',

@@ -37,6 +37,46 @@ const section = (value: GuideSection): GuideSection =>
  */
 export const GUIDE_SECTIONS: readonly GuideSection[] = [
   section({
+    id: '2026-bid-quick-start',
+    category: 'Bid',
+    title: '2026 BID — QUICK START',
+    route: '/admin/current-bid?year=2026',
+    routeLabel: 'Bid — 2026 readiness',
+    summary:
+      'A short, safe operating path for getting the 2026 Bid ready, rehearsing it, and completing Bid day without treating a checklist or test as permission to start the real Bid.',
+    controls: [
+      '2026 BID READINESS',
+      'Review policy',
+      'Review positions',
+      'Review participants',
+      'Review credentials',
+      'Review A-Day',
+      'Prepare Mock',
+      'Check Managed Live readiness',
+    ],
+    steps: [
+      'Before Bid day: refresh the Department roster, review the TargetSolutions comparison, and resolve the review items in 2026 BID READINESS. An active-only credentials report is provisional evidence; it never expires or removes a qualification. Reconcile the final post-September 30 export through the same reviewed workflow.',
+      'Open Participants & flow. For each stage, confirm the base filter, named explicit inclusions and exclusions, resolved participant count, and the governing Bid-order evidence. Captains and Lieutenants use time-in-grade order; Firefighters use department-service order. Open Details only when the recorded seniority evidence needs review.',
+      'Open Opportunities & rules and A-Day. Resolve invalid opportunity rules, source decisions, timing limits, exceptions, and policy references before depending on a readiness result.',
+      'Use Mock Bid with the saved version. Practice operator handoffs, unavailable-member handling, specialty fallback, selection review, and result recovery. A Mock is a rehearsal, not proof that the real Bid can start.',
+      'On Bid day: use the Managed Live readiness check with the authorized operator signed in. It is read-only. If it identifies a blocker, return to the recorded policy or source evidence and resolve it before creating a Live session.',
+      'After Bid day: inspect Results, retain the generated evidence package, and complete the separately authorized publication process. A result package does not send email, publish a bulletin, or change another system.',
+    ],
+    important:
+      'Creating and starting a Live Bid remain separate, controlled actions. Never use this quick start to bypass an unresolved source decision, required qualification review, authorization check, or a failed readiness result.',
+    keywords: [
+      '2026',
+      'quick start',
+      'bid readiness',
+      'time in grade',
+      'department service',
+      'targetsolutions',
+      'mock',
+      'live',
+      'september 30',
+    ],
+  }),
+  section({
     id: 'current-bid-edit',
     category: 'Bid',
     title: 'Edit and save the Current Bid',
