@@ -52,6 +52,9 @@ foreach ($scenario in @('success', 'executor-fails', 'temp-fallback')) {
   $shouldPass = $scenario -in @('success', 'temp-fallback')
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome."
   Assert-True (-not ($outputText -match 'synthetic-private-token|0123456789abcdef0123456789abcdef|synthetic-private-executor-detail')) "$scenario leaked private restore material."
+  if ($scenario -eq 'executor-fails') {
+    Assert-True ($outputText -match 'category=opaque') 'The executor failure did not emit a bounded category.'
+  }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
     Assert-True ($state.RestoreText.StartsWith("PRAGMA defer_foreign_keys = TRUE;")) 'The restore file did not scope deferred foreign-key checks.'

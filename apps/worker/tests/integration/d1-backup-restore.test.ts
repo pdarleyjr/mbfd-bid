@@ -73,6 +73,8 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('wrangler d1 execute $DbName --remote --file=$restoreFile');
     expect(src).not.toContain('Invoke-RestMethod');
     expect(src).not.toContain('/d1/database/');
+    expect(src).toContain('Get-SafeExecutorFailureCategory');
+    expect(src).toContain('category=$category');
     expect(src).toContain('PRAGMA defer_foreign_keys = TRUE;');
     expect(src).toContain('[System.IO.StreamReader]::new($file)');
     expect(src).toContain('BEGIN(?:\\s+TRANSACTION)?|COMMIT');
