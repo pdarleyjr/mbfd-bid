@@ -162,11 +162,12 @@ try {
   }
   if ($ingest.success -ne $true) { throw 'D1 import ingest request failed.' }
 
-  # D1 may finish a small import before the ingest response is returned. In
-  # that case it returns status=complete instead of a running-import bookmark.
-  $completed = $ingest.result.status -eq 'complete'
+  # D1 may finish a small import before the ingest response is returned. The
+  # current response uses status=complete; older service responses instead
+  # report terminal completion through result.success without a bookmark.
+  $completed = $ingest.result.status -eq 'complete' -or $ingest.result.success -eq $true
   if (-not $completed) {
-    if ($ingest.result.status -eq 'error') {
+    if ($ingest.result.status -eq 'error' -or $ingest.result.success -eq $false) {
       $category = Get-SafeImportFailureCategory $ingest.result.error
       throw "D1 import reported failure (category=$category)."
     }
@@ -185,11 +186,11 @@ try {
         throw 'D1 import status poll failed.'
       }
       if ($poll.success -ne $true) { throw 'D1 import status poll reported failure.' }
-      if ($poll.result.status -eq 'error') {
+      if ($poll.result.status -eq 'error' -or $poll.result.success -eq $false) {
         $category = Get-SafeImportFailureCategory $poll.result.error
         throw "D1 import reported failure (category=$category)."
       }
-      if ($poll.result.status -eq 'complete') {
+      if ($poll.result.status -eq 'complete' -or $poll.result.success -eq $true) {
         $completed = $true
         break
       }
