@@ -434,12 +434,9 @@ function Invoke-BoundOversizedInsertReplay {
   $maxReplayRequestBytes = 512KB
   function New-BoundReplayBatch([object[]]$ReplayStatements) {
     $batch = [System.Collections.Generic.List[object]]::new()
-    $batch.Add(@{ sql = 'PRAGMA foreign_keys = OFF;' })
-    $batch.Add(@{ sql = 'PRAGMA defer_foreign_keys = TRUE;' })
     foreach ($statement in $ReplayStatements) {
       $batch.Add(@{ sql = $statement.Sql; params = @($statement.Params) })
     }
-    $batch.Add(@{ sql = 'PRAGMA foreign_keys = ON;' })
     return @($batch)
   }
   function Get-BoundReplayBody([object[]]$ReplayStatements) {
@@ -451,7 +448,12 @@ function Invoke-BoundOversizedInsertReplay {
     try {
       $response = Invoke-RestMethod -Method Post -Uri ($ApiUri -replace '/import$', '/query') -Headers $Headers -ContentType 'application/json' -Body $body -ErrorAction Stop
     } catch {
-      throw 'D1 bound oversized-insert replay request failed.'
+      $category = 'transport_failure'
+      try {
+        $statusCode = [int]$_.Exception.Response.StatusCode
+        if ($statusCode -ge 100 -and $statusCode -le 599) { $category = "http_status_$statusCode" }
+      } catch {}
+      throw "D1 bound oversized-insert replay request failed (category=$category)."
     }
     if ($response.success -ne $true) {
       $category = Get-SafeImportFailureCategory $response.errors

@@ -15,7 +15,7 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'bound-replay-batched')) {
+foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'bound-replay-batched', 'bound-replay-transport-failure')) {
   $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; BoundPayloads = [System.Collections.Generic.List[object]]::new() }
   function global:pnpm {
     $commandText = $args -join ' '
@@ -40,6 +40,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     param([string]$Method, [string]$Uri, [hashtable]$Headers, [string]$ContentType, [string]$Body)
     $payload = $Body | ConvertFrom-Json
     if ($null -ne $payload.batch) {
+      if ($scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
       $state.BoundPayloads.Add($payload)
       return [pscustomobject]@{ success = $true; result = @($payload.batch | ForEach-Object { [pscustomobject]@{ success = $true } }) }
     }
@@ -92,6 +93,9 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   if ($scenario -eq 'ingest-structured-error') {
     Assert-True ($outputText -match 'category=provider_unsupported_sql_statement' -and $outputText -notmatch 'synthetic-private-error') 'The structured import-error diagnostic did not emit only a bounded category.'
   }
+  if ($scenario -eq 'bound-replay-transport-failure') {
+    Assert-True ($outputText -match 'D1 bound oversized-insert replay request failed \(category=transport_failure\)\.' -and $outputText -notmatch 'synthetic-bound-replay-provider-detail') 'The bound-replay transport failure did not emit a bounded category.'
+  }
   Assert-True ((Get-ChildItem -LiteralPath $testRoot -Force).Count -eq 0) "$scenario left snapshot material in the temporary directory."
   if ($shouldPass) {
     Assert-True ($outputText -match '\[d1-restore\] sanitized statements=\d+ max_chars=\d+ over_cap=\d+ inserts=\d+ creates=\d+ other=\d+') 'The restore output omitted content-free statement-size metrics.'
@@ -116,6 +120,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     $boundQueries = @($state.BoundPayloads | ForEach-Object { @($_.batch | Where-Object { $null -ne $_.params }) })
     Assert-True ($boundQueries.Count -eq $expectedBoundStatementCount -and @($boundQueries | Where-Object { @($_.params).Count -ne 1 }).Count -eq 0) 'The bound oversized-insert replay did not contain the expected parameterized text literals.'
     Assert-True (@($boundQueries | Where-Object { $_.sql.Length -ge 1000 -or @($_.params)[0].Length -le 100000 }).Count -eq 0) 'The oversized text literal was not moved out of the SQL statement.'
+    Assert-True (@($state.BoundPayloads | ForEach-Object { @($_.batch | Where-Object { $_.sql -match '(?i)^\s*PRAGMA\s+' }) }).Count -eq 0) 'The bound oversized-insert replay mixed connection-scoped pragma state with parameterized writes.'
     Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
     Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'bound-replay-batched')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
