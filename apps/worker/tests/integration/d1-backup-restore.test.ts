@@ -77,6 +77,8 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain("action = 'poll'");
     expect(src).toContain("$ingest.result.status -eq 'complete'");
     expect(src).toContain('PRAGMA defer_foreign_keys = TRUE;');
+    expect(src).toContain('[System.IO.StreamReader]::new($file)');
+    expect(src).toContain('BEGIN(?:\\s+TRANSACTION)?|COMMIT');
     expect(src).toContain('CLOUDFLARE_API_TOKEN');
     expect(src).toContain('[System.IO.Path]::GetTempPath()');
     expect(src).not.toContain('wrangler d1 execute $DbName');

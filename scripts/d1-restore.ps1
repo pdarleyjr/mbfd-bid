@@ -82,11 +82,16 @@ try {
     "PRAGMA defer_foreign_keys = TRUE;`n",
     [System.Text.UTF8Encoding]::new($false)
   )
-  $source = [System.IO.File]::OpenRead($file)
+  $source = [System.IO.StreamReader]::new($file)
   try {
-    $destination = [System.IO.File]::Open($restoreFile, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    $destination = [System.IO.StreamWriter]::new($restoreFile, $true, [System.Text.UTF8Encoding]::new($false))
     try {
-      $source.CopyTo($destination)
+      while (($line = $source.ReadLine()) -ne $null) {
+        # D1's import API owns the transaction. Wrangler SQL exports wrap the
+        # dump in an outer transaction, which D1 rejects during import.
+        if ($line -match '^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;\s*$') { continue }
+        $destination.WriteLine($line)
+      }
     } finally {
       $destination.Dispose()
     }
