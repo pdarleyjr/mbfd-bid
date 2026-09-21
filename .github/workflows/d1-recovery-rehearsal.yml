@@ -94,7 +94,9 @@ jobs:
               throw 'Restored source snapshot did not satisfy the pre-migration integrity gate.'
             }
 
-            $apply = & pnpm --dir apps/worker exec wrangler d1 migrations apply $database --remote *>&1
+            # Keep the temporary database target explicit while selecting the
+            # source environment's canonical migrations directory/config.
+            $apply = & pnpm --dir apps/worker exec wrangler d1 migrations apply $database --remote --env $env:SOURCE_ENV *>&1
             if ($LASTEXITCODE -ne 0) {
               $category = Get-SafeMigrationFailureCategory $apply
               throw "Disposable D1 migration apply failed (category=$category)."
