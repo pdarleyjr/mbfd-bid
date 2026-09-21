@@ -1,16 +1,17 @@
 // Plan 09 Task 6 — D1 backup/restore script regression test.
 //
 // The scripts shell out to `wrangler d1 export` / `wrangler r2 object put` /
-// `wrangler d1 execute`, so the test verifies the FORMAT of the script
-// invocation rather than the live wrangler call (Phase A forbids touching
-// prod). We assert:
+// the D1 asynchronous import API, so the test verifies the FORMAT of the
+// script invocation rather than the live call (Phase A forbids touching prod).
+// We assert:
 //
 //   1. The backup script file exists and uses safe parameter bindings
 //      (`-Env`, `-DbName`, `-BucketName`).
 //   2. The R2 key it produces follows the `d1/<YYYY-MM-DD>/<dbname>-<HHMM>.sql`
 //      schema documented in Plan 09 § D4.
-//   3. The restore script accepts `-SnapshotKey` and executes against the
-//      target database name (no hard-coded prod values).
+//   3. The restore script accepts `-SnapshotKey`, resolves the target database
+//      without a hard-coded production name, and uses the asynchronous import
+//      protocol instead of the statement-size-limited synchronous executor.
 //
 // Running the actual scripts would call `wrangler` against the live API. We
 // avoid that by reading the script source and validating shape.
@@ -64,11 +65,17 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toMatch(/string\]\$SnapshotKey/);
   });
 
-  it('restore script downloads from R2 and applies via wrangler d1 execute', () => {
+  it('restore script downloads from R2 and uses the D1 asynchronous import protocol', () => {
     const src = readFileSync(RESTORE_SCRIPT, 'utf-8');
     expect(src).toContain('wrangler r2 object get');
-    expect(src).toContain('wrangler d1 execute $DbName');
-    expect(src).toContain('--env $Env --remote --file=');
+    expect(src).toContain('wrangler d1 info $DbName --json');
+    expect(src).toContain('/d1/database/$databaseId/import');
+    expect(src).toContain("action = 'init'");
+    expect(src).toContain("action = 'ingest'");
+    expect(src).toContain("action = 'poll'");
+    expect(src).toContain('PRAGMA defer_foreign_keys = TRUE;');
+    expect(src).toContain('CLOUDFLARE_API_TOKEN');
+    expect(src).not.toContain('wrangler d1 execute $DbName');
   });
 
   it('restore script does not hard-code prod database names', () => {
