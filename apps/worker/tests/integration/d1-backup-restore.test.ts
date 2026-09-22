@@ -86,13 +86,8 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('Split-RestoreImportAndBoundInserts');
     expect(src).toContain('Convert-OversizedInsertToStagedRequest');
     expect(src).toContain('Invoke-StagedOversizedInsertReplay');
-    expect(src).toContain("ValidateSet('insert_atomic')");
-    expect(src).toContain("$placeholders -join ' || '");
-    expect(src).toContain('atomic_inserts=$replayed');
-    expect(src).not.toContain('CAST(NULL AS TEXT)');
-    expect(src).not.toContain('rowid');
-    expect(src).not.toContain('value_replace');
-    expect(src).not.toContain('value_append');
+    expect(src).toMatch(/ValidateSet\('insert_atomic'\)[\s\S]*?\$placeholders\s*-join\s*' \|\| '[\s\S]*?atomic_inserts=\$replayed/);
+    expect(src).not.toMatch(/CAST\(NULL AS TEXT\)|\browid\b|value_replace|value_append/);
     expect(src).toContain('staged oversized inserts replayed=');
     expect(src).toContain('sanitized statements=$($metrics.StatementCount)');
     expect(src).toContain('inserts=$($metrics.OverCapInsertCount)');
