@@ -716,14 +716,15 @@ function Invoke-StagedOversizedInsertReplay {
     return $response
   }
 
-  function Get-StagedResultRows {
+  function Get-StagedRawResultSet {
     param([Parameter(Mandatory)][object]$Response, [Parameter(Mandatory)][string]$Operation)
 
     $result = @($Response.result)
-    if ($result.Count -ne 1 -or $null -eq $result[0].PSObject.Properties['results']) {
-      throw "D1 staged oversized-insert replay returned no result rows (operation=$Operation)."
+    $rawResult = if ($result.Count -eq 1 -and $null -ne $result[0].PSObject.Properties['results']) { $result[0].results } else { $null }
+    if ($null -eq $rawResult -or $null -eq $rawResult.PSObject.Properties['columns'] -or $null -eq $rawResult.PSObject.Properties['rows']) {
+      throw "D1 staged oversized-insert replay returned no raw result set (operation=$Operation)."
     }
-    return @($result[0].results)
+    return [pscustomobject]@{ Columns = @($rawResult.columns); Rows = @($rawResult.rows) }
   }
 
   function Assert-StagedSingleRowMutation {
@@ -743,15 +744,18 @@ function Invoke-StagedOversizedInsertReplay {
 
     if ($null -ne $Statement.Columns) { return @($Statement.Columns) }
     $schemaResponse = Invoke-StagedRawRequest -Sql "PRAGMA table_info($($Statement.TableSql));" -Operation schema_lookup
+    $resultSet = Get-StagedRawResultSet -Response $schemaResponse -Operation schema_lookup
+    $cidIndex = [array]::IndexOf([string[]]$resultSet.Columns, 'cid')
+    $nameIndex = [array]::IndexOf([string[]]$resultSet.Columns, 'name')
+    if ($cidIndex -lt 0 -or $nameIndex -lt 0) { throw 'D1 staged oversized-insert replay received an invalid table schema response.' }
     $columns = [System.Collections.Generic.List[object]]::new()
-    foreach ($row in @(Get-StagedResultRows -Response $schemaResponse -Operation schema_lookup)) {
-      $cidProperty = $row.PSObject.Properties['cid']
-      $nameProperty = $row.PSObject.Properties['name']
+    foreach ($row in @($resultSet.Rows)) {
+      $values = @($row)
       [Int32]$cid = 0
-      if ($null -eq $cidProperty -or $null -eq $nameProperty -or [string]::IsNullOrWhiteSpace("$($nameProperty.Value)") -or -not [Int32]::TryParse("$($cidProperty.Value)", [ref]$cid) -or $cid -lt 0) {
+      if ($values.Count -le $cidIndex -or $values.Count -le $nameIndex -or $null -eq $values[$cidIndex] -or $null -eq $values[$nameIndex] -or [string]::IsNullOrWhiteSpace("$($values[$nameIndex])") -or -not [Int32]::TryParse("$($values[$cidIndex])", [ref]$cid) -or $cid -lt 0) {
         throw 'D1 staged oversized-insert replay received an invalid table schema response.'
       }
-      $columns.Add([pscustomobject]@{ Cid = $cid; Name = "$($nameProperty.Value)" })
+      $columns.Add([pscustomobject]@{ Cid = $cid; Name = "$($values[$nameIndex])" })
     }
     if ($columns.Count -eq 0) { throw 'D1 staged oversized-insert replay found no target-table columns.' }
     return @($columns | Sort-Object Cid | ForEach-Object { $_.Name })
@@ -760,8 +764,12 @@ function Invoke-StagedOversizedInsertReplay {
   function Get-StagedInsertedRowId {
     param([Parameter(Mandatory)][object]$Response)
 
-    $rows = @(Get-StagedResultRows -Response $Response -Operation insert_seed)
-    $rowIdProperty = if ($rows.Count -eq 1) { $rows[0].PSObject.Properties['__mbfd_restore_rowid'] } else { $null }
+    # `/raw` returns result rows as arrays and exposes the most recent insert
+    # identifier in metadata. Do not infer an ID if D1 omits it (for example,
+    # a WITHOUT ROWID table): that could target the wrong restored record.
+    $result = @($Response.result)
+    $meta = if ($result.Count -eq 1 -and $null -ne $result[0].PSObject.Properties['meta']) { $result[0].meta } else { $null }
+    $rowIdProperty = if ($null -ne $meta) { $meta.PSObject.Properties['last_row_id'] } else { $null }
     [Int64]$rowId = 0
     if ($null -eq $rowIdProperty -or -not [Int64]::TryParse("$($rowIdProperty.Value)", [ref]$rowId)) {
       throw 'D1 staged oversized-insert replay did not return one valid target rowid.'
@@ -794,7 +802,7 @@ function Invoke-StagedOversizedInsertReplay {
         $valueIndex++
         $valueCount++
       }
-      $seedSql = [regex]::Replace($seedSql, ';\s*$', ' RETURNING rowid AS "__mbfd_restore_rowid";')
+      $seedSql = [regex]::Replace($seedSql, ';\s*$', ';')
       if ((Get-Utf8ByteCount $seedSql) -gt 90KB) {
         throw 'D1 staged oversized-insert replay would exceed the safe final SQL-text budget.'
       }
