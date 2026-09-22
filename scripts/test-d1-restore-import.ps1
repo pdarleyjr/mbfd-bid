@@ -80,7 +80,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     }
     if (-not $SkipHttpErrorCheck) { throw 'Staged replay did not request a readable HTTP error response.' }
     $kind = if ($payload.sql -match '(?i)^PRAGMA table_info\(') { 'schema_lookup' }
-      elseif ($payload.sql -match '(?i)^\s*INSERT\b') { 'insert_seed' }
+      elseif ($payload.sql -match '(?i)^INSERT\b') { 'insert_seed' }
       elseif ($payload.sql -match '(?i)^UPDATE .+ AND .+ = \?;$') { 'value_replace' }
       elseif ($payload.sql -match '(?i)^UPDATE ') { 'value_append' }
       else { 'unexpected' }
@@ -164,6 +164,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True ($schemaLookups.Count -eq $expectedSchemaLookupCount -and $seedInserts.Count -eq $expectedBoundStatementCount -and $valueReplacements.Count -eq $expectedStagedValueCount) 'The staged oversized-insert replay did not resolve the schema, create one row, and replace every deferred value.'
     Assert-True ($valueWrites.Count -ge $expectedStagedValueCount -and @($valueWrites | Where-Object { $_.Params.Count -lt 2 -or $_.Params.Count -gt 3 -or $_.Bytes -gt 16KB }).Count -eq 0) 'The staged oversized-insert replay did not keep every rowid-scoped write bounded.'
     Assert-True (@($seedInserts | Where-Object { $_.Params.Count -ne 0 -or $_.Sql -match '(?i)\bRETURNING\b|CAST\(NULL AS TEXT\)' -or $_.Bytes -gt 92KB }).Count -eq 0) 'The staged oversized-insert replay did not seed one row through the documented metadata contract.'
+    Assert-True (@($stagedRequests | Where-Object { $_.Sql -match '^\s|\s$' }).Count -eq 0) 'The staged oversized-insert replay did not canonicalize outer SQL whitespace before its raw requests.'
     Assert-True (@($stagedRequests | Where-Object { $_.Uri -notmatch '/raw$' }).Count -eq 0) 'The staged oversized-insert replay did not use the documented D1 raw-query endpoint.'
     Assert-True ($outputText -match "\[d1-restore\] staged oversized inserts replayed=$expectedBoundStatementCount values=$expectedStagedValueCount chunks=\d+ rowid_updates=\d+") 'The restore output did not record staged oversized-insert replay metrics.'
     if ($scenario -eq 'bound-replay-unicode') {

@@ -658,7 +658,14 @@ function Invoke-StagedOversizedInsertReplay {
       [AllowEmptyCollection()][string[]]$Params = @(),
       [Parameter(Mandatory)][ValidateSet('schema_lookup', 'insert_seed', 'value_replace', 'value_append')][string]$Operation
     )
-    $payload = @{ sql = $Sql }
+    # The export parser preserves statement-boundary whitespace. Canonicalize
+    # only that outer whitespace before using the REST query contract; the SQL
+    # statement, identifiers, literals, and bound values remain unchanged.
+    $canonicalSql = $Sql.Trim()
+    if ([string]::IsNullOrWhiteSpace($canonicalSql)) {
+      throw 'D1 staged oversized-insert replay received an empty SQL statement.'
+    }
+    $payload = @{ sql = $canonicalSql }
     if ($Params.Count -gt 0) { $payload.params = @($Params) }
     $body = $payload | ConvertTo-Json -Depth 5 -Compress
     $requestBytes = Get-Utf8ByteCount $body
