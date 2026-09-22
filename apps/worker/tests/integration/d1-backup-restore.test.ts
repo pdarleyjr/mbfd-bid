@@ -68,7 +68,7 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
   it('restore script downloads from R2 and uses the bounded asynchronous import protocol', () => {
     const src = readFileSync(RESTORE_SCRIPT, 'utf-8');
     expect(src).toContain('pnpm --dir apps/worker exec wrangler r2 object get');
-    expect(src).toContain('pnpm --dir apps/worker exec wrangler d1 info $DbName --json');
+    expect(src).toContain("Invoke-WranglerCli -Args @('d1', 'info', $DbName, '--json')");
     expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(2);
     expect(src).not.toContain('& pnpm exec wrangler');
     expect(src).toContain('/d1/database/$databaseId/import');
