@@ -324,6 +324,134 @@ function Split-BoundTextParameter {
   return $chunks.ToArray()
 }
 
+function Convert-SqlIdentifierToName {
+  param([Parameter(Mandatory)][string]$Identifier)
+
+  $value = $Identifier.Trim()
+  if ($value -match '^"(?<name>(?:""|[^"])*)"$') { return $Matches.name.Replace('""', '"') }
+  if ($value -match '^\[(?<name>[^\]]+)\]$') { return $Matches.name }
+  if ($value -match '^`(?<name>(?:``|[^`])*)`$') { return $Matches.name.Replace('``', '`') }
+  if ($value -match '^[A-Za-z_][A-Za-z0-9_$]*$') { return $value }
+  return $null
+}
+
+function Convert-NameToSqlIdentifier {
+  param([Parameter(Mandatory)][string]$Name)
+
+  if ([string]::IsNullOrWhiteSpace($Name)) { throw 'D1 staged oversized-insert replay encountered an empty schema identifier.' }
+  return '"' + $Name.Replace('"', '""') + '"'
+}
+
+function Split-SqlIdentifierList {
+  param([Parameter(Mandatory)][string]$Value)
+
+  $identifiers = [System.Collections.Generic.List[string]]::new()
+  $current = [System.Text.StringBuilder]::new()
+  $quote = [char]0
+  for ($index = 0; $index -lt $Value.Length; $index++) {
+    $character = $Value[$index]
+    if ($quote -ne [char]0) {
+      [void]$current.Append($character)
+      if ($character -eq $quote) {
+        if ($quote -ne [char]93 -and $index + 1 -lt $Value.Length -and $Value[$index + 1] -eq $quote) {
+          [void]$current.Append($Value[$index + 1])
+          $index++
+        } else {
+          $quote = [char]0
+        }
+      }
+      continue
+    }
+    if ($character -eq [char]34 -or $character -eq [char]96 -or $character -eq [char]91) {
+      $quote = if ($character -eq [char]91) { [char]93 } else { $character }
+      [void]$current.Append($character)
+      continue
+    }
+    if ($character -eq [char]44) {
+      $name = Convert-SqlIdentifierToName -Identifier $current.ToString()
+      if ($null -eq $name) { return $null }
+      $identifiers.Add($name)
+      $current.Clear() | Out-Null
+      continue
+    }
+    [void]$current.Append($character)
+  }
+  if ($quote -ne [char]0) { return $null }
+  $name = Convert-SqlIdentifierToName -Identifier $current.ToString()
+  if ($null -eq $name) { return $null }
+  $identifiers.Add($name)
+  return $identifiers.ToArray()
+}
+
+function Get-SingleValuesTupleExpressions {
+  param([Parameter(Mandatory)][string]$Values)
+
+  if ($Values.Length -lt 2 -or $Values[0] -ne [char]40 -or $Values[$Values.Length - 1] -ne [char]41) { return $null }
+  $expressions = [System.Collections.Generic.List[object]]::new()
+  $quote = [char]0
+  $depth = 0
+  $start = 1
+  for ($index = 1; $index -lt ($Values.Length - 1); $index++) {
+    $character = $Values[$index]
+    if ($quote -ne [char]0) {
+      if ($character -eq $quote) {
+        if ($quote -ne [char]93 -and $index + 1 -lt ($Values.Length - 1) -and $Values[$index + 1] -eq $quote) {
+          $index++
+        } else {
+          $quote = [char]0
+        }
+      }
+      continue
+    }
+    if ($character -eq [char]39 -or $character -eq [char]34 -or $character -eq [char]96 -or $character -eq [char]91) {
+      $quote = if ($character -eq [char]91) { [char]93 } else { $character }
+      continue
+    }
+    if ($character -eq [char]40) { $depth++; continue }
+    if ($character -eq [char]41) {
+      $depth--
+      if ($depth -lt 0) { return $null }
+      continue
+    }
+    if ($character -eq [char]44 -and $depth -eq 0) {
+      $expressions.Add([pscustomobject]@{ Start = $start; Length = $index - $start })
+      $start = $index + 1
+    }
+  }
+  if ($quote -ne [char]0 -or $depth -ne 0) { return $null }
+  $expressions.Add([pscustomobject]@{ Start = $start; Length = ($Values.Length - 1) - $start })
+  if ($expressions.Count -eq 0 -or @($expressions | Where-Object { $_.Length -le 0 }).Count -gt 0) { return $null }
+  return $expressions.ToArray()
+}
+
+function Get-StagedInsertReplayLayout {
+  param([Parameter(Mandatory)][string]$Statement)
+
+  # The fallback is intentionally narrower than the ordinary importer: it can
+  # only replay a single VALUES tuple with ordinary identifiers. This provides
+  # a rowid and one unambiguous source column per deferred text literal.
+  $identifier = '(?:"(?:""|[^"])*"|\[(?:[^\]])*\]|`(?:``|[^`])*`|[A-Za-z_][A-Za-z0-9_$]*)'
+  $pattern = '(?is)^\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\s+(?<table>' + $identifier + ')\s*(?:\((?<columns>.*?)\))?\s+VALUES\s*(?<values>\(.*\))\s*;\s*$'
+  $match = [regex]::Match($Statement, $pattern)
+  if (-not $match.Success) { return $null }
+  $tableName = Convert-SqlIdentifierToName -Identifier $match.Groups['table'].Value
+  if ($null -eq $tableName) { return $null }
+  $expressions = @(Get-SingleValuesTupleExpressions -Values $match.Groups['values'].Value)
+  if ($expressions.Count -eq 0) { return $null }
+  $columns = $null
+  if ($match.Groups['columns'].Success) {
+    $columns = @(Split-SqlIdentifierList -Value $match.Groups['columns'].Value)
+    if ($columns.Count -ne $expressions.Count) { return $null }
+  }
+  return [pscustomobject]@{
+    TableName = $tableName
+    TableSql = Convert-NameToSqlIdentifier -Name $tableName
+    Columns = $columns
+    ValuesStart = $match.Groups['values'].Index
+    Expressions = $expressions
+  }
+}
+
 function Convert-OversizedInsertToStagedRequest {
   param(
     [Parameter(Mandatory)][string]$Statement,
@@ -338,6 +466,9 @@ function Convert-OversizedInsertToStagedRequest {
   if ($Statement -notmatch '(?is)^\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\b') {
     return $null
   }
+
+  $layout = Get-StagedInsertReplayLayout -Statement $Statement
+  if ($null -eq $layout) { return $null }
 
   $literals = [System.Collections.Generic.List[object]]::new()
   $index = 0
@@ -412,15 +543,28 @@ function Convert-OversizedInsertToStagedRequest {
   foreach ($literal in @($literals | Sort-Object Start)) {
     [void]$sql.Append($Statement.Substring($cursor, $literal.Start - $cursor))
     if ($selected.Contains($literal.Start)) {
-      # Keep each HTTP request far below the opaque provider failure observed
-      # for a single large parameterized INSERT. Text reconstruction happens
-      # within D1 from generated helper-table chunks.
+      # Keep each HTTP request far below D1's SQL-text ceiling. The values are
+      # restored through bounded, rowid-scoped updates after the seed INSERT.
       $chunks = @(Split-BoundTextParameter -Value $literal.Value -MaxBytes 12KB)
+      $columnOrdinal = $null
+      foreach ($expressionIndex in 0..($layout.Expressions.Count - 1)) {
+        $expression = $layout.Expressions[$expressionIndex]
+        $expressionStart = $layout.ValuesStart + $expression.Start
+        $expressionEnd = $expressionStart + $expression.Length
+        if ($literal.Start -lt $expressionStart -or ($literal.Start + $literal.Length) -gt $expressionEnd) { continue }
+        # The fallback appends directly to a column. Do not rewrite a text
+        # literal nested in an arbitrary SQL expression.
+        if ($Statement.Substring($expressionStart, $expression.Length).Trim() -cne $Statement.Substring($literal.Start, $literal.Length)) { return $null }
+        $columnOrdinal = $expressionIndex
+        break
+      }
+      if ($null -eq $columnOrdinal) { return $null }
       $marker = "CAST(NULL AS TEXT) /* d1_restore_value_$valueIndex */"
       [void]$sql.Append($marker)
       $values.Add([pscustomobject]@{
         Marker = $marker
         Chunks = $chunks
+        ColumnOrdinal = $columnOrdinal
       })
       $valueIndex++
     } else {
@@ -433,6 +577,8 @@ function Convert-OversizedInsertToStagedRequest {
 
   return [pscustomobject]@{
     Sql = $sql.ToString()
+    TableSql = $layout.TableSql
+    Columns = $layout.Columns
     Values = $values.ToArray()
   }
 }
@@ -510,7 +656,7 @@ function Invoke-StagedOversizedInsertReplay {
     param(
       [Parameter(Mandatory)][string]$Sql,
       [AllowEmptyCollection()][string[]]$Params = @(),
-      [Parameter(Mandatory)][ValidateSet('helper_create', 'helper_chunk', 'insert_apply', 'helper_cleanup')][string]$Operation
+      [Parameter(Mandatory)][ValidateSet('schema_lookup', 'insert_seed', 'value_replace', 'value_append')][string]$Operation
     )
     $payload = @{ sql = $Sql }
     if ($Params.Count -gt 0) { $payload.params = @($Params) }
@@ -570,78 +716,118 @@ function Invoke-StagedOversizedInsertReplay {
     return $response
   }
 
-  $helperTables = [System.Collections.Generic.List[string]]::new()
+  function Get-StagedResultRows {
+    param([Parameter(Mandatory)][object]$Response, [Parameter(Mandatory)][string]$Operation)
+
+    $result = @($Response.result)
+    if ($result.Count -ne 1 -or $null -eq $result[0].PSObject.Properties['results']) {
+      throw "D1 staged oversized-insert replay returned no result rows (operation=$Operation)."
+    }
+    return @($result[0].results)
+  }
+
+  function Assert-StagedSingleRowMutation {
+    param([Parameter(Mandatory)][object]$Response, [Parameter(Mandatory)][string]$Operation)
+
+    $result = @($Response.result)
+    $meta = if ($result.Count -eq 1 -and $null -ne $result[0].PSObject.Properties['meta']) { $result[0].meta } else { $null }
+    $changesProperty = if ($null -ne $meta) { $meta.PSObject.Properties['changes'] } else { $null }
+    [Int64]$changes = 0
+    if ($null -eq $changesProperty -or -not [Int64]::TryParse("$($changesProperty.Value)", [ref]$changes) -or $changes -ne 1) {
+      throw "D1 staged oversized-insert replay did not mutate exactly one row (operation=$Operation)."
+    }
+  }
+
+  function Get-StagedTableColumns {
+    param([Parameter(Mandatory)][object]$Statement)
+
+    if ($null -ne $Statement.Columns) { return @($Statement.Columns) }
+    $schemaResponse = Invoke-StagedRawRequest -Sql "PRAGMA table_info($($Statement.TableSql));" -Operation schema_lookup
+    $columns = [System.Collections.Generic.List[object]]::new()
+    foreach ($row in @(Get-StagedResultRows -Response $schemaResponse -Operation schema_lookup)) {
+      $cidProperty = $row.PSObject.Properties['cid']
+      $nameProperty = $row.PSObject.Properties['name']
+      [Int32]$cid = 0
+      if ($null -eq $cidProperty -or $null -eq $nameProperty -or [string]::IsNullOrWhiteSpace("$($nameProperty.Value)") -or -not [Int32]::TryParse("$($cidProperty.Value)", [ref]$cid) -or $cid -lt 0) {
+        throw 'D1 staged oversized-insert replay received an invalid table schema response.'
+      }
+      $columns.Add([pscustomobject]@{ Cid = $cid; Name = "$($nameProperty.Value)" })
+    }
+    if ($columns.Count -eq 0) { throw 'D1 staged oversized-insert replay found no target-table columns.' }
+    return @($columns | Sort-Object Cid | ForEach-Object { $_.Name })
+  }
+
+  function Get-StagedInsertedRowId {
+    param([Parameter(Mandatory)][object]$Response)
+
+    $rows = @(Get-StagedResultRows -Response $Response -Operation insert_seed)
+    $rowIdProperty = if ($rows.Count -eq 1) { $rows[0].PSObject.Properties['__mbfd_restore_rowid'] } else { $null }
+    [Int64]$rowId = 0
+    if ($null -eq $rowIdProperty -or -not [Int64]::TryParse("$($rowIdProperty.Value)", [ref]$rowId)) {
+      throw 'D1 staged oversized-insert replay did not return one valid target rowid.'
+    }
+    return "$rowId"
+  }
+
   $replayed = 0
   $valueCount = 0
   $chunkCount = 0
-  $helperCount = 0
   $operationFailure = $null
-  $cleanupFailure = $null
   $nonce = [guid]::NewGuid().ToString('N')
   try {
     $statementIndex = 0
     foreach ($statement in $Statements) {
-      $replaySql = $statement.Sql
+      $columns = @(Get-StagedTableColumns -Statement $statement)
+      $seedSql = $statement.Sql
+      $sentinels = [System.Collections.Generic.List[string]]::new()
       $valueIndex = 0
       foreach ($value in @($statement.Values)) {
-        $helper = "__mbfd_restore_chunks_$nonce`_$statementIndex`_$valueIndex"
-        $helperTables.Add($helper)
-        $helperCount++
-        Invoke-StagedRawRequest -Sql "CREATE TABLE `"$helper`" (chunk_index INTEGER PRIMARY KEY, chunk_value TEXT NOT NULL);" -Operation helper_create | Out-Null
-        $chunkIndex = 0
-        $allChunks = @($value.Chunks)
-        while ($chunkIndex -lt $allChunks.Count) {
-          # Bound the replay request below the provider failure observed near
-          # 100 KB while amortizing the per-request overhead. Three 12 KB
-          # chunks are materially below that threshold and use six parameters.
-          $rowSql = [System.Collections.Generic.List[string]]::new()
-          $rowParams = [System.Collections.Generic.List[string]]::new()
-          for ($row = 0; $row -lt 3 -and $chunkIndex -lt $allChunks.Count; $row++) {
-            $rowSql.Add('(?, ?)')
-            $rowParams.Add("$chunkIndex")
-            $rowParams.Add($allChunks[$chunkIndex])
-            $chunkIndex++
-            $chunkCount++
-          }
-          Invoke-StagedRawRequest -Sql "INSERT INTO `"$helper`" (chunk_index, chunk_value) VALUES $($rowSql -join ', ');" -Params ($rowParams.ToArray()) -Operation helper_chunk | Out-Null
+        if ($value.ColumnOrdinal -lt 0 -or $value.ColumnOrdinal -ge $columns.Count) {
+          throw 'D1 staged oversized-insert replay could not resolve the selected source column.'
         }
-        $assembledValue = "(SELECT group_concat(chunk_value, '') FROM (SELECT chunk_value FROM `"$helper`" ORDER BY chunk_index))"
-        if (-not $replaySql.Contains($value.Marker, [System.StringComparison]::Ordinal)) {
+        if (-not $seedSql.Contains($value.Marker, [System.StringComparison]::Ordinal)) {
           throw 'D1 staged oversized-insert replay lost an internal value marker.'
         }
-        $replaySql = $replaySql.Replace($value.Marker, $assembledValue)
+        $sentinel = "__mbfd_restore_value_$nonce`_$statementIndex`_$valueIndex"
+        $seedSql = $seedSql.Replace($value.Marker, "'$sentinel'")
+        $sentinels.Add($sentinel)
         $valueIndex++
         $valueCount++
       }
-      if ((Get-Utf8ByteCount $replaySql) -gt 90KB) {
+      $seedSql = [regex]::Replace($seedSql, ';\s*$', ' RETURNING rowid AS "__mbfd_restore_rowid";')
+      if ((Get-Utf8ByteCount $seedSql) -gt 90KB) {
         throw 'D1 staged oversized-insert replay would exceed the safe final SQL-text budget.'
       }
-      Invoke-StagedRawRequest -Sql $replaySql -Operation insert_apply | Out-Null
-      foreach ($helper in @($helperTables.ToArray())) {
-        Invoke-StagedRawRequest -Sql "DROP TABLE IF EXISTS `"$helper`";" -Operation helper_cleanup | Out-Null
-        [void]$helperTables.Remove($helper)
+      $seedResponse = Invoke-StagedRawRequest -Sql $seedSql -Operation insert_seed
+      Assert-StagedSingleRowMutation -Response $seedResponse -Operation insert_seed
+      $rowId = Get-StagedInsertedRowId -Response $seedResponse
+
+      $valueIndex = 0
+      foreach ($value in @($statement.Values)) {
+        $chunks = @($value.Chunks)
+        if ($chunks.Count -eq 0) { throw 'D1 staged oversized-insert replay produced no text chunks.' }
+        $columnSql = Convert-NameToSqlIdentifier -Name $columns[$value.ColumnOrdinal]
+        $sentinel = $sentinels[$valueIndex]
+        $replaceResponse = Invoke-StagedRawRequest -Sql "UPDATE $($statement.TableSql) SET $columnSql = ? WHERE rowid = ? AND $columnSql = ?;" -Params @($chunks[0], $rowId, $sentinel) -Operation value_replace
+        Assert-StagedSingleRowMutation -Response $replaceResponse -Operation value_replace
+        $chunkCount++
+        for ($chunkIndex = 1; $chunkIndex -lt $chunks.Count; $chunkIndex++) {
+          $appendResponse = Invoke-StagedRawRequest -Sql "UPDATE $($statement.TableSql) SET $columnSql = $columnSql || ? WHERE rowid = ?;" -Params @($chunks[$chunkIndex], $rowId) -Operation value_append
+          Assert-StagedSingleRowMutation -Response $appendResponse -Operation value_append
+          $chunkCount++
+        }
+        $valueIndex++
       }
       $replayed++
       $statementIndex++
     }
   } catch {
     $operationFailure = $_
-  } finally {
-    $helpersForCleanup = @($helperTables.ToArray())
-    [array]::Reverse($helpersForCleanup)
-    foreach ($helper in $helpersForCleanup) {
-      try {
-        Invoke-StagedRawRequest -Sql "DROP TABLE IF EXISTS `"$helper`";" -Operation helper_cleanup | Out-Null
-      } catch {
-        if ($null -eq $cleanupFailure) { $cleanupFailure = $_ }
-      }
-    }
   }
   if ($null -ne $operationFailure) { throw $operationFailure }
-  if ($null -ne $cleanupFailure) { throw 'D1 staged oversized-insert replay helper cleanup failed.' }
   if ($replayed -ne $Statements.Count) { throw 'D1 staged oversized-insert replay did not apply every deferred statement.' }
   if ($valueCount -eq 0 -or $chunkCount -eq 0) { throw 'D1 staged oversized-insert replay omitted required text chunks.' }
-  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount chunks=$chunkCount helpers=$helperCount"
+  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount chunks=$chunkCount rowid_updates=$chunkCount"
 }
 
 if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
