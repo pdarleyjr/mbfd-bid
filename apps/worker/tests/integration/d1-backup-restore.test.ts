@@ -72,7 +72,7 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(2);
     expect(src).not.toContain('& pnpm exec wrangler');
     expect(src).toContain('/d1/database/$databaseId/import');
-    expect(src).toContain("-replace '/import$', '/raw'");
+    expect(src).toContain("-replace '/import$', '/query'");
     expect(src).toContain('Invoke-WebRequest -Method Post');
     expect(src).toContain('-SkipHttpErrorCheck');
     expect(src).toContain("action = 'init'");
@@ -85,6 +85,13 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('Split-RestoreImportAndBoundInserts');
     expect(src).toContain('Convert-OversizedInsertToStagedRequest');
     expect(src).toContain('Invoke-StagedOversizedInsertReplay');
+    expect(src).toContain("ValidateSet('insert_atomic')");
+    expect(src).toContain("$placeholders -join ' || '");
+    expect(src).toContain('atomic_inserts=$replayed');
+    expect(src).not.toContain('CAST(NULL AS TEXT)');
+    expect(src).not.toContain('rowid');
+    expect(src).not.toContain('value_replace');
+    expect(src).not.toContain('value_append');
     expect(src).toContain('staged oversized inserts replayed=');
     expect(src).toContain('sanitized statements=$($metrics.StatementCount)');
     expect(src).toContain('inserts=$($metrics.OverCapInsertCount)');

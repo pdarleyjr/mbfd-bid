@@ -53,6 +53,43 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+function Invoke-WranglerCli {
+  param(
+    [Parameter(Mandatory)][string[]]$Args
+  )
+  return & pnpm --dir apps/worker exec wrangler @Args *>&1
+}
+
+function Get-WranglerAccountId {
+  if (-not [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
+    return $env:CLOUDFLARE_ACCOUNT_ID.Trim()
+  }
+  $whoamiJson = @(Invoke-WranglerCli -Args @('whoami', '--json')) | Out-String
+  if (-not [string]::IsNullOrWhiteSpace($whoamiJson)) {
+    try {
+      $parsedWhoami = $whoamiJson | ConvertFrom-Json -ErrorAction Stop
+      foreach ($candidate in @($parsedWhoami.accounts, $parsedWhoami.account)) {
+        if ($null -eq $candidate) { continue }
+        foreach ($entry in @($candidate)) {
+          if ($entry -is [System.Collections.IDictionary]) {
+            $value = $entry['id']
+          } elseif ($entry -is [pscustomobject]) {
+            $value = $entry.PSObject.Properties['id']
+            if ($null -ne $value) { $value = $value.Value }
+          } else {
+            $value = $null
+          }
+          if (-not [string]::IsNullOrWhiteSpace("$value")) { return "$value".Trim() }
+        }
+      }
+    } catch {
+      # Fall through to the legacy text parser below.
+    }
+  }
+
+  return $null
+}
+
 function Get-SafePropertyNames {
   param([object]$Value)
   if ($null -eq $Value) { return 'none' }
@@ -429,7 +466,7 @@ function Get-StagedInsertReplayLayout {
 
   # The fallback is intentionally narrower than the ordinary importer: it can
   # only replay a single VALUES tuple with ordinary identifiers. This provides
-  # a rowid and one unambiguous source column per deferred text literal.
+  # one unambiguous source column per deferred text literal.
   $identifier = '(?:"(?:""|[^"])*"|\[(?:[^\]])*\]|`(?:``|[^`])*`|[A-Za-z_][A-Za-z0-9_$]*)'
   $pattern = '(?is)^\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\s+(?<table>' + $identifier + ')\s*(?:\((?<columns>.*?)\))?\s+VALUES\s*(?<values>\(.*\))\s*;\s*$'
   $match = [regex]::Match($Statement, $pattern)
@@ -543,9 +580,12 @@ function Convert-OversizedInsertToStagedRequest {
   foreach ($literal in @($literals | Sort-Object Start)) {
     [void]$sql.Append($Statement.Substring($cursor, $literal.Start - $cursor))
     if ($selected.Contains($literal.Start)) {
-      # Keep each HTTP request far below D1's SQL-text ceiling. The values are
-      # restored through bounded, rowid-scoped updates after the seed INSERT.
-      $chunks = @(Split-BoundTextParameter -Value $literal.Value -MaxBytes 12KB)
+      # Keep each bound value well below D1's per-value ceiling while preserving
+      # the original INSERT as one atomic statement.
+      if ((Get-Utf8ByteCount $literal.Value) -gt 400KB) {
+        throw 'D1 staged oversized-insert replay requires more than the provider bound-parameter limit.'
+      }
+      $chunks = @(Split-BoundTextParameter -Value $literal.Value -MaxBytes 4KB)
       $columnOrdinal = $null
       foreach ($expressionIndex in 0..($layout.Expressions.Count - 1)) {
         $expression = $layout.Expressions[$expressionIndex]
@@ -577,8 +617,6 @@ function Convert-OversizedInsertToStagedRequest {
 
   return [pscustomobject]@{
     Sql = $sql.ToString()
-    TableSql = $layout.TableSql
-    Columns = $layout.Columns
     Values = $values.ToArray()
   }
 }
@@ -656,7 +694,7 @@ function Invoke-StagedOversizedInsertReplay {
     param(
       [Parameter(Mandatory)][string]$Sql,
       [AllowEmptyCollection()][string[]]$Params = @(),
-      [Parameter(Mandatory)][ValidateSet('schema_lookup', 'insert_seed', 'value_replace', 'value_append')][string]$Operation
+      [Parameter(Mandatory)][ValidateSet('insert_atomic')][string]$Operation
     )
     # The export parser preserves statement-boundary whitespace. Canonicalize
     # only that outer whitespace before using the REST query contract; the SQL
@@ -665,21 +703,29 @@ function Invoke-StagedOversizedInsertReplay {
     if ([string]::IsNullOrWhiteSpace($canonicalSql)) {
       throw 'D1 staged oversized-insert replay received an empty SQL statement.'
     }
-    $payload = @{ sql = $canonicalSql }
-    if ($Params.Count -gt 0) { $payload.params = @($Params) }
+    $payload = @{ sql = $canonicalSql; params = @($Params) }
     $body = $payload | ConvertTo-Json -Depth 5 -Compress
     $requestBytes = Get-Utf8ByteCount $body
     try {
-      # `/raw` accepts the documented single-query parameter contract. Keep a
+      # The query endpoint accepts the documented single-query parameter contract. Keep a
       # readable HTTP response for non-2xx replies so only a safe error
       # category—not the provider body, SQL, or values—can be emitted.
-      $response = Invoke-WebRequest -Method Post -Uri ($ApiUri -replace '/import$', '/raw') -Headers $Headers -ContentType 'application/json' -Body $body -SkipHttpErrorCheck -ErrorAction Stop
+      $queryUri = $ApiUri -replace '/import$', '/query'
+      $response = Invoke-WebRequest -Method Post -Uri $queryUri -Headers $Headers -ContentType 'application/json' -Body $body -SkipHttpErrorCheck -ErrorAction Stop
     } catch {
       $category = 'transport_failure'
       $detail = $null
-      try { $detail = $_.ErrorDetails.Message } catch {}
+      foreach ($candidate in @($_.Exception.Message, $_.ToString(), $_.ErrorDetails.Message)) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+          $detail = $candidate
+          break
+        }
+      }
       if (-not [string]::IsNullOrWhiteSpace($detail)) {
-        $category = Get-SafeImportFailureCategory $detail
+        $candidateCategory = Get-SafeImportFailureCategory $detail
+        if ($candidateCategory -ne 'opaque') {
+          $category = $candidateCategory
+        }
       }
       try {
         $statusCode = [int]$_.Exception.Response.StatusCode
@@ -723,17 +769,6 @@ function Invoke-StagedOversizedInsertReplay {
     return $response
   }
 
-  function Get-StagedRawResultSet {
-    param([Parameter(Mandatory)][object]$Response, [Parameter(Mandatory)][string]$Operation)
-
-    $result = @($Response.result)
-    $rawResult = if ($result.Count -eq 1 -and $null -ne $result[0].PSObject.Properties['results']) { $result[0].results } else { $null }
-    if ($null -eq $rawResult -or $null -eq $rawResult.PSObject.Properties['columns'] -or $null -eq $rawResult.PSObject.Properties['rows']) {
-      throw "D1 staged oversized-insert replay returned no raw result set (operation=$Operation)."
-    }
-    return [pscustomobject]@{ Columns = @($rawResult.columns); Rows = @($rawResult.rows) }
-  }
-
   function Assert-StagedSingleRowMutation {
     param([Parameter(Mandatory)][object]$Response, [Parameter(Mandatory)][string]$Operation)
 
@@ -746,95 +781,38 @@ function Invoke-StagedOversizedInsertReplay {
     }
   }
 
-  function Get-StagedTableColumns {
-    param([Parameter(Mandatory)][object]$Statement)
-
-    if ($null -ne $Statement.Columns) { return @($Statement.Columns) }
-    $schemaResponse = Invoke-StagedRawRequest -Sql "PRAGMA table_info($($Statement.TableSql));" -Operation schema_lookup
-    $resultSet = Get-StagedRawResultSet -Response $schemaResponse -Operation schema_lookup
-    $cidIndex = [array]::IndexOf([string[]]$resultSet.Columns, 'cid')
-    $nameIndex = [array]::IndexOf([string[]]$resultSet.Columns, 'name')
-    if ($cidIndex -lt 0 -or $nameIndex -lt 0) { throw 'D1 staged oversized-insert replay received an invalid table schema response.' }
-    $columns = [System.Collections.Generic.List[object]]::new()
-    foreach ($row in @($resultSet.Rows)) {
-      $values = @($row)
-      [Int32]$cid = 0
-      if ($values.Count -le $cidIndex -or $values.Count -le $nameIndex -or $null -eq $values[$cidIndex] -or $null -eq $values[$nameIndex] -or [string]::IsNullOrWhiteSpace("$($values[$nameIndex])") -or -not [Int32]::TryParse("$($values[$cidIndex])", [ref]$cid) -or $cid -lt 0) {
-        throw 'D1 staged oversized-insert replay received an invalid table schema response.'
-      }
-      $columns.Add([pscustomobject]@{ Cid = $cid; Name = "$($values[$nameIndex])" })
-    }
-    if ($columns.Count -eq 0) { throw 'D1 staged oversized-insert replay found no target-table columns.' }
-    return @($columns | Sort-Object Cid | ForEach-Object { $_.Name })
-  }
-
-  function Get-StagedInsertedRowId {
-    param([Parameter(Mandatory)][object]$Response)
-
-    # `/raw` returns result rows as arrays and exposes the most recent insert
-    # identifier in metadata. Do not infer an ID if D1 omits it (for example,
-    # a WITHOUT ROWID table): that could target the wrong restored record.
-    $result = @($Response.result)
-    $meta = if ($result.Count -eq 1 -and $null -ne $result[0].PSObject.Properties['meta']) { $result[0].meta } else { $null }
-    $rowIdProperty = if ($null -ne $meta) { $meta.PSObject.Properties['last_row_id'] } else { $null }
-    [Int64]$rowId = 0
-    if ($null -eq $rowIdProperty -or -not [Int64]::TryParse("$($rowIdProperty.Value)", [ref]$rowId)) {
-      throw 'D1 staged oversized-insert replay did not return one valid target rowid.'
-    }
-    return "$rowId"
-  }
-
   $replayed = 0
   $valueCount = 0
   $chunkCount = 0
   $operationFailure = $null
-  $nonce = [guid]::NewGuid().ToString('N')
   try {
-    $statementIndex = 0
     foreach ($statement in $Statements) {
-      $columns = @(Get-StagedTableColumns -Statement $statement)
-      $seedSql = $statement.Sql
-      $sentinels = [System.Collections.Generic.List[string]]::new()
-      $valueIndex = 0
+      $atomicSql = $statement.Sql
+      $parameters = [System.Collections.Generic.List[string]]::new()
       foreach ($value in @($statement.Values)) {
-        if ($value.ColumnOrdinal -lt 0 -or $value.ColumnOrdinal -ge $columns.Count) {
-          throw 'D1 staged oversized-insert replay could not resolve the selected source column.'
-        }
-        if (-not $seedSql.Contains($value.Marker, [System.StringComparison]::Ordinal)) {
+        if (-not $atomicSql.Contains($value.Marker, [System.StringComparison]::Ordinal)) {
           throw 'D1 staged oversized-insert replay lost an internal value marker.'
         }
-        $sentinel = "__mbfd_restore_value_$nonce`_$statementIndex`_$valueIndex"
-        $seedSql = $seedSql.Replace($value.Marker, "'$sentinel'")
-        $sentinels.Add($sentinel)
-        $valueIndex++
+        $chunks = @($value.Chunks)
+        if ($chunks.Count -eq 0) {
+          throw 'D1 staged oversized-insert replay produced no text chunks.'
+        }
+        if ($parameters.Count + $chunks.Count -gt 100) {
+          throw 'D1 staged oversized-insert replay requires more than the provider bound-parameter limit.'
+        }
+        $placeholders = @('?') * $chunks.Count
+        $atomicSql = $atomicSql.Replace($value.Marker, ($placeholders -join ' || '))
+        foreach ($chunk in $chunks) { $parameters.Add($chunk) }
         $valueCount++
       }
-      $seedSql = [regex]::Replace($seedSql, ';\s*$', ';')
-      if ((Get-Utf8ByteCount $seedSql) -gt 90KB) {
+      $atomicSql = [regex]::Replace($atomicSql, ';\s*$', ';')
+      if ((Get-Utf8ByteCount $atomicSql) -gt 90KB) {
         throw 'D1 staged oversized-insert replay would exceed the safe final SQL-text budget.'
       }
-      $seedResponse = Invoke-StagedRawRequest -Sql $seedSql -Operation insert_seed
-      Assert-StagedSingleRowMutation -Response $seedResponse -Operation insert_seed
-      $rowId = Get-StagedInsertedRowId -Response $seedResponse
-
-      $valueIndex = 0
-      foreach ($value in @($statement.Values)) {
-        $chunks = @($value.Chunks)
-        if ($chunks.Count -eq 0) { throw 'D1 staged oversized-insert replay produced no text chunks.' }
-        $columnSql = Convert-NameToSqlIdentifier -Name $columns[$value.ColumnOrdinal]
-        $sentinel = $sentinels[$valueIndex]
-        $replaceResponse = Invoke-StagedRawRequest -Sql "UPDATE $($statement.TableSql) SET $columnSql = ? WHERE rowid = ? AND $columnSql = ?;" -Params @($chunks[0], $rowId, $sentinel) -Operation value_replace
-        Assert-StagedSingleRowMutation -Response $replaceResponse -Operation value_replace
-        $chunkCount++
-        for ($chunkIndex = 1; $chunkIndex -lt $chunks.Count; $chunkIndex++) {
-          $appendResponse = Invoke-StagedRawRequest -Sql "UPDATE $($statement.TableSql) SET $columnSql = $columnSql || ? WHERE rowid = ?;" -Params @($chunks[$chunkIndex], $rowId) -Operation value_append
-          Assert-StagedSingleRowMutation -Response $appendResponse -Operation value_append
-          $chunkCount++
-        }
-        $valueIndex++
-      }
+      $insertResponse = Invoke-StagedRawRequest -Sql $atomicSql -Params $parameters.ToArray() -Operation insert_atomic
+      Assert-StagedSingleRowMutation -Response $insertResponse -Operation insert_atomic
+      $chunkCount += $parameters.Count
       $replayed++
-      $statementIndex++
     }
   } catch {
     $operationFailure = $_
@@ -842,12 +820,21 @@ function Invoke-StagedOversizedInsertReplay {
   if ($null -ne $operationFailure) { throw $operationFailure }
   if ($replayed -ne $Statements.Count) { throw 'D1 staged oversized-insert replay did not apply every deferred statement.' }
   if ($valueCount -eq 0 -or $chunkCount -eq 0) { throw 'D1 staged oversized-insert replay omitted required text chunks.' }
-  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount chunks=$chunkCount rowid_updates=$chunkCount"
+  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount chunks=$chunkCount atomic_inserts=$replayed"
 }
 
-if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
-  throw 'D1 restore requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the execution environment.'
+$apiToken = $env:CLOUDFLARE_API_TOKEN
+if ([string]::IsNullOrWhiteSpace($apiToken)) {
+  throw 'D1 restore requires CLOUDFLARE_API_TOKEN for direct Cloudflare API calls.'
 }
+if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) {
+  $accountId = Get-WranglerAccountId
+  if ([string]::IsNullOrWhiteSpace($accountId)) {
+    throw 'D1 restore requires CLOUDFLARE_ACCOUNT_ID in the execution environment or a Wrangler account session.'
+  }
+  $env:CLOUDFLARE_ACCOUNT_ID = $accountId
+}
+$headers = @{ Authorization = "Bearer $apiToken" }
 
 $tempRoot = [System.Environment]::GetEnvironmentVariable('TEMP', 'Process')
 if ([string]::IsNullOrWhiteSpace($tempRoot)) {
@@ -863,10 +850,8 @@ try {
   $importFile = Join-Path $tmp 'import.sql'
   $tablePreambleFile = Join-Path $tmp 'tables.sql'
   $remainingSqlFile = Join-Path $tmp 'remaining.sql'
-  $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
-
   Write-Host "[d1-restore] downloading r2://$BucketName/$SnapshotKey"
-  $downloadOutput = & pnpm --dir apps/worker exec wrangler r2 object get "$BucketName/$SnapshotKey" --file=$file --remote *>&1
+  $downloadOutput = @(Invoke-WranglerCli -Args @('r2', 'object', 'get', "$BucketName/$SnapshotKey", "--file=$file", '--remote'))
   if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object get failed (exit $LASTEXITCODE)" }
 
   $size = (Get-Item $file).Length
@@ -969,7 +954,7 @@ try {
   # bound parameters after the normalized file import succeeds.
   $boundStatements = @(Split-RestoreImportAndBoundInserts -SourcePath $restoreFile -ImportPath $importFile -MaxSqlBytes 90000)
 
-  $databaseInfoOutput = & pnpm --dir apps/worker exec wrangler d1 info $DbName --json *>&1
+  $databaseInfoOutput = @(Invoke-WranglerCli -Args @('d1', 'info', $DbName, '--json'))
   if ($LASTEXITCODE -ne 0) { throw 'D1 database lookup failed; import not started.' }
   try {
     $databaseId = (($databaseInfoOutput | Out-String) | ConvertFrom-Json -ErrorAction Stop).uuid
