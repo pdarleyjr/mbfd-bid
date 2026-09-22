@@ -323,44 +323,6 @@ function Get-Utf8ByteCount {
   return [System.Text.Encoding]::UTF8.GetByteCount($Value)
 }
 
-function Split-BoundTextParameter {
-  param(
-    [Parameter(Mandatory)][string]$Value,
-    [ValidateRange(4, 2000000)][int]$MaxBytes = 64KB
-  )
-
-  # Keep each bound string well below D1's documented 2 MB value ceiling and
-  # below the size that triggered an opaque provider-internal replay failure.
-  # Splitting happens on UTF-16 boundaries without separating a surrogate pair;
-  # SQLite concatenates the parameters inside the original single INSERT.
-  if ((Get-Utf8ByteCount $Value) -le $MaxBytes) { return @($Value) }
-  $chunks = [System.Collections.Generic.List[string]]::new()
-  $offset = 0
-  while ($offset -lt $Value.Length) {
-    $remaining = $Value.Length - $offset
-    $lower = 1
-    $upper = [Math]::Min($remaining, $MaxBytes)
-    $best = 0
-    while ($lower -le $upper) {
-      $length = $lower + [int](($upper - $lower) / 2)
-      $bytes = Get-Utf8ByteCount ($Value.Substring($offset, $length))
-      if ($bytes -le $MaxBytes) {
-        $best = $length
-        $lower = $length + 1
-      } else {
-        $upper = $length - 1
-      }
-    }
-    if ($best -lt $remaining -and [char]::IsHighSurrogate($Value[$offset + $best - 1])) {
-      $best--
-    }
-    if ($best -le 0) { throw 'A bound text value could not be split at a valid Unicode boundary.' }
-    $chunks.Add($Value.Substring($offset, $best))
-    $offset += $best
-  }
-  return $chunks.ToArray()
-}
-
 function Convert-SqlIdentifierToName {
   param([Parameter(Mandatory)][string]$Identifier)
 
@@ -498,7 +460,7 @@ function Convert-OversizedInsertToStagedRequest {
   # D1 limits SQL text to 100 KB, but allows a text value/row up to 2 MB.
   # Preserve the original SQL spelling and types except for only the text
   # literals needed to bring this INSERT below the SQL-text limit. The values
-  # remain in memory and are later staged in small bound requests; no SQL or
+  # remain in memory and are bound into the final atomic request; no SQL or
   # values are logged.
   if ($Statement -notmatch '(?is)^\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\b') {
     return $null
@@ -575,38 +537,31 @@ function Convert-OversizedInsertToStagedRequest {
 
   $sql = [System.Text.StringBuilder]::new()
   $values = [System.Collections.Generic.List[object]]::new()
-  $valueIndex = 0
   $cursor = 0
   foreach ($literal in @($literals | Sort-Object Start)) {
     [void]$sql.Append($Statement.Substring($cursor, $literal.Start - $cursor))
     if ($selected.Contains($literal.Start)) {
-      # Keep each bound value well below D1's per-value ceiling while preserving
-      # the original INSERT as one atomic statement.
-      if ((Get-Utf8ByteCount $literal.Value) -gt 400KB) {
-        throw 'D1 staged oversized-insert replay requires more than the provider bound-parameter limit.'
+      if ((Get-Utf8ByteCount $literal.Value) -gt 2000000) {
+        throw 'D1 staged oversized-insert replay encountered a value above the provider 2 MB limit.'
       }
-      $chunks = @(Split-BoundTextParameter -Value $literal.Value -MaxBytes 4KB)
       $columnOrdinal = $null
       foreach ($expressionIndex in 0..($layout.Expressions.Count - 1)) {
         $expression = $layout.Expressions[$expressionIndex]
         $expressionStart = $layout.ValuesStart + $expression.Start
         $expressionEnd = $expressionStart + $expression.Length
         if ($literal.Start -lt $expressionStart -or ($literal.Start + $literal.Length) -gt $expressionEnd) { continue }
-        # The fallback appends directly to a column. Do not rewrite a text
-        # literal nested in an arbitrary SQL expression.
+        # Do not rewrite a text literal nested in an arbitrary SQL expression.
         if ($Statement.Substring($expressionStart, $expression.Length).Trim() -cne $Statement.Substring($literal.Start, $literal.Length)) { return $null }
         $columnOrdinal = $expressionIndex
         break
       }
       if ($null -eq $columnOrdinal) { return $null }
-      $marker = "CAST(NULL AS TEXT) /* d1_restore_value_$valueIndex */"
+      $marker = "__mbfd_restore_value_$([guid]::NewGuid().ToString('N'))__"
       [void]$sql.Append($marker)
       $values.Add([pscustomobject]@{
         Marker = $marker
-        Chunks = $chunks
-        ColumnOrdinal = $columnOrdinal
+        Parameter = $literal.Value
       })
-      $valueIndex++
     } else {
       [void]$sql.Append($Statement.Substring($literal.Start, $literal.Length))
     }
@@ -783,7 +738,7 @@ function Invoke-StagedOversizedInsertReplay {
 
   $replayed = 0
   $valueCount = 0
-  $chunkCount = 0
+  $parameterCount = 0
   $operationFailure = $null
   try {
     foreach ($statement in $Statements) {
@@ -793,16 +748,11 @@ function Invoke-StagedOversizedInsertReplay {
         if (-not $atomicSql.Contains($value.Marker, [System.StringComparison]::Ordinal)) {
           throw 'D1 staged oversized-insert replay lost an internal value marker.'
         }
-        $chunks = @($value.Chunks)
-        if ($chunks.Count -eq 0) {
-          throw 'D1 staged oversized-insert replay produced no text chunks.'
-        }
-        if ($parameters.Count + $chunks.Count -gt 100) {
+        if ($parameters.Count -ge 100) {
           throw 'D1 staged oversized-insert replay requires more than the provider bound-parameter limit.'
         }
-        $placeholders = @('?') * $chunks.Count
-        $atomicSql = $atomicSql.Replace($value.Marker, ($placeholders -join ' || '))
-        foreach ($chunk in $chunks) { $parameters.Add($chunk) }
+        $atomicSql = $atomicSql.Replace($value.Marker, '?')
+        $parameters.Add([string]$value.Parameter)
         $valueCount++
       }
       $atomicSql = [regex]::Replace($atomicSql, ';\s*$', ';')
@@ -811,7 +761,7 @@ function Invoke-StagedOversizedInsertReplay {
       }
       $insertResponse = Invoke-StagedRawRequest -Sql $atomicSql -Params $parameters.ToArray() -Operation insert_atomic
       Assert-StagedSingleRowMutation -Response $insertResponse -Operation insert_atomic
-      $chunkCount += $parameters.Count
+      $parameterCount += $parameters.Count
       $replayed++
     }
   } catch {
@@ -819,8 +769,8 @@ function Invoke-StagedOversizedInsertReplay {
   }
   if ($null -ne $operationFailure) { throw $operationFailure }
   if ($replayed -ne $Statements.Count) { throw 'D1 staged oversized-insert replay did not apply every deferred statement.' }
-  if ($valueCount -eq 0 -or $chunkCount -eq 0) { throw 'D1 staged oversized-insert replay omitted required text chunks.' }
-  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount chunks=$chunkCount atomic_inserts=$replayed"
+  if ($valueCount -eq 0 -or $parameterCount -eq 0) { throw 'D1 staged oversized-insert replay omitted required bound values.' }
+  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount parameters=$parameterCount atomic_inserts=$replayed"
 }
 
 $apiToken = $env:CLOUDFLARE_API_TOKEN

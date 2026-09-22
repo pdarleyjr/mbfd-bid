@@ -40,7 +40,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
       $filePath = ($args | Where-Object { $_ -like '--file=*' }).Substring(7)
       $largeRows = (1..1600 | ForEach-Object { "($_, 'synthetic-row-payload-0123456789abcdef0123456789abcdef', 'synthetic-row-payload-0123456789abcdef0123456789abcdef')" }) -join ','
       $replayScenarios = @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-parameter-limit', 'bound-replay-transport-failure', 'bound-replay-http-400', 'json-whoami-account-id')
-      $deferredPayload = if ($scenario -eq 'bound-replay-unicode') { '🙂' * 40000 } elseif ($scenario -eq 'bound-replay-quotes-empty') { "O'Brien " * 14000 } elseif ($scenario -eq 'bound-replay-parameter-limit') { 'synthetic-bound-private-payload-' * 42000 } elseif ($scenario -in $replayScenarios) { 'synthetic-bound-private-payload-' * 3000 } else { 'small' }
+      $deferredPayload = if ($scenario -eq 'bound-replay-unicode') { ('🙂' * 40000) -join '' } elseif ($scenario -eq 'bound-replay-quotes-empty') { ("O'Brien " * 14000) -join '' } elseif ($scenario -in $replayScenarios) { ('synthetic-bound-private-payload-' * 3000) -join '' } else { 'small' }
       $deferredSqlPayload = $deferredPayload.Replace("'", "''")
       if ($scenario -eq 'bound-replay-unicode') { $state.ExpectedBoundValue = $deferredPayload }
       if ($scenario -eq 'bound-replay-quotes-empty') { $state.ExpectedBoundValue = $deferredPayload }
@@ -50,6 +50,8 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
         "INSERT INTO synthetic VALUES (900001, '$deferredSqlPayload', '$deferredSqlPayload');"
       } elseif ($scenario -eq 'bound-replay-explicit-columns') {
         "INSERT INTO synthetic (note, id) VALUES ('$deferredSqlPayload', 900001);"
+      } elseif ($scenario -eq 'bound-replay-parameter-limit') {
+        "INSERT INTO synthetic VALUES (" + ((1..101 | ForEach-Object { "'$deferredSqlPayload'" }) -join ',') + ');'
       } else {
         "INSERT INTO synthetic VALUES (900001, '$deferredSqlPayload');"
       }
@@ -100,7 +102,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     $kind = if ($payload.sql -match '(?i)^INSERT\b') { 'insert_atomic' }
       else { 'unexpected' }
     if ($kind -eq 'insert_atomic' -and ($null -eq $payload.params -or @($payload.params).Count -eq 0)) { throw 'Atomic insert omitted bound parameters.' }
-    $params = if ($null -eq $payload.params) { @() } else { @($payload.params | ForEach-Object { "$_" }) }
+    $params = if ($null -eq $payload.params) { @() } else { @($payload.params) }
     $state.StagedReplayRequests.Add([pscustomobject]@{ Kind = $kind; Uri = $Uri; Sql = "$($payload.sql)"; Params = $params; Bytes = [System.Text.Encoding]::UTF8.GetByteCount($Body) })
     if ($kind -eq 'insert_atomic' -and $scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
     if ($kind -eq 'insert_atomic' -and $scenario -eq 'bound-replay-http-400') {
@@ -179,13 +181,17 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True ($atomicInserts.Count -eq $expectedBoundStatementCount) 'The staged oversized-insert replay did not perform one atomic insert per deferred statement.'
     Assert-True (@($atomicInserts | Where-Object { $_.Params.Count -lt 1 -or $_.Params.Count -gt 100 }).Count -eq 0) 'The atomic replay exceeded the provider bound-parameter limit.'
     Assert-True (@($atomicInserts | Where-Object { $_.Sql -match '(?i)\bUPDATE\b|CAST\(NULL AS TEXT\)|RETURNING' }).Count -eq 0) 'The atomic replay emitted a placeholder/update protocol.'
-    Assert-True (@($atomicInserts | Where-Object { $_.Sql -notmatch '\?\s*\|\|' }).Count -eq 0) 'The atomic replay did not concatenate bound chunks inside the INSERT expression.'
+    Assert-True (@($atomicInserts | Where-Object { $_.Sql -notmatch '\?' }).Count -eq 0) 'The atomic replay did not bind selected literals inside the INSERT expression.'
     Assert-True (@($stagedRequests | Where-Object { $_.Sql -match '^\s|\s$' }).Count -eq 0) 'The staged oversized-insert replay did not canonicalize outer SQL whitespace before its raw requests.'
     Assert-True (@($stagedRequests | Where-Object { $_.Uri -notmatch '/query$' }).Count -eq 0) 'The staged oversized-insert replay did not use the documented D1 query endpoint.'
-    Assert-True ($normalizedOutput -match "\[d1-restore\] staged oversized inserts replayed=$expectedBoundStatementCount values=$expectedStagedValueCount chunks=\d+ atomic_inserts=$expectedBoundStatementCount") 'The restore output did not record atomic oversized-insert replay metrics.'
+    Assert-True ($normalizedOutput -match "\[d1-restore\] staged oversized inserts replayed=$expectedBoundStatementCount values=$expectedStagedValueCount parameters=\d+ atomic_inserts=$expectedBoundStatementCount") 'The restore output did not record atomic oversized-insert replay metrics.'
     if ($scenario -eq 'bound-replay-unicode') {
-      $unicodeChunks = @($atomicInserts[0].Params)
-      Assert-True (($unicodeChunks -join '') -ceq $state.ExpectedBoundValue) 'The staged replay split a Unicode surrogate pair or changed the source text.'
+      $expectedBytes = [System.Text.Encoding]::UTF8.GetByteCount($state.ExpectedBoundValue)
+      $boundParams = @($atomicInserts[0].Params)
+      $actualBytes = if ($boundParams.Count -eq 1) { [System.Text.Encoding]::UTF8.GetByteCount($boundParams[0]) } else { -1 }
+      $actualChars = if ($boundParams.Count -eq 1) { $boundParams[0].Length } else { -1 }
+      $expectedChars = $state.ExpectedBoundValue.Length
+      Assert-True ($boundParams.Count -eq 1 -and $actualBytes -eq $expectedBytes -and $boundParams[0] -ceq $state.ExpectedBoundValue) "The staged replay changed Unicode text (params=$($boundParams.Count) expected_chars=$expectedChars actual_chars=$actualChars expected_bytes=$expectedBytes actual_bytes=$actualBytes)."
     }
     if ($scenario -eq 'bound-replay-quotes-empty') {
       Assert-True (($atomicInserts[0].Params -join '') -ceq $state.ExpectedBoundValue) 'The staged replay changed apostrophe-containing text.'
