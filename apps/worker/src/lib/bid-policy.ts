@@ -18,7 +18,10 @@ import { evaluateAssignmentTerms } from './assignment-terms.js';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { type BidOrdinalDatasetRow, projectBidOrdinals } from './bid-ordinal-evidence.js';
-import { bidSourceDecisionReviewIssues } from './bid-source-decision-review.js';
+import {
+  bidSourceDecisionBlocksPurpose,
+  bidSourceDecisionReviewIssues,
+} from './bid-source-decision-review.js';
 import { serviceCreditsAsOf } from './service-evidence.js';
 import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence.js';
 
@@ -1672,7 +1675,7 @@ export async function prepareCapturedBidEvaluation(
     .sort((left, right) => left.memberId - right.memberId);
 
   if (
-    policy.sourceDecisions.some((decision) => decision.status === 'OPEN') ||
+    policy.sourceDecisions.some((decision) => bidSourceDecisionBlocksPurpose(decision, mode)) ||
     bidSourceDecisionReviewIssues(policy.sourceDecisions).length > 0
   )
     return { ok: false, code: 'policy_source_decision_required' };

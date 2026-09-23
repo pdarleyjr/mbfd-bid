@@ -376,11 +376,24 @@ describe('read-only preparation of an explicit saved Bid version', () => {
     },
   );
 
-  it('keeps a saved OPEN policy question blocked after the global year resolves it', async () => {
+  it('allows a saved Real-only OPEN question in Mock but blocks the exact version in Live', async () => {
     decision('OPEN', 1);
-    const version = await savedVersion();
+    const version = await savedVersion((content) => {
+      if (content.settings?.v !== 2) throw new Error('Synthetic V2 settings required');
+      content.settings = { ...content.settings, v: 3, livePolicy: syntheticLivePolicy() };
+      content.sourceDecisions = content.sourceDecisions.map((source) => ({
+        ...source,
+        blockingClassification: 'BLOCKS_REAL_BID_ACTIVATION',
+        affectedScopes: ['contact-policy'],
+      }));
+    });
     decision('RESOLVED', 2);
     expect(await readOnly(() => prepareBidDefinitionRun(h.env.DB, input(version)))).toMatchObject({
+      ok: true,
+    });
+    expect(
+      await readOnly(() => prepareBidDefinitionRun(h.env.DB, input(version, { mode: 'live' }))),
+    ).toMatchObject({
       ok: false,
       code: 'policy_source_decision_required',
     });
@@ -389,6 +402,26 @@ describe('read-only preparation of an explicit saved Bid version', () => {
     );
     expect(legacy.ok, JSON.stringify(legacy)).toBe(true);
   });
+
+  it.each(['BLOCKS_APPLICATION_RELEASE', 'BLOCKS_FINAL_2026_CONFIGURATION'] as const)(
+    'keeps a saved %s question blocked in Mock',
+    async (blockingClassification) => {
+      decision('OPEN', 1);
+      const version = await savedVersion((content) => {
+        content.sourceDecisions = content.sourceDecisions.map((source) => ({
+          ...source,
+          blockingClassification,
+          affectedScopes: ['annual-policy'],
+        }));
+      });
+      expect(await readOnly(() => prepareBidDefinitionRun(h.env.DB, input(version)))).toMatchObject(
+        {
+          ok: false,
+          code: 'policy_source_decision_required',
+        },
+      );
+    },
+  );
 
   it('prepares a managed version with valid trimmed source decision bounds while preserving recorded whitespace', async () => {
     decision('RESOLVED', 1);

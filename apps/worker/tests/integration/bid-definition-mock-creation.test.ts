@@ -24,6 +24,11 @@ type Preview = {
   contextSha256: string;
   runtimeSourceToken: string;
   pool: Record<string, number>;
+  sourceDecisionBlockers: {
+    issueId: string;
+    classification: string;
+    affectedScopes: string[];
+  }[];
 };
 type CreateBody = {
   versionId: string;
@@ -325,6 +330,7 @@ describe('managed Mock preview and atomic creation through the admin router', ()
         'contextSha256',
         'runtimeSourceToken',
         'pool',
+        'sourceDecisionBlockers',
       ].sort(),
     );
     expect(checked).toMatchObject({
@@ -339,6 +345,7 @@ describe('managed Mock preview and atomic creation through the admin router', ()
         administrativeAssignmentExcludedCount: 0,
       },
     });
+    expect(checked.sourceDecisionBlockers).toEqual([]);
     const allowed = [
       'bid_sessions',
       'bid_session_policy_snapshots',
@@ -454,6 +461,31 @@ describe('managed Mock preview and atomic creation through the admin router', ()
     expect(JSON.parse(receipt.response_json)).toEqual(persisted);
     expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
     noRuntimeWrites();
+  });
+
+  it('labels a permitted Mock when unresolved review still blocks Real activation', async () => {
+    const working = await successor((content) => {
+      content.sourceDecisions.push({
+        issueId: 'synthetic-real-only-review',
+        title: 'Synthetic Real activation review',
+        question: 'Which final operating value applies?',
+        area: 'annual-policy',
+        status: 'OPEN',
+        decision: '',
+        sourceRef: 'Synthetic source section 7',
+        effectiveOn: '2027-01-01',
+        blockingClassification: 'BLOCKS_REAL_BID_ACTIVATION',
+        affectedScopes: ['contact-policy'],
+      });
+    });
+    const checked = await preview(working);
+    expect(checked.sourceDecisionBlockers).toEqual([
+      {
+        issueId: 'synthetic-real-only-review',
+        classification: 'BLOCKS_REAL_BID_ACTIVATION',
+        affectedScopes: ['contact-policy'],
+      },
+    ]);
   });
 
   it('returns a real blocker with no invented tokens for a saved incomplete version', async () => {

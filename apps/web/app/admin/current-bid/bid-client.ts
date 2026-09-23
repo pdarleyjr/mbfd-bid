@@ -237,6 +237,19 @@ export const BidMockPreviewSchema = z.discriminatedUnion('wouldAllowCreateMock',
       versionNumber: z.number().int().positive(),
       contextSha256: digest,
       runtimeSourceToken: digest,
+      sourceDecisionBlockers: z.array(
+        z
+          .object({
+            issueId: identity,
+            classification: z.enum([
+              'BLOCKS_APPLICATION_RELEASE',
+              'BLOCKS_FINAL_2026_CONFIGURATION',
+              'BLOCKS_REAL_BID_ACTIVATION',
+            ]),
+            affectedScopes: z.array(identity),
+          })
+          .strict(),
+      ),
       pool: poolSummary,
     })
     .strict(),

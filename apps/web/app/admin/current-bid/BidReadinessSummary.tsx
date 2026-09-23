@@ -36,6 +36,7 @@ function ReadinessItem({ label, status, children, action, tone = 'review' }: Rea
 export function BidReadinessSummary({
   year,
   policyReady,
+  realActivationReviewCount,
   positionsReady,
   participantStagesConfigured,
   aDayConfigured,
@@ -45,6 +46,7 @@ export function BidReadinessSummary({
 }: {
   year: number;
   policyReady: boolean;
+  realActivationReviewCount: number;
   positionsReady: boolean;
   participantStagesConfigured: boolean;
   aDayConfigured: boolean;
@@ -66,8 +68,8 @@ export function BidReadinessSummary({
             What to do next
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Complete the review items below before relying on a Mock or Managed Live check. A
-            readiness review never starts the real Bid.
+            Prepare and practice a Mock with saved working assumptions. Real remains separately
+            fail-closed until every activation review is resolved.
           </p>
         </div>
         <Link
@@ -91,8 +93,10 @@ export function BidReadinessSummary({
           }
         >
           {policyReady
-            ? 'The saved Bid has a policy and no open source-decision record.'
-            : 'A policy setting or source decision still needs an administrator review.'}
+            ? realActivationReviewCount > 0
+              ? `The working policy can support a Mock. ${realActivationReviewCount} Real activation reviews remain.`
+              : 'The saved Bid has a complete working policy and no open Real activation review.'
+            : 'A policy setting or configuration-level source decision still needs administrator review.'}
         </ReadinessItem>
         <ReadinessItem
           label="Positions"
@@ -171,19 +175,25 @@ export function BidReadinessSummary({
         </ReadinessItem>
         <ReadinessItem
           label="Mock rehearsal"
-          status="Not completed with the current Bid evidence"
+          status={policyReady ? 'Ready to prepare safely' : 'Working setup required'}
+          tone={policyReady ? 'ready' : 'review'}
           action={
             <Button type="button" variant="secondary" onClick={onOpenMock}>
               Prepare Mock
             </Button>
           }
         >
-          A Mock is the safe place to practice selections, unreachable-member handling, and
-          specialty fallback before Bid day.
+          {policyReady
+            ? 'A Mock can use the saved working assumptions without granting Real authority.'
+            : 'Finish the working setup, then practice selections, unreachable-member handling, and specialty fallback.'}
         </ReadinessItem>
         <ReadinessItem
           label="Live"
-          status="Check readiness after the review items are resolved"
+          status={
+            realActivationReviewCount > 0
+              ? `${realActivationReviewCount} activation reviews remain`
+              : 'Check final readiness'
+          }
           action={
             <Button type="button" variant="secondary" onClick={onOpenLive}>
               Check Managed Live readiness
