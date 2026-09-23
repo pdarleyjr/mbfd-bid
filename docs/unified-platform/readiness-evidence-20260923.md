@@ -50,4 +50,5 @@ No value in this bundle can be derived safely from rank, a daily roster, a curre
 - Playwright E2E now runs automatically on pushes and pull requests with an ephemeral process-only signing key; it no longer depends on a protected staging secret or a manual workflow input.
 - Two empty permanent-skip placeholders were removed. Their day-cycle and force-pick service behavior is covered by executable integration tests; the real authenticated force-pick browser scenario remains explicitly gated on an authorized test identity.
 - Supported Node tooling is constrained to the validated 22.x line, and the existing package-manager declaration continues to pin pnpm 9.12.0 for Corepack and CI.
+- Direct dependency declarations now match the already-patched Hono/Drizzle resolutions, and Vitest plus its coverage plugin are upgraded to the fixed 4.1.11 release so the source manifests and audit state agree.
 
