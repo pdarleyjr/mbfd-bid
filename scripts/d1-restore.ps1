@@ -673,49 +673,63 @@ function Invoke-StagedOversizedInsertReplay {
     if ($requestBytes -gt 90KB) {
       throw "D1 staged oversized-insert replay would exceed the safe control-plane request budget (operation=$Operation)."
     }
-    try {
-      # The query endpoint accepts the documented single-query parameter contract. Keep a
-      # readable HTTP response for non-2xx replies so only a safe error
-      # category—not the provider body, SQL, or values—can be emitted.
-      $queryUri = $ApiUri -replace '/import$', '/query'
-      $response = Invoke-WebRequest -Method Post -Uri $queryUri -Headers $Headers -ContentType 'application/json' -Body $body -SkipHttpErrorCheck -ErrorAction Stop
-    } catch {
-      $category = 'transport_failure'
-      $detail = $null
-      foreach ($candidate in @($_.Exception.Message, $_.ToString(), $_.ErrorDetails.Message)) {
-        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
-          $detail = $candidate
-          break
-        }
-      }
-      if (-not [string]::IsNullOrWhiteSpace($detail)) {
-        $candidateCategory = Get-SafeImportFailureCategory $detail
-        if ($candidateCategory -ne 'opaque') {
-          $category = $candidateCategory
-        }
-      }
+    # Helper-table operations are made idempotent below, so bounded retries are
+    # safe for transient control-plane failures. The final target INSERT is not
+    # retried because an ambiguous response must never duplicate a target write.
+    $maxAttempts = if ($Operation -in @('stage_create', 'stage_chunk', 'stage_cleanup')) { 5 } else { 1 }
+    $response = $null
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+      $statusCode = 0
+      $category = $null
       try {
-        $statusCode = [int]$_.Exception.Response.StatusCode
-        if ($statusCode -ge 100 -and $statusCode -le 599) {
-          $category = if ($category -eq 'transport_failure' -or $category -eq 'opaque') {
-            "http_status_$statusCode"
-          } else {
-            "$category`_http_status_$statusCode"
+        # The query endpoint accepts the documented single-query parameter contract. Keep a
+        # readable HTTP response for non-2xx replies so only a safe error
+        # category—not the provider body, SQL, or values—can be emitted.
+        $queryUri = $ApiUri -replace '/import$', '/query'
+        $response = Invoke-WebRequest -Method Post -Uri $queryUri -Headers $Headers -ContentType 'application/json' -Body $body -SkipHttpErrorCheck -ErrorAction Stop
+        try { $statusCode = [int]$response.StatusCode } catch {}
+      } catch {
+        $category = 'transport_failure'
+        $detail = $null
+        foreach ($candidate in @($_.Exception.Message, $_.ToString(), $_.ErrorDetails.Message)) {
+          if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            $detail = $candidate
+            break
           }
         }
-      } catch {}
-      Write-Host "[d1-restore] staged replay request failure operation=$Operation category=$category request_bytes=$requestBytes"
-      throw "D1 staged oversized-insert replay request failed (operation=$Operation category=$category)."
-    }
-    $statusCode = 0
-    try { $statusCode = [int]$response.StatusCode } catch {}
-    if ($statusCode -lt 200 -or $statusCode -gt 299) {
-      $category = Get-SafeImportFailureCategory $response.Content
-      if ($category -eq 'opaque') {
-        $providerCode = Get-SafeProviderErrorCode $response.Content
-        if ($null -ne $providerCode) { $category = $providerCode }
+        if (-not [string]::IsNullOrWhiteSpace($detail)) {
+          $candidateCategory = Get-SafeImportFailureCategory $detail
+          if ($candidateCategory -ne 'opaque') {
+            $category = $candidateCategory
+          }
+        }
+        try {
+          $statusCode = [int]$_.Exception.Response.StatusCode
+          if ($statusCode -ge 100 -and $statusCode -le 599) {
+            $category = if ($category -eq 'transport_failure' -or $category -eq 'opaque') {
+              "http_status_$statusCode"
+            } else {
+              "$category`_http_status_$statusCode"
+            }
+          }
+        } catch {}
       }
-      $category = if ($category -eq 'opaque') { "http_status_$statusCode" } else { "$category`_http_status_$statusCode" }
+      if ($null -eq $category -and ($statusCode -lt 200 -or $statusCode -gt 299)) {
+        $category = Get-SafeImportFailureCategory $response.Content
+        if ($category -eq 'opaque') {
+          $providerCode = Get-SafeProviderErrorCode $response.Content
+          if ($null -ne $providerCode) { $category = $providerCode }
+        }
+        $category = if ($category -eq 'opaque') { "http_status_$statusCode" } else { "$category`_http_status_$statusCode" }
+      }
+      if ($null -eq $category -and $statusCode -ge 200 -and $statusCode -le 299) { break }
+
+      $retryableStatus = $statusCode -in @(0, 429, 500, 502, 503, 504)
+      if ($attempt -lt $maxAttempts -and $retryableStatus) {
+        Write-Host "[d1-restore] staged replay transient retry operation=$Operation category=$category attempt=$attempt request_bytes=$requestBytes"
+        Start-Sleep -Seconds ([int][Math]::Pow(2, $attempt))
+        continue
+      }
       Write-Host "[d1-restore] staged replay request failure operation=$Operation category=$category request_bytes=$requestBytes"
       throw "D1 staged oversized-insert replay request failed (operation=$Operation category=$category)."
     }
@@ -802,9 +816,9 @@ function Invoke-StagedOversizedInsertReplay {
   $stageCreated = $false
   $stageTableName = "__mbfd_restore_chunks_$([guid]::NewGuid().ToString('N'))"
   $stageTableSql = Convert-NameToSqlIdentifier -Name $stageTableName
-  $stageCreateSql = "CREATE TABLE $stageTableSql (`"statement_ordinal`" INTEGER NOT NULL, `"value_ordinal`" INTEGER NOT NULL, `"chunk_ordinal`" INTEGER NOT NULL, `"chunk`" TEXT NOT NULL, PRIMARY KEY (`"statement_ordinal`", `"value_ordinal`", `"chunk_ordinal`")) WITHOUT ROWID;"
-  $stageInsertSql = "INSERT INTO $stageTableSql (`"statement_ordinal`", `"value_ordinal`", `"chunk_ordinal`", `"chunk`") VALUES (?, ?, ?, ?);"
-  $stageDropSql = "DROP TABLE $stageTableSql;"
+  $stageCreateSql = "CREATE TABLE IF NOT EXISTS $stageTableSql (`"statement_ordinal`" INTEGER NOT NULL, `"value_ordinal`" INTEGER NOT NULL, `"chunk_ordinal`" INTEGER NOT NULL, `"chunk`" TEXT NOT NULL, PRIMARY KEY (`"statement_ordinal`", `"value_ordinal`", `"chunk_ordinal`")) WITHOUT ROWID;"
+  $stageInsertSql = "INSERT OR REPLACE INTO $stageTableSql (`"statement_ordinal`", `"value_ordinal`", `"chunk_ordinal`", `"chunk`") VALUES (?, ?, ?, ?);"
+  $stageDropSql = "DROP TABLE IF EXISTS $stageTableSql;"
   try {
     $createResponse = Invoke-StagedRawRequest -Sql $stageCreateSql -Operation stage_create
     $stageCreated = $true
