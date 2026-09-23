@@ -858,7 +858,20 @@ function Invoke-StagedOversizedInsertReplay {
       if ((Get-Utf8ByteCount $atomicSql) -gt 90KB) {
         throw 'D1 staged oversized-insert replay would exceed the safe final SQL-text budget.'
       }
-      $insertResponse = Invoke-StagedRawRequest -Sql $atomicSql -Params $parameters.ToArray() -Operation insert_atomic
+      try {
+        $insertResponse = Invoke-StagedRawRequest -Sql $atomicSql -Params $parameters.ToArray() -Operation insert_atomic
+      } catch {
+        $targetName = 'unknown'
+        $targetMatch = [regex]::Match($statement.Sql, '(?is)^\s*INSERT(?:\s+OR\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\s+INTO\s+(?:"(?<quoted>[A-Za-z0-9_]+)"|\[(?<bracketed>[A-Za-z0-9_]+)\]|`(?<backtick>[A-Za-z0-9_]+)`|(?<bare>[A-Za-z0-9_]+))')
+        foreach ($groupName in @('quoted', 'bracketed', 'backtick', 'bare')) {
+          if ($targetMatch.Groups[$groupName].Success) {
+            $targetName = $targetMatch.Groups[$groupName].Value
+            break
+          }
+        }
+        Write-Host "[d1-restore] staged atomic insert failure statement=$statementOrdinal target=$targetName sql_bytes=$(Get-Utf8ByteCount $atomicSql) parameters=$($parameters.Count)"
+        throw
+      }
       Assert-StagedSingleRowMutation -Response $insertResponse -Operation insert_atomic
       $parameterCount += $parameters.Count
       $replayed++
@@ -882,6 +895,69 @@ function Invoke-StagedOversizedInsertReplay {
   if ($replayed -ne $Statements.Count) { throw 'D1 staged oversized-insert replay did not apply every deferred statement.' }
   if ($valueCount -eq 0 -or $parameterCount -eq 0 -or $chunkCount -eq 0) { throw 'D1 staged oversized-insert replay omitted required bound values.' }
   Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount chunks=$chunkCount parameters=$parameterCount atomic_inserts=$replayed"
+}
+
+function Invoke-D1ImportSqlFile {
+  param(
+    [Parameter(Mandatory)][string]$ApiUri,
+    [Parameter(Mandatory)][hashtable]$Headers,
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][int]$PollAttempts,
+    [Parameter(Mandatory)][int]$PollIntervalSeconds
+  )
+
+  $etag = (Get-FileHash -LiteralPath $Path -Algorithm MD5).Hash.ToLowerInvariant()
+  try {
+    $init = Invoke-RestMethod -Method Post -Uri $ApiUri -Headers $Headers -ContentType 'application/json' -Body (@{ action = 'init'; etag = $etag } | ConvertTo-Json -Compress) -ErrorAction Stop
+  } catch {
+    throw 'D1 import initialization failed.'
+  }
+  if ($init.success -ne $true -or $init.result.upload_url -isnot [string] -or [string]::IsNullOrWhiteSpace($init.result.filename)) {
+    throw 'D1 import initialization returned no usable upload target.'
+  }
+  try {
+    Invoke-WebRequest -Method Put -Uri $init.result.upload_url -InFile $Path -ErrorAction Stop | Out-Null
+  } catch {
+    throw 'D1 import upload failed.'
+  }
+  try {
+    $ingest = Invoke-RestMethod -Method Post -Uri $ApiUri -Headers $Headers -ContentType 'application/json' -Body (@{ action = 'ingest'; etag = $etag; filename = $init.result.filename } | ConvertTo-Json -Compress) -ErrorAction Stop
+  } catch {
+    throw 'D1 import ingest request failed.'
+  }
+  if ($ingest.success -ne $true) { throw 'D1 import ingest request failed.' }
+
+  $completed = $ingest.result.status -eq 'complete' -or $ingest.result.success -eq $true
+  if (-not $completed) {
+    if ($ingest.result.status -eq 'error' -or $ingest.result.success -eq $false) {
+      $category = Get-SafeImportFailureCategory $ingest.result.error
+      throw "D1 import reported failure (category=$category)."
+    }
+    $bookmark = $ingest.result.at_bookmark
+    if ([string]::IsNullOrWhiteSpace($bookmark)) {
+      $topShape = Get-SafePropertyNames $ingest
+      $resultShape = Get-SafePropertyNames $ingest.result
+      throw "D1 import ingest request returned neither completion nor a status bookmark (top=$topShape; result=$resultShape)."
+    }
+    for ($attempt = 1; $attempt -le $PollAttempts; $attempt++) {
+      if ($PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
+      try {
+        $poll = Invoke-RestMethod -Method Post -Uri $ApiUri -Headers $Headers -ContentType 'application/json' -Body (@{ action = 'poll'; current_bookmark = $bookmark } | ConvertTo-Json -Compress) -ErrorAction Stop
+      } catch {
+        throw 'D1 import status poll failed.'
+      }
+      if ($poll.success -ne $true) { throw 'D1 import status poll reported failure.' }
+      if ($poll.result.status -eq 'error' -or $poll.result.success -eq $false) {
+        $category = Get-SafeImportFailureCategory $poll.result.error
+        throw "D1 import reported failure (category=$category)."
+      }
+      if ($poll.result.status -eq 'complete' -or $poll.result.success -eq $true) {
+        $completed = $true
+        break
+      }
+    }
+  }
+  if (-not $completed) { throw 'D1 import did not complete before the bounded polling window expired.' }
 }
 
 $apiToken = $env:CLOUDFLARE_API_TOKEN
@@ -911,6 +987,7 @@ try {
   $importFile = Join-Path $tmp 'import.sql'
   $tablePreambleFile = Join-Path $tmp 'tables.sql'
   $remainingSqlFile = Join-Path $tmp 'remaining.sql'
+  $postSchemaFile = Join-Path $tmp 'post-schema.sql'
   Write-Host "[d1-restore] downloading r2://$BucketName/$SnapshotKey"
   $downloadOutput = @(Invoke-WranglerCli -Args @('r2', 'object', 'get', "$BucketName/$SnapshotKey", "--file=$file", '--remote'))
   if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object get failed (exit $LASTEXITCODE)" }
@@ -926,10 +1003,14 @@ try {
   try {
     $tablePreamble = [System.IO.StreamWriter]::new($tablePreambleFile, $false, [System.Text.UTF8Encoding]::new($false))
     $remainingSql = [System.IO.StreamWriter]::new($remainingSqlFile, $false, [System.Text.UTF8Encoding]::new($false))
+    $postSchema = [System.IO.StreamWriter]::new($postSchemaFile, $false, [System.Text.UTF8Encoding]::new($false))
     try {
       $skippingReservedD1TableStatement = $false
       $pendingTable = $null
       $pendingInsert = $null
+      $pendingPostSchema = $null
+      $pendingPostSchemaKind = $null
+      $postSchemaCount = 0
       while (($line = $source.ReadLine()) -ne $null) {
         # The restore executor scopes the import transaction. Wrangler SQL
         # exports wrap the dump in an outer transaction, so omit that wrapper.
@@ -953,12 +1034,36 @@ try {
           }
           continue
         }
+        if ($null -ne $pendingPostSchema) {
+          [void]$pendingPostSchema.AppendLine($line)
+          $postSchemaComplete = if ($pendingPostSchemaKind -eq 'trigger') { $line -match '(?i)^\s*END\s*;\s*$' -or $line -match '(?i)\bBEGIN\b.*\bEND\s*;\s*$' } else { $line -match ';\s*$' }
+          if ($postSchemaComplete) {
+            $postSchema.Write($pendingPostSchema.ToString())
+            $pendingPostSchema = $null
+            $pendingPostSchemaKind = $null
+            $postSchemaCount++
+          }
+          continue
+        }
         if ($line -match '(?i)^\s*CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\b') {
           $pendingTable = [System.Text.StringBuilder]::new()
           [void]$pendingTable.AppendLine($line)
           if ($line -match ';\s*$') {
             $tablePreamble.Write($pendingTable.ToString())
             $pendingTable = $null
+          }
+          continue
+        }
+        if ($line -match '(?i)^\s*CREATE\s+(?:(?:UNIQUE\s+)?INDEX|TRIGGER|VIEW)\b') {
+          $pendingPostSchema = [System.Text.StringBuilder]::new()
+          [void]$pendingPostSchema.AppendLine($line)
+          $pendingPostSchemaKind = if ($line -match '(?i)^\s*CREATE\s+TRIGGER\b') { 'trigger' } else { 'ordinary' }
+          $postSchemaComplete = if ($pendingPostSchemaKind -eq 'trigger') { $line -match '(?i)^\s*END\s*;\s*$' -or $line -match '(?i)\bBEGIN\b.*\bEND\s*;\s*$' } else { $line -match ';\s*$' }
+          if ($postSchemaComplete) {
+            $postSchema.Write($pendingPostSchema.ToString())
+            $pendingPostSchema = $null
+            $pendingPostSchemaKind = $null
+            $postSchemaCount++
           }
           continue
         }
@@ -983,7 +1088,9 @@ try {
       }
       if ($null -ne $pendingTable) { throw 'Restore snapshot ended inside a CREATE TABLE statement.' }
       if ($null -ne $pendingInsert) { throw 'Restore snapshot ended inside an INSERT statement.' }
+      if ($null -ne $pendingPostSchema) { throw 'Restore snapshot ended inside a post-data schema statement.' }
     } finally {
+      $postSchema.Dispose()
       $remainingSql.Dispose()
       $tablePreamble.Dispose()
     }
@@ -1027,60 +1134,14 @@ try {
   }
 
   $apiUri = "https://api.cloudflare.com/client/v4/accounts/$($env:CLOUDFLARE_ACCOUNT_ID)/d1/database/$databaseId/import"
-  $etag = (Get-FileHash -LiteralPath $importFile -Algorithm MD5).Hash.ToLowerInvariant()
-  try {
-    $init = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'init'; etag = $etag } | ConvertTo-Json -Compress) -ErrorAction Stop
-  } catch {
-    throw 'D1 import initialization failed.'
-  }
-  if ($init.success -ne $true -or $init.result.upload_url -isnot [string] -or [string]::IsNullOrWhiteSpace($init.result.filename)) {
-    throw 'D1 import initialization returned no usable upload target.'
-  }
-  try {
-    Invoke-WebRequest -Method Put -Uri $init.result.upload_url -InFile $importFile -ErrorAction Stop | Out-Null
-  } catch {
-    throw 'D1 import upload failed.'
-  }
-  try {
-    $ingest = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'ingest'; etag = $etag; filename = $init.result.filename } | ConvertTo-Json -Compress) -ErrorAction Stop
-  } catch {
-    throw 'D1 import ingest request failed.'
-  }
-  if ($ingest.success -ne $true) { throw 'D1 import ingest request failed.' }
-
-  $completed = $ingest.result.status -eq 'complete' -or $ingest.result.success -eq $true
-  if (-not $completed) {
-    if ($ingest.result.status -eq 'error' -or $ingest.result.success -eq $false) {
-      $category = Get-SafeImportFailureCategory $ingest.result.error
-      throw "D1 import reported failure (category=$category)."
-    }
-    $bookmark = $ingest.result.at_bookmark
-    if ([string]::IsNullOrWhiteSpace($bookmark)) {
-      $topShape = Get-SafePropertyNames $ingest
-      $resultShape = Get-SafePropertyNames $ingest.result
-      throw "D1 import ingest request returned neither completion nor a status bookmark (top=$topShape; result=$resultShape)."
-    }
-    for ($attempt = 1; $attempt -le $PollAttempts; $attempt++) {
-      if ($PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
-      try {
-        $poll = Invoke-RestMethod -Method Post -Uri $apiUri -Headers $headers -ContentType 'application/json' -Body (@{ action = 'poll'; current_bookmark = $bookmark } | ConvertTo-Json -Compress) -ErrorAction Stop
-      } catch {
-        throw 'D1 import status poll failed.'
-      }
-      if ($poll.success -ne $true) { throw 'D1 import status poll reported failure.' }
-      if ($poll.result.status -eq 'error' -or $poll.result.success -eq $false) {
-        $category = Get-SafeImportFailureCategory $poll.result.error
-        throw "D1 import reported failure (category=$category)."
-      }
-      if ($poll.result.status -eq 'complete' -or $poll.result.success -eq $true) {
-        $completed = $true
-        break
-      }
-    }
-  }
-  if (-not $completed) { throw 'D1 import did not complete before the bounded polling window expired.' }
+  Invoke-D1ImportSqlFile -ApiUri $apiUri -Headers $headers -Path $importFile -PollAttempts $PollAttempts -PollIntervalSeconds $PollIntervalSeconds
 
   Invoke-StagedOversizedInsertReplay -ApiUri $apiUri -Headers $headers -Statements $boundStatements
+
+  if ($postSchemaCount -gt 0) {
+    Invoke-D1ImportSqlFile -ApiUri $apiUri -Headers $headers -Path $postSchemaFile -PollAttempts $PollAttempts -PollIntervalSeconds $PollIntervalSeconds
+    Write-Host "[d1-restore] post-data schema statements=$postSchemaCount applied"
+  }
 
   Write-Host "[d1-restore] import complete into $DbName ($Env)"
 } finally {

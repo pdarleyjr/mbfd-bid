@@ -20,8 +20,8 @@ $env:CLOUDFLARE_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
 $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
-foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-parameter-limit', 'bound-replay-transport-failure', 'bound-replay-http-400', 'bound-replay-http-500-retry', 'json-whoami-account-id')) {
-  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; StagedReplayRequests = [System.Collections.Generic.List[object]]::new(); StagedChunks = [System.Collections.Generic.List[object]]::new(); ExpectedBoundValue = $null; NextRowId = 900000 }
+foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-post-schema', 'bound-replay-parameter-limit', 'bound-replay-transport-failure', 'bound-replay-http-400', 'bound-replay-http-500-retry', 'json-whoami-account-id')) {
+  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PostSchemaText = $null; ImportTexts = [System.Collections.Generic.List[string]]::new(); PollCount = 0; StagedReplayRequests = [System.Collections.Generic.List[object]]::new(); StagedChunks = [System.Collections.Generic.List[object]]::new(); ExpectedBoundValue = $null; NextRowId = 900000 }
   function global:pnpm {
     $commandText = $args -join ' '
     $state.Calls.Add($commandText)
@@ -39,7 +39,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     if ($commandText -match 'r2 object get') {
       $filePath = ($args | Where-Object { $_ -like '--file=*' }).Substring(7)
       $largeRows = (1..1600 | ForEach-Object { "($_, 'synthetic-row-payload-0123456789abcdef0123456789abcdef', 'synthetic-row-payload-0123456789abcdef0123456789abcdef')" }) -join ','
-      $replayScenarios = @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-parameter-limit', 'bound-replay-transport-failure', 'bound-replay-http-400', 'bound-replay-http-500-retry', 'json-whoami-account-id')
+      $replayScenarios = @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-post-schema', 'bound-replay-parameter-limit', 'bound-replay-transport-failure', 'bound-replay-http-400', 'bound-replay-http-500-retry', 'json-whoami-account-id')
       $deferredPayload = if ($scenario -eq 'bound-replay-unicode') { ('🙂' * 40000) -join '' } elseif ($scenario -eq 'bound-replay-quotes-empty') { ("O'Brien " * 14000) -join '' } elseif ($scenario -in $replayScenarios) { ('synthetic-bound-private-payload-' * 3000) -join '' } else { 'small' }
       $deferredSqlPayload = $deferredPayload.Replace("'", "''")
       if ($scenario -eq 'bound-replay-unicode') { $state.ExpectedBoundValue = $deferredPayload }
@@ -56,7 +56,8 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
         "INSERT INTO synthetic VALUES (900001, '$deferredSqlPayload');"
       }
       $largeInsert = if ($scenario -eq 'split-replace-batch') { 'INSERT OR REPLACE INTO synthetic VALUES' } else { 'INSERT INTO synthetic VALUES' }
-      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY, note TEXT, note_two TEXT);`nINSERT INTO synthetic VALUES (1, 'small', 'small');`nINSERT INTO synthetic VALUES (2, '', '');`n$largeInsert $largeRows;`n$deferredInserts`nCREATE TABLE referenced_later (id INTEGER PRIMARY KEY);`nCOMMIT;`n")
+      $postSchemaSql = if ($scenario -eq 'bound-replay-post-schema') { "CREATE TRIGGER synthetic_insert_guard BEFORE INSERT ON synthetic WHEN NEW.id < 0 BEGIN SELECT RAISE(ABORT, 'synthetic guard'); END;`n" } else { '' }
+      [System.IO.File]::WriteAllText($filePath, "BEGIN TRANSACTION;`nCREATE TABLE _cf_KV (`n key TEXT PRIMARY KEY,`n value BLOB`n) WITHOUT ROWID;`nINSERT INTO _cf_KV VALUES ('synthetic-reserved');`nCREATE TABLE synthetic (id INTEGER PRIMARY KEY, note TEXT, note_two TEXT);`nINSERT INTO synthetic VALUES (1, 'small', 'small');`nINSERT INTO synthetic VALUES (2, '', '');`n$largeInsert $largeRows;`n$deferredInserts`nCREATE TABLE referenced_later (id INTEGER PRIMARY KEY);`n$postSchemaSql`nCOMMIT;`n")
       return
     }
     if ($commandText -match 'd1 info') { return '{"uuid":"01234567-89ab-cdef-0123-456789abcdef"}' }
@@ -91,7 +92,9 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   function global:Invoke-WebRequest {
     param([string]$Method, [string]$Uri, [hashtable]$Headers, [string]$ContentType, [string]$Body, [string]$InFile, [switch]$SkipHttpErrorCheck)
     if (-not [string]::IsNullOrWhiteSpace($InFile)) {
-      $state.RestoreText = [System.IO.File]::ReadAllText($InFile)
+      $importText = [System.IO.File]::ReadAllText($InFile)
+      $state.ImportTexts.Add($importText)
+      if ($null -eq $state.RestoreText) { $state.RestoreText = $importText } else { $state.PostSchemaText = $importText }
       return [pscustomobject]@{ StatusCode = 200 }
     }
     $payload = $Body | ConvertFrom-Json
@@ -145,7 +148,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
   $env:TEMP = $testRoot
   $outputText = ($captured -join "`n") + ($caught | Out-String)
   $normalizedOutput = Normalize-OutputText -Text $outputText
-  $shouldPass = $scenario -in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-http-500-retry', 'json-whoami-account-id')
+  $shouldPass = $scenario -in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-post-schema', 'bound-replay-http-500-retry', 'json-whoami-account-id')
   $caughtMessage = if ($null -eq $caught) { 'none' } else { $caught.Exception.Message }
   Assert-True (($null -eq $caught) -eq $shouldPass) "$scenario returned the wrong success/failure outcome: $caughtMessage"
   if ($scenario -eq 'bound-replay-parameter-limit') {
@@ -169,7 +172,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True ($normalizedOutput -match '\[d1-restore\] staged replay request failure operation=insert_atomic category=transport_failure request_bytes=\d+') 'The staged-replay transport failure did not record only its request size.'
   }
   if ($scenario -eq 'bound-replay-http-400') {
-    Assert-True ($normalizedOutput -match '\[d1-restore\] staged replay request failure operation=insert_atomic category=provider_code_9001_http_status_400 request_bytes=\d+' -and $normalizedOutput -notmatch 'synthetic-bound-replay-provider-detail') 'The HTTP failure did not classify the safe provider code without exposing its response body.'
+    Assert-True ($normalizedOutput -match '\[d1-restore\] staged replay request failure operation=insert_atomic category=provider_code_9001_http_status_400 request_bytes=\d+' -and $normalizedOutput -match '\[d1-restore\] staged atomic insert failure statement=0 target=synthetic sql_bytes=\d+ parameters=\d+' -and $normalizedOutput -notmatch 'synthetic-bound-replay-provider-detail') 'The HTTP failure did not classify the safe provider code and statement shape without exposing its response body.'
   }
   if ($scenario -eq 'bound-replay-http-500-retry') {
     Assert-True ($normalizedOutput -match '\[d1-restore\] staged replay transient retry operation=stage_create category=provider_code_7500_http_status_500 attempt=1 request_bytes=\d+' -and $normalizedOutput -notmatch 'synthetic-transient-provider-detail') 'The transient provider failure was not retried with a bounded diagnostic.'
@@ -221,13 +224,17 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
       $quoteChunks = @($state.StagedChunks | Where-Object { $_.Statement -eq 0 -and $_.Value -eq 0 } | Sort-Object Chunk)
       Assert-True ((($quoteChunks | ForEach-Object { $_.Text }) -join '') -ceq $state.ExpectedBoundValue) 'The staged replay changed apostrophe-containing text.'
     }
+    if ($scenario -eq 'bound-replay-post-schema') {
+      Assert-True ($state.ImportTexts.Count -eq 2 -and $state.RestoreText -notmatch 'synthetic_insert_guard' -and $state.PostSchemaText -match 'CREATE TRIGGER synthetic_insert_guard') 'The restore did not defer schema objects until after staged oversized rows.'
+      Assert-True ($normalizedOutput -match '\[d1-restore\] post-data schema statements=1 applied') 'The restore omitted the post-data schema application receipt.'
+    }
     Assert-True (@($stagedRequests | Where-Object { $_.Kind -eq 'unexpected' }).Count -eq 0) 'The staged oversized-insert replay emitted an unexpected SQL shape.'
     if ($scenario -ne 'json-whoami-account-id') {
       Assert-True ($state.Calls.Count -eq 2 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not use the Worker runtime to download then resolve the target database.'
     } else {
       Assert-True ($state.Calls.Count -ge 3 -and $state.Calls[0] -match '^--dir apps/worker exec wrangler whoami --json' -and $state.Calls[1] -match '^--dir apps/worker exec wrangler r2 object get' -and $state.Calls[2] -match '^--dir apps/worker exec wrangler d1 info') 'The restore path did not resolve the account ID from Wrangler JSON before importing.'
     }
-    Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-http-500-retry', 'json-whoami-account-id')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
+    Assert-True ((($scenario -in @('ingest-complete', 'ingest-legacy-complete')) -and $state.PollCount -eq 0) -or ($scenario -eq 'bound-replay-post-schema' -and $state.PollCount -eq 2) -or (($scenario -in @('success', 'poll-legacy-complete', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-http-500-retry', 'json-whoami-account-id')) -and $state.PollCount -eq 1)) "$scenario did not use the expected D1 import completion path."
   }
 }
 
