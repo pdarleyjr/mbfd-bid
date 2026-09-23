@@ -1510,12 +1510,11 @@ export async function prepareCapturedBidEvaluation(
       const termPosition = administrativeAssignment
         ? positionByStaffingId.get(administrativeAssignment.staffingPositionId)
         : undefined;
-      const voluntaryTerm = termReview.find(
-        (term) =>
-          term.positionId === termPosition &&
-          term.status === 'EVALUATED' &&
-          term.memberMayLeave === true,
-      );
+      const relevantTermReview = termReview.find((term) => term.positionId === termPosition);
+      const voluntaryTerm =
+        relevantTermReview?.status === 'EVALUATED' && relevantTermReview.memberMayLeave === true
+          ? relevantTermReview
+          : undefined;
       const termEvidence = administrativeAssignment
         ? tenureEvidence.find(
             (row) =>
@@ -1545,6 +1544,10 @@ export async function prepareCapturedBidEvaluation(
         mode === 'mock' &&
         personnelState?.employmentStatus === 'unknown' &&
         mockParticipantMemberIds.has(member.id);
+      const hasAssignmentTermAssumption =
+        administrativeAssignment?.status === 'active' &&
+        relevantTermReview?.status === 'BLOCKED' &&
+        !assignmentTermReviewBlocksPurpose(relevantTermReview, mode);
       const eligibility = {
         ...(bidTour
           ? {
@@ -1629,7 +1632,11 @@ export async function prepareCapturedBidEvaluation(
           ...eligibility,
         };
       }
-      if (administrativeAssignment !== undefined && termParticipation === undefined) {
+      if (
+        administrativeAssignment !== undefined &&
+        termParticipation === undefined &&
+        !hasAssignmentTermAssumption
+      ) {
         return {
           memberId: member.id,
           pool: 'EXCLUDED',
@@ -1666,9 +1673,11 @@ export async function prepareCapturedBidEvaluation(
         rankSeniority: member.rankSeniority,
         exclusionReason: null,
         authoritativeAssignmentId: null,
-        ...(hasAcceptedMockParticipationEvidence
-          ? { mockParticipationEvidence: 'ACCEPTED_STAFFING_BASELINE' as const }
-          : {}),
+        ...(hasAssignmentTermAssumption
+          ? { mockParticipationEvidence: 'ASSIGNMENT_TERM_ASSUMPTION' as const }
+          : hasAcceptedMockParticipationEvidence
+            ? { mockParticipationEvidence: 'ACCEPTED_STAFFING_BASELINE' as const }
+            : {}),
         ...eligibility,
       };
     })

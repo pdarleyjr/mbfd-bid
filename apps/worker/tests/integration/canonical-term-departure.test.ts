@@ -507,8 +507,23 @@ describe('canonical voluntary term departure and transition', () => {
   });
 
   it('carries missing tenure facts only as a Mock rehearsal assumption', async () => {
-    expect(await prepareAgain('mock')).toMatchObject({ ok: true });
-    expect(await prepareAgain('participant_preview')).toMatchObject({ ok: true });
+    const mock = await prepareAgain('mock');
+    expect(mock).toMatchObject({ ok: true });
+    if (!mock.ok) throw new Error(JSON.stringify(mock));
+    expect(mock.evaluation.members.find((member) => member.memberId === MEMBER)).toMatchObject({
+      pool: 'FF',
+      exclusionReason: null,
+      mockParticipationEvidence: 'ASSIGNMENT_TERM_ASSUMPTION',
+    });
+
+    const preview = await prepareAgain('participant_preview');
+    expect(preview).toMatchObject({ ok: true });
+    if (!preview.ok) throw new Error(JSON.stringify(preview));
+    expect(preview.evaluation.members.find((member) => member.memberId === MEMBER)).toMatchObject({
+      pool: 'FF',
+      exclusionReason: null,
+      mockParticipationEvidence: 'ASSIGNMENT_TERM_ASSUMPTION',
+    });
     expect(await prepareAgain('live')).toMatchObject({
       ok: false,
       code: 'assignment_term_evidence_requires_review',
@@ -516,8 +531,9 @@ describe('canonical voluntary term departure and transition', () => {
       termIssues: [{ positionId: ORIGIN, code: 'term_evidence_required' }],
     });
     expect(snapshot.members.find((member) => member.memberId === MEMBER)).toMatchObject({
-      pool: 'EXCLUDED',
-      exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+      pool: 'FF',
+      exclusionReason: null,
+      mockParticipationEvidence: 'ASSIGNMENT_TERM_ASSUMPTION',
     });
     expect(snapshot.members.find((member) => member.memberId === MEMBER)?.termParticipation).toBe(
       undefined,
