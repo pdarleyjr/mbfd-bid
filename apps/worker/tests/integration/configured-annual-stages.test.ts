@@ -345,7 +345,7 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
          (id, member_id, staffing_position_id, origin_type, origin_ref, source_observation_id,
           status, effective_from, created_at, updated_at)
        VALUES ('synthetic-stage-assignment-${year}', 10004, '${staffingId}', 'TELESTAFF_IMPORT',
-         '${importId}', '${observationId}', 'active', '${year}-01-01', 1, 1);
+         '${importId}', '${observationId}', 'active', '${year}-01-04', 1, 1);
        INSERT INTO bid_year_staffing_baselines
          (id, bid_year, assignment_import_id, status, accepted_at, accepted_by_member_id,
           acceptance_reason, created_at)

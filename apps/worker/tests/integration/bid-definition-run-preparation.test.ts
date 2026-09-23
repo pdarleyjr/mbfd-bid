@@ -105,7 +105,7 @@ describe('read-only preparation of an explicit saved Bid version', () => {
     await teardownTestD1(h);
   });
 
-  function acceptedBaseline() {
+  function acceptedBaseline(options: { assignmentEffectiveFrom?: string } = {}) {
     // Actual import/mapping/observation/assignment/baseline relationships, all
     // synthetic. No personnel correction is supplied for the unknown member.
     h.sqlite.exec(`
@@ -140,7 +140,7 @@ describe('read-only preparation of an explicit saved Bid version', () => {
       INSERT INTO member_assignments
         (id,member_id,staffing_position_id,origin_type,origin_ref,source_observation_id,status,effective_from,effective_to,created_at,updated_at)
         VALUES ('synthetic-run-assignment',10002,'synthetic-run-staffing','TELESTAFF_IMPORT','synthetic-run-import',
-          'synthetic-run-observation','active','2027-01-01','2027-01-31',1,1);
+          'synthetic-run-observation','active','${options.assignmentEffectiveFrom ?? '2027-01-01'}','2027-01-31',1,1);
       INSERT INTO bid_year_staffing_baselines
         (id,bid_year,assignment_import_id,status,accepted_at,accepted_by_member_id,acceptance_reason,created_at)
         VALUES ('synthetic-run-baseline',2027,'synthetic-run-import','accepted',1,10001,
@@ -304,6 +304,17 @@ describe('read-only preparation of an explicit saved Bid version', () => {
         )
         .get(),
     ).toEqual({ employment_status: 'unknown', employment_status_effective_on: null });
+  });
+
+  it('uses the accepted source snapshot when canonical persistence happened after the personnel evaluation date', async () => {
+    acceptedBaseline({ assignmentEffectiveFrom: '2027-01-04' });
+    const version = await savedVersion();
+    const result = await prepared(version);
+    expect(result.snapshot.members.find((member) => member.memberId === 10002)).toMatchObject({
+      pool: 'FF',
+      exclusionReason: null,
+      mockParticipationEvidence: 'ACCEPTED_STAFFING_BASELINE',
+    });
   });
 
   it('uses an explicit older version and its dated context after a different version becomes current', async () => {
