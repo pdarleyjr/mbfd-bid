@@ -28,6 +28,7 @@ import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence
 import type { DB } from '../db/index.js';
 import {
   annualBidPolicyDocuments,
+  assignmentImports,
   assignmentObservations,
   bidSessionPolicySnapshots,
   bidSessions,
@@ -1004,6 +1005,7 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
         staffingPositionId: memberAssignments.staffingPositionId,
         originType: memberAssignments.originType,
         acceptedImportId: assignmentObservations.assignmentImportId,
+        acceptedImportSnapshotAsOf: assignmentImports.sourceSnapshotAsOf,
         status: memberAssignments.status,
         effectiveFrom: memberAssignments.effectiveFrom,
         effectiveTo: memberAssignments.effectiveTo,
@@ -1012,6 +1014,10 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
       .leftJoin(
         assignmentObservations,
         eq(memberAssignments.sourceObservationId, assignmentObservations.id),
+      )
+      .leftJoin(
+        assignmentImports,
+        eq(assignmentObservations.assignmentImportId, assignmentImports.id),
       )
       .all(),
     db.select().from(staffingTenureEvidence).all(),
@@ -1402,11 +1408,22 @@ export async function prepareCapturedBidEvaluation(
   const mockAssignmentsByMember = new Map<number, typeof assignmentRows>();
   if (acceptedMockBaselineImportId !== null) {
     for (const assignment of assignmentRows) {
+      // A committed canonical assignment can be persisted after the official
+      // roster's as-of date. For the exact accepted baseline only, that
+      // source snapshot is the authoritative lower bound; otherwise a policy
+      // evaluation on the roster date would reject the very placement the
+      // accepted source proves. Current assignment status and the ordinary
+      // effective-to bound still fail closed for superseded placements.
+      const acceptedBaselineEffectiveFrom =
+        assignment.acceptedImportSnapshotAsOf !== null &&
+        assignment.acceptedImportSnapshotAsOf < assignment.effectiveFrom
+          ? assignment.acceptedImportSnapshotAsOf
+          : assignment.effectiveFrom;
       if (
         assignment.originType !== 'TELESTAFF_IMPORT' ||
         assignment.acceptedImportId !== acceptedMockBaselineImportId ||
         assignment.status !== 'active' ||
-        !effectiveOn(capturedOn, assignment.effectiveFrom, assignment.effectiveTo)
+        !effectiveOn(capturedOn, acceptedBaselineEffectiveFrom, assignment.effectiveTo)
       ) {
         continue;
       }
