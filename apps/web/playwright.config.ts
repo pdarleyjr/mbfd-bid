@@ -10,11 +10,10 @@ export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: path.resolve(__dirname, './tests/e2e/global-setup.ts'),
   fullyParallel: true,
-  // Native Windows `next dev` plus the loopback annual Worker cannot sustain
-  // Playwright's automatic six-worker fan-out: requests abort and unrelated
-  // assertions then fail. Keep hosted Linux coverage parallel while making
-  // the documented local command deterministic on its supported desktop host.
-  ...(process.platform === 'win32' && !process.env.CI ? { workers: 1 } : {}),
+  // Keep the shared Next server and loopback annual Worker within a measured
+  // concurrency bound. Hosted runners vary in CPU count, so an explicit CI
+  // value prevents the same gate from silently fanning out differently.
+  ...(process.env.CI ? { workers: 2 } : process.platform === 'win32' ? { workers: 1 } : {}),
   // The 521-member authoritative impact fixture executes the real Worker
   // evaluator. It has a separate one-worker config so normal E2E retains its
   // parallel coverage without resource-starving the deterministic fixture.

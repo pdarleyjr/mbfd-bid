@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { SignJWT } from 'jose';
+import { signJwt } from '../../lib/jwt';
 
 test('Docs, contextual help and reviewed credential upload work on desktop and mobile', async ({
   page,
@@ -8,7 +8,7 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
   const key = process.env.JWT_SIGNING_KEY;
   if (!key) throw new Error('Local synthetic signing key required');
   const now = Math.floor(Date.now() / 1000);
-  const payload: Record<string, unknown> = {
+  const payload: Parameters<typeof signJwt>[0] = {
     sub: 901,
     hub_user_id: 901,
     member_id: 901,
@@ -21,11 +21,7 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
     fresh_auth_at: now,
     authz_checked_at: now,
   };
-  const jwt = await new SignJWT(payload)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .sign(new TextEncoder().encode(key));
+  const jwt = await signJwt(payload, key, '1h');
   await page.context().addCookies([
     {
       name: 'mbfd_pin',
