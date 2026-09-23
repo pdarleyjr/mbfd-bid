@@ -102,7 +102,8 @@ jobs:
           node-version: '${{ env.NODE_VERSION }}'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @mbfd/shared build
+      - name: Build all internal packages for the browser and isolated Worker
+        run: pnpm -r --filter "./packages/*" build
       - run: pnpm --filter @mbfd/web exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - if: failure()
