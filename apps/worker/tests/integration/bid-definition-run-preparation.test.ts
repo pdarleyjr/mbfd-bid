@@ -149,6 +149,35 @@ describe('read-only preparation of an explicit saved Bid version', () => {
     expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
   }
 
+  function acceptedBaselineWithReviewedAmbiguousPresence() {
+    h.sqlite.exec(`
+      INSERT INTO assignment_imports
+        (id,source_system,source_version,source_hash,source_format,parser_version,source_kind,status,input_row_count,
+         normalized_data_row_count,unique_employee_count,report_row_count,structural_row_count,source_snapshot_as_of,created_at)
+        VALUES ('synthetic-run-ambiguous-import','telestaff','synthetic-ambiguous-v1','${SOURCE_HASH}',
+          'TELSTAFF_ASSIGNMENTS_HTML_V1','telestaff-assignments-html@1','official','staged',1,1,1,1,0,
+          '2027-01-01',1);
+      INSERT INTO assignment_import_rows
+        (id,import_id,source_row_number,row_fingerprint,member_reference_hmac,resolved_member_id,
+         normalized_source_topology,source_topology_completeness,disposition,reconciliation_classification,
+         review_status,resolution_action,reviewed_at,reviewed_by_member_id,resolution_reason,created_at)
+        VALUES ('synthetic-run-ambiguous-row','synthetic-run-ambiguous-import',1,'${'d'.repeat(64)}','${'e'.repeat(64)}',10002,
+          '{"v":1,"shift":"D","division":"Prevention","station":"Prevention","unit":"Prevention","position":"Captain (INSP)"}',
+          'complete','ambiguous_mapping','AMBIGUOUS_MAPPING','rejected','REJECT_SOURCE_ROW',1,10001,
+          'Synthetic repeated-seat ambiguity; member identity and source presence remain resolved.',1);
+      UPDATE assignment_imports SET status='reviewed' WHERE id='synthetic-run-ambiguous-import';
+      UPDATE assignment_imports SET status='approved',approved_at=1,approved_by_member_id=10001
+        WHERE id='synthetic-run-ambiguous-import';
+      UPDATE assignment_imports SET status='committed',committed_at=1
+        WHERE id='synthetic-run-ambiguous-import';
+      INSERT INTO bid_year_staffing_baselines
+        (id,bid_year,assignment_import_id,status,accepted_at,accepted_by_member_id,acceptance_reason,created_at)
+        VALUES ('synthetic-run-ambiguous-baseline',2027,'synthetic-run-ambiguous-import','accepted',1,10001,
+          'Synthetic accepted baseline with reviewed repeated-seat ambiguity',1);
+    `);
+    expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
+  }
+
   function decision(status: 'OPEN' | 'RESOLVED', revision: number) {
     h.sqlite
       .prepare(`INSERT INTO bid_source_decisions
@@ -315,6 +344,25 @@ describe('read-only preparation of an explicit saved Bid version', () => {
       exclusionReason: null,
       mockParticipationEvidence: 'ACCEPTED_STAFFING_BASELINE',
     });
+  });
+
+  it('uses reviewed accepted-row presence for Mock without inventing an ambiguous assignment', async () => {
+    acceptedBaselineWithReviewedAmbiguousPresence();
+    const version = await savedVersion();
+    const result = await prepared(version);
+    expect(result.snapshot.members.find((member) => member.memberId === 10002)).toMatchObject({
+      pool: 'FF',
+      exclusionReason: null,
+      mockParticipationEvidence: 'ACCEPTED_STAFFING_BASELINE',
+    });
+    expect(
+      h.sqlite
+        .prepare('SELECT COUNT(*) AS n FROM assignment_observations WHERE member_id=10002')
+        .get(),
+    ).toEqual({ n: 0 });
+    expect(
+      h.sqlite.prepare('SELECT COUNT(*) AS n FROM member_assignments WHERE member_id=10002').get(),
+    ).toEqual({ n: 0 });
   });
 
   it('uses an explicit older version and its dated context after a different version becomes current', async () => {

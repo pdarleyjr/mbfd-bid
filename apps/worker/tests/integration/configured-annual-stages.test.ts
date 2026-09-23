@@ -293,7 +293,6 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
     const staffingId = `synthetic-stage-staffing-${year}`;
     const mappingId = `synthetic-stage-mapping-${year}`;
     const rowId = `synthetic-stage-row-${year}`;
-    const observationId = `synthetic-stage-observation-${year}`;
     h.sqlite.exec(
       `INSERT INTO staffing_positions
          (id, stable_slot_key, shift, station, unit, position_name, applicable_rank,
@@ -317,13 +316,15 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
          'official', 'staged', 1, 1, 1, 1, 0, '${year}-01-01', 1);
        INSERT INTO assignment_import_rows
          (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
-          resolved_member_id, staffing_position_source_mapping_id, normalized_source_topology,
-          disposition, reconciliation_classification, review_status, created_at)
+          resolved_member_id, normalized_source_topology, source_topology_completeness,
+          disposition, reconciliation_classification, review_status, resolution_action,
+          reviewed_at, reviewed_by_member_id, resolution_reason, created_at)
        VALUES ('${rowId}', '${importId}', 1,
          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-         'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 10004, '${mappingId}',
+         'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 10004,
          '{"v":1,"shift":"A","division":"Combat","station":"7","unit":"Synthetic Engine","position":"Synthetic firefighter"}',
-         'unchanged', 'UNCHANGED', 'not_required', 1);`,
+         'complete', 'ambiguous_mapping', 'AMBIGUOUS_MAPPING', 'rejected', 'REJECT_SOURCE_ROW',
+         1, 10001, 'Synthetic repeated-seat ambiguity with resolved member presence.', 1);`,
     );
     await h.db.run('UPDATE assignment_imports SET status = ? WHERE id = ?', ['reviewed', importId]);
     await h.db.run(
@@ -335,18 +336,7 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
       importId,
     ]);
     h.sqlite.exec(
-      `INSERT INTO assignment_observations
-         (id, assignment_import_id, assignment_import_row_id, member_id, staffing_position_id,
-          staffing_position_source_mapping_id, normalized_source_topology, observed_at, created_at)
-       VALUES ('${observationId}', '${importId}', '${rowId}', 10004, '${staffingId}', '${mappingId}',
-         '{"v":1,"shift":"A","division":"Combat","station":"7","unit":"Synthetic Engine","position":"Synthetic firefighter"}',
-         1, 1);
-       INSERT INTO member_assignments
-         (id, member_id, staffing_position_id, origin_type, origin_ref, source_observation_id,
-          status, effective_from, created_at, updated_at)
-       VALUES ('synthetic-stage-assignment-${year}', 10004, '${staffingId}', 'TELESTAFF_IMPORT',
-         '${importId}', '${observationId}', 'active', '${year}-01-04', 1, 1);
-       INSERT INTO bid_year_staffing_baselines
+      `INSERT INTO bid_year_staffing_baselines
          (id, bid_year, assignment_import_id, status, accepted_at, accepted_by_member_id,
           acceptance_reason, created_at)
        VALUES ('synthetic-stage-baseline-acceptance-${year}', ${year}, '${importId}', 'accepted',
