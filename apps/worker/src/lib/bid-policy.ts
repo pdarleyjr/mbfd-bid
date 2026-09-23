@@ -1541,7 +1541,7 @@ export async function prepareCapturedBidEvaluation(
             }
           : undefined;
       const hasAcceptedMockParticipationEvidence =
-        mode === 'mock' &&
+        (mode === 'mock' || mode === 'participant_preview') &&
         personnelState?.employmentStatus === 'unknown' &&
         mockParticipantMemberIds.has(member.id);
       const hasAssignmentTermAssumption =

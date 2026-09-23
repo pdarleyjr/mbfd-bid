@@ -60,9 +60,11 @@ function sourceDecisionsForParticipantPreview(content: BidDefinitionContent) {
 }
 
 /**
- * Builds the same immutable Department evaluation used by a run, while
- * retaining normal (non-Mock) participation semantics and creating no
- * version, session, receipt, audit, or execution artifact.
+ * Builds the same immutable Department evaluation used by a run. The
+ * display-only preview carries the same reviewed rehearsal assumptions as a
+ * Mock so the authoring gate cannot reject a participant that Mock creation
+ * will admit. It never grants Live participation and creates no version,
+ * session, receipt, audit, or execution artifact.
  */
 async function prepareParticipantPreviewEvaluation(
   db: ReturnType<typeof getDb>,

@@ -288,6 +288,72 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
     return candidate;
   }
 
+  async function seedAcceptedParticipantPreviewBaseline(): Promise<void> {
+    const importId = `synthetic-stage-baseline-${year}`;
+    const staffingId = `synthetic-stage-staffing-${year}`;
+    const mappingId = `synthetic-stage-mapping-${year}`;
+    const rowId = `synthetic-stage-row-${year}`;
+    const observationId = `synthetic-stage-observation-${year}`;
+    h.sqlite.exec(
+      `INSERT INTO staffing_positions
+         (id, stable_slot_key, shift, station, unit, position_name, applicable_rank,
+          active_from, review_status, created_at, updated_at)
+       VALUES ('${staffingId}', 'SYNTHETIC/${year}/A/7/FF', 'A', '7', 'Synthetic Engine',
+         'Synthetic firefighter', 'FF', '${year}-01-01', 'approved', 1, 1);
+       INSERT INTO staffing_position_source_mappings
+         (id, staffing_position_id, source_system, source_locator, source_signature,
+          source_version, source_hash, effective_from, created_at)
+       VALUES ('${mappingId}', '${staffingId}', 'telestaff',
+         '{"v":1,"shift":"A","division":"Combat","station":"7","unit":"Synthetic Engine","position":"Synthetic firefighter"}',
+         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '${importId}',
+         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '${year}-01-01', 1);
+       INSERT INTO assignment_imports
+         (id, source_system, source_version, source_hash, source_format, parser_version, source_kind,
+          status, input_row_count, normalized_data_row_count, unique_employee_count,
+          report_row_count, structural_row_count, source_snapshot_as_of, created_at)
+       VALUES ('${importId}', 'telestaff', '${importId}',
+         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+         'TELSTAFF_ASSIGNMENTS_HTML_V1', 'telestaff-assignments-html@1',
+         'official', 'staged', 1, 1, 1, 1, 0, '${year}-01-01', 1);
+       INSERT INTO assignment_import_rows
+         (id, import_id, source_row_number, row_fingerprint, member_reference_hmac,
+          resolved_member_id, staffing_position_source_mapping_id, normalized_source_topology,
+          disposition, reconciliation_classification, review_status, created_at)
+       VALUES ('${rowId}', '${importId}', 1,
+         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+         'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 10004, '${mappingId}',
+         '{"v":1,"shift":"A","division":"Combat","station":"7","unit":"Synthetic Engine","position":"Synthetic firefighter"}',
+         'unchanged', 'UNCHANGED', 'not_required', 1);`,
+    );
+    await h.db.run('UPDATE assignment_imports SET status = ? WHERE id = ?', ['reviewed', importId]);
+    await h.db.run(
+      'UPDATE assignment_imports SET status = ?, approved_at = 1, approved_by_member_id = 10001 WHERE id = ?',
+      ['approved', importId],
+    );
+    await h.db.run('UPDATE assignment_imports SET status = ?, committed_at = 1 WHERE id = ?', [
+      'committed',
+      importId,
+    ]);
+    h.sqlite.exec(
+      `INSERT INTO assignment_observations
+         (id, assignment_import_id, assignment_import_row_id, member_id, staffing_position_id,
+          staffing_position_source_mapping_id, normalized_source_topology, observed_at, created_at)
+       VALUES ('${observationId}', '${importId}', '${rowId}', 10004, '${staffingId}', '${mappingId}',
+         '{"v":1,"shift":"A","division":"Combat","station":"7","unit":"Synthetic Engine","position":"Synthetic firefighter"}',
+         1, 1);
+       INSERT INTO member_assignments
+         (id, member_id, staffing_position_id, origin_type, origin_ref, source_observation_id,
+          status, effective_from, created_at, updated_at)
+       VALUES ('synthetic-stage-assignment-${year}', 10004, '${staffingId}', 'TELESTAFF_IMPORT',
+         '${importId}', '${observationId}', 'active', '${year}-01-01', 1, 1);
+       INSERT INTO bid_year_staffing_baselines
+         (id, bid_year, assignment_import_id, status, accepted_at, accepted_by_member_id,
+          acceptance_reason, created_at)
+       VALUES ('synthetic-stage-baseline-acceptance-${year}', ${year}, '${importId}', 'accepted',
+         1, 10001, 'Synthetic accepted baseline for participant-preview coverage.', 1);`,
+    );
+  }
+
   it('reads an existing unsorted policy array by configured order without rewriting its snapshot', async () => {
     const db = getDb(h.env.DB);
     const capturedAtMs = Date.parse(`${year}-02-01T12:00:00Z`);
@@ -572,6 +638,42 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
     ]) {
       expect(h.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
     }
+  });
+
+  it('uses the accepted staffing baseline when previewing Mock stage membership', async () => {
+    await seedAcceptedParticipantPreviewBaseline();
+    const refreshedSource = await captureBidDefinitionSource(h.env.DB, year);
+    if (!refreshedSource.ok) throw new Error(JSON.stringify(refreshedSource));
+    sourceToken = refreshedSource.sourceToken;
+    configureUnresolvedTypedParticipantSources(content);
+    if (!content.policy || content.settings?.v !== 3) throw new Error('V3 policy fixture required');
+    const earlierSource = content.policy.stageParticipantSources?.find(
+      (source) => source.stageId === 'EARLIER',
+    );
+    if (!earlierSource) throw new Error('Synthetic Earlier-stage source required');
+    earlierSource.participantSource = {
+      type: 'EXPLICIT_MEMBERS',
+      memberIds: [10002, 10003, 10004],
+    };
+    stageById(content.settings.livePolicy, 'EARLIER').memberIds.push(10004);
+    content.policy.executionPolicy = content.settings.livePolicy;
+
+    const before = h.sqlite.serialize();
+    const response = await post(`bid/${year}/preview`, {
+      kind: 'stage-participant-membership',
+      expected: { kind: 'legacy', sourceToken },
+      intent: { operation: 'save', content },
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect(await response.json()).toMatchObject({
+      valid: true,
+      membership: { status: 'RESOLVED_FOR_PREVIEW' },
+      stages: [
+        { stageId: 'EARLIER', matchedMemberIds: [10002, 10003, 10004] },
+        { stageId: 'LATER', matchedMemberIds: [10001] },
+      ],
+    });
   });
 
   it('keeps every unrelated OPEN source decision blocking during participant preview', async () => {
