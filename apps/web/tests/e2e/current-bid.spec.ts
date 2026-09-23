@@ -636,10 +636,11 @@ test('[bid-impact] participant membership preview renders server evidence withou
     await expect(opening).toContainText(
       `SYNTHETIC participant preview source for ${BID_STAGE_LABEL}`,
     );
-    await expect(opening).toContainText('261 matched');
+    await expect(opening).toContainText('Resolved participants: 261');
     await expect(opening).toContainText('Display-only member-ID order');
+    await expect(opening).toContainText('Bid order: Recorded seniority evidence');
     await expect(opening).toContainText(
-      'Ordering: awaiting authoritative annual-policy comparator decision.',
+      'The governing Bid-order decision still needs review before a run can be prepared.',
     );
     await expect(opening).not.toContainText(/frozen/i);
 
