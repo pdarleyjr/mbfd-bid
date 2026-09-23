@@ -1618,7 +1618,11 @@ export async function prepareCapturedBidEvaluation(
           }),
         ),
       };
-      if (personnelState?.employmentStatus !== 'active' && !hasAcceptedMockParticipationEvidence) {
+      if (
+        personnelState?.employmentStatus !== 'active' &&
+        !hasAcceptedMockParticipationEvidence &&
+        !hasAssignmentTermAssumption
+      ) {
         return {
           memberId: member.id,
           pool: 'EXCLUDED',
