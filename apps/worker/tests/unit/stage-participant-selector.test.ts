@@ -263,7 +263,7 @@ describe('adaptive stage participant compiler', () => {
     expect(result.stages.flatMap((stage) => stage.matchedMemberIds)).not.toContain(10005);
   });
 
-  it('keeps explicit-only policies fail-closed for every pinned bid participant', () => {
+  it('scopes explicit-only population completeness to ranks represented by the authored policy', () => {
     const evaluation = pinnedEvaluation();
     const captain = evaluation.members[0];
     if (!captain) throw new Error('Synthetic captain required');
@@ -282,16 +282,36 @@ describe('adaptive stage participant compiler', () => {
       },
     }));
 
+    const result = resolveStageParticipantMembership({
+      pinnedEvaluation: evaluation,
+      executionPolicy: executionPolicy(),
+      stageParticipantSources: explicitOnly,
+    });
+
+    expect(result).toMatchObject({ ok: true, kind: 'resolved_typed_sources' });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    expect(result.stages.flatMap((stage) => stage.matchedMemberIds)).not.toContain(10005);
+  });
+
+  it('keeps explicit-only policies fail-closed for an omitted member of an authored bidding rank', () => {
+    const explicitOnly = sources().map((definition) => ({
+      ...definition,
+      participantSource: {
+        type: 'EXPLICIT_MEMBERS' as const,
+        memberIds: definition.stageId === 'CAPTAINS' ? [10001] : [10004],
+      },
+    }));
+
     expect(
       resolveStageParticipantMembership({
-        pinnedEvaluation: evaluation,
+        pinnedEvaluation: pinnedEvaluation(),
         executionPolicy: executionPolicy(),
         stageParticipantSources: explicitOnly,
       }),
     ).toMatchObject({
       ok: false,
       code: 'stage_authoring_population_incomplete',
-      memberIds: [10005],
+      memberIds: [10002],
     });
   });
 
