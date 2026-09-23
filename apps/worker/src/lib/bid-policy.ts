@@ -28,6 +28,7 @@ import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence
 import type { DB } from '../db/index.js';
 import {
   annualBidPolicyDocuments,
+  assignmentImportRows,
   assignmentImports,
   assignmentObservations,
   bidSessionPolicySnapshots,
@@ -981,6 +982,7 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
   const [
     staffingRows,
     assignmentRows,
+    assignmentImportRowEvidence,
     tenureRows,
     eligibility,
     acceptedBaseline,
@@ -1019,6 +1021,17 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
         assignmentImports,
         eq(assignmentObservations.assignmentImportId, assignmentImports.id),
       )
+      .all(),
+    db
+      .select({
+        importId: assignmentImportRows.importId,
+        resolvedMemberId: assignmentImportRows.resolvedMemberId,
+        sourceTopologyCompleteness: assignmentImportRows.sourceTopologyCompleteness,
+        reconciliationClassification: assignmentImportRows.reconciliationClassification,
+        reviewStatus: assignmentImportRows.reviewStatus,
+        resolutionAction: assignmentImportRows.resolutionAction,
+      })
+      .from(assignmentImportRows)
       .all(),
     db.select().from(staffingTenureEvidence).all(),
     loadBidEligibilityEvidence(db),
@@ -1060,6 +1073,7 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
   return {
     staffingRows,
     assignmentRows,
+    assignmentImportRowEvidence,
     tenureRows,
     ...eligibility,
     acceptedBaseline,
@@ -1250,6 +1264,7 @@ export async function prepareCapturedBidEvaluation(
   const {
     staffingRows,
     assignmentRows,
+    assignmentImportRowEvidence,
     tenureRows,
     memberRows,
     personnelEventRows,
@@ -1398,9 +1413,10 @@ export async function prepareCapturedBidEvaluation(
   );
   // A mock may rehearse with an accepted, complete TeleStaff baseline without
   // mutating the personnel ledger. The evidence is intentionally narrower
-  // than a generic active assignment: it must be a current TELESTAFF_IMPORT
-  // whose observation belongs to the one accepted annual baseline. Ambiguous
-  // source placement stays excluded rather than silently choosing a row.
+  // than a generic active assignment: it must belong to the one accepted
+  // annual baseline. A fully identified member on a complete source row may
+  // prove roster presence even when repeated canonical seats made placement
+  // ambiguous; that evidence never chooses a seat or becomes an assignment.
   const acceptedMockBaselineImportId =
     acceptedBaseline.status === 'PASS' && acceptedBaseline.importId !== null
       ? acceptedBaseline.importId
@@ -1438,6 +1454,20 @@ export async function prepareCapturedBidEvaluation(
       .filter(([, assignments]) => assignments.length === 1)
       .map(([memberId]) => memberId),
   );
+  if (acceptedMockBaselineImportId !== null) {
+    for (const row of assignmentImportRowEvidence) {
+      if (
+        row.importId === acceptedMockBaselineImportId &&
+        row.resolvedMemberId !== null &&
+        row.sourceTopologyCompleteness === 'complete' &&
+        row.reconciliationClassification === 'AMBIGUOUS_MAPPING' &&
+        row.reviewStatus === 'rejected' &&
+        row.resolutionAction === 'REJECT_SOURCE_ROW'
+      ) {
+        mockParticipantMemberIds.add(row.resolvedMemberId);
+      }
+    }
+  }
   const personnelEventsByMember = new Map<number, typeof personnelEventRows>();
   for (const event of personnelEventRows) {
     if (event.memberId === null) continue;
