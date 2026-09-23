@@ -253,13 +253,10 @@ export function resolveStageParticipantMembership(input: {
   const membersById = new Map(
     input.pinnedEvaluation.members.map((member) => [member.memberId, member]),
   );
-  const filterRankScope = new Set<string>(
+  const authoredPopulationRanks = new Set<string>(
     input.stageParticipantSources.flatMap((definition) =>
       definition.participantSource.type === 'FILTER' ? definition.participantSource.ranks : [],
     ),
-  );
-  const hasFilterPopulationScope = input.stageParticipantSources.some(
-    (definition) => definition.participantSource.type === 'FILTER',
   );
   const includedMemberIds = new Set<number>();
   const stages: ResolvedStageParticipantMembership[] = [];
@@ -284,6 +281,7 @@ export function resolveStageParticipantMembership(input: {
         memberIds: [duplicate],
       };
     for (const memberId of memberIds) includedMemberIds.add(memberId);
+    for (const member of members) authoredPopulationRanks.add(member.rank);
     stages.push({
       stageId: stage.id,
       definition,
@@ -297,10 +295,11 @@ export function resolveStageParticipantMembership(input: {
       (member) =>
         isPinnedBidParticipant(member) &&
         !includedMemberIds.has(member.memberId) &&
-        // FILTER ranks declare the policy's adaptable bid population. Named
-        // cross-rank inclusions remain valid because they are already included
-        // above. Explicit-only policies retain whole-population completeness.
-        (!hasFilterPopulationScope || filterRankScope.has(member.rank)),
+        // The authored sources define the bidding ranks. FILTER sources state
+        // them directly; explicit sources establish them through their pinned
+        // members. This keeps omitted members of an authored rank fail-closed
+        // without forcing active non-bidding ranks into a bid stage.
+        authoredPopulationRanks.has(member.rank),
     )
     .map((member) => member.memberId);
   if (uncoveredMemberIds.length > 0)
