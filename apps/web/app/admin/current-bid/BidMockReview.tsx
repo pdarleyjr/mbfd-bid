@@ -79,6 +79,18 @@ export function BidMockReview({
               {mockPreview.pool.officerPoolCount} officers · {mockPreview.pool.firefighterPoolCount}{' '}
               firefighters · {mockPreview.pool.excludedCount} excluded
             </p>
+            {mockPreview.sourceDecisionBlockers.length > 0 ? (
+              <output className="block rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                <p className="font-medium">
+                  Working Mock only — {mockPreview.sourceDecisionBlockers.length} Real activation{' '}
+                  {mockPreview.sourceDecisionBlockers.length === 1 ? 'review' : 'reviews'} remain.
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  This rehearsal preserves those open questions as visible assumptions. They still
+                  block creation of a Real Bid.
+                </p>
+              </output>
+            ) : null}
             <p className="text-sm">
               Create a rehearsal with this saved version and the reviewed Department evidence. It
               will keep that version if the Current Bid is edited later.

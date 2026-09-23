@@ -200,6 +200,7 @@ function mockPreview(number = 2, context = 'c'.repeat(64), source = 'd'.repeat(6
     versionNumber: number,
     contextSha256: context,
     runtimeSourceToken: source,
+    sourceDecisionBlockers: [],
     pool: {
       officerPoolCount: 2,
       firefighterPoolCount: 11,
@@ -773,7 +774,11 @@ describe('Current Bid version history and restore', () => {
 
 describe('Current Bid managed Live workflow', () => {
   function livePreview() {
-    const { wouldAllowCreateMock: _mock, ...pins } = mockPreview();
+    const {
+      wouldAllowCreateMock: _mock,
+      sourceDecisionBlockers: _sourceDecisionBlockers,
+      ...pins
+    } = mockPreview();
     return {
       ...pins,
       wouldAllowCreateLive: true,

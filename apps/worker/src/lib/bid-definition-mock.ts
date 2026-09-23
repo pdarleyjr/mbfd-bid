@@ -5,8 +5,10 @@ import { getDb } from '../db/index.js';
 import { loadConfigurationReceipt } from './admin-configuration-receipt.js';
 import { assertBidDefinitionRunIntegrity } from './bid-definition-integrity.js';
 import { prepareBidDefinitionRun } from './bid-definition-run.js';
+import { loadBidDefinitionVersion } from './bid-definition-version.js';
 import { loadFrozenSessionBidPolicy, summarizeBidSessionPolicySnapshot } from './bid-policy.js';
 import { bidSessionCreationResponse, persistBidSessionCreation } from './bid-session-creation.js';
+import { bidSourceDecisionBlockers } from './bid-source-decision-review.js';
 
 export const BidIdentitySchema = z
   .string()
@@ -43,6 +45,9 @@ export async function previewBidDefinitionMock(
       ...('tenureIssues' in prepared ? { tenureIssues: prepared.tenureIssues } : {}),
       ...('termIssues' in prepared ? { termIssues: prepared.termIssues } : {}),
     };
+  const version = await loadBidDefinitionVersion(database, year, input.versionId);
+  if (!version.ok || version.sha256 !== input.versionSha256)
+    return { wouldAllowCreateMock: false as const, policyError: 'bid_definition_source_changed' };
   return {
     wouldAllowCreateMock: true as const,
     versionId: input.versionId,
@@ -50,6 +55,7 @@ export async function previewBidDefinitionMock(
     versionNumber: prepared.snapshot.configurationRevision,
     contextSha256: prepared.pins.contextSha256,
     runtimeSourceToken: prepared.sourceGuard.token,
+    sourceDecisionBlockers: bidSourceDecisionBlockers(version.content.sourceDecisions),
     pool: summarizeBidSessionPolicySnapshot(prepared.snapshot),
   };
 }

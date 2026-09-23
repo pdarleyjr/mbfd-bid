@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 import type { BidDefinitionContent } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 import { canonicalBidDefinition } from '../src/lib/bid-definition-content.js';
-import { bidSourceDecisionReviewIssues } from '../src/lib/bid-source-decision-review.js';
+import {
+  bidSourceDecisionBlocksPurpose,
+  bidSourceDecisionReviewIssues,
+} from '../src/lib/bid-source-decision-review.js';
 
 const boundaries = [
   ['title', 200],
@@ -23,6 +26,30 @@ const resolved: Decision = {
 };
 
 describe('source decision review boundaries', () => {
+  it('allows explicitly Real-only questions in Mock while keeping every other gate fail-closed', () => {
+    const realOnly: Decision = {
+      ...resolved,
+      status: 'OPEN',
+      decision: '',
+      blockingClassification: 'BLOCKS_REAL_BID_ACTIVATION',
+      affectedScopes: ['contact-policy'],
+    };
+    expect(bidSourceDecisionBlocksPurpose(realOnly, 'mock')).toBe(false);
+    expect(bidSourceDecisionBlocksPurpose(realOnly, 'participant_preview')).toBe(false);
+    expect(bidSourceDecisionBlocksPurpose(realOnly, 'live')).toBe(true);
+
+    for (const blockingClassification of [
+      undefined,
+      'BLOCKS_APPLICATION_RELEASE',
+      'BLOCKS_FINAL_2026_CONFIGURATION',
+    ] as const) {
+      expect(bidSourceDecisionBlocksPurpose({ ...realOnly, blockingClassification }, 'mock')).toBe(
+        true,
+      );
+    }
+    expect(bidSourceDecisionBlocksPurpose(resolved, 'live')).toBe(false);
+  });
+
   it.each(boundaries)('rejects %s above its existing source-review maximum', (field, maximum) => {
     const decision = { ...resolved, [field]: `  ${'x'.repeat(maximum + 1)}  ` };
     expect(bidSourceDecisionReviewIssues([decision])).toEqual([

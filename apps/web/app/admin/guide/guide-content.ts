@@ -46,6 +46,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'A short, safe operating path for getting the 2026 Bid ready, rehearsing it, and completing Bid day without treating a checklist or test as permission to start the real Bid.',
     controls: [
       '2026 BID READINESS',
+      'Apply known 2026 working setup',
       'Review policy',
       'Review positions',
       'Review participants',
@@ -55,6 +56,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Check Managed Live readiness',
     ],
     steps: [
+      'If the Current Bid still shows the source policy awaiting decisions, choose Apply known 2026 working setup. Confirm the four required administrator employee IDs are found, review the displayed dates and working assumptions, then save the draft as a new version. This shortcut does not resolve source questions or authorize a Real Bid.',
       'Before Bid day: refresh the Department roster, review the TargetSolutions comparison, and resolve the review items in 2026 BID READINESS. An active-only credentials report is provisional evidence; it never expires or removes a qualification. Reconcile the final post-September 30 export through the same reviewed workflow.',
       'Open Participants & flow. For each stage, confirm the base filter, named explicit inclusions and exclusions, resolved participant count, and the governing Bid-order evidence. Captains and Lieutenants use time-in-grade order; Firefighters use department-service order. Open Details only when the recorded seniority evidence needs review.',
       'Open Opportunities & rules and A-Day. Resolve invalid opportunity rules, source decisions, timing limits, exceptions, and policy references before depending on a readiness result.',
@@ -74,6 +76,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'mock',
       'live',
       'september 30',
+      'working setup',
     ],
   }),
   section({

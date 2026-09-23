@@ -3,7 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { type BidDefinitionContent, FrozenLiveBidPolicySchema } from '@mbfd/shared';
+import { useState } from 'react';
 import { FieldSection, ReferencePicker, TextField, useBidMembers } from './BidFields';
+import { applyKnown2026Setup } from './known-2026-setup';
 
 /** Unresolved source material stays visible and editable without supplying
  * runtime defaults. Activation still uses the existing strict policy parser. */
@@ -15,6 +17,7 @@ export function PendingPolicyReview({
   onChange(content: BidDefinitionContent): void;
 }) {
   const people = useBidMembers();
+  const [quickSetupError, setQuickSetupError] = useState<string | null>(null);
   const draft = content.pendingPolicy;
   if (!draft) return null;
   const policy = draft.executionPolicy;
@@ -45,6 +48,48 @@ export function PendingPolicyReview({
       title="Source policy awaiting operational decisions"
       description="This saved policy is not executable. Unresolved values remain blank and grant no authority. Review the source decisions below before preparing a run."
     >
+      {content.bidYear === 2026 ? (
+        <div className="space-y-3 rounded border border-primary/40 bg-primary/5 p-4">
+          <div>
+            <h3 className="font-medium">Start with the known 2026 setup</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Uses the August 28 assignment snapshot, the September 30 credential cutoff, a
+              three-day schedule, the saved rank-based participant rules, and full action rights for
+              employee IDs 20731, 19545, 20732, and 18156. Unstated A-Day limits remain
+              non-restrictive working assumptions; the documented Marine Float maximum is two.
+            </p>
+          </div>
+          <Button
+            type="button"
+            disabled={people.isLoading || people.isError}
+            onClick={() => {
+              const result = applyKnown2026Setup(content, people.data ?? []);
+              if (!result.ok) {
+                setQuickSetupError(result.message);
+                return;
+              }
+              setQuickSetupError(null);
+              onChange(result.content);
+            }}
+          >
+            Apply known 2026 working setup
+          </Button>
+          {people.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              The member catalog could not be loaded, so administrator rights were not changed.
+            </p>
+          ) : null}
+          {quickSetupError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {quickSetupError}
+            </p>
+          ) : null}
+          <p className="text-sm text-muted-foreground">
+            This edits only the unsaved draft and enables Mock rehearsal. It does not resolve source
+            questions, save the draft, create a session, or authorize a Real Bid.
+          </p>
+        </div>
+      ) : null}
       <TextField
         label="Pending authoritative policy language"
         value={draft.policyText}

@@ -200,6 +200,7 @@ function mockPreview() {
     versionNumber: 2,
     contextSha256: mockRequest().expectedContextSha256,
     runtimeSourceToken: mockRequest().expectedSourceToken,
+    sourceDecisionBlockers: [],
     pool: {
       officerPoolCount: 2,
       firefighterPoolCount: 11,

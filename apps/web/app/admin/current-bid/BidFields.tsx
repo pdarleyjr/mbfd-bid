@@ -342,7 +342,16 @@ export function useBidMembers() {
     queryKey: ['admin', 'current-bid', 'member-options'],
     staleTime: 30_000,
     queryFn: async () => {
-      const members: { id: number; firstName: string; lastName: string; employeeId: string }[] = [];
+      const members: {
+        id: number;
+        firstName: string;
+        lastName: string;
+        employeeId: string;
+        rank: 'FF' | 'LT' | 'CPT' | 'DC' | 'DEP_CHIEF' | 'CHIEF';
+        bidCategory: 'OFC' | 'FF' | 'EXCLUDED';
+        employmentStatus: 'unknown' | 'active' | 'inactive' | 'retired' | 'separated';
+        priorPositionId: string | null;
+      }[] = [];
       let total = 1;
       while (members.length < total) {
         const response = await fetch(`/api/admin/members?limit=500&offset=${members.length}`, {
@@ -363,6 +372,11 @@ export function useBidMembers() {
       return members.map((m) => ({
         value: String(m.id),
         label: `${m.lastName}, ${m.firstName} · ${m.employeeId}`,
+        employeeId: m.employeeId,
+        rank: m.rank,
+        bidCategory: m.bidCategory,
+        employmentStatus: m.employmentStatus,
+        priorPositionId: m.priorPositionId,
       }));
     },
   });

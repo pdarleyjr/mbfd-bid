@@ -15,6 +15,21 @@ type ReviewableDecision = Pick<Decision, 'status'> &
     >
   >;
 
+export type BidSourceDecisionPurpose = 'mock' | 'live' | 'participant_preview';
+
+/** OPEN questions may be carried as explicit working assumptions only for a
+ * Mock or participant preview when their saved classification says they block
+ * Real activation and nothing earlier. Missing classifications remain
+ * conservatively configuration-blocking. */
+export function bidSourceDecisionBlocksPurpose(
+  decision: ReviewableDecision,
+  purpose: BidSourceDecisionPurpose,
+) {
+  if (decision.status !== 'OPEN') return false;
+  if (purpose === 'live') return true;
+  return decision.blockingClassification !== 'BLOCKS_REAL_BID_ACTIVATION';
+}
+
 /** Preserve recorded content bytes and allow unfinished OPEN drafts. A resolved
  * decision must retain the evidence bounds of the existing source-review route.
  * Read/history parsing is deliberately separate from this admission check. */
