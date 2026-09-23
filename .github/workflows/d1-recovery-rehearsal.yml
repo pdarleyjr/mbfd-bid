@@ -15,15 +15,6 @@ on:
         description: Exact sanitized R2 SQL snapshot key produced by D1 backup
         required: true
         type: string
-      credential_sync:
-        description: Temporary encrypted credential-file synchronization
-        required: false
-        default: false
-        type: boolean
-      recipient_public_key_b64:
-        description: Base64 PEM public key for the encrypted synchronization artifact
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -37,32 +28,7 @@ env:
   NODE_VERSION: 22.x
 
 jobs:
-  credential-sync:
-    if: ${{ inputs.credential_sync == true }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Encrypt the active token for the authorized local credential file
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          RECIPIENT_PUBLIC_KEY_B64: ${{ inputs.recipient_public_key_b64 }}
-        run: |
-          set -euo pipefail
-          test -n "$CLOUDFLARE_API_TOKEN"
-          test -n "$RECIPIENT_PUBLIC_KEY_B64"
-          printf '%s' "$RECIPIENT_PUBLIC_KEY_B64" | base64 --decode > recipient.pem
-          printf '%s' "$CLOUDFLARE_API_TOKEN" | openssl pkeyutl -encrypt -pubin -inkey recipient.pem -out cloudflare-token.enc -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
-          rm -f recipient.pem
-          test -s cloudflare-token.enc
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: credential-sync-${{ github.run_id }}
-          path: cloudflare-token.enc
-          if-no-files-found: error
-          retention-days: 1
-
   restore-and-migrate-copy:
-    if: ${{ inputs.credential_sync != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment:
