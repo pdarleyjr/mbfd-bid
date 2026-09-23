@@ -21,7 +21,7 @@ $env:TEMP = $testRoot
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 
 foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'ingest-legacy-complete', 'ingest-missing-state', 'ingest-error', 'ingest-structured-error', 'init-fails', 'temp-fallback', 'split-replace-batch', 'bound-replay-batched', 'bound-replay-multiple-values', 'bound-replay-explicit-columns', 'bound-replay-unicode', 'bound-replay-quotes-empty', 'bound-replay-parameter-limit', 'bound-replay-transport-failure', 'bound-replay-http-400', 'json-whoami-account-id')) {
-  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; StagedReplayRequests = [System.Collections.Generic.List[object]]::new(); ExpectedBoundValue = $null; NextRowId = 900000 }
+  $state = [pscustomobject]@{ Calls = [System.Collections.Generic.List[string]]::new(); RestoreText = $null; PollCount = 0; StagedReplayRequests = [System.Collections.Generic.List[object]]::new(); StagedChunks = [System.Collections.Generic.List[object]]::new(); ExpectedBoundValue = $null; NextRowId = 900000 }
   function global:pnpm {
     $commandText = $args -join ' '
     $state.Calls.Add($commandText)
@@ -45,7 +45,7 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
       if ($scenario -eq 'bound-replay-unicode') { $state.ExpectedBoundValue = $deferredPayload }
       if ($scenario -eq 'bound-replay-quotes-empty') { $state.ExpectedBoundValue = $deferredPayload }
       $deferredInserts = if ($scenario -eq 'bound-replay-batched') {
-        (1..40 | ForEach-Object { "INSERT INTO synthetic VALUES ($(900000 + $_), '$deferredSqlPayload$_');" }) -join "`n"
+        (1..8 | ForEach-Object { "INSERT INTO synthetic VALUES ($(900000 + $_), '$deferredSqlPayload$_');" }) -join "`n"
       } elseif ($scenario -eq 'bound-replay-multiple-values') {
         "INSERT INTO synthetic VALUES (900001, '$deferredSqlPayload', '$deferredSqlPayload');"
       } elseif ($scenario -eq 'bound-replay-explicit-columns') {
@@ -99,19 +99,28 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
       throw "Unexpected WebRequest payload: $Uri"
     }
     if (-not $SkipHttpErrorCheck) { throw 'Staged replay did not request a readable HTTP error response.' }
-    $kind = if ($payload.sql -match '(?i)^INSERT\b') { 'insert_atomic' }
+    $kind = if ($payload.sql -match '(?i)^CREATE TABLE "__mbfd_restore_chunks_[0-9a-f]+"') { 'stage_create' }
+      elseif ($payload.sql -match '(?i)^INSERT INTO "__mbfd_restore_chunks_[0-9a-f]+"') { 'stage_chunk' }
+      elseif ($payload.sql -match '(?i)^DROP TABLE "__mbfd_restore_chunks_[0-9a-f]+"') { 'stage_cleanup' }
+      elseif ($payload.sql -match '(?i)^INSERT\b') { 'insert_atomic' }
       else { 'unexpected' }
     if ($kind -eq 'insert_atomic' -and ($null -eq $payload.params -or @($payload.params).Count -eq 0)) { throw 'Atomic insert omitted bound parameters.' }
     $params = if ($null -eq $payload.params) { @() } else { @($payload.params) }
     $state.StagedReplayRequests.Add([pscustomobject]@{ Kind = $kind; Uri = $Uri; Sql = "$($payload.sql)"; Params = $params; Bytes = [System.Text.Encoding]::UTF8.GetByteCount($Body) })
+    if ($kind -eq 'stage_chunk') {
+      if ($params.Count -ne 4) { throw 'Staged chunk request did not use the bounded four-parameter contract.' }
+      $state.StagedChunks.Add([pscustomobject]@{ Statement = [int]$params[0]; Value = [int]$params[1]; Chunk = [int]$params[2]; Text = [string]$params[3] })
+    }
     if ($kind -eq 'insert_atomic' -and $scenario -eq 'bound-replay-transport-failure') { throw 'synthetic-bound-replay-provider-detail' }
     if ($kind -eq 'insert_atomic' -and $scenario -eq 'bound-replay-http-400') {
       return [pscustomobject]@{ StatusCode = 400; Content = '{"errors":[{"code":9001,"message":"synthetic-bound-replay-provider-detail"}]}' }
     }
-    $result = if ($kind -eq 'insert_atomic') {
+    $result = if ($kind -in @('stage_chunk', 'insert_atomic')) {
       $state.NextRowId++
       $meta = [ordered]@{ changes = 1 }
       [pscustomobject]@{ success = $true; results = [pscustomobject]@{ columns = @(); rows = @() }; meta = [pscustomobject]$meta }
+    } elseif ($kind -in @('stage_create', 'stage_cleanup')) {
+      [pscustomobject]@{ success = $true; results = [pscustomobject]@{ columns = @(); rows = @() }; meta = [pscustomobject]@{ changes = 0 } }
     } else {
       throw "Unexpected staged replay SQL: $($payload.sql)"
     }
@@ -174,27 +183,36 @@ foreach ($scenario in @('success', 'poll-legacy-complete', 'ingest-complete', 'i
     Assert-True ($syntheticInserts.Count -ge 3) 'The restore file did not split the oversized INSERT batch.'
     Assert-True ((($syntheticInserts | ForEach-Object { $_.Value.Length } | Measure-Object -Maximum).Maximum) -le 8000) 'The restore file emitted an INSERT batch above the safe statement-size cap.'
     Assert-True ([regex]::Matches($state.RestoreText, 'synthetic-row-payload-0123456789abcdef0123456789abcdef').Count -eq 3200) 'The restore file lost rows while splitting an oversized INSERT batch.'
-    $expectedBoundStatementCount = if ($scenario -eq 'bound-replay-batched') { 40 } else { 1 }
+    $expectedBoundStatementCount = if ($scenario -eq 'bound-replay-batched') { 8 } else { 1 }
     $expectedStagedValueCount = if ($scenario -eq 'bound-replay-multiple-values') { 2 } else { $expectedBoundStatementCount }
     $stagedRequests = @($state.StagedReplayRequests)
+    $stageCreates = @($stagedRequests | Where-Object { $_.Kind -eq 'stage_create' })
+    $stageChunks = @($stagedRequests | Where-Object { $_.Kind -eq 'stage_chunk' })
+    $stageCleanups = @($stagedRequests | Where-Object { $_.Kind -eq 'stage_cleanup' })
     $atomicInserts = @($stagedRequests | Where-Object { $_.Kind -eq 'insert_atomic' })
+    Assert-True ($stageCreates.Count -eq 1 -and $stageCleanups.Count -eq 1) 'The staged replay did not create and remove exactly one disposable helper table.'
+    Assert-True ($stageChunks.Count -gt 0) 'The staged replay did not upload bounded text chunks before the atomic inserts.'
+    Assert-True (@($stagedRequests | Where-Object { $_.Bytes -gt 90KB }).Count -eq 0) 'The staged replay emitted a request above the conservative control-plane body ceiling.'
     Assert-True ($atomicInserts.Count -eq $expectedBoundStatementCount) 'The staged oversized-insert replay did not perform one atomic insert per deferred statement.'
     Assert-True (@($atomicInserts | Where-Object { $_.Params.Count -lt 1 -or $_.Params.Count -gt 100 }).Count -eq 0) 'The atomic replay exceeded the provider bound-parameter limit.'
     Assert-True (@($atomicInserts | Where-Object { $_.Sql -match '(?i)\bUPDATE\b|CAST\(NULL AS TEXT\)|RETURNING' }).Count -eq 0) 'The atomic replay emitted a placeholder/update protocol.'
-    Assert-True (@($atomicInserts | Where-Object { $_.Sql -notmatch '\?' }).Count -eq 0) 'The atomic replay did not bind selected literals inside the INSERT expression.'
+    Assert-True (@($atomicInserts | Where-Object { $_.Sql -notmatch '(?i)group_concat\("chunk",\s*\x27\x27\)' }).Count -eq 0) 'The atomic replay did not assemble each selected literal inside the final INSERT.'
+    Assert-True (@($atomicInserts | Where-Object { $_.Sql -match '(?i)INSERT\s+INTO\s+"__mbfd_restore_chunks_|\browid\b|value_replace|value_append' }).Count -eq 0) 'The atomic target write reintroduced a prohibited replay protocol.'
     Assert-True (@($stagedRequests | Where-Object { $_.Sql -match '^\s|\s$' }).Count -eq 0) 'The staged oversized-insert replay did not canonicalize outer SQL whitespace before its raw requests.'
     Assert-True (@($stagedRequests | Where-Object { $_.Uri -notmatch '/query$' }).Count -eq 0) 'The staged oversized-insert replay did not use the documented D1 query endpoint.'
-    Assert-True ($normalizedOutput -match "\[d1-restore\] staged oversized inserts replayed=$expectedBoundStatementCount values=$expectedStagedValueCount parameters=\d+ atomic_inserts=$expectedBoundStatementCount") 'The restore output did not record atomic oversized-insert replay metrics.'
+    Assert-True ($normalizedOutput -match "\[d1-restore\] staged oversized inserts replayed=$expectedBoundStatementCount values=$expectedStagedValueCount chunks=\d+ parameters=\d+ atomic_inserts=$expectedBoundStatementCount") 'The restore output did not record atomic oversized-insert replay metrics.'
     if ($scenario -eq 'bound-replay-unicode') {
       $expectedBytes = [System.Text.Encoding]::UTF8.GetByteCount($state.ExpectedBoundValue)
-      $boundParams = @($atomicInserts[0].Params)
-      $actualBytes = if ($boundParams.Count -eq 1) { [System.Text.Encoding]::UTF8.GetByteCount($boundParams[0]) } else { -1 }
-      $actualChars = if ($boundParams.Count -eq 1) { $boundParams[0].Length } else { -1 }
+      $boundChunks = @($state.StagedChunks | Where-Object { $_.Statement -eq 0 -and $_.Value -eq 0 } | Sort-Object Chunk)
+      $reassembled = ($boundChunks | ForEach-Object { $_.Text }) -join ''
+      $actualBytes = [System.Text.Encoding]::UTF8.GetByteCount($reassembled)
+      $actualChars = $reassembled.Length
       $expectedChars = $state.ExpectedBoundValue.Length
-      Assert-True ($boundParams.Count -eq 1 -and $actualBytes -eq $expectedBytes -and $boundParams[0] -ceq $state.ExpectedBoundValue) "The staged replay changed Unicode text (params=$($boundParams.Count) expected_chars=$expectedChars actual_chars=$actualChars expected_bytes=$expectedBytes actual_bytes=$actualBytes)."
+      Assert-True ($boundChunks.Count -gt 1 -and $actualBytes -eq $expectedBytes -and $reassembled -ceq $state.ExpectedBoundValue) "The staged replay changed Unicode text (chunks=$($boundChunks.Count) expected_chars=$expectedChars actual_chars=$actualChars expected_bytes=$expectedBytes actual_bytes=$actualBytes)."
     }
     if ($scenario -eq 'bound-replay-quotes-empty') {
-      Assert-True (($atomicInserts[0].Params -join '') -ceq $state.ExpectedBoundValue) 'The staged replay changed apostrophe-containing text.'
+      $quoteChunks = @($state.StagedChunks | Where-Object { $_.Statement -eq 0 -and $_.Value -eq 0 } | Sort-Object Chunk)
+      Assert-True ((($quoteChunks | ForEach-Object { $_.Text }) -join '') -ceq $state.ExpectedBoundValue) 'The staged replay changed apostrophe-containing text.'
     }
     Assert-True (@($stagedRequests | Where-Object { $_.Kind -eq 'unexpected' }).Count -eq 0) 'The staged oversized-insert replay emitted an unexpected SQL shape.'
     if ($scenario -ne 'json-whoami-account-id') {

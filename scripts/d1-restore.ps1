@@ -645,22 +645,34 @@ function Invoke-StagedOversizedInsertReplay {
   )
 
   if ($Statements.Count -eq 0) { return }
-  function Invoke-StagedRawRequest {
+
+  function ConvertTo-StagedRequestBody {
     param(
       [Parameter(Mandatory)][string]$Sql,
-      [AllowEmptyCollection()][string[]]$Params = @(),
-      [Parameter(Mandatory)][ValidateSet('insert_atomic')][string]$Operation
+      [AllowEmptyCollection()][string[]]$Params = @()
     )
-    # The export parser preserves statement-boundary whitespace. Canonicalize
-    # only that outer whitespace before using the REST query contract; the SQL
-    # statement, identifiers, literals, and bound values remain unchanged.
+
     $canonicalSql = $Sql.Trim()
     if ([string]::IsNullOrWhiteSpace($canonicalSql)) {
       throw 'D1 staged oversized-insert replay received an empty SQL statement.'
     }
-    $payload = @{ sql = $canonicalSql; params = @($Params) }
-    $body = $payload | ConvertTo-Json -Depth 5 -Compress
+    return (@{ sql = $canonicalSql; params = @($Params) } | ConvertTo-Json -Depth 5 -Compress)
+  }
+
+  function Invoke-StagedRawRequest {
+    param(
+      [Parameter(Mandatory)][string]$Sql,
+      [AllowEmptyCollection()][string[]]$Params = @(),
+      [Parameter(Mandatory)][ValidateSet('stage_create', 'stage_chunk', 'insert_atomic', 'stage_cleanup')][string]$Operation
+    )
+    # The export parser preserves statement-boundary whitespace. Canonicalize
+    # only that outer whitespace before using the REST query contract; the SQL
+    # statement, identifiers, literals, and bound values remain unchanged.
+    $body = ConvertTo-StagedRequestBody -Sql $Sql -Params $Params
     $requestBytes = Get-Utf8ByteCount $body
+    if ($requestBytes -gt 90KB) {
+      throw "D1 staged oversized-insert replay would exceed the safe control-plane request budget (operation=$Operation)."
+    }
     try {
       # The query endpoint accepts the documented single-query parameter contract. Keep a
       # readable HTTP response for non-2xx replies so only a safe error
@@ -724,6 +736,51 @@ function Invoke-StagedOversizedInsertReplay {
     return $response
   }
 
+  function Split-StagedTextValue {
+    param(
+      [Parameter(Mandatory)][AllowEmptyString()][string]$Value,
+      [Parameter(Mandatory)][string]$InsertSql,
+      [Parameter(Mandatory)][int]$StatementOrdinal,
+      [Parameter(Mandatory)][int]$ValueOrdinal
+    )
+
+    $chunks = [System.Collections.Generic.List[string]]::new()
+    if ($Value.Length -eq 0) {
+      $chunks.Add('')
+      return $chunks.ToArray()
+    }
+
+    # Start well above the obsolete 4 KB slice, then halve only when the exact
+    # JSON request would exceed the 90 KB control-plane budget. This avoids the
+    # undocumented large-parameter behavior that rejected the hosted replay,
+    # while supporting the provider's full 2 MB text/row ceiling without tying
+    # value size to the final INSERT's 100-parameter limit.
+    $offset = 0
+    while ($offset -lt $Value.Length) {
+      $chunkLength = [Math]::Min(30000, $Value.Length - $offset)
+      $candidate = $null
+      while ($chunkLength -gt 0) {
+        $end = $offset + $chunkLength
+        if ($end -lt $Value.Length -and [char]::IsHighSurrogate($Value[$end - 1]) -and [char]::IsLowSurrogate($Value[$end])) {
+          $chunkLength--
+        }
+        if ($chunkLength -le 0) { break }
+        $candidate = $Value.Substring($offset, $chunkLength)
+        $candidateParams = @("$StatementOrdinal", "$ValueOrdinal", "$($chunks.Count)", $candidate)
+        $candidateBody = ConvertTo-StagedRequestBody -Sql $InsertSql -Params $candidateParams
+        if ((Get-Utf8ByteCount $candidateBody) -le 90KB) { break }
+        $candidate = $null
+        $chunkLength = [int][Math]::Floor($chunkLength / 2)
+      }
+      if ($chunkLength -le 0 -or $null -eq $candidate) {
+        throw 'D1 staged oversized-insert replay could not fit a Unicode-safe text chunk inside the safe control-plane request budget.'
+      }
+      $chunks.Add($candidate)
+      $offset += $chunkLength
+    }
+    return $chunks.ToArray()
+  }
+
   function Assert-StagedSingleRowMutation {
     param([Parameter(Mandatory)][object]$Response, [Parameter(Mandatory)][string]$Operation)
 
@@ -739,20 +796,48 @@ function Invoke-StagedOversizedInsertReplay {
   $replayed = 0
   $valueCount = 0
   $parameterCount = 0
+  $chunkCount = 0
   $operationFailure = $null
+  $cleanupFailure = $null
+  $stageCreated = $false
+  $stageTableName = "__mbfd_restore_chunks_$([guid]::NewGuid().ToString('N'))"
+  $stageTableSql = Convert-NameToSqlIdentifier -Name $stageTableName
+  $stageCreateSql = "CREATE TABLE $stageTableSql (`"statement_ordinal`" INTEGER NOT NULL, `"value_ordinal`" INTEGER NOT NULL, `"chunk_ordinal`" INTEGER NOT NULL, `"chunk`" TEXT NOT NULL, PRIMARY KEY (`"statement_ordinal`", `"value_ordinal`", `"chunk_ordinal`")) WITHOUT ROWID;"
+  $stageInsertSql = "INSERT INTO $stageTableSql (`"statement_ordinal`", `"value_ordinal`", `"chunk_ordinal`", `"chunk`") VALUES (?, ?, ?, ?);"
+  $stageDropSql = "DROP TABLE $stageTableSql;"
   try {
-    foreach ($statement in $Statements) {
+    $createResponse = Invoke-StagedRawRequest -Sql $stageCreateSql -Operation stage_create
+    $stageCreated = $true
+    if (@($createResponse.result).Count -ne 1) {
+      throw 'D1 staged oversized-insert replay did not create exactly one disposable helper table.'
+    }
+
+    for ($statementOrdinal = 0; $statementOrdinal -lt $Statements.Count; $statementOrdinal++) {
+      $statement = $Statements[$statementOrdinal]
       $atomicSql = $statement.Sql
       $parameters = [System.Collections.Generic.List[string]]::new()
-      foreach ($value in @($statement.Values)) {
+      $values = @($statement.Values)
+      if (($values.Count * 2) -gt 100) {
+        throw 'D1 staged oversized-insert replay requires more than the provider bound-parameter limit.'
+      }
+      for ($valueOrdinal = 0; $valueOrdinal -lt $values.Count; $valueOrdinal++) {
+        $value = $values[$valueOrdinal]
         if (-not $atomicSql.Contains($value.Marker, [System.StringComparison]::Ordinal)) {
           throw 'D1 staged oversized-insert replay lost an internal value marker.'
         }
-        if ($parameters.Count -ge 100) {
+        if (($parameters.Count + 2) -gt 100) {
           throw 'D1 staged oversized-insert replay requires more than the provider bound-parameter limit.'
         }
-        $atomicSql = $atomicSql.Replace($value.Marker, '?')
-        $parameters.Add([string]$value.Parameter)
+        $chunks = @(Split-StagedTextValue -Value ([string]$value.Parameter) -InsertSql $stageInsertSql -StatementOrdinal $statementOrdinal -ValueOrdinal $valueOrdinal)
+        for ($chunkOrdinal = 0; $chunkOrdinal -lt $chunks.Count; $chunkOrdinal++) {
+          $chunkResponse = Invoke-StagedRawRequest -Sql $stageInsertSql -Params @("$statementOrdinal", "$valueOrdinal", "$chunkOrdinal", [string]$chunks[$chunkOrdinal]) -Operation stage_chunk
+          Assert-StagedSingleRowMutation -Response $chunkResponse -Operation stage_chunk
+          $chunkCount++
+        }
+        $assemblySql = "(SELECT group_concat(`"chunk`", '') FROM (SELECT `"chunk`" FROM $stageTableSql WHERE `"statement_ordinal`" = ? AND `"value_ordinal`" = ? ORDER BY `"chunk_ordinal`"))"
+        $atomicSql = $atomicSql.Replace($value.Marker, $assemblySql)
+        $parameters.Add("$statementOrdinal")
+        $parameters.Add("$valueOrdinal")
         $valueCount++
       }
       $atomicSql = [regex]::Replace($atomicSql, ';\s*$', ';')
@@ -766,11 +851,23 @@ function Invoke-StagedOversizedInsertReplay {
     }
   } catch {
     $operationFailure = $_
+  } finally {
+    if ($stageCreated) {
+      try {
+        $dropResponse = Invoke-StagedRawRequest -Sql $stageDropSql -Operation stage_cleanup
+        if (@($dropResponse.result).Count -ne 1) {
+          throw 'D1 staged oversized-insert replay did not remove exactly one disposable helper table.'
+        }
+      } catch {
+        $cleanupFailure = $_
+      }
+    }
   }
   if ($null -ne $operationFailure) { throw $operationFailure }
+  if ($null -ne $cleanupFailure) { throw $cleanupFailure }
   if ($replayed -ne $Statements.Count) { throw 'D1 staged oversized-insert replay did not apply every deferred statement.' }
-  if ($valueCount -eq 0 -or $parameterCount -eq 0) { throw 'D1 staged oversized-insert replay omitted required bound values.' }
-  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount parameters=$parameterCount atomic_inserts=$replayed"
+  if ($valueCount -eq 0 -or $parameterCount -eq 0 -or $chunkCount -eq 0) { throw 'D1 staged oversized-insert replay omitted required bound values.' }
+  Write-Host "[d1-restore] staged oversized inserts replayed=$replayed values=$valueCount chunks=$chunkCount parameters=$parameterCount atomic_inserts=$replayed"
 }
 
 $apiToken = $env:CLOUDFLARE_API_TOKEN
