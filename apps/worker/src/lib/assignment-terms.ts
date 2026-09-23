@@ -1,6 +1,25 @@
 import type { FrozenAnnualOperationsPolicy } from '@mbfd/shared';
 import { type TenureEvidence, isProtectedTenure } from './tenure-evidence.js';
 
+export type AssignmentTermReviewPurpose = 'mock' | 'live' | 'participant_preview';
+
+const MOCK_ASSIGNMENT_TERM_ASSUMPTIONS = new Set([
+  'term_evidence_required',
+  'term_holder_service_evidence_required',
+]);
+
+/** Missing holder facts can be carried as an explicit rehearsal assumption.
+ * Real execution and every structural or contradictory term issue remain
+ * fail-closed. Evaluated terms never block any purpose. */
+export function assignmentTermReviewBlocksPurpose(
+  review: { status: string; code: string },
+  purpose: AssignmentTermReviewPurpose,
+) {
+  if (review.status !== 'BLOCKED') return false;
+  if (purpose === 'live') return true;
+  return !MOCK_ASSIGNMENT_TERM_ASSUMPTIONS.has(review.code);
+}
+
 /** Service completion permits the incumbent to leave; consecutive bid cycles
  * determine annual reopening. They are distinct source facts, never dates
  * fabricated from seniority or an assumed annual session schedule. */
@@ -58,7 +77,6 @@ export function evaluateAssignmentTerms(input: {
           offerAnnually: false,
           protected: null,
         };
-      if (!record || record.status === 'UNKNOWN') return blocked('term_evidence_required');
       const holder = holders[0];
       if (!holder)
         return {
@@ -69,6 +87,7 @@ export function evaluateAssignmentTerms(input: {
           offerAnnually: true,
           protected: false,
         };
+      if (!record || record.status === 'UNKNOWN') return blocked('term_evidence_required');
       if (
         record.termMemberId !== holder.memberId ||
         record.accumulatedServiceMonths == null ||

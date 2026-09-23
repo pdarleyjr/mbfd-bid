@@ -140,9 +140,13 @@ describe('canonical voluntary term departure and transition', () => {
   let policy: FrozenLiveBidPolicy;
   let state: BidSessionState;
   let nextId: number;
+  let prepareAgain: (
+    mode: 'mock' | 'live' | 'participant_preview',
+  ) => ReturnType<typeof prepareCapturedBidEvaluation>;
 
   beforeEach(async ({ task }) => {
     const ordinary = task.name.includes('ordinary preexisting canonical');
+    const missingTermEvidence = task.name.includes('missing tenure facts');
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
     h = await setupTestD1();
@@ -189,7 +193,7 @@ describe('canonical voluntary term departure and transition', () => {
       ('2027.1','${SEAT}','target-staffing','approved','synthetic:target-binding',1),
       ('2027.1','${PRIOR_SEAT}','second-staffing','approved','synthetic:second-binding',1);
       INSERT INTO member_assignments (id,member_id,staffing_position_id,origin_type,origin_ref,status,effective_from,effective_to,created_at,updated_at) SELECT 'source-assignment',10001,'source-staffing','ADMIN_TRANSFER','synthetic:source-assignment','active','2026-01-01',NULL,1,1 WHERE ${ordinary ? 0 : 1};
-      INSERT INTO staffing_tenure_evidence (id,staffing_position_id,revision,effective_on,status,member_id,protected_from,protected_through,source_ref,actor_subject,reason,idempotency_key,request_json,created_at,term_member_id,accumulated_service_months,consecutive_bid_cycles) SELECT 'source-term-evidence','source-staffing',1,'2026-01-01','PROTECTED',10001,'2026-01-01','2028-12-31','synthetic:term-record','10001','Synthetic prior service facts','synthetic-term-key','{}',1,10001,36,2 WHERE ${ordinary ? 0 : 1};
+      INSERT INTO staffing_tenure_evidence (id,staffing_position_id,revision,effective_on,status,member_id,protected_from,protected_through,source_ref,actor_subject,reason,idempotency_key,request_json,created_at,term_member_id,accumulated_service_months,consecutive_bid_cycles) SELECT 'source-term-evidence','source-staffing',1,'2026-01-01','PROTECTED',10001,'2026-01-01','2028-12-31','synthetic:term-record','10001','Synthetic prior service facts','synthetic-term-key','{}',1,10001,36,2 WHERE ${ordinary || missingTermEvidence ? 0 : 1};
       `);
     if (task.name.includes('finite term source')) {
       h.sqlite
@@ -261,45 +265,49 @@ describe('canonical voluntary term departure and transition', () => {
       },
     });
     if (body.v !== 3) throw new Error('Synthetic V3 snapshot required');
-    const prepared = await prepareCapturedBidEvaluation(
-      getDb(h.env.DB),
-      {
-        bidYear: 2027,
-        settings: version.content.settings,
-        coverage: evaluateRuleBookCoverage({
-          ruleBookVersion: body.ruleBookVersion,
-          declaredTemplateVersion: body.positionTemplateVersion,
-          rules: body.ruleBookMaterial.rules,
-          positions: body.ruleBookMaterial.positions,
-        }),
-        bindings: [
-          {
-            positionId: ORIGIN,
-            staffingPositionId: 'source-staffing',
-            reviewStatus: 'approved',
-            authoritativeSourceRef: 'synthetic:source-binding',
-          },
-          {
-            positionId: SEAT,
-            staffingPositionId: 'target-staffing',
-            reviewStatus: 'approved',
-            authoritativeSourceRef: 'synthetic:target-binding',
-          },
-          {
-            positionId: PRIOR_SEAT,
-            staffingPositionId: 'second-staffing',
-            reviewStatus: 'approved',
-            authoritativeSourceRef: 'synthetic:second-binding',
-          },
-        ],
-        ruleBookMaterial: body.ruleBookMaterial,
-        sourceDecisions: [],
-        policyReferenceJson: [],
-      },
-      await loadBidEvaluationEvidence(getDb(h.env.DB), 2027),
-      NOW,
-      'mock',
-    );
+    const evaluationPolicy = {
+      bidYear: 2027,
+      settings: version.content.settings,
+      coverage: evaluateRuleBookCoverage({
+        ruleBookVersion: body.ruleBookVersion,
+        declaredTemplateVersion: body.positionTemplateVersion,
+        rules: body.ruleBookMaterial.rules,
+        positions: body.ruleBookMaterial.positions,
+      }),
+      bindings: [
+        {
+          positionId: ORIGIN,
+          staffingPositionId: 'source-staffing',
+          reviewStatus: 'approved' as const,
+          authoritativeSourceRef: 'synthetic:source-binding',
+        },
+        {
+          positionId: SEAT,
+          staffingPositionId: 'target-staffing',
+          reviewStatus: 'approved' as const,
+          authoritativeSourceRef: 'synthetic:target-binding',
+        },
+        {
+          positionId: PRIOR_SEAT,
+          staffingPositionId: 'second-staffing',
+          reviewStatus: 'approved' as const,
+          authoritativeSourceRef: 'synthetic:second-binding',
+        },
+      ],
+      ruleBookMaterial: body.ruleBookMaterial,
+      sourceDecisions: [],
+      policyReferenceJson: [],
+    };
+    const evaluationEvidence = await loadBidEvaluationEvidence(getDb(h.env.DB), 2027);
+    prepareAgain = (mode) =>
+      prepareCapturedBidEvaluation(
+        getDb(h.env.DB),
+        evaluationPolicy,
+        evaluationEvidence,
+        NOW,
+        mode,
+      );
+    const prepared = await prepareAgain('mock');
     if (!prepared.ok) throw new Error(JSON.stringify(prepared));
     body.members = prepared.evaluation.members;
     body.tenureEvidence = prepared.evaluation.tenureEvidence;
@@ -496,6 +504,24 @@ describe('canonical voluntary term departure and transition', () => {
       'ADMIN_ASSIGNED_NON_BIDDABLE',
     );
     expect(snapshot.members.find((m) => m.memberId === SECOND)?.termParticipation).toBeUndefined();
+  });
+
+  it('carries missing tenure facts only as a Mock rehearsal assumption', async () => {
+    expect(await prepareAgain('mock')).toMatchObject({ ok: true });
+    expect(await prepareAgain('participant_preview')).toMatchObject({ ok: true });
+    expect(await prepareAgain('live')).toMatchObject({
+      ok: false,
+      code: 'assignment_term_evidence_requires_review',
+      positionIds: [ORIGIN],
+      termIssues: [{ positionId: ORIGIN, code: 'term_evidence_required' }],
+    });
+    expect(snapshot.members.find((member) => member.memberId === MEMBER)).toMatchObject({
+      pool: 'EXCLUDED',
+      exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+    });
+    expect(snapshot.members.find((member) => member.memberId === MEMBER)?.termParticipation).toBe(
+      undefined,
+    );
   });
 
   it.each([

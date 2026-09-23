@@ -14,7 +14,7 @@ import {
   FrozenLiveBidPolicySchema,
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
-import { evaluateAssignmentTerms } from './assignment-terms.js';
+import { assignmentTermReviewBlocksPurpose, evaluateAssignmentTerms } from './assignment-terms.js';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { type BidOrdinalDatasetRow, projectBidOrdinals } from './bid-ordinal-evidence.js';
@@ -1331,7 +1331,7 @@ export async function prepareCapturedBidEvaluation(
       ...coverage.reservedPositionIds,
     ],
   });
-  const blockedTerms = termReview.filter((term) => term.status === 'BLOCKED');
+  const blockedTerms = termReview.filter((term) => assignmentTermReviewBlocksPurpose(term, mode));
   if (blockedTerms.length)
     return {
       ok: false,
