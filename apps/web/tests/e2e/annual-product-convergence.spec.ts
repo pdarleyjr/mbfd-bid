@@ -1,5 +1,5 @@
 import { type Page, expect, test } from '@playwright/test';
-import { SignJWT } from 'jose';
+import { signJwt } from '../../lib/jwt';
 
 async function setPin(page: Page): Promise<void> {
   await page.context().addCookies([
@@ -17,23 +17,23 @@ async function setAdmin(page: Page): Promise<boolean> {
   const signingKey = process.env.JWT_SIGNING_KEY;
   if (!signingKey) return false;
   const nowSec = Math.floor(Date.now() / 1000);
-  const jwt = await new SignJWT({
-    sub: 901,
-    hub_user_id: 901,
-    member_id: 901,
-    emp: 'e2e-annual-admin',
-    role: 'admin',
-    security_version: 1,
-    rank: 'CPT',
-    first_name: 'Annual',
-    last_name: 'Operator',
-    fresh_auth_at: nowSec,
-    authz_checked_at: nowSec,
-  } as Record<string, unknown>)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .sign(new TextEncoder().encode(signingKey));
+  const jwt = await signJwt(
+    {
+      sub: 901,
+      hub_user_id: 901,
+      member_id: 901,
+      emp: 'e2e-annual-admin',
+      role: 'admin',
+      security_version: 1,
+      rank: 'CPT',
+      first_name: 'Annual',
+      last_name: 'Operator',
+      fresh_auth_at: nowSec,
+      authz_checked_at: nowSec,
+    },
+    signingKey,
+    '1h',
+  );
   await setPin(page);
   await page.context().addCookies([
     {

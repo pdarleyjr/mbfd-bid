@@ -93,6 +93,8 @@ jobs:
     env:
       JWT_SIGNING_KEY: ${{ secrets.E2E_JWT_SIGNING_KEY }}
       E2E_REAL_JWT: '1'
+      E2E_USE_BUILT_WEB: '1'
+      NEXT_PUBLIC_WORKER_BASE: http://127.0.0.1:31987
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -102,12 +104,17 @@ jobs:
           node-version: '${{ env.NODE_VERSION }}'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @mbfd/shared build
+      - name: Build all internal packages for the browser and isolated Worker
+        run: pnpm -r --filter "./packages/*" build
+      - name: Build production-mode web artifact for browser tests
+        run: pnpm --filter @mbfd/web build
       - run: pnpm --filter @mbfd/web exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report
-          path: apps/web/playwright-report
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
           retention-days: 7

@@ -67,12 +67,13 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
 
   it('restore script downloads from R2 and uses the bounded asynchronous import protocol', () => {
     const src = readFileSync(RESTORE_SCRIPT, 'utf-8');
-    expect(src).toContain('pnpm --dir apps/worker exec wrangler r2 object get');
-    expect(src).toContain('pnpm --dir apps/worker exec wrangler d1 info $DbName --json');
-    expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(2);
+    expect(src).toContain('& pnpm --dir apps/worker exec wrangler @Args');
+    expect(src).toContain("Invoke-WranglerCli -Args @('r2', 'object', 'get'");
+    expect(src).toContain("Invoke-WranglerCli -Args @('d1', 'info', $DbName, '--json')");
+    expect(src.match(/pnpm --dir apps\/worker exec wrangler/g)).toHaveLength(1);
     expect(src).not.toContain('& pnpm exec wrangler');
     expect(src).toContain('/d1/database/$databaseId/import');
-    expect(src).toContain("-replace '/import$', '/raw'");
+    expect(src).toContain("-replace '/import$', '/query'");
     expect(src).toContain('Invoke-WebRequest -Method Post');
     expect(src).toContain('-SkipHttpErrorCheck');
     expect(src).toContain("action = 'init'");
@@ -85,6 +86,14 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('Split-RestoreImportAndBoundInserts');
     expect(src).toContain('Convert-OversizedInsertToStagedRequest');
     expect(src).toContain('Invoke-StagedOversizedInsertReplay');
+    expect(src).toMatch(
+      /ValidateSet\('stage_create', 'stage_chunk', 'insert_atomic', 'stage_cleanup'\)[\s\S]*?Split-StagedTextValue[\s\S]*?group_concat[\s\S]*?atomic_inserts=\$replayed/,
+    );
+    expect(src).toContain('safe control-plane request budget');
+    expect(src).toContain('$values.Count * 2');
+    expect(src).toContain('chunks=$chunkCount');
+    expect(src).not.toMatch(/CAST\(NULL AS TEXT\)|\browid\b|value_replace|value_append/);
+    expect(src).toContain('2000000');
     expect(src).toContain('staged oversized inserts replayed=');
     expect(src).toContain('sanitized statements=$($metrics.StatementCount)');
     expect(src).toContain('inserts=$($metrics.OverCapInsertCount)');

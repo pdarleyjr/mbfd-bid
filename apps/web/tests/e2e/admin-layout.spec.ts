@@ -9,7 +9,7 @@
  */
 
 import { type Page, expect, test } from '@playwright/test';
-import { SignJWT } from 'jose';
+import { signJwt } from '../../lib/jwt';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -18,25 +18,24 @@ import { SignJWT } from 'jose';
 const SIGNING_KEY = process.env.JWT_SIGNING_KEY ?? 'test-signing-key-for-e2e-specs-only';
 
 async function makeJwt(role: 'admin' | 'member') {
-  const key = new TextEncoder().encode(SIGNING_KEY);
   const nowSec = Math.floor(Date.now() / 1000);
-  return new SignJWT({
-    sub: 1,
-    hub_user_id: 1,
-    member_id: 1,
-    emp: '10001',
-    role,
-    security_version: 1,
-    rank: 'CPT',
-    first_name: 'Admin',
-    last_name: 'Tester',
-    fresh_auth_at: nowSec,
-    authz_checked_at: nowSec,
-  } as Record<string, unknown>)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .sign(key);
+  return signJwt(
+    {
+      sub: 1,
+      hub_user_id: 1,
+      member_id: 1,
+      emp: '10001',
+      role,
+      security_version: 1,
+      rank: 'CPT',
+      first_name: 'Admin',
+      last_name: 'Tester',
+      fresh_auth_at: nowSec,
+      authz_checked_at: nowSec,
+    },
+    SIGNING_KEY,
+    '1h',
+  );
 }
 
 async function setAuthCookies(page: Page, jwt: string) {

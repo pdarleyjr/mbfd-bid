@@ -1,5 +1,5 @@
 import type { FullConfig } from '@playwright/test';
-import { SignJWT } from 'jose';
+import { signJwt } from '../../lib/jwt';
 
 export default async function globalSetup(_: FullConfig) {
   const signingKey = process.env.JWT_SIGNING_KEY;
@@ -7,9 +7,8 @@ export default async function globalSetup(_: FullConfig) {
     console.warn('[e2e] no JWT_SIGNING_KEY — tests requiring real JWT will skip');
     return;
   }
-  const key = new TextEncoder().encode(signingKey);
   const nowSec = Math.floor(Date.now() / 1000);
-  const payload: Record<string, unknown> = {
+  const payload: Parameters<typeof signJwt>[0] = {
     sub: 555,
     hub_user_id: 555,
     member_id: 555,
@@ -22,10 +21,6 @@ export default async function globalSetup(_: FullConfig) {
     fresh_auth_at: nowSec,
     authz_checked_at: nowSec,
   };
-  const jwt = await new SignJWT(payload)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .sign(key);
+  const jwt = await signJwt(payload, signingKey, '1h');
   process.env.E2E_JWT = jwt;
 }

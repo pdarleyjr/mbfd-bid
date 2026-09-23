@@ -138,6 +138,7 @@ describe('OpenNext deployment configuration', () => {
 
   it('has CI build the staging artifact and a manual-only production release workflow without a Pages path', () => {
     const ci = readRepoFile('.github/workflows/ci.yml');
+    const playwright = readAppFile('playwright.config.ts');
     const deployStaging = readRepoFile('.github/workflows/deploy-staging.yml');
     const deployProduction = readRepoFile('.github/workflows/deploy-production.yml');
     const workerPackageJson = JSON.parse(readRepoFile('apps/worker/package.json')) as {
@@ -146,6 +147,12 @@ describe('OpenNext deployment configuration', () => {
 
     expect(ci).toContain('Build OpenNext staging artifact (non-deploy)');
     expect(ci).toContain('pnpm build:opennext:staging');
+    expect(ci).toContain("E2E_USE_BUILT_WEB: '1'");
+    expect(ci).toContain('NEXT_PUBLIC_WORKER_BASE: http://127.0.0.1:31987');
+    expect(ci).toContain('Build production-mode web artifact for browser tests');
+    expect(ci).toContain('pnpm --filter @mbfd/web build');
+    expect(ci).toContain('apps/web/test-results');
+    expect(playwright).toContain('process.env.CI ? { workers: 2 }');
     expect(deployStaging).toContain('Deploy web (OpenNext Worker, staging)');
     expect(deployStaging).toContain('Build and deploy OpenNext Worker (staging only)');
     expect(deployStaging).toContain('pnpm deploy:staging');
