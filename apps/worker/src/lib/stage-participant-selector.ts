@@ -253,6 +253,14 @@ export function resolveStageParticipantMembership(input: {
   const membersById = new Map(
     input.pinnedEvaluation.members.map((member) => [member.memberId, member]),
   );
+  const filterRankScope = new Set<string>(
+    input.stageParticipantSources.flatMap((definition) =>
+      definition.participantSource.type === 'FILTER' ? definition.participantSource.ranks : [],
+    ),
+  );
+  const hasFilterPopulationScope = input.stageParticipantSources.some(
+    (definition) => definition.participantSource.type === 'FILTER',
+  );
   const includedMemberIds = new Set<number>();
   const stages: ResolvedStageParticipantMembership[] = [];
   for (const stage of input.executionPolicy.stages) {
@@ -285,7 +293,15 @@ export function resolveStageParticipantMembership(input: {
     });
   }
   const uncoveredMemberIds = input.pinnedEvaluation.members
-    .filter((member) => isPinnedBidParticipant(member) && !includedMemberIds.has(member.memberId))
+    .filter(
+      (member) =>
+        isPinnedBidParticipant(member) &&
+        !includedMemberIds.has(member.memberId) &&
+        // FILTER ranks declare the policy's adaptable bid population. Named
+        // cross-rank inclusions remain valid because they are already included
+        // above. Explicit-only policies retain whole-population completeness.
+        (!hasFilterPopulationScope || filterRankScope.has(member.rank)),
+    )
     .map((member) => member.memberId);
   if (uncoveredMemberIds.length > 0)
     return {

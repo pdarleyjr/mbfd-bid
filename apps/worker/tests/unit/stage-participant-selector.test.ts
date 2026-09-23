@@ -240,6 +240,61 @@ describe('adaptive stage participant compiler', () => {
     expect(result.executionPolicy.stages[0]?.memberIds).not.toContain(10003);
   });
 
+  it('scopes FILTER-backed population completeness to the ranks declared by the typed policy', () => {
+    const evaluation = pinnedEvaluation();
+    const captain = evaluation.members[0];
+    if (!captain) throw new Error('Synthetic captain required');
+    evaluation.members.push({
+      ...captain,
+      memberId: 10005,
+      rank: 'DC',
+      rscSeniority: 30,
+      rankSeniority: 1,
+    });
+
+    const result = resolveStageParticipantMembership({
+      pinnedEvaluation: evaluation,
+      executionPolicy: executionPolicy(),
+      stageParticipantSources: sources(),
+    });
+
+    expect(result).toMatchObject({ ok: true, kind: 'resolved_typed_sources' });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    expect(result.stages.flatMap((stage) => stage.matchedMemberIds)).not.toContain(10005);
+  });
+
+  it('keeps explicit-only policies fail-closed for every pinned bid participant', () => {
+    const evaluation = pinnedEvaluation();
+    const captain = evaluation.members[0];
+    if (!captain) throw new Error('Synthetic captain required');
+    evaluation.members.push({
+      ...captain,
+      memberId: 10005,
+      rank: 'DC',
+      rscSeniority: 30,
+      rankSeniority: 1,
+    });
+    const explicitOnly = sources().map((definition) => ({
+      ...definition,
+      participantSource: {
+        type: 'EXPLICIT_MEMBERS' as const,
+        memberIds: definition.stageId === 'CAPTAINS' ? [10001, 10002] : [10004],
+      },
+    }));
+
+    expect(
+      resolveStageParticipantMembership({
+        pinnedEvaluation: evaluation,
+        executionPolicy: executionPolicy(),
+        stageParticipantSources: explicitOnly,
+      }),
+    ).toMatchObject({
+      ok: false,
+      code: 'stage_authoring_population_incomplete',
+      memberIds: [10005],
+    });
+  });
+
   it('applies named filter inclusions and exclusions only to the pinned evaluation before freezing provenance', () => {
     const definitions = sources();
     const captains = definitions[0];
