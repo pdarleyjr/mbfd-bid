@@ -945,11 +945,13 @@ export const FrozenBidPoolMemberSchema = z
       .nullable(),
     authoritativeAssignmentId: z.string().min(1).nullable(),
     /**
-     * Present only when a mock session admits an otherwise unconfirmed member
-     * from the one accepted annual staffing baseline. It is deliberately
-     * source-safe and must never be interpreted as a personnel correction.
+     * Present only when a rehearsal admits a member using an explicitly
+     * allowed Mock-only assumption. The evidence is deliberately frozen so a
+     * rehearsal cannot be mistaken for a Live eligibility determination.
      */
-    mockParticipationEvidence: z.enum(['ACCEPTED_STAFFING_BASELINE']).optional(),
+    mockParticipationEvidence: z
+      .enum(['ACCEPTED_STAFFING_BASELINE', 'ASSIGNMENT_TERM_ASSUMPTION'])
+      .optional(),
   })
   .strict();
 export type FrozenBidPoolMember = z.infer<typeof FrozenBidPoolMemberSchema>;

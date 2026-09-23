@@ -19,7 +19,11 @@ const Pool = FrozenBidPoolMemberSchema.pick({
   exclusionReason: true,
   authoritativeAssignmentId: true,
 })
-  .extend({ mockParticipationEvidence: z.literal('ACCEPTED_STAFFING_BASELINE').nullable() })
+  .extend({
+    mockParticipationEvidence: z
+      .enum(['ACCEPTED_STAFFING_BASELINE', 'ASSIGNMENT_TERM_ASSUMPTION'])
+      .nullable(),
+  })
   .strict();
 const StageEntry = z.object({ ordinal: memberId, memberId, stageId: id }).strict();
 const SpecialtyCandidate = z.object({ memberId, points: number, priority: memberId }).strict();
