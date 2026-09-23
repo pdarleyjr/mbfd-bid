@@ -5,18 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # E2E job is manual-only via workflow_dispatch until seeded staging
-  # fixtures + memberA.json storage state are wired (Plan 09 hardening).
   workflow_dispatch:
-    inputs:
-      run_e2e:
-        description: 'Run Playwright E2E against staging fixtures'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
 
 permissions:
   contents: read
@@ -84,14 +73,9 @@ jobs:
 
   e2e:
     name: Playwright E2E
-    # Plan 04/07 E2E specs are infrastructure-gated until staging is seeded
-    # with members + an active session + memberA.json storage state. Run
-    # manually via workflow_dispatch once those fixtures exist.
-    if: github.event_name == 'workflow_dispatch' && inputs.run_e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      JWT_SIGNING_KEY: ${{ secrets.E2E_JWT_SIGNING_KEY }}
       E2E_REAL_JWT: '1'
       E2E_USE_BUILT_WEB: '1'
       NEXT_PUBLIC_WORKER_BASE: http://127.0.0.1:31987
@@ -103,6 +87,9 @@ jobs:
         with:
           node-version: '${{ env.NODE_VERSION }}'
           cache: pnpm
+      - name: Create isolated browser-test signing key
+        shell: bash
+        run: echo "JWT_SIGNING_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - name: Build all internal packages for the browser and isolated Worker
         run: pnpm -r --filter "./packages/*" build

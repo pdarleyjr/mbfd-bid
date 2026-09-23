@@ -2,6 +2,8 @@
 
 Assessment date: 2026-09-20. The software release is deployed and the final 2026 authored configuration is saved as immutable version 2. Version 2 is **not executable**: participant preview, Mock preparation and Managed Live readiness remain blocked. The [production release record](production-release-20260920.md) contains sanitized deployment, configuration and authenticated acceptance evidence. Real readiness and operational start remain separate from software delivery.
 
+The [2026-09-23 readiness evidence addendum](readiness-evidence-20260923.md) records the later repository/source audit, current production state, newly supplied evidence and remaining finite blocker bundle. It supersedes only facts explicitly re-observed there; it does not make version 2 executable.
+
 ## Source and repository identity
 
 Deployed merged main: `85823a5da3c79f6a72684342a9f030f4ad78c84b`; tree: `18445a878f177713ac70ffaee233ffe3f0582206`. Corrective PR #132 is merged, as is the earlier PR #129. The validated candidate `605100104697af53098115e2abff3bd3efd0fbf5` has the identical tree. Production workflow `35487527280` succeeded; Worker and Web runtime versions match the release artifacts at 100%.
