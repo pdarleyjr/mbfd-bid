@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateAssignmentTerms } from '../../src/lib/assignment-terms.js';
+import {
+  assignmentTermReviewBlocksPurpose,
+  evaluateAssignmentTerms,
+} from '../../src/lib/assignment-terms.js';
 import type { TenureEvidence } from '../../src/lib/tenure-evidence.js';
 
 const term = {
@@ -213,6 +216,32 @@ describe('source-backed assignment service and cycle evaluation', () => {
     ).toMatchObject([{ code: 'term_evidence_required' }]);
   });
 
+  it('carries only missing holder facts as explicit Mock assumptions and keeps Real fail-closed', () => {
+    for (const code of ['term_evidence_required', 'term_holder_service_evidence_required']) {
+      const review = { status: 'BLOCKED' as const, code };
+      expect(assignmentTermReviewBlocksPurpose(review, 'mock')).toBe(false);
+      expect(assignmentTermReviewBlocksPurpose(review, 'participant_preview')).toBe(false);
+      expect(assignmentTermReviewBlocksPurpose(review, 'live')).toBe(true);
+    }
+
+    for (const code of [
+      'term_binding_required',
+      'term_holder_ambiguous',
+      'term_service_cycle_conflict',
+      'protected_term_cannot_be_biddable',
+      'completed_cycles_require_annual_reopening',
+      'term_annual_closure_required',
+    ]) {
+      expect(assignmentTermReviewBlocksPurpose({ status: 'BLOCKED', code }, 'mock')).toBe(true);
+    }
+    expect(
+      assignmentTermReviewBlocksPurpose(
+        { status: 'EVALUATED', code: 'term_service_complete' },
+        'live',
+      ),
+    ).toBe(false);
+  });
+
   it('allows an explicit annual closure without inventing holder dates or service facts', () => {
     const base = {
       ...input(),
@@ -244,9 +273,9 @@ describe('source-backed assignment service and cycle evaluation', () => {
     ).toMatchObject([{ status: 'BLOCKED', code: 'term_holder_ambiguous' }]);
   });
 
-  it('evaluates explicit vacancies only with known evidence and leaves snapshots without terms unchanged', () => {
+  it('evaluates explicit vacancies without inventing holder evidence and leaves snapshots without terms unchanged', () => {
     expect(evaluateAssignmentTerms({ ...input(), assignments: [], records: [] })).toMatchObject([
-      { status: 'BLOCKED', code: 'term_evidence_required' },
+      { status: 'EVALUATED', code: 'term_vacant', offerAnnually: true, memberMayLeave: null },
     ]);
     expect(
       evaluateAssignmentTerms({
