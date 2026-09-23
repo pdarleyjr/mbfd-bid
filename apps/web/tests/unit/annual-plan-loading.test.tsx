@@ -61,17 +61,18 @@ it.each(['saved draft', 'unavailable source'])(
       });
       expect(container.querySelector('form')).toBeNull();
       if (scenario === 'unavailable source') {
-        await vi.waitFor(() =>
-          expect(container.textContent).toContain('Saved preparation could not be verified'),
-        );
+        await act(async () => {
+          await vi.waitFor(() =>
+            expect(container.textContent).toContain('Saved preparation could not be verified'),
+          );
+        });
         expect(container.textContent).not.toContain('Not started');
       } else {
-        await vi.waitFor(async () => {
-          await act(async () => {
-            await new Promise((resolve) => setTimeout(resolve, 0));
-          });
-          expect(fetch).toHaveBeenCalledWith('/api/admin/annual-plan/2027', {
-            credentials: 'include',
+        await act(async () => {
+          await vi.waitFor(() => {
+            expect(fetch).toHaveBeenCalledWith('/api/admin/annual-plan/2027', {
+              credentials: 'include',
+            });
           });
         });
         await act(async () => {
@@ -93,9 +94,11 @@ it.each(['saved draft', 'unavailable source'])(
           );
           await new Promise((resolve) => setTimeout(resolve, 0));
         });
-        await vi.waitFor(() =>
-          expect(container.textContent).toContain('Review existing draft for guided preparation'),
-        );
+        await act(async () => {
+          await vi.waitFor(() =>
+            expect(container.textContent).toContain('Review existing draft for guided preparation'),
+          );
+        });
         expect(container.textContent).not.toContain('Not started');
       }
     } finally {

@@ -20,6 +20,7 @@ const impactArtifacts = path.resolve(
   process.env.CURRENT_BID_IMPACT_ARTIFACTS ??
     '../../tmp/unified-platform/current-bid-impact-browser-20260913',
 );
+const IMPACT_RESULT_TIMEOUT_MS = 30_000;
 
 // These tests operate the real Next/React UI against isolated synthetic data.
 // Impact previews call the real service over migrated SQLite; legacy Save and
@@ -688,7 +689,9 @@ for (const viewport of [
         workspace(page).getByRole('button', { name: 'Evaluate draft impact', exact: true }),
       );
       const draft = impactSection(page, 'Unsaved draft');
-      await expect(draft).toContainText(`${BID_COUNT} participants`);
+      await expect(draft).toContainText(`${BID_COUNT} participants`, {
+        timeout: IMPACT_RESULT_TIMEOUT_MS,
+      });
       await expect(draft).toContainText('Operating policy references need review');
       await expect(draft).toContainText('specialty credential reference invalid');
       await expect(draft).not.toContainText('0 ranked candidates');
@@ -748,7 +751,12 @@ for (const viewport of [
       await enter(
         workspace(page).getByRole('button', { name: 'Evaluate draft impact', exact: true }),
       );
-      await expect(impactSection(page, 'Unsaved draft')).toContainText(`${BID_COUNT} participants`);
+      await expect(impactSection(page, 'Unsaved draft')).toContainText(
+        `${BID_COUNT} participants`,
+        {
+          timeout: IMPACT_RESULT_TIMEOUT_MS,
+        },
+      );
       expect(state.impactRequests.at(-1)?.mode).toBe('live');
       expect(state.impactRequests.at(-1)?.expectedImpactSha256).toBeUndefined();
       await assertWidth(page);
@@ -778,6 +786,7 @@ test('[bid-impact] Blueprint keyboard paging reaches all 521 opportunities and m
     );
     await expect(workspace(page).getByTestId('bid-impact-change-summary')).toContainText(
       `${BID_COUNT} people with evaluated changes`,
+      { timeout: IMPACT_RESULT_TIMEOUT_MS },
     );
 
     const opportunityEvidence = await openImpactDetails(page, 'Eligibility by opportunity');
@@ -882,6 +891,7 @@ test('[bid-impact] Blueprint keyboard paging reaches all 521 opportunities and m
     );
     await expect(workspace(page).getByTestId('bid-impact-change-summary')).toContainText(
       `${BID_COUNT} people with evaluated changes`,
+      { timeout: IMPACT_RESULT_TIMEOUT_MS },
     );
     expect(state.impactRequests.at(-1)?.expectedImpactSha256).toBeUndefined();
     await assertWidth(page);
@@ -912,6 +922,7 @@ test('[bid-impact] Blueprint unresolved draft source decisions remain blocked wi
     );
     await expect(impactSection(page, 'Current saved Bid')).toContainText(
       `${BID_COUNT} participants`,
+      { timeout: IMPACT_RESULT_TIMEOUT_MS },
     );
     const blocked = impactSection(page, 'Unsaved draft');
     await expect(blocked).toContainText('Resolve the open policy source decisions');

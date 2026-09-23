@@ -160,8 +160,8 @@ let root: Root | undefined;
 let container: HTMLDivElement;
 let requests: RequestEntry[];
 let result: unknown;
-let begin: ReturnType<typeof vi.fn>;
-let finish: ReturnType<typeof vi.fn>;
+let begin: ReturnType<typeof vi.fn<() => boolean>>;
+let finish: ReturnType<typeof vi.fn<() => void>>;
 let originalWindowFetch: typeof fetch;
 
 beforeEach(() => {
