@@ -24,6 +24,7 @@ const members = [
   ['20745', 206, 'FF'],
   ['18158', 207, 'DC'],
   ['16584', 208, 'FF'],
+  ['14326', 209, 'CPT'],
 ] as const;
 
 function content() {
@@ -190,7 +191,7 @@ describe('known 2026 setup', () => {
       personnelEvaluationOn: '2026-09-24',
     });
     const policy = result.content.policy?.executionPolicy;
-    expect(policy?.stages[0]?.memberIds).toEqual([103, 104, 105, 203, 205, 206]);
+    expect(policy?.stages[0]?.memberIds).toEqual([103, 105, 203, 205, 206]);
     expect(
       policy?.actionPermissions.every(
         (grant) => grant.actorMemberIds.join(',') === '101,102,103,104',
@@ -212,6 +213,7 @@ describe('known 2026 setup', () => {
       102, 106, 202, 207,
     ]);
     expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(208);
+    expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(209);
     expect(policy?.annualOperations?.membershipDistributions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -229,6 +231,22 @@ describe('known 2026 setup', () => {
       ),
     ).toEqual(['EXPLICIT_MEMBERS', 'EXPLICIT_MEMBERS', 'EXPLICIT_MEMBERS']);
     expect(result.content.sourceDecisions[0]?.status).toBe('OPEN');
+  });
+
+  it('keeps source-authorized bidders when the broader directory has not classified status yet', () => {
+    const unresolved = options.map((member) => ({
+      ...member,
+      employmentStatus: 'unknown' as const,
+    }));
+    const result = applyKnown2026Setup(content(), unresolved);
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error(result.message);
+    expect(result.content.policy?.executionPolicy.stages[0]?.memberIds).toEqual([
+      103, 105, 203, 205, 206,
+    ]);
+    expect(
+      result.content.policy?.executionPolicy.stages.flatMap((stage) => stage.memberIds),
+    ).toContain(207);
   });
 
   it('fails visibly instead of granting partial authority when a required admin is missing', () => {

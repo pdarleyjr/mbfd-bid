@@ -2,7 +2,7 @@ import {
   type BidDefinitionContent,
   BidDefinitionContentSchema,
   FINAL_2026_BLOOMFIELD,
-  FINAL_2026_EXCLUDED_EMPLOYEE_IDS,
+  FINAL_2026_NON_BIDDER_EMPLOYEE_IDS,
   FINAL_2026_SWAT_EMPLOYEE_IDS,
   FrozenLiveBidPolicySchema,
 } from '@mbfd/shared';
@@ -35,7 +35,7 @@ function stageMembers(
   const included = new Set(source.participantSource.includeMemberIds ?? []);
   const excluded = new Set(source.participantSource.excludeMemberIds ?? []);
   const ranks = new Set<string>(source.participantSource.ranks);
-  const excludedEmployees = new Set<string>(FINAL_2026_EXCLUDED_EMPLOYEE_IDS);
+  const excludedEmployees = new Set<string>(FINAL_2026_NON_BIDDER_EMPLOYEE_IDS);
   const selected = members
     .filter((member) => {
       const bidRank =
@@ -48,7 +48,7 @@ function stageMembers(
         !ranks.has(bidRank)
       )
         return false;
-      return member.employmentStatus === 'active';
+      return !['inactive', 'retired', 'separated'].includes(member.employmentStatus);
     })
     .map((member) => Number(member.value))
     .filter((memberId) => Number.isSafeInteger(memberId) && memberId > 0);
