@@ -574,6 +574,41 @@ describe('Bid evaluation extraction with a real common Department capture', () =
     expect(calculated.evaluation).not.toHaveProperty('annualPolicyEvidence');
   });
 
+  it('projects the final 2026 source cohort before stage-authoring completeness is evaluated', async () => {
+    h.sqlite.exec(`
+      UPDATE members
+      SET employee_id = '18158', rank = 'DC', bid_category = 'OFC'
+      WHERE id = 10001;
+      UPDATE members
+      SET employee_id = '14326', rank = 'CPT', bid_category = 'OFC'
+      WHERE id = 10002;
+    `);
+    const db = getDb(h.env.DB);
+    const evidence = await readOnly(() => loadBidEvaluationEvidence(db, 2027));
+    const final2026 = material();
+    final2026.bidYear = 2026;
+
+    const result = await readOnly(() =>
+      prepareCapturedBidEvaluation(db, final2026, evidence, CAPTURED_AT, 'participant_preview'),
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) throw new Error(result.code);
+    expect(result.evaluation.members.find((member) => member.memberId === 10001)).toMatchObject({
+      pool: 'OFC',
+      rank: 'CPT',
+      exclusionReason: null,
+    });
+    expect(result.evaluation.members.find((member) => member.memberId === 10002)).toMatchObject({
+      pool: 'EXCLUDED',
+      rank: 'CPT',
+      exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+    });
+    expect(
+      result.evaluation.operatorIdentityProjection?.find((member) => member.memberId === 10001),
+    ).toMatchObject({ employeeId: '18158', rank: 'CPT' });
+  });
+
   it('uses one raw capture across qualification and personnel date boundaries with no later live-table read', async () => {
     const evidence = await readOnly(() => loadBidEvaluationEvidence(getDb(h.env.DB), 2027));
     const captureBefore = structuredClone(evidence);
