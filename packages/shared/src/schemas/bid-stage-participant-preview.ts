@@ -204,8 +204,10 @@ const ValidPreviewSchema = z
         path: ['executionIssues'],
         message: 'unresolved ordering authority must be represented in execution issues',
       });
+    // Membership is stage-scoped. The frozen runtime policy is the authority
+    // that limits a member to one Days/Specialized and one ordinary stage;
+    // this display contract must not reject that valid cross-stage overlap.
     const stageIds = new Set<string>();
-    const memberIds = new Set<number>();
     for (const [stageIndex, stage] of preview.stages.entries()) {
       if (stageIds.has(stage.stageId))
         context.addIssue({
@@ -214,15 +216,6 @@ const ValidPreviewSchema = z
           message: 'participant preview stage ids must be unique',
         });
       stageIds.add(stage.stageId);
-      for (const memberId of stage.matchedMemberIds) {
-        if (memberIds.has(memberId))
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['stages', stageIndex, 'matchedMemberIds'],
-            message: 'a preview participant may appear in only one stage',
-          });
-        memberIds.add(memberId);
-      }
     }
   });
 

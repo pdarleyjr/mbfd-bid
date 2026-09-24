@@ -122,10 +122,14 @@ describe('stage participant membership preview response', () => {
     expect(BidStageParticipantPreviewResponseSchema.safeParse(emptyResolved).success).toBe(false);
 
     const overlap = response();
-    const duplicateStage = structuredClone(overlap.stages[0]);
-    duplicateStage.stageId = 'another-stage';
-    duplicateStage.order = 1;
-    overlap.stages.push(duplicateStage);
-    expect(BidStageParticipantPreviewResponseSchema.safeParse(overlap).success).toBe(false);
+    const laterStage = structuredClone(overlap.stages[0]);
+    laterStage.stageId = 'later-stage';
+    laterStage.order = 1;
+    overlap.stages.push(laterStage);
+    expect(BidStageParticipantPreviewResponseSchema.safeParse(overlap).success).toBe(true);
+
+    const duplicateStage = response();
+    duplicateStage.stages.push(structuredClone(duplicateStage.stages[0]));
+    expect(BidStageParticipantPreviewResponseSchema.safeParse(duplicateStage).success).toBe(false);
   });
 });
