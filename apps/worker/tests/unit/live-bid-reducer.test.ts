@@ -565,6 +565,22 @@ describe('live canonical reducer', () => {
           min: 18,
           max: 19,
           captainDcMax: 2,
+          execution: {
+            timing: 'SIMULTANEOUS',
+            timingExceptions: [
+              {
+                id: 'specialized-position-delay',
+                label: 'Specialized position A-Day at ordinary rank turn',
+                timing: 'AFTER_POSITION_SELECTION',
+                sourceRef: '2026 Bid Policy final, A-Day Selection Guidelines',
+                positionIds: ['p1'],
+                profileIds: [],
+              },
+            ],
+            officersPerGroup: null,
+            sourceRef: '2026 Bid Policy final, A-Day Selection Guidelines',
+            constraints: [],
+          },
           specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 2, SWAT: 1 },
         },
       },
@@ -602,8 +618,73 @@ describe('live canonical reducer', () => {
     expect(resolved.state).toMatchObject({
       currentBidderId: 1,
       fills: { p1: { memberId: 2, bidId: 'specialty-award' } },
-      bidOrder: [{ memberId: 1 }],
+      bidOrder: [{ memberId: 1 }, { memberId: 2 }],
       live: { specialty: null },
+    });
+    expect(resolved.payload).toMatchObject({ removedFromRemainingOrder: false });
+
+    const ordinaryFirst = reduceLiveBidCommand(
+      resolved.state,
+      specialtyPolicy,
+      command('live.record_selection', {
+        expectedSeq: resolved.state.lastSeq,
+        memberId: 1,
+        positionId: 'p2',
+      }),
+      103,
+      'ordinary-first',
+    );
+    if (!ordinaryFirst.ok) throw new Error(ordinaryFirst.code);
+    expect(ordinaryFirst.state).toMatchObject({
+      currentPhase: 'position_bid',
+      currentBidderId: 2,
+      fills: { p1: { memberId: 2 }, p2: { memberId: 1 } },
+    });
+
+    const awaitingADay = delayedADayState();
+    if (awaitingADay.aDay === null) throw new Error('A-Day fixture required');
+    const withCanonicalADay = {
+      ...ordinaryFirst.state,
+      aDay: {
+        ...awaitingADay.aDay,
+        bidOrder: [2],
+        phase1: [[2, { positionId: 'p1', shift: 'A' }]] as NonNullable<
+          BidSessionState['aDay']
+        >['phase1'],
+      },
+    };
+    // Canonical Mock state is serialized between Durable Object instances and
+    // reloaded by reconnecting clients. The deferred ordinary turn must survive
+    // that exact persistence boundary without an in-memory side channel.
+    const restartedState = JSON.parse(JSON.stringify(withCanonicalADay)) as BidSessionState;
+    expect(restartedState).toMatchObject({
+      currentBidderId: 2,
+      fills: { p1: { memberId: 2, bidId: 'specialty-award' } },
+      bidOrder: [{ memberId: 1 }, { memberId: 2 }],
+    });
+    const aDayOnlyTurn = reduceLiveBidCommand(
+      restartedState,
+      specialtyPolicy,
+      command('live.record_a_day', {
+        expectedSeq: restartedState.lastSeq,
+        memberId: 2,
+        aDay: 'G1',
+      }),
+      104,
+      'ordinary-a-day-only',
+      false,
+      aDayMembers,
+    );
+    if (!aDayOnlyTurn.ok) throw new Error(aDayOnlyTurn.code);
+    expect(aDayOnlyTurn.state).toMatchObject({
+      currentPhase: 'complete',
+      currentBidderId: null,
+      fills: { p1: { memberId: 2 }, p2: { memberId: 1 } },
+      aDay: { picks: [{ memberId: 2, aDay: 'G1' }] },
+    });
+    expect(aDayOnlyTurn.payload).toMatchObject({
+      operation: 'record_a_day',
+      ordinaryRankTurnCompleted: true,
     });
   });
 

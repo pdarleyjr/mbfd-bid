@@ -12,7 +12,7 @@ type ReadinessItemProps = {
   status: string;
   children: ReactNode;
   action?: ReactNode;
-  tone?: 'ready' | 'review';
+  tone?: 'ready' | 'review' | 'blocking';
 };
 
 function ReadinessItem({ label, status, children, action, tone = 'review' }: ReadinessItemProps) {
@@ -21,7 +21,17 @@ function ReadinessItem({ label, status, children, action, tone = 'review' }: Rea
       <p className="font-medium">
         {label}: {status}
       </p>
-      <p className={tone === 'ready' ? 'text-sm text-muted-foreground' : 'text-sm'}>{children}</p>
+      <p
+        className={
+          tone === 'ready'
+            ? 'text-sm text-muted-foreground'
+            : tone === 'blocking'
+              ? 'text-sm text-destructive'
+              : 'text-sm'
+        }
+      >
+        {children}
+      </p>
       {action && <div className="flex flex-wrap gap-2">{action}</div>}
     </li>
   );
@@ -54,6 +64,8 @@ export function BidReadinessSummary({
   onOpenMock(): void;
   onOpenLive(): void;
 }) {
+  const mockReady = policyReady && positionsReady && participantStagesConfigured && aDayConfigured;
+  const liveReady = mockReady && realActivationReviewCount === 0;
   return (
     <section
       aria-labelledby="bid-readiness-heading"
@@ -69,7 +81,8 @@ export function BidReadinessSummary({
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             Prepare and practice a Mock with saved working assumptions. Real remains separately
-            fail-closed until every activation review is resolved.
+            fail-closed until every activation review is resolved. {realActivationReviewCount} Real
+            activation {realActivationReviewCount === 1 ? 'review remains' : 'reviews remain'}.
           </p>
         </div>
         <Link
@@ -81,27 +94,25 @@ export function BidReadinessSummary({
       </div>
       <ul className="mt-4">
         <ReadinessItem
-          label="Policy"
-          status={policyReady ? 'Ready' : 'Review required'}
-          tone={policyReady ? 'ready' : 'review'}
+          label="Source package"
+          status={policyReady ? 'Ready' : 'Blocking'}
+          tone={policyReady ? 'ready' : 'blocking'}
           action={
             !policyReady ? (
               <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
-                Review policy
+                Review source decisions
               </Button>
             ) : undefined
           }
         >
           {policyReady
-            ? realActivationReviewCount > 0
-              ? `The working policy can support a Mock. ${realActivationReviewCount} Real activation reviews remain.`
-              : 'The saved Bid has a complete working policy and no open Real activation review.'
-            : 'A policy setting or configuration-level source decision still needs administrator review.'}
+            ? 'The saved version identifies its governing policy, source workbook, evidence dates, and dated administrative decisions.'
+            : 'A governing source or configuration-level decision is missing.'}
         </ReadinessItem>
         <ReadinessItem
           label="Positions"
-          status={positionsReady ? 'Ready' : 'Rules need review'}
-          tone={positionsReady ? 'ready' : 'review'}
+          status={positionsReady ? 'Ready' : 'Blocking'}
+          tone={positionsReady ? 'ready' : 'blocking'}
           action={
             !positionsReady ? (
               <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
@@ -115,12 +126,9 @@ export function BidReadinessSummary({
             : 'At least one biddable opportunity is missing or has an invalid rule.'}
         </ReadinessItem>
         <ReadinessItem
-          label="Bid order"
-          status={
-            participantStagesConfigured
-              ? 'Preview participant stages'
-              : 'Participant stages need setup'
-          }
+          label="Participants"
+          status={participantStagesConfigured ? 'Ready' : 'Blocking'}
+          tone={participantStagesConfigured ? 'ready' : 'blocking'}
           action={
             <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
               Review participants
@@ -132,8 +140,22 @@ export function BidReadinessSummary({
             : 'Add the saved participant sources before the server can review who will bid and in what order.'}
         </ReadinessItem>
         <ReadinessItem
+          label="Seniority / order"
+          status={participantStagesConfigured ? 'Ready' : 'Blocking'}
+          tone={participantStagesConfigured ? 'ready' : 'blocking'}
+          action={
+            <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
+              Review ordering evidence
+            </Button>
+          }
+        >
+          Captain and Lieutenant order uses the reviewed time-in-grade Bid ordinal; Firefighter
+          order uses the reviewed department-service Bid ordinal. No employee-ID or alphabetical
+          fallback is permitted.
+        </ReadinessItem>
+        <ReadinessItem
           label="Credentials"
-          status="Provisional source review required"
+          status="Needs Confirmation"
           action={
             <Link
               href={'/admin/targetsolutions' as Route}
@@ -143,14 +165,27 @@ export function BidReadinessSummary({
             </Link>
           }
         >
-          Compare the current TargetSolutions export before applying reviewed qualification
-          evidence. An active-only report never expires or removes a qualification; refresh with the
-          final post-September 30 export through the same workflow.
+          The authoritative annual baseline is evaluated as of September 24, 2026. A later approved
+          TargetSolutions or TeleStaff report can add, renew, correct, revoke, or explicitly remove
+          evidence; omission from a filtered report never removes a qualification.
         </ReadinessItem>
         <ReadinessItem
-          label="A-Day timing"
-          status={aDayConfigured ? 'Configured' : 'Source-backed timing is still needed'}
-          tone={aDayConfigured ? 'ready' : 'review'}
+          label="Specialty populations"
+          status={policyReady ? 'Ready' : 'Blocking'}
+          tone={policyReady ? 'ready' : 'blocking'}
+          action={
+            <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
+              Review specialties
+            </Button>
+          }
+        >
+          Review qualification-based specialized stages and the fixed six-member SWAT distribution
+          before rehearsal.
+        </ReadinessItem>
+        <ReadinessItem
+          label="A-Day constraints"
+          status={aDayConfigured ? 'Ready' : 'Blocking'}
+          tone={aDayConfigured ? 'ready' : 'blocking'}
           action={
             <Button type="button" variant="secondary" onClick={() => onOpenEdit('a-day')}>
               Review A-Day
@@ -159,11 +194,11 @@ export function BidReadinessSummary({
         >
           {aDayConfigured
             ? 'Review the saved timing, limits, exceptions, and their policy references.'
-            : 'Add the approved timing source and limits before relying on A-Day controls.'}
+            : 'Save the four-group mapping and the explicit Marine, SWAT, DE, and policy-backed constraints before rehearsal.'}
         </ReadinessItem>
         <ReadinessItem
-          label="Operator"
-          status="Confirm permissions"
+          label="Operators / permissions"
+          status="Needs Confirmation"
           action={
             <Button type="button" variant="secondary" onClick={onOpenLive}>
               Review operator access
@@ -174,26 +209,37 @@ export function BidReadinessSummary({
           server remains the authority for Live permissions.
         </ReadinessItem>
         <ReadinessItem
+          label="Operating settings"
+          status={realActivationReviewCount > 0 ? 'Needs Confirmation' : 'Ready'}
+          tone={realActivationReviewCount > 0 ? 'review' : 'ready'}
+          action={
+            <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
+              Review operating settings
+            </Button>
+          }
+        >
+          Confirm the staffing transition effective date before Live. Evaluation dates, three-day
+          duration, 300-second timer, and operator-discretion contact handling remain editable and
+          auditable.
+        </ReadinessItem>
+        <ReadinessItem
           label="Mock rehearsal"
-          status={policyReady ? 'Ready to prepare safely' : 'Working setup required'}
-          tone={policyReady ? 'ready' : 'review'}
+          status={mockReady ? 'Ready' : 'Blocking'}
+          tone={mockReady ? 'ready' : 'blocking'}
           action={
             <Button type="button" variant="secondary" onClick={onOpenMock}>
               Prepare Mock
             </Button>
           }
         >
-          {policyReady
+          {mockReady
             ? 'A Mock can use the saved working assumptions without granting Real authority.'
-            : 'Finish the working setup, then practice selections, unreachable-member handling, and specialty fallback.'}
+            : 'Finish the source, positions, participants, ordering, and A-Day setup, then practice selections, unreachable-member handling, and specialty fallback.'}
         </ReadinessItem>
         <ReadinessItem
-          label="Live"
-          status={
-            realActivationReviewCount > 0
-              ? `${realActivationReviewCount} activation reviews remain`
-              : 'Check final readiness'
-          }
+          label="Live readiness"
+          status={liveReady ? 'Ready' : 'Needs Confirmation'}
+          tone={liveReady ? 'ready' : 'review'}
           action={
             <Button type="button" variant="secondary" onClick={onOpenLive}>
               Check Managed Live readiness

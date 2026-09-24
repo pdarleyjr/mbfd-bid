@@ -98,6 +98,56 @@ describe('POST /api/admin/eligibility/preview', () => {
     expect(body.eligible).toBe(true);
   });
 
+  it('builds the official position list and downloads single-position Excel and PDF', async () => {
+    await h.db.run(
+      "UPDATE members SET employment_status='active', employment_status_effective_on='2026-01-01', rank_seniority=1 WHERE id=80;",
+    );
+    await h.db.run("INSERT INTO credentials (id, name) VALUES (1, 'Paramedic');");
+    await h.db.run('INSERT INTO member_credentials (member_id, credential_id) VALUES (80, 1);');
+    const authorization = `Bearer ${await adminJwt()}`;
+    const base =
+      'http://x/api/admin/eligibility?position_id=A205&rule_book_version=2026.1&as_of=2026-09-24&bid_year=2026';
+    const list = await app.fetch(
+      new Request(base.replace('/eligibility?', '/eligibility/list?'), {
+        headers: { Authorization: authorization },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({
+      positionId: 'A205',
+      asOf: '2026-09-24',
+      eligible: [{ priority: 1, member: { employeeId: '80080' } }],
+      excluded: [],
+      dataBlocked: [],
+    });
+
+    for (const format of ['xlsx', 'pdf'] as const) {
+      const response = await app.fetch(
+        new Request(
+          `${base.replace('/eligibility?', '/eligibility/export?')}&format=${format}&scope=single`,
+          { headers: { Authorization: authorization } },
+        ),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(response.status).toBe(200);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      expect(bytes.length).toBeGreaterThan(500);
+      expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe(
+        format === 'pdf' ? '%PDF' : 'PK\u0003\u0004',
+      );
+    }
+    const massExport = await app.fetch(
+      new Request(
+        `${base.replace('/eligibility?', '/eligibility/export?')}&format=xlsx&scope=all`,
+        { headers: { Authorization: authorization } },
+      ),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(massExport.status).toBe(200);
+    expect(massExport.headers.get('content-disposition')).toContain('all-positions');
+  });
+
   it('uses effective-dated qualification evidence instead of a timeless legacy credential row', async () => {
     await h.db.run("INSERT INTO credentials (id, name) VALUES (1, 'Paramedic');");
     await h.db.run(

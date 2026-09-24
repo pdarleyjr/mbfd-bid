@@ -543,7 +543,10 @@ function validateAnnualPolicyReferences(
   const biddablePositionIds = new Set(material.rules.map((rule) => rule.positionId));
   const memberById = new Map(members.map((member) => [member.memberId, member]));
   const positionById = new Map(material.positions.map((position) => [position.id, position]));
-  const stagedMembers = livePolicy.stages.flatMap((stage) => stage.memberIds);
+  const hasOrdinaryStages = livePolicy.stages.some((stage) => stage.kind !== 'D_SHIFT');
+  const stagedMembers = livePolicy.stages
+    .filter((stage) => !hasOrdinaryStages || stage.kind !== 'D_SHIFT')
+    .flatMap((stage) => stage.memberIds);
   const stagedMemberIds = new Set(stagedMembers);
   if (
     snapshot !== null &&

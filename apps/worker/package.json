@@ -44,6 +44,7 @@
     "parse5": "8.0.1",
     "read-excel-file": "9.3.10",
     "ulid": "2.4.0",
+    "write-excel-file": "4.1.1",
     "zod": "3.23.8"
   },
   "devDependencies": {
@@ -58,7 +59,6 @@
     "tsx": "4.22.1",
     "typescript": "5.6.3",
     "vitest": "4.1.11",
-    "wrangler": "4.125.0",
-    "write-excel-file": "4.1.1"
+    "wrangler": "4.125.0"
   }
 }

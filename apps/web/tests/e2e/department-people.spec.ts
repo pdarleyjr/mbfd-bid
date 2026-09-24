@@ -547,7 +547,7 @@ for (const viewport of [
     });
     await page.getByRole('link', { name: 'Import TargetSolutions', exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/department\/import\?source=targetsolutions$/);
-    await expect(page.getByRole('heading', { name: /TargetSolutions/ }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Update credentials' })).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
     ).toBeLessThanOrEqual(1);

@@ -80,8 +80,8 @@ export function evaluateFrozenADays(
       employeeId: String(m.memberId),
     }));
   const cap: GroupCapacityConfig = {
-    min: annual.aDay.min,
-    max: annual.aDay.max,
+    min: annual.aDay.min ?? 0,
+    max: annual.aDay.max ?? Math.max(1, members.length),
     officersRequired: execution.officersPerGroup ?? 0,
     officerMode: execution.officersPerGroup === null ? 'NONE' : 'EXACT',
   };
@@ -100,16 +100,20 @@ export function evaluateFrozenADays(
   };
   const constraints: ADayScopedConstraint[] = [
     ...execution.constraints,
-    {
-      id: 'captain-division-chief-limit',
-      label: 'Captain and Division Chief limit',
-      sourceRef: execution.sourceRef,
-      maximum: annual.aDay.captainDcMax,
-      positionIds: [],
-      memberIds: [],
-      ranks: ['CPT', 'DC'],
-      shifts: ['A', 'B', 'C'],
-    },
+    ...(annual.aDay.captainDcMax === null
+      ? []
+      : ([
+          {
+            id: 'captain-division-chief-limit',
+            label: 'Captain and Division Chief limit',
+            sourceRef: execution.sourceRef,
+            maximum: annual.aDay.captainDcMax,
+            positionIds: [],
+            memberIds: [],
+            ranks: ['CPT', 'DC'],
+            shifts: ['A', 'B', 'C'],
+          },
+        ] satisfies ADayScopedConstraint[])),
   ];
   const phase1Picks: { positionId: string; memberId: number; shift: 'A' | 'B' | 'C' | 'D' }[] = [];
   const simultaneousPicks: ADayPick[] = [];
@@ -187,7 +191,8 @@ export function evaluateFrozenADays(
     if (nextDeferredMemberId !== null)
       return { ok: false, code: 'A_DAY_DEFERRED_SELECTION_INCOMPLETE' };
     for (const entry of computeAllMeters(engine).groups) {
-      if (entry.meter.total < annual.aDay.min) return { ok: false, code: 'A_DAY_MINIMUM_NOT_MET' };
+      if (annual.aDay.min !== null && entry.meter.total < annual.aDay.min)
+        return { ok: false, code: 'A_DAY_MINIMUM_NOT_MET' };
       if (
         execution.officersPerGroup !== null &&
         entry.meter.officers !== execution.officersPerGroup

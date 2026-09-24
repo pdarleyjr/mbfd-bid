@@ -3,6 +3,7 @@ import { evaluateEligibility } from '@mbfd/eligibility';
 import { EligibilityPreviewSchema, type JwtPayload } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { getDb } from '../../db/index.js';
 import {
   credentials,
@@ -11,6 +12,15 @@ import {
   members,
   positionRules,
 } from '../../db/schema.js';
+import {
+  type EligibilityExportList,
+  generateEligibilityPdf,
+  generateEligibilityWorkbook,
+} from '../../exports/eligibility-lists.js';
+import {
+  EligibilityListLoadError,
+  loadAdminEligibilityListContext,
+} from '../../lib/admin-eligibility-list.js';
 import { operationalDate } from '../../lib/operational-date.js';
 import { isIsoCalendarDate } from '../../lib/personnel-lifecycle.js';
 import { decodeRuleBookRows } from '../../lib/position-rule.js';
@@ -25,6 +35,107 @@ type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
+
+const EligibilityListQuerySchema = z
+  .object({
+    position_id: z.string().regex(/^[A-D]\d{3}$/),
+    rule_book_version: z.string().regex(/^\d{4}\.\d+$/),
+    as_of: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    bid_year: z.coerce.number().int().min(2024).max(2100).default(2026),
+  })
+  .strict();
+
+const EligibilityExportQuerySchema = z
+  .object({
+    format: z.enum(['xlsx', 'pdf']),
+    rule_book_version: z.string().regex(/^\d{4}\.\d+$/),
+    as_of: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    bid_year: z.coerce.number().int().min(2024).max(2100).default(2026),
+    position_id: z
+      .string()
+      .regex(/^[A-D]\d{3}$/)
+      .optional(),
+    scope: z.enum(['single', 'all']).default('single'),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.scope === 'single' && value.position_id === undefined)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['position_id'], message: 'required' });
+  });
+
+router.get('/export', zValidator('query', EligibilityExportQuerySchema), async (c) => {
+  const query = c.req.valid('query');
+  const asOf = query.as_of ?? operationalDate();
+  if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
+  const db = getDb(c.env.DB);
+  let context: Awaited<ReturnType<typeof loadAdminEligibilityListContext>>;
+  try {
+    context = await loadAdminEligibilityListContext({
+      db,
+      ruleBookVersion: query.rule_book_version,
+      asOf,
+      bidYear: query.bid_year,
+    });
+  } catch (error) {
+    if (error instanceof EligibilityListLoadError) return c.json(error.body, error.status);
+    throw error;
+  }
+  const positionIds = query.scope === 'all' ? context.positionIds : [query.position_id as string];
+  if (positionIds.length === 0) return c.json({ error: 'rule_book_empty' }, 409);
+  if (positionIds.length > 250) return c.json({ error: 'export_position_limit_exceeded' }, 413);
+
+  const lists: EligibilityExportList[] = [];
+  try {
+    for (const positionId of positionIds) lists.push(context.evaluate(positionId));
+  } catch (error) {
+    if (error instanceof EligibilityListLoadError) return c.json(error.body, error.status);
+    throw error;
+  }
+  const stamp = asOf.replaceAll('-', '');
+  const scope = query.scope === 'all' ? 'all-positions' : positionIds[0];
+  if (query.format === 'xlsx') {
+    const blob = await generateEligibilityWorkbook(lists);
+    return new Response(blob, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="mbfd-eligibility-${scope}-${stamp}.xlsx"`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+  return new Response(generateEligibilityPdf(lists), {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="mbfd-eligibility-${scope}-${stamp}.pdf"`,
+      'Cache-Control': 'no-store',
+    },
+  });
+});
+
+router.get('/list', zValidator('query', EligibilityListQuerySchema), async (c) => {
+  const query = c.req.valid('query');
+  const asOf = query.as_of ?? operationalDate();
+  if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
+  const db = getDb(c.env.DB);
+  try {
+    const context = await loadAdminEligibilityListContext({
+      db,
+      ruleBookVersion: query.rule_book_version,
+      asOf,
+      bidYear: query.bid_year,
+    });
+    return c.json(context.evaluate(query.position_id));
+  } catch (error) {
+    if (error instanceof EligibilityListLoadError) return c.json(error.body, error.status);
+    throw error;
+  }
+});
 
 router.post('/preview', zValidator('json', EligibilityPreviewSchema), async (c) => {
   const { member_id, position_id, rule_book_version, as_of: requestedAsOf } = c.req.valid('json');

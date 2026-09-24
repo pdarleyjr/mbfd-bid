@@ -18,6 +18,7 @@ import {
   CheckField,
   ChoiceField,
   FieldSection,
+  NullableNumberField,
   NullableText,
   NumberField,
   OrderedChoices,
@@ -569,7 +570,7 @@ export function BidPolicyFields({
         <FieldSection title="Contact procedure">
           {ops ? (
             <>
-              <NumberField
+              <NullableNumberField
                 label="Minimum contact attempts"
                 min={0}
                 max={10}
@@ -587,7 +588,21 @@ export function BidPolicyFields({
                   { value: 'OPERATOR_DISCRETION', label: 'Operator discretion' },
                 ]}
                 onChange={(timingMode) =>
-                  changeOps({ ...ops, contact: { ...ops.contact, timingMode } })
+                  changeOps({
+                    ...ops,
+                    contact: {
+                      ...ops.contact,
+                      timingMode,
+                      minimumAttempts:
+                        timingMode === 'OPERATOR_DISCRETION'
+                          ? null
+                          : (ops.contact.minimumAttempts ?? 0),
+                      durationSeconds:
+                        timingMode === 'OPERATOR_DISCRETION'
+                          ? null
+                          : (ops.contact.durationSeconds ?? 0),
+                    },
+                  })
                 }
               />
               <CheckField
@@ -732,19 +747,19 @@ export function BidPolicyFields({
               }
               help="Choose the groups available for this annual Bid. The four established identifiers remain stable; a group not selected here is unavailable to the frozen execution engine."
             />
-            <NumberField
+            <NullableNumberField
               label="Minimum group size"
               value={ops.aDay.min}
               max={1000}
               onChange={(min) => changeOps({ ...ops, aDay: { ...ops.aDay, min } })}
             />
-            <NumberField
+            <NullableNumberField
               label="Maximum group size"
               value={ops.aDay.max}
               max={1000}
               onChange={(max) => changeOps({ ...ops, aDay: { ...ops.aDay, max } })}
             />
-            <NumberField
+            <NullableNumberField
               label="Captain / Division Chief maximum"
               value={ops.aDay.captainDcMax}
               max={1000}

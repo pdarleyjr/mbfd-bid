@@ -89,9 +89,14 @@ function liveSettings(grants: string[]) {
         id,
         label: id,
         order,
-        memberIds: [POLICY_MEMBER_ID + order],
+        memberIds:
+          order === 2
+            ? [POLICY_MEMBER_ID, POLICY_MEMBER_ID + order]
+            : order === 3
+              ? [POLICY_MEMBER_ID + 1, POLICY_MEMBER_ID + order]
+              : [POLICY_MEMBER_ID + order],
         opportunityPositionIds: ['A101'],
-        kind: order === 0 ? 'D_SHIFT' : 'MIXED',
+        kind: order <= 1 ? 'D_SHIFT' : 'MIXED',
       })),
       dispositions: LIVE_DISPOSITIONS.map((disposition) => ({
         disposition,
@@ -699,13 +704,15 @@ describe('POST /api/admin/bid-session/:id/start', () => {
           [sessionId],
         )
       ).results,
-    ).toEqual(
-      ANNUAL_STAGE_IDS.map((stageId, index) => ({
-        ordinal: index + 1,
-        member_id: POLICY_MEMBER_ID + index,
-        stage_id: stageId,
-      })),
-    );
+    ).toEqual([
+      { ordinal: 1, member_id: POLICY_MEMBER_ID, stage_id: 'D_CAPTAIN' },
+      { ordinal: 2, member_id: POLICY_MEMBER_ID + 1, stage_id: 'D_LIEUTENANT' },
+      { ordinal: 3, member_id: POLICY_MEMBER_ID, stage_id: 'ABC_CAPTAIN' },
+      { ordinal: 4, member_id: POLICY_MEMBER_ID + 2, stage_id: 'ABC_CAPTAIN' },
+      { ordinal: 5, member_id: POLICY_MEMBER_ID + 1, stage_id: 'ABC_LIEUTENANT' },
+      { ordinal: 6, member_id: POLICY_MEMBER_ID + 3, stage_id: 'ABC_LIEUTENANT' },
+      { ordinal: 7, member_id: POLICY_MEMBER_ID + 4, stage_id: 'ABC_FIREFIGHTER' },
+    ]);
     const canonical = await h.db.run(
       'SELECT current_seq, state_json FROM canonical_bid_session_state WHERE bid_session_id = ?',
       [sessionId],

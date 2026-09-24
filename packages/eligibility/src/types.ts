@@ -2,6 +2,10 @@ export type Rank = 'CHIEF' | 'DEP_CHIEF' | 'DC' | 'CPT' | 'LT' | 'FF';
 
 export interface Credential {
   name: string;
+  /** Optional lifecycle facts. Omitted values preserve legacy imported evidence. */
+  status?: 'active' | 'expired' | 'revoked' | 'removed';
+  effectiveOn?: string | null;
+  expiresOn?: string | null;
 }
 
 export interface Member {
@@ -154,4 +158,21 @@ export interface EligibilityResult {
   soPoints: number;
   moPoints: number;
   breakdown: PointsBreakdown;
+}
+
+export interface CohortDecision {
+  member: Member;
+  result: EligibilityResult;
+  priority: number | null;
+  orderingComponents: Partial<Record<TieBreakKey, number>>;
+  dataBlockers: string[];
+}
+
+export interface EligibilityCohortResult {
+  positionId: string;
+  ruleBookVersion: string;
+  asOf: string;
+  eligible: CohortDecision[];
+  excluded: CohortDecision[];
+  dataBlocked: CohortDecision[];
 }
