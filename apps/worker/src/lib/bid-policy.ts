@@ -12,6 +12,8 @@ import {
   type FrozenBidEligibilityMember,
   type FrozenBidPoolMember,
   FrozenLiveBidPolicySchema,
+  final2026BidRank,
+  isFinal2026NonBidder,
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { assignmentTermReviewBlocksPurpose, evaluateAssignmentTerms } from './assignment-terms.js';
@@ -1556,6 +1558,12 @@ export async function prepareCapturedBidEvaluation(
         ?.filter((row) => row.memberId === member.id && row.effectiveOn <= capturedOn)
         .sort((a, b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.revision - a.revision)[0];
       const personnelState = personnelStateByMember.get(member.id);
+      const bidRank = final2026BidRank(
+        policy.bidYear,
+        member.employeeId,
+        personnelState?.rank ?? member.rank,
+      );
+      const sourceExcluded = isFinal2026NonBidder(policy.bidYear, member.employeeId);
       const administrativeAssignment = assignmentByMember.get(member.id);
       const termPosition = administrativeAssignment
         ? positionByStaffingId.get(administrativeAssignment.staffingPositionId)
@@ -1640,7 +1648,7 @@ export async function prepareCapturedBidEvaluation(
               ),
             }
           : {}),
-        rank: personnelState?.rank ?? member.rank,
+        rank: bidRank,
         isProbationary: member.isProbationary,
         credentialNames: credentialNamesByMember.get(member.id) ?? [],
         scoringEvidence: {
@@ -1668,6 +1676,17 @@ export async function prepareCapturedBidEvaluation(
           }),
         ),
       };
+      if (sourceExcluded) {
+        return {
+          memberId: member.id,
+          pool: 'EXCLUDED',
+          rscSeniority: member.rscSeniority,
+          rankSeniority: member.rankSeniority,
+          exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+          authoritativeAssignmentId: null,
+          ...eligibility,
+        };
+      }
       if (
         personnelState?.employmentStatus !== 'active' &&
         !hasAcceptedMockParticipationEvidence &&
@@ -1792,7 +1811,7 @@ export async function prepareCapturedBidEvaluation(
         employeeId: member.employeeId,
         firstName: member.firstName,
         lastName: member.lastName,
-        rank: member.rank,
+        rank: final2026BidRank(policy.bidYear, member.employeeId, member.rank),
       }))
       .sort((left, right) => left.memberId - right.memberId),
     ruleBookMaterial,
