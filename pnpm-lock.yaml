@@ -84,6 +84,9 @@ importers:
       react-dom:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
+      read-excel-file:
+        specifier: 9.3.10
+        version: 9.3.10
       tailwind-merge:
         specifier: 2.5.4
         version: 2.5.4
@@ -202,6 +205,9 @@ importers:
       ulid:
         specifier: 2.4.0
         version: 2.4.0
+      write-excel-file:
+        specifier: 4.1.1
+        version: 4.1.1
       zod:
         specifier: 3.23.8
         version: 3.23.8
@@ -242,9 +248,6 @@ importers:
       wrangler:
         specifier: 4.125.0
         version: 4.125.0(@cloudflare/workers-types@5.20260820.1)(@types/node@25.8.0)
-      write-excel-file:
-        specifier: 4.1.1
-        version: 4.1.1
 
   packages/a-day:
     dependencies:

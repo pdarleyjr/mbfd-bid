@@ -44,7 +44,7 @@ const STATION_SIX_SOURCE = '2026.1';
 const STATION_SIX_TARGET = '2026.2';
 const STATION_SIX_RULE_BOOK = '2026.2';
 const REVIEWED_SOURCE_REFERENCE =
-  'User-supplied 2026 Bid policy v3, staffing guidance, assignment source, credentials package, and workbook package';
+  'Final July 2026 Bid Policy, staffing guidance, assignment source, credentials package, and workbook package';
 const ADMINISTRATIVE_DIVISION_CHIEF_BINDINGS = [
   { positionId: 'A211', shift: 'A Shift', shiftCode: 'A' },
   { positionId: 'B211', shift: 'B Shift', shiftCode: 'B' },
@@ -53,9 +53,8 @@ const ADMINISTRATIVE_DIVISION_CHIEF_BINDINGS = [
 const MARINE_COMMON = [
   'Merchant Mariner Credential (MMC)',
   'IADRS Swim Evaluation',
-  'Hazardous Materials Operations',
+  'Hazardous Materials Awareness',
   'Open Water Diver Certified',
-  'Fire Boat Operator Qualifications',
 ];
 
 type AdministrativeStaffingSlot = {
@@ -106,29 +105,57 @@ export function resolveStationSixAdministrativeBindings(
   return { ok: true, bindings };
 }
 
-function correctedMarineRule(positionId: string) {
+export function correctedMarineRule(positionId: string) {
   const suffix = positionId.slice(-1);
   const requiresDriverEngineer = suffix === '2' || suffix === '3';
-  const credentials = requiresDriverEngineer
-    ? [...MARINE_COMMON, 'Driver Engineer Qualified']
-    : MARINE_COMMON;
+  const roleCredential =
+    suffix === '1'
+      ? 'Metal Craft Officer Credential'
+      : suffix === '2'
+        ? 'Metal Craft Boat Operator Credential'
+        : suffix === '3'
+          ? 'Metal Craft Engineer Credential'
+          : 'Metal Craft Deckhand Credential';
+  const credentials = [
+    ...MARINE_COMMON,
+    roleCredential,
+    ...(requiresDriverEngineer ? ['Driver Engineer Qualified'] : []),
+  ];
   const items = [
-    ...credentials.map((credential) => ({ points: 1, credential })),
-    { points: 1, credential: 'Public Safety Diver' },
-    ...(suffix === '1' ? [] : [{ points: 2, credential: 'Car Seat Technician' }]),
+    { points: 1, credential: 'Public Safety Diver', requiresOpsPair: false },
+    ...(suffix === '1'
+      ? []
+      : [{ points: 1, credential: 'Car Seat Technician', requiresOpsPair: false }]),
   ];
   return {
     requiredCriteria: JSON.stringify({
       rank: [suffix === '1' ? 'CPT' : 'FF'],
       credentials,
+      postAward: [
+        {
+          id: 'marine-dri-public-safety-diver',
+          credential: 'DRI Public Safety Diver',
+          sourceRef: 'Final July 2026 Bid Policy Procedure 8',
+          deadline: {
+            unit: 'CALENDAR_MONTHS',
+            count: 3,
+            timeZone: 'America/New_York',
+            basis: 'FINAL_POSITION_AWARD',
+          },
+        },
+      ],
       custom: [],
     }),
     pointsPreference: JSON.stringify({
       max: items.reduce((total, item) => total + item.points, 0),
       items,
     }),
-    tieBreakChain: JSON.stringify(['points', 'mo_points', 'rsc_seniority', 'rank_seniority']),
-    notes: '2026 policy v3 Station 6 reconciliation from 2026-08-24 staffing source',
+    tieBreakChain: JSON.stringify([
+      'points',
+      suffix === '1' ? 'time_in_grade_bid_ordinal' : 'department_service_bid_ordinal',
+    ]),
+    notes:
+      'Final July 2026 policy Marine role requirements; required credentials are separate from optional preferences',
   };
 }
 
@@ -306,31 +333,20 @@ router.post('/bootstrap-reviewed-2026-source', requireStepUpAuth(), async (c) =>
     targetTemplate === undefined &&
     sourceBook?.status === 'archived' &&
     draftBook?.status === 'draft' &&
-    stateCounts.source_positions === 233 &&
+    stateCounts.source_positions === 228 &&
     stateCounts.target_positions === 0 &&
-    stateCounts.source_rules === 229 &&
-    stateCounts.draft_rules === 229 &&
-    stateCounts.source_participation === 3 &&
-    stateCounts.draft_participation === 3;
-  const postReconciliationComplete =
-    sourceTemplate !== undefined &&
-    targetTemplate !== undefined &&
-    sourceBook?.status === 'archived' &&
-    draftBook?.status === 'draft' &&
-    stateCounts.source_positions === 233 &&
-    stateCounts.target_positions === 242 &&
-    stateCounts.source_rules === 229 &&
-    stateCounts.draft_rules === 238 &&
-    stateCounts.source_participation === 3 &&
-    stateCounts.draft_participation === 3;
-  if (preReconciliationComplete || postReconciliationComplete) {
+    stateCounts.source_rules === 223 &&
+    stateCounts.draft_rules === 223 &&
+    stateCounts.source_participation === 5 &&
+    stateCounts.draft_participation === 5;
+  if (preReconciliationComplete) {
     return c.json({
       source_template_version: REVIEWED_2026_SOURCE_TEMPLATE,
       source_rule_book_version: REVIEWED_2026_SOURCE_TEMPLATE,
       draft_rule_book_version: REVIEWED_2026_DRAFT_RULE_BOOK,
-      source_positions: 233,
-      source_rules: 229,
-      administrative_positions: 3,
+      source_positions: 228,
+      source_rules: 223,
+      administrative_positions: 5,
       resumed: true,
     });
   }
@@ -358,9 +374,9 @@ router.post('/bootstrap-reviewed-2026-source', requireStepUpAuth(), async (c) =>
        VALUES (?, 2026, 'draft', ?), (?, 2026, 'draft', ?)`,
     ).bind(
       REVIEWED_2026_SOURCE_TEMPLATE,
-      'Reviewed immutable 2026.1 source snapshot; never published as the production policy',
+      'Reviewed immutable final 2026 source snapshot; never published as the production policy',
       REVIEWED_2026_DRAFT_RULE_BOOK,
-      'Editable 2026.2 draft cloned from the reviewed source package',
+      'Editable final 2026 draft cloned from the reviewed source package',
     ),
   ];
 
@@ -423,7 +439,7 @@ router.post('/bootstrap-reviewed-2026-source', requireStepUpAuth(), async (c) =>
           ruleBookVersion,
           positionId,
           REVIEWED_2026_SOURCE_TEMPLATE,
-          '2026 Bid Policy v3 administrative Division Chief direction',
+          'Final July 2026 Bid Policy and 2026-09-24 administrative source decisions',
           Date.now(),
         ]),
       ),
@@ -488,38 +504,77 @@ router.post('/reconcile-station-six', requireStepUpAuth(), async (c) => {
   }
 
   const db = getDb(c.env.DB);
-  const [year, sourceTemplate, targetTemplate, draft, sourcePositions, sourceRules, staffingRows] =
-    await Promise.all([
-      db.select().from(bidYears).where(eq(bidYears.year, 2026)).get(),
-      db
-        .select()
-        .from(positionTemplates)
-        .where(eq(positionTemplates.version, STATION_SIX_SOURCE))
-        .get(),
-      db
-        .select()
-        .from(positionTemplates)
-        .where(eq(positionTemplates.version, STATION_SIX_TARGET))
-        .get(),
-      db.select().from(ruleBooks).where(eq(ruleBooks.version, STATION_SIX_RULE_BOOK)).get(),
-      db.select().from(positions).where(eq(positions.templateVersion, STATION_SIX_SOURCE)).all(),
-      db
-        .select()
-        .from(positionRules)
-        .where(eq(positionRules.ruleBookVersion, STATION_SIX_RULE_BOOK))
-        .all(),
-      db
-        .select({
-          id: staffingPositions.id,
-          shift: staffingPositions.shift,
-          station: staffingPositions.station,
-          unit: staffingPositions.unit,
-          positionName: staffingPositions.positionName,
-          reviewStatus: staffingPositions.reviewStatus,
-        })
-        .from(staffingPositions)
-        .all(),
-    ]);
+  const [
+    year,
+    sourceTemplate,
+    targetTemplate,
+    draft,
+    sourcePositions,
+    sourceRules,
+    staffingRows,
+    finalTemplate,
+    finalPositionCount,
+    finalRuleCount,
+  ] = await Promise.all([
+    db.select().from(bidYears).where(eq(bidYears.year, 2026)).get(),
+    db
+      .select()
+      .from(positionTemplates)
+      .where(eq(positionTemplates.version, STATION_SIX_SOURCE))
+      .get(),
+    db
+      .select()
+      .from(positionTemplates)
+      .where(eq(positionTemplates.version, STATION_SIX_TARGET))
+      .get(),
+    db.select().from(ruleBooks).where(eq(ruleBooks.version, STATION_SIX_RULE_BOOK)).get(),
+    db.select().from(positions).where(eq(positions.templateVersion, STATION_SIX_SOURCE)).all(),
+    db
+      .select()
+      .from(positionRules)
+      .where(eq(positionRules.ruleBookVersion, STATION_SIX_RULE_BOOK))
+      .all(),
+    db
+      .select({
+        id: staffingPositions.id,
+        shift: staffingPositions.shift,
+        station: staffingPositions.station,
+        unit: staffingPositions.unit,
+        positionName: staffingPositions.positionName,
+        reviewStatus: staffingPositions.reviewStatus,
+      })
+      .from(staffingPositions)
+      .all(),
+    db
+      .select()
+      .from(positionTemplates)
+      .where(eq(positionTemplates.version, REVIEWED_2026_SOURCE_TEMPLATE))
+      .get(),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(positions)
+      .where(eq(positions.templateVersion, REVIEWED_2026_SOURCE_TEMPLATE))
+      .get(),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(positionRules)
+      .where(eq(positionRules.ruleBookVersion, REVIEWED_2026_DRAFT_RULE_BOOK))
+      .get(),
+  ]);
+  if (
+    finalTemplate !== undefined &&
+    finalPositionCount?.count === 228 &&
+    finalRuleCount?.count === 223
+  )
+    return c.json({
+      template_version: REVIEWED_2026_SOURCE_TEMPLATE,
+      rule_book_version: REVIEWED_2026_DRAFT_RULE_BOOK,
+      positions: 228,
+      rules: 223,
+      station_six_roles_per_shift: 6,
+      resumed: true,
+      supersedes_legacy_reconciliation: true,
+    });
   if (
     year === undefined ||
     (targetTemplate === undefined &&

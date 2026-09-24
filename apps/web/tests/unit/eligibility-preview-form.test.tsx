@@ -54,11 +54,12 @@ function renderForm() {
   const ruleBookVersion = container.querySelector<HTMLOutputElement>(
     '[data-testid="eligibility-rule-book-version"]',
   );
-  if (!form || !memberId || !positionId || !ruleBookVersion) {
+  const asOf = container.querySelector<HTMLInputElement>('[data-testid="eligibility-as-of"]');
+  if (!form || !memberId || !positionId || !ruleBookVersion || !asOf) {
     throw new Error('Eligibility preview controls did not render.');
   }
 
-  return { container, form, memberId, positionId, ruleBookVersion };
+  return { container, form, memberId, positionId, ruleBookVersion, asOf };
 }
 
 async function setInput(input: HTMLInputElement | HTMLSelectElement, value: string) {
@@ -107,7 +108,7 @@ describe('EligibilityPreviewForm', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const { form, memberId, positionId } = renderForm();
+    const { form, memberId, positionId, asOf } = renderForm();
     await setInput(memberId, '80');
     await setInput(positionId, 'A205');
 
@@ -120,6 +121,7 @@ describe('EligibilityPreviewForm', () => {
       member_id: 80,
       position_id: 'A205',
       rule_book_version: '2027.2',
+      as_of: asOf.value,
     });
   });
 });

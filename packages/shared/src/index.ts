@@ -122,3 +122,11 @@ export {
   bidOrdinalValue,
 } from './schemas/bid-ordinal.js';
 export type { FrozenBidOrdinalEvidence } from './schemas/bid-ordinal.js';
+export {
+  FINAL_2026_ACTIVE_BIDDERS,
+  FINAL_2026_AS_OF,
+  FINAL_2026_BLOOMFIELD,
+  FINAL_2026_EXCLUDED_EMPLOYEE_IDS,
+  FINAL_2026_SWAT_EMPLOYEE_IDS,
+  FINAL_2026_TOPOLOGY,
+} from './constants/final-2026.js';

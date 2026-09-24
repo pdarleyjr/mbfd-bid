@@ -272,7 +272,10 @@ export function resolveStageParticipantMembership(input: {
     if (!selected.ok) return selected;
     const members = [...selected.members].sort((left, right) => left.memberId - right.memberId);
     const memberIds = members.map((member) => member.memberId);
-    const duplicate = memberIds.find((memberId) => includedMemberIds.has(memberId));
+    const duplicate =
+      stage.kind === 'D_SHIFT'
+        ? undefined
+        : memberIds.find((memberId) => includedMemberIds.has(memberId));
     if (duplicate !== undefined)
       return {
         ok: false,
@@ -280,7 +283,7 @@ export function resolveStageParticipantMembership(input: {
         stageId: stage.id,
         memberIds: [duplicate],
       };
-    for (const memberId of memberIds) includedMemberIds.add(memberId);
+    if (stage.kind !== 'D_SHIFT') for (const memberId of memberIds) includedMemberIds.add(memberId);
     for (const member of members) authoredPopulationRanks.add(member.rank);
     stages.push({
       stageId: stage.id,

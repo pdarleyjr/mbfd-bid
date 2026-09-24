@@ -37,6 +37,7 @@
     "next": "15.5.24",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "read-excel-file": "9.3.10",
     "tailwind-merge": "2.5.4",
     "zod": "3.23.8",
     "zustand": "5.0.0"

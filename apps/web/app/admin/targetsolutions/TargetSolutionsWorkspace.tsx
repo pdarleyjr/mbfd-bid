@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { AnnualRequestError, annualGet, annualPost } from '../annual-plan/annual-plan-client';
+import { credentialSourceText } from './credential-source-file';
 import { retryImportGroup } from './import-retry';
 
 type Row = {
@@ -43,6 +44,7 @@ type Detail = {
     issueDates: boolean;
     explicitStatus: boolean;
     activeOnly: boolean;
+    authoritativeBaseline?: boolean;
   };
   counts: Record<string, number>;
   rows: Row[];
@@ -189,7 +191,11 @@ export function TargetSolutionsWorkspace({
     await action(async () => {
       const result = await annualPost<{ id: string }>(
         'targetsolutions/imports',
-        { csv: await file.text(), filename: file.name, ...(date ? { observed_on: date } : {}) },
+        {
+          csv: await credentialSourceText(file),
+          filename: file.name,
+          ...(date ? { observed_on: date } : {}),
+        },
         crypto.randomUUID(),
       );
       setRetainedFile(file);
@@ -282,20 +288,21 @@ export function TargetSolutionsWorkspace({
     <div className="mx-auto max-w-7xl space-y-6">
       <header>
         <p className="text-sm text-muted-foreground">People / Credential imports</p>
-        <Heading className="mt-1 font-heading text-3xl">Update from TargetSolutions</Heading>
+        <Heading className="mt-1 font-heading text-3xl">Update credentials</Heading>
         <p className="mt-2 max-w-3xl">
-          Upload the credential report, review differences, then apply approved updates. Employee
-          IDs identify people; existing qualifications retain their history.
+          Upload an approved TargetSolutions or TeleStaff CSV, or the authoritative annual Bid
+          workbook. Review differences before applying them. Employee IDs identify people; existing
+          qualifications retain their history.
         </p>
       </header>
       <section className="rounded-lg border border-border bg-card p-5">
         <h2 className="text-lg font-semibold">1. Upload or resume</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Label>
-            TargetSolutions CSV
+            Credential report (CSV or approved Excel workbook)
             <Input
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               disabled={busy}
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />

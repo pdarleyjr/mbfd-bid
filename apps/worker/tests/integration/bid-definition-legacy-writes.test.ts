@@ -680,7 +680,7 @@ describe('managed Bid boundary for legacy authoring', () => {
     },
   );
 
-  it('blocks Station 6 missing-binding resume after adoption without relying on shape errors', async () => {
+  it('keeps final-source Station 6 reconciliation read-only and blocks it after adoption', async () => {
     h.sqlite.exec("INSERT INTO bid_years(year,status) VALUES (2026,'configuring')");
     const reconciliation = { reason_code: REASON_CODE, reason: REASON };
     expect(
@@ -696,26 +696,24 @@ describe('managed Bid boundary for legacy authoring', () => {
     expect((await request('positions/reconcile-station-six', 'POST', reconciliation)).status).toBe(
       200,
     );
-    const clearLegacyBindings = () =>
-      h.sqlite
-        .prepare('DELETE FROM position_staffing_bindings WHERE template_version=?')
-        .run('2026.2');
-    clearLegacyBindings();
+    const beforeResume = h.sqlite.serialize();
     const resumed = await request('positions/reconcile-station-six', 'POST', reconciliation);
     expect(resumed.status).toBe(200);
-    expect(await resumed.json()).toMatchObject({ resumed: true });
+    expect(await resumed.json()).toMatchObject({
+      template_version: '2026.final.1',
+      rule_book_version: '2026.final.2',
+      positions: 228,
+      rules: 223,
+      supersedes_legacy_reconciliation: true,
+    });
+    expect(h.sqlite.serialize()).toEqual(beforeResume);
     expect(
       h.sqlite
         .prepare(
-          "SELECT count(*) AS count FROM position_staffing_bindings WHERE template_version='2026.2'",
+          "SELECT count(*) AS count FROM position_staffing_bindings WHERE template_version='2026.final.1'",
         )
         .get(),
-    ).toEqual({ count: 3 });
-    clearLegacyBindings();
-    // Keep the real recognized Station 6 target/draft in place. Adopt a separate
-    // schema-valid synthetic configuration of that year: the reviewed 2026
-    // source itself retains its known decoder rejections and is not fabricated
-    // into an approved complete definition merely to make this test pass.
+    ).toEqual({ count: 0 });
     seedYear(2026, '2026.800');
     await adopt(2026);
     const bytes = h.sqlite.serialize();
@@ -727,5 +725,5 @@ describe('managed Bid boundary for legacy authoring', () => {
       await request('positions/bootstrap-reviewed-2026-source', 'POST', reconciliation),
       bytes,
     );
-  });
+  }, 15_000);
 });

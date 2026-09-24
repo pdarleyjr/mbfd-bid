@@ -9,6 +9,22 @@ function firstRow() {
   return row;
 }
 describe('TargetSolutions source interpretation', () => {
+  it('accepts the authoritative 2026 baseline headers and keeps blank expiration held', () => {
+    const report = parseTargetSolutions(
+      'First Name,Last Name,Employee ID,Rank,Credential Name,Start Date,Expiration Date\nJamie,Example,0012,Firefighter,Hazardous Materials Operations,2020-01-15,',
+    );
+    expect(report.errors).toEqual([]);
+    expect(report.coverage).toMatchObject({ authoritativeBaseline: true, issueDates: true });
+    expect(report.rows).toEqual([
+      expect.objectContaining({
+        employeeId: '0012',
+        credentialName: 'Hazardous Materials Operations',
+        status: 'active',
+        effectiveOn: '2020-01-15',
+        expiresOn: null,
+      }),
+    ]);
+  });
   it('reads report preambles and quoted CSV without converting employee identities', () => {
     const report = parseTargetSolutions(exportText);
     expect(report.rows).toHaveLength(1);

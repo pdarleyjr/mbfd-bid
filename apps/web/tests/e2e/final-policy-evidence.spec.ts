@@ -29,7 +29,11 @@ test('pending source procedures remain visible and cannot be promoted with unres
         })),
         annualOperations: {
           ...annual,
-          contact: { ...annual.contact, minimumAttempts: null },
+          contact: {
+            minimumAttempts: null,
+            timingMode: 'OPERATOR_DISCRETION',
+            durationSeconds: null,
+          },
           aDay: { ...annual.aDay, min: null, max: null, captainDcMax: null },
         },
       },

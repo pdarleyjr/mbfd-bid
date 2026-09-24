@@ -78,6 +78,42 @@ export function NumberField({
     </div>
   );
 }
+export function NullableNumberField({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max,
+  emptyLabel = 'No fixed limit',
+}: {
+  label: string;
+  value: number | null;
+  onChange(value: number | null): void;
+  min?: number;
+  max?: number;
+  emptyLabel?: string;
+}) {
+  const id = useId();
+  return (
+    <div className="min-w-0 space-y-1">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        value={value ?? ''}
+        placeholder={emptyLabel}
+        onChange={(event) => {
+          if (event.target.value === '') return onChange(null);
+          const next = Number(event.target.value);
+          if (Number.isFinite(next)) onChange(next);
+        }}
+      />
+      {value === null && <p className="text-xs text-muted-foreground">{emptyLabel}</p>}
+    </div>
+  );
+}
 export function ChoiceField<T extends string>({
   label,
   value,

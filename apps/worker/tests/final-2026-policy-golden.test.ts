@@ -289,7 +289,7 @@ describe('final July2026 source golden cases through the profile compiler', () =
     // represent reviewed facts; this does not approve aliases in a live catalog.
     // Oracle Points!ET5/FQ5 tests preference-inclusive totals; never reproduce
     // their ability to compensate for a missing minimum. Operations is not an
-    // automatically approved substitute for the PDF's Awareness requirement.
+    // approved 2026 one-way substitute for the PDF's Awareness requirement.
     const awareness = 'HazMat Awareness';
     const common = [
       'Valid MMC with OUPV / Six Pack endorsement',
@@ -371,8 +371,8 @@ describe('final July2026 source golden cases through the profile compiler', () =
         expectRejected(syntheticMember([...common, de, otherCraft, ...optional], role.rank), rule);
       });
 
-      it('does not silently replace Awareness with the spreadsheet Operations requirement', () => {
-        expectRejected(
+      it('accepts the approved one-way Operations equivalency for Awareness', () => {
+        const result = evaluateEligibility(
           syntheticMember(
             [
               ...minimums.filter((name) => name !== awareness),
@@ -382,6 +382,10 @@ describe('final July2026 source golden cases through the profile compiler', () =
             role.rank,
           ),
           rule,
+        );
+        expect(result.eligible).toBe(true);
+        expect(result.reasons).toEqual(
+          expect.arrayContaining([expect.objectContaining({ code: 'CRED_EQUIVALENT' })]),
         );
       });
 

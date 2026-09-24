@@ -242,7 +242,7 @@ export const FrozenAnnualOperationsPolicySchema = z
       .optional(),
     contact: z
       .object({
-        minimumAttempts: z.number().int().min(0).max(10),
+        minimumAttempts: z.number().int().min(0).max(10).nullable(),
         timingMode: z.enum(['HARD_MINIMUM', 'TARGET', 'OPERATOR_DISCRETION']),
         durationSeconds: z.number().int().min(0).max(86_400).nullable(),
         /** Explicit annual evidence policy; omitted only for pre-editor recovery material. */
@@ -250,6 +250,13 @@ export const FrozenAnnualOperationsPolicySchema = z
       })
       .strict()
       .superRefine((contact, ctx) => {
+        if (contact.timingMode !== 'OPERATOR_DISCRETION' && contact.minimumAttempts === null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['minimumAttempts'],
+            message: 'hard-minimum and target contact handling require an explicit attempt count',
+          });
+        }
         if (contact.timingMode !== 'OPERATOR_DISCRETION' && contact.durationSeconds === null) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -268,9 +275,9 @@ export const FrozenAnnualOperationsPolicySchema = z
           .refine((groups) => new Set(groups).size === groups.length, {
             message: 'A-Day combat groups must be unique',
           }),
-        min: z.number().int().min(0).max(1_000),
-        max: z.number().int().min(0).max(1_000),
-        captainDcMax: z.number().int().min(0).max(1_000),
+        min: z.number().int().min(0).max(1_000).nullable(),
+        max: z.number().int().min(0).max(1_000).nullable(),
+        captainDcMax: z.number().int().min(0).max(1_000).nullable(),
         /** Explicit execution policy for new versions; old snapshots are unchanged. */
         execution: z
           .object({
@@ -358,7 +365,7 @@ export const FrozenAnnualOperationsPolicySchema = z
         message: 'annual specialty topology position ids must be unique',
       });
     }
-    if (policy.aDay.min > policy.aDay.max) {
+    if (policy.aDay.min !== null && policy.aDay.max !== null && policy.aDay.min > policy.aDay.max) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['aDay'],
@@ -770,7 +777,7 @@ export const FrozenLiveBidPolicySchema = z
       });
     const stageIds = new Set<string>();
     const stageOrders = new Set<number>();
-    const memberIds = new Set<number>();
+    const memberStageKinds = new Map<number, Set<string>>();
     for (const [index, stage] of policy.stages.entries()) {
       if (stageIds.has(stage.id) || stageOrders.has(stage.order)) {
         context.addIssue({
@@ -804,14 +811,20 @@ export const FrozenLiveBidPolicySchema = z
         });
       }
       for (const memberId of stage.memberIds) {
-        if (memberIds.has(memberId)) {
+        const priorKinds = memberStageKinds.get(memberId) ?? new Set<string>();
+        const duplicatesOrdinaryStage =
+          stage.kind !== 'D_SHIFT' && [...priorKinds].some((kind) => kind !== 'D_SHIFT');
+        const duplicatesSpecialtyStage = stage.kind === 'D_SHIFT' && priorKinds.has('D_SHIFT');
+        if (duplicatesOrdinaryStage || duplicatesSpecialtyStage) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['stages', index, 'memberIds'],
-            message: 'a member may occur in only one frozen stage',
+            message:
+              'a member may occur in one ordinary stage and one Days/Specialized eligibility stage',
           });
         }
-        memberIds.add(memberId);
+        priorKinds.add(stage.kind);
+        memberStageKinds.set(memberId, priorKinds);
       }
     }
     const dispositions = new Set(policy.dispositions.map((rule) => rule.disposition));

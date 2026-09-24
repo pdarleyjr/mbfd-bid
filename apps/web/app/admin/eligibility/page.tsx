@@ -71,7 +71,7 @@ export default async function EligibilityPreviewPage({
 
   if (binding.error !== null) {
     return (
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-6xl">
         <h1 className="font-heading text-2xl text-foreground">Eligibility Preview</h1>
         <p className="mt-6 rounded border border-warning/40 bg-warning-surface p-4 text-sm text-warning">
           {binding.error}{' '}
@@ -85,7 +85,7 @@ export default async function EligibilityPreviewPage({
 
   const selectors = await loadSelectorOptions(binding.configuration.positionTemplateVersion);
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-6xl">
       <h1 className="font-heading text-2xl text-foreground">Eligibility Preview</h1>
       <p className="mt-2 text-sm text-foreground">
         Review one configured member and position against the exact designated rule book. The

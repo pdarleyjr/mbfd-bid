@@ -1,4 +1,4 @@
-import { requiredCredsSatisfied } from './criteria/certs.js';
+import { credentialSatisfiesMinimum, requiredCredsSatisfied } from './criteria/certs.js';
 import { driverEngineerSatisfied } from './criteria/driver-engineer.js';
 import { nonProbationarySatisfied } from './criteria/non-probationary.js';
 import { paramedicSatisfied } from './criteria/paramedic.js';
@@ -40,15 +40,36 @@ function evaluateWithChannels(
   channels?: EligibilityChannels,
 ): EligibilityResult {
   const reasons: EligibilityReason[] = [];
+  const evaluationOn = member.scoringEvidence?.evaluationOn;
+  const activeMember: Member = {
+    ...member,
+    credentials: member.credentials.filter(
+      (credential) =>
+        (credential.status === undefined || credential.status === 'active') &&
+        (evaluationOn === undefined ||
+          credential.effectiveOn === undefined ||
+          credential.effectiveOn === null ||
+          credential.effectiveOn <= evaluationOn) &&
+        (evaluationOn === undefined ||
+          credential.expiresOn === undefined ||
+          credential.expiresOn === null ||
+          credential.expiresOn >= evaluationOn),
+    ),
+  };
 
   reasons.push(rankSatisfied(member, rule.requiredCriteria.rank));
   reasons.push(...requiredCredsSatisfied(member, rule.requiredCriteria.credentials));
-  const held = new Set(member.credentials.map((credential) => credential.name));
   for (const [index, group] of (rule.requiredCriteria.anyOfCredentials ?? []).entries())
     reasons.push({
       code: `qualification_alternative_${index + 1}`,
       label: `Requires one of: ${group.join(' or ')}`,
-      satisfied: group.length > 0 && group.some((name) => held.has(name)),
+      satisfied:
+        group.length > 0 &&
+        group.some((name) =>
+          activeMember.credentials.some((credential) =>
+            credentialSatisfiesMinimum(credential.name, name),
+          ),
+        ),
     });
 
   for (const requirement of rule.requiredCriteria.service ?? []) {
@@ -69,13 +90,13 @@ function evaluateWithChannels(
   for (const gate of rule.requiredCriteria.custom) {
     switch (gate) {
       case 'paramedic':
-        reasons.push(paramedicSatisfied(member));
+        reasons.push(paramedicSatisfied(activeMember));
         break;
       case 'driver_engineer':
-        reasons.push(driverEngineerSatisfied(member));
+        reasons.push(driverEngineerSatisfied(activeMember));
         break;
       case 'non_probationary':
-        reasons.push(nonProbationarySatisfied(member));
+        reasons.push(nonProbationarySatisfied(activeMember));
         break;
     }
   }
@@ -95,9 +116,9 @@ function evaluateWithChannels(
 
   const configured = rule.pointsPreference.scoring;
   if (configured !== undefined) {
-    const total = configuredChannel(member, configured.total);
-    const so = configuredChannel(member, configured.so);
-    const mo = configuredChannel(member, configured.mo);
+    const total = configuredChannel(activeMember, configured.total);
+    const so = configuredChannel(activeMember, configured.so);
+    const mo = configuredChannel(activeMember, configured.mo);
     if (channels) {
       channels.total = total;
       channels.so = so;
@@ -108,7 +129,10 @@ function evaluateWithChannels(
       ...(configured.orderedPreference === undefined
         ? {}
         : {
-            orderedPreference: evaluateOrderedPreference(member, configured.orderedPreference),
+            orderedPreference: evaluateOrderedPreference(
+              activeMember,
+              configured.orderedPreference,
+            ),
           }),
       reasons,
       points: total.total,
@@ -122,9 +146,9 @@ function evaluateWithChannels(
       },
     };
   }
-  const breakdown = computePoints(member, rule);
+  const breakdown = computePoints(activeMember, rule);
   const soPoints = computeSoPoints(
-    member,
+    activeMember,
     channels
       ? (credential) => {
           channels.so.itemized.push({ credential, awarded: 1 });
@@ -132,7 +156,7 @@ function evaluateWithChannels(
       : undefined,
   );
   const moPoints = computeMoPoints(
-    member,
+    activeMember,
     channels
       ? (credential, reason) => {
           channels.mo.itemized.push({

@@ -148,13 +148,14 @@ export function computeBidEvaluationStageOrder(
   const members = new Map(snapshot.members.map((member) => [member.memberId, member]));
   const included = new Set<number>();
   const entries: FrozenStageOrderEntry[] = [];
+  const hasOrdinaryStages = livePolicy.stages.some((stage) => stage.kind !== 'D_SHIFT');
   for (const stage of [...livePolicy.stages].sort((left, right) => left.order - right.order)) {
     const stageMembers = [] as typeof snapshot.members;
     for (const memberId of stage.memberIds) {
       const member = members.get(memberId);
       if (member === undefined) return { ok: false, code: 'stage_member_not_in_snapshot' };
       if (member.pool === 'EXCLUDED') return { ok: false, code: 'stage_member_excluded' };
-      included.add(memberId);
+      if (!hasOrdinaryStages || stage.kind !== 'D_SHIFT') included.add(memberId);
       stageMembers.push(member);
     }
     const configuredOrdering = orderingForStage({ policy: livePolicy, stage });

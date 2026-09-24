@@ -54,8 +54,19 @@ export function parseTargetSolutions(text: string) {
   const employee = index('employeeid', 'empid');
   const credential = index('credentialname');
   const expires = index('expirationdate', 'expireson', 'expirydate');
-  const effective = index('issuedate', 'completiondate', 'effectiveon');
+  const effective = index('issuedate', 'completiondate', 'effectiveon', 'startdate');
   const statusIndex = index('credentialstatus', 'status');
+  const authoritativeBaseline = [
+    'firstname',
+    'lastname',
+    'employeeid',
+    'rank',
+    'credentialname',
+    'startdate',
+    'expirationdate',
+  ]
+    .map((name) => index(name))
+    .every((column) => column >= 0);
   const preamble = parsed.data.slice(0, Math.max(0, headerIndex));
   const activeOnly = preamble.some(
     (row) =>
@@ -74,7 +85,7 @@ export function parseTargetSolutions(text: string) {
       ? `${stamp[3]}-${String(month).padStart(2, '0')}-${stamp[2]?.padStart(2, '0')}`
       : null;
   if (headerIndex < 0) errors.push('Employee ID and Credential Name columns are required.');
-  if (statusIndex < 0 && !activeOnly)
+  if (statusIndex < 0 && !activeOnly && !authoritativeBaseline)
     errors.push(
       'Include a credential status column or the report Active credential-status filter.',
     );
@@ -134,6 +145,7 @@ export function parseTargetSolutions(text: string) {
     sourceRowCount: Math.max(0, parsed.data.length - headerIndex - 1),
     coverage: {
       activeOnly,
+      authoritativeBaseline,
       expirationDates: expires >= 0,
       issueDates: effective >= 0,
       explicitStatus: statusIndex >= 0,

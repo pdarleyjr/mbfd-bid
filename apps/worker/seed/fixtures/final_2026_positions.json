@@ -1,0 +1,4562 @@
+[
+  {
+    "id": "A101",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 2,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A102",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 3,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A103",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 4,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A104",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 5,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "A105",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 6,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "A106",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 7,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "A107",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 8,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "A108",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 9,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "A109",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 10,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A110",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 11,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A111",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 12,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A112",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 13,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A113",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 14,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A114",
+    "shift": "A",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 15,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A201",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 16,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A202",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 17,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A203",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 AT",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 18,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A204",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 19,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "A205",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 20,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A206",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 21,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A207",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 22,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A208",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 23,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A209",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 24,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A210",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 25,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A211",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": 300,
+    "rankRequired": "DC",
+    "positionName": "Division Chief",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 26,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A212",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Captain 5",
+    "rankRequired": "CPT",
+    "positionName": "Captain 5",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 27,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A213",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Float 2",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #1 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 28,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A214",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Float 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 (C)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 29,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A215",
+    "shift": "A",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Float 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 30,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A301",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 31,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A302",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 32,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A303",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 33,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A304",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 34,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "A305",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 INV",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 35,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "A306",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 36,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "A307",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 37,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "A308",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 38,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "A309",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 39,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A310",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 40,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A311",
+    "shift": "A",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 41,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A401",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 42,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A402",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 43,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A403",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 44,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A404",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 45,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "A405",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 46,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A406",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 47,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A407",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 48,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A408",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 49,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A409",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 50,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A410",
+    "shift": "A",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 51,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A601",
+    "shift": "A",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 52,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A602",
+    "shift": "A",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter FBO",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 53,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A603",
+    "shift": "A",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter ENG",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 54,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A604",
+    "shift": "A",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DH",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 55,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "A605",
+    "shift": "A",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Marine Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter Float",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 56,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "A606",
+    "shift": "A",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Marine Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter Float",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 57,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "A701",
+    "shift": "A",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #1 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 58,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A702",
+    "shift": "A",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #2 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 59,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A703",
+    "shift": "A",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 60,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A704",
+    "shift": "A",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 61,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "A705",
+    "shift": "A",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 62,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "A706",
+    "shift": "A",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 63,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "A707",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 64,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "A708",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 65,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "A709",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 66,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "A710",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 67,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "A711",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 68,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "A712",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 69,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "A713",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #5",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 70,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "A714",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #6",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 71,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "A715",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #7",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 72,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 9,
+      "correction": null
+    }
+  },
+  {
+    "id": "A716",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #8",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 73,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 10,
+      "correction": null
+    }
+  },
+  {
+    "id": "A717",
+    "shift": "A",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #9",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 74,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 11,
+      "correction": null
+    }
+  },
+  {
+    "id": "A801",
+    "shift": "A",
+    "station": "Union President",
+    "division": "Combat",
+    "unit": "Union President",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": true,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 75,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B101",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 76,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B102",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 77,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B103",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 78,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B104",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 79,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "B105",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 80,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "B106",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 81,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "B107",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 82,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "B108",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 83,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "B109",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 84,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B110",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 85,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B111",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 86,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B112",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 87,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B113",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 88,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B114",
+    "shift": "B",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 89,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B201",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 90,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B202",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 91,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B203",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 AT",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 92,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B204",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 93,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "B205",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 94,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B206",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 95,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B207",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 96,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B208",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 97,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B209",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 98,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B210",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 99,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B211",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": 300,
+    "rankRequired": "DC",
+    "positionName": "Division Chief",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 100,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B212",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Captain 5",
+    "rankRequired": "CPT",
+    "positionName": "Captain 5",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 101,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B213",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Float 2",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #1 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 102,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B214",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Float 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 (C)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 103,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": "2026-09-24 administrative decision: runtime Division is Combat; raw MASTER label retained"
+    }
+  },
+  {
+    "id": "B215",
+    "shift": "B",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Float 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 104,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B301",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 105,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B302",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 106,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B303",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 107,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B304",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 108,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "B305",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 INV",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 109,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "B306",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 110,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "B307",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 111,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "B308",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 112,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "B309",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 113,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B310",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 114,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B311",
+    "shift": "B",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 115,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B401",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 116,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B402",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 117,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B403",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 118,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B404",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 119,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "B405",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 120,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B406",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 121,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B407",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 122,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B408",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 123,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B409",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 124,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B410",
+    "shift": "B",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 125,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B601",
+    "shift": "B",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 126,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B602",
+    "shift": "B",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter FBO",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 127,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B603",
+    "shift": "B",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter ENG",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 128,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B604",
+    "shift": "B",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DH",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 129,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "B605",
+    "shift": "B",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Marine Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter Float",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 130,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "B606",
+    "shift": "B",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Marine Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter Float",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 131,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "B701",
+    "shift": "B",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #1 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 132,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B702",
+    "shift": "B",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #2 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 133,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B703",
+    "shift": "B",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 134,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B704",
+    "shift": "B",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 135,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "B705",
+    "shift": "B",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 136,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "B706",
+    "shift": "B",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 137,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "B707",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 138,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "B708",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 139,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "B709",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 140,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "B710",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 141,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "B711",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 142,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "B712",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 143,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "B713",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #5",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 144,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "B714",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #6",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 145,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "B715",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #7",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 146,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 9,
+      "correction": null
+    }
+  },
+  {
+    "id": "B716",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #8",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 147,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 10,
+      "correction": null
+    }
+  },
+  {
+    "id": "B717",
+    "shift": "B",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #9",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 148,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 11,
+      "correction": null
+    }
+  },
+  {
+    "id": "C101",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 149,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C102",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 150,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C103",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 151,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C104",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 152,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "C105",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 153,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "C106",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 154,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "C107",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 155,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "C108",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Combat",
+    "unit": "Combat 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 156,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "C109",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 157,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C110",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 158,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C111",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 1",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 159,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C112",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 160,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C113",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 161,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C114",
+    "shift": "C",
+    "station": "Station #1",
+    "division": "Rescue",
+    "unit": "Rescue 11",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 162,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C201",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 163,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C202",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 164,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C203",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 AT",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 165,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C204",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Engine 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 166,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "C205",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 167,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C206",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 168,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C207",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 169,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C208",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 170,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C209",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 171,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C210",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Rescue 22",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 172,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C211",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": 300,
+    "rankRequired": "DC",
+    "positionName": "Division Chief",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 173,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C212",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Captain 5",
+    "rankRequired": "CPT",
+    "positionName": "Captain 5",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 174,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C213",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Float 2",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #1 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 175,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C214",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Combat",
+    "unit": "Float 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 (C)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 176,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": "2026-09-24 administrative decision: runtime Division is Combat; raw MASTER label retained"
+    }
+  },
+  {
+    "id": "C215",
+    "shift": "C",
+    "station": "Station #2",
+    "division": "Rescue",
+    "unit": "Float 2",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 177,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C301",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 178,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C302",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 179,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C303",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 180,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C304",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 181,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "C305",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1 INV",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 182,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "C306",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 183,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "C307",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 184,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "C308",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Combat",
+    "unit": "Combat 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 185,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "C309",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 186,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C310",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 187,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C311",
+    "shift": "C",
+    "station": "Station #3",
+    "division": "Rescue",
+    "unit": "Rescue 3",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 188,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C401",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 189,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C402",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 190,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C403",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 191,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C404",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Combat",
+    "unit": "Engine 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 192,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "C405",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 193,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C406",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 194,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C407",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 4",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 195,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C408",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 196,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C409",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 197,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C410",
+    "shift": "C",
+    "station": "Station #4",
+    "division": "Rescue",
+    "unit": "Rescue 44",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 198,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C601",
+    "shift": "C",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 199,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C602",
+    "shift": "C",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter FBO",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 200,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C603",
+    "shift": "C",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter ENG",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 201,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C604",
+    "shift": "C",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Fire Boat 6",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DH",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 202,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "C605",
+    "shift": "C",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Marine Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter Float",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 203,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "C606",
+    "shift": "C",
+    "station": "Station #6",
+    "division": "Combat",
+    "unit": "Marine Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter Float",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 204,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "C701",
+    "shift": "C",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #1 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 205,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C702",
+    "shift": "C",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant #2 (R)",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 206,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C703",
+    "shift": "C",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 207,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C704",
+    "shift": "C",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 208,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "C705",
+    "shift": "C",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 209,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "C706",
+    "shift": "C",
+    "station": "Rescue Float Pool",
+    "division": "Rescue",
+    "unit": "Rescue Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 210,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "C707",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 211,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "C708",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter DE #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 212,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "C709",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #1",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 213,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 3,
+      "correction": null
+    }
+  },
+  {
+    "id": "C710",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #2",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 214,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 4,
+      "correction": null
+    }
+  },
+  {
+    "id": "C711",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #3",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 215,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 5,
+      "correction": null
+    }
+  },
+  {
+    "id": "C712",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #4",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 216,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 6,
+      "correction": null
+    }
+  },
+  {
+    "id": "C713",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #5",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 217,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 7,
+      "correction": null
+    }
+  },
+  {
+    "id": "C714",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #6",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 218,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 8,
+      "correction": null
+    }
+  },
+  {
+    "id": "C715",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #7",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 219,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 9,
+      "correction": null
+    }
+  },
+  {
+    "id": "C716",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #8",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 220,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 10,
+      "correction": null
+    }
+  },
+  {
+    "id": "C717",
+    "shift": "C",
+    "station": "Combat Float Pool",
+    "division": "Combat",
+    "unit": "Combat Float",
+    "rankRequired": "FF",
+    "positionName": "Firefighter #9",
+    "isFloating": true,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 221,
+      "sourceDivision": "Combat",
+      "sourceOrdinal": 11,
+      "correction": null
+    }
+  },
+  {
+    "id": "D101",
+    "shift": "D",
+    "station": "Days",
+    "division": "Prevention",
+    "unit": "Prevention",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 222,
+      "sourceDivision": "Prevention",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "D102",
+    "shift": "D",
+    "station": "Days",
+    "division": "Prevention",
+    "unit": "Special Events",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 223,
+      "sourceDivision": "Prevention",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "D103",
+    "shift": "D",
+    "station": "Days",
+    "division": "Prevention",
+    "unit": "Public Education",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 224,
+      "sourceDivision": "Prevention",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "D104",
+    "shift": "D",
+    "station": "Days",
+    "division": "Prevention",
+    "unit": "Special Events",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": false,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 225,
+      "sourceDivision": "Prevention",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  },
+  {
+    "id": "D201",
+    "shift": "D",
+    "station": "Days",
+    "division": "Rescue",
+    "unit": "EMS",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": true,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 226,
+      "sourceDivision": "Rescue",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "D301",
+    "shift": "D",
+    "station": "Days",
+    "division": "Support Services",
+    "unit": "Support Services",
+    "rankRequired": "CPT",
+    "positionName": "Captain",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": true,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 227,
+      "sourceDivision": "Support Services",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "D401",
+    "shift": "D",
+    "station": "Days",
+    "division": "Training",
+    "unit": "Training",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": true,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 228,
+      "sourceDivision": "Training",
+      "sourceOrdinal": 1,
+      "correction": null
+    }
+  },
+  {
+    "id": "D402",
+    "shift": "D",
+    "station": "Days",
+    "division": "Training",
+    "unit": "Training",
+    "rankRequired": "LT",
+    "positionName": "Lieutenant",
+    "isFloating": false,
+    "isVacantByDesign": false,
+    "isExcludedFromCount": true,
+    "source": {
+      "workbookSha256": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sheet": "Positions",
+      "row": 229,
+      "sourceDivision": "Training",
+      "sourceOrdinal": 2,
+      "correction": null
+    }
+  }
+]

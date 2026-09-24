@@ -11,6 +11,8 @@ export type {
   Rank,
   RequiredCriteria,
   TieBreakKey,
+  CohortDecision,
+  EligibilityCohortResult,
 } from './types.js';
 
 export {
@@ -38,4 +40,5 @@ export {
 } from './evaluate.js';
 export { configuredChannel } from './points/configured.js';
 export { evaluateOrderedPreference, compareOrderedPreferences } from './ordered-preference.js';
+export { evaluateEligibilityCohort } from './cohort.js';
 export type { OrderedPreferenceResult, OrderedQualificationPreference } from './types.js';

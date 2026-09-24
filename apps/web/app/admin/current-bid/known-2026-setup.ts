@@ -1,6 +1,9 @@
 import {
   type BidDefinitionContent,
   BidDefinitionContentSchema,
+  FINAL_2026_BLOOMFIELD,
+  FINAL_2026_EXCLUDED_EMPLOYEE_IDS,
+  FINAL_2026_SWAT_EMPLOYEE_IDS,
   FrozenLiveBidPolicySchema,
 } from '@mbfd/shared';
 
@@ -24,7 +27,6 @@ function stageMembers(
     NonNullable<BidDefinitionContent['pendingPolicy']>['stageParticipantSources']
   >,
   members: readonly BidMemberOption[],
-  dayStageRanks: ReadonlySet<string>,
 ) {
   const source = sources.find((entry) => entry.stageId === stage.id);
   if (!source) return [];
@@ -33,13 +35,20 @@ function stageMembers(
   const included = new Set(source.participantSource.includeMemberIds ?? []);
   const excluded = new Set(source.participantSource.excludeMemberIds ?? []);
   const ranks = new Set<string>(source.participantSource.ranks);
-  const partitionsDays = source.participantSource.ranks.some((rank) => dayStageRanks.has(rank));
+  const excludedEmployees = new Set<string>(FINAL_2026_EXCLUDED_EMPLOYEE_IDS);
   const selected = members
     .filter((member) => {
-      if (member.bidCategory === 'EXCLUDED' || !ranks.has(member.rank)) return false;
-      if (!partitionsDays) return true;
-      const assignedToDays = member.priorPositionId?.trim().toUpperCase().startsWith('D') === true;
-      return stage.kind === 'D_SHIFT' ? assignedToDays : !assignedToDays;
+      const bidRank =
+        member.employeeId === FINAL_2026_BLOOMFIELD.employeeId
+          ? FINAL_2026_BLOOMFIELD.bidRank
+          : member.rank;
+      if (
+        excludedEmployees.has(member.employeeId) ||
+        member.bidCategory === 'EXCLUDED' ||
+        !ranks.has(bidRank)
+      )
+        return false;
+      return member.employmentStatus === 'active';
     })
     .map((member) => Number(member.value))
     .filter((memberId) => Number.isSafeInteger(memberId) && memberId > 0);
@@ -88,16 +97,26 @@ export function applyKnown2026Setup(
     adminMemberIds.push(memberId);
   }
 
-  const dayStageRanks = new Set(
-    pending.executionPolicy.stages.flatMap((stage) => {
-      if (stage.kind !== 'D_SHIFT') return [];
-      const source = pending.stageParticipantSources?.find((entry) => entry.stageId === stage.id);
-      return source?.participantSource.type === 'FILTER' ? source.participantSource.ranks : [];
-    }),
-  );
+  const swatMemberIds: number[] = [];
+  for (const employeeId of FINAL_2026_SWAT_EMPLOYEE_IDS) {
+    const matches = members.filter((member) => member.employeeId === employeeId);
+    if (matches.length !== 1)
+      return {
+        ok: false,
+        message:
+          matches.length === 0
+            ? `Required 2026 SWAT employee ID ${employeeId} is missing from the member catalog.`
+            : `Required 2026 SWAT employee ID ${employeeId} is duplicated in the member catalog.`,
+      };
+    const memberId = Number(matches[0]?.value);
+    if (!Number.isSafeInteger(memberId) || memberId <= 0)
+      return { ok: false, message: `2026 SWAT employee ID ${employeeId} has an invalid record.` };
+    swatMemberIds.push(memberId);
+  }
+
   const stages = pending.executionPolicy.stages.map((stage) => ({
     ...stage,
-    memberIds: stageMembers(stage, pending.stageParticipantSources ?? [], members, dayStageRanks),
+    memberIds: stageMembers(stage, pending.stageParticipantSources ?? [], members),
   }));
   const emptyStage = stages.find((stage) => stage.memberIds.length === 0);
   if (emptyStage)
@@ -106,7 +125,6 @@ export function applyKnown2026Setup(
       message: `${emptyStage.label} has no members matching its saved participant-source rule.`,
     };
 
-  const rosterCeiling = Math.max(1, members.length);
   const stageParticipantSources = pending.stageParticipantSources.map((source) => ({
     ...source,
     participantSource: {
@@ -123,12 +141,29 @@ export function applyKnown2026Setup(
     })),
     annualOperations: {
       ...annual,
-      contact: { ...annual.contact, minimumAttempts: 0 },
+      membershipDistributions: [
+        ...(annual.membershipDistributions ?? []).filter(
+          (distribution) => distribution.id !== '2026-swat-medics',
+        ),
+        {
+          id: '2026-swat-medics',
+          label: '2026 SWAT Medics',
+          sourceRef: 'Final July 2026 Bid Policy section 9 and 2026-09-24 approved roster',
+          sourceDecisionId: '2026-09-24-swat-membership',
+          membershipSource: 'REVIEWED_EXISTING_MEMBERS',
+          memberIds: swatMemberIds,
+          shifts: ['A', 'B', 'C'],
+          minimumPerShift: 2,
+          maximumPerShift: 2,
+          maximumPerADay: 1,
+        },
+      ],
+      contact: { ...annual.contact, minimumAttempts: null, timingMode: 'OPERATOR_DISCRETION' },
       aDay: {
         ...annual.aDay,
-        min: 0,
-        max: rosterCeiling,
-        captainDcMax: rosterCeiling,
+        min: null,
+        max: null,
+        captainDcMax: null,
         specialtyMaximums: { ...annual.aDay.specialtyMaximums, MARINE_FLOAT: 2 },
       },
     },
@@ -150,8 +185,8 @@ export function applyKnown2026Setup(
       v: 3,
       expectedDurationDays: 3,
       turnTimerSeconds: 300,
-      credentialEvaluationOn: '2026-09-30',
-      personnelEvaluationOn: '2026-08-28',
+      credentialEvaluationOn: '2026-09-24',
+      personnelEvaluationOn: '2026-09-24',
       livePolicy: policyResult.data,
     },
     policy: { ...pending, stageParticipantSources, executionPolicy: policyResult.data },

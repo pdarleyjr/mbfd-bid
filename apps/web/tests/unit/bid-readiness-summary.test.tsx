@@ -18,14 +18,18 @@ it('gives a 2026 Bid administrator plain-English next steps without readiness co
   );
 
   expect(html).toContain('2026 BID READINESS');
-  expect(html).toContain('Policy: Ready');
+  expect(html).toContain('Source package: Ready');
   expect(html).toContain('4 Real activation reviews remain');
   expect(html).toContain('Positions: Ready');
-  expect(html).toContain('Bid order: Preview participant stages');
-  expect(html).toContain('Credentials: Provisional source review required');
-  expect(html).toContain('A-Day timing: Source-backed timing is still needed');
-  expect(html).toContain('Mock rehearsal: Ready to prepare safely');
-  expect(html).toContain('Live: 4 activation reviews remain');
+  expect(html).toContain('Participants: Ready');
+  expect(html).toContain('Seniority / order: Ready');
+  expect(html).toContain('Credentials: Needs Confirmation');
+  expect(html).toContain('Specialty populations: Ready');
+  expect(html).toContain('A-Day constraints: Blocking');
+  expect(html).toContain('Operators / permissions: Needs Confirmation');
+  expect(html).toContain('Operating settings: Needs Confirmation');
+  expect(html).toContain('Mock rehearsal: Blocking');
+  expect(html).toContain('Live readiness: Needs Confirmation');
   expect(html).toContain('Review credentials');
   expect(html).toContain('Review A-Day');
   expect(html).toContain('Prepare Mock');

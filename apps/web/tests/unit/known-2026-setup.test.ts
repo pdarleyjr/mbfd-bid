@@ -16,6 +16,14 @@ const members = [
   ['18156', 104, 'FF'],
   ['99999', 105, 'FF'],
   ['99998', 106, 'CPT'],
+  ['18366', 201, 'LT'],
+  ['16563', 202, 'CPT'],
+  ['20730', 203, 'FF'],
+  ['19953', 204, 'LT'],
+  ['24506', 205, 'FF'],
+  ['20745', 206, 'FF'],
+  ['18158', 207, 'DC'],
+  ['16584', 208, 'FF'],
 ] as const;
 
 function content() {
@@ -170,7 +178,7 @@ const options = members.map(([employeeId, id, rank]) => ({
 describe('known 2026 setup', () => {
   it('creates a configurable Mock baseline and grants every action to the four required admins', () => {
     const result = applyKnown2026Setup(content(), options);
-    expect(result.ok).toBe(true);
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.message);
     expect(REQUIRED_2026_ADMIN_EMPLOYEE_IDS).toEqual(['20731', '19545', '20732', '18156']);
     expect(result.content.pendingPolicy).toBeUndefined();
@@ -178,22 +186,43 @@ describe('known 2026 setup', () => {
       v: 3,
       expectedDurationDays: 3,
       turnTimerSeconds: 300,
-      credentialEvaluationOn: '2026-09-30',
-      personnelEvaluationOn: '2026-08-28',
+      credentialEvaluationOn: '2026-09-24',
+      personnelEvaluationOn: '2026-09-24',
     });
     const policy = result.content.policy?.executionPolicy;
-    expect(policy?.stages[0]?.memberIds).toEqual([103, 104, 105]);
+    expect(policy?.stages[0]?.memberIds).toEqual([103, 104, 105, 203, 205, 206]);
     expect(
       policy?.actionPermissions.every(
         (grant) => grant.actorMemberIds.join(',') === '101,102,103,104',
       ),
     ).toBe(true);
     expect(policy?.annualOperations).toMatchObject({
-      contact: { minimumAttempts: 0, timingMode: 'OPERATOR_DISCRETION' },
-      aDay: { min: 0, max: 6, captainDcMax: 6, specialtyMaximums: { MARINE_FLOAT: 2 } },
+      contact: { minimumAttempts: null, timingMode: 'OPERATOR_DISCRETION' },
+      aDay: {
+        min: null,
+        max: null,
+        captainDcMax: null,
+        specialtyMaximums: { MARINE_FLOAT: 2 },
+      },
     });
-    expect(policy?.stages.find((stage) => stage.id === 'days-captains')?.memberIds).toEqual([102]);
-    expect(policy?.stages.find((stage) => stage.id === 'captains')?.memberIds).toEqual([106]);
+    expect(policy?.stages.find((stage) => stage.id === 'days-captains')?.memberIds).toEqual([
+      102, 106, 202, 207,
+    ]);
+    expect(policy?.stages.find((stage) => stage.id === 'captains')?.memberIds).toEqual([
+      102, 106, 202, 207,
+    ]);
+    expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(208);
+    expect(policy?.annualOperations?.membershipDistributions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: '2026-swat-medics',
+          memberIds: [201, 202, 203, 204, 205, 206],
+          minimumPerShift: 2,
+          maximumPerShift: 2,
+          maximumPerADay: 1,
+        }),
+      ]),
+    );
     expect(
       result.content.policy?.stageParticipantSources?.map(
         (source) => source.participantSource.type,

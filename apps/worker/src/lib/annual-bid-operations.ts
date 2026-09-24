@@ -14,16 +14,16 @@ export interface AnnualOperationsPolicy {
   readonly stageOrder: readonly AnnualStageId[];
   readonly requiredTopologyPositionIds: readonly string[];
   readonly contact: {
-    readonly minimumAttempts: number;
+    readonly minimumAttempts: number | null;
     readonly timingMode: ContactTimingMode;
     /** Null is intentional for operator-discretion policy; it is never a hidden 15-minute default. */
     readonly durationSeconds: number | null;
   };
   readonly aDay: {
     readonly combatGroups: readonly ('G1' | 'G2' | 'G3' | 'G4')[];
-    readonly min: number;
-    readonly max: number;
-    readonly captainDcMax: number;
+    readonly min: number | null;
+    readonly max: number | null;
+    readonly captainDcMax: number | null;
     readonly specialtyMaximums: Readonly<
       Record<'MARINE_ASSIGNED' | 'MARINE_FLOAT' | 'DE' | 'SWAT', number>
     >;
@@ -183,7 +183,7 @@ export function validateUnreachableContact(
 ): { ok: true } | { ok: false; code: string } {
   if (policy === undefined) return { ok: false, code: 'CONTACT_POLICY_MISSING' };
   const attempts = state.contactAttempts.filter((attempt) => attempt.memberId === input.memberId);
-  if (attempts.length < policy.contact.minimumAttempts)
+  if (policy.contact.minimumAttempts !== null && attempts.length < policy.contact.minimumAttempts)
     return { ok: false, code: 'CONTACT_ATTEMPTS_INCOMPLETE' };
   if (policy.contact.timingMode === 'HARD_MINIMUM') {
     const firstAttempt = attempts.length

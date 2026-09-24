@@ -45,4 +45,27 @@ describe('requiredCredsSatisfied', () => {
     const reasons = requiredCredsSatisfied(withCreds(['Cred A']), required);
     expect(reasons).toHaveLength(3);
   });
+
+  it('accepts Operations for the approved 2026 Awareness minimum without rewriting evidence', () => {
+    const member = withCreds(['Hazardous Materials Operations']);
+    const reasons = requiredCredsSatisfied(member, ['Hazardous Materials Awareness']);
+
+    expect(member.credentials).toEqual([{ name: 'Hazardous Materials Operations' }]);
+    expect(reasons).toEqual([
+      {
+        code: 'CRED_EQUIVALENT',
+        label:
+          'Holds Hazardous Materials Operations, which satisfies the 2026 Hazardous Materials Awareness minimum',
+        satisfied: true,
+      },
+    ]);
+  });
+
+  it('does not apply the 2026 HazMat equivalency in reverse', () => {
+    expect(
+      requiredCredsSatisfied(withCreds(['Hazardous Materials Awareness']), [
+        'Hazardous Materials Operations',
+      ])[0],
+    ).toMatchObject({ code: 'CRED_MISSING', satisfied: false });
+  });
 });

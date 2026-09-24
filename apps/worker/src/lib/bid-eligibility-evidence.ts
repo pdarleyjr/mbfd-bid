@@ -136,6 +136,7 @@ export function projectAnnualMemberEvidence(
     });
     return {
       memberId: member.id,
+      employeeId: member.employeeId,
       firstName: member.firstName,
       lastName: member.lastName,
       rank: projected.rank,
