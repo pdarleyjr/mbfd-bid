@@ -40,7 +40,7 @@
     "read-excel-file": "9.3.10",
     "tailwind-merge": "2.5.4",
     "zod": "3.23.8",
-    "zustand": "5.0.0"
+    "zustand": "5.0.13"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260826.1",
