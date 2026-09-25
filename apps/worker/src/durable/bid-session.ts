@@ -67,6 +67,7 @@ import {
   type VerifiedWebSocketIdentity,
   parseVerifiedWebSocketIdentity,
 } from '../lib/websocket-identity.js';
+import { BID_WEBSOCKET_PROTOCOL } from '../lib/websocket-ticket.js';
 import { buildPortalPayload } from '../portal-writeback/payload-builder.js';
 import { isPortalPublicationEnabled } from '../portal-writeback/publication-policy.js';
 import { enqueuePortalWriteback } from '../portal-writeback/queue-producer.js';
@@ -1560,6 +1561,10 @@ export class BidSessionDO implements DurableObject {
     if (identity === null) {
       return new Response('Forbidden', { status: 403 });
     }
+    const requestedProtocol = req.headers.get('Sec-WebSocket-Protocol');
+    if (requestedProtocol !== null && requestedProtocol !== BID_WEBSOCKET_PROTOCOL) {
+      return new Response('Unsupported WebSocket Protocol', { status: 400 });
+    }
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
     server.accept();
@@ -1584,7 +1589,16 @@ export class BidSessionDO implements DurableObject {
       this.clients.delete(clientId);
     });
 
-    return new Response(null, { status: 101, webSocket: client });
+    return new Response(
+      null,
+      requestedProtocol === null
+        ? { status: 101, webSocket: client }
+        : {
+            status: 101,
+            headers: { 'Sec-WebSocket-Protocol': BID_WEBSOCKET_PROTOCOL },
+            webSocket: client,
+          },
+    );
   }
 
   private async onMessage(

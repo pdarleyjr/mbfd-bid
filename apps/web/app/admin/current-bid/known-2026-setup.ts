@@ -132,6 +132,18 @@ export function applyKnown2026Setup(
       memberIds: [...(stages.find((stage) => stage.id === source.stageId)?.memberIds ?? [])],
     },
   }));
+  const specializedPositionIds = [
+    ...new Set((annual.specialties ?? []).flatMap((specialty) => specialty.opportunityPositionIds)),
+  ];
+  const existingADayExecution = annual.aDay.execution;
+  const specializedADayTimingException = {
+    id: '2026-specialized-award-deferred-a-day',
+    label: 'Specialized award A-Day at ordinary rank turn',
+    timing: 'AFTER_POSITION_SELECTION' as const,
+    sourceRef: '2026-09-24 administrator decision: specialized award A-Day timing',
+    positionIds: specializedPositionIds,
+    profileIds: [],
+  };
   const policyResult = FrozenLiveBidPolicySchema.safeParse({
     ...pending.executionPolicy,
     stages,
@@ -165,6 +177,20 @@ export function applyKnown2026Setup(
         max: null,
         captainDcMax: null,
         specialtyMaximums: { ...annual.aDay.specialtyMaximums, MARINE_FLOAT: 2 },
+        execution: {
+          ...(existingADayExecution ?? {
+            timing: 'SIMULTANEOUS' as const,
+            officersPerGroup: null,
+            sourceRef: 'Final July 2026 Bid Policy and 2026-09-24 administrator decisions',
+            constraints: [],
+          }),
+          timingExceptions: [
+            ...(existingADayExecution?.timingExceptions ?? []).filter(
+              (exception) => exception.id !== specializedADayTimingException.id,
+            ),
+            ...(specializedPositionIds.length === 0 ? [] : [specializedADayTimingException]),
+          ],
+        },
       },
     },
   });

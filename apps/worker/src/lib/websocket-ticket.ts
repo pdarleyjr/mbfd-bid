@@ -5,6 +5,8 @@ import {
 } from '@mbfd/shared';
 import { jwtVerify } from 'jose';
 
+export const BID_WEBSOCKET_PROTOCOL = 'mbfd-bid-v1';
+
 function keyToUint8(key: string): Uint8Array {
   if (/^[0-9a-fA-F]{64}$/.test(key)) {
     const bytes = key.match(/.{1,2}/g) ?? [];

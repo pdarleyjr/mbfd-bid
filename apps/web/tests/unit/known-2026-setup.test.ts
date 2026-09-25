@@ -143,6 +143,18 @@ function content() {
           v: 1,
           stageOrder: ['firefighters', 'days-captains', 'captains'],
           requiredTopologyPositionIds: ['A101'],
+          specialties: [
+            {
+              id: '2026-fire-investigator',
+              label: 'Fire Investigator preference',
+              mode: 'INTERRUPTING',
+              opportunityPositionIds: ['A101'],
+              requiredCredentialNames: [],
+              requiredSpecialtyCodes: [],
+              points: [],
+              tieBreakChain: ['POINTS', 'RSC_SENIORITY', 'RANK_SENIORITY'],
+            },
+          ],
           contact: {
             minimumAttempts: null,
             timingMode: 'OPERATOR_DISCRETION',
@@ -158,6 +170,13 @@ function content() {
               MARINE_FLOAT: null,
               DE: 2,
               SWAT: 2,
+            },
+            execution: {
+              timing: 'SIMULTANEOUS',
+              timingExceptions: [],
+              officersPerGroup: null,
+              sourceRef: 'Synthetic ordinary A-Day source',
+              constraints: [],
             },
           },
         },
@@ -204,6 +223,19 @@ describe('known 2026 setup', () => {
         max: null,
         captainDcMax: null,
         specialtyMaximums: { MARINE_FLOAT: 2 },
+        execution: {
+          timing: 'SIMULTANEOUS',
+          timingExceptions: [
+            {
+              id: '2026-specialized-award-deferred-a-day',
+              label: 'Specialized award A-Day at ordinary rank turn',
+              timing: 'AFTER_POSITION_SELECTION',
+              sourceRef: '2026-09-24 administrator decision: specialized award A-Day timing',
+              positionIds: ['A101'],
+              profileIds: [],
+            },
+          ],
+        },
       },
     });
     expect(policy?.stages.find((stage) => stage.id === 'days-captains')?.memberIds).toEqual([

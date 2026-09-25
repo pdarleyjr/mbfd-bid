@@ -8,11 +8,10 @@ import { verifyJwt } from '../lib/jwt.js';
 import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
 import { isExpectedPublicWebOrigin } from '../lib/public-web-origin.js';
 import { verifiedWebSocketIdentityHeaders } from '../lib/websocket-identity.js';
-import { verifyWebSocketTicket } from '../lib/websocket-ticket.js';
+import { BID_WEBSOCKET_PROTOCOL, verifyWebSocketTicket } from '../lib/websocket-ticket.js';
 import type { WorkerEnv } from '../types/env.js';
 
 const ws = new Hono<{ Bindings: WorkerEnv }>();
-const BROWSER_TICKET_PROTOCOL = 'mbfd-bid-v1';
 const COMPACT_JWS_PATTERN = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){2}$/;
 
 function browserTicketFromProtocols(header: string): string | null {
@@ -20,7 +19,7 @@ function browserTicketFromProtocols(header: string): string | null {
     .split(',')
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
-  if (protocols.length !== 2 || protocols[0] !== BROWSER_TICKET_PROTOCOL) return null;
+  if (protocols.length !== 2 || protocols[0] !== BID_WEBSOCKET_PROTOCOL) return null;
   const ticket = protocols[1];
   return ticket !== undefined && COMPACT_JWS_PATTERN.test(ticket) ? ticket : null;
 }
@@ -121,6 +120,7 @@ ws.get('/session/:id', async (c) => {
     method: 'GET',
     headers: {
       Upgrade: 'websocket',
+      ...(protocolHeader === undefined ? {} : { 'Sec-WebSocket-Protocol': BID_WEBSOCKET_PROTOCOL }),
       ...verifiedWebSocketIdentityHeaders(identity),
     },
   });
