@@ -50,9 +50,13 @@ type SpecialtyState = {
   membership_distributions?: Array<{
     id: string;
     label: string;
-    membershipSource: string;
+    membershipSource: 'REVIEWED_EXISTING_MEMBERS' | 'REVIEWED_QUALIFIED_POOL';
     memberIds: number[];
     sourceRef: string;
+    shifts: Array<'A' | 'B' | 'C'>;
+    minimumPerShift: number;
+    maximumPerShift: number;
+    maximumPerADay: number;
   }>;
   sequence: number;
   term_participation?: Record<
@@ -103,7 +107,7 @@ type SpecialtyState = {
   unresolved_members?: Candidate[];
   returning_member?: Candidate | null;
   remaining_order: number[];
-  fills: Record<string, { member_id: number }>;
+  fills: Record<string, { member_id: number; a_day?: string | null; membership_ids?: string[] }>;
   specialties: Array<{
     id: string;
     label: string;
@@ -202,6 +206,7 @@ function ADayChoice({
   combatGroups,
   value,
   onChange,
+  unavailable,
 }: {
   label: string;
   position: PositionMeta | undefined;
@@ -209,6 +214,7 @@ function ADayChoice({
   combatGroups?: readonly string[] | undefined;
   value: string;
   onChange: (value: string) => void;
+  unavailable?: Readonly<Record<string, string>>;
 }) {
   return (
     <Label className="mt-2 block w-full text-sm">
@@ -221,13 +227,44 @@ function ADayChoice({
       >
         <option value="">Select A-Day</option>
         {aDayOptions(position, shift, combatGroups).map((option) => (
-          <option key={option} value={option}>
+          <option key={option} value={option} disabled={unavailable?.[option] !== undefined}>
             {option}
+            {unavailable?.[option] ? ` — unavailable for ${unavailable[option]}` : ''}
           </option>
         ))}
       </NativeSelect>
+      {Object.entries(unavailable ?? {}).map(([aDay, reason]) => (
+        <span key={aDay} className="mt-1 block text-xs text-amber-800">
+          {aDay} is unavailable because {reason}.
+        </span>
+      ))}
     </Label>
   );
+}
+
+function commandErrorMessage(
+  body: { code?: string; error?: string } | null,
+  status: number,
+): string {
+  const messages: Record<string, string> = {
+    MEMBERSHIP_A_DAY_MAXIMUM_REACHED:
+      'That A-Day is already assigned to the maximum number of members in this group on this shift.',
+    MEMBERSHIP_SHIFT_MAXIMUM_REACHED:
+      'That shift already has the maximum number of members in this group.',
+    MEMBERSHIP_SHIFT_NOT_PERMITTED: 'This group is not permitted on the selected shift.',
+    MEMBERSHIP_A_DAY_REQUIRED: 'Select an A-Day for this group before recording the award.',
+    MEMBERSHIP_QUALIFICATION_EVIDENCE_REQUIRED:
+      'This member does not have the frozen qualification evidence required for that group.',
+    MEMBERSHIP_POOL_SELECTION_INVALID:
+      'This member is not in the reviewed qualified pool for that group.',
+    MEMBERSHIP_MULTIPLE_ASSIGNMENTS:
+      'This member already has a group assignment in the canonical award set.',
+  };
+  const codeMessage = body?.code ? messages[body.code] : undefined;
+  if (codeMessage) return codeMessage;
+  const errorMessage = body?.error ? messages[body.error] : undefined;
+  if (errorMessage) return errorMessage;
+  return body?.error ?? body?.code ?? `Command failed (${status}).`;
 }
 
 export function AnnualLiveControls(props: Props) {
@@ -321,6 +358,46 @@ export function AnnualLiveControls(props: Props) {
   const selectionPosition = props.positions?.find(
     (position) => position.id === selectionPositionId,
   );
+  const selectionUnavailableADays = useMemo(() => {
+    const memberId = selectionMember?.member_id;
+    const shift = selectionPosition?.shift;
+    if (memberId === undefined || shift === undefined || shift === 'D') return {};
+    const unavailable: Record<string, string> = {};
+    for (const distribution of state?.membership_distributions ?? []) {
+      const applies =
+        distribution.membershipSource === 'REVIEWED_EXISTING_MEMBERS'
+          ? distribution.memberIds.includes(memberId)
+          : membershipChoice.memberId === memberId &&
+            membershipChoice.ids.includes(distribution.id);
+      if (!applies || !distribution.shifts.includes(shift)) continue;
+      const assigned = Object.entries(state?.fills ?? {}).flatMap(([positionId, fill]) => {
+        const fillShift = props.positions?.find((position) => position.id === positionId)?.shift;
+        const included =
+          distribution.membershipSource === 'REVIEWED_EXISTING_MEMBERS'
+            ? distribution.memberIds.includes(fill.member_id)
+            : fill.membership_ids?.includes(distribution.id) === true;
+        return included && fillShift === shift ? [fill] : [];
+      });
+      for (const aDay of aDayOptions(selectionPosition, undefined, state?.a_day_combat_groups)) {
+        const reason =
+          assigned.length >= distribution.maximumPerShift
+            ? `${distribution.label} already has its maximum on ${shift} shift`
+            : assigned.filter((fill) => fill.a_day === aDay).length >= distribution.maximumPerADay
+              ? `${distribution.label} already has its maximum on ${shift} shift for that A-Day`
+              : null;
+        if (reason) unavailable[aDay] = reason;
+      }
+    }
+    return unavailable;
+  }, [
+    membershipChoice,
+    props.positions,
+    selectionMember?.member_id,
+    selectionPosition,
+    state?.a_day_combat_groups,
+    state?.fills,
+    state?.membership_distributions,
+  ]);
   const selectionRequiresSimultaneousADay = requiresSimultaneousADay(selectionPositionId);
   const amendmentPosition = props.positions?.find((position) => position.id === amendTo);
   const amendmentRequiresSimultaneousADay = requiresSimultaneousADay(amendTo);
@@ -514,7 +591,7 @@ export function AnnualLiveControls(props: Props) {
       } | null;
       if (body?.kind === 'rejected') pendingCommand.current = null;
       if (!response.ok || body?.kind !== 'accepted')
-        throw new Error(body?.error ?? body?.code ?? `Command failed (${response.status}).`);
+        throw new Error(commandErrorMessage(body, response.status));
       pendingCommand.current = null;
       if (awardsPosition) {
         setTermChoice({ identity: '', confirmed: false, evidence: '' });
@@ -1260,6 +1337,7 @@ export function AnnualLiveControls(props: Props) {
                 combatGroups={state?.a_day_combat_groups}
                 value={selectionADay}
                 onChange={setSelectionADay}
+                unavailable={selectionUnavailableADays}
               />
             ) : null}
             {(state?.membership_distributions ?? [])
@@ -1298,7 +1376,8 @@ export function AnnualLiveControls(props: Props) {
                 state === null ||
                 selectionMember === null ||
                 !selectionPositionId ||
-                (selectionRequiresSimultaneousADay && !selectionADay)
+                (selectionRequiresSimultaneousADay &&
+                  (!selectionADay || selectionUnavailableADays[selectionADay] !== undefined))
               }
               onClick={() =>
                 void command('live.record_selection', {
