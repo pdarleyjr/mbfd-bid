@@ -292,15 +292,26 @@ export function reduceLiveBidCommand(
     const committed = state.bidOrder.slice(0, state.queueCursor);
     const remaining = state.bidOrder.slice(state.queueCursor);
     const supplied = command.orderedRemainingMemberIds;
+    const remainingCounts = new Map<number, number>();
+    const suppliedCounts = new Map<number, number>();
+    for (const entry of remaining)
+      remainingCounts.set(entry.memberId, (remainingCounts.get(entry.memberId) ?? 0) + 1);
+    for (const memberId of supplied)
+      suppliedCounts.set(memberId, (suppliedCounts.get(memberId) ?? 0) + 1);
     if (
       supplied.length !== remaining.length ||
-      new Set(supplied).size !== supplied.length ||
-      remaining.some((entry) => !supplied.includes(entry.memberId))
+      remainingCounts.size !== suppliedCounts.size ||
+      [...remainingCounts].some(([memberId, count]) => suppliedCounts.get(memberId) !== count)
     ) {
       return { ok: false, code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' };
     }
-    const byMember = new Map(remaining.map((entry) => [entry.memberId, entry]));
-    const reordered = supplied.map((memberId) => byMember.get(memberId));
+    const byMember = new Map<number, typeof remaining>();
+    for (const entry of remaining) {
+      const entries = byMember.get(entry.memberId) ?? [];
+      entries.push(entry);
+      byMember.set(entry.memberId, entries);
+    }
+    const reordered = supplied.map((memberId) => byMember.get(memberId)?.shift());
     if (reordered.some((entry) => entry === undefined))
       return { ok: false, code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' };
     const stageOrder = new Map(policy.stages.map((stage) => [stage.id, stage.order]));

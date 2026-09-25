@@ -971,11 +971,73 @@ describe('live canonical reducer', () => {
     });
   });
 
+  it('reorders duplicate member occurrences without losing their frozen stage entries', () => {
+    const initialStage = policy.stages[0];
+    if (initialStage === undefined) throw new Error('fixture stage missing');
+    const duplicatePolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      stages: [
+        initialStage,
+        {
+          ...initialStage,
+          id: 'repeat',
+          label: 'Repeat',
+          order: 1,
+        },
+      ],
+    };
+    const duplicateState: BidSessionState = {
+      ...state(),
+      bidOrder: [
+        { ordinal: 1, memberId: 1, pool: 'FF', stageId: 'd' },
+        { ordinal: 2, memberId: 2, pool: 'FF', stageId: 'd' },
+        { ordinal: 3, memberId: 1, pool: 'FF', stageId: 'repeat' },
+        { ordinal: 4, memberId: 2, pool: 'FF', stageId: 'repeat' },
+      ],
+    };
+
+    const result = reduceLiveBidCommand(
+      duplicateState,
+      duplicatePolicy,
+      command('live.alter_order', { orderedRemainingMemberIds: [2, 1, 1, 2] }),
+      100,
+      'unused',
+    );
+
+    if (!result.ok) throw new Error(result.code);
+    expect(result.state.bidOrder).toEqual([
+      { ordinal: 2, memberId: 2, pool: 'FF', stageId: 'd' },
+      { ordinal: 1, memberId: 1, pool: 'FF', stageId: 'd' },
+      { ordinal: 3, memberId: 1, pool: 'FF', stageId: 'repeat' },
+      { ordinal: 4, memberId: 2, pool: 'FF', stageId: 'repeat' },
+    ]);
+    expect(result.state.currentBidderId).toBe(2);
+  });
+
   it('rejects an altered order that drops a remaining member', () => {
     const result = reduceLiveBidCommand(
       state(),
       policy,
       command('live.alter_order', { orderedRemainingMemberIds: [2] }),
+      100,
+      'unused',
+    );
+    expect(result).toMatchObject({ ok: false, code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' });
+  });
+
+  it('rejects an altered duplicate order whose occurrence counts do not match', () => {
+    const duplicateState: BidSessionState = {
+      ...state(),
+      bidOrder: [
+        { ordinal: 1, memberId: 1, pool: 'FF', stageId: 'd' },
+        { ordinal: 2, memberId: 1, pool: 'FF', stageId: 'd' },
+        { ordinal: 3, memberId: 2, pool: 'FF', stageId: 'd' },
+      ],
+    };
+    const result = reduceLiveBidCommand(
+      duplicateState,
+      policy,
+      command('live.alter_order', { orderedRemainingMemberIds: [1, 2, 2] }),
       100,
       'unused',
     );

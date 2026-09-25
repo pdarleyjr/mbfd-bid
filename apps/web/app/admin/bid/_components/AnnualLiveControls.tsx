@@ -148,6 +148,17 @@ type SpecialtyState = {
       };
 };
 
+type RemainingOrderEntry = { memberId: number; occurrence: number };
+
+function remainingOrderEntries(memberIds: number[]): RemainingOrderEntry[] {
+  const counts = new Map<number, number>();
+  return memberIds.map((memberId) => {
+    const occurrence = counts.get(memberId) ?? 0;
+    counts.set(memberId, occurrence + 1);
+    return { memberId, occurrence };
+  });
+}
+
 interface Props {
   bidSessionId: string;
   isMock: boolean;
@@ -349,9 +360,11 @@ export function AnnualLiveControls(props: Props) {
   );
   const pendingADay = state?.a_day_current ?? null;
   const orderSequence = useRef<number | null>(null);
-  const [order, setOrder] = useState<number[]>(() => {
+  const [order, setOrder] = useState<RemainingOrderEntry[]>(() => {
     const cursor = props.bidOrder.findIndex((entry) => entry.memberId === props.currentBidderId);
-    return props.bidOrder.slice(Math.max(cursor, 0)).map((entry) => entry.memberId);
+    return remainingOrderEntries(
+      props.bidOrder.slice(Math.max(cursor, 0)).map((entry) => entry.memberId),
+    );
   });
 
   const load = useCallback(async () => {
@@ -370,7 +383,7 @@ export function AnnualLiveControls(props: Props) {
     const next = body as SpecialtyState;
     if (orderSequence.current !== next.sequence) {
       orderSequence.current = next.sequence;
-      setOrder(next.remaining_order);
+      setOrder(remainingOrderEntries(next.remaining_order));
     }
     setState(next);
   }, [props.bidSessionId]);
@@ -1404,9 +1417,9 @@ export function AnnualLiveControls(props: Props) {
           <article hidden={panel !== 'order'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Alter remaining order</h3>
             <ol className="mt-2 max-h-[40dvh] space-y-1 overflow-y-auto">
-              {order.map((memberId, index) => (
+              {order.map(({ memberId, occurrence }, index) => (
                 <li
-                  key={memberId}
+                  key={`${memberId}-${occurrence}`}
                   className="flex items-center gap-2 rounded bg-muted px-2 py-1 text-sm"
                 >
                   <span className="mr-auto">
@@ -1428,7 +1441,11 @@ export function AnnualLiveControls(props: Props) {
             <Button
               type="button"
               disabled={busy || order.length === 0}
-              onClick={() => void command('live.alter_order', { orderedRemainingMemberIds: order })}
+              onClick={() =>
+                void command('live.alter_order', {
+                  orderedRemainingMemberIds: order.map((entry) => entry.memberId),
+                })
+              }
               className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
             >
               Commit remaining order
