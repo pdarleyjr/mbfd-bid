@@ -104,20 +104,23 @@ function orderMatchesFrozenSnapshot(
 }
 
 /**
- * Canonical live commands may reorder the remaining bidders or consume an
- * interrupting-specialty candidate.  The read model still requires every
- * surviving entry to be one unique member of the immutable frozen order with
- * its original ordinal and pool metadata unchanged.
+ * Canonical live commands may reorder the remaining turns or consume an
+ * interrupting-specialty turn. The read model still requires every surviving
+ * entry to be one unique frozen turn with its ordinal, member, and pool
+ * metadata unchanged. A member may intentionally appear in both specialty
+ * and ordinary stages so their A-Day can be deferred to the ordinary turn.
  */
 export function canonicalOrderUsesFrozenMembership(
   persisted: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
   expected: readonly { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }[],
 ): boolean {
-  if (new Set(persisted.map((entry) => entry.memberId)).size !== persisted.length) return false;
-  const expectedByMember = new Map(expected.map((entry) => [entry.memberId, entry]));
+  const key = (entry: { ordinal: number; memberId: number; pool: 'OFC' | 'FF' }) =>
+    `${entry.ordinal}:${entry.memberId}:${entry.pool}`;
+  const persistedKeys = persisted.map(key);
+  if (new Set(persistedKeys).size !== persisted.length) return false;
+  const expectedKeys = new Set(expected.map(key));
   return persisted.every((entry) => {
-    const frozen = expectedByMember.get(entry.memberId);
-    return frozen !== undefined && frozen.ordinal === entry.ordinal && frozen.pool === entry.pool;
+    return expectedKeys.has(key(entry));
   });
 }
 

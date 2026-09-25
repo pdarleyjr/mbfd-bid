@@ -24,6 +24,17 @@ describe('canonical board order validation', () => {
     expect(canonicalOrderUsesFrozenMembership([frozen[1], frozen[2]], frozen)).toBe(true);
   });
 
+  it('accepts distinct specialty and ordinary turns for the same frozen member', () => {
+    const staged = [
+      { ordinal: 1, memberId: 10, pool: 'OFC' as const },
+      { ordinal: 2, memberId: 10, pool: 'OFC' as const },
+      { ordinal: 3, memberId: 20, pool: 'FF' as const },
+    ];
+
+    expect(canonicalOrderUsesFrozenMembership(staged, staged)).toBe(true);
+    expect(canonicalOrderUsesFrozenMembership(staged.slice(1), staged)).toBe(true);
+  });
+
   it('rejects duplicates, unknown members, or changed frozen metadata', () => {
     expect(canonicalOrderUsesFrozenMembership([frozen[0], frozen[0]], frozen)).toBe(false);
     expect(
