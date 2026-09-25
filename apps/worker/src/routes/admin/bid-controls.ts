@@ -463,7 +463,14 @@ router.get('/:id/specialty-live', async (c) => {
     fills: Object.fromEntries(
       Object.entries(canonical.fills).map(([positionId, fill]) => [
         positionId,
-        { member_id: fill.memberId },
+        {
+          member_id: fill.memberId,
+          a_day:
+            canonical.aDay?.picks.find((pick) => pick.memberId === fill.memberId)?.aDay ??
+            fill.aDay ??
+            null,
+          membership_ids: fill.membershipIds ?? [],
+        },
       ]),
     ),
     specialties: (policy.annualOperations?.specialties ?? []).map((specialty) => ({

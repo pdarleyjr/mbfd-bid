@@ -103,6 +103,20 @@ describe('annual live operator and presentation surfaces', () => {
           captainDcMax: 1,
           specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 1, SWAT: 1 },
         },
+        membershipDistributions: [
+          {
+            id: 'swat',
+            label: 'SWAT',
+            sourceRef: 'Synthetic reviewed SWAT source',
+            sourceDecisionId: 'synthetic-swat-decision',
+            membershipSource: 'REVIEWED_EXISTING_MEMBERS',
+            memberIds: [1, 2],
+            shifts: ['A'],
+            minimumPerShift: 0,
+            maximumPerShift: 2,
+            maximumPerADay: 1,
+          },
+        ],
       },
     };
     const snapshot = {
@@ -216,7 +230,9 @@ describe('annual live operator and presentation surfaces', () => {
       turnStartedAtMs: 1,
       turnTimerSeconds: 180,
       lastSeq: 8,
-      fills: { A101: { memberId: 2, ordinal: 2, bidId: 'b2' } },
+      fills: {
+        A101: { memberId: 2, ordinal: 2, bidId: 'b2', aDay: 'G1', membershipIds: ['swat'] },
+      },
       bidOrder: held.bidOrder,
       queueCursor: 1,
       frozenAt: null,
@@ -268,6 +284,9 @@ describe('annual live operator and presentation surfaces', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       sequence: 8,
+      fills: {
+        A101: { member_id: 2, a_day: 'G1', membership_ids: ['swat'] },
+      },
       active: {
         original_bidder: { member_id: 1, policy_rank: 2 },
         candidates: [

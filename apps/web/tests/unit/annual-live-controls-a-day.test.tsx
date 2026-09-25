@@ -14,6 +14,14 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 const candidate = { member_id: 17, first_name: 'Synthetic', last_name: 'Member', rank: 'FF' };
 const positions: PositionMeta[] = [
   {
+    id: 'filled',
+    shift: 'A',
+    station: '2',
+    unit: 'Synthetic',
+    rankRequired: 'FF',
+    positionName: 'Filled ABC seat',
+  },
+  {
     id: 'abc',
     shift: 'A',
     station: '1',
@@ -35,6 +43,7 @@ let container: HTMLDivElement;
 let originalWindowFetch: typeof fetch;
 let commands: Record<string, unknown>[];
 let failCommand: boolean;
+let rejectCommandCode: string | null;
 let live: ReturnType<typeof state>;
 function fallback(mode: 'VOLUNTARY' | 'FORCED' = 'VOLUNTARY') {
   return {
@@ -105,6 +114,17 @@ function state(simultaneous = true, active = false) {
     ],
     unresolved_members: [] as Array<typeof candidate>,
     returning_member: null as typeof candidate | null,
+    membership_distributions: [] as Array<{
+      id: string;
+      label: string;
+      membershipSource: 'REVIEWED_EXISTING_MEMBERS' | 'REVIEWED_QUALIFIED_POOL';
+      memberIds: number[];
+      sourceRef: string;
+      shifts: Array<'A' | 'B' | 'C'>;
+      minimumPerShift: number;
+      maximumPerShift: number;
+      maximumPerADay: number;
+    }>,
     term_participation: {} as Record<
       string,
       {
@@ -116,7 +136,9 @@ function state(simultaneous = true, active = false) {
       }
     >,
     remaining_order: [17],
-    fills: { original: { member_id: 17 } },
+    fills: {
+      original: { member_id: 17, a_day: null as string | null, membership_ids: [] as string[] },
+    } as Record<string, { member_id: number; a_day: string | null; membership_ids: string[] }>,
     specialties: [],
     opportunity_pools: [] as Array<{
       id: string;
@@ -165,6 +187,7 @@ beforeEach(() => {
   originalWindowFetch = window.fetch;
   commands = [];
   failCommand = false;
+  rejectCommandCode = null;
   live = state();
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -174,6 +197,11 @@ beforeEach(() => {
     if (url.endsWith('/commands/live')) {
       commands.push(JSON.parse(String(init?.body)));
       if (failCommand) throw new Error('Synthetic uncertain transport');
+      if (rejectCommandCode)
+        return new Response(JSON.stringify({ kind: 'rejected', code: rejectCommandCode }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        });
       return response({ kind: 'accepted' });
     }
     throw new Error(`Unexpected request ${url}`);
@@ -271,6 +299,45 @@ async function mount(panel: string, positionList = positions) {
 }
 
 describe('simultaneous A-Day live awards', () => {
+  it('disables a same-shift membership A-Day that has reached its reviewed maximum', async () => {
+    live.membership_distributions = [
+      {
+        id: 'swat',
+        label: 'SWAT',
+        membershipSource: 'REVIEWED_EXISTING_MEMBERS',
+        memberIds: [9, 17],
+        sourceRef: 'Synthetic reviewed SWAT source',
+        shifts: ['A', 'B', 'C'],
+        minimumPerShift: 0,
+        maximumPerShift: 2,
+        maximumPerADay: 1,
+      },
+    ];
+    live.fills = {
+      filled: { member_id: 9, a_day: 'G1', membership_ids: [] },
+    };
+    await mount('Record selection');
+    await choose('Position selected by current bidder', 'abc');
+    const g1 = [...select('Selection A-Day').options].find((option) => option.value === 'G1');
+    expect(g1?.disabled).toBe(true);
+    expect(g1?.textContent).toContain('unavailable for SWAT');
+    expect(container.textContent).toContain(
+      'G1 is unavailable because SWAT already has its maximum on A shift for that A-Day.',
+    );
+  });
+
+  it('translates a server membership A-Day rejection into operator guidance', async () => {
+    rejectCommandCode = 'MEMBERSHIP_A_DAY_MAXIMUM_REACHED';
+    await mount('Record selection');
+    await choose('Position selected by current bidder', 'abc');
+    await choose('Selection A-Day', 'G1');
+    await settle(() => button('Commit selection').click());
+    expect(container.textContent).toContain(
+      'That A-Day is already assigned to the maximum number of members in this group on this shift.',
+    );
+    expect(container.textContent).not.toContain('MEMBERSHIP_A_DAY_MAXIMUM_REACHED');
+  });
+
   it('requires a fresh explicit voluntary departure election and preserves it on an uncertain retry', async () => {
     live.term_participation['17'] = {
       assignmentId: 'source-assignment',
