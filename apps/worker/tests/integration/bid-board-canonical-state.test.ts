@@ -32,7 +32,7 @@ describe('canonical board order validation', () => {
     ];
 
     expect(canonicalOrderUsesFrozenMembership(staged, staged)).toBe(true);
-    expect(canonicalOrderUsesFrozenMembership([staged[1]!, staged[2]!], staged)).toBe(true);
+    expect(canonicalOrderUsesFrozenMembership(staged.slice(1), staged)).toBe(true);
   });
 
   it('rejects duplicates, unknown members, or changed frozen metadata', () => {
