@@ -26,10 +26,14 @@ not the final 2026 candidate and does not impose a source-number-equality gate.
   awarded in the 2026 Bid.
 - B214 and C214 use Combat at runtime. Their raw Rescue source label remains in
   immutable provenance with the approved correction.
-- Ordinary active cohort: 222 — 22 Captain, 39 Lieutenant, 161 Firefighter.
+- Ordinary active cohort: 221 — 21 Captain, 39 Lieutenant, 161 Firefighter.
 - Division Chiefs are not ordinary rank-stage bidders.
 - Employee IDs 16584, 16613, 16617, 16573, 19131, and 20734 are explicitly
   excluded. Stale roster absence does not exclude anyone else.
+- On 2026-09-25, employee ID 18148 (Dwight Nicholas) was confirmed as the
+  current B-shift Division Chief occupying protected position B211. His stored
+  Captain rank remains identity evidence, but he is excluded from ordinary
+  Captain stages while occupying that administrative assignment.
 - Employee ID 18158 uses Captain for this Bid; the acting Division Chief
   assignment remains separately preserved evidence.
 - Captain and Lieutenant ordering uses reviewed time-in-grade Bid ordinals.

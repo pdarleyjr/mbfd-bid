@@ -429,6 +429,81 @@ describe('live canonical reducer', () => {
     });
   });
 
+  it('settles a returned member when their controlled A-Day completes the session', () => {
+    const returned = delayedADayState();
+    returned.currentBidderId = 2;
+    if (returned.aDay === null) throw new Error('A-Day fixture required');
+    returned.aDay = { ...returned.aDay, cursor: 1 };
+    returned.annual = {
+      preferenceSheets: [],
+      contactAttempts: [],
+      unresolvedMemberIds: [],
+      returnedAtCurrentSequence: [{ memberId: 2, sequence: 7 }],
+      returningMemberId: 2,
+      checkpoint: null,
+      completion: null,
+    };
+
+    const result = reduceLiveBidCommand(
+      returned,
+      policy,
+      command('live.record_a_day', { memberId: 2, aDay: 'G2' }),
+      102,
+      'synthetic-returned-a-day-final',
+      false,
+      aDayMembers,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      state: {
+        currentPhase: 'complete',
+        currentBidderId: null,
+        annual: { returnedAtCurrentSequence: [], returningMemberId: null },
+      },
+    });
+  });
+
+  it('normalizes a legacy settled return while marking a completed session ready', () => {
+    const completed = delayedADayState();
+    completed.currentPhase = 'complete';
+    completed.currentBidderId = null;
+    completed.annual = {
+      preferenceSheets: [],
+      contactAttempts: [],
+      unresolvedMemberIds: [],
+      returnedAtCurrentSequence: [{ memberId: 2, sequence: 7 }],
+      returningMemberId: 2,
+      checkpoint: null,
+      completion: null,
+    };
+    const configured = contactPolicy({
+      minimumAttempts: 0,
+      timingMode: 'OPERATOR_DISCRETION',
+      durationSeconds: null,
+    });
+
+    const result = reduceLiveBidCommand(
+      completed,
+      configured,
+      command('live.complete_session'),
+      103,
+      'synthetic-completion',
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      state: {
+        annual: {
+          returnedAtCurrentSequence: [],
+          returningMemberId: null,
+          completion: { actorMemberId: 99, readyForFinalizationAtMs: 103 },
+        },
+      },
+      payload: { operation: 'ready_for_finalization', settledReturnMemberId: 2 },
+    });
+  });
+
   it.each(['selection', 'disposition'] as const)(
     'skips an ahead-of-turn forced award when the ordinary bidder advances by %s',
     (advanceBy) => {

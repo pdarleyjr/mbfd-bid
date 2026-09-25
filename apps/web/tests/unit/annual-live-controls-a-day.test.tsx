@@ -75,6 +75,7 @@ function state(simultaneous = true, active = false) {
       | 'a_day_bid'
       | 'paused'
       | 'complete',
+    finalization_ready: false,
     a_day_timing_by_position: {} as Record<string, 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION'>,
     a_day_current: null as {
       member_id: number;
@@ -82,7 +83,7 @@ function state(simultaneous = true, active = false) {
       shift: 'A' | 'B' | 'C' | 'D';
       eligible_a_days: readonly string[];
     } | null,
-    current_bidder: candidate,
+    current_bidder: candidate as typeof candidate | null,
     dispositions: [
       {
         disposition: 'DEFER' as const,
@@ -672,6 +673,20 @@ describe('canonical disposition and return controls', () => {
       memberId: 9,
       positionId: 'abc',
       aDay: 'G2',
+    });
+  });
+});
+
+describe('canonical finalization control', () => {
+  it('exposes the audited completion command only after bidding is complete', async () => {
+    live.current_phase = 'complete';
+    live.current_bidder = null;
+    await mount('Finalize results');
+    await settle(() => button('Mark ready for finalization').click());
+
+    expect(commands[0]).toMatchObject({
+      type: 'live.complete_session',
+      reason: 'Synthetic reviewed award',
     });
   });
 });
