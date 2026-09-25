@@ -119,6 +119,7 @@ async function connectFresh(): Promise<{
     }),
   );
   expect(response.status).toBe(101);
+  expect(response.headers.get('Sec-WebSocket-Protocol')).toBe('mbfd-bid-v1');
   const socket = response.webSocket;
   if (socket === null) throw new Error('Expected authenticated WebSocket upgrade.');
   socket.accept();
@@ -163,6 +164,7 @@ async function connectFor(sessionName: string): Promise<WebSocket> {
     }),
   );
   expect(response.status).toBe(101);
+  expect(response.headers.get('Sec-WebSocket-Protocol')).toBe('mbfd-bid-v1');
   const socket = response.webSocket;
   if (socket === null) throw new Error('Expected authenticated WebSocket upgrade.');
   socket.accept();
