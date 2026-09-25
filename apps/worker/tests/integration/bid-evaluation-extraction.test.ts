@@ -607,6 +607,36 @@ describe('Bid evaluation extraction with a real common Department capture', () =
     expect(
       result.evaluation.operatorIdentityProjection?.find((member) => member.memberId === 10001),
     ).toMatchObject({ employeeId: '18158', rank: 'CPT' });
+
+    h.sqlite.exec(`
+      UPDATE members
+      SET employee_id = '99991'
+      WHERE id = 10001;
+    `);
+    const executiveEvidence = await readOnly(() => loadBidEvaluationEvidence(db, 2027));
+    const executiveResult = await readOnly(() =>
+      prepareCapturedBidEvaluation(
+        db,
+        final2026,
+        executiveEvidence,
+        CAPTURED_AT,
+        'participant_preview',
+      ),
+    );
+    expect(executiveResult.ok, JSON.stringify(executiveResult)).toBe(true);
+    if (!executiveResult.ok) throw new Error(executiveResult.code);
+    expect(
+      executiveResult.evaluation.members.find((member) => member.memberId === 10001),
+    ).toMatchObject({
+      pool: 'EXCLUDED',
+      rank: 'DC',
+      exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+    });
+    expect(
+      executiveResult.evaluation.operatorIdentityProjection?.find(
+        (member) => member.memberId === 10001,
+      ),
+    ).toMatchObject({ employeeId: '99991', rank: 'DC' });
   });
 
   it('uses one raw capture across qualification and personnel date boundaries with no later live-table read', async () => {

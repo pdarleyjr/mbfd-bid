@@ -62,6 +62,17 @@ export function final2026BidRank<Rank extends string>(
     : currentRank;
 }
 
+/** Restrict only the final 2026 ordinary-bid cohort to its authoritative
+ * rank totals. Executive ranks remain valid identities and operators, but do
+ * not belong in an ordinary bid stage. Other bid years retain their authored
+ * policy behavior. */
+export function isFinal2026OrdinaryBidderRank(bidYear: number, bidRank: string): boolean {
+  return (
+    bidYear !== 2026 ||
+    Object.prototype.hasOwnProperty.call(FINAL_2026_ACTIVE_BIDDERS.byRank, bidRank)
+  );
+}
+
 export function isFinal2026NonBidder(bidYear: number, employeeId: string): boolean {
   return (
     bidYear === 2026 &&

@@ -14,6 +14,7 @@ import {
   FrozenLiveBidPolicySchema,
   final2026BidRank,
   isFinal2026NonBidder,
+  isFinal2026OrdinaryBidderRank,
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { assignmentTermReviewBlocksPurpose, evaluateAssignmentTerms } from './assignment-terms.js';
@@ -1564,6 +1565,7 @@ export async function prepareCapturedBidEvaluation(
         personnelState?.rank ?? member.rank,
       );
       const sourceExcluded = isFinal2026NonBidder(policy.bidYear, member.employeeId);
+      const final2026ExecutiveExcluded = !isFinal2026OrdinaryBidderRank(policy.bidYear, bidRank);
       const administrativeAssignment = assignmentByMember.get(member.id);
       const termPosition = administrativeAssignment
         ? positionByStaffingId.get(administrativeAssignment.staffingPositionId)
@@ -1717,6 +1719,17 @@ export async function prepareCapturedBidEvaluation(
           rankSeniority: member.rankSeniority,
           exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
           authoritativeAssignmentId: administrativeAssignment.id,
+          ...eligibility,
+        };
+      }
+      if (final2026ExecutiveExcluded) {
+        return {
+          memberId: member.id,
+          pool: 'EXCLUDED',
+          rscSeniority: member.rscSeniority,
+          rankSeniority: member.rankSeniority,
+          exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+          authoritativeAssignmentId: null,
           ...eligibility,
         };
       }

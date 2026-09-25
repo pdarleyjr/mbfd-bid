@@ -9,6 +9,7 @@ import {
   FINAL_2026_TOPOLOGY,
   final2026BidRank,
   isFinal2026NonBidder,
+  isFinal2026OrdinaryBidderRank,
 } from '../src/index.js';
 
 describe('final 2026 administrative decisions', () => {
@@ -47,6 +48,12 @@ describe('final 2026 administrative decisions', () => {
     });
     expect(final2026BidRank(2026, '18158', 'DC')).toBe('CPT');
     expect(final2026BidRank(2027, '18158', 'DC')).toBe('DC');
+    expect(isFinal2026OrdinaryBidderRank(2026, 'CPT')).toBe(true);
+    expect(isFinal2026OrdinaryBidderRank(2026, 'LT')).toBe(true);
+    expect(isFinal2026OrdinaryBidderRank(2026, 'FF')).toBe(true);
+    expect(isFinal2026OrdinaryBidderRank(2026, 'DC')).toBe(false);
+    expect(isFinal2026OrdinaryBidderRank(2027, 'DC')).toBe(true);
+    expect(isFinal2026OrdinaryBidderRank(2026, final2026BidRank(2026, '18158', 'DC'))).toBe(true);
     expect(isFinal2026NonBidder(2026, '14326')).toBe(true);
     expect(isFinal2026NonBidder(2026, '16584')).toBe(true);
     expect(isFinal2026NonBidder(2027, '14326')).toBe(false);
