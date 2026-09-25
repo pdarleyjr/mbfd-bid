@@ -453,6 +453,12 @@ router.get('/:id/specialty-live', async (c) => {
       ),
     ),
     current_bidder: canonical.currentBidderId === null ? null : member(canonical.currentBidderId),
+    dispositions: policy.dispositions,
+    unresolved_members: (canonical.annual?.unresolvedMemberIds ?? []).map(member),
+    returning_member:
+      canonical.annual?.returningMemberId == null
+        ? null
+        : member(canonical.annual.returningMemberId),
     remaining_order: canonical.bidOrder.slice(canonical.queueCursor).map((entry) => entry.memberId),
     fills: Object.fromEntries(
       Object.entries(canonical.fills).map(([positionId, fill]) => [

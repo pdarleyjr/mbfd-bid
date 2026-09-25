@@ -58,6 +58,7 @@ describe('annual live product surfaces', () => {
     expect(html).toContain('Correct selection');
     expect(html).toContain('Remaining order');
     expect(html).toContain('Record selection');
+    expect(html).toContain('Disposition and return');
   });
 
   it('exposes the canonical controls in an isolated mock rehearsal', () => {
@@ -78,5 +79,6 @@ describe('annual live product surfaces', () => {
     expect(html).toContain('Presentation');
     expect(html).toContain('Specialty and contact');
     expect(html).toContain('Record selection');
+    expect(html).toContain('Disposition and return');
   });
 });
