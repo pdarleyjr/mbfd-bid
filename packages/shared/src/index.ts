@@ -132,5 +132,6 @@ export {
   FINAL_2026_SWAT_EMPLOYEE_IDS,
   FINAL_2026_TOPOLOGY,
   final2026BidRank,
+  isFinal2026OrdinaryBidderRank,
   isFinal2026NonBidder,
 } from './constants/final-2026.js';

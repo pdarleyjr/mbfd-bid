@@ -48,6 +48,17 @@ describe('frozen live stages', () => {
     });
   });
 
+  it('does not require an excluded executive member to appear in an ordinary bid stage', () => {
+    const withExecutive = {
+      ...snapshot,
+      members: snapshot.members.map((member) =>
+        member.memberId === 3 ? { ...member, rank: 'DC' } : member,
+      ),
+    } as unknown as BidSessionPolicySnapshot;
+
+    expect(computeFrozenStageOrder(withExecutive, policy)).toMatchObject({ ok: true });
+  });
+
   it('rejects typed provenance without a resolved ordering authority instead of falling back to legacy seniority', () => {
     const pinned = {
       ...snapshot,
