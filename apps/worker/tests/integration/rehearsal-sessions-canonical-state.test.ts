@@ -89,4 +89,47 @@ describe('GET /api/admin/rehearsal/sessions canonical state projection', () => {
       ],
     });
   });
+
+  it('keeps healthy Mock sessions visible when one historical canonical row cannot be projected', async () => {
+    const historical = '01HZZ0000000000STALEMOCK';
+    await h.db.run(
+      `INSERT INTO bid_sessions (
+        id, bid_year, started_at, current_phase, current_bidder_id,
+        turn_timer_seconds, expected_duration_days, day_count, is_mock
+      ) VALUES (?, 2026, 2, 'config', NULL, 180, 2, 0, 1);`,
+      [historical],
+    );
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state (
+        bid_session_id, current_seq, state_json, last_command_id, created_at, updated_at
+      ) VALUES (?, 0, ?, NULL, 2, 2);`,
+      [historical, JSON.stringify({ bidSessionId: historical, lastSeq: 0 })],
+    );
+
+    const res = await app.fetch(
+      new Request('http://x/api/admin/rehearsal/sessions', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sessions: Array<{ id: string; currentPhase: string; currentBidderId: number | null }>;
+    };
+    expect(body.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: SESSION_ID,
+          currentPhase: 'paused',
+          currentBidderId: null,
+        }),
+        expect.objectContaining({
+          id: historical,
+          currentPhase: 'config',
+          currentBidderId: null,
+        }),
+      ]),
+    );
+  });
 });

@@ -74,6 +74,37 @@ function state(simultaneous = true, active = false) {
       eligible_a_days: readonly string[];
     } | null,
     current_bidder: candidate,
+    dispositions: [
+      {
+        disposition: 'DEFER' as const,
+        advances: true,
+        returns: false,
+        retainsLaterSelectionRights: true,
+        terminal: false,
+        requiresReason: true,
+        requiresEvidence: false,
+      },
+      {
+        disposition: 'DECLINED' as const,
+        advances: true,
+        returns: false,
+        retainsLaterSelectionRights: false,
+        terminal: false,
+        requiresReason: true,
+        requiresEvidence: false,
+      },
+      {
+        disposition: 'UNREACHABLE' as const,
+        advances: true,
+        returns: false,
+        retainsLaterSelectionRights: true,
+        terminal: false,
+        requiresReason: true,
+        requiresEvidence: true,
+      },
+    ],
+    unresolved_members: [] as Array<typeof candidate>,
+    returning_member: null as typeof candidate | null,
     term_participation: {} as Record<
       string,
       {
@@ -181,6 +212,16 @@ async function choose(label: string, value: string) {
     const node = select(label);
     node.value = value;
     node.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+async function fill(labelText: string, value: string) {
+  await settle(() => {
+    const input = [...container.querySelectorAll('label')]
+      .find((label) => label.textContent?.includes(labelText))
+      ?.querySelector('input');
+    if (!input) throw new Error(`Missing input ${labelText}`);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 async function mount(panel: string, positionList = positions) {
@@ -511,6 +552,60 @@ describe('simultaneous A-Day live awards', () => {
     await settle(() => button('Commit selection').click());
     expect(commands[2]).toMatchObject({ aDay: 'G4' });
     expect(commands[2]?.commandId).not.toBe(commands[0]?.commandId);
+  });
+});
+
+describe('canonical disposition and return controls', () => {
+  it('records contact, defer, and evidence-gated unreachable commands', async () => {
+    await mount('Disposition and return');
+    await settle(() => button('Record PHONE').click());
+    await settle(() => button('Record DEFER').click());
+    expect(button('Record UNREACHABLE').disabled).toBe(true);
+    await fill('Evidence reference', 'Mock contact log 2026-09-24');
+    await settle(() => button('Record UNREACHABLE').click());
+
+    expect(commands[0]).toMatchObject({
+      type: 'live.record_contact_attempt',
+      memberId: 17,
+      method: 'PHONE',
+    });
+    expect(commands[1]).toMatchObject({ type: 'live.disposition', disposition: 'DEFER' });
+    expect(commands[2]).toMatchObject({
+      type: 'live.disposition',
+      disposition: 'UNREACHABLE',
+      evidenceReference: 'Mock contact log 2026-09-24',
+    });
+  });
+
+  it('returns an unresolved member and records that member selection at the current sequence', async () => {
+    const returned = {
+      member_id: 9,
+      first_name: 'Synthetic',
+      last_name: 'Return',
+      rank: 'FF',
+    };
+    live.unresolved_members = [returned];
+    await mount('Disposition and return');
+    await settle(() => button('Return FF Synthetic Return').click());
+    expect(commands[0]).toMatchObject({
+      type: 'live.return_at_current_sequence',
+      memberId: 9,
+    });
+
+    await act(async () => root?.unmount());
+    root = undefined;
+    commands = [];
+    live = { ...state(), returning_member: returned };
+    await mount('Record selection');
+    await choose('Position selected by current bidder', 'abc');
+    await choose('Selection A-Day', 'G2');
+    await settle(() => button('Commit selection').click());
+    expect(commands[0]).toMatchObject({
+      type: 'live.record_selection',
+      memberId: 9,
+      positionId: 'abc',
+      aDay: 'G2',
+    });
   });
 });
 

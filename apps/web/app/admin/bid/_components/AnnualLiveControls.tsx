@@ -91,6 +91,17 @@ type SpecialtyState = {
     shift: string | null;
   }>;
   current_bidder: Candidate | null;
+  dispositions?: Array<{
+    disposition: 'HOLD' | 'PASS' | 'DEFER' | 'SKIP' | 'DECLINED' | 'UNREACHABLE';
+    advances: boolean;
+    returns: boolean;
+    retainsLaterSelectionRights: boolean;
+    terminal: boolean;
+    requiresReason: boolean;
+    requiresEvidence: boolean;
+  }>;
+  unresolved_members?: Candidate[];
+  returning_member?: Candidate | null;
   remaining_order: number[];
   fills: Record<string, { member_id: number }>;
   specialties: Array<{
@@ -212,7 +223,15 @@ export function AnnualLiveControls(props: Props) {
   const csrfFetch = useMemo(() => createCsrfAwareFetch(fetch, () => window.location.origin), []);
   const [state, setState] = useState<SpecialtyState | null>(null);
   const [panel, setPanel] = useState<
-    'selection' | 'a-day' | 'specialty' | 'fallback' | 'presentation' | 'amendment' | 'order' | null
+    | 'selection'
+    | 'disposition'
+    | 'a-day'
+    | 'specialty'
+    | 'fallback'
+    | 'presentation'
+    | 'amendment'
+    | 'order'
+    | null
   >(null);
   const pendingCommand = useRef<{
     fingerprint: string;
@@ -259,9 +278,10 @@ export function AnnualLiveControls(props: Props) {
   const requiresSimultaneousADay = (positionId: string | undefined) =>
     aDayTimingForPosition(positionId) === 'SIMULTANEOUS';
   const fallbackRequiresSimultaneousADay = requiresSimultaneousADay(fallback?.positionId);
+  const selectionMember = state?.returning_member ?? state?.current_bidder ?? null;
   const termMemberId =
     panel === 'selection'
-      ? state?.current_bidder?.member_id
+      ? selectionMember?.member_id
       : panel === 'amendment'
         ? state?.fills[amendFrom]?.member_id
         : panel === 'specialty'
@@ -302,7 +322,7 @@ export function AnnualLiveControls(props: Props) {
   const [selectionADay, setSelectionADay] = useAwardADay(
     JSON.stringify([
       props.bidSessionId,
-      state?.current_bidder?.member_id,
+      selectionMember?.member_id,
       selectionPositionId,
       selectionPosition?.shift,
     ]),
@@ -576,6 +596,7 @@ export function AnnualLiveControls(props: Props) {
         {(
           [
             ['selection', 'Record selection'],
+            ['disposition', 'Disposition and return'],
             ['a-day', 'Record A-Day'],
             ['specialty', 'Specialty and contact'],
             ['fallback', 'Fallback awards'],
@@ -611,17 +632,19 @@ export function AnnualLiveControls(props: Props) {
         title={
           panel === 'specialty'
             ? 'Specialty and contact'
-            : panel === 'a-day'
-              ? 'Record controlled A-Day selection'
-              : panel === 'fallback'
-                ? 'Fallback awards'
-                : panel === 'presentation'
-                  ? 'Department presentation'
-                  : panel === 'amendment'
-                    ? 'Correct a recorded selection'
-                    : panel === 'order'
-                      ? 'Remaining bid order'
-                      : 'Record selection'
+            : panel === 'disposition'
+              ? 'Disposition, contact, and return'
+              : panel === 'a-day'
+                ? 'Record controlled A-Day selection'
+                : panel === 'fallback'
+                  ? 'Fallback awards'
+                  : panel === 'presentation'
+                    ? 'Department presentation'
+                    : panel === 'amendment'
+                      ? 'Correct a recorded selection'
+                      : panel === 'order'
+                        ? 'Remaining bid order'
+                        : 'Record selection'
         }
         description="Actions follow this session’s approved policy and your operator authority. Enter a reason and review the selected member or position before recording an action."
       >
@@ -691,6 +714,78 @@ export function AnnualLiveControls(props: Props) {
         </div>
 
         <div className="mt-4 space-y-4">
+          <article hidden={panel !== 'disposition'} className="rounded border border-border p-3">
+            <h3 className="font-semibold text-foreground">Record bidder disposition</h3>
+            <p className="text-xs text-muted-foreground">
+              Contact attempts and disposition outcomes are audited canonical commands. An
+              unreachable outcome requires the evidence reference above.
+            </p>
+            {state?.current_bidder ? (
+              <div className="mt-3 space-y-3 text-sm">
+                <p>
+                  Current bidder: <strong>{name(state.current_bidder)}</strong>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(['PHONE', 'TEXT'] as const).map((method) => (
+                    <Button
+                      key={method}
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void command('live.record_contact_attempt', {
+                          memberId: state.current_bidder?.member_id,
+                          method,
+                        })
+                      }
+                    >
+                      Record {method}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(state.dispositions ?? []).map((entry) => (
+                    <Button
+                      key={entry.disposition}
+                      type="button"
+                      disabled={busy || (entry.requiresEvidence && !evidenceReference.trim())}
+                      onClick={() =>
+                        void command('live.disposition', { disposition: entry.disposition })
+                      }
+                    >
+                      Record {entry.disposition}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">No bidder is currently active.</p>
+            )}
+            {(state?.unresolved_members ?? []).length > 0 ? (
+              <div className="mt-4 border-t border-border pt-3">
+                <h4 className="font-semibold text-foreground">Return an unresolved bidder</h4>
+                <p className="text-xs text-muted-foreground">
+                  The returned member selects at the current sequence without rewinding completed
+                  awards.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {state?.unresolved_members?.map((candidate) => (
+                    <Button
+                      key={candidate.member_id}
+                      type="button"
+                      disabled={busy || state.returning_member != null}
+                      onClick={() =>
+                        void command('live.return_at_current_sequence', {
+                          memberId: candidate.member_id,
+                        })
+                      }
+                    >
+                      Return {name(candidate)}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </article>
           <article hidden={panel !== 'a-day'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Controlled A-Day selection</h3>
             <p className="text-xs text-muted-foreground">
@@ -1079,7 +1174,11 @@ export function AnnualLiveControls(props: Props) {
           ) : null}
 
           <article hidden={panel !== 'selection'} className="rounded border border-border p-3">
-            <h3 className="font-semibold text-foreground">Record current bidder selection</h3>
+            <h3 className="font-semibold text-foreground">
+              {state?.returning_member
+                ? 'Record returned bidder selection'
+                : 'Record current bidder selection'}
+            </h3>
             <p className="text-xs text-muted-foreground">
               Canonical selection for the active member; the frozen stage policy remains enforced.
             </p>
@@ -1154,18 +1253,18 @@ export function AnnualLiveControls(props: Props) {
               .filter(
                 (entry) =>
                   entry.membershipSource === 'REVIEWED_QUALIFIED_POOL' &&
-                  entry.memberIds.includes(state?.current_bidder?.member_id ?? -1),
+                  entry.memberIds.includes(selectionMember?.member_id ?? -1),
               )
               .map((entry) => (
                 <Label key={entry.id} className="flex min-h-11 items-center gap-2">
                   <input
                     type="checkbox"
                     checked={
-                      membershipChoice.memberId === state?.current_bidder?.member_id &&
+                      membershipChoice.memberId === selectionMember?.member_id &&
                       membershipChoice.ids.includes(entry.id)
                     }
                     onChange={(event) => {
-                      const memberId = state?.current_bidder?.member_id ?? null;
+                      const memberId = selectionMember?.member_id ?? null;
                       const ids =
                         membershipChoice.memberId === memberId ? membershipChoice.ids : [];
                       setMembershipChoice({
@@ -1184,13 +1283,13 @@ export function AnnualLiveControls(props: Props) {
               disabled={
                 busy ||
                 state === null ||
-                state.current_bidder === null ||
+                selectionMember === null ||
                 !selectionPositionId ||
                 (selectionRequiresSimultaneousADay && !selectionADay)
               }
               onClick={() =>
                 void command('live.record_selection', {
-                  memberId: state?.current_bidder?.member_id,
+                  memberId: selectionMember?.member_id,
                   positionId: selectionPositionId,
                   ...(selectionPoolId ? { pool: { poolId: selectionPoolId } } : {}),
                   ...(selectionRequiresSimultaneousADay ? { aDay: selectionADay } : {}),

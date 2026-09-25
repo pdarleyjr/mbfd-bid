@@ -1808,10 +1808,9 @@ router.get('/sessions', async (c) => {
     .where(eq(bidSessions.isMock, true))
     .all();
 
-  let effectiveSessions: typeof sessions;
-  try {
-    effectiveSessions = await Promise.all(
-      sessions.map(async (session) => {
+  const effectiveSessions = await Promise.all(
+    sessions.map(async (session) => {
+      try {
         const canonical = await loadCanonicalBidSessionState(c.env.DB, session.id);
         return canonical === null
           ? session
@@ -1820,11 +1819,14 @@ router.get('/sessions', async (c) => {
               currentPhase: canonical.currentPhase,
               currentBidderId: canonical.currentBidderId,
             };
-      }),
-    );
-  } catch {
-    return c.json({ error: 'canonical_state_unavailable' }, 503);
-  }
+      } catch {
+        // Historical rehearsal rows may predate the current canonical-policy
+        // envelope. Keep their D1 projection visible instead of allowing one
+        // stale Mock to hide every active, healthy rehearsal from operators.
+        return session;
+      }
+    }),
+  );
 
   // Last-pick lookup per session (best-effort).
   const lastPicks = new Map<string, string>();
