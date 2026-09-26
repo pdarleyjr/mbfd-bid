@@ -446,6 +446,7 @@ router.get('/:id/specialty-live', async (c) => {
     bid_session_id: sessionId,
     sequence: canonical.lastSeq,
     current_phase: canonical.currentPhase,
+    finalization_ready: canonical.annual?.completion != null,
     membership_distributions: policy.annualOperations?.membershipDistributions ?? [],
     term_participation: Object.fromEntries(
       frozen.snapshot.members.flatMap((person) =>

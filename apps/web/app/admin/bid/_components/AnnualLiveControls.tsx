@@ -70,6 +70,7 @@ type SpecialtyState = {
     }
   >;
   current_phase?: 'config' | 'position_bid' | 'a_day_bid' | 'paused' | 'complete';
+  finalization_ready?: boolean;
   a_day_selection?: 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION' | null;
   a_day_timing_by_position?: Record<string, 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION'>;
   a_day_combat_groups?: readonly ('G1' | 'G2' | 'G3' | 'G4')[];
@@ -279,6 +280,7 @@ export function AnnualLiveControls(props: Props) {
     | 'presentation'
     | 'amendment'
     | 'order'
+    | 'finalization'
     | null
   >(null);
   const pendingCommand = useRef<{
@@ -693,6 +695,9 @@ export function AnnualLiveControls(props: Props) {
             ['presentation', 'Presentation'],
             ['amendment', 'Correct selection'],
             ['order', 'Remaining order'],
+            ...(state?.current_phase === 'complete' && !state.finalization_ready
+              ? ([['finalization', 'Finalize results']] as const)
+              : []),
           ] as const
         ).map(([id, label]) => (
           <Button
@@ -734,7 +739,9 @@ export function AnnualLiveControls(props: Props) {
                       ? 'Correct a recorded selection'
                       : panel === 'order'
                         ? 'Remaining bid order'
-                        : 'Record selection'
+                        : panel === 'finalization'
+                          ? 'Finalize completed results'
+                          : 'Record selection'
         }
         description="Actions follow this session’s approved policy and your operator authority. Enter a reason and review the selected member or position before recording an action."
       >
@@ -1528,6 +1535,22 @@ export function AnnualLiveControls(props: Props) {
               className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
             >
               Commit remaining order
+            </Button>
+          </article>
+
+          <article hidden={panel !== 'finalization'} className="rounded border border-border p-3">
+            <h3 className="font-semibold text-foreground">Mark results ready for finalization</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              This seals the completed canonical result for Results, exports, and the read-only
+              staffing transition preview. It does not publish to Portal or change staffing.
+            </p>
+            <Button
+              type="button"
+              disabled={busy || state?.current_phase !== 'complete'}
+              onClick={() => void command('live.complete_session')}
+              className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
+            >
+              Mark ready for finalization
             </Button>
           </article>
         </div>

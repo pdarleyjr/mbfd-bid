@@ -3,6 +3,7 @@ import type { FrozenLiveBidPolicy, LiveBidAction, LiveBidCommand } from '@mbfd/s
 import { handleSubmitADayPick } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, Fill, LiveBidProgress } from '../durable/bid-session-state.js';
 import {
+  type AnnualOperationsState,
   checkpointAnnualOperations,
   declareUnreachable,
   initializeAnnualOperations,
@@ -11,6 +12,24 @@ import {
   returnAtCurrentSequence,
   validateUnreachableContact,
 } from '../lib/annual-bid-operations.js';
+
+function settleReturnedMember(
+  state: AnnualOperationsState,
+  memberId: number,
+): AnnualOperationsState {
+  if (
+    state.returningMemberId !== memberId &&
+    !state.returnedAtCurrentSequence.some((entry) => entry.memberId === memberId)
+  )
+    return state;
+  return {
+    ...state,
+    returnedAtCurrentSequence: state.returnedAtCurrentSequence.filter(
+      (entry) => entry.memberId !== memberId,
+    ),
+    returningMemberId: state.returningMemberId === memberId ? null : state.returningMemberId,
+  };
+}
 
 export type LiveReduction =
   | {
@@ -144,6 +163,7 @@ export function reduceLiveBidCommand(
     return { ok: false, code: 'ANNUAL_COMPLETION_SEALED' };
   const live = progress(state);
   const currentStageId = stageFor(state);
+  const annual = state.annual ?? initializeAnnualOperations({ preferenceSheets: [] });
   if (currentStageId === null || !policy.stages.some((stage) => stage.id === currentStageId))
     return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
   if (command.type === 'live.pause') {
@@ -197,12 +217,15 @@ export function reduceLiveBidCommand(
     );
     if (picked.kind === 'rejected') return { ok: false, code: picked.code };
     const ordinaryAdvance = isDeferredOrdinaryTurn ? next(state, policy, now) : null;
+    const settledAnnual = settleReturnedMember(annual, command.memberId);
+    const pickedState =
+      settledAnnual === annual ? picked.newState : { ...picked.newState, annual: settledAnnual };
     return {
       ok: true,
       state:
         ordinaryAdvance === null
-          ? picked.newState
-          : { ...picked.newState, ...ordinaryAdvance, aDay: picked.newState.aDay },
+          ? pickedState
+          : { ...pickedState, ...ordinaryAdvance, aDay: pickedState.aDay },
       eventType: 'live_command_applied',
       payload: {
         operation: 'record_a_day',
@@ -499,7 +522,6 @@ export function reduceLiveBidCommand(
       supersedesBidId: null,
     };
   }
-  const annual = state.annual ?? initializeAnnualOperations({ preferenceSheets: [] });
   const annualPolicy = policy.annualOperations;
   if (command.type === 'live.record_fallback_response') {
     if (!fallbackAuthorized) return { ok: false, code: 'FALLBACK_REVIEW_REQUIRED' };
@@ -614,7 +636,13 @@ export function reduceLiveBidCommand(
   if (command.type === 'live.complete_session') {
     if (state.currentPhase !== 'complete') return { ok: false, code: 'SESSION_NOT_COMPLETE' };
     if (annualPolicy === undefined) return { ok: false, code: 'ANNUAL_OPERATIONS_POLICY_MISSING' };
-    const result = markReadyForFinalization(annual, {
+    const settledReturnMemberId = annual.returningMemberId;
+    const settledAnnual: AnnualOperationsState = {
+      ...annual,
+      returnedAtCurrentSequence: [],
+      returningMemberId: null,
+    };
+    const result = markReadyForFinalization(settledAnnual, {
       actorMemberId: command.actor.id,
       atMs: now,
       unresolvedMembersBlock: true,
@@ -624,7 +652,10 @@ export function reduceLiveBidCommand(
       ok: true,
       state: { ...state, annual: result.state, lastSeq: state.lastSeq + 1 },
       eventType: 'live_command_applied',
-      payload: { operation: 'ready_for_finalization' },
+      payload: {
+        operation: 'ready_for_finalization',
+        ...(settledReturnMemberId === null ? {} : { settledReturnMemberId }),
+      },
       supersedesBidId: null,
     };
   }
@@ -776,7 +807,7 @@ export function reduceLiveBidCommand(
         },
       },
       live: { ...live, lastSelectionBidId: bidId },
-      annual: isReturnedAtCurrentSequence ? { ...annual, returningMemberId: null } : annual,
+      annual: isReturnedAtCurrentSequence ? settleReturnedMember(annual, memberId) : annual,
       lastSeq: state.lastSeq + 1,
     },
     eventType: 'live_command_applied',

@@ -30,6 +30,9 @@ export const FINAL_2026_MASTER_EXCLUDED_EMPLOYEE_IDS = [
 export const FINAL_2026_NON_BIDDER_EMPLOYEE_IDS = [
   ...FINAL_2026_MASTER_EXCLUDED_EMPLOYEE_IDS,
   ...FINAL_2026_EXCLUDED_EMPLOYEE_IDS,
+  // Current B-shift Division Chief 300 occupant (B211). The Department
+  // identity remains Captain, but the reviewed assignment is outside Bid.
+  '18148',
 ] as const;
 
 export const FINAL_2026_BLOOMFIELD = {
@@ -39,8 +42,8 @@ export const FINAL_2026_BLOOMFIELD = {
 } as const;
 
 export const FINAL_2026_ACTIVE_BIDDERS = {
-  total: 222,
-  byRank: { CPT: 22, LT: 39, FF: 161 },
+  total: 221,
+  byRank: { CPT: 21, LT: 39, FF: 161 },
 } as const;
 
 export const FINAL_2026_SWAT_EMPLOYEE_IDS = [

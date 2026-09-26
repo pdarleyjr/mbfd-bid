@@ -25,6 +25,7 @@ const members = [
   ['18158', 207, 'DC'],
   ['16584', 208, 'FF'],
   ['14326', 209, 'CPT'],
+  ['18148', 210, 'CPT'],
 ] as const;
 
 function content() {
@@ -192,7 +193,8 @@ const options = members.map(([employeeId, id, rank]) => ({
   rank,
   bidCategory: rank === 'FF' ? ('FF' as const) : ('OFC' as const),
   employmentStatus: 'active' as const,
-  priorPositionId: id === 102 ? 'D-CAPTAIN-1' : id === 106 ? 'A-CAPTAIN-1' : 'A-FF-1',
+  priorPositionId:
+    id === 102 ? 'D-CAPTAIN-1' : id === 106 ? 'A-CAPTAIN-1' : id === 210 ? 'B211' : 'A-FF-1',
 }));
 
 describe('known 2026 setup', () => {
@@ -246,6 +248,7 @@ describe('known 2026 setup', () => {
     ]);
     expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(208);
     expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(209);
+    expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(210);
     expect(policy?.annualOperations?.membershipDistributions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
