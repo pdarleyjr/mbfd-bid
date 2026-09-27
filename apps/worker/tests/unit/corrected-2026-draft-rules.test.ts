@@ -1,6 +1,10 @@
 import { type Member, compare, evaluateEligibility } from '@mbfd/eligibility';
 import { describe, expect, it } from 'vitest';
 import { buildCorrected2026DraftRules } from '../../src/lib/corrected-2026-draft-rules.js';
+import {
+  obligationDueOn,
+  postAwardObligationApplies,
+} from '../../src/lib/post-award-obligations.js';
 
 const candidate = buildCorrected2026DraftRules();
 const rule = (id: string) => {
@@ -68,6 +72,19 @@ describe('corrected 2026 draft rules from semantic roles', () => {
     }
   });
 
+  it('limits the July policy Paramedic minimum to explicit Rescue Float and Captain 5 roles', () => {
+    for (const id of ['A109', 'A110', 'A205', 'A206']) {
+      expect(
+        rule(id).requiredCriteria.custom,
+        `${id} is ordinary or Station 2 Rescue`,
+      ).not.toContain('paramedic');
+    }
+    for (const id of ['A212', 'A213', 'A215'])
+      expect(rule(id).requiredCriteria.custom, `${id} has an explicit policy minimum`).toContain(
+        'paramedic',
+      );
+  });
+
   it('gives every Station #2 Float 2 seat Special Ops scoring and gates Technician points', () => {
     for (const shift of ['A', 'B', 'C']) {
       for (const suffix of ['213', '214', '215', '718']) {
@@ -82,6 +99,79 @@ describe('corrected 2026 draft rules from semantic roles', () => {
         expect(group?.items[12]?.credential).toBe('Drone Operator Qualified-Part 107 sUAS');
         expect(candidateRule.tieBreakChain).toContain('so_points');
       }
+    }
+  });
+
+  it('combines Station #2 scoring exactly once with each role-specific preference', () => {
+    const cases: { id: string; rank: Member['rank']; extra: string[] }[] = [
+      { id: 'A201', rank: 'CPT', extra: [] }, // ordinary Combat
+      { id: 'A205', rank: 'LT', extra: [] }, // ordinary Rescue
+      { id: 'A202', rank: 'FF', extra: [] }, // Driver Engineer
+      {
+        id: 'A212',
+        rank: 'CPT',
+        extra: [
+          'Instructor I',
+          'Advance Cardiac Life Support (ACLS) INSTRUCTOR AHA',
+          'Pediatric Advanced Life Support (PALS) INSTRUCTOR AHA',
+          'Basic Life Support (BLS) INSTRUCTOR AHA',
+          'State of Florida Incident Safety Officer',
+        ],
+      }, // Captain 5
+      { id: 'A203', rank: 'FF', extra: ['Car Seat Technician'] }, // Air Tech
+      { id: 'A213', rank: 'LT', extra: [] }, // Rescue Float Lieutenant
+      { id: 'A214', rank: 'FF', extra: [] }, // Combat Float Firefighter
+      { id: 'A215', rank: 'FF', extra: [] }, // Rescue Float Firefighter
+      { id: 'A718', rank: 'CPT', extra: [] }, // Float 2 Captain
+    ];
+    for (const item of cases) {
+      const candidateRule = rule(item.id);
+      const scoring = candidateRule.pointsPreference.scoring;
+      const so = scoring?.so.find((group) => group.id === 'special-operations-2026');
+      expect(so?.cap, item.id).toBe(13);
+      expect(
+        scoring?.total.map((group) => group.id),
+        item.id,
+      ).toEqual([
+        'special-operations-2026',
+        ...(item.id === 'A212'
+          ? ['captain-five']
+          : item.id === 'A203'
+            ? ['air-tech-car-seat']
+            : []),
+      ]);
+      expect(candidateRule.tieBreakChain, item.id).toEqual([
+        'points',
+        'so_points',
+        item.rank === 'FF' ? 'department_service_bid_ordinal' : 'time_in_grade_bid_ordinal',
+      ]);
+      const credentials = [
+        ...new Set([
+          ...candidateRule.requiredCriteria.credentials,
+          ...operations,
+          ...technicians,
+          'Drone Operator Qualified-Part 107 sUAS',
+          'Paramedic',
+          ...item.extra,
+        ]),
+      ];
+      const member = candidateMember(item.rank, credentials, 1);
+      if (item.id === 'A212')
+        member.serviceCredits = [
+          {
+            serviceCode: 'RESCUE_DIVISION',
+            verifiedMonths: 36,
+            effectiveOn: '2026-01-01',
+            recordId: 'synthetic-service',
+            sourceRef: 'synthetic reviewed service',
+            actorSubject: 'synthetic-actor',
+          },
+        ];
+      expect(evaluateEligibility(member, candidateRule), item.id).toMatchObject({
+        eligible: true,
+        points: 13 + item.extra.length,
+        soPoints: 13,
+      });
     }
   });
 
@@ -212,7 +302,7 @@ describe('corrected 2026 draft rules from semantic roles', () => {
     expect(() => buildCorrected2026DraftRules({ approvedBidStartOn: '2026-02-30' })).toThrow(
       'approved_2026_bid_start_date_invalid',
     );
-    const configured = buildCorrected2026DraftRules({ approvedBidStartOn: '2026-11-01' });
+    const configured = buildCorrected2026DraftRules({ approvedBidStartOn: '2026-10-24' });
     expect(configured.blockingIssues).not.toContain(
       'MARINE_DRI_THREE_MONTHS_FROM_APPROVED_BID_START_DATE_NOT_YET_CONFIGURED',
     );
@@ -223,21 +313,72 @@ describe('corrected 2026 draft rules from semantic roles', () => {
             .postAward,
         ).toEqual([
           {
-            id: '2026-marine-dri-transition',
+            id: '2026-marine-open-water-to-dri',
             credential: 'DRI Public Safety Diver',
-            sourceRef: 'Final July 2026 Bid Policy Procedure 8(f)(i-ii)',
+            sourceRef: 'Final July 2026 Bid Policy Procedure 8(f)(i)',
             appliesWhenMissingAll: ['DRI Public Safety Diver', 'PADI Public Safety Diver'],
             deadline: {
               basis: 'APPROVED_BID_START_DATE',
-              startOn: '2026-11-01',
+              startOn: '2026-10-24',
               unit: 'CALENDAR_MONTHS',
               count: 3,
               timeZone: 'America/New_York',
             },
           },
+          {
+            id: '2026-marine-padi-to-dri-continuing-training',
+            credential: 'DRI Public Safety Diver',
+            sourceRef: 'Final July 2026 Bid Policy Procedure 8(f)(ii)',
+            appliesWhenMissingAll: ['DRI Public Safety Diver'],
+            appliesWhenHoldingAny: ['PADI Public Safety Diver'],
+            deadline: null,
+          },
         ]);
       }
     }
+  });
+
+  it('separates Open Water deadline from PADI continuing-training transition without changing Marine minimums', () => {
+    const marine = buildCorrected2026DraftRules({ approvedBidStartOn: '2026-10-24' }).rules.find(
+      (item) => item.positionId === 'A602',
+    );
+    if (!marine) throw new Error('Missing Marine rule');
+    const terms = marine.requiredCriteria.postAward ?? [];
+    const minimums = marine.requiredCriteria.credentials;
+    const cases = [
+      { additional: [], expected: ['2026-marine-open-water-to-dri'] },
+      {
+        additional: ['PADI Public Safety Diver'],
+        expected: ['2026-marine-padi-to-dri-continuing-training'],
+      },
+      { additional: ['DRI Public Safety Diver'], expected: [] },
+      { additional: ['PADI Public Safety Diver', 'DRI Public Safety Diver'], expected: [] },
+    ];
+    for (const item of cases) {
+      const credentials = [...minimums, ...item.additional];
+      expect(evaluateEligibility(candidateMember('FF', credentials, 1), marine).eligible).toBe(
+        true,
+      );
+      const applicable = terms.filter((term) => postAwardObligationApplies(term, credentials));
+      expect(applicable.map((term) => term.id)).toEqual(item.expected);
+      expect(
+        applicable.map((term) =>
+          obligationDueOn(Date.parse('2026-10-25T12:00:00Z'), term.deadline),
+        ),
+      ).toEqual(
+        item.expected.length === 0 ? [] : item.additional.length === 0 ? ['2027-01-24'] : [null],
+      );
+    }
+    expect(
+      evaluateEligibility(
+        candidateMember(
+          'FF',
+          minimums.filter((name) => name !== 'Valid OUPV / Six Pack Authority'),
+          2,
+        ),
+        marine,
+      ).eligible,
+    ).toBe(false);
   });
 
   it('maps Investigator, Captain 5, Air Tech and Marine requirements by current roles', () => {

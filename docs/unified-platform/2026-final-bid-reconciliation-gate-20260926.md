@@ -6,7 +6,7 @@ The supplied MASTER workbook (SHA-256 `0aa4441f03c13f93a1d48833581a9a9a370743b76
 
 ## Missing role determination
 
-The administrator's direct review of the actual 2025 A/B/C shift diagrams confirms each shows 74 counted positions including one Division Chief and a counted `Captain #1 (C)` under **Station #2 / Float 2**. A-shift Union President A701 appears separately outside the counted blocks. This diagram finding is reported by the administrator; the image files have not been independently inspected in this worktree. Independent available evidence agrees:
+The administrator's direct review of the actual 2025 A/B/C shift diagrams confirms each shows 74 counted positions including one Division Chief and a counted `Captain #1 (C)` under **Station #2 / Float 2**. A-shift Union President A701 appears separately outside the counted blocks. The diagrams were independently inspected on 2026-09-27; they are historical structure evidence, subordinate to the final 2026 MASTER for individual seat rank. Independent available evidence agrees:
 
 - Legacy `2026_positions.json` has A213/B213/C213 as floating CPT `Captain #1 (C)` roles, one per shift. Those numeric IDs now identify Rescue Float Lieutenants in the final source, so copying the legacy IDs would corrupt the final topology.
 - `Daily Shift Staffing Guidelines 1.13 12-1-25.docx`, supplied extraction SHA-256 `c13364c0ea9333383b70e3c8578640fc097a2af4dddfde863170383db1328659`, explicitly refers to `Bid Floating Captain with Certs` for Marine coverage and the second boat.
@@ -51,6 +51,20 @@ certificate validity, or DRI/PADI issuer. The successor resolves seven catalog
 identity source decisions and the Investigator preference ordering, while 25
 OPEN source decisions remain scoped to Real activation and person-specific or
 operational evidence, in addition to the one final-configuration cutoff gate.
-Marine DRI completion is due three months from the 2026-10-24 Bid start under
-Procedure 8(f), conditional on missing both DRI and PADI. None
+Marine open-water-only entry without DRI or PADI PSD carries a DRI due date of
+2027-01-24, three calendar months from the approved 2026-10-24 Bid start under
+Procedure 8(f)(i). PADI PSD entry without DRI carries a separate continuing
+education/training/renewal transition with no fabricated fixed deadline under
+Procedure 8(f)(ii). None
 of these gaps calls for an administrator to choose an internal position ID.
+
+## Superseding candidate finding
+
+The live release decision is now tracked in
+`2026-LIVE-READINESS-AND-DECISIONS.md`. That register supersedes this
+2026-09-26 candidate summary wherever newer source reconciliation or code
+validation differs. In particular, the final MASTER and supplied 2026 shift
+template label B703 as Firefighter; a 2025 B-shift diagram and current
+assignment export show a third B Rescue Float Lieutenant. Assignment evidence
+does not approve a 2026 Bid rank correction. The resulting 39 Lieutenant
+bidders versus 38 Lieutenant opportunities is a hard final-configuration gate.

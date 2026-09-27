@@ -221,9 +221,9 @@ export function buildCorrected2026DraftRules(
         });
         if (options.approvedBidStartOn)
           postAward.push({
-            id: '2026-marine-dri-transition',
+            id: '2026-marine-open-water-to-dri',
             credential: MARINE_PSD_DRI,
-            sourceRef: 'Final July 2026 Bid Policy Procedure 8(f)(i-ii)',
+            sourceRef: 'Final July 2026 Bid Policy Procedure 8(f)(i)',
             appliesWhenMissingAll: [MARINE_PSD_DRI, MARINE_PSD_PADI],
             deadline: {
               basis: 'APPROVED_BID_START_DATE',
@@ -233,13 +233,22 @@ export function buildCorrected2026DraftRules(
               timeZone: 'America/New_York',
             },
           });
+        postAward.push({
+          id: '2026-marine-padi-to-dri-continuing-training',
+          credential: MARINE_PSD_DRI,
+          sourceRef: 'Final July 2026 Bid Policy Procedure 8(f)(ii)',
+          appliesWhenMissingAll: [MARINE_PSD_DRI],
+          appliesWhenHoldingAny: [MARINE_PSD_PADI],
+          deadline: null,
+        });
         break;
       }
       case 'RESCUE_FLOAT_LT':
       case 'RESCUE_FLOAT_FF':
+        custom.push('paramedic');
+        break;
       case 'ORDINARY_RESCUE':
       case 'SPECIAL_OPS_RESCUE':
-        custom.push('paramedic');
         break;
       case 'DRIVER_ENGINEER':
       case 'COMBAT_FLOAT_DE':
@@ -299,7 +308,7 @@ export function buildCorrected2026DraftRules(
         issue: 'Ordinary and Float Rescue paramedic minimum',
         classification: 'SOURCE_CAN_RESOLVE',
         finding:
-          'July policy Procedure 11(b) explicitly requires Rescue Float paramedics; the historical 2026 Rules and Points source requires Paramedic for the Rescue track and the final policy has no contrary ordinary-Rescue exception.',
+          'July policy Procedure 11(b) explicitly requires Rescue Float paramedics. The supplied final policy and calculation workbook do not establish a Paramedic Bid minimum for ordinary Rescue or Station #2 Rescue positions, so this draft does not impose one on those roles. A staffing assignment requirement does not become a Bid eligibility rule without source authority.',
       },
       {
         issue: 'Station #2 Special Ops cumulative scoring and Float 2 Captain placement',

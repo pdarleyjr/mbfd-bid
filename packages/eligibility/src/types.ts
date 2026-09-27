@@ -61,11 +61,17 @@ export interface RequiredCriteria {
     credential: string;
     sourceRef: string;
     appliesWhenMissingAll?: string[] | undefined;
-    deadline: {
-      unit: 'CALENDAR_DAYS' | 'CALENDAR_MONTHS';
-      count: number;
-      timeZone: 'America/New_York' | 'UTC';
-    } & ({ basis: 'FINAL_POSITION_AWARD' } | { basis: 'APPROVED_BID_START_DATE'; startOn: string });
+    appliesWhenHoldingAny?: string[] | undefined;
+    deadline:
+      | ({
+          unit: 'CALENDAR_DAYS' | 'CALENDAR_MONTHS';
+          count: number;
+          timeZone: 'America/New_York' | 'UTC';
+        } & (
+          | { basis: 'FINAL_POSITION_AWARD' }
+          | { basis: 'APPROVED_BID_START_DATE'; startOn: string }
+        ))
+      | null;
   }[];
   custom: Array<'paramedic' | 'driver_engineer' | 'non_probationary'>;
 }

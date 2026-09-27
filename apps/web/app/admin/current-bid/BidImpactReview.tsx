@@ -174,8 +174,11 @@ function TraceCard({ title, trace }: { title: string; trace: Trace }) {
               <ul className="space-y-2 text-sm">
                 {trace.postAward.map((term) => (
                   <li key={term.id}>
-                    {term.credential}: {term.deadline.count} {words(term.deadline.unit)} from{' '}
-                    {words(term.deadline.basis)} · {term.sourceRef}
+                    {term.credential}:{' '}
+                    {term.deadline
+                      ? `${term.deadline.count} ${words(term.deadline.unit)} from ${words(term.deadline.basis)}`
+                      : 'Continuing transition; no fixed policy deadline'}{' '}
+                    · {term.sourceRef}
                   </li>
                 ))}
               </ul>

@@ -7,9 +7,12 @@ export function postAwardObligationApplies(
   frozenCredentialNames: readonly string[] | null,
 ): boolean {
   return (
-    !term.appliesWhenMissingAll ||
-    frozenCredentialNames === null ||
-    term.appliesWhenMissingAll.every((name) => !frozenCredentialNames.includes(name))
+    (!term.appliesWhenMissingAll ||
+      frozenCredentialNames === null ||
+      term.appliesWhenMissingAll.every((name) => !frozenCredentialNames.includes(name))) &&
+    (!term.appliesWhenHoldingAny ||
+      (frozenCredentialNames !== null &&
+        term.appliesWhenHoldingAny.some((name) => frozenCredentialNames.includes(name))))
   );
 }
 
@@ -17,6 +20,7 @@ export function obligationDueOn(
   awardedAtMs: number,
   deadline: PostAwardObligation['deadline'],
 ): string | null {
+  if (deadline === null) return null;
   if (
     !Number.isSafeInteger(awardedAtMs) ||
     awardedAtMs <= 0 ||

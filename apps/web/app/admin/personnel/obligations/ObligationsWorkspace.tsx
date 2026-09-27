@@ -292,16 +292,25 @@ export function ObligationsWorkspace() {
               {row.status.replaceAll('_', ' ')}
               {row.completionTiming ? ` · ${row.completionTiming.replaceAll('_', ' ')}` : ''}
             </p>
-            <p>
-              Due {row.dueOn ?? 'unknown — award evidence required'} · {row.term.deadline.count}{' '}
-              {row.term.deadline.unit.toLowerCase().replaceAll('_', ' ')} ·{' '}
-              {row.term.deadline.timeZone}
-            </p>
-            <p className="text-sm text-foreground">
-              {row.term.deadline.basis === 'APPROVED_BID_START_DATE'
-                ? `Measured from approved bid start ${row.term.deadline.startOn}; retained through award amendments.`
-                : 'Measured from the final accepted position award, including its replacement after an amendment.'}
-            </p>
+            {row.term.deadline ? (
+              <>
+                <p>
+                  Due {row.dueOn ?? 'unknown — award evidence required'} · {row.term.deadline.count}{' '}
+                  {row.term.deadline.unit.toLowerCase().replaceAll('_', ' ')} ·{' '}
+                  {row.term.deadline.timeZone}
+                </p>
+                <p className="text-sm text-foreground">
+                  {row.term.deadline.basis === 'APPROVED_BID_START_DATE'
+                    ? `Measured from approved bid start ${row.term.deadline.startOn}; retained through award amendments.`
+                    : 'Measured from the final accepted position award, including its replacement after an amendment.'}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-foreground">
+                Continuing transition for future training and renewal; the policy sets no fixed due
+                date.
+              </p>
+            )}
             <p className="break-words text-sm">Policy source: {row.term.sourceRef}</p>
             {row.award && (
               <p className="break-words text-xs text-muted-foreground">

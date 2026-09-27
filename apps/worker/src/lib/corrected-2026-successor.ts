@@ -1,6 +1,7 @@
 import type { BidDefinitionContent } from '@mbfd/shared';
 import { CredentialEvaluationDateSchema } from '@mbfd/shared';
 import { evaluate2026OpportunityInventory } from './2026-opportunity-inventory.js';
+import { evaluate2026RankCapacity } from './2026-rank-capacity.js';
 import { buildCorrected2026DraftRules } from './corrected-2026-draft-rules.js';
 import { buildCorrected2026SemanticRoles } from './corrected-2026-semantic-roles.js';
 import {
@@ -21,7 +22,7 @@ const policyCatalogBindings = new Map([
 
 /** The MASTER Personnel row confirms a Captain Bid rank; the historical B211
  * staffing assignment does not turn this person into a biddable Chief seat. */
-export const RETURNED_2026_CAPTAIN_MEMBER_ID = 9;
+export const RETURNED_2026_CAPTAIN_EMPLOYEE_ID = '18148';
 
 /** Direct administrator instruction. The date-only eligibility projection
  * cannot itself prove the 17:00 Eastern evidence boundary. */
@@ -90,14 +91,51 @@ export function map2026VersionPositionsByRole(
   return mapped;
 }
 
-function remapReferences(value: unknown, ids: ReadonlyMap<string, string>): unknown {
-  if (typeof value === 'string') return ids.get(value) ?? value;
-  if (Array.isArray(value)) return value.map((item) => remapReferences(item, ids));
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, remapReferences(item, ids)]),
-    );
-  return value;
+/** Change only schema-declared position references. Prose, source citations,
+ * member identities, and arbitrary strings remain byte-for-byte intact. */
+export function remap2026PositionReferences(
+  content: BidDefinitionContent,
+  ids: ReadonlyMap<string, string>,
+  observedReferences?: string[],
+): BidDefinitionContent {
+  const result = structuredClone(content);
+  const map = (id: string) => {
+    observedReferences?.push(id);
+    return ids.get(id) ?? id;
+  };
+  const mapAll = (values: string[]) => values.map(map);
+  for (const policy of [
+    result.policy?.executionPolicy,
+    result.pendingPolicy?.executionPolicy,
+    result.settings?.v === 3 ? result.settings.livePolicy : undefined,
+  ]) {
+    if (!policy) continue;
+    for (const stage of policy.stages)
+      stage.opportunityPositionIds = mapAll(stage.opportunityPositionIds);
+    const operations = policy.annualOperations;
+    if (!operations) continue;
+    operations.requiredTopologyPositionIds = mapAll(operations.requiredTopologyPositionIds);
+    for (const specialty of operations.specialties ?? [])
+      specialty.opportunityPositionIds = mapAll(specialty.opportunityPositionIds);
+    for (const pool of operations.opportunityPools ?? [])
+      pool.positionIds = mapAll(pool.positionIds);
+    for (const term of operations.assignmentTerms ?? [])
+      term.positionIds = mapAll(term.positionIds);
+    for (const fallback of operations.fallbackPolicies ?? [])
+      fallback.positionIds = mapAll(fallback.positionIds);
+    for (const exception of operations.aDay.execution?.timingExceptions ?? [])
+      exception.positionIds = mapAll(exception.positionIds);
+    for (const constraint of operations.aDay.execution?.constraints ?? [])
+      constraint.positionIds = mapAll(constraint.positionIds);
+  }
+  for (const binding of result.staffingBindings) binding.positionId = map(binding.positionId);
+  return result;
+}
+
+export function list2026PositionReferences(content: BidDefinitionContent): string[] {
+  const references: string[] = [];
+  remap2026PositionReferences(content, new Map(), references);
+  return references;
 }
 
 export interface Corrected2026SuccessorOptions {
@@ -105,6 +143,25 @@ export interface Corrected2026SuccessorOptions {
   evaluationOn: string;
   /** Required to freeze the conditional three-month Marine DRI term. */
   approvedBidStartOn: string;
+  /** Immutable roster projection from the same reviewed candidate evidence. */
+  memberIdentities: readonly { memberId: number; employeeId: string }[];
+}
+
+export function resolveReturned2026CaptainMemberId(
+  identities: readonly { memberId: number; employeeId: string }[],
+): number {
+  const matches = identities.filter(
+    (member) => member.employeeId === RETURNED_2026_CAPTAIN_EMPLOYEE_ID,
+  );
+  const match = matches[0];
+  if (
+    matches.length !== 1 ||
+    !match ||
+    !Number.isSafeInteger(match.memberId) ||
+    match.memberId <= 0
+  )
+    throw new Error('returned_2026_captain_employee_identity_not_unique');
+  return match.memberId;
 }
 
 /** Pure candidate construction. This does not save a version or start a Bid.
@@ -125,8 +182,9 @@ export function buildCorrected2026Successor(
     throw new Error('corrected_2026_successor_dates_do_not_match_administrator_instruction');
   if (!previous.settings || previous.settings.v !== 3 || !previous.policy)
     throw new Error('corrected_2026_successor_requires_frozen_policy_and_settings');
+  const returnedCaptainMemberId = resolveReturned2026CaptainMemberId(options.memberIdentities);
   const oldToNew = map2026VersionPositionsByRole(previous.positions);
-  const content = remapReferences(structuredClone(previous), oldToNew) as BidDefinitionContent;
+  const content = remap2026PositionReferences(previous, oldToNew);
   if (!content.settings || content.settings.v !== 3 || !content.policy)
     throw new Error('corrected_2026_successor_requires_frozen_policy_and_settings');
   const topology = buildCorrected2026Topology();
@@ -205,7 +263,7 @@ export function buildCorrected2026Successor(
       if (!seats) throw new Error(`corrected_2026_unknown_stage:${stage.id}`);
       stage.opportunityPositionIds = seats.sort(compareId);
       if (stage.id === 'captains' || stage.id === 'days-captains')
-        stage.memberIds = [...new Set([...stage.memberIds, RETURNED_2026_CAPTAIN_MEMBER_ID])].sort(
+        stage.memberIds = [...new Set([...stage.memberIds, returnedCaptainMemberId])].sort(
           (a, b) => a - b,
         );
     }
@@ -221,9 +279,14 @@ export function buildCorrected2026Successor(
       source.participantSource.type === 'EXPLICIT_MEMBERS'
     )
       source.participantSource.memberIds = [
-        ...new Set([...source.participantSource.memberIds, RETURNED_2026_CAPTAIN_MEMBER_ID]),
+        ...new Set([...source.participantSource.memberIds, returnedCaptainMemberId]),
       ].sort((a, b) => a - b);
   }
+  const rankCapacity = evaluate2026RankCapacity(content, content.policy.executionPolicy.stages);
+  if (rankCapacity.shortages.length > 0)
+    throw new Error(
+      `corrected_2026_rank_capacity_insufficient:${rankCapacity.shortages.map((item) => `${item.rank}:${item.bidders}>${item.capacity}`).join(',')}`,
+    );
   if (
     content.sourceDecisions.some(
       (decision) => decision.issueId === CORRECTED_2026_TOPOLOGY_SOURCE_DECISION.issueId,

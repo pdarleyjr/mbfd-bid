@@ -72,7 +72,7 @@ it('requires an explicit approved start and retains it when the period changes',
         field.dispatchEvent(new Event('input', { bubbles: true }));
     });
   const value = () => JSON.parse(container.querySelector('output')?.textContent ?? 'null');
-  change('Deadline starts from', 'APPROVED_BID_START_DATE');
+  change('Deadline', 'APPROVED_BID_START_DATE');
   expect(control('Approved bid start date')).toHaveProperty('value', '');
   expect(PostAwardObligationsSchema.safeParse(value()).success).toBe(false);
   change('Approved bid start date', '2027-01-01');
@@ -84,11 +84,15 @@ it('requires an explicit approved start and retains it when the period changes',
     count: 3,
   });
   expect(PostAwardObligationsSchema.safeParse(value()).success).toBe(true);
-  change('Deadline starts from', 'FINAL_POSITION_AWARD');
+  change('Deadline', 'FINAL_POSITION_AWARD');
   expect(value()[0].deadline).toEqual({
     basis: 'FINAL_POSITION_AWARD',
     unit: 'CALENDAR_DAYS',
     count: 3,
     timeZone: 'America/New_York',
   });
+  change('Deadline', 'NO_FIXED_DEADLINE');
+  expect(value()[0].deadline).toBeNull();
+  expect(container.textContent).toContain('No fixed policy deadline');
+  expect(PostAwardObligationsSchema.safeParse(value()).success).toBe(true);
 });

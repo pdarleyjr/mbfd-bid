@@ -655,8 +655,11 @@ export function AnnualPlanProfiles({
                     ))}
                 {(p.rule.requiredCriteria.postAward ?? []).map((o) => (
                   <dd key={o.id}>
-                    After selection: {o.credential} within {o.deadline.count}{' '}
-                    {o.deadline.unit.toLowerCase().replaceAll('_', ' ')} — {o.sourceRef}
+                    After selection: {o.credential}{' '}
+                    {o.deadline
+                      ? `within ${o.deadline.count} ${o.deadline.unit.toLowerCase().replaceAll('_', ' ')}`
+                      : 'for continuing training and renewal; no fixed deadline'}{' '}
+                    — {o.sourceRef}
                   </dd>
                 ))}
               </dl>

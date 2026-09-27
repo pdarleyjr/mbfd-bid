@@ -18,12 +18,17 @@ export const PostAwardObligationSchema = z
     sourceRef: z.string().trim().min(4).max(500),
     /** Apply only when the frozen member lacks every listed qualification. */
     appliesWhenMissingAll: z.array(z.string().trim().min(1).max(160)).min(1).max(20).optional(),
-    deadline: z.discriminatedUnion('basis', [
-      deadlinePeriod.extend({ basis: z.literal('FINAL_POSITION_AWARD') }).strict(),
-      deadlinePeriod
-        .extend({ basis: z.literal('APPROVED_BID_START_DATE'), startOn: calendarDate })
-        .strict(),
-    ]),
+    /** Apply only when frozen evidence establishes at least one listed qualification. */
+    appliesWhenHoldingAny: z.array(z.string().trim().min(1).max(160)).min(1).max(20).optional(),
+    /** Null records a continuing transition with no policy-imposed fixed date. */
+    deadline: z
+      .discriminatedUnion('basis', [
+        deadlinePeriod.extend({ basis: z.literal('FINAL_POSITION_AWARD') }).strict(),
+        deadlinePeriod
+          .extend({ basis: z.literal('APPROVED_BID_START_DATE'), startOn: calendarDate })
+          .strict(),
+      ])
+      .nullable(),
   })
   .strict();
 export const PostAwardObligationsSchema = z
