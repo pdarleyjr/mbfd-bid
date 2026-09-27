@@ -467,14 +467,49 @@ router.get('/:session_id', async (c) => {
 });
 
 router.get('/:session_id/:r2key/url', async (c) => {
-  const signer = signerOf(c.env);
-  if (!signer) return c.json({ error: 'signed_urls_not_configured' }, 503);
   const sid = c.req.param('session_id');
   const key = decodeURIComponent(c.req.param('r2key'));
   const belongs = await exportKeyBelongsToSession(c.env, sid, key);
   if (!belongs) return c.json({ error: 'export_not_found' }, 404);
+  const signer = signerOf(c.env);
+  if (!signer) {
+    return c.json({
+      url: `/api/admin/exports/${encodeURIComponent(sid)}/${encodeURIComponent(key)}/download`,
+    });
+  }
   const url = await signer(key);
   return c.json({ url });
+});
+
+router.get('/:session_id/:r2key/download', async (c) => {
+  const sid = c.req.param('session_id');
+  const key = decodeURIComponent(c.req.param('r2key'));
+  const belongs = await exportKeyBelongsToSession(c.env, sid, key);
+  if (!belongs) return c.json({ error: 'export_not_found' }, 404);
+  if (!c.env.R2_EXPORTS || typeof c.env.R2_EXPORTS.get !== 'function') {
+    return c.json({ error: 'exports_bucket_not_configured' }, 503);
+  }
+  const object = await c.env.R2_EXPORTS.get(key);
+  if (object === null) return c.json({ error: 'export_not_found' }, 404);
+
+  const rawFileName = key.split('/').pop() ?? 'mbfd-bid-export';
+  const fileName = rawFileName.replace(/[^A-Za-z0-9._-]/g, '_');
+  const contentType = fileName.endsWith('.pdf')
+    ? 'application/pdf'
+    : fileName.endsWith('.csv.gz')
+      ? 'application/gzip'
+      : 'application/octet-stream';
+  const bytes = await object.arrayBuffer();
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Content-Length': String(object.size),
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
 });
 
 export default router;

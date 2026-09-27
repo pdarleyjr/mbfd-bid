@@ -31,6 +31,7 @@ describe('staging release configuration', () => {
     expect(config).not.toContain('bucket_name = "mbfd-bid-audit"');
     expect(config).not.toContain('bucket_name = "mbfd-bid-exports"');
     expect(config).not.toContain('R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging"');
+    expect(config).toContain('WEB_BASE_URL = "https://staging.bid.mbfdhub.com"');
   });
 
   it('runs non-deploy validation before the controlled D1 guard and deployment', () => {
@@ -76,6 +77,7 @@ describe('staging release configuration', () => {
     );
 
     expect(config).toContain('PORTAL_BASE_URL = "https://www.mbfdhub.com"');
+    expect(config).toContain('WEB_BASE_URL = "https://bid.mbfdhub.com"');
     expect(config).toContain('PORTAL_WRITEBACK_ENABLED = "false"');
     expect(config).not.toContain('[[env.production.queues.producers]]');
     expect(config).not.toContain('[[env.production.queues.consumers]]');
