@@ -40,6 +40,30 @@ function inMemR2(): R2Bucket & { _objects: Map<string, Uint8Array> } {
         })),
       };
     },
+    async head(key: string) {
+      const body = objects.get(key);
+      if (!body) return null;
+      return { key, size: body.byteLength, uploaded: new Date(0) };
+    },
+    async get(key: string) {
+      const body = objects.get(key);
+      if (!body) return null;
+      return {
+        key,
+        size: body.byteLength,
+        uploaded: new Date(0),
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(body);
+            controller.close();
+          },
+        }),
+        httpMetadata: { contentType: key.endsWith('.pdf') ? 'application/pdf' : 'text/csv' },
+        async arrayBuffer() {
+          return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
+        },
+      };
+    },
   } as unknown as R2Bucket & { _objects: Map<string, Uint8Array> };
 }
 
@@ -170,14 +194,40 @@ describe('/api/admin/exports (Plan 08 Task 17)', () => {
     expect(body.exports.find((e) => e.kind === 'audit-csv')).toBeDefined();
   });
 
-  it('GET /:session_id/:r2key/url returns 503 when R2 access keys are absent', async () => {
+  it('GET /:session_id/:r2key/url falls back to the authenticated download route', async () => {
+    const year = new Date().getUTCFullYear();
+    const key = `${year}/01HF3/A_Shift_1.pdf`;
+    r2._objects.set(key, new Uint8Array([0x25, 0x50, 0x44, 0x46]));
     const jwt = await adminJwt(env);
     const res = await mkApp().request(
-      '/api/admin/exports/01HF3/somekey/url',
+      `/api/admin/exports/01HF3/${encodeURIComponent(key)}/url`,
       { headers: { Authorization: `Bearer ${jwt}` } },
       env,
     );
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      url: `/api/admin/exports/01HF3/${encodeURIComponent(key)}/download`,
+    });
+  });
+
+  it('GET /:session_id/:r2key/download streams the stored export with safe headers', async () => {
+    const year = new Date().getUTCFullYear();
+    const key = `${year}/01HF3/A_Shift_1.pdf`;
+    r2._objects.set(key, new Uint8Array([0x25, 0x50, 0x44, 0x46]));
+    const jwt = await adminJwt(env);
+
+    const res = await mkApp().request(
+      `/api/admin/exports/01HF3/${encodeURIComponent(key)}/download`,
+      { headers: { Authorization: `Bearer ${jwt}` } },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/pdf');
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="A_Shift_1.pdf"');
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(
+      new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+    );
   });
 });
 

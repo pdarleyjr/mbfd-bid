@@ -1,16 +1,12 @@
-// Plan 08 Task 13 — Print-stylesheet RSC for Browserless to render to PDF.
-//
-// Public URL (called by Browserless via the worker's POST /export trigger):
-//   GET /admin/exports/render/roster/A/01HF3?token=...
-//
-// The token is a 5-min HMAC minted by the worker (Plan 08 Task 14 /print-token
-// endpoint) and verified here. The page is RSC-only (no client islands) so
-// Browserless gets a single static document.
+// Public, short-lived print-token roster renderer used by Cloudflare Browser
+// Rendering. This route intentionally lives outside /admin so the headless
+// browser does not need an administrator session cookie. The Worker remains
+// the sole authorization boundary and validates the token before returning
+// immutable, session-scoped roster data.
 
 import { notFound } from 'next/navigation';
 import type { ReactElement } from 'react';
 
-import { verifyPrintToken } from '@/lib/print-token';
 import { getWorkerBase } from '@/lib/worker-base';
 
 import './print.css';
@@ -55,9 +51,9 @@ async function fetchRoster(
     sessionId,
   )}&shift=${shift}&token=${encodeURIComponent(token)}`;
   try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return (await res.json()) as RosterPayload;
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) return null;
+    return (await response.json()) as RosterPayload;
   } catch {
     return null;
   }
@@ -69,17 +65,18 @@ export default async function RosterRenderPage({
 }: PageProps): Promise<ReactElement> {
   const { shift, session_id: sessionId } = await params;
   const { token } = await searchParams;
-  const ok = await verifyPrintToken(token, { kind: 'roster', shift, session_id: sessionId });
-  if (!ok) {
-    return <div className="auth-error">Unauthorized — invalid or expired print token.</div>;
-  }
-  if (!['A', 'B', 'C', 'D'].includes(shift)) return notFound();
+  if (!token || !['A', 'B', 'C', 'D'].includes(shift)) return notFound();
 
-  const roster = await fetchRoster(sessionId, shift, token ?? '');
+  const roster = await fetchRoster(sessionId, shift, token);
   if (!roster) return notFound();
 
   return (
-    <main className="roster-page">
+    <main
+      className="roster-page"
+      data-roster-export="ready"
+      data-session-id={sessionId}
+      data-shift={shift}
+    >
       <header className="roster-header">
         <h1>
           {roster.year} {shift} Shift Roster
@@ -89,9 +86,9 @@ export default async function RosterRenderPage({
           {new Date().toISOString()}
         </p>
       </header>
-      {roster.stations.map((s) => (
-        <section key={s.station} className="station-block" data-station={s.station}>
-          <h2>Station {s.station}</h2>
+      {roster.stations.map((station) => (
+        <section key={station.station} className="station-block" data-station={station.station}>
+          <h2>Station {station.station}</h2>
           <table>
             <thead>
               <tr>
@@ -103,13 +100,13 @@ export default async function RosterRenderPage({
               </tr>
             </thead>
             <tbody>
-              {s.rows.map((r) => (
-                <tr key={r.position_id} data-empty={r.member_name === null}>
-                  <td>{r.unit}</td>
-                  <td>{r.position_id}</td>
-                  <td>{r.rank}</td>
-                  <td>{r.member_name ?? <span className="vacant">VACANT</span>}</td>
-                  <td className="num">{r.rsc_seniority ?? '—'}</td>
+              {station.rows.map((row) => (
+                <tr key={row.position_id} data-empty={row.member_name === null}>
+                  <td>{row.unit}</td>
+                  <td>{row.position_id}</td>
+                  <td>{row.rank}</td>
+                  <td>{row.member_name ?? <span className="vacant">VACANT</span>}</td>
+                  <td className="num">{row.rsc_seniority ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

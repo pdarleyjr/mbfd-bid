@@ -1,5 +1,3 @@
-/* Plan 08 Task 13 — print stylesheet for the roster RSC. */
-
 @page {
   size: Letter;
   margin: 0.5in;
@@ -73,10 +71,4 @@ td.num {
 
 tr[data-empty="true"] td {
   background: #fef2f2;
-}
-
-.auth-error {
-  padding: 24pt;
-  font-family: monospace;
-  color: #b91c1c;
 }

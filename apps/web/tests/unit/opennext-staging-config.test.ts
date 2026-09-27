@@ -136,6 +136,25 @@ describe('OpenNext deployment configuration', () => {
     expect(edgeRuntimeFiles).toEqual([]);
   });
 
+  it('keeps the print-token roster renderer outside the authenticated admin layout', () => {
+    const publicRenderPath = join(
+      appRoot,
+      'app/exports/render/roster/[shift]/[session_id]/page.tsx',
+    );
+    const oldAdminRenderPath = join(
+      appRoot,
+      'app/admin/exports/render/roster/[shift]/[session_id]/page.tsx',
+    );
+
+    expect(existsSync(publicRenderPath)).toBe(true);
+    expect(existsSync(oldAdminRenderPath)).toBe(false);
+
+    const source = readFileSync(publicRenderPath, 'utf8');
+    expect(source).toContain('data-roster-export="ready"');
+    expect(source).not.toContain('import { verifyPrintToken }');
+    expect(source).toContain('/api/admin/exports/roster-data');
+  });
+
   it('has CI build the staging artifact and a manual-only production release workflow without a Pages path', () => {
     const ci = readRepoFile('.github/workflows/ci.yml');
     const playwright = readAppFile('playwright.config.ts');

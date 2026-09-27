@@ -46,7 +46,7 @@ export async function generateRosterPdf(args: RosterPdfArgs): Promise<RosterPdfR
     300,
     args.now(),
   );
-  const renderUrl = `${args.webBaseUrl}/admin/exports/render/roster/${
+  const renderUrl = `${args.webBaseUrl}/exports/render/roster/${
     args.shift
   }/${encodeURIComponent(args.sessionId)}?token=${encodeURIComponent(token)}`;
 
@@ -60,6 +60,10 @@ export async function generateRosterPdf(args: RosterPdfArgs): Promise<RosterPdfR
   try {
     const page = await browser.newPage();
     await page.goto(renderUrl, { waitUntil: 'networkidle0', timeout: 30_000 });
+    // Never persist a login, error, or not-found page as a roster. The public
+    // render route adds this marker only after the Worker has accepted the
+    // short-lived token and returned the immutable session roster payload.
+    await page.waitForSelector('[data-roster-export="ready"]', { timeout: 10_000 });
     const buf = await page.pdf({
       format: 'Letter',
       printBackground: true,
