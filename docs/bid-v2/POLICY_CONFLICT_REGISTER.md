@@ -1,5 +1,12 @@
 # MBFD Bid v2 policy conflict register
 
+2026-09-27 correction: POL-019's 228-profile/223-rule snapshot was later
+shown to count A211/B211/C211 Division Chiefs as ordinary Bid opportunities.
+The corrected candidate adds one Combat Floating Captain per shift as a new
+application identity and excludes all three Chiefs, preserving A801 Union
+President outside ordinary Bid capacity. See
+`docs/unified-platform/2026-final-bid-reconciliation-gate-20260926.md`.
+
 | ID | Conflict or open question | Evidence | Required disposition |
 | --- | --- | --- | --- |
 | POL-001 | Excluded Union President identifier differs | External 2026 policy identifies `A711`; fixture/seed uses `A701`. | Policy-owner confirmation and data correction plan. |
