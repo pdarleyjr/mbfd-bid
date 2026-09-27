@@ -29,16 +29,20 @@ describe('managed 2026 run inventory gate', () => {
     mocks.version.mockReset().mockResolvedValue({
       ok: true,
       sha256: SHA,
+      row: { position_template_version: '2026.final.1' },
       content: {
-        positions: ['A', 'B', 'C'].flatMap((shift) => [
-          ...Array.from({ length: 72 }, (_, i) => ({
-            id: `${shift}${String(i + 1).padStart(3, '0')}`,
-            shift,
-            rankRequired: 'FF',
-            isExcludedFromCount: false,
-          })),
-          { id: `${shift}211`, shift, rankRequired: 'DC', isExcludedFromCount: false },
-        ]),
+        positions: [
+          ...['A', 'B', 'C'].flatMap((shift) => [
+            ...Array.from({ length: 72 }, (_, i) => ({
+              id: `${shift}${String(i + 1).padStart(3, '0')}`,
+              shift,
+              rankRequired: 'FF',
+              isExcludedFromCount: false,
+            })),
+            { id: `${shift}211`, shift, rankRequired: 'DC', isExcludedFromCount: false },
+          ]),
+          { id: 'A801', shift: 'A', rankRequired: 'CPT', isExcludedFromCount: true },
+        ],
         participation: [],
       },
     });

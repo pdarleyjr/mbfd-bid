@@ -1,4 +1,5 @@
 import type { BidDefinitionContent, BidDefinitionIssue } from '@mbfd/shared';
+import { isFinal2026ManagedConfiguration } from './2026-opportunity-inventory.js';
 import { definitionRuleBookMaterial } from './bid-definition-content.js';
 import { evaluateRuleBookCoverage } from './bid-policy.js';
 import { bidSourceDecisionReviewIssues } from './bid-source-decision-review.js';
@@ -10,7 +11,10 @@ export async function bidDefinitionReferenceIssues(
   content: BidDefinitionContent,
 ) {
   const issues: BidDefinitionIssue[] = bidSourceDecisionReviewIssues(content.sourceDecisions);
-  if (content.bidYear === 2026 && content.rules.length > 0) {
+  if (
+    isFinal2026ManagedConfiguration(content.bidYear, content.positions) &&
+    content.rules.length > 0
+  ) {
     const catalog = await database
       .prepare(`SELECT c.name FROM credentials c
         LEFT JOIN credential_catalog_metadata m ON m.credential_id = c.id
@@ -21,6 +25,7 @@ export async function bidDefinitionReferenceIssues(
       ruleBookVersion: 'bid-definition-content-v1',
       declaredTemplateVersion: 'bid-definition-content-v1',
       credentialCatalogNames: catalog.results.map((row) => row.name),
+      enforcePositionRank: true,
     });
     for (const positionId of coverage.rankMismatchPositionIds) {
       issues.push({

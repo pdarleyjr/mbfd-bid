@@ -1,5 +1,8 @@
 import { getDb } from '../db/index.js';
-import { evaluate2026OpportunityInventory } from './2026-opportunity-inventory.js';
+import {
+  evaluate2026OpportunityInventory,
+  isFinal2026ManagedConfiguration,
+} from './2026-opportunity-inventory.js';
 import {
   bidDefinitionContextHash,
   compileBidDefinitionStagePolicy,
@@ -34,7 +37,7 @@ export async function prepareBidDefinitionRun(
   if (!version.ok) return { ok: false as const, code: version.error };
   if (version.sha256 !== input.versionSha256)
     return { ok: false as const, code: 'bid_version_hash_mismatch' };
-  if (input.year === 2026) {
+  if (isFinal2026ManagedConfiguration(input.year, version.content.positions)) {
     const participation = new Map(
       version.content.participation.map((row) => [row.positionId, row.bidParticipation]),
     );

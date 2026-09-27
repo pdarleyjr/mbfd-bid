@@ -17,6 +17,7 @@ import {
   isFinal2026OrdinaryBidderRank,
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
+import { isFinal2026ManagedConfiguration } from './2026-opportunity-inventory.js';
 import { assignmentTermReviewBlocksPurpose, evaluateAssignmentTerms } from './assignment-terms.js';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
@@ -89,6 +90,8 @@ export interface RuleBookCoverageInput {
   }[];
   /** Exact approved canonical names. Omission keeps historical in-memory callers readable. */
   credentialCatalogNames?: readonly string[];
+  /** Prospective final-2026 authoring may request the check before a numeric version is minted. */
+  enforcePositionRank?: boolean;
   positions: readonly {
     id: string;
     templateVersion: string;
@@ -346,6 +349,9 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
       .filter((rule) => {
         const position = byPositionId.get(rule.positionId);
         return (
+          (input.enforcePositionRank === true ||
+            (input.ruleBookVersion.startsWith('2026.') &&
+              isFinal2026ManagedConfiguration(2026, templatePositions))) &&
           position?.rankRequired !== undefined &&
           !rule.requiredCriteria.rank.includes(position.rankRequired)
         );
@@ -535,16 +541,30 @@ export async function loadRuleBookCoverage(
       .all(),
   ]);
   const participationByPositionId = new Map(participationRows.map((row) => [row.positionId, row]));
+  const templateVersions = new Set(rules.map((rule) => rule.templateVersion));
+  const templateVersion = templateVersions.size === 1 ? rules[0]?.templateVersion : undefined;
+  const final2026 =
+    ruleBookVersion.startsWith('2026.') &&
+    templateVersion !== undefined &&
+    isFinal2026ManagedConfiguration(
+      2026,
+      allPositions.filter((position) => position.templateVersion === templateVersion),
+    );
   return evaluateRuleBookCoverage({
     ruleBookVersion,
     rules,
-    credentialCatalogNames: catalogRows
-      .filter((row) => row.retiredOn === null)
-      .map((row) => row.name),
+    ...(final2026
+      ? {
+          credentialCatalogNames: catalogRows
+            .filter((row) => row.retiredOn === null)
+            .map((row) => row.name),
+        }
+      : {}),
     positions: allPositions.map((position) => {
       const participation = participationByPositionId.get(position.id);
       return {
         ...position,
+        rankRequired: position.rankRequired,
         // The database FK binds an override to the exact annual position
         // template. Keep the defensive equality check so malformed legacy
         // data cannot silently change a coverage result.

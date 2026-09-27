@@ -12,6 +12,7 @@ describe('bid position participation policy', () => {
   it('rejects a decoded rule whose required rank belongs to the former A213 role', () => {
     const coverage = evaluateRuleBookCoverage({
       ruleBookVersion: '2026.corrected',
+      enforcePositionRank: true,
       rules: [
         {
           ruleBookVersion: '2026.corrected',

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { evaluate2026OpportunityInventory } from '../../src/lib/2026-opportunity-inventory.js';
+import {
+  evaluate2026OpportunityInventory,
+  isFinal2026ManagedConfiguration,
+} from '../../src/lib/2026-opportunity-inventory.js';
 
 const seats = (ordinaryPerShift: number, chiefParticipation: string) => [
   ...(['A', 'B', 'C'] as const).flatMap((shift) => [
@@ -20,6 +23,12 @@ const seats = (ordinaryPerShift: number, chiefParticipation: string) => [
 ];
 
 describe('2026 opportunity inventory', () => {
+  it('scopes the final production gate by frozen source content across numeric aliases', () => {
+    expect(isFinal2026ManagedConfiguration(2026, [{ id: 'A801' }, { id: 'A211' }])).toBe(true);
+    expect(isFinal2026ManagedConfiguration(2026, [{ id: 'A101' }])).toBe(false);
+    expect(isFinal2026ManagedConfiguration(2027, [{ id: 'A801' }])).toBe(false);
+  });
+
   it('rejects a superficially correct 223 total when a Chief fills each 73-seat shift', () => {
     const result = evaluate2026OpportunityInventory(seats(72, 'BIDDABLE'));
     expect(result.total).toBe(223);
@@ -32,5 +41,15 @@ describe('2026 opportunity inventory', () => {
     const result = evaluate2026OpportunityInventory(seats(73, 'ADMIN_ASSIGNED_NON_BIDDABLE'));
     expect(result.total).toBe(223);
     expect(result.blockingCodes).toEqual([]);
+  });
+
+  it('rejects each biddable Chief even when excluded from numerical capacity', () => {
+    const hiddenChiefs = seats(73, 'BIDDABLE').map((position) =>
+      position.rankRequired === 'DC' ? { ...position, isExcludedFromCount: true } : position,
+    );
+    const result = evaluate2026OpportunityInventory(hiddenChiefs);
+    expect(result.byShift).toEqual({ A: 73, B: 73, C: 73, D: 4 });
+    expect(result.biddableDivisionChiefIds).toEqual(['A211', 'B211', 'C211']);
+    expect(result.blockingCodes).toContain('division_chief_biddable:A211,B211,C211');
   });
 });

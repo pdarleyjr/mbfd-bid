@@ -8,7 +8,10 @@ import { and, eq, ne } from 'drizzle-orm';
 import type { DB } from '../db/index.js';
 import { bidSessions } from '../db/schema.js';
 import type { WorkerEnv } from '../types/env.js';
-import { evaluate2026OpportunityInventory } from './2026-opportunity-inventory.js';
+import {
+  evaluate2026OpportunityInventory,
+  isFinal2026ManagedConfiguration,
+} from './2026-opportunity-inventory.js';
 import { validateAnnualOperationsReadiness } from './annual-bid-operations.js';
 import { evaluateAuthoritativeStaffingBaseline } from './authoritative-staffing-baseline.js';
 import { snapshotMatchesBidDefinition } from './bid-definition-context.js';
@@ -132,8 +135,12 @@ export async function evaluateLiveBidReadiness(
   const biddablePositions = snapshot.ruleBookMaterial.positions.filter(
     (position) => position.bidParticipation === 'BIDDABLE' && position.isExcludedFromCount !== true,
   );
-  const opportunityInventory =
-    bidYear === 2026 ? evaluate2026OpportunityInventory(snapshot.ruleBookMaterial.positions) : null;
+  const opportunityInventory = isFinal2026ManagedConfiguration(
+    bidYear,
+    snapshot.ruleBookMaterial.positions,
+  )
+    ? evaluate2026OpportunityInventory(snapshot.ruleBookMaterial.positions)
+    : null;
   const participatingMembers = snapshot.members.filter((member) => member.pool !== 'EXCLUDED');
   const stageOrder =
     snapshot.settings.v === 3
