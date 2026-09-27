@@ -12,7 +12,9 @@ export async function bidDefinitionReferenceIssues(
 ) {
   const issues: BidDefinitionIssue[] = bidSourceDecisionReviewIssues(content.sourceDecisions);
   if (
-    isFinal2026ManagedConfiguration(content.bidYear, content.positions) &&
+    isFinal2026ManagedConfiguration(content.bidYear, {
+      sourceDecisions: content.sourceDecisions,
+    }) &&
     content.rules.length > 0
   ) {
     const catalog = await database

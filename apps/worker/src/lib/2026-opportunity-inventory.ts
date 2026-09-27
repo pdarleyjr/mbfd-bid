@@ -13,17 +13,52 @@ export interface OpportunityInventory2026 {
   blockingCodes: string[];
 }
 
-/** Saved Bid definitions mint numeric template aliases. Use source-content
- * markers to distinguish managed final topology from minimal same-year test
- * configurations. The three Combat Float FF #9 identities keep the gate in
- * force if the organizational A801 row is accidentally omitted. */
+/** A resolved source decision is copied into each immutable Bid definition.
+ * The source identity, not a coincidental position ID, opts the corrected
+ * final topology into its strict 73-seat inventory contract. */
+export const FINAL_2026_TOPOLOGY_DECISION_ID = '2026-reviewed-final-topology';
+export const FINAL_2026_TOPOLOGY_SOURCE_REF =
+  'MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a; administrator direct review 2025 A/B/C diagrams 2026-09-27';
+
+export interface Final2026TopologyProvenance {
+  sourceDecisions?: readonly {
+    issueId: string;
+    area: string;
+    status: string;
+    sourceRef: string;
+  }[];
+  sourceTemplateVersion?: string | undefined;
+}
+
 export function isFinal2026ManagedConfiguration(
   year: number,
-  positions: readonly Pick<OpportunityInventoryPosition, 'id'>[],
+  provenance: Final2026TopologyProvenance,
 ): boolean {
   if (year !== 2026) return false;
-  const ids = new Set(positions.map((position) => position.id));
-  return ids.has('A801') || ['A717', 'B717', 'C717'].every((id) => ids.has(id));
+  return (
+    provenance.sourceTemplateVersion === '2026.final.1' ||
+    (provenance.sourceDecisions ?? []).some(
+      (decision) =>
+        decision.issueId === FINAL_2026_TOPOLOGY_DECISION_ID &&
+        decision.area === 'positions' &&
+        decision.status === 'RESOLVED' &&
+        decision.sourceRef === FINAL_2026_TOPOLOGY_SOURCE_REF,
+    )
+  );
+}
+
+/** Chief exclusion applies to every new 2026 run, including older versions
+ * without the corrected topology decision. Frozen historical reads remain intact. */
+export function biddable2026DivisionChiefIds(
+  positions: readonly OpportunityInventoryPosition[],
+): string[] {
+  return positions
+    .filter(
+      (position) =>
+        position.bidParticipation === 'BIDDABLE' &&
+        (position.rankRequired === 'DC' || ['A211', 'B211', 'C211'].includes(position.id)),
+    )
+    .map((position) => position.id);
 }
 
 /** Evaluate exact frozen seats. An overall total cannot conceal a Chief seat. */

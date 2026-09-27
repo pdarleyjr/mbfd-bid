@@ -60,6 +60,7 @@ export interface RequiredCriteria {
     id: string;
     credential: string;
     sourceRef: string;
+    appliesWhenMissingAll?: string[] | undefined;
     deadline: {
       unit: 'CALENDAR_DAYS' | 'CALENDAR_MONTHS';
       count: number;

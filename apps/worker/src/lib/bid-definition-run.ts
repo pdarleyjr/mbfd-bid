@@ -1,5 +1,6 @@
 import { getDb } from '../db/index.js';
 import {
+  biddable2026DivisionChiefIds,
   evaluate2026OpportunityInventory,
   isFinal2026ManagedConfiguration,
 } from './2026-opportunity-inventory.js';
@@ -37,16 +38,28 @@ export async function prepareBidDefinitionRun(
   if (!version.ok) return { ok: false as const, code: version.error };
   if (version.sha256 !== input.versionSha256)
     return { ok: false as const, code: 'bid_version_hash_mismatch' };
-  if (isFinal2026ManagedConfiguration(input.year, version.content.positions)) {
-    const participation = new Map(
-      version.content.participation.map((row) => [row.positionId, row.bidParticipation]),
-    );
-    const inventory = evaluate2026OpportunityInventory(
-      version.content.positions.map((position) => ({
-        ...position,
-        bidParticipation: participation.get(position.id) ?? 'BIDDABLE',
-      })),
-    );
+  const participation = new Map(
+    version.content.participation.map((row) => [row.positionId, row.bidParticipation]),
+  );
+  const inventoryPositions = version.content.positions.map((position) => ({
+    ...position,
+    bidParticipation: participation.get(position.id) ?? 'BIDDABLE',
+  }));
+  if (input.year === 2026) {
+    const chiefs = biddable2026DivisionChiefIds(inventoryPositions);
+    if (chiefs.length > 0)
+      return {
+        ok: false as const,
+        code: '2026_shift_opportunity_inventory_invalid' as const,
+        inventoryIssues: [`division_chief_biddable:${chiefs.join(',')}`],
+      };
+  }
+  if (
+    isFinal2026ManagedConfiguration(input.year, {
+      sourceDecisions: version.content.sourceDecisions,
+    })
+  ) {
+    const inventory = evaluate2026OpportunityInventory(inventoryPositions);
     if (inventory.blockingCodes.length > 0)
       return {
         ok: false as const,

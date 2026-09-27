@@ -4642,7 +4642,8 @@
         "rank": ["CPT"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Officer Credential"
@@ -4660,8 +4661,8 @@
               "cap": 1,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 }
@@ -4681,7 +4682,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Boat Operator Credential",
@@ -4700,8 +4702,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -4727,7 +4729,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Engineer Credential",
@@ -4746,8 +4749,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -4773,7 +4776,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -4791,8 +4795,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -4818,7 +4822,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -4836,8 +4841,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -4863,7 +4868,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -4881,8 +4887,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -9882,7 +9888,8 @@
         "rank": ["CPT"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Officer Credential"
@@ -9900,8 +9907,8 @@
               "cap": 1,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 }
@@ -9921,7 +9928,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Boat Operator Credential",
@@ -9940,8 +9948,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -9967,7 +9975,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Engineer Credential",
@@ -9986,8 +9995,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -10013,7 +10022,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -10031,8 +10041,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -10058,7 +10068,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -10076,8 +10087,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -10103,7 +10114,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -10121,8 +10133,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -15122,7 +15134,8 @@
         "rank": ["CPT"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Officer Credential"
@@ -15140,8 +15153,8 @@
               "cap": 1,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 }
@@ -15161,7 +15174,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Boat Operator Credential",
@@ -15180,8 +15194,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -15207,7 +15221,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Engineer Credential",
@@ -15226,8 +15241,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -15253,7 +15268,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -15271,8 +15287,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -15298,7 +15314,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -15316,8 +15333,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -15343,7 +15360,8 @@
         "rank": ["FF"],
         "credentials": [
           "Merchant Mariner Credential (MMC)",
-          "IADRS Swim Evaluation",
+          "Valid OUPV / Six Pack Authority",
+          "Passing IADRS Watermanship Test",
           "Open Water Diver Certified",
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
@@ -15361,8 +15379,8 @@
               "cap": 2,
               "items": [
                 {
-                  "credential": "Public Safety Diver",
-                  "alternatives": [],
+                  "credential": "DRI Public Safety Diver",
+                  "alternatives": ["PADI Public Safety Diver"],
                   "requiresAll": [],
                   "points": 1
                 },
@@ -15760,25 +15778,25 @@
               "cap": 4,
               "items": [
                 {
-                  "credential": "NFPA 1123",
+                  "credential": "NFPA1123 Outdoor Fireworks",
                   "alternatives": [],
                   "requiresAll": [],
                   "points": 1
                 },
                 {
-                  "credential": "NFPA 1126",
+                  "credential": "NFPA1126 Indoor Pyrotechnics",
                   "alternatives": [],
                   "requiresAll": [],
                   "points": 1
                 },
                 {
-                  "credential": "RN 8312",
+                  "credential": "RN8312 Assembly Occupancies",
                   "alternatives": [],
                   "requiresAll": [],
                   "points": 1
                 },
                 {
-                  "credential": "RN 8313",
+                  "credential": "Crowd Manager Certificate (RN8313)",
                   "alternatives": [],
                   "requiresAll": [],
                   "points": 1
@@ -15835,9 +15853,11 @@
                     "requiresAll": []
                   },
                   {
-                    "credential": "RN8977 I",
+                    "credential": "RN8977 Youth Fire Setter Prevention and Intervention course I",
                     "alternatives": [],
-                    "requiresAll": ["RN8977 II"]
+                    "requiresAll": [
+                      "RN8977 Youth Fire Setter Prevention and Intervention course II"
+                    ]
                   }
                 ]
               }
@@ -15882,12 +15902,266 @@
         "items": [],
         "scoring": {
           "v": 1,
-          "total": [],
-          "so": [],
+          "total": [
+            {
+              "id": "special-operations-2026",
+              "cap": 13,
+              "items": [
+                {
+                  "credential": "Hazardous Materials Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "State Certified Hazardous Materials Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Drone Operator Qualified-Part 107 sUAS",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                }
+              ]
+            }
+          ],
+          "so": [
+            {
+              "id": "special-operations-2026",
+              "cap": 13,
+              "items": [
+                {
+                  "credential": "Hazardous Materials Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "State Certified Hazardous Materials Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Drone Operator Qualified-Part 107 sUAS",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                }
+              ]
+            }
+          ],
           "mo": []
         }
       },
-      "tieBreakChain": ["points", "time_in_grade_bid_ordinal"]
+      "tieBreakChain": ["points", "so_points", "time_in_grade_bid_ordinal"]
     },
     {
       "positionId": "B718",
@@ -15902,12 +16176,266 @@
         "items": [],
         "scoring": {
           "v": 1,
-          "total": [],
-          "so": [],
+          "total": [
+            {
+              "id": "special-operations-2026",
+              "cap": 13,
+              "items": [
+                {
+                  "credential": "Hazardous Materials Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "State Certified Hazardous Materials Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Drone Operator Qualified-Part 107 sUAS",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                }
+              ]
+            }
+          ],
+          "so": [
+            {
+              "id": "special-operations-2026",
+              "cap": 13,
+              "items": [
+                {
+                  "credential": "Hazardous Materials Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "State Certified Hazardous Materials Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Drone Operator Qualified-Part 107 sUAS",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                }
+              ]
+            }
+          ],
           "mo": []
         }
       },
-      "tieBreakChain": ["points", "time_in_grade_bid_ordinal"]
+      "tieBreakChain": ["points", "so_points", "time_in_grade_bid_ordinal"]
     },
     {
       "positionId": "C718",
@@ -15922,29 +16450,374 @@
         "items": [],
         "scoring": {
           "v": 1,
-          "total": [],
-          "so": [],
+          "total": [
+            {
+              "id": "special-operations-2026",
+              "cap": 13,
+              "items": [
+                {
+                  "credential": "Hazardous Materials Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "State Certified Hazardous Materials Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Drone Operator Qualified-Part 107 sUAS",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                }
+              ]
+            }
+          ],
+          "so": [
+            {
+              "id": "special-operations-2026",
+              "cap": 13,
+              "items": [
+                {
+                  "credential": "Hazardous Materials Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Operations",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                },
+                {
+                  "credential": "State Certified Hazardous Materials Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Rope Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Vehicle & Machinery Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Confined Space Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Structural Collapse Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Trench Rescue Technician",
+                  "alternatives": [],
+                  "requiresAll": [
+                    "Hazardous Materials Operations",
+                    "Rope Rescue Operations",
+                    "Vehicle & Machinery Rescue Operations",
+                    "Confined Space Operations",
+                    "Structural Collapse Operations",
+                    "Trench Rescue Operations"
+                  ],
+                  "points": 1
+                },
+                {
+                  "credential": "Drone Operator Qualified-Part 107 sUAS",
+                  "alternatives": [],
+                  "requiresAll": [],
+                  "points": 1
+                }
+              ]
+            }
+          ],
           "mo": []
         }
       },
-      "tieBreakChain": ["points", "time_in_grade_bid_ordinal"]
+      "tieBreakChain": ["points", "so_points", "time_in_grade_bid_ordinal"]
     }
   ],
   "blockingIssues": [
-    "DAYS_SOURCE_CREDENTIALS_AND_OPEN_ROLE_SCORING_REVIEW_REQUIRED",
-    "INVESTIGATOR_STATE_CERTIFICATION_AND_IAAI_CFI_MAPPING_REVIEW_REQUIRED",
-    "MARINE_VALID_MMC_OUPV_PASSING_IADRS_AND_PSD_ISSUER_EVIDENCE_REVIEW_REQUIRED",
+    "POLICY_2026_CATALOG_DEFINITIONS_NOT_YET_CONFIRMED_IN_RUNTIME",
+    "MARINE_PERSON_SPECIFIC_OUPV_PASSING_IADRS_AND_PSD_ISSUER_EVIDENCE_MISSING",
     "MARINE_DRI_THREE_MONTHS_FROM_APPROVED_BID_START_DATE_NOT_YET_CONFIGURED",
-    "ORDINARY_RESCUE_PARAMEDIC_REQUIREMENT_SOURCE_REVIEW_REQUIRED",
-    "SPECIAL_OPS_POINTS_PRIORITY_AND_FINAL_ROLE_SCORING_REVIEW_REQUIRED"
+    "CORRECTED_VERSION_EVALUATION_AS_OF_DATE_AND_PERSONNEL_EVIDENCE_NOT_YET_REVIEWED"
   ],
-  "missingCatalogCredentials": [
-    "Certified Fire Investigator (IAAI-CFI)",
-    "NFPA 1123",
-    "NFPA 1126",
-    "RN 8312",
-    "RN 8313",
-    "RN8977 I",
-    "RN8977 II"
-  ]
+  "blockerReview": [
+    {
+      "issue": "Days and Investigator catalog names",
+      "classification": "SOURCE_CAN_RESOLVE",
+      "finding": "Final July policy Procedures 3(b), 3(c), and 3(e) define the names. Create missing identities through the audited credential catalog; this does not assign member evidence."
+    },
+    {
+      "issue": "Ordinary and Float Rescue paramedic minimum",
+      "classification": "SOURCE_CAN_RESOLVE",
+      "finding": "July policy Procedure 11(b) explicitly requires Rescue Float paramedics; the historical 2026 Rules and Points source requires Paramedic for the Rescue track and the final policy has no contrary ordinary-Rescue exception."
+    },
+    {
+      "issue": "Station #2 Special Ops cumulative scoring and Float 2 Captain placement",
+      "classification": "SOURCE_CAN_RESOLVE",
+      "finding": "Direct administrator diagram review establishes Station #2 / Float 2; July policy Procedures 7 and 11 establish the 6+6+Part107 preference and Float exception. Golden tests verify gating and ranking."
+    },
+    {
+      "issue": "Marine OUPV, passing IADRS, and diver issuer per member",
+      "classification": "DATA_EVIDENCE_MISSING",
+      "finding": "The approved baseline contains generic MMC, IADRS Swim Evaluation, and Public Safety Diver labels. Those labels do not prove OUPV authority, passing result, or DRI/PADI issuer."
+    },
+    {
+      "issue": "Marine DRI three-month deadline",
+      "classification": "ADMIN_SETTING_REQUIRED",
+      "finding": "The policy fixes three calendar months from the approved Bid start date; that date must be explicitly configured before the post-award obligation can be frozen."
+    },
+    {
+      "issue": "Eligibility as-of date and current personnel evidence",
+      "classification": "ADMIN_SETTING_REQUIRED",
+      "finding": "The administrator must select an eligibility evaluation date independent of the 2026-09-24 credential baseline revision; qualifications and personnel must be reviewed as of that date."
+    }
+  ],
+  "ruleCoverage": {
+    "valid": true,
+    "expectedBiddable": 223,
+    "validRules": 223,
+    "rankMismatches": [],
+    "duplicateRules": [],
+    "unresolvedCredentialReferences": []
+  },
+  "absentFromLocalFixtureAndReviewedExistingBindings": [
+    "Passing IADRS Watermanship Test",
+    "Valid OUPV / Six Pack Authority"
+  ],
+  "reviewedExistingCatalogBindings": [
+    {
+      "term": "IAAI-CFI",
+      "name": "Certified Fire Investigator (IAAI-CFI)",
+      "source": "Procedure 3(e)"
+    },
+    {
+      "term": "NFPA 1123",
+      "name": "NFPA1123 Outdoor Fireworks",
+      "source": "Procedure 3(b)"
+    },
+    {
+      "term": "NFPA 1126",
+      "name": "NFPA1126 Indoor Pyrotechnics",
+      "source": "Procedure 3(b)"
+    },
+    {
+      "term": "RN 8312",
+      "name": "RN8312 Assembly Occupancies",
+      "source": "Procedure 3(b)"
+    },
+    {
+      "term": "RN 8313",
+      "name": "Crowd Manager Certificate (RN8313)",
+      "source": "Procedure 3(b)"
+    },
+    {
+      "term": "RN8977 I",
+      "name": "RN8977 Youth Fire Setter Prevention and Intervention course I",
+      "source": "Procedure 3(c)"
+    },
+    {
+      "term": "RN8977 II",
+      "name": "RN8977 Youth Fire Setter Prevention and Intervention course II",
+      "source": "Procedure 3(c)"
+    },
+    {
+      "term": "DRI Public Safety Diver",
+      "name": "DRI Public Safety Diver",
+      "source": "Procedure 8(a-f)"
+    },
+    {
+      "term": "PADI Public Safety Diver",
+      "name": "PADI Public Safety Diver",
+      "source": "Procedure 8(a-f)"
+    }
+  ],
+  "reviewedNewPolicyDefinitions": [
+    {
+      "name": "Valid OUPV / Six Pack Authority",
+      "source": "Procedure 8(a-e)"
+    },
+    {
+      "name": "Passing IADRS Watermanship Test",
+      "source": "Procedure 8(a-e)"
+    }
+  ],
+  "missingReviewedDefinitions": []
 }

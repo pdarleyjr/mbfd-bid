@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  FINAL_2026_TOPOLOGY_DECISION_ID,
+  FINAL_2026_TOPOLOGY_SOURCE_REF,
+} from '../../src/lib/2026-opportunity-inventory.js';
 import { prepareBidDefinitionRun } from '../../src/lib/bid-definition-run.js';
 
 const mocks = vi.hoisted(() => ({
@@ -31,6 +35,14 @@ describe('managed 2026 run inventory gate', () => {
       sha256: SHA,
       row: { position_template_version: '2026.final.1' },
       content: {
+        sourceDecisions: [
+          {
+            issueId: FINAL_2026_TOPOLOGY_DECISION_ID,
+            area: 'positions',
+            status: 'RESOLVED',
+            sourceRef: FINAL_2026_TOPOLOGY_SOURCE_REF,
+          },
+        ],
         positions: [
           ...['A', 'B', 'C'].flatMap((shift) => [
             ...Array.from({ length: 72 }, (_, i) => ({

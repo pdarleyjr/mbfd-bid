@@ -16,6 +16,8 @@ export const PostAwardObligationSchema = z
     id: z.string().trim().min(1).max(160),
     credential: z.string().trim().min(1).max(160),
     sourceRef: z.string().trim().min(4).max(500),
+    /** Apply only when the frozen member lacks every listed qualification. */
+    appliesWhenMissingAll: z.array(z.string().trim().min(1).max(160)).min(1).max(20).optional(),
     deadline: z.discriminatedUnion('basis', [
       deadlinePeriod.extend({ basis: z.literal('FINAL_POSITION_AWARD') }).strict(),
       deadlinePeriod

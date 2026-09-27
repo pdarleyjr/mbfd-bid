@@ -18,6 +18,7 @@ export function PendingPolicyReview({
 }) {
   const people = useBidMembers();
   const [quickSetupError, setQuickSetupError] = useState<string | null>(null);
+  const [evaluationOn, setEvaluationOn] = useState(content.bidYear === 2026 ? '2026-09-30' : '');
   const draft = content.pendingPolicy;
   if (!draft) return null;
   const policy = draft.executionPolicy;
@@ -53,17 +54,30 @@ export function PendingPolicyReview({
           <div>
             <h3 className="font-medium">Start with the known 2026 setup</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Uses the August 28 assignment snapshot, the September 30 credential cutoff, a
-              three-day schedule, the saved rank-based participant rules, and full action rights for
-              employee IDs 20731, 19545, 20732, and 18156. Unstated A-Day limits remain
-              non-restrictive working assumptions; the documented Marine Float maximum is two.
+              Uses the August 28 assignment snapshot, the eligibility date below, a three-day
+              schedule, the saved rank-based participant rules, and full action rights for employee
+              IDs 20731, 19545, 20732, and 18156. Unstated A-Day limits remain non-restrictive
+              working assumptions; the documented Marine Float maximum is two.
             </p>
           </div>
+          <Label className="block space-y-2">
+            Eligibility evaluation date (separate from the imported credential source date)
+            <Input
+              type="date"
+              value={evaluationOn}
+              onChange={(event) => setEvaluationOn(event.target.value)}
+            />
+          </Label>
+          <p className="text-sm text-muted-foreground">
+            The approved 2026 eligibility cutoff is September 30 at 17:00 Eastern. This date field
+            evaluates calendar-day validity; final source evidence and same-day changes still
+            require review at the cutoff before the corrected version can be saved.
+          </p>
           <Button
             type="button"
             disabled={people.isLoading || people.isError}
             onClick={() => {
-              const result = applyKnown2026Setup(content, people.data ?? []);
+              const result = applyKnown2026Setup(content, people.data ?? [], evaluationOn);
               if (!result.ok) {
                 setQuickSetupError(result.message);
                 return;

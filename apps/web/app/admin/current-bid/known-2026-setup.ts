@@ -1,6 +1,7 @@
 import {
   type BidDefinitionContent,
   BidDefinitionContentSchema,
+  CredentialEvaluationDateSchema,
   FINAL_2026_BLOOMFIELD,
   FINAL_2026_NON_BIDDER_EMPLOYEE_IDS,
   FINAL_2026_SWAT_EMPLOYEE_IDS,
@@ -66,9 +67,16 @@ function stageMembers(
 export function applyKnown2026Setup(
   content: BidDefinitionContent,
   members: readonly BidMemberOption[],
+  evaluationOn: string,
 ): Result {
   if (content.bidYear !== 2026)
     return { ok: false, message: 'The source-backed quick setup is only available for 2026.' };
+  if (!CredentialEvaluationDateSchema.safeParse(evaluationOn).success)
+    return {
+      ok: false,
+      message:
+        'Choose the eligibility evaluation date separately from the credential source revision.',
+    };
   const pending = content.pendingPolicy;
   if (!pending) return { ok: false, message: 'The reviewed 2026 pending policy is not available.' };
   if (!pending.stageParticipantSources)
@@ -211,8 +219,8 @@ export function applyKnown2026Setup(
       v: 3,
       expectedDurationDays: 3,
       turnTimerSeconds: 300,
-      credentialEvaluationOn: '2026-09-24',
-      personnelEvaluationOn: '2026-09-24',
+      credentialEvaluationOn: evaluationOn,
+      personnelEvaluationOn: evaluationOn,
       livePolicy: policyResult.data,
     },
     policy: { ...pending, stageParticipantSources, executionPolicy: policyResult.data },

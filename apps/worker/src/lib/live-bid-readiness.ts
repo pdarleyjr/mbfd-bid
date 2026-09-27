@@ -9,6 +9,7 @@ import type { DB } from '../db/index.js';
 import { bidSessions } from '../db/schema.js';
 import type { WorkerEnv } from '../types/env.js';
 import {
+  biddable2026DivisionChiefIds,
   evaluate2026OpportunityInventory,
   isFinal2026ManagedConfiguration,
 } from './2026-opportunity-inventory.js';
@@ -135,12 +136,14 @@ export async function evaluateLiveBidReadiness(
   const biddablePositions = snapshot.ruleBookMaterial.positions.filter(
     (position) => position.bidParticipation === 'BIDDABLE' && position.isExcludedFromCount !== true,
   );
-  const opportunityInventory = isFinal2026ManagedConfiguration(
-    bidYear,
-    snapshot.ruleBookMaterial.positions,
-  )
+  const opportunityInventory = isFinal2026ManagedConfiguration(bidYear, {
+    sourceDecisions: managedVersion?.ok ? managedVersion.content.sourceDecisions : [],
+    sourceTemplateVersion: managedPin === null ? snapshot.positionTemplateVersion : undefined,
+  })
     ? evaluate2026OpportunityInventory(snapshot.ruleBookMaterial.positions)
     : null;
+  const biddableChiefIds =
+    bidYear === 2026 ? biddable2026DivisionChiefIds(snapshot.ruleBookMaterial.positions) : [];
   const participatingMembers = snapshot.members.filter((member) => member.pool !== 'EXCLUDED');
   const stageOrder =
     snapshot.settings.v === 3
@@ -239,9 +242,12 @@ export async function evaluateLiveBidReadiness(
       ),
       check(
         '2026_shift_opportunity_inventory',
-        opportunityInventory === null || opportunityInventory.blockingCodes.length === 0,
+        biddableChiefIds.length === 0 &&
+          (opportunityInventory === null || opportunityInventory.blockingCodes.length === 0),
         opportunityInventory === null
-          ? '2026 shift inventory requirement does not apply to this Bid year.'
+          ? biddableChiefIds.length > 0
+            ? `Biddable Division Chief positions are prohibited: ${biddableChiefIds.join(', ')}.`
+            : '2026 shift inventory requirement does not apply to this Bid year.'
           : `Frozen Bid opportunities: A ${opportunityInventory.byShift.A}, B ${opportunityInventory.byShift.B}, C ${opportunityInventory.byShift.C}, Days ${opportunityInventory.byShift.D}. ${opportunityInventory.blockingCodes.length === 0 ? 'All three shifts contain 73 non-Chief Bid seats.' : `Blocked: ${opportunityInventory.blockingCodes.join('; ')}.`}`,
       ),
       check(

@@ -2,6 +2,17 @@ import type { PostAwardObligation } from '@mbfd/shared';
 import { loadCanonicalBidSessionState } from '../commands/canonical-command-service.js';
 import { loadOfficialAnnualCompletion } from './official-annual-completion.js';
 
+export function postAwardObligationApplies(
+  term: PostAwardObligation,
+  frozenCredentialNames: readonly string[] | null,
+): boolean {
+  return (
+    !term.appliesWhenMissingAll ||
+    frozenCredentialNames === null ||
+    term.appliesWhenMissingAll.every((name) => !frozenCredentialNames.includes(name))
+  );
+}
+
 export function obligationDueOn(
   awardedAtMs: number,
   deadline: PostAwardObligation['deadline'],
@@ -144,48 +155,53 @@ export async function loadPostAwardObligations(db: D1Database, sessionId: string
     .sort(([a], [b]) => a.localeCompare(b))
     .flatMap(([positionId, fill]) => {
       const award = finalAwardEvidence(events, fill, positionId, official.completion.completion);
-      return (rules.get(positionId)?.requiredCriteria.postAward ?? []).map((term) => {
-        const history = reviewRows.results.filter(
-          (r) => r.finalBidId === fill.bidId && r.obligationId === term.id,
-        );
-        const review = history.find((r) => r.effectiveOn <= asOf) ?? null;
-        const dueOn = award ? obligationDueOn(award.createdAtMs, term.deadline) : null;
-        const member = members.get(fill.memberId);
-        return {
-          term,
-          positionId,
-          memberId: fill.memberId,
-          memberName: member ? `${member.firstName} ${member.lastName}` : null,
-          finalBidId: fill.bidId,
-          award: award
-            ? {
-                eventId: award.id,
-                commandId: award.commandId,
-                seq: award.seq,
-                awardedAtMs: award.createdAtMs,
-              }
-            : null,
-          dueOn,
-          status: !award
-            ? 'AWARD_EVIDENCE_UNKNOWN'
-            : review?.status === 'COMPLETED'
-              ? 'COMPLETED'
-              : review?.status === 'UNKNOWN'
-                ? 'UNKNOWN'
-                : dueOn && dueOn < asOf
-                  ? 'PAST_DUE_REVIEW_REQUIRED'
-                  : 'PENDING',
-          completionTiming:
-            review?.status === 'COMPLETED' && review.completedOn && dueOn
-              ? review.completedOn <= dueOn
-                ? 'ON_TIME'
-                : 'AFTER_DEADLINE'
+      const frozenMember = official.snapshot.members.find(
+        (member) => member.memberId === fill.memberId,
+      );
+      return (rules.get(positionId)?.requiredCriteria.postAward ?? [])
+        .filter((term) => postAwardObligationApplies(term, frozenMember?.credentialNames ?? null))
+        .map((term) => {
+          const history = reviewRows.results.filter(
+            (r) => r.finalBidId === fill.bidId && r.obligationId === term.id,
+          );
+          const review = history.find((r) => r.effectiveOn <= asOf) ?? null;
+          const dueOn = award ? obligationDueOn(award.createdAtMs, term.deadline) : null;
+          const member = members.get(fill.memberId);
+          return {
+            term,
+            positionId,
+            memberId: fill.memberId,
+            memberName: member ? `${member.firstName} ${member.lastName}` : null,
+            finalBidId: fill.bidId,
+            award: award
+              ? {
+                  eventId: award.id,
+                  commandId: award.commandId,
+                  seq: award.seq,
+                  awardedAtMs: award.createdAtMs,
+                }
               : null,
-          review,
-          history,
-          latestRevision: history[0]?.revision ?? 0,
-        };
-      });
+            dueOn,
+            status: !award
+              ? 'AWARD_EVIDENCE_UNKNOWN'
+              : review?.status === 'COMPLETED'
+                ? 'COMPLETED'
+                : review?.status === 'UNKNOWN'
+                  ? 'UNKNOWN'
+                  : dueOn && dueOn < asOf
+                    ? 'PAST_DUE_REVIEW_REQUIRED'
+                    : 'PENDING',
+            completionTiming:
+              review?.status === 'COMPLETED' && review.completedOn && dueOn
+                ? review.completedOn <= dueOn
+                  ? 'ON_TIME'
+                  : 'AFTER_DEADLINE'
+                : null,
+            review,
+            history,
+            latestRevision: history[0]?.revision ?? 0,
+          };
+        });
     });
   return {
     ok: true as const,

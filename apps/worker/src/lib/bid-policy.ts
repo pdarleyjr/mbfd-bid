@@ -351,7 +351,9 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
         return (
           (input.enforcePositionRank === true ||
             (input.ruleBookVersion.startsWith('2026.') &&
-              isFinal2026ManagedConfiguration(2026, templatePositions))) &&
+              isFinal2026ManagedConfiguration(2026, {
+                sourceTemplateVersion: templateVersion ?? undefined,
+              }))) &&
           position?.rankRequired !== undefined &&
           !rule.requiredCriteria.rank.includes(position.rankRequired)
         );
@@ -546,10 +548,7 @@ export async function loadRuleBookCoverage(
   const final2026 =
     ruleBookVersion.startsWith('2026.') &&
     templateVersion !== undefined &&
-    isFinal2026ManagedConfiguration(
-      2026,
-      allPositions.filter((position) => position.templateVersion === templateVersion),
-    );
+    isFinal2026ManagedConfiguration(2026, { sourceTemplateVersion: templateVersion });
   return evaluateRuleBookCoverage({
     ruleBookVersion,
     rules,

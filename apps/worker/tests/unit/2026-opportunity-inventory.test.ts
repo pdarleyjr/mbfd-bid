@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FINAL_2026_TOPOLOGY_DECISION_ID,
+  FINAL_2026_TOPOLOGY_SOURCE_REF,
   evaluate2026OpportunityInventory,
   isFinal2026ManagedConfiguration,
 } from '../../src/lib/2026-opportunity-inventory.js';
@@ -23,13 +25,26 @@ const seats = (ordinaryPerShift: number, chiefParticipation: string) => [
 ];
 
 describe('2026 opportunity inventory', () => {
-  it('scopes the final production gate by frozen source content across numeric aliases', () => {
-    expect(isFinal2026ManagedConfiguration(2026, [{ id: 'A801' }, { id: 'A211' }])).toBe(true);
-    expect(isFinal2026ManagedConfiguration(2026, [{ id: 'A101' }])).toBe(false);
+  it('scopes the final production gate by immutable reviewed source provenance', () => {
+    const sourceDecisions = [
+      {
+        issueId: FINAL_2026_TOPOLOGY_DECISION_ID,
+        area: 'positions',
+        status: 'RESOLVED',
+        sourceRef: FINAL_2026_TOPOLOGY_SOURCE_REF,
+      },
+    ];
+    expect(isFinal2026ManagedConfiguration(2026, { sourceDecisions })).toBe(true);
+    expect(isFinal2026ManagedConfiguration(2026, {})).toBe(false);
     expect(
-      isFinal2026ManagedConfiguration(2026, [{ id: 'A717' }, { id: 'B717' }, { id: 'C717' }]),
-    ).toBe(true);
-    expect(isFinal2026ManagedConfiguration(2027, [{ id: 'A801' }])).toBe(false);
+      isFinal2026ManagedConfiguration(2026, {
+        sourceDecisions: sourceDecisions.map((decision) => ({ ...decision, status: 'OPEN' })),
+      }),
+    ).toBe(false);
+    expect(isFinal2026ManagedConfiguration(2027, { sourceDecisions })).toBe(false);
+    expect(isFinal2026ManagedConfiguration(2026, { sourceTemplateVersion: '2026.final.1' })).toBe(
+      true,
+    );
   });
 
   it('rejects a superficially correct 223 total when a Chief fills each 73-seat shift', () => {

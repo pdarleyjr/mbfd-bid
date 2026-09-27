@@ -25,8 +25,10 @@ export function corrected2026Role(position: Corrected2026Position): Corrected202
     position.canonicalIdentity?.identityOrigin === 'APPLICATION_CANONICAL' &&
     position.rankRequired === 'CPT' &&
     position.isFloating &&
-    position.station === 'Combat Float Pool' &&
-    name.includes('COMBAT FLOATING CAPTAIN');
+    position.station === 'Station #2' &&
+    unit === 'FLOAT 2' &&
+    position.division === 'Combat' &&
+    name.includes('FLOATING CAPTAIN #1 (C)');
   let roleFamily: string;
   let policyRef: string;
   if (['A211', 'B211', 'C211'].includes(id)) {
@@ -40,7 +42,7 @@ export function corrected2026Role(position: Corrected2026Position): Corrected202
     policyRef = 'Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5';
   } else if (isCanonicalFloatCaptain) {
     roleFamily = 'COMBAT_FLOAT_CAPTAIN';
-    policyRef = 'Legacy Captain #1 (C); staffing guideline; final policy Procedure 11';
+    policyRef = 'Reviewed 2025 Station #2 Float 2 Captain #1 (C); final policy Procedures 7 and 11';
   } else if (position.station === 'Station #6') {
     const marineRole = position.isFloating
       ? 'MARINE_FLOAT'

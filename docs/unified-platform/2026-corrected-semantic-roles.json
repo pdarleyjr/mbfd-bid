@@ -28,16 +28,16 @@
     "UNION_PRESIDENT": 1
   },
   "float_captain_provenance": {
-    "role": "Combat Floating Captain / Captain #1 (C)",
+    "role": "Station #2 / Float 2 / Combat-track Floating Captain #1 (C)",
     "identityOrigin": "APPLICATION_CANONICAL",
     "evidence": [
-      "2025 A/B/C shift diagrams: administrator-described counted Captain #1 (C) on each shift",
+      "2025 A/B/C shift diagrams: administrator directly reviewed counted Station #2 / Float 2 Captain #1 (C) on each shift",
       "Legacy 2026 positions: A213/B213/C213 floating CPT Captain #1 (C)",
       "Daily Shift Staffing Guidelines 1.13 (2025-12-01): Bid Floating Captain with Certs",
-      "July 2026 Bid Policy Procedure 11: Combat and Rescue Float Pools",
+      "July 2026 Bid Policy Procedures 7 and 11: all Station #2 Special Ops positions receive preference scoring; Special Ops Floats are excepted from ordinary pools",
       "Final MASTER: 72 non-DC/non-Union seats per shift and no floating CPT"
     ],
-    "discrepancy": "Legacy role was grouped under Station #2 / Rescue / Float 2; July policy places ordinary floats in Combat or Rescue pools. Combat is supported by the (C) role label, but direct 2025 image inspection remains outstanding."
+    "discrepancy": "Final MASTER omits the counted Captain; legacy A213/B213/C213 now belong to different final roles. Application IDs A718/B718/C718 preserve the reviewed Station #2 / Float 2 placement without reusing occupied IDs."
   },
   "positions": [
     {
@@ -2095,7 +2095,7 @@
     {
       "positionId": "A718",
       "roleFamily": "COMBAT_FLOAT_CAPTAIN",
-      "policyRef": "Legacy Captain #1 (C); staffing guideline; final policy Procedure 11",
+      "policyRef": "Reviewed 2025 Station #2 Float 2 Captain #1 (C); final policy Procedures 7 and 11",
       "bidParticipation": "BIDDABLE",
       "rank": "CPT",
       "identityOrigin": "APPLICATION_CANONICAL",
@@ -2104,7 +2104,7 @@
     {
       "positionId": "B718",
       "roleFamily": "COMBAT_FLOAT_CAPTAIN",
-      "policyRef": "Legacy Captain #1 (C); staffing guideline; final policy Procedure 11",
+      "policyRef": "Reviewed 2025 Station #2 Float 2 Captain #1 (C); final policy Procedures 7 and 11",
       "bidParticipation": "BIDDABLE",
       "rank": "CPT",
       "identityOrigin": "APPLICATION_CANONICAL",
@@ -2113,7 +2113,7 @@
     {
       "positionId": "C718",
       "roleFamily": "COMBAT_FLOAT_CAPTAIN",
-      "policyRef": "Legacy Captain #1 (C); staffing guideline; final policy Procedure 11",
+      "policyRef": "Reviewed 2025 Station #2 Float 2 Captain #1 (C); final policy Procedures 7 and 11",
       "bidParticipation": "BIDDABLE",
       "rank": "CPT",
       "identityOrigin": "APPLICATION_CANONICAL",

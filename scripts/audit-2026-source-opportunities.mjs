@@ -187,20 +187,20 @@ const correctedCandidate = {
   new_positions: ['A', 'B', 'C'].map((shift) => ({
     id: `${shift}718`,
     shift,
-    station_or_pool: 'Combat Float Pool',
+    station_or_pool: 'Station #2',
     division: 'Combat',
-    unit: 'Combat Float',
-    displayed_role: 'Combat Floating Captain #1 (C)',
+    unit: 'Float 2',
+    displayed_role: 'Floating Captain #1 (C)',
     bid_rank: 'CPT',
     identity_origin: 'APPLICATION_CANONICAL_NOT_MASTER_WORKBOOK',
     role_evidence: [
-      'Administrator description of 2025 shift diagram',
+      'Administrator direct review of 2025 A/B/C shift diagrams: Station #2 / Float 2 Captain #1 (C)',
       `Legacy 2026 ${shift}213 Captain #1 (C)`,
       'Daily Shift Staffing Guidelines 1.13: Bid Floating Captain with Certs',
-      'Final July 2026 policy Procedure 11: Combat Float Pool',
+      'Final July 2026 policy Procedures 7 and 11: Station #2 Special Ops preference and Float exception',
     ],
     source_discrepancy:
-      'Legacy Station #2 / Rescue / Float 2 grouping differs from current Combat Float Pool placement; direct 2025 diagrams not available for inspection',
+      'Final MASTER omits the counted Station #2 Float 2 Captain; old A/B/C213 IDs are occupied by other final roles',
     final_rule_status: 'NOT_SEMANTICALLY_APPROVED',
   })),
 };
