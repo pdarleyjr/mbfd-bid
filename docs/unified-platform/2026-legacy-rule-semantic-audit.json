@@ -19,9 +19,7 @@
         "role": "Captain",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "D101"
-      ],
+      "exact_semantic_candidate_ids": ["D101"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -42,9 +40,7 @@
         "role": "Captain",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "D102"
-      ],
+      "exact_semantic_candidate_ids": ["D102"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -65,9 +61,7 @@
         "role": "Lieutenant",
         "rank": "LT"
       },
-      "exact_semantic_candidate_ids": [
-        "D103"
-      ],
+      "exact_semantic_candidate_ids": ["D103"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -88,9 +82,7 @@
         "role": "Lieutenant",
         "rank": "LT"
       },
-      "exact_semantic_candidate_ids": [
-        "D104"
-      ],
+      "exact_semantic_candidate_ids": ["D104"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -111,9 +103,7 @@
         "role": "Captain",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "D201"
-      ],
+      "exact_semantic_candidate_ids": ["D201"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -134,9 +124,7 @@
         "role": "Captain",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "D301"
-      ],
+      "exact_semantic_candidate_ids": ["D301"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -157,17 +145,12 @@
         "role": "Lieutenant",
         "rank": "LT"
       },
-      "exact_semantic_candidate_ids": [
-        "D401",
-        "D402"
-      ],
+      "exact_semantic_candidate_ids": ["D401", "D402"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "State of Florida Live Fire Training Instructor I "
-      ],
+      "unresolved_credential_literals": ["State of Florida Live Fire Training Instructor I "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -183,17 +166,12 @@
         "role": "Lieutenant",
         "rank": "LT"
       },
-      "exact_semantic_candidate_ids": [
-        "D401",
-        "D402"
-      ],
+      "exact_semantic_candidate_ids": ["D401", "D402"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "State of Florida Live Fire Training Instructor I "
-      ],
+      "unresolved_credential_literals": ["State of Florida Live Fire Training Instructor I "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -209,9 +187,7 @@
         "role": "Captain",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "A201"
-      ],
+      "exact_semantic_candidate_ids": ["A201"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -232,9 +208,7 @@
         "role": "Captain",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "B201"
-      ],
+      "exact_semantic_candidate_ids": ["B201"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -255,9 +229,7 @@
         "role": "Captain",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "C201"
-      ],
+      "exact_semantic_candidate_ids": ["C201"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -278,9 +250,7 @@
         "role": "Firefighter DE",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "A202"
-      ],
+      "exact_semantic_candidate_ids": ["A202"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -301,9 +271,7 @@
         "role": "Firefighter DE",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "B202"
-      ],
+      "exact_semantic_candidate_ids": ["B202"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -324,9 +292,7 @@
         "role": "Firefighter DE",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "C202"
-      ],
+      "exact_semantic_candidate_ids": ["C202"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -347,9 +313,7 @@
         "role": "Firefighter #1 AT",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "A203"
-      ],
+      "exact_semantic_candidate_ids": ["A203"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -370,9 +334,7 @@
         "role": "Firefighter #1 AT",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "B203"
-      ],
+      "exact_semantic_candidate_ids": ["B203"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -393,9 +355,7 @@
         "role": "Firefighter #1 AT",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "C203"
-      ],
+      "exact_semantic_candidate_ids": ["C203"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -416,9 +376,7 @@
         "role": "Lieutenant",
         "rank": "LT"
       },
-      "exact_semantic_candidate_ids": [
-        "A205"
-      ],
+      "exact_semantic_candidate_ids": ["A205"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -439,9 +397,7 @@
         "role": "Lieutenant",
         "rank": "LT"
       },
-      "exact_semantic_candidate_ids": [
-        "B205"
-      ],
+      "exact_semantic_candidate_ids": ["B205"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -462,9 +418,7 @@
         "role": "Lieutenant",
         "rank": "LT"
       },
-      "exact_semantic_candidate_ids": [
-        "C205"
-      ],
+      "exact_semantic_candidate_ids": ["C205"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -485,9 +439,7 @@
         "role": "Firefighter #1 (C)",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "A213"
-      ],
+      "exact_semantic_candidate_ids": ["A213"],
       "policy_candidate_id": null,
       "semantic_match": false,
       "rank_match": false,
@@ -508,9 +460,7 @@
         "role": "Firefighter #1 (C)",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "B213"
-      ],
+      "exact_semantic_candidate_ids": ["B213"],
       "policy_candidate_id": null,
       "semantic_match": false,
       "rank_match": false,
@@ -531,9 +481,7 @@
         "role": "Firefighter #1 (C)",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "C213"
-      ],
+      "exact_semantic_candidate_ids": ["C213"],
       "policy_candidate_id": null,
       "semantic_match": false,
       "rank_match": false,
@@ -554,9 +502,7 @@
         "role": "Firefighter #1",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "A206"
-      ],
+      "exact_semantic_candidate_ids": ["A206"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -577,9 +523,7 @@
         "role": "Firefighter #1",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "B206"
-      ],
+      "exact_semantic_candidate_ids": ["B206"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -600,9 +544,7 @@
         "role": "Firefighter #1",
         "rank": "FF"
       },
-      "exact_semantic_candidate_ids": [
-        "C206"
-      ],
+      "exact_semantic_candidate_ids": ["C206"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -619,9 +561,7 @@
         "rank": "FF"
       },
       "final_same_id_role": null,
-      "exact_semantic_candidate_ids": [
-        "A214"
-      ],
+      "exact_semantic_candidate_ids": ["A214"],
       "policy_candidate_id": null,
       "semantic_match": false,
       "rank_match": false,
@@ -638,9 +578,7 @@
         "rank": "FF"
       },
       "final_same_id_role": null,
-      "exact_semantic_candidate_ids": [
-        "B214"
-      ],
+      "exact_semantic_candidate_ids": ["B214"],
       "policy_candidate_id": null,
       "semantic_match": false,
       "rank_match": false,
@@ -657,9 +595,7 @@
         "rank": "FF"
       },
       "final_same_id_role": null,
-      "exact_semantic_candidate_ids": [
-        "C214"
-      ],
+      "exact_semantic_candidate_ids": ["C214"],
       "policy_candidate_id": null,
       "semantic_match": false,
       "rank_match": false,
@@ -680,9 +616,7 @@
         "role": "Captain 5",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "A212"
-      ],
+      "exact_semantic_candidate_ids": ["A212"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -703,9 +637,7 @@
         "role": "Captain 5",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "B212"
-      ],
+      "exact_semantic_candidate_ids": ["B212"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -726,9 +658,7 @@
         "role": "Captain 5",
         "rank": "CPT"
       },
-      "exact_semantic_candidate_ids": [
-        "C212"
-      ],
+      "exact_semantic_candidate_ids": ["C212"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -754,9 +684,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -777,9 +705,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -800,9 +726,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -819,9 +743,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -838,9 +760,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -857,9 +777,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -876,9 +794,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -895,9 +811,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -914,9 +828,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -933,9 +845,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -952,9 +862,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -971,9 +879,7 @@
       "semantic_match": false,
       "rank_match": false,
       "requirements_match": "NOT_POLICY_REVALIDATED",
-      "unresolved_credential_literals": [
-        "IADRS Swim Evaluation "
-      ],
+      "unresolved_credential_literals": ["IADRS Swim Evaluation "],
       "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
       "authority": "MASTER Positions source role and final July 2026 Bid Policy"
     },
@@ -1052,9 +958,7 @@
         "role": "Division Chief",
         "rank": "DC"
       },
-      "exact_semantic_candidate_ids": [
-        "A211"
-      ],
+      "exact_semantic_candidate_ids": ["A211"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -1075,9 +979,7 @@
         "role": "Division Chief",
         "rank": "DC"
       },
-      "exact_semantic_candidate_ids": [
-        "B211"
-      ],
+      "exact_semantic_candidate_ids": ["B211"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,
@@ -1098,9 +1000,7 @@
         "role": "Division Chief",
         "rank": "DC"
       },
-      "exact_semantic_candidate_ids": [
-        "C211"
-      ],
+      "exact_semantic_candidate_ids": ["C211"],
       "policy_candidate_id": null,
       "semantic_match": true,
       "rank_match": true,

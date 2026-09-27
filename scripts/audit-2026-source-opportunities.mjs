@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -196,3 +197,20 @@ await writeFile(
   output('2026-legacy-rule-semantic-audit.json'),
   `${JSON.stringify({ ...common, rule_count: ruleAudit.length, rules: ruleAudit }, null, 2)}\n`,
 );
+// Keep generated manifests byte-stable with the repository formatter so a
+// source audit can be rerun without leaving a lint failure or noisy diff.
+const biome = resolve(root, 'node_modules/@biomejs/biome/bin/biome');
+const formatted = spawnSync(
+  process.execPath,
+  [
+    biome,
+    'format',
+    '--write',
+    output('2026-source-opportunity-audit.json'),
+    output('2026-legacy-rule-semantic-audit.json'),
+  ],
+  { cwd: root, encoding: 'utf8' },
+);
+if (formatted.status !== 0) {
+  throw new Error(`Cannot format generated audits: ${formatted.stderr || formatted.error}`);
+}

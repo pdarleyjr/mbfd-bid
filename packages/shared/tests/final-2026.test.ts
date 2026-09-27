@@ -19,16 +19,7 @@ describe('final 2026 administrative decisions', () => {
       byShift: { A: 74, B: 73, C: 73, D: 8 },
       provisionalBiddableOpportunities: 220,
       requiredShiftBiddableOpportunities: 73,
-      nonOpportunityPositionIds: [
-        'A211',
-        'B211',
-        'C211',
-        'A801',
-        'D201',
-        'D301',
-        'D401',
-        'D402',
-      ],
+      nonOpportunityPositionIds: ['A211', 'B211', 'C211', 'A801', 'D201', 'D301', 'D401', 'D402'],
     });
     expect(FINAL_2026_ACTIVE_BIDDERS).toEqual({
       total: 222,
