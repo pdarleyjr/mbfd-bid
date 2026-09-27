@@ -241,14 +241,14 @@ describe('known 2026 setup', () => {
       },
     });
     expect(policy?.stages.find((stage) => stage.id === 'days-captains')?.memberIds).toEqual([
-      102, 106, 202, 207,
+      102, 106, 202, 207, 210,
     ]);
     expect(policy?.stages.find((stage) => stage.id === 'captains')?.memberIds).toEqual([
-      102, 106, 202, 207,
+      102, 106, 202, 207, 210,
     ]);
     expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(208);
     expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(209);
-    expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(210);
+    expect(policy?.stages.find((stage) => stage.id === 'captains')?.memberIds).toContain(210);
     expect(policy?.annualOperations?.membershipDistributions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

@@ -8,6 +8,7 @@ import { and, eq, ne } from 'drizzle-orm';
 import type { DB } from '../db/index.js';
 import { bidSessions } from '../db/schema.js';
 import type { WorkerEnv } from '../types/env.js';
+import { evaluate2026OpportunityInventory } from './2026-opportunity-inventory.js';
 import { validateAnnualOperationsReadiness } from './annual-bid-operations.js';
 import { evaluateAuthoritativeStaffingBaseline } from './authoritative-staffing-baseline.js';
 import { snapshotMatchesBidDefinition } from './bid-definition-context.js';
@@ -129,8 +130,10 @@ export async function evaluateLiveBidReadiness(
             currentPolicy.policy.configurationRevision === snapshot.configurationRevision,
         );
   const biddablePositions = snapshot.ruleBookMaterial.positions.filter(
-    (position) => position.bidParticipation === 'BIDDABLE',
+    (position) => position.bidParticipation === 'BIDDABLE' && position.isExcludedFromCount !== true,
   );
+  const opportunityInventory =
+    bidYear === 2026 ? evaluate2026OpportunityInventory(snapshot.ruleBookMaterial.positions) : null;
   const participatingMembers = snapshot.members.filter((member) => member.pool !== 'EXCLUDED');
   const stageOrder =
     snapshot.settings.v === 3
@@ -174,6 +177,7 @@ export async function evaluateLiveBidReadiness(
       'participant_population',
       'execution_policy_references',
       'position_catalog',
+      '2026_shift_opportunity_inventory',
       'qualification_rule_readiness',
       'annual_operations_policy',
       'ordering_authority',
@@ -225,6 +229,13 @@ export async function evaluateLiveBidReadiness(
         'position_catalog',
         biddablePositions.length > 0,
         `${biddablePositions.length} biddable positions are frozen into the session.`,
+      ),
+      check(
+        '2026_shift_opportunity_inventory',
+        opportunityInventory === null || opportunityInventory.blockingCodes.length === 0,
+        opportunityInventory === null
+          ? '2026 shift inventory requirement does not apply to this Bid year.'
+          : `Frozen Bid opportunities: A ${opportunityInventory.byShift.A}, B ${opportunityInventory.byShift.B}, C ${opportunityInventory.byShift.C}, Days ${opportunityInventory.byShift.D}. ${opportunityInventory.blockingCodes.length === 0 ? 'All three shifts contain 73 non-Chief Bid seats.' : `Blocked: ${opportunityInventory.blockingCodes.join('; ')}.`}`,
       ),
       check(
         'qualification_rule_readiness',

@@ -4,6 +4,15 @@ Date: 2026-09-24. This record distinguishes locally verified implementation
 facts from deployment and authenticated acceptance gates. It is not evidence
 that a Real Bid was started.
 
+Correction, 2026-09-26: The prior assignment-based exclusion of employee 18148
+was withdrawn under the administrator's new direction. The final MASTER
+`Personnel` sheet lists his substantive rank as Captain (row 19), while `Bid
+Pick` row 4 records his current B211 assignment. The `Tables` exclusion list
+does not name him. Applying the five MASTER nonparticipants, the six directed
+departures, and Bloomfield's Captain Bid rank to `Personnel` yields 22 CPT, 39
+LT, and 161 FF. This is source arithmetic; production participant preview and
+final saved-version acceptance remain separate gates.
+
 ## Governing sources
 
 | Source | Immutable identity / applied authority |
@@ -26,14 +35,14 @@ not the final 2026 candidate and does not impose a source-number-equality gate.
   awarded in the 2026 Bid.
 - B214 and C214 use Combat at runtime. Their raw Rescue source label remains in
   immutable provenance with the approved correction.
-- Ordinary active cohort: 221 — 21 Captain, 39 Lieutenant, 161 Firefighter.
+- Source-reconciled ordinary cohort: 222 — 22 Captain, 39 Lieutenant, 161 Firefighter.
 - Division Chiefs are not ordinary rank-stage bidders.
 - Employee IDs 16584, 16613, 16617, 16573, 19131, and 20734 are explicitly
   excluded. Stale roster absence does not exclude anyone else.
-- On 2026-09-25, employee ID 18148 (Dwight Nicholas) was confirmed as the
-  current B-shift Division Chief occupying protected position B211. His stored
-  Captain rank remains identity evidence, but he is excluded from ordinary
-  Captain stages while occupying that administrative assignment.
+- Employee ID 18148 (Dwight Nicholas) occupies protected B211 but retains a
+  substantive Captain Bid rank. B211 remains non-biddable; its occupant is not
+  excluded solely by that assignment. No separate nonparticipant authority was
+  found in the supplied MASTER exclusion list.
 - Employee ID 18158 uses Captain for this Bid; the acting Division Chief
   assignment remains separately preserved evidence.
 - Captain and Lieutenant ordering uses reviewed time-in-grade Bid ordinals.

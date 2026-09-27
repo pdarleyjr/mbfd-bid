@@ -266,6 +266,8 @@ router.put(
         {
           error: 'rule_book_invalid',
           invalid_position_ids: coverage.invalidPositionIds,
+          rank_mismatch_position_ids: coverage.rankMismatchPositionIds,
+          unresolved_credential_references: coverage.unresolvedCredentialReferences,
           duplicate_position_ids: coverage.duplicatePositionIds,
           missing_biddable_position_ids: coverage.missingBiddablePositionIds,
           non_biddable_position_ids: coverage.nonBiddablePositionIds,

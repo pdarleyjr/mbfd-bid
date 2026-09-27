@@ -1,0 +1,1113 @@
+{
+  "audit_status": "SOURCE_AUDIT_ONLY_NOT_AN_EXECUTABLE_2026_CONFIGURATION",
+  "source_hashes": {
+    "master_workbook": "0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+    "final_policy": "a28e73c403fb2b8e5ece4559cf16324f9e4dfe56425d16ac6f1559080ec6befc"
+  },
+  "fixture_sha256": "40ed2e56ff139839bb42a162f0907738301d773311d9faddc5c435a9ad9e43ff",
+  "rule_count": 50,
+  "rules": [
+    {
+      "old_rule_id": "D101",
+      "old_semantic_role": {
+        "unit": "Prevention",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Prevention",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "D101"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "D102",
+      "old_semantic_role": {
+        "unit": "Special Events",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Special Events",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "D102"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "D103",
+      "old_semantic_role": {
+        "unit": "Public Education",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Public Education",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [
+        "D103"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "D104",
+      "old_semantic_role": {
+        "unit": "Special Events",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Special Events",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [
+        "D104"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "D201",
+      "old_semantic_role": {
+        "unit": "EMS",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "EMS",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "D201"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "D301",
+      "old_semantic_role": {
+        "unit": "Support Services",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Support Services",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "D301"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "D401",
+      "old_semantic_role": {
+        "unit": "Training",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Training",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [
+        "D401",
+        "D402"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "State of Florida Live Fire Training Instructor I "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "D402",
+      "old_semantic_role": {
+        "unit": "Training",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Training",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [
+        "D401",
+        "D402"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "State of Florida Live Fire Training Instructor I "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A201",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "A201"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B201",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "B201"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C201",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Captain",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "C201"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A202",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter DE",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter DE",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "A202"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B202",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter DE",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter DE",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "B202"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C202",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter DE",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter DE",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "C202"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A203",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter #1 AT",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter #1 AT",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "A203"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B203",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter #1 AT",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter #1 AT",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "B203"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C203",
+      "old_semantic_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter #1 AT",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Engine 2",
+        "role": "Firefighter #1 AT",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "C203"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A205",
+      "old_semantic_role": {
+        "unit": "Rescue 2",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Rescue 2",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [
+        "A205"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B205",
+      "old_semantic_role": {
+        "unit": "Rescue 2",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Rescue 2",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [
+        "B205"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C205",
+      "old_semantic_role": {
+        "unit": "Rescue 2",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Rescue 2",
+        "role": "Lieutenant",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [
+        "C205"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A214",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Lieutenant #1 (R)",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Float 2",
+        "role": "Firefighter #1 (C)",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "A213"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B214",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Lieutenant #1 (R)",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Float 2",
+        "role": "Firefighter #1 (C)",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "B213"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C214",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Lieutenant #1 (R)",
+        "rank": "LT"
+      },
+      "final_same_id_role": {
+        "unit": "Float 2",
+        "role": "Firefighter #1 (C)",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "C213"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A206",
+      "old_semantic_role": {
+        "unit": "Rescue 2",
+        "role": "Firefighter #1",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Rescue 2",
+        "role": "Firefighter #1",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "A206"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B206",
+      "old_semantic_role": {
+        "unit": "Rescue 2",
+        "role": "Firefighter #1",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Rescue 2",
+        "role": "Firefighter #1",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "B206"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C206",
+      "old_semantic_role": {
+        "unit": "Rescue 2",
+        "role": "Firefighter #1",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Rescue 2",
+        "role": "Firefighter #1",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [
+        "C206"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A216",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Firefighter #1 (C)",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [
+        "A214"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B216",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Firefighter #1 (C)",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [
+        "B214"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C216",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Firefighter #1 (C)",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [
+        "C214"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A212",
+      "old_semantic_role": {
+        "unit": "Captain 5",
+        "role": "Captain 5",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Captain 5",
+        "role": "Captain 5",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "A212"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B212",
+      "old_semantic_role": {
+        "unit": "Captain 5",
+        "role": "Captain 5",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Captain 5",
+        "role": "Captain 5",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "B212"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C212",
+      "old_semantic_role": {
+        "unit": "Captain 5",
+        "role": "Captain 5",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Captain 5",
+        "role": "Captain 5",
+        "rank": "CPT"
+      },
+      "exact_semantic_candidate_ids": [
+        "C212"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REVALIDATE_REQUIREMENTS_AGAINST_FINAL_POLICY",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A213",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Captain #1 (C)",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Float 2",
+        "role": "Lieutenant #1 (R)",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B213",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Captain #1 (C)",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Float 2",
+        "role": "Lieutenant #1 (R)",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C213",
+      "old_semantic_role": {
+        "unit": "Float 2",
+        "role": "Captain #1 (C)",
+        "rank": "CPT"
+      },
+      "final_same_id_role": {
+        "unit": "Float 2",
+        "role": "Lieutenant #1 (R)",
+        "rank": "LT"
+      },
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A611",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Officer",
+        "rank": "CPT"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B611",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Officer",
+        "rank": "CPT"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C611",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Officer",
+        "rank": "CPT"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A612",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Operator (Pilot)",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B612",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Operator (Pilot)",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C612",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Operator (Pilot)",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A613",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Engineer",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B613",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Engineer",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C613",
+      "old_semantic_role": {
+        "unit": "Fire Boat",
+        "role": "Fireboat Engineer",
+        "rank": "FF"
+      },
+      "final_same_id_role": null,
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": null,
+      "semantic_match": false,
+      "rank_match": false,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [
+        "IADRS Swim Evaluation "
+      ],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "A303",
+      "old_semantic_role": {
+        "unit": "Ladder 3",
+        "role": "Firefighter #1 INV",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Combat 3",
+        "role": "Firefighter DE #1",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": "A305",
+      "semantic_match": false,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "Final July 2026 Bid Policy p2 procedure 3(e); MASTER Positions INV role"
+    },
+    {
+      "old_rule_id": "B303",
+      "old_semantic_role": {
+        "unit": "Ladder 3",
+        "role": "Firefighter #1 INV",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Combat 3",
+        "role": "Firefighter DE #1",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": "B305",
+      "semantic_match": false,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "Final July 2026 Bid Policy p2 procedure 3(e); MASTER Positions INV role"
+    },
+    {
+      "old_rule_id": "C303",
+      "old_semantic_role": {
+        "unit": "Ladder 3",
+        "role": "Firefighter #1 INV",
+        "rank": "FF"
+      },
+      "final_same_id_role": {
+        "unit": "Combat 3",
+        "role": "Firefighter DE #1",
+        "rank": "FF"
+      },
+      "exact_semantic_candidate_ids": [],
+      "policy_candidate_id": "C305",
+      "semantic_match": false,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REAUTHOR_AND_REVIEW_BY_SEMANTIC_ROLE",
+      "authority": "Final July 2026 Bid Policy p2 procedure 3(e); MASTER Positions INV role"
+    },
+    {
+      "old_rule_id": "A211",
+      "old_semantic_role": {
+        "unit": "300",
+        "role": "Division Chief",
+        "rank": "DC"
+      },
+      "final_same_id_role": {
+        "unit": 300,
+        "role": "Division Chief",
+        "rank": "DC"
+      },
+      "exact_semantic_candidate_ids": [
+        "A211"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REMOVE_FROM_NEW_BID_RULE_BOOK",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "B211",
+      "old_semantic_role": {
+        "unit": "300",
+        "role": "Division Chief",
+        "rank": "DC"
+      },
+      "final_same_id_role": {
+        "unit": 300,
+        "role": "Division Chief",
+        "rank": "DC"
+      },
+      "exact_semantic_candidate_ids": [
+        "B211"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REMOVE_FROM_NEW_BID_RULE_BOOK",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    },
+    {
+      "old_rule_id": "C211",
+      "old_semantic_role": {
+        "unit": "300",
+        "role": "Division Chief",
+        "rank": "DC"
+      },
+      "final_same_id_role": {
+        "unit": 300,
+        "role": "Division Chief",
+        "rank": "DC"
+      },
+      "exact_semantic_candidate_ids": [
+        "C211"
+      ],
+      "policy_candidate_id": null,
+      "semantic_match": true,
+      "rank_match": true,
+      "requirements_match": "NOT_POLICY_REVALIDATED",
+      "unresolved_credential_literals": [],
+      "action": "REMOVE_FROM_NEW_BID_RULE_BOOK",
+      "authority": "MASTER Positions source role and final July 2026 Bid Policy"
+    }
+  ]
+}

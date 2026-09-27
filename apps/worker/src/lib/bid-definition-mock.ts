@@ -44,6 +44,7 @@ export async function previewBidDefinitionMock(
       ...('positionIds' in prepared ? { positionIds: prepared.positionIds } : {}),
       ...('tenureIssues' in prepared ? { tenureIssues: prepared.tenureIssues } : {}),
       ...('termIssues' in prepared ? { termIssues: prepared.termIssues } : {}),
+      ...('inventoryIssues' in prepared ? { inventoryIssues: prepared.inventoryIssues } : {}),
     };
   const version = await loadBidDefinitionVersion(database, year, input.versionId);
   if (!version.ok || version.sha256 !== input.versionSha256)
@@ -154,6 +155,7 @@ export async function createBidDefinitionMock(
       ...('positionIds' in prepared ? { positionIds: prepared.positionIds } : {}),
       ...('tenureIssues' in prepared ? { tenureIssues: prepared.tenureIssues } : {}),
       ...('termIssues' in prepared ? { termIssues: prepared.termIssues } : {}),
+      ...('inventoryIssues' in prepared ? { inventoryIssues: prepared.inventoryIssues } : {}),
     };
   if (
     prepared.pins.contextSha256 !== input.body.expectedContextSha256 ||

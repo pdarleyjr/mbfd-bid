@@ -87,10 +87,14 @@ export interface RuleBookCoverageInput {
     pointsPreferenceJson: string;
     tieBreakChainJson: string;
   }[];
+  /** Exact approved canonical names. Omission keeps historical in-memory callers readable. */
+  credentialCatalogNames?: readonly string[];
   positions: readonly {
     id: string;
     templateVersion: string;
     bidParticipation: BidParticipation;
+    /** Present for persisted templates; historical in-memory coverage callers may omit it. */
+    rankRequired?: DecodedPositionRule['requiredCriteria']['rank'][number];
     // A701 is an existing, separately tracked legacy exception: the seed has
     // always omitted it from ordinary rule generation. It does not represent
     // an administrative staffing assignment and must not cause a member-pool
@@ -106,6 +110,8 @@ export interface RuleBookCoverage {
   templateVersionIssues: readonly string[];
   rules: readonly DecodedPositionRule[];
   invalidPositionIds: readonly string[];
+  rankMismatchPositionIds: readonly string[];
+  unresolvedCredentialReferences: readonly string[];
   duplicatePositionIds: readonly string[];
   administrativelyAssignedPositionIds: readonly string[];
   reservedPositionIds: readonly string[];
@@ -134,6 +140,30 @@ function uniqueSorted(values: Iterable<string>): string[] {
   return [...new Set([...values].filter((value) => value.trim().length > 0))].sort((a, b) =>
     a.localeCompare(b),
   );
+}
+
+function ruleCredentialReferences(rule: DecodedPositionRule): string[] {
+  const scoring = rule.pointsPreference.scoring;
+  const groups = scoring ? [...scoring.total, ...scoring.so, ...scoring.mo] : [];
+  const criteria = [
+    ...groups.flatMap((group) => group.preference?.criteria ?? []),
+    ...(scoring?.orderedPreference?.criteria ?? []),
+  ];
+  return [
+    ...rule.requiredCriteria.credentials,
+    ...(rule.requiredCriteria.anyOfCredentials ?? []).flat(),
+    ...(rule.requiredCriteria.postAward ?? []).map((entry) => entry.credential),
+    ...rule.pointsPreference.items.map((item) => item.credential),
+    ...groups.flatMap((group) => [
+      ...(group.excludesAny ?? []),
+      ...group.items.flatMap((item) => [
+        item.credential,
+        ...item.alternatives,
+        ...item.requiresAll,
+      ]),
+    ]),
+    ...criteria.flatMap((entry) => [entry.credential, ...entry.alternatives, ...entry.requiresAll]),
+  ];
 }
 
 function comparePositionScopedRows<T extends { positionId: string }>(
@@ -311,6 +341,28 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
       );
     }),
   );
+  const rankMismatchPositionIds = uniqueSorted(
+    decoded.rules
+      .filter((rule) => {
+        const position = byPositionId.get(rule.positionId);
+        return (
+          position?.rankRequired !== undefined &&
+          !rule.requiredCriteria.rank.includes(position.rankRequired)
+        );
+      })
+      .map((rule) => rule.positionId),
+  );
+  const catalog = input.credentialCatalogNames ? new Set(input.credentialCatalogNames) : null;
+  const unresolvedCredentialReferences =
+    catalog === null
+      ? []
+      : uniqueSorted(
+          decoded.rules.flatMap((rule) =>
+            ruleCredentialReferences(rule)
+              .filter((name) => !catalog.has(name))
+              .map((name) => `${rule.positionId}:${name}`),
+          ),
+        );
   const unexpectedPositionIds = uniqueSorted(
     rawRulePositionIds.filter((positionId) => !byPositionId.has(positionId)),
   );
@@ -330,6 +382,8 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
     input.rules.length > 0 &&
     templateVersionIssues.length === 0 &&
     decoded.invalidPositionIds.length === 0 &&
+    rankMismatchPositionIds.length === 0 &&
+    unresolvedCredentialReferences.length === 0 &&
     decoded.duplicatePositionIds.length === 0 &&
     missingBiddablePositionIds.length === 0 &&
     nonBiddablePositionIds.length === 0 &&
@@ -342,6 +396,8 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
     templateVersionIssues,
     rules: decoded.rules,
     invalidPositionIds: decoded.invalidPositionIds,
+    rankMismatchPositionIds,
+    unresolvedCredentialReferences,
     duplicatePositionIds: decoded.duplicatePositionIds,
     administrativelyAssignedPositionIds,
     reservedPositionIds,
@@ -379,7 +435,12 @@ function loadV3SnapshotRuleBookCoverage(
   return evaluateRuleBookCoverage({
     ruleBookVersion: snapshot.ruleBookVersion,
     rules: snapshot.ruleBookMaterial.rules,
-    positions: snapshot.ruleBookMaterial.positions,
+    // Historical sessions retain the coverage rules that governed their
+    // creation. New rank/catalog gates apply to prospective publication and
+    // preparation, not to an already frozen session's replay.
+    positions: snapshot.ruleBookMaterial.positions.map(
+      ({ rankRequired: _rankRequired, ...position }) => position,
+    ),
   });
 }
 
@@ -444,13 +505,14 @@ export async function loadRuleBookCoverage(
   db: DB,
   ruleBookVersion: string,
 ): Promise<RuleBookCoverage> {
-  const [rules, allPositions, participationRows] = await Promise.all([
+  const [rules, allPositions, participationRows, catalogRows] = await Promise.all([
     db.select().from(positionRules).where(eq(positionRules.ruleBookVersion, ruleBookVersion)).all(),
     db
       .select({
         id: positions.id,
         templateVersion: positions.templateVersion,
         isExcludedFromCount: positions.isExcludedFromCount,
+        rankRequired: positions.rankRequired,
       })
       .from(positions)
       .all(),
@@ -463,11 +525,22 @@ export async function loadRuleBookCoverage(
       .from(ruleBookPositionParticipation)
       .where(eq(ruleBookPositionParticipation.ruleBookVersion, ruleBookVersion))
       .all(),
+    db
+      .select({ name: credentials.name, retiredOn: credentialCatalogMetadata.retiredOn })
+      .from(credentials)
+      .leftJoin(
+        credentialCatalogMetadata,
+        eq(credentials.id, credentialCatalogMetadata.credentialId),
+      )
+      .all(),
   ]);
   const participationByPositionId = new Map(participationRows.map((row) => [row.positionId, row]));
   return evaluateRuleBookCoverage({
     ruleBookVersion,
     rules,
+    credentialCatalogNames: catalogRows
+      .filter((row) => row.retiredOn === null)
+      .map((row) => row.name),
     positions: allPositions.map((position) => {
       const participation = participationByPositionId.get(position.id);
       return {
