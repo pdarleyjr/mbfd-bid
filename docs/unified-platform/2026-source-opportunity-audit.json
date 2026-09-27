@@ -15,9 +15,73 @@
     "A_NON_DC_BID_SEATS_72_EXPECTED_73",
     "B_NON_DC_BID_SEATS_72_EXPECTED_73",
     "C_NON_DC_BID_SEATS_72_EXPECTED_73",
-    "A801_UNION_PRESIDENT_CLASSIFICATION_REQUIRES_APPROVED_BUSINESS_DECISION",
     "FINAL_RULE_BOOK_NOT_SEMANTICALLY_RECONCILED"
   ],
+  "corrected_candidate": {
+    "status": "ROLE_RESOLVED_APPLICATION_IDENTITIES_NOT_YET_SAVED",
+    "biddable_counts": {
+      "A": 73,
+      "B": 73,
+      "C": 73,
+      "D": 4
+    },
+    "new_positions": [
+      {
+        "id": "A718",
+        "shift": "A",
+        "station_or_pool": "Combat Float Pool",
+        "division": "Combat",
+        "unit": "Combat Float",
+        "displayed_role": "Combat Floating Captain #1 (C)",
+        "bid_rank": "CPT",
+        "identity_origin": "APPLICATION_CANONICAL_NOT_MASTER_WORKBOOK",
+        "role_evidence": [
+          "Administrator description of 2025 shift diagram",
+          "Legacy 2026 A213 Captain #1 (C)",
+          "Daily Shift Staffing Guidelines 1.13: Bid Floating Captain with Certs",
+          "Final July 2026 policy Procedure 11: Combat Float Pool"
+        ],
+        "source_discrepancy": "Legacy Station #2 / Rescue / Float 2 grouping differs from current Combat Float Pool placement; direct 2025 diagrams not available for inspection",
+        "final_rule_status": "NOT_SEMANTICALLY_APPROVED"
+      },
+      {
+        "id": "B718",
+        "shift": "B",
+        "station_or_pool": "Combat Float Pool",
+        "division": "Combat",
+        "unit": "Combat Float",
+        "displayed_role": "Combat Floating Captain #1 (C)",
+        "bid_rank": "CPT",
+        "identity_origin": "APPLICATION_CANONICAL_NOT_MASTER_WORKBOOK",
+        "role_evidence": [
+          "Administrator description of 2025 shift diagram",
+          "Legacy 2026 B213 Captain #1 (C)",
+          "Daily Shift Staffing Guidelines 1.13: Bid Floating Captain with Certs",
+          "Final July 2026 policy Procedure 11: Combat Float Pool"
+        ],
+        "source_discrepancy": "Legacy Station #2 / Rescue / Float 2 grouping differs from current Combat Float Pool placement; direct 2025 diagrams not available for inspection",
+        "final_rule_status": "NOT_SEMANTICALLY_APPROVED"
+      },
+      {
+        "id": "C718",
+        "shift": "C",
+        "station_or_pool": "Combat Float Pool",
+        "division": "Combat",
+        "unit": "Combat Float",
+        "displayed_role": "Combat Floating Captain #1 (C)",
+        "bid_rank": "CPT",
+        "identity_origin": "APPLICATION_CANONICAL_NOT_MASTER_WORKBOOK",
+        "role_evidence": [
+          "Administrator description of 2025 shift diagram",
+          "Legacy 2026 C213 Captain #1 (C)",
+          "Daily Shift Staffing Guidelines 1.13: Bid Floating Captain with Certs",
+          "Final July 2026 policy Procedure 11: Combat Float Pool"
+        ],
+        "source_discrepancy": "Legacy Station #2 / Rescue / Float 2 grouping differs from current Combat Float Pool placement; direct 2025 diagrams not available for inspection",
+        "final_rule_status": "NOT_SEMANTICALLY_APPROVED"
+      }
+    ]
+  },
   "positions": [
     {
       "position_id": "A101",
@@ -2001,7 +2065,7 @@
       "specialty": null,
       "floating": true,
       "biddable": false,
-      "classification": "UNION_PRESIDENT_NOT_COUNTED_PENDING_BUSINESS_CLASSIFICATION",
+      "classification": "UNION_PRESIDENT_ORGANIZATIONAL_NOT_BID",
       "legacy_same_id_semantic_match": false,
       "legacy_same_id_rank_match": false,
       "legacy_same_id_rule": null,
@@ -2015,7 +2079,7 @@
         "source_division": "Combat",
         "source_correction": null
       },
-      "determination": "MASTER Positions row 75 identifies a Union President organizational seat; no authority to count it as an ordinary Bid opportunity"
+      "determination": "MASTER Positions row 75 and legacy A701 preserve a count-excluded Union President; no final July policy provision changes it to an ordinary Bid seat"
     },
     {
       "position_id": "B101",

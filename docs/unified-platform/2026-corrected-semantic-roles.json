@@ -1,0 +1,2123 @@
+{
+  "status": "POSITION_ROLES_CLASSIFIED_RULES_NOT_APPROVED_NOT_PRODUCTION",
+  "master_source_positions": 228,
+  "corrected_organizational_positions": 231,
+  "corrected_biddable_positions": 223,
+  "role_families": {
+    "AIR_TECH": 3,
+    "CAPTAIN_5": 3,
+    "COMBAT_FLOAT_CAPTAIN": 3,
+    "COMBAT_FLOAT_DE": 6,
+    "COMBAT_FLOAT_FF": 30,
+    "DAYS_CLOSED": 4,
+    "DAYS_OPEN": 4,
+    "DIVISION_CHIEF": 3,
+    "DRIVER_ENGINEER": 18,
+    "FIRE_INVESTIGATOR": 3,
+    "MARINE_DECKHAND": 3,
+    "MARINE_ENGINEER": 3,
+    "MARINE_FLOAT": 6,
+    "MARINE_OFFICER": 3,
+    "MARINE_OPERATOR": 3,
+    "ORDINARY_COMBAT": 42,
+    "ORDINARY_RESCUE": 45,
+    "RESCUE_FLOAT_FF": 15,
+    "RESCUE_FLOAT_LT": 9,
+    "SPECIAL_OPS_COMBAT": 6,
+    "SPECIAL_OPS_RESCUE": 18,
+    "UNION_PRESIDENT": 1
+  },
+  "float_captain_provenance": {
+    "role": "Combat Floating Captain / Captain #1 (C)",
+    "identityOrigin": "APPLICATION_CANONICAL",
+    "evidence": [
+      "2025 A/B/C shift diagrams: administrator-described counted Captain #1 (C) on each shift",
+      "Legacy 2026 positions: A213/B213/C213 floating CPT Captain #1 (C)",
+      "Daily Shift Staffing Guidelines 1.13 (2025-12-01): Bid Floating Captain with Certs",
+      "July 2026 Bid Policy Procedure 11: Combat and Rescue Float Pools",
+      "Final MASTER: 72 non-DC/non-Union seats per shift and no floating CPT"
+    ],
+    "discrepancy": "Legacy role was grouped under Station #2 / Rescue / Float 2; July policy places ordinary floats in Combat or Rescue pools. Combat is supported by the (C) role label, but direct 2025 image inspection remains outstanding."
+  },
+  "positions": [
+    {
+      "positionId": "A101",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A102",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A103",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A104",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A105",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A106",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A107",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A108",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A109",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A110",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A111",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A112",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A113",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A114",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A201",
+      "roleFamily": "SPECIAL_OPS_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A202",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A203",
+      "roleFamily": "AIR_TECH",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A204",
+      "roleFamily": "SPECIAL_OPS_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A205",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A206",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A207",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A208",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A209",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A210",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A211",
+      "roleFamily": "DIVISION_CHIEF",
+      "policyRef": "Protected administrative assignment; not an ordinary Bid opportunity",
+      "bidParticipation": "ADMIN_ASSIGNED",
+      "rank": "DC",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "NOT_APPLICABLE"
+    },
+    {
+      "positionId": "A212",
+      "roleFamily": "CAPTAIN_5",
+      "policyRef": "Final July 2026 Bid Policy Procedures 6(b) and 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A213",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A214",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A215",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A301",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A302",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A303",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A304",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A305",
+      "roleFamily": "FIRE_INVESTIGATOR",
+      "policyRef": "Final July 2026 Bid Policy Procedure 3(e) and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A306",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A307",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A308",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A309",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A310",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A311",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A401",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A402",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A403",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A404",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A405",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A406",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A407",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A408",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A409",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A410",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A601",
+      "roleFamily": "MARINE_OFFICER",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A602",
+      "roleFamily": "MARINE_OPERATOR",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A603",
+      "roleFamily": "MARINE_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A604",
+      "roleFamily": "MARINE_DECKHAND",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A605",
+      "roleFamily": "MARINE_FLOAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A606",
+      "roleFamily": "MARINE_FLOAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A701",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A702",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A703",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A704",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A705",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A706",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A707",
+      "roleFamily": "COMBAT_FLOAT_DE",
+      "policyRef": "Final July 2026 Bid Policy Procedures 11(a) and 12",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A708",
+      "roleFamily": "COMBAT_FLOAT_DE",
+      "policyRef": "Final July 2026 Bid Policy Procedures 11(a) and 12",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A709",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A710",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A711",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A712",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A713",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A714",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A715",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A716",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A717",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "A801",
+      "roleFamily": "UNION_PRESIDENT",
+      "policyRef": "MASTER count exclusion; legacy A701 organizational role",
+      "bidParticipation": "ADMIN_ASSIGNED",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "NOT_APPLICABLE"
+    },
+    {
+      "positionId": "B101",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B102",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B103",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B104",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B105",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B106",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B107",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B108",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B109",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B110",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B111",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B112",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B113",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B114",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B201",
+      "roleFamily": "SPECIAL_OPS_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B202",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B203",
+      "roleFamily": "AIR_TECH",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B204",
+      "roleFamily": "SPECIAL_OPS_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B205",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B206",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B207",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B208",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B209",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B210",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B211",
+      "roleFamily": "DIVISION_CHIEF",
+      "policyRef": "Protected administrative assignment; not an ordinary Bid opportunity",
+      "bidParticipation": "ADMIN_ASSIGNED",
+      "rank": "DC",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "NOT_APPLICABLE"
+    },
+    {
+      "positionId": "B212",
+      "roleFamily": "CAPTAIN_5",
+      "policyRef": "Final July 2026 Bid Policy Procedures 6(b) and 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B213",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B214",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B215",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B301",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B302",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B303",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B304",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B305",
+      "roleFamily": "FIRE_INVESTIGATOR",
+      "policyRef": "Final July 2026 Bid Policy Procedure 3(e) and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B306",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B307",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B308",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B309",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B310",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B311",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B401",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B402",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B403",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B404",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B405",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B406",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B407",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B408",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B409",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B410",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B601",
+      "roleFamily": "MARINE_OFFICER",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B602",
+      "roleFamily": "MARINE_OPERATOR",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B603",
+      "roleFamily": "MARINE_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B604",
+      "roleFamily": "MARINE_DECKHAND",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B605",
+      "roleFamily": "MARINE_FLOAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B606",
+      "roleFamily": "MARINE_FLOAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B701",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B702",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B703",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B704",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B705",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B706",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B707",
+      "roleFamily": "COMBAT_FLOAT_DE",
+      "policyRef": "Final July 2026 Bid Policy Procedures 11(a) and 12",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B708",
+      "roleFamily": "COMBAT_FLOAT_DE",
+      "policyRef": "Final July 2026 Bid Policy Procedures 11(a) and 12",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B709",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B710",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B711",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B712",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B713",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B714",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B715",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B716",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B717",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C101",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C102",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C103",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C104",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C105",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C106",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C107",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C108",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C109",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C110",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C111",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C112",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C113",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C114",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C201",
+      "roleFamily": "SPECIAL_OPS_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C202",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C203",
+      "roleFamily": "AIR_TECH",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C204",
+      "roleFamily": "SPECIAL_OPS_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C205",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C206",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C207",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C208",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C209",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C210",
+      "roleFamily": "SPECIAL_OPS_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy Procedure 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C211",
+      "roleFamily": "DIVISION_CHIEF",
+      "policyRef": "Protected administrative assignment; not an ordinary Bid opportunity",
+      "bidParticipation": "ADMIN_ASSIGNED",
+      "rank": "DC",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "NOT_APPLICABLE"
+    },
+    {
+      "positionId": "C212",
+      "roleFamily": "CAPTAIN_5",
+      "policyRef": "Final July 2026 Bid Policy Procedures 6(b) and 7",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C213",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C214",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C215",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C301",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C302",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C303",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C304",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C305",
+      "roleFamily": "FIRE_INVESTIGATOR",
+      "policyRef": "Final July 2026 Bid Policy Procedure 3(e) and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C306",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C307",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C308",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C309",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C310",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C311",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C401",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C402",
+      "roleFamily": "DRIVER_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedures 12-13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C403",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C404",
+      "roleFamily": "ORDINARY_COMBAT",
+      "policyRef": "Final July 2026 Bid Policy Bid Selection 4 and Procedure 13",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C405",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C406",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C407",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C408",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C409",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C410",
+      "roleFamily": "ORDINARY_RESCUE",
+      "policyRef": "Final July 2026 Bid Policy rank and qualification procedures",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C601",
+      "roleFamily": "MARINE_OFFICER",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C602",
+      "roleFamily": "MARINE_OPERATOR",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C603",
+      "roleFamily": "MARINE_ENGINEER",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C604",
+      "roleFamily": "MARINE_DECKHAND",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C605",
+      "roleFamily": "MARINE_FLOAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C606",
+      "roleFamily": "MARINE_FLOAT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 8",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C701",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C702",
+      "roleFamily": "RESCUE_FLOAT_LT",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C703",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C704",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C705",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C706",
+      "roleFamily": "RESCUE_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C707",
+      "roleFamily": "COMBAT_FLOAT_DE",
+      "policyRef": "Final July 2026 Bid Policy Procedures 11(a) and 12",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C708",
+      "roleFamily": "COMBAT_FLOAT_DE",
+      "policyRef": "Final July 2026 Bid Policy Procedures 11(a) and 12",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C709",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C710",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C711",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C712",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C713",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C714",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C715",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C716",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C717",
+      "roleFamily": "COMBAT_FLOAT_FF",
+      "policyRef": "Final July 2026 Bid Policy Procedure 11(a)",
+      "bidParticipation": "BIDDABLE",
+      "rank": "FF",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "D101",
+      "roleFamily": "DAYS_OPEN",
+      "policyRef": "Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "D102",
+      "roleFamily": "DAYS_OPEN",
+      "policyRef": "Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "D103",
+      "roleFamily": "DAYS_OPEN",
+      "policyRef": "Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "D104",
+      "roleFamily": "DAYS_OPEN",
+      "policyRef": "Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5",
+      "bidParticipation": "BIDDABLE",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "D201",
+      "roleFamily": "DAYS_CLOSED",
+      "policyRef": "Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5",
+      "bidParticipation": "CLOSED",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "NOT_APPLICABLE"
+    },
+    {
+      "positionId": "D301",
+      "roleFamily": "DAYS_CLOSED",
+      "policyRef": "Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5",
+      "bidParticipation": "CLOSED",
+      "rank": "CPT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "NOT_APPLICABLE"
+    },
+    {
+      "positionId": "D401",
+      "roleFamily": "DAYS_CLOSED",
+      "policyRef": "Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5",
+      "bidParticipation": "CLOSED",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "NOT_APPLICABLE"
+    },
+    {
+      "positionId": "D402",
+      "roleFamily": "DAYS_CLOSED",
+      "policyRef": "Final July 2026 Bid Policy Procedures 3-6 and Bid Selection 5",
+      "bidParticipation": "CLOSED",
+      "rank": "LT",
+      "identityOrigin": "MASTER_WORKBOOK",
+      "ruleReview": "NOT_APPLICABLE"
+    },
+    {
+      "positionId": "A718",
+      "roleFamily": "COMBAT_FLOAT_CAPTAIN",
+      "policyRef": "Legacy Captain #1 (C); staffing guideline; final policy Procedure 11",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "APPLICATION_CANONICAL",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "B718",
+      "roleFamily": "COMBAT_FLOAT_CAPTAIN",
+      "policyRef": "Legacy Captain #1 (C); staffing guideline; final policy Procedure 11",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "APPLICATION_CANONICAL",
+      "ruleReview": "REQUIRED"
+    },
+    {
+      "positionId": "C718",
+      "roleFamily": "COMBAT_FLOAT_CAPTAIN",
+      "policyRef": "Legacy Captain #1 (C); staffing guideline; final policy Procedure 11",
+      "bidParticipation": "BIDDABLE",
+      "rank": "CPT",
+      "identityOrigin": "APPLICATION_CANONICAL",
+      "ruleReview": "REQUIRED"
+    }
+  ]
+}

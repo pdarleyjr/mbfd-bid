@@ -1,5 +1,14 @@
 # Final 2026 position, personnel, and eligibility audit
 
+**2026-09-27 correction:** The later read-only production audit found that the
+claimed 73/73/73 active shifts in this historical record counted A211/B211/C211
+Division Chiefs as Bid opportunities. The corrected source candidate adds one
+Combat Floating Captain per shift and excludes all three Chiefs. The old
+228-profile/223-rule result below is a MASTER-source snapshot, not a validated
+final Bid topology or rule book. See
+`2026-final-bid-reconciliation-gate-20260926.md` and the corrected semantic
+role/rule audit artifacts. No corrected production version has been saved.
+
 Date: 2026-09-24. This record distinguishes locally verified implementation
 facts from deployment and authenticated acceptance gates. It is not evidence
 that a Real Bid was started.

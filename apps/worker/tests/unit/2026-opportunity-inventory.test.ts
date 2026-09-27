@@ -26,6 +26,9 @@ describe('2026 opportunity inventory', () => {
   it('scopes the final production gate by frozen source content across numeric aliases', () => {
     expect(isFinal2026ManagedConfiguration(2026, [{ id: 'A801' }, { id: 'A211' }])).toBe(true);
     expect(isFinal2026ManagedConfiguration(2026, [{ id: 'A101' }])).toBe(false);
+    expect(
+      isFinal2026ManagedConfiguration(2026, [{ id: 'A717' }, { id: 'B717' }, { id: 'C717' }]),
+    ).toBe(true);
     expect(isFinal2026ManagedConfiguration(2027, [{ id: 'A801' }])).toBe(false);
   });
 

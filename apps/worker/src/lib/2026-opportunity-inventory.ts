@@ -13,15 +13,17 @@ export interface OpportunityInventory2026 {
   blockingCodes: string[];
 }
 
-/** Saved Bid definitions mint numeric template aliases. A801 is the preserved
- * organizational profile unique to the final MASTER topology; legacy 2026
- * templates used A701. This immutable content marker distinguishes the final
- * production topology from minimal same-year policy fixtures. */
+/** Saved Bid definitions mint numeric template aliases. Use source-content
+ * markers to distinguish managed final topology from minimal same-year test
+ * configurations. The three Combat Float FF #9 identities keep the gate in
+ * force if the organizational A801 row is accidentally omitted. */
 export function isFinal2026ManagedConfiguration(
   year: number,
   positions: readonly Pick<OpportunityInventoryPosition, 'id'>[],
 ): boolean {
-  return year === 2026 && positions.some((position) => position.id === 'A801');
+  if (year !== 2026) return false;
+  const ids = new Set(positions.map((position) => position.id));
+  return ids.has('A801') || ['A717', 'B717', 'C717'].every((id) => ids.has(id));
 }
 
 /** Evaluate exact frozen seats. An overall total cannot conceal a Chief seat. */

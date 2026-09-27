@@ -87,7 +87,7 @@ const positionAudit = positions.map((position) => {
     classification: administrative
       ? 'ADMINISTRATIVELY_ASSIGNED_NOT_BID'
       : union
-        ? 'UNION_PRESIDENT_NOT_COUNTED_PENDING_BUSINESS_CLASSIFICATION'
+        ? 'UNION_PRESIDENT_ORGANIZATIONAL_NOT_BID'
         : closed
           ? 'CLOSED_2026_DAYS'
           : 'SOURCE_CANDIDATE_NOT_FINAL_VALIDATED',
@@ -107,7 +107,7 @@ const positionAudit = positions.map((position) => {
     determination: administrative
       ? '2026-09-26 administrator direction'
       : union
-        ? 'MASTER Positions row 75 identifies a Union President organizational seat; no authority to count it as an ordinary Bid opportunity'
+        ? 'MASTER Positions row 75 and legacy A701 preserve a count-excluded Union President; no final July policy provision changes it to an ordinary Bid seat'
         : closed
           ? 'Final July 2026 Bid Policy, procedures 4-6'
           : 'MASTER Positions row; final 73-seat reconciliation and rule validation pending',
@@ -179,9 +179,31 @@ const blockingIssues = [
   ...['A', 'B', 'C']
     .filter((shift) => counts[shift] !== 73)
     .map((shift) => `${shift}_NON_DC_BID_SEATS_${counts[shift]}_EXPECTED_73`),
-  'A801_UNION_PRESIDENT_CLASSIFICATION_REQUIRES_APPROVED_BUSINESS_DECISION',
   'FINAL_RULE_BOOK_NOT_SEMANTICALLY_RECONCILED',
 ];
+const correctedCandidate = {
+  status: 'ROLE_RESOLVED_APPLICATION_IDENTITIES_NOT_YET_SAVED',
+  biddable_counts: { A: 73, B: 73, C: 73, D: 4 },
+  new_positions: ['A', 'B', 'C'].map((shift) => ({
+    id: `${shift}718`,
+    shift,
+    station_or_pool: 'Combat Float Pool',
+    division: 'Combat',
+    unit: 'Combat Float',
+    displayed_role: 'Combat Floating Captain #1 (C)',
+    bid_rank: 'CPT',
+    identity_origin: 'APPLICATION_CANONICAL_NOT_MASTER_WORKBOOK',
+    role_evidence: [
+      'Administrator description of 2025 shift diagram',
+      `Legacy 2026 ${shift}213 Captain #1 (C)`,
+      'Daily Shift Staffing Guidelines 1.13: Bid Floating Captain with Certs',
+      'Final July 2026 policy Procedure 11: Combat Float Pool',
+    ],
+    source_discrepancy:
+      'Legacy Station #2 / Rescue / Float 2 grouping differs from current Combat Float Pool placement; direct 2025 diagrams not available for inspection',
+    final_rule_status: 'NOT_SEMANTICALLY_APPROVED',
+  })),
+};
 const common = {
   audit_status: 'SOURCE_AUDIT_ONLY_NOT_AN_EXECUTABLE_2026_CONFIGURATION',
   source_hashes: { master_workbook: workbookSha256, final_policy: policySha256 },
@@ -191,7 +213,7 @@ const common = {
 };
 await writeFile(
   output('2026-source-opportunity-audit.json'),
-  `${JSON.stringify({ ...common, biddable_counts: counts, blocking_issues: blockingIssues, positions: positionAudit }, null, 2)}\n`,
+  `${JSON.stringify({ ...common, biddable_counts: counts, blocking_issues: blockingIssues, corrected_candidate: correctedCandidate, positions: positionAudit }, null, 2)}\n`,
 );
 await writeFile(
   output('2026-legacy-rule-semantic-audit.json'),

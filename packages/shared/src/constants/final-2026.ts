@@ -3,9 +3,6 @@ export const FINAL_2026_AS_OF = '2026-09-24' as const;
 export const FINAL_2026_TOPOLOGY = {
   total: 228,
   byShift: { A: 74, B: 73, C: 73, D: 8 },
-  // Counts in the supplied MASTER source after removing the protected Chief
-  // seats and organizational/closed Days positions. This is not a final Bid.
-  provisionalBiddableOpportunities: 220,
   requiredShiftBiddableOpportunities: 73,
   nonOpportunityPositionIds: ['A211', 'B211', 'C211', 'A801', 'D201', 'D301', 'D401', 'D402'],
 } as const;
