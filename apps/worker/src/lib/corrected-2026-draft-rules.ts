@@ -88,11 +88,11 @@ export function buildCorrected2026DraftRules(): Corrected2026DraftRuleSet {
         // The four open Days roles are resolved by their current final role,
         // never by the old A/B/C rule IDs.
         credentials.push('Firesafety Inspector I');
-        if (role.positionId === 'D102')
+        if (position.unit === 'Special Events' && position.rankRequired === 'CPT')
           groups.push(
             preferenceGroup('special-events', ['NFPA 1123', 'NFPA 1126', 'RN 8312', 'RN 8313']),
           );
-        if (role.positionId === 'D103')
+        if (position.unit === 'Public Education' && position.rankRequired === 'LT')
           groups.push({
             id: 'fire-prevention',
             cap: null,

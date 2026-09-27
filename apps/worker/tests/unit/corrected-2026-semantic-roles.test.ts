@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildCorrected2026SemanticRoles } from '../../src/lib/corrected-2026-semantic-roles.js';
+import {
+  buildCorrected2026SemanticRoles,
+  corrected2026Role,
+} from '../../src/lib/corrected-2026-semantic-roles.js';
+import { buildCorrected2026Topology } from '../../src/lib/corrected-2026-topology.js';
 
 describe('corrected 2026 role reconciliation', () => {
   it('classifies every organizational profile and all 223 Bid opportunities', () => {
@@ -23,5 +27,14 @@ describe('corrected 2026 role reconciliation', () => {
     expect(
       roles.filter((role) => role.roleFamily === 'AIR_TECH').map((role) => role.positionId),
     ).toEqual(['A203', 'B203', 'C203']);
+  });
+
+  it('uses role facts rather than numeric suffixes for Marine and canonical Float Captain', () => {
+    const positions = buildCorrected2026Topology();
+    const operator = positions.find((position) => position.id === 'A602');
+    const captain = positions.find((position) => position.id === 'A718');
+    if (!operator || !captain) throw new Error('Reviewed source roles missing');
+    expect(corrected2026Role({ ...operator, id: 'A699' }).roleFamily).toBe('MARINE_OPERATOR');
+    expect(corrected2026Role({ ...captain, id: 'A799' }).roleFamily).toBe('COMBAT_FLOAT_CAPTAIN');
   });
 });

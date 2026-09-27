@@ -1,5 +1,7 @@
-import { buildCorrected2026Topology } from './corrected-2026-topology.js';
-import type { ReviewedPosition } from './reviewed-2026-source.js';
+import {
+  type Corrected2026Position,
+  buildCorrected2026Topology,
+} from './corrected-2026-topology.js';
 
 export const CLOSED_2026_POSITION_IDS = new Set(['D201', 'D301', 'D401', 'D402']);
 export const PROTECTED_2026_POSITION_IDS = new Set(['A211', 'B211', 'C211', 'A801']);
@@ -15,11 +17,16 @@ export interface Corrected2026SemanticRole {
 }
 
 /** Classify by reviewed role attributes, never by a legacy rule's numeric ID. */
-export function corrected2026Role(position: ReviewedPosition): Corrected2026SemanticRole {
+export function corrected2026Role(position: Corrected2026Position): Corrected2026SemanticRole {
   const name = position.positionName.toUpperCase();
   const unit = String(position.unit).toUpperCase();
   const id = position.id;
-  const isCanonicalFloatCaptain = /^[ABC]718$/.test(id);
+  const isCanonicalFloatCaptain =
+    position.canonicalIdentity?.identityOrigin === 'APPLICATION_CANONICAL' &&
+    position.rankRequired === 'CPT' &&
+    position.isFloating &&
+    position.station === 'Combat Float Pool' &&
+    name.includes('COMBAT FLOATING CAPTAIN');
   let roleFamily: string;
   let policyRef: string;
   if (['A211', 'B211', 'C211'].includes(id)) {
@@ -35,16 +42,16 @@ export function corrected2026Role(position: ReviewedPosition): Corrected2026Sema
     roleFamily = 'COMBAT_FLOAT_CAPTAIN';
     policyRef = 'Legacy Captain #1 (C); staffing guideline; final policy Procedure 11';
   } else if (position.station === 'Station #6') {
-    const marineRole = id.endsWith('01')
-      ? 'MARINE_OFFICER'
-      : id.endsWith('02')
-        ? 'MARINE_OPERATOR'
-        : id.endsWith('03')
-          ? 'MARINE_ENGINEER'
-          : id.endsWith('04')
-            ? 'MARINE_DECKHAND'
-            : position.isFloating
-              ? 'MARINE_FLOAT'
+    const marineRole = position.isFloating
+      ? 'MARINE_FLOAT'
+      : position.rankRequired === 'CPT' && name === 'CAPTAIN'
+        ? 'MARINE_OFFICER'
+        : name.includes('FBO')
+          ? 'MARINE_OPERATOR'
+          : name.includes('ENG')
+            ? 'MARINE_ENGINEER'
+            : name.includes('DH')
+              ? 'MARINE_DECKHAND'
               : null;
     if (!marineRole) throw new Error(`unclassified_2026_marine_position:${id}`);
     roleFamily = marineRole;
