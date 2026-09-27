@@ -43,7 +43,7 @@ describe('managed 2026 run inventory gate', () => {
           ]),
           { id: 'A801', shift: 'A', rankRequired: 'CPT', isExcludedFromCount: true },
         ],
-        participation: [],
+        participation: [{ positionId: 'A801', bidParticipation: 'ADMIN_ASSIGNED_NON_BIDDABLE' }],
       },
     });
   });
@@ -59,10 +59,12 @@ describe('managed 2026 run inventory gate', () => {
 
   it('rejects 72-per-shift inventory after the Chiefs are marked non-biddable', async () => {
     const version = await mocks.version();
-    version.content.participation = ['A', 'B', 'C'].map((shift) => ({
-      positionId: `${shift}211`,
-      bidParticipation: 'ADMIN_ASSIGNED_NON_BIDDABLE',
-    }));
+    version.content.participation.push(
+      ...['A', 'B', 'C'].map((shift) => ({
+        positionId: `${shift}211`,
+        bidParticipation: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+      })),
+    );
     mocks.version.mockResolvedValue(version);
     const result = await prepareBidDefinitionRun({} as D1Database, input);
     expect(result).toMatchObject({

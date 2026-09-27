@@ -32,9 +32,11 @@ export function evaluate2026OpportunityInventory(
 ): OpportunityInventory2026 {
   const byShift = { A: 0, B: 0, C: 0, D: 0 };
   const biddableDivisionChiefIds: string[] = [];
+  const biddableProtectedIds: string[] = [];
   const blockingCodes: string[] = [];
   const ids = new Set<string>();
   const chiefIds = ['A211', 'B211', 'C211'];
+  const protectedIds = ['A801', 'D201', 'D301', 'D401', 'D402'];
   for (const position of positions) {
     if (ids.has(position.id)) blockingCodes.push(`duplicate_position:${position.id}`);
     ids.add(position.id);
@@ -45,6 +47,9 @@ export function evaluate2026OpportunityInventory(
       (position.rankRequired === 'DC' || chiefIds.includes(position.id))
     ) {
       biddableDivisionChiefIds.push(position.id);
+    }
+    if (position.bidParticipation === 'BIDDABLE' && protectedIds.includes(position.id)) {
+      biddableProtectedIds.push(position.id);
     }
     if (position.bidParticipation !== 'BIDDABLE' || position.isExcludedFromCount === true) continue;
     if (position.shift in byShift) {
@@ -62,6 +67,9 @@ export function evaluate2026OpportunityInventory(
   }
   if (biddableDivisionChiefIds.length > 0) {
     blockingCodes.push(`division_chief_biddable:${biddableDivisionChiefIds.join(',')}`);
+  }
+  if (biddableProtectedIds.length > 0) {
+    blockingCodes.push(`protected_2026_position_biddable:${biddableProtectedIds.join(',')}`);
   }
   return {
     byShift,

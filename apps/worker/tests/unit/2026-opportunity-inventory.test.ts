@@ -55,4 +55,22 @@ describe('2026 opportunity inventory', () => {
     expect(result.biddableDivisionChiefIds).toEqual(['A211', 'B211', 'C211']);
     expect(result.blockingCodes).toContain('division_chief_biddable:A211,B211,C211');
   });
+
+  it('rejects Union President and closed Days rows even when excluded from capacity', () => {
+    const hiddenProtected = [
+      ...seats(73, 'ADMIN_ASSIGNED_NON_BIDDABLE'),
+      ...['A801', 'D201', 'D301', 'D401', 'D402'].map((id) => ({
+        id,
+        shift: id[0] ?? 'D',
+        rankRequired: 'CPT',
+        bidParticipation: 'BIDDABLE',
+        isExcludedFromCount: true,
+      })),
+    ];
+    const result = evaluate2026OpportunityInventory(hiddenProtected);
+    expect(result.byShift).toEqual({ A: 73, B: 73, C: 73, D: 4 });
+    expect(result.blockingCodes).toContain(
+      'protected_2026_position_biddable:A801,D201,D301,D401,D402',
+    );
+  });
 });

@@ -18,7 +18,7 @@ Together, these establish the carried-forward **Combat Floating Captain** busine
 
 ## Union President and other protected positions
 
-The legacy 2026 template's A701 Union President is marked `isExcludedFromCount: true`; the final MASTER moves that organizational role to A801 and also marks it excluded. The administrator states the historical A-shift diagram shows Union President outside the 74 counted shift positions. No final July policy provision was found making Union President an ordinary Bid seat. A801 remains organizational/protected and is not used to reach 73. A211/B211/C211 remain non-biddable regardless of count flags.
+The legacy 2026 template's A701 Union President is marked `isExcludedFromCount: true`; the final MASTER moves that organizational role to A801 and also marks it excluded. The administrator states the historical A-shift diagram shows Union President outside the 74 counted shift positions. No final July policy provision was found making Union President an ordinary Bid seat. A801 remains organizational/protected and is not used to reach 73. The managed-run inventory now rejects A801 or any closed Days row marked BIDDABLE even when its count flag hides the row. A211/B211/C211 remain non-biddable regardless of count flags.
 
 ## Runtime boundary and unfinished gates
 
