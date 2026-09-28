@@ -125,9 +125,7 @@ auth.post('/revalidate', async (c) => {
   // exchange; deployed Hub origins still require a freshly issued Hub JWT.
   const renewedJwt =
     result.jwt ??
-    (env.ENV === 'staging' && env.PORTAL_BASE_URL === 'https://test.invalid'
-      ? authorization.slice(7)
-      : null);
+    (publicWebOrigin(env) === 'http://127.0.0.1:3000' ? authorization.slice(7) : null);
   return c.json(
     { jwt: renewedJwt, role: result.claims.role },
     { headers: { 'cache-control': 'no-store' } },
