@@ -278,6 +278,14 @@ function commandErrorMessage(
       'Qualified Fire Investigator candidates have priority for this seat. Open Specialty and contact to review them before recording a selection.',
     live_specialty_no_higher_priority_candidate:
       'No higher-priority qualified candidate needs review for that seat. Use Record selection for the current bidder if the opportunity is eligible.',
+    live_specialty_requester_position_ineligible:
+      'The current bidder does not qualify for that Fire Investigator position under the frozen Bid rules. Review their eligibility before starting a specialty interruption.',
+    live_specialty_requester_missing:
+      'No current bidder is available for a specialty request. Refresh the session and confirm the active turn.',
+    live_specialty_evidence_date_missing:
+      'The saved Bid version has no credential evidence date for this specialty review. Check the frozen version before continuing.',
+    live_specialty_policy_missing:
+      'This specialty is not in the saved Bid policy. Refresh the session and review its frozen version.',
     MEMBERSHIP_A_DAY_MAXIMUM_REACHED:
       'That A-Day is already assigned to the maximum number of members in this group on this shift.',
     MEMBERSHIP_SHIFT_MAXIMUM_REACHED:
@@ -1221,6 +1229,11 @@ export function AnnualLiveControls(props: Props) {
 
           <article hidden={panel !== 'specialty'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Start specialty review</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Use this when the current bidder qualifies for the requested specialty seat and a
+              higher-priority qualified candidate may need review. The frozen Bid rules verify both
+              conditions before suspending the turn.
+            </p>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <NativeSelect
                 aria-label="Specialty"
