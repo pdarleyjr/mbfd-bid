@@ -37,6 +37,12 @@ describe('source decision review boundaries', () => {
     expect(bidSourceDecisionBlocksPurpose(realOnly, 'mock')).toBe(false);
     expect(bidSourceDecisionBlocksPurpose(realOnly, 'participant_preview')).toBe(false);
     expect(bidSourceDecisionBlocksPurpose(realOnly, 'live')).toBe(true);
+    const finalEvidence = {
+      ...realOnly,
+      blockingClassification: 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION' as const,
+    };
+    expect(bidSourceDecisionBlocksPurpose(finalEvidence, 'mock')).toBe(false);
+    expect(bidSourceDecisionBlocksPurpose(finalEvidence, 'live')).toBe(true);
 
     for (const blockingClassification of [
       undefined,

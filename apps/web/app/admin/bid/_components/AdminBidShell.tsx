@@ -1,5 +1,7 @@
 'use client';
 import type { BidAdvisoryBundle } from '@mbfd/shared';
+import { useRouter } from 'next/navigation';
+import { useCallback } from 'react';
 import type { BidderContext } from '../../../_components/bid/BidderCard';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { AdminBoard } from './AdminBoard';
@@ -50,6 +52,8 @@ interface Props {
  * the snapshot and passes operational data down to the client controls.
  */
 export function AdminBidShell(props: Props) {
+  const router = useRouter();
+  const refreshCanonical = useCallback(() => router.refresh(), [router]);
   return (
     <ManualPickProvider
       bidSessionId={props.bidSessionId}
@@ -80,6 +84,7 @@ export function AdminBidShell(props: Props) {
           fills={props.initialFills}
           members={props.members}
           positions={props.positions}
+          onCanonicalChange={refreshCanonical}
         />
 
         <ManualPickBar isMock={props.isMock} members={props.members} />
@@ -90,6 +95,7 @@ export function AdminBidShell(props: Props) {
           currentBidderId={props.currentBidderId}
           fills={props.initialFills}
           preview={props.bidOrderPreview}
+          currentPhase={props.currentPhase}
           positions={props.positions}
           snapshotBound
         />

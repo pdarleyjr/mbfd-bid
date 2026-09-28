@@ -17,12 +17,12 @@ describe('final 2026 administrative decisions', () => {
     expect(FINAL_2026_TOPOLOGY).toMatchObject({
       total: 228,
       byShift: { A: 74, B: 73, C: 73, D: 8 },
-      activeOpportunities: 223,
-      nonOpportunityPositionIds: ['A801', 'D201', 'D301', 'D401', 'D402'],
+      requiredShiftBiddableOpportunities: 73,
+      nonOpportunityPositionIds: ['A211', 'B211', 'C211', 'A801', 'D201', 'D301', 'D401', 'D402'],
     });
     expect(FINAL_2026_ACTIVE_BIDDERS).toEqual({
-      total: 221,
-      byRank: { CPT: 21, LT: 39, FF: 161 },
+      total: 222,
+      byRank: { CPT: 22, LT: 39, FF: 161 },
     });
     expect(FINAL_2026_EXCLUDED_EMPLOYEE_IDS).toHaveLength(6);
     expect(FINAL_2026_MASTER_EXCLUDED_EMPLOYEE_IDS).toEqual([
@@ -32,8 +32,8 @@ describe('final 2026 administrative decisions', () => {
       '21989',
       '14326',
     ]);
-    expect(FINAL_2026_NON_BIDDER_EMPLOYEE_IDS).toContain('18148');
-    expect(FINAL_2026_NON_BIDDER_EMPLOYEE_IDS).toHaveLength(12);
+    expect(FINAL_2026_NON_BIDDER_EMPLOYEE_IDS).not.toContain('18148');
+    expect(FINAL_2026_NON_BIDDER_EMPLOYEE_IDS).toHaveLength(11);
     expect(FINAL_2026_SWAT_EMPLOYEE_IDS).toEqual([
       '18366',
       '16563',
@@ -56,7 +56,7 @@ describe('final 2026 administrative decisions', () => {
     expect(isFinal2026OrdinaryBidderRank(2027, 'DC')).toBe(true);
     expect(isFinal2026OrdinaryBidderRank(2026, final2026BidRank(2026, '18158', 'DC'))).toBe(true);
     expect(isFinal2026NonBidder(2026, '14326')).toBe(true);
-    expect(isFinal2026NonBidder(2026, '18148')).toBe(true);
+    expect(isFinal2026NonBidder(2026, '18148')).toBe(false);
     expect(isFinal2026NonBidder(2026, '16584')).toBe(true);
     expect(isFinal2026NonBidder(2027, '14326')).toBe(false);
   });

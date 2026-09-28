@@ -198,8 +198,16 @@ const options = members.map(([employeeId, id, rank]) => ({
 }));
 
 describe('known 2026 setup', () => {
+  it('requires an explicit eligibility date instead of silently reusing the source revision', () => {
+    expect(applyKnown2026Setup(content(), options, '')).toEqual({
+      ok: false,
+      message:
+        'Choose the eligibility evaluation date separately from the credential source revision.',
+    });
+  });
+
   it('creates a configurable Mock baseline and grants every action to the four required admins', () => {
-    const result = applyKnown2026Setup(content(), options);
+    const result = applyKnown2026Setup(content(), options, '2026-10-01');
     expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.message);
     expect(REQUIRED_2026_ADMIN_EMPLOYEE_IDS).toEqual(['20731', '19545', '20732', '18156']);
@@ -208,8 +216,8 @@ describe('known 2026 setup', () => {
       v: 3,
       expectedDurationDays: 3,
       turnTimerSeconds: 300,
-      credentialEvaluationOn: '2026-09-24',
-      personnelEvaluationOn: '2026-09-24',
+      credentialEvaluationOn: '2026-10-01',
+      personnelEvaluationOn: '2026-10-01',
     });
     const policy = result.content.policy?.executionPolicy;
     expect(policy?.stages[0]?.memberIds).toEqual([103, 105, 203, 205, 206]);
@@ -241,14 +249,14 @@ describe('known 2026 setup', () => {
       },
     });
     expect(policy?.stages.find((stage) => stage.id === 'days-captains')?.memberIds).toEqual([
-      102, 106, 202, 207,
+      102, 106, 202, 207, 210,
     ]);
     expect(policy?.stages.find((stage) => stage.id === 'captains')?.memberIds).toEqual([
-      102, 106, 202, 207,
+      102, 106, 202, 207, 210,
     ]);
     expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(208);
     expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(209);
-    expect(policy?.stages.flatMap((stage) => stage.memberIds)).not.toContain(210);
+    expect(policy?.stages.find((stage) => stage.id === 'captains')?.memberIds).toContain(210);
     expect(policy?.annualOperations?.membershipDistributions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -273,7 +281,7 @@ describe('known 2026 setup', () => {
       ...member,
       employmentStatus: 'unknown' as const,
     }));
-    const result = applyKnown2026Setup(content(), unresolved);
+    const result = applyKnown2026Setup(content(), unresolved, '2026-10-01');
     expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.message);
     expect(result.content.policy?.executionPolicy.stages[0]?.memberIds).toEqual([
@@ -288,6 +296,7 @@ describe('known 2026 setup', () => {
     const result = applyKnown2026Setup(
       content(),
       options.filter((member) => member.employeeId !== '18156'),
+      '2026-10-01',
     );
     expect(result).toEqual({
       ok: false,

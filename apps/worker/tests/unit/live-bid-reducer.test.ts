@@ -6,6 +6,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { reduceLiveBidCommand } from '../../src/commands/live-bid-reducer.js';
 import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
+import { initializeAnnualOperations } from '../../src/lib/annual-bid-operations.js';
 
 const policy: FrozenLiveBidPolicy = {
   v: 1,
@@ -72,6 +73,47 @@ function state(): BidSessionState {
     },
   };
 }
+
+it('disposes a returned bidder without consuming the waiting ordinary turn', () => {
+  const current: BidSessionState = {
+    ...state(),
+    queueCursor: 1,
+    currentBidderId: 2,
+    annual: {
+      ...initializeAnnualOperations({ preferenceSheets: [] }),
+      returningMemberId: 1,
+      returnedAtCurrentSequence: [{ memberId: 1, sequence: 0 }],
+    },
+  };
+  const returnedPass = reduceLiveBidCommand(
+    current,
+    policy,
+    command('live.disposition', { disposition: 'PASS' }),
+    100,
+    'returned-pass',
+  );
+  expect(returnedPass).toMatchObject({
+    ok: true,
+    payload: { memberId: 1, disposition: 'PASS' },
+    state: { queueCursor: 1, currentBidderId: 2 },
+  });
+  if (!returnedPass.ok) return;
+  expect(returnedPass.state.annual?.returningMemberId).toBeNull();
+  expect(returnedPass.state.annual?.returnedAtCurrentSequence).toEqual([]);
+
+  const ordinaryPass = reduceLiveBidCommand(
+    returnedPass.state,
+    policy,
+    command('live.disposition', { expectedSeq: 1, disposition: 'PASS' }),
+    101,
+    'ordinary-pass',
+  );
+  expect(ordinaryPass).toMatchObject({
+    ok: true,
+    payload: { memberId: 2, disposition: 'PASS' },
+    state: { currentPhase: 'complete', currentBidderId: null },
+  });
+});
 function command(
   type: LiveBidCommand['type'],
   extra: Record<string, unknown> = {},
@@ -645,7 +687,7 @@ describe('live canonical reducer', () => {
             timingExceptions: [
               {
                 id: 'specialized-position-delay',
-                label: 'Specialized position A-Day at ordinary rank turn',
+                label: 'Specialized position A-Day after position turns',
                 timing: 'AFTER_POSITION_SELECTION',
                 sourceRef: '2026 Bid Policy final, A-Day Selection Guidelines',
                 positionIds: ['p1'],
@@ -711,7 +753,7 @@ describe('live canonical reducer', () => {
     );
     if (!ordinaryFirst.ok) throw new Error(ordinaryFirst.code);
     expect(ordinaryFirst.state).toMatchObject({
-      currentPhase: 'position_bid',
+      currentPhase: 'a_day_bid',
       currentBidderId: 2,
       fills: { p1: { memberId: 2 }, p2: { memberId: 1 } },
     });
@@ -729,7 +771,7 @@ describe('live canonical reducer', () => {
       },
     };
     // Canonical Mock state is serialized between Durable Object instances and
-    // reloaded by reconnecting clients. The deferred ordinary turn must survive
+    // reloaded by reconnecting clients. The deferred A-Day turn must survive
     // that exact persistence boundary without an in-memory side channel.
     const restartedState = JSON.parse(JSON.stringify(withCanonicalADay)) as BidSessionState;
     expect(restartedState).toMatchObject({
@@ -759,8 +801,102 @@ describe('live canonical reducer', () => {
     });
     expect(aDayOnlyTurn.payload).toMatchObject({
       operation: 'record_a_day',
-      ordinaryRankTurnCompleted: true,
+      completed: true,
     });
+  });
+
+  it('finishes ordinary position turns before ordered deferred A-Day turns', () => {
+    const firstStage = policy.stages[0];
+    if (!firstStage) throw new Error('synthetic stage missing');
+    const deferredPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      stages: [{ ...firstStage, memberIds: [1, 2, 3], opportunityPositionIds: ['p1', 'p2', 'p3'] }],
+      annualOperations: {
+        v: 1,
+        stageOrder: ['d'],
+        requiredTopologyPositionIds: ['p1', 'p2', 'p3'],
+        specialties: [],
+        contact: { minimumAttempts: 0, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 0,
+          max: 10,
+          captainDcMax: null,
+          execution: {
+            timing: 'SIMULTANEOUS',
+            timingExceptions: [
+              {
+                id: 'deferred',
+                label: 'Deferred specialty A-Day',
+                timing: 'AFTER_POSITION_SELECTION',
+                sourceRef: 'Synthetic policy',
+                positionIds: ['p1', 'p2'],
+                profileIds: [],
+              },
+            ],
+            officersPerGroup: null,
+            sourceRef: 'Synthetic policy',
+            constraints: [],
+          },
+          specialtyMaximums: { MARINE_ASSIGNED: 1, MARINE_FLOAT: 1, DE: 1, SWAT: 1 },
+        },
+      },
+    };
+    const pendingADay = delayedADayState();
+    const current: BidSessionState = {
+      ...pendingADay,
+      currentPhase: 'position_bid',
+      currentBidderId: 3,
+      queueCursor: 2,
+      bidOrder: [
+        { ordinal: 1, memberId: 1, pool: 'FF', stageId: 'd' },
+        { ordinal: 2, memberId: 2, pool: 'FF', stageId: 'd' },
+        { ordinal: 3, memberId: 3, pool: 'FF', stageId: 'd' },
+      ],
+      fills: {
+        p1: { memberId: 1, ordinal: 1, bidId: 'first-specialty' },
+        p2: { memberId: 2, ordinal: 2, bidId: 'second-specialty' },
+      },
+    };
+    const lastPosition = reduceLiveBidCommand(
+      current,
+      deferredPolicy,
+      command('live.record_selection', { memberId: 3, positionId: 'p3', aDay: 'G1' }),
+      100,
+      'last-position',
+    );
+    if (!lastPosition.ok) throw new Error(lastPosition.code);
+    expect(lastPosition.state).toMatchObject({ currentPhase: 'a_day_bid', currentBidderId: 1 });
+    const firstADay = reduceLiveBidCommand(
+      lastPosition.state,
+      deferredPolicy,
+      command('live.record_a_day', {
+        expectedSeq: lastPosition.state.lastSeq,
+        memberId: 1,
+        aDay: 'G2',
+      }),
+      101,
+      'first-a-day',
+      false,
+      aDayMembers,
+    );
+    if (!firstADay.ok) throw new Error(firstADay.code);
+    expect(firstADay.state).toMatchObject({ currentPhase: 'a_day_bid', currentBidderId: 2 });
+    const secondADay = reduceLiveBidCommand(
+      firstADay.state,
+      deferredPolicy,
+      command('live.record_a_day', {
+        expectedSeq: firstADay.state.lastSeq,
+        memberId: 2,
+        aDay: 'G3',
+      }),
+      102,
+      'second-a-day',
+      false,
+      aDayMembers,
+    );
+    if (!secondADay.ok) throw new Error(secondADay.code);
+    expect(secondADay.state).toMatchObject({ currentPhase: 'complete', currentBidderId: null });
   });
 
   it('supersedes a specialty candidate previous award without losing its bid ordinal', () => {
@@ -1025,6 +1161,106 @@ describe('live canonical reducer', () => {
       toPositionId: 'p2',
       supersedesBidId: 'b1',
       replacementBidId: 'b2',
+    });
+  });
+
+  it('uses the active stage when a member has both Days and regular turns', () => {
+    const firstStage = policy.stages[0];
+    const baseState = state();
+    if (!firstStage || !baseState.live) throw new Error('synthetic stage missing');
+    const stagedPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      stages: [
+        {
+          ...firstStage,
+          id: 'days',
+          order: 0,
+          memberIds: [1],
+          opportunityPositionIds: ['p1'],
+        },
+        {
+          ...firstStage,
+          id: 'regular',
+          order: 1,
+          memberIds: [1],
+          opportunityPositionIds: ['p2', 'p3'],
+        },
+      ],
+    };
+    const stagedState: BidSessionState = {
+      ...baseState,
+      queueCursor: 1,
+      bidOrder: [
+        { ordinal: 1, memberId: 1, pool: 'FF', stageId: 'days' },
+        { ordinal: 2, memberId: 1, pool: 'FF', stageId: 'regular' },
+      ],
+      live: { ...baseState.live, currentStageId: 'regular' },
+    };
+    const selected = reduceLiveBidCommand(
+      stagedState,
+      stagedPolicy,
+      command('live.record_selection', { memberId: 1, positionId: 'p2' }),
+      100,
+      'regular-selection',
+    );
+    if (!selected.ok) throw new Error(selected.code);
+    expect(selected.state.fills.p2?.ordinal).toBe(2);
+    const amended = reduceLiveBidCommand(
+      selected.state,
+      stagedPolicy,
+      command('live.amend_selection', {
+        expectedSeq: 1,
+        memberId: 1,
+        fromPositionId: 'p2',
+        toPositionId: 'p3',
+      }),
+      101,
+      'regular-amendment',
+    );
+    if (!amended.ok) throw new Error(amended.code);
+    expect(amended.state.fills.p3?.ordinal).toBe(2);
+  });
+
+  it('skips already awarded Days members when advancing into the ordinary stage', () => {
+    const firstStage = policy.stages[0];
+    const baseState = state();
+    if (!firstStage || !baseState.live) throw new Error('synthetic stage missing');
+    const stagedPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      stages: [
+        { ...firstStage, id: 'days', order: 0, memberIds: [1], opportunityPositionIds: ['p1'] },
+        {
+          ...firstStage,
+          id: 'regular',
+          order: 1,
+          memberIds: [1, 2],
+          opportunityPositionIds: ['p2'],
+        },
+      ],
+    };
+    const stagedState: BidSessionState = {
+      ...baseState,
+      queueCursor: 0,
+      bidOrder: [
+        { ordinal: 1, memberId: 1, pool: 'FF', stageId: 'days' },
+        { ordinal: 2, memberId: 1, pool: 'FF', stageId: 'regular' },
+        { ordinal: 3, memberId: 2, pool: 'FF', stageId: 'regular' },
+      ],
+      fills: { p1: { memberId: 1, ordinal: 1, bidId: 'days-award' } },
+      live: { ...baseState.live, currentStageId: 'days' },
+    };
+    const transitioned = reduceLiveBidCommand(
+      stagedState,
+      stagedPolicy,
+      command('live.transition_stage', { stageId: 'regular' }),
+      100,
+      'unused',
+    );
+    if (!transitioned.ok) throw new Error(transitioned.code);
+    expect(transitioned.state).toMatchObject({
+      queueCursor: 2,
+      currentBidderId: 2,
+      live: { currentStageId: 'regular' },
     });
   });
 

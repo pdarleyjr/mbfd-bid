@@ -84,6 +84,20 @@ function state(simultaneous = true, active = false) {
       eligible_a_days: readonly string[];
     } | null,
     current_bidder: candidate as typeof candidate | null,
+    selection_stage: {
+      id: 'synthetic-stage',
+      label: 'Synthetic stage',
+      opportunity_position_ids: ['filled', 'abc', 'days'],
+      eligible_position_ids: ['abc', 'days'],
+      all_opportunities_filled: false,
+      next_stage: null as { id: string; label: string } | null,
+    },
+    amendable_selection: {
+      from_position_id: 'original',
+      member_id: 17,
+      opportunity_position_ids: ['abc', 'days'],
+      eligible_position_ids: ['abc', 'days'],
+    },
     dispositions: [
       {
         disposition: 'DEFER' as const,
@@ -125,6 +139,15 @@ function state(simultaneous = true, active = false) {
       minimumPerShift: number;
       maximumPerShift: number;
       maximumPerADay: number;
+    }>,
+    a_day_scoped_constraints: [] as Array<{
+      id: string;
+      label: string;
+      maximum: number;
+      memberIds: number[];
+      positionIds: string[];
+      ranks: string[];
+      shifts: Array<'A' | 'B' | 'C' | 'D'>;
     }>,
     term_participation: {} as Record<
       string,
@@ -300,6 +323,48 @@ async function mount(panel: string, positionList = positions) {
 }
 
 describe('simultaneous A-Day live awards', () => {
+  it('offers an audited stage transition only when every stage opportunity is filled', async () => {
+    live.selection_stage = {
+      id: 'days-stage',
+      label: 'Days stage',
+      opportunity_position_ids: ['filled'],
+      eligible_position_ids: [],
+      all_opportunities_filled: true,
+      next_stage: { id: 'regular-stage', label: 'Regular stage' },
+    };
+    await mount('Disposition and return');
+    await settle(() => button('Advance to Regular stage').click());
+    expect(commands.at(-1)).toMatchObject({
+      type: 'live.transition_stage',
+      stageId: 'regular-stage',
+    });
+  });
+  it('shows only open biddable opportunities from the active saved stage', async () => {
+    live.selection_stage = {
+      id: 'days-stage',
+      label: 'Days stage',
+      opportunity_position_ids: ['days', 'reserved'],
+      eligible_position_ids: ['days', 'reserved'],
+      all_opportunities_filled: false,
+      next_stage: null,
+    };
+    await mount('Record selection', [
+      ...positions,
+      {
+        id: 'reserved',
+        shift: 'D',
+        station: '1',
+        unit: 'Synthetic',
+        rankRequired: 'FF',
+        positionName: 'Reserved seat',
+        bidParticipation: 'RESERVED_NON_BIDDABLE',
+      },
+    ]);
+    expect(
+      [...select('Position selected by current bidder').options].map((item) => item.value),
+    ).toEqual(['', 'days']);
+    expect(container.textContent).toContain('Current stage: Days stage');
+  });
   it('disables a same-shift membership A-Day that has reached its reviewed maximum', async () => {
     live.membership_distributions = [
       {
@@ -324,6 +389,29 @@ describe('simultaneous A-Day live awards', () => {
     expect(g1?.textContent).toContain('unavailable for SWAT');
     expect(container.textContent).toContain(
       'G1 is unavailable because SWAT already has its maximum on A shift for that A-Day.',
+    );
+  });
+
+  it('disables a scoped A-Day at its frozen maximum while leaving other groups available', async () => {
+    live.a_day_scoped_constraints = [
+      {
+        id: 'synthetic-scope',
+        label: 'Specialty staffing limit',
+        maximum: 1,
+        memberIds: [9, 17],
+        positionIds: [],
+        ranks: [],
+        shifts: ['A'],
+      },
+    ];
+    live.fills = { filled: { member_id: 9, a_day: 'G1', membership_ids: [] } };
+    await mount('Record selection');
+    await choose('Position selected by current bidder', 'abc');
+    const options = [...select('Selection A-Day').options];
+    expect(options.find((option) => option.value === 'G1')?.disabled).toBe(true);
+    expect(options.find((option) => option.value === 'G2')?.disabled).toBe(false);
+    expect(container.textContent).toContain(
+      'G1 is unavailable because Specialty staffing limit already has its maximum on A shift for that A-Day.',
     );
   });
 
@@ -456,8 +544,8 @@ describe('simultaneous A-Day live awards', () => {
     expect(
       [...select('Corrected station or float pool').options].find(
         (option) => option.value === 'full',
-      )?.disabled,
-    ).toBe(true);
+      ),
+    ).toBeUndefined();
     await choose('Original filled opportunity', 'original');
     await choose('Corrected station or float pool', 'pool');
     await choose('Corrected selection A-Day', 'G3');
@@ -510,6 +598,14 @@ describe('simultaneous A-Day live awards', () => {
 
   it('requires a new explicit A-Day for an amended award', async () => {
     await mount('Correct selection');
+    expect(
+      [...select('Original filled opportunity').options].map((option) => option.value),
+    ).toEqual(['', 'original']);
+    expect([...select('New open opportunity').options].map((option) => option.value)).toEqual([
+      '',
+      'abc',
+      'days',
+    ]);
     await choose('Original filled opportunity', 'original');
     await choose('New open opportunity', 'abc');
     expect(button('Amend opportunity').disabled).toBe(true);

@@ -222,6 +222,7 @@ async function render(
         stale={false}
         begin={begin}
         finish={finish}
+        onOpenAuthority={vi.fn()}
         {...props}
       />,
     ),
@@ -419,7 +420,7 @@ describe('BidLiveReview', () => {
     expect(container.textContent).toContain('No Live run is created by this check.');
     expect(
       [...container.querySelectorAll('button')].map((node) => node.textContent?.trim()),
-    ).toEqual(['Check Managed Live readiness']);
+    ).toEqual(['Edit authority in Bid configuration', 'Check Managed Live readiness']);
   });
 
   it('rejects an unrecognized Live preflight field instead of trusting an ambiguous server response', async () => {

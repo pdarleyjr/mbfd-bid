@@ -9,6 +9,61 @@ const VALID_RULE_JSON = {
 };
 
 describe('bid position participation policy', () => {
+  it('rejects a decoded rule whose required rank belongs to the former A213 role', () => {
+    const coverage = evaluateRuleBookCoverage({
+      ruleBookVersion: '2026.corrected',
+      enforcePositionRank: true,
+      rules: [
+        {
+          ruleBookVersion: '2026.corrected',
+          positionId: 'A213',
+          templateVersion: '2026.corrected',
+          requiredCriteriaJson: '{"rank":["CPT"],"credentials":[],"custom":[]}',
+          pointsPreferenceJson: VALID_RULE_JSON.pointsPreferenceJson,
+          tieBreakChainJson: VALID_RULE_JSON.tieBreakChainJson,
+        },
+      ],
+      positions: [
+        {
+          id: 'A213',
+          templateVersion: '2026.corrected',
+          bidParticipation: 'BIDDABLE',
+          rankRequired: 'LT',
+        },
+      ],
+    });
+    expect(coverage.valid).toBe(false);
+    expect(coverage.rankMismatchPositionIds).toEqual(['A213']);
+  });
+
+  it('blocks an executable rule with a credential placeholder absent from the approved catalog', () => {
+    const coverage = evaluateRuleBookCoverage({
+      ruleBookVersion: '2026.corrected',
+      credentialCatalogNames: ['Firesafety Inspector I'],
+      rules: [
+        {
+          ruleBookVersion: '2026.corrected',
+          positionId: 'D102',
+          templateVersion: '2026.corrected',
+          requiredCriteriaJson:
+            '{"rank":["FF"],"credentials":["Current FL Fire Inspector"],"custom":[]}',
+          pointsPreferenceJson: VALID_RULE_JSON.pointsPreferenceJson,
+          tieBreakChainJson: VALID_RULE_JSON.tieBreakChainJson,
+        },
+      ],
+      positions: [
+        {
+          id: 'D102',
+          templateVersion: '2026.corrected',
+          bidParticipation: 'BIDDABLE',
+          rankRequired: 'FF',
+        },
+      ],
+    });
+    expect(coverage.valid).toBe(false);
+    expect(coverage.unresolvedCredentialReferences).toEqual(['D102:Current FL Fire Inspector']);
+  });
+
   it('treats administratively assigned Division Chief staffing positions as outside the rule-book opportunity set', () => {
     const coverage = evaluateRuleBookCoverage({
       ruleBookVersion: '2026.2',

@@ -1,11 +1,12 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { type BidDefinitionContent, evaluate2026RankCapacity } from '@mbfd/shared';
 import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-type EditSection = 'flow' | 'a-day';
+type EditSection = 'flow' | 'a-day' | 'authority';
 
 type ReadinessItemProps = {
   label: string;
@@ -45,6 +46,7 @@ function ReadinessItem({ label, status, children, action, tone = 'review' }: Rea
  */
 export function BidReadinessSummary({
   year,
+  content,
   policyReady,
   realActivationReviewCount,
   positionsReady,
@@ -55,6 +57,7 @@ export function BidReadinessSummary({
   onOpenLive,
 }: {
   year: number;
+  content: BidDefinitionContent;
   policyReady: boolean;
   realActivationReviewCount: number;
   positionsReady: boolean;
@@ -64,7 +67,29 @@ export function BidReadinessSummary({
   onOpenMock(): void;
   onOpenLive(): void;
 }) {
-  const mockReady = policyReady && positionsReady && participantStagesConfigured && aDayConfigured;
+  const rankCapacity = (() => {
+    if (
+      !content.sourceDecisions.some(
+        (decision) =>
+          decision.issueId === '2026-b-rescue-float-rank-correction' &&
+          decision.status === 'RESOLVED',
+      )
+    )
+      return null;
+    try {
+      return evaluate2026RankCapacity(content, content.policy?.executionPolicy.stages ?? []);
+    } catch {
+      return null;
+    }
+  })();
+  const ranksReady =
+    rankCapacity !== null &&
+    JSON.stringify(rankCapacity.capacity) === JSON.stringify({ CPT: 23, LT: 39, FF: 161 }) &&
+    JSON.stringify(rankCapacity.bidders) === JSON.stringify({ CPT: 22, LT: 39, FF: 161 }) &&
+    JSON.stringify(rankCapacity.expectedVacancies) === JSON.stringify({ CPT: 1, LT: 0, FF: 0 }) &&
+    rankCapacity.shortages.length === 0;
+  const mockReady =
+    policyReady && positionsReady && participantStagesConfigured && aDayConfigured && ranksReady;
   const liveReady = mockReady && realActivationReviewCount === 0;
   return (
     <section
@@ -124,6 +149,20 @@ export function BidReadinessSummary({
           {positionsReady
             ? 'Every current biddable opportunity has a valid rule.'
             : 'At least one biddable opportunity is missing or has an invalid rule.'}
+        </ReadinessItem>
+        <ReadinessItem
+          label="Rank opportunities and bidders"
+          status={ranksReady ? 'Ready' : 'Blocking'}
+          tone={ranksReady ? 'ready' : 'blocking'}
+          action={
+            <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
+              Review participants
+            </Button>
+          }
+        >
+          {rankCapacity
+            ? `Opportunities: ${rankCapacity.capacity.CPT} Captains, ${rankCapacity.capacity.LT} Lieutenants, ${rankCapacity.capacity.FF} Firefighters. Bidders: ${rankCapacity.bidders.CPT}, ${rankCapacity.bidders.LT}, ${rankCapacity.bidders.FF}. Expected vacancies: ${rankCapacity.expectedVacancies.CPT} Captain, ${rankCapacity.expectedVacancies.LT} Lieutenant, ${rankCapacity.expectedVacancies.FF} Firefighter.`
+            : 'Save the reviewed 2026 topology and participant stages to reconcile opportunities by rank.'}
         </ReadinessItem>
         <ReadinessItem
           label="Participants"
@@ -200,13 +239,13 @@ export function BidReadinessSummary({
           label="Operators / permissions"
           status="Needs Confirmation"
           action={
-            <Button type="button" variant="secondary" onClick={onOpenLive}>
+            <Button type="button" variant="secondary" onClick={() => onOpenEdit('authority')}>
               Review operator access
             </Button>
           }
         >
-          Confirm that the authorized Bid operator is signed in before creating any session. The
-          server remains the authority for Live permissions.
+          Review the saved, editable action grants in this annual version. Operator authority is
+          independent of bidder participation; the server checks the signed-in operator for Live.
         </ReadinessItem>
         <ReadinessItem
           label="Operating settings"

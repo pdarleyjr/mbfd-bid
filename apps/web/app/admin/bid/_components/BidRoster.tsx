@@ -29,6 +29,7 @@ interface Props {
   /** True when the worker computed bidOrder on-the-fly (session not yet
    *  started); badges the panel as a preview. */
   preview: boolean;
+  currentPhase?: string;
   /** Immutable material returned by /api/board for this exact session. */
   positions?: readonly PositionMeta[] | undefined;
   /** Avoid a static-policy inference if an actual session lacks material. */
@@ -41,9 +42,8 @@ interface Props {
  *   - "Up now" for the current bidder
  *   - "Waiting" for everyone else
  *
- * Renders all 226 (or however many) rows so the chief can see the full
- * sequence at a glance. Collapsible so it doesn't dominate the screen when
- * the admin is focused on the station grid.
+ * A member may have a Days turn and a later shift turn. Show each person once
+ * in this roster while the session keeps the full stage-turn order intact.
  */
 export function BidRoster({
   bidOrder,
@@ -51,6 +51,7 @@ export function BidRoster({
   currentBidderId,
   fills,
   preview,
+  currentPhase,
   positions: immutablePositions,
   snapshotBound = false,
 }: Props) {
@@ -71,6 +72,16 @@ export function BidRoster({
     () => new Set<number>(Object.values(fills).map((f) => f.memberId)),
     [fills],
   );
+  const uniqueOrder = useMemo(() => {
+    const seen = new Set<number>();
+    return bidOrder
+      .filter((entry) => {
+        if (seen.has(entry.memberId)) return false;
+        seen.add(entry.memberId);
+        return true;
+      })
+      .map((entry, index) => ({ ...entry, displayOrdinal: index + 1 }));
+  }, [bidOrder]);
 
   // Reverse-lookup so each row can show "this year's pick" = position the
   // member just selected. Built once per `fills` change.
@@ -83,14 +94,15 @@ export function BidRoster({
   }, [fills]);
 
   const rows = useMemo(() => {
-    return bidOrder.filter((entry) => {
+    return uniqueOrder.filter((entry) => {
       if (filter === 'remaining') return !pickedIds.has(entry.memberId);
       if (filter === 'picked') return pickedIds.has(entry.memberId);
       return true;
     });
-  }, [bidOrder, filter, pickedIds]);
+  }, [uniqueOrder, filter, pickedIds]);
 
-  const remainingCount = bidOrder.length - pickedIds.size;
+  const remainingCount = uniqueOrder.length - pickedIds.size;
+  const complete = currentPhase === 'complete';
   const positions = useMemo(
     () => immutablePositions ?? (snapshotBound ? [] : FALLBACK_POSITION_METADATA),
     [immutablePositions, snapshotBound],
@@ -113,7 +125,8 @@ export function BidRoster({
           {open ? '▾' : '▸'} Bid Roster
         </Button>
         <span className="text-xs uppercase tracking-wide text-muted-foreground">
-          {bidOrder.length} total · {remainingCount} remaining · {pickedIds.size} picked
+          {uniqueOrder.length} bidders · {remainingCount} {complete ? 'without award' : 'remaining'}{' '}
+          · {pickedIds.size} picked
         </span>
         {preview && (
           <span
@@ -138,7 +151,7 @@ export function BidRoster({
                     : 'bg-muted text-foreground hover:bg-muted',
                 ].join(' ')}
               >
-                {opt}
+                {complete && opt === 'remaining' ? 'Without award' : opt}
               </Button>
             ))}
           </div>
@@ -168,11 +181,13 @@ export function BidRoster({
                 const isCurrent = currentBidderId === entry.memberId;
                 const isPicked = pickedIds.has(entry.memberId);
                 const isSelected = selectedMemberId === entry.memberId;
-                const status: 'picked' | 'current' | 'waiting' = isCurrent
+                const status: 'picked' | 'current' | 'waiting' | 'unawarded' = isCurrent
                   ? 'current'
                   : isPicked
                     ? 'picked'
-                    : 'waiting';
+                    : complete
+                      ? 'unawarded'
+                      : 'waiting';
                 const baseRowClass = isCurrent
                   ? 'bg-red-50'
                   : isPicked
@@ -187,7 +202,9 @@ export function BidRoster({
                     ? 'bg-red-700 text-white'
                     : status === 'picked'
                       ? 'bg-emerald-200 text-emerald-900'
-                      : 'bg-muted text-foreground';
+                      : status === 'unawarded'
+                        ? 'bg-amber-100 text-amber-900'
+                        : 'bg-muted text-foreground';
                 const onRowClick =
                   pickMode && !isPicked
                     ? () =>
@@ -222,7 +239,7 @@ export function BidRoster({
                     {...interactiveProps}
                   >
                     <TableCell className="px-3 py-1 font-mono tabular-nums">
-                      {entry.ordinal}
+                      {entry.displayOrdinal}
                     </TableCell>
                     <TableCell className="px-3 py-1 text-xs font-semibold uppercase tracking-wide">
                       {entry.pool}
@@ -254,7 +271,11 @@ export function BidRoster({
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadge}`}
                       >
-                        {status === 'current' ? 'Up now' : status}
+                        {status === 'current'
+                          ? 'Up now'
+                          : status === 'unawarded'
+                            ? 'No award'
+                            : status}
                       </span>
                     </TableCell>
                   </TableRow>

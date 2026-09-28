@@ -32,6 +32,7 @@ import {
   resolveFrozenSessionBidTarget,
 } from '../../lib/bid-policy.js';
 import { unresolvedSpecialtyPriority } from '../../lib/canonical-specialty-priority.js';
+import { frozenADayConstraints } from '../../lib/frozen-a-day.js';
 import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
@@ -408,6 +409,50 @@ router.get('/:id/specialty-live', async (c) => {
     policy,
     canonical.fills,
   );
+  const selectionMemberId = canonical.annual?.returningMemberId ?? canonical.currentBidderId;
+  const selectionStageId =
+    canonical.bidOrder[canonical.queueCursor]?.stageId ?? canonical.live?.currentStageId;
+  const selectionStage = policy.stages.find((stage) => stage.id === selectionStageId);
+  const nextSelectionStage = selectionStage
+    ? policy.stages
+        .filter((stage) => stage.order > selectionStage.order)
+        .sort((left, right) => left.order - right.order)[0]
+    : undefined;
+  const selectionMember =
+    selectionMemberId === null
+      ? null
+      : frozenEligibilityMemberForSession(frozen.snapshot, selectionMemberId);
+  const selectionEligiblePositionIds =
+    selectionStage && selectionMember
+      ? selectionStage.opportunityPositionIds.filter((positionId) => {
+          if (canonical.fills[positionId] !== undefined) return false;
+          const rule = frozen.coverage.rules.find((item) => item.positionId === positionId);
+          return (
+            rule !== undefined &&
+            evaluateEligibility(eligibilityMemberFromFrozen(selectionMember), rule).eligible
+          );
+        })
+      : [];
+  const latestFill = Object.entries(canonical.fills).find(
+    ([, fill]) => fill.bidId === canonical.live?.lastSelectionBidId,
+  );
+  const amendmentStage = policy.stages.find((stage) =>
+    latestFill ? stage.opportunityPositionIds.includes(latestFill[0]) : false,
+  );
+  const amendmentMember = latestFill
+    ? frozenEligibilityMemberForSession(frozen.snapshot, latestFill[1].memberId)
+    : null;
+  const amendmentEligiblePositionIds =
+    amendmentStage && amendmentMember
+      ? amendmentStage.opportunityPositionIds.filter((positionId) => {
+          if (canonical.fills[positionId] !== undefined) return false;
+          const rule = frozen.coverage.rules.find((item) => item.positionId === positionId);
+          return (
+            rule !== undefined &&
+            evaluateEligibility(eligibilityMemberFromFrozen(amendmentMember), rule).eligible
+          );
+        })
+      : [];
   const aDayExecution = policy.annualOperations?.aDay.execution;
   const aDayTimingByPosition = Object.fromEntries(
     (aDayExecution?.timingExceptions ?? []).flatMap((exception) =>
@@ -454,6 +499,29 @@ router.get('/:id/specialty-live', async (c) => {
       ),
     ),
     current_bidder: canonical.currentBidderId === null ? null : member(canonical.currentBidderId),
+    selection_stage: selectionStage
+      ? {
+          id: selectionStage.id,
+          label: selectionStage.label,
+          opportunity_position_ids: selectionStage.opportunityPositionIds,
+          eligible_position_ids: selectionEligiblePositionIds,
+          all_opportunities_filled: selectionStage.opportunityPositionIds.every(
+            (positionId) => canonical.fills[positionId] !== undefined,
+          ),
+          next_stage: nextSelectionStage
+            ? { id: nextSelectionStage.id, label: nextSelectionStage.label }
+            : null,
+        }
+      : null,
+    amendable_selection:
+      latestFill && amendmentStage
+        ? {
+            from_position_id: latestFill[0],
+            member_id: latestFill[1].memberId,
+            opportunity_position_ids: amendmentStage.opportunityPositionIds,
+            eligible_position_ids: amendmentEligiblePositionIds,
+          }
+        : null,
     dispositions: policy.dispositions,
     unresolved_members: (canonical.annual?.unresolvedMemberIds ?? []).map(member),
     returning_member:
@@ -496,6 +564,9 @@ router.get('/:id/specialty-live', async (c) => {
     a_day_selection: aDayExecution?.timing ?? null,
     a_day_timing_by_position: aDayTimingByPosition,
     a_day_combat_groups: policy.annualOperations?.aDay.combatGroups ?? [],
+    a_day_scoped_constraints: policy.annualOperations
+      ? frozenADayConstraints(policy.annualOperations)
+      : [],
     a_day_current: aDayCurrent,
     fallbacks: (policy.annualOperations?.fallbackPolicies ?? []).flatMap((fallback) =>
       fallback.positionIds

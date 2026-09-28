@@ -130,6 +130,7 @@ export async function editCatalogEntry(
     revision: before.revision + 1 + Number(before.fyPointsDefault !== input.body.fy_points_default),
     retiredOn: input.body.retired_on === undefined ? before.retiredOn : input.body.retired_on,
   };
+  const pointsChanged = before.fyPointsDefault !== after.fyPointsDefault;
   try {
     const result = await db.batch([
       db
@@ -151,13 +152,19 @@ export async function editCatalogEntry(
           after.name,
           after.name,
         ),
-      db
-        .prepare('UPDATE credentials SET fy_points_default = ? WHERE id = ? AND changes() = 1')
-        .bind(after.fyPointsDefault, input.id),
+      ...(pointsChanged
+        ? [
+            db
+              .prepare(
+                'UPDATE credentials SET fy_points_default = ? WHERE id = ? AND changes() = 1',
+              )
+              .bind(after.fyPointsDefault, input.id),
+          ]
+        : []),
       db
         .prepare(`INSERT INTO credential_catalog_receipts
         (idempotency_key, credential_id, actor_subject, request_json, response_json, created_at)
-        SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`)
+        VALUES (?, CASE WHEN changes() = 1 THEN ? ELSE NULL END, ?, ?, ?, ?)`)
         .bind(input.key, input.id, input.actorSubject, request, JSON.stringify(after), Date.now()),
       auditInsertStatement(
         db,
@@ -177,14 +184,18 @@ export async function editCatalogEntry(
         true,
       ),
     ]);
+    const saved = await replay();
+    if (saved?.ok) return { ...saved, replayed: false };
     if (result.some((r) => r.meta.changes !== 1))
       return { ok: false, error: 'credential_revision_or_name_changed' };
-    return { ok: true, replayed: false, credential: after };
+    return { ok: false, error: 'credential_catalog_receipt_missing' };
   } catch (error) {
     const receipt = await replay();
     if (receipt) return receipt;
     if (String(error).includes('credential is referenced by active policy'))
       return { ok: false, error: 'credential_active_policy_dependency' };
+    if (String(error).includes('credential_catalog_receipts.credential_id'))
+      return { ok: false, error: 'credential_revision_or_name_changed' };
     throw error;
   }
 }

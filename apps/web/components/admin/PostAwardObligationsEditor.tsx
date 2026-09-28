@@ -13,6 +13,17 @@ export function PostAwardObligationsEditor({
   const catalog = useCredentialCatalog();
   const update = (id: string, patch: Partial<PostAwardObligation>) =>
     onChange(value.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  const updatePeriod = (
+    id: string,
+    patch: Partial<
+      Pick<NonNullable<PostAwardObligation['deadline']>, 'unit' | 'count' | 'timeZone'>
+    >,
+  ) =>
+    onChange(
+      value.map((row) =>
+        row.id === id && row.deadline ? { ...row, deadline: { ...row.deadline, ...patch } } : row,
+      ),
+    );
   return (
     <fieldset className="space-y-4 rounded border border-border p-4">
       <legend className="px-1 font-semibold">Post-award qualifications</legend>
@@ -20,7 +31,8 @@ export function PostAwardObligationsEditor({
         These follow-up requirements do not affect initial eligibility or points. Choose whether the
         approved period starts at the final award or on an explicitly approved bid start date.
         Calendar-month deadlines use the last day of a shorter month. Cite the authority for the
-        date, period and calendar zone.
+        date, period and calendar zone when policy supplies a fixed deadline. Continuing training
+        transitions can have no fixed deadline.
       </p>
       {value.map((row) => (
         <div className="space-y-3 rounded border border-border p-3" key={row.id}>
@@ -50,29 +62,49 @@ export function PostAwardObligationsEditor({
             </NativeSelect>
           </Label>
           <Label className="block">
-            Deadline starts from
+            Deadline
             <NativeSelect
               className={fieldClass}
-              value={row.deadline.basis}
+              value={row.deadline?.basis ?? 'NO_FIXED_DEADLINE'}
               onChange={(e) => {
-                const period = {
-                  unit: row.deadline.unit,
-                  count: row.deadline.count,
-                  timeZone: row.deadline.timeZone,
-                };
+                const period = row.deadline
+                  ? {
+                      unit: row.deadline.unit,
+                      count: row.deadline.count,
+                      timeZone: row.deadline.timeZone,
+                    }
+                  : {
+                      unit: 'CALENDAR_MONTHS' as const,
+                      count: 1,
+                      timeZone: 'America/New_York' as const,
+                    };
                 update(row.id, {
                   deadline:
-                    e.target.value === 'APPROVED_BID_START_DATE'
-                      ? { ...period, basis: 'APPROVED_BID_START_DATE', startOn: '' }
-                      : { ...period, basis: 'FINAL_POSITION_AWARD' },
+                    e.target.value === 'NO_FIXED_DEADLINE'
+                      ? null
+                      : e.target.value === 'APPROVED_BID_START_DATE'
+                        ? { ...period, basis: 'APPROVED_BID_START_DATE', startOn: '' }
+                        : { ...period, basis: 'FINAL_POSITION_AWARD' },
                 });
               }}
             >
+              <option value="NO_FIXED_DEADLINE">No fixed policy deadline</option>
               <option value="FINAL_POSITION_AWARD">Final accepted position award</option>
               <option value="APPROVED_BID_START_DATE">Approved bid start date</option>
             </NativeSelect>
           </Label>
-          {row.deadline.basis === 'APPROVED_BID_START_DATE' && (
+          {row.appliesWhenHoldingAny?.length ? (
+            <p className="text-sm text-foreground">
+              Applies when the member holds: {row.appliesWhenHoldingAny.join(' or ')}.
+            </p>
+          ) : null}
+          {row.appliesWhenMissingAll?.length ? (
+            <p className="text-sm text-foreground">
+              Does not apply when the member already holds: {row.appliesWhenMissingAll.join(' or ')}
+              .
+            </p>
+          ) : null}
+          {row.deadline?.basis === 'APPROVED_BID_START_DATE' && (
             <Label className="block">
               Approved bid start date
               <Input
@@ -81,7 +113,7 @@ export function PostAwardObligationsEditor({
                 className={fieldClass}
                 value={row.deadline.startOn}
                 onChange={(e) => {
-                  if (row.deadline.basis === 'APPROVED_BID_START_DATE')
+                  if (row.deadline?.basis === 'APPROVED_BID_START_DATE')
                     update(row.id, { deadline: { ...row.deadline, startOn: e.target.value } });
                 }}
               />
@@ -91,58 +123,54 @@ export function PostAwardObligationsEditor({
               </span>
             </Label>
           )}
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Label>
-              Period
-              <Input
-                className={fieldClass}
-                type="number"
-                min={1}
-                max={1200}
-                required
-                value={row.deadline.count || ''}
-                onChange={(e) =>
-                  update(row.id, { deadline: { ...row.deadline, count: Number(e.target.value) } })
-                }
-              />
-            </Label>
-            <Label>
-              Calendar unit
-              <NativeSelect
-                className={fieldClass}
-                value={row.deadline.unit}
-                onChange={(e) =>
-                  update(row.id, {
-                    deadline: {
-                      ...row.deadline,
-                      unit: e.target.value as PostAwardObligation['deadline']['unit'],
-                    },
-                  })
-                }
-              >
-                <option value="CALENDAR_DAYS">Calendar days</option>
-                <option value="CALENDAR_MONTHS">Calendar months</option>
-              </NativeSelect>
-            </Label>
-            <Label>
-              Calendar zone
-              <NativeSelect
-                className={fieldClass}
-                value={row.deadline.timeZone}
-                onChange={(e) =>
-                  update(row.id, {
-                    deadline: {
-                      ...row.deadline,
-                      timeZone: e.target.value as PostAwardObligation['deadline']['timeZone'],
-                    },
-                  })
-                }
-              >
-                <option value="America/New_York">Miami / New York</option>
-                <option value="UTC">UTC</option>
-              </NativeSelect>
-            </Label>
-          </div>
+          {row.deadline && (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Label>
+                Period
+                <Input
+                  className={fieldClass}
+                  type="number"
+                  min={1}
+                  max={1200}
+                  required
+                  value={row.deadline.count || ''}
+                  onChange={(e) => updatePeriod(row.id, { count: Number(e.target.value) })}
+                />
+              </Label>
+              <Label>
+                Calendar unit
+                <NativeSelect
+                  className={fieldClass}
+                  value={row.deadline.unit}
+                  onChange={(e) =>
+                    updatePeriod(row.id, {
+                      unit: e.target.value as NonNullable<PostAwardObligation['deadline']>['unit'],
+                    })
+                  }
+                >
+                  <option value="CALENDAR_DAYS">Calendar days</option>
+                  <option value="CALENDAR_MONTHS">Calendar months</option>
+                </NativeSelect>
+              </Label>
+              <Label>
+                Calendar zone
+                <NativeSelect
+                  className={fieldClass}
+                  value={row.deadline.timeZone}
+                  onChange={(e) =>
+                    updatePeriod(row.id, {
+                      timeZone: e.target.value as NonNullable<
+                        PostAwardObligation['deadline']
+                      >['timeZone'],
+                    })
+                  }
+                >
+                  <option value="America/New_York">Miami / New York</option>
+                  <option value="UTC">UTC</option>
+                </NativeSelect>
+              </Label>
+            </div>
+          )}
           <Label className="block">
             Approved obligation source
             <Input

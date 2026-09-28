@@ -101,28 +101,36 @@ function memberHasDeferredOrdinaryTurn(
   );
 }
 
-function next(
+function nextAvailableFrom(
   state: BidSessionState,
   policy: FrozenLiveBidPolicy,
+  startIndex: number,
   now: number,
 ): Pick<BidSessionState, 'queueCursor' | 'currentBidderId' | 'currentPhase' | 'turnStartedAtMs'> {
-  let queueCursor = state.queueCursor + 1;
+  let queueCursor = startIndex;
   const selected = new Set(Object.values(state.fills).map((fill) => fill.memberId));
-  while (
-    state.bidOrder[queueCursor] &&
-    selected.has(state.bidOrder[queueCursor]?.memberId ?? -1) &&
-    !memberHasDeferredOrdinaryTurn(state, policy, state.bidOrder[queueCursor]?.memberId ?? -1)
-  )
+  while (state.bidOrder[queueCursor] && selected.has(state.bidOrder[queueCursor]?.memberId ?? -1))
     queueCursor += 1;
   const entry = state.bidOrder[queueCursor];
-  return entry
-    ? {
-        queueCursor,
-        currentBidderId: entry.memberId,
-        currentPhase: 'position_bid',
-        turnStartedAtMs: now,
-      }
-    : { queueCursor, currentBidderId: null, currentPhase: 'complete', turnStartedAtMs: 0 };
+  if (entry)
+    return {
+      queueCursor,
+      currentBidderId: entry.memberId,
+      currentPhase: 'position_bid',
+      turnStartedAtMs: now,
+    };
+  const picked = new Set(state.aDay?.picks.map((pick) => pick.memberId) ?? []);
+  const pending = state.bidOrder.find(
+    (candidate) =>
+      !picked.has(candidate.memberId) &&
+      memberHasDeferredOrdinaryTurn(state, policy, candidate.memberId),
+  )?.memberId;
+  return pending === undefined
+    ? { queueCursor, currentBidderId: null, currentPhase: 'complete', turnStartedAtMs: 0 }
+    : { queueCursor, currentBidderId: pending, currentPhase: 'a_day_bid', turnStartedAtMs: now };
+}
+function next(state: BidSessionState, policy: FrozenLiveBidPolicy, now: number) {
+  return nextAvailableFrom(state, policy, state.queueCursor + 1, now);
 }
 function stageFor(state: BidSessionState): string | null {
   return state.bidOrder[state.queueCursor]?.stageId ?? state.live?.currentStageId ?? null;
@@ -199,14 +207,8 @@ export function reduceLiveBidCommand(
   }
   if (command.type === 'live.record_a_day') {
     if (aDayMembers === undefined) return { ok: false, code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE' };
-    const isDeferredOrdinaryTurn =
-      state.currentPhase === 'position_bid' &&
-      state.currentBidderId === command.memberId &&
-      memberHasDeferredOrdinaryTurn(state, policy, command.memberId);
-    if (isDeferredOrdinaryTurn && state.aDay === null)
-      return { ok: false, code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE' };
     const picked = handleSubmitADayPick(
-      isDeferredOrdinaryTurn ? { ...state, currentPhase: 'a_day_bid' } : state,
+      state,
       {
         senderMemberId: command.memberId,
         aDay: command.aDay,
@@ -216,32 +218,19 @@ export function reduceLiveBidCommand(
       now,
     );
     if (picked.kind === 'rejected') return { ok: false, code: picked.code };
-    const ordinaryAdvance = isDeferredOrdinaryTurn ? next(state, policy, now) : null;
     const settledAnnual = settleReturnedMember(annual, command.memberId);
     const pickedState =
       settledAnnual === annual ? picked.newState : { ...picked.newState, annual: settledAnnual };
     return {
       ok: true,
-      state:
-        ordinaryAdvance === null
-          ? pickedState
-          : { ...pickedState, ...ordinaryAdvance, aDay: pickedState.aDay },
+      state: pickedState,
       eventType: 'live_command_applied',
       payload: {
         operation: 'record_a_day',
         memberId: command.memberId,
         aDay: command.aDay,
-        nextMemberId: ordinaryAdvance?.currentBidderId ?? picked.nextMemberId,
-        completed:
-          ordinaryAdvance === null
-            ? picked.nextMemberId === null
-            : ordinaryAdvance.currentPhase === 'complete',
-        ...(isDeferredOrdinaryTurn
-          ? {
-              ordinaryRankTurnCompleted: true,
-              aDayQueueNextMemberId: picked.nextMemberId,
-            }
-          : {}),
+        nextMemberId: picked.nextMemberId,
+        completed: picked.nextMemberId === null,
       },
       supersedesBidId: null,
     };
@@ -257,16 +246,15 @@ export function reduceLiveBidCommand(
       return { ok: false, code: 'INVALID_STAGE_TRANSITION' };
     const index = state.bidOrder.findIndex((entry) => entry.stageId === target.id);
     if (index < 0) return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
+    const advance = nextAvailableFrom(state, policy, index, now);
     return {
       ok: true,
       state: {
         ...state,
-        queueCursor: index,
-        currentBidderId: state.bidOrder[index]?.memberId ?? null,
-        turnStartedAtMs: now,
+        ...advance,
         live: {
           ...live,
-          currentStageId: target.id,
+          currentStageId: state.bidOrder[advance.queueCursor]?.stageId ?? target.id,
           completedStageIds: [...live.completedStageIds, currentStageId],
         },
         lastSeq: state.lastSeq + 1,
@@ -670,8 +658,9 @@ export function reduceLiveBidCommand(
       return { ok: false, code: 'AMENDMENT_MEMBER_MISMATCH' };
     if (state.fills[command.toPositionId] !== undefined)
       return { ok: false, code: 'POSITION_FILLED' };
-    const selectedEntry = state.bidOrder.find((entry) => entry.memberId === command.memberId);
-    const selectedStage = policy.stages.find((stage) => stage.id === selectedEntry?.stageId);
+    const selectedStage = policy.stages.find((stage) =>
+      stage.opportunityPositionIds.includes(command.fromPositionId),
+    );
     if (!selectedStage?.opportunityPositionIds.includes(command.toPositionId))
       return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
     const fill: Fill = {
@@ -716,30 +705,36 @@ export function reduceLiveBidCommand(
       (rule.requiresReason && !command.reason.trim())
     )
       return { ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' };
-    if (state.currentBidderId === null) return { ok: false, code: 'NO_CURRENT_BIDDER' };
+    const dispositionMemberId = annual.returningMemberId ?? state.currentBidderId;
+    if (dispositionMemberId === null) return { ok: false, code: 'NO_CURRENT_BIDDER' };
     let dispositionAnnual = annual;
     if (command.disposition === 'UNREACHABLE') {
       const contact = declareUnreachable(annual, annualPolicy, {
-        memberId: state.currentBidderId,
+        memberId: dispositionMemberId,
         actorMemberId: command.actor.id,
         nowMs: now,
       });
       if (!contact.ok) return contact;
       dispositionAnnual = contact.state;
     }
-    const advance = rule.advances ? next(state, policy, now) : {};
+    const returningMemberDisposition = annual.returningMemberId !== null;
+    const advance = rule.advances && !returningMemberDisposition ? next(state, policy, now) : {};
+    if (rule.advances && returningMemberDisposition)
+      dispositionAnnual = settleReturnedMember(dispositionAnnual, dispositionMemberId);
     return {
       ok: true,
       state: {
         ...state,
         ...advance,
-        ...(command.disposition === 'UNREACHABLE' ? { annual: dispositionAnnual } : {}),
+        ...(command.disposition === 'UNREACHABLE' || returningMemberDisposition
+          ? { annual: dispositionAnnual }
+          : {}),
         live: {
           ...live,
           dispositions: [
             ...live.dispositions,
             {
-              memberId: state.currentBidderId,
+              memberId: dispositionMemberId,
               disposition: command.disposition,
               stageId: currentStageId,
               reason: command.reason,
@@ -753,7 +748,7 @@ export function reduceLiveBidCommand(
       payload: {
         operation: 'disposition',
         disposition: command.disposition,
-        memberId: state.currentBidderId,
+        memberId: dispositionMemberId,
         stageId: currentStageId,
         returns: rule.returns,
         returnStageId: rule.returnStageId,
@@ -786,26 +781,31 @@ export function reduceLiveBidCommand(
     return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
   if ('fallback' in command && command.fallback && !fallbackAuthorized)
     return { ok: false, code: 'FALLBACK_REVIEW_REQUIRED' };
-  const entry = state.bidOrder.find((candidate) => candidate.memberId === memberId);
+  const entry =
+    state.bidOrder.find(
+      (candidate) => candidate.memberId === memberId && candidate.stageId === currentStageId,
+    ) ?? state.bidOrder.find((candidate) => candidate.memberId === memberId);
   if (!entry) return { ok: false, code: 'MEMBER_NOT_IN_FROZEN_ORDER' };
-  const advance = memberId === state.currentBidderId ? next(state, policy, now) : {};
+  const nextFills = {
+    ...state.fills,
+    [positionId]: {
+      memberId,
+      ordinal: entry.ordinal,
+      bidId,
+      ...(command.type === 'live.record_selection' && command.membershipIds !== undefined
+        ? { membershipIds: command.membershipIds }
+        : {}),
+      ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
+    },
+  };
+  const advance =
+    memberId === state.currentBidderId ? next({ ...state, fills: nextFills }, policy, now) : {};
   return {
     ok: true,
     state: {
       ...state,
       ...advance,
-      fills: {
-        ...state.fills,
-        [positionId]: {
-          memberId,
-          ordinal: entry.ordinal,
-          bidId,
-          ...(command.type === 'live.record_selection' && command.membershipIds !== undefined
-            ? { membershipIds: command.membershipIds }
-            : {}),
-          ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
-        },
-      },
+      fills: nextFills,
       live: { ...live, lastSelectionBidId: bidId },
       annual: isReturnedAtCurrentSequence ? settleReturnedMember(annual, memberId) : annual,
       lastSeq: state.lastSeq + 1,

@@ -611,7 +611,10 @@ bid.get('/board', async (c) => {
   const currentBidderId = typeof body.currentBidderId === 'number' ? body.currentBidderId : null;
   const fillsRec = body.fills && typeof body.fills === 'object' ? body.fills : {};
   const filledMemberIds = new Set<number>(Object.values(fillsRec).map((f) => f.memberId));
-  const onDeckEntries = computeOnDeck(bidOrder, currentBidderId, filledMemberIds);
+  const onDeckEntries =
+    body.currentPhase === 'complete'
+      ? []
+      : computeOnDeck(bidOrder, currentBidderId, filledMemberIds);
   const snapshotMembersById = new Map(
     frozenBoardPolicy.snapshot.members.map((member) => [member.memberId, member]),
   );

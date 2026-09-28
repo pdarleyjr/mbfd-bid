@@ -64,7 +64,13 @@ describe('official post-award obligations', () => {
     seedSyntheticOfficialCompletion(h, [
       {
         ...term,
-        deadline: { ...term.deadline, basis: 'APPROVED_BID_START_DATE', startOn: '2027-01-01' },
+        deadline: {
+          basis: 'APPROVED_BID_START_DATE',
+          unit: 'CALENDAR_MONTHS',
+          count: 3,
+          timeZone: 'America/New_York',
+          startOn: '2027-01-01',
+        },
       },
     ]);
     expect(
@@ -87,6 +93,21 @@ describe('official post-award obligations', () => {
       obligations: [
         { status: 'COMPLETED', completionTiming: 'AFTER_DEADLINE', dueOn: '2027-04-01' },
       ],
+    });
+  });
+  it('tracks a continuing obligation with no invented due date', async () => {
+    seedSyntheticOfficialCompletion(h, [{ ...term, deadline: null }]);
+    expect(
+      await loadPostAwardObligations(h.env.DB, 'annual-real-2027', '2027-05-01'),
+    ).toMatchObject({
+      ok: true,
+      obligations: [{ dueOn: null, status: 'PENDING', term: { deadline: null } }],
+    });
+    expect((await request(body, 'continuing-completion')).status).toBe(201);
+    expect(
+      await loadPostAwardObligations(h.env.DB, 'annual-real-2027', '2027-05-01'),
+    ).toMatchObject({
+      obligations: [{ dueOn: null, status: 'COMPLETED', completionTiming: null }],
     });
   });
   it('uses the final amended award clock and immutable frozen terms; retries and dated corrections preserve history', async () => {

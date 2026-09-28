@@ -17,8 +17,11 @@ import {
   isFinal2026OrdinaryBidderRank,
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
+import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
+import { isFinal2026ManagedConfiguration } from './2026-opportunity-inventory.js';
 import { assignmentTermReviewBlocksPurpose, evaluateAssignmentTerms } from './assignment-terms.js';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
+import { APPROVED_2026_CUTOFF_AT, loadBidEvidenceFreeze } from './bid-evidence-freeze.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { type BidOrdinalDatasetRow, projectBidOrdinals } from './bid-ordinal-evidence.js';
 import {
@@ -87,10 +90,16 @@ export interface RuleBookCoverageInput {
     pointsPreferenceJson: string;
     tieBreakChainJson: string;
   }[];
+  /** Exact approved canonical names. Omission keeps historical in-memory callers readable. */
+  credentialCatalogNames?: readonly string[];
+  /** Prospective final-2026 authoring may request the check before a numeric version is minted. */
+  enforcePositionRank?: boolean;
   positions: readonly {
     id: string;
     templateVersion: string;
     bidParticipation: BidParticipation;
+    /** Present for persisted templates; historical in-memory coverage callers may omit it. */
+    rankRequired?: DecodedPositionRule['requiredCriteria']['rank'][number];
     // A701 is an existing, separately tracked legacy exception: the seed has
     // always omitted it from ordinary rule generation. It does not represent
     // an administrative staffing assignment and must not cause a member-pool
@@ -106,6 +115,8 @@ export interface RuleBookCoverage {
   templateVersionIssues: readonly string[];
   rules: readonly DecodedPositionRule[];
   invalidPositionIds: readonly string[];
+  rankMismatchPositionIds: readonly string[];
+  unresolvedCredentialReferences: readonly string[];
   duplicatePositionIds: readonly string[];
   administrativelyAssignedPositionIds: readonly string[];
   reservedPositionIds: readonly string[];
@@ -134,6 +145,30 @@ function uniqueSorted(values: Iterable<string>): string[] {
   return [...new Set([...values].filter((value) => value.trim().length > 0))].sort((a, b) =>
     a.localeCompare(b),
   );
+}
+
+function ruleCredentialReferences(rule: DecodedPositionRule): string[] {
+  const scoring = rule.pointsPreference.scoring;
+  const groups = scoring ? [...scoring.total, ...scoring.so, ...scoring.mo] : [];
+  const criteria = [
+    ...groups.flatMap((group) => group.preference?.criteria ?? []),
+    ...(scoring?.orderedPreference?.criteria ?? []),
+  ];
+  return [
+    ...rule.requiredCriteria.credentials,
+    ...(rule.requiredCriteria.anyOfCredentials ?? []).flat(),
+    ...(rule.requiredCriteria.postAward ?? []).map((entry) => entry.credential),
+    ...rule.pointsPreference.items.map((item) => item.credential),
+    ...groups.flatMap((group) => [
+      ...(group.excludesAny ?? []),
+      ...group.items.flatMap((item) => [
+        item.credential,
+        ...item.alternatives,
+        ...item.requiresAll,
+      ]),
+    ]),
+    ...criteria.flatMap((entry) => [entry.credential, ...entry.alternatives, ...entry.requiresAll]),
+  ];
 }
 
 function comparePositionScopedRows<T extends { positionId: string }>(
@@ -311,6 +346,33 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
       );
     }),
   );
+  const rankMismatchPositionIds = uniqueSorted(
+    decoded.rules
+      .filter((rule) => {
+        const position = byPositionId.get(rule.positionId);
+        return (
+          (input.enforcePositionRank === true ||
+            (input.ruleBookVersion.startsWith('2026.') &&
+              isFinal2026ManagedConfiguration(2026, {
+                sourceTemplateVersion: templateVersion ?? undefined,
+              }))) &&
+          position?.rankRequired !== undefined &&
+          !rule.requiredCriteria.rank.includes(position.rankRequired)
+        );
+      })
+      .map((rule) => rule.positionId),
+  );
+  const catalog = input.credentialCatalogNames ? new Set(input.credentialCatalogNames) : null;
+  const unresolvedCredentialReferences =
+    catalog === null
+      ? []
+      : uniqueSorted(
+          decoded.rules.flatMap((rule) =>
+            ruleCredentialReferences(rule)
+              .filter((name) => !catalog.has(name))
+              .map((name) => `${rule.positionId}:${name}`),
+          ),
+        );
   const unexpectedPositionIds = uniqueSorted(
     rawRulePositionIds.filter((positionId) => !byPositionId.has(positionId)),
   );
@@ -330,6 +392,8 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
     input.rules.length > 0 &&
     templateVersionIssues.length === 0 &&
     decoded.invalidPositionIds.length === 0 &&
+    rankMismatchPositionIds.length === 0 &&
+    unresolvedCredentialReferences.length === 0 &&
     decoded.duplicatePositionIds.length === 0 &&
     missingBiddablePositionIds.length === 0 &&
     nonBiddablePositionIds.length === 0 &&
@@ -342,6 +406,8 @@ export function evaluateRuleBookCoverage(input: RuleBookCoverageInput): RuleBook
     templateVersionIssues,
     rules: decoded.rules,
     invalidPositionIds: decoded.invalidPositionIds,
+    rankMismatchPositionIds,
+    unresolvedCredentialReferences,
     duplicatePositionIds: decoded.duplicatePositionIds,
     administrativelyAssignedPositionIds,
     reservedPositionIds,
@@ -379,7 +445,12 @@ function loadV3SnapshotRuleBookCoverage(
   return evaluateRuleBookCoverage({
     ruleBookVersion: snapshot.ruleBookVersion,
     rules: snapshot.ruleBookMaterial.rules,
-    positions: snapshot.ruleBookMaterial.positions,
+    // Historical sessions retain the coverage rules that governed their
+    // creation. New rank/catalog gates apply to prospective publication and
+    // preparation, not to an already frozen session's replay.
+    positions: snapshot.ruleBookMaterial.positions.map(
+      ({ rankRequired: _rankRequired, ...position }) => position,
+    ),
   });
 }
 
@@ -444,13 +515,14 @@ export async function loadRuleBookCoverage(
   db: DB,
   ruleBookVersion: string,
 ): Promise<RuleBookCoverage> {
-  const [rules, allPositions, participationRows] = await Promise.all([
+  const [rules, allPositions, participationRows, catalogRows] = await Promise.all([
     db.select().from(positionRules).where(eq(positionRules.ruleBookVersion, ruleBookVersion)).all(),
     db
       .select({
         id: positions.id,
         templateVersion: positions.templateVersion,
         isExcludedFromCount: positions.isExcludedFromCount,
+        rankRequired: positions.rankRequired,
       })
       .from(positions)
       .all(),
@@ -463,15 +535,37 @@ export async function loadRuleBookCoverage(
       .from(ruleBookPositionParticipation)
       .where(eq(ruleBookPositionParticipation.ruleBookVersion, ruleBookVersion))
       .all(),
+    db
+      .select({ name: credentials.name, retiredOn: credentialCatalogMetadata.retiredOn })
+      .from(credentials)
+      .leftJoin(
+        credentialCatalogMetadata,
+        eq(credentials.id, credentialCatalogMetadata.credentialId),
+      )
+      .all(),
   ]);
   const participationByPositionId = new Map(participationRows.map((row) => [row.positionId, row]));
+  const templateVersions = new Set(rules.map((rule) => rule.templateVersion));
+  const templateVersion = templateVersions.size === 1 ? rules[0]?.templateVersion : undefined;
+  const final2026 =
+    ruleBookVersion.startsWith('2026.') &&
+    templateVersion !== undefined &&
+    isFinal2026ManagedConfiguration(2026, { sourceTemplateVersion: templateVersion });
   return evaluateRuleBookCoverage({
     ruleBookVersion,
     rules,
+    ...(final2026
+      ? {
+          credentialCatalogNames: catalogRows
+            .filter((row) => row.retiredOn === null)
+            .map((row) => row.name),
+        }
+      : {}),
     positions: allPositions.map((position) => {
       const participation = participationByPositionId.get(position.id);
       return {
         ...position,
+        rankRequired: position.rankRequired,
         // The database FK binds an override to the exact annual position
         // template. Keep the defensive equality check so malformed legacy
         // data cannot silently change a coverage result.
@@ -907,6 +1001,7 @@ export type BidSessionPolicySnapshotPreparation =
         | 'tenure_evidence_requires_review'
         | 'assignment_term_evidence_requires_review'
         | 'authoritative_staffing_baseline_required'
+        | 'bid_evidence_freeze_integrity_failed'
         | ConfiguredBidYearPolicyError;
       positionIds?: readonly string[];
       tenureIssues?: readonly { staffingPositionId: string; code: string; recordId: string }[];
@@ -1570,6 +1665,15 @@ export async function prepareCapturedBidEvaluation(
       const termPosition = administrativeAssignment
         ? positionByStaffingId.get(administrativeAssignment.staffingPositionId)
         : undefined;
+      const reviewed2026ActingCaptain =
+        policy.bidYear === 2026 &&
+        member.employeeId === '18148' &&
+        bidRank === 'CPT' &&
+        termPosition === 'B211' &&
+        policy.sourceDecisions.some(
+          (decision) =>
+            decision.issueId === '2026-b211-substantive-captain' && decision.status === 'RESOLVED',
+        );
       const relevantTermReview = termReview.find((term) => term.positionId === termPosition);
       const voluntaryTerm =
         relevantTermReview?.status === 'EVALUATED' && relevantTermReview.memberMayLeave === true
@@ -1710,7 +1814,8 @@ export async function prepareCapturedBidEvaluation(
       if (
         administrativeAssignment !== undefined &&
         termParticipation === undefined &&
-        !hasAssignmentTermAssumption
+        !hasAssignmentTermAssumption &&
+        !reviewed2026ActingCaptain
       ) {
         return {
           memberId: member.id,
@@ -1758,7 +1863,9 @@ export async function prepareCapturedBidEvaluation(
         rscSeniority: member.rscSeniority,
         rankSeniority: member.rankSeniority,
         exclusionReason: null,
-        authoritativeAssignmentId: null,
+        authoritativeAssignmentId: reviewed2026ActingCaptain
+          ? (administrativeAssignment?.id ?? null)
+          : null,
         ...(hasAssignmentTermAssumption
           ? { mockParticipationEvidence: 'ASSIGNMENT_TERM_ASSUMPTION' as const }
           : hasAcceptedMockParticipationEvidence
@@ -1867,11 +1974,68 @@ export async function prepareConfiguredBidPolicySnapshot(
   mode: BidSessionMode,
   sourceDecisions?: BidDefinitionContent['sourceDecisions'],
 ): Promise<BidSessionPolicySnapshotPreparation> {
-  const [evidence, material] = await Promise.all([
-    loadBidEvaluationEvidence(db, policy.bidYear),
-    loadPersistedBidEvaluationMaterial(db, policy, sourceDecisions),
-  ]);
-  const prepared = await prepareCapturedBidEvaluation(db, material, evidence, capturedAtMs, mode);
+  const material = await loadPersistedBidEvaluationMaterial(db, policy, sourceDecisions);
+  let prepared: BidEvaluationPreparation;
+  const freeze = policy.settings.v === 3 ? policy.settings.evidenceFreeze : undefined;
+  if (freeze) {
+    try {
+      const saved = await loadBidEvidenceFreeze(db, policy.bidYear);
+      const serial = (value: unknown) =>
+        canonicalize(JSON.parse(JSON.stringify(value)) as JsonValue);
+      const beforeSettings = { ...saved?.evaluation.settings, evidenceFreeze: undefined };
+      const afterSettings = { ...policy.settings, evidenceFreeze: undefined };
+      const materialWithoutVersion = (value: BidEvaluation['ruleBookMaterial']) => ({
+        ...value,
+        positions: value.positions.map(
+          ({ templateVersion: _templateVersion, ...position }) => position,
+        ),
+        rules: value.rules.map(
+          ({ ruleBookVersion: _ruleBookVersion, templateVersion: _templateVersion, ...rule }) =>
+            rule,
+        ),
+      });
+      if (
+        !saved ||
+        freeze.freezeId !== saved.row.id ||
+        freeze.evaluationSha256 !== saved.row.evaluation_sha256 ||
+        freeze.personnelSnapshot.sha256 !== saved.row.personnel_sha256 ||
+        freeze.credentialSnapshot.sha256 !== saved.row.credential_sha256 ||
+        freeze.sourceVersionId !== saved.row.source_version_id ||
+        freeze.sourceVersionSha256 !== saved.row.source_version_sha256 ||
+        freeze.evidenceCutoffAt !== APPROVED_2026_CUTOFF_AT ||
+        freeze.personnelSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
+        freeze.credentialSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
+        Date.parse(freeze.approvedAt) < saved.row.captured_at ||
+        serial(freeze.sourceImports) !== serial(saved.sourceImports) ||
+        serial(beforeSettings) !== serial(afterSettings) ||
+        serial(materialWithoutVersion(saved.evaluation.ruleBookMaterial)) !==
+          serial(materialWithoutVersion(material.ruleBookMaterial)) ||
+        material.coverage.valid !== true
+      )
+        return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
+      const evaluation = BidEvaluationSchema.parse({
+        ...saved.evaluation,
+        ruleBookVersion: material.coverage.ruleBookVersion,
+        positionTemplateVersion: material.coverage.templateVersion,
+        ruleBookMaterial: material.ruleBookMaterial,
+        settings: policy.settings,
+        capturedAtMs,
+      });
+      if (
+        material.sourceDecisions.some((decision) =>
+          bidSourceDecisionBlocksPurpose(decision, mode),
+        ) ||
+        bidSourceDecisionReviewIssues(material.sourceDecisions).length > 0
+      )
+        return { ok: false, code: 'policy_source_decision_required' };
+      prepared = { ok: true, evaluation, coverage: material.coverage };
+    } catch {
+      return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
+    }
+  } else {
+    const evidence = await loadBidEvaluationEvidence(db, policy.bidYear);
+    prepared = await prepareCapturedBidEvaluation(db, material, evidence, capturedAtMs, mode);
+  }
   if (!prepared.ok) return prepared;
   const settings =
     prepared.evaluation.settings.v === 3

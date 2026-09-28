@@ -101,7 +101,7 @@ binding = "BROWSER"
 
 [triggers]
 # Plan 08: 04:15 UTC daily portal reconciliation.
-crons = ["15 4 * * *"]
+crons = ["15 4 * * *", "0 21 30 9 *"]
 
 # Secrets — set via `wrangler secret put NAME --env staging`:
 #   JWT_SIGNING_KEY        (HMAC HS256, 32-byte random base64url)

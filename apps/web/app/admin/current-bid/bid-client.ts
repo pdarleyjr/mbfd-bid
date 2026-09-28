@@ -98,6 +98,71 @@ export const HistoricalBidSchema = z
     (value) => value.bidYear === value.content.bidYear,
     'The historical Bid belongs to another year.',
   );
+export const Reviewed2026CandidateSchema = z
+  .object({
+    sourceVersionId: identity,
+    sourceSha256: digest,
+    candidateSha256: digest,
+    content: BidDefinitionContentSchema,
+    label: z.string().min(1),
+  })
+  .strict();
+export const BidEvidenceFreezeResponseSchema = z
+  .object({
+    bidYear: z.literal(2026),
+    freeze: z
+      .object({
+        freezeId: identity,
+        evidenceCutoffAt: z.literal('2026-09-30T17:00:00-04:00'),
+        timeZone: z.literal('America/New_York'),
+        capturedAt: z.string().datetime({ offset: true }),
+        sourceVersionId: identity,
+        sourceVersionSha256: digest,
+        evaluationSha256: digest,
+        personnelSha256: digest,
+        credentialSha256: digest,
+        sourceImports: z
+          .array(
+            z
+              .object({
+                source: z.string(),
+                importId: z.string(),
+                revision: z.string(),
+                sha256: digest,
+                acceptedAt: z.string().datetime({ offset: true }),
+              })
+              .strict(),
+          )
+          .min(1),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export const BidMarineReviewSchema = z
+  .object({
+    bidYear: z.literal(2026),
+    versionId: identity,
+    versionSha256: digest,
+    asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    candidateMemberCount: z.number().int().nonnegative(),
+    marinePositionCount: z.number().int().nonnegative(),
+    rows: z.array(
+      z
+        .object({
+          member: z.string(),
+          employeeId: z.string(),
+          positionId: z.string(),
+          marinePosition: z.string(),
+          missingEvidence: z.array(z.string()),
+          sourceReviewed: z.string(),
+          requiredAction: z.string(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type BidMarineReview = z.infer<typeof BidMarineReviewSchema>;
 export const BidVersionsSchema = z
   .object({
     bidYear: z.number().int(),
@@ -244,6 +309,7 @@ export const BidMockPreviewSchema = z.discriminatedUnion('wouldAllowCreateMock',
             classification: z.enum([
               'BLOCKS_APPLICATION_RELEASE',
               'BLOCKS_FINAL_2026_CONFIGURATION',
+              'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
               'BLOCKS_REAL_BID_ACTIVATION',
             ]),
             affectedScopes: z.array(identity),

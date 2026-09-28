@@ -104,6 +104,10 @@ export function BidPolicySourceFields({
                   options={[
                     { value: 'BLOCKS_APPLICATION_RELEASE', label: 'Application release' },
                     { value: 'BLOCKS_FINAL_2026_CONFIGURATION', label: 'Final 2026 configuration' },
+                    {
+                      value: 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
+                      label: 'Final evidence certification',
+                    },
                     { value: 'BLOCKS_REAL_BID_ACTIVATION', label: 'Real Bid activation' },
                   ]}
                   onChange={(blockingClassification) =>

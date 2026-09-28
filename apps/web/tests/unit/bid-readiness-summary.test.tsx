@@ -6,6 +6,20 @@ it('gives a 2026 Bid administrator plain-English next steps without readiness co
   const html = renderToStaticMarkup(
     <BidReadinessSummary
       year={2026}
+      content={{
+        v: 1,
+        bidYear: 2026,
+        settings: null,
+        notes: { bid: null, positions: null },
+        policy: null,
+        planning: null,
+        authoring: null,
+        positions: [],
+        rules: [],
+        participation: [],
+        staffingBindings: [],
+        sourceDecisions: [],
+      }}
       policyReady
       realActivationReviewCount={4}
       positionsReady

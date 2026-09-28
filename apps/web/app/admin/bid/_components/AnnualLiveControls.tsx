@@ -74,6 +74,15 @@ type SpecialtyState = {
   a_day_selection?: 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION' | null;
   a_day_timing_by_position?: Record<string, 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION'>;
   a_day_combat_groups?: readonly ('G1' | 'G2' | 'G3' | 'G4')[];
+  a_day_scoped_constraints?: Array<{
+    id: string;
+    label: string;
+    maximum: number;
+    memberIds: number[];
+    positionIds: string[];
+    ranks: string[];
+    shifts?: Array<'A' | 'B' | 'C' | 'D'>;
+  }>;
   a_day_current?: {
     member_id: number;
     position_id: string;
@@ -96,6 +105,20 @@ type SpecialtyState = {
     shift: string | null;
   }>;
   current_bidder: Candidate | null;
+  selection_stage?: {
+    id: string;
+    label: string;
+    opportunity_position_ids: string[];
+    eligible_position_ids: string[];
+    all_opportunities_filled: boolean;
+    next_stage: { id: string; label: string } | null;
+  } | null;
+  amendable_selection?: {
+    from_position_id: string;
+    member_id: number;
+    opportunity_position_ids: string[];
+    eligible_position_ids: string[];
+  } | null;
   dispositions?: Array<{
     disposition: 'HOLD' | 'PASS' | 'DEFER' | 'SKIP' | 'DECLINED' | 'UNREACHABLE';
     advances: boolean;
@@ -172,6 +195,7 @@ interface Props {
   fills: Record<string, { memberId: number }>;
   members: Record<string, MemberLite>;
   positions?: readonly PositionMeta[] | undefined;
+  onCanonicalChange?: (() => void) | undefined;
 }
 
 function name(candidate: Candidate): string {
@@ -248,6 +272,12 @@ function commandErrorMessage(
   status: number,
 ): string {
   const messages: Record<string, string> = {
+    LIVE_STAGE_NOT_ELIGIBLE:
+      'This opportunity is outside the bidder’s current stage. Choose an open opportunity shown for this stage.',
+    SPECIALTY_HIGHER_PRIORITY_UNRESOLVED:
+      'Qualified Fire Investigator candidates have priority for this seat. Open Specialty and contact to review them before recording a selection.',
+    live_specialty_no_higher_priority_candidate:
+      'No higher-priority qualified candidate needs review for that seat. Use Record selection for the current bidder if the opportunity is eligible.',
     MEMBERSHIP_A_DAY_MAXIMUM_REACHED:
       'That A-Day is already assigned to the maximum number of members in this group on this shift.',
     MEMBERSHIP_SHIFT_MAXIMUM_REACHED:
@@ -260,12 +290,16 @@ function commandErrorMessage(
       'This member is not in the reviewed qualified pool for that group.',
     MEMBERSHIP_MULTIPLE_ASSIGNMENTS:
       'This member already has a group assignment in the canonical award set.',
+    SCOPED_A_DAY_MAXIMUM:
+      'That A-Day has reached a scoped staffing limit. Choose another available A-Day.',
   };
   const codeMessage = body?.code ? messages[body.code] : undefined;
   if (codeMessage) return codeMessage;
   const errorMessage = body?.error ? messages[body.error] : undefined;
   if (errorMessage) return errorMessage;
-  return body?.error ?? body?.code ?? `Command failed (${status}).`;
+  return status === 409
+    ? 'This action could not be recorded under the saved Bid policy. Refresh the session and review the current bidder, stage, and opportunity.'
+    : `The action could not be recorded. Refresh the session and try again (${status}).`;
 }
 
 export function AnnualLiveControls(props: Props) {
@@ -288,6 +322,7 @@ export function AnnualLiveControls(props: Props) {
     commandId: string;
     expectedSeq: number;
   } | null>(null);
+  const lastLoadedSequence = useRef<number | null>(null);
   const [reason, setReason] = useState('');
   const [evidenceReference, setEvidenceReference] = useState('');
   const [specialtyId, setSpecialtyId] = useState('');
@@ -329,6 +364,7 @@ export function AnnualLiveControls(props: Props) {
     aDayTimingForPosition(positionId) === 'SIMULTANEOUS';
   const fallbackRequiresSimultaneousADay = requiresSimultaneousADay(fallback?.positionId);
   const selectionMember = state?.returning_member ?? state?.current_bidder ?? null;
+  const dispositionMember = selectionMember;
   const termMemberId =
     panel === 'selection'
       ? selectionMember?.member_id
@@ -363,7 +399,13 @@ export function AnnualLiveControls(props: Props) {
   const selectionUnavailableADays = useMemo(() => {
     const memberId = selectionMember?.member_id;
     const shift = selectionPosition?.shift;
-    if (memberId === undefined || shift === undefined || shift === 'D') return {};
+    if (
+      memberId === undefined ||
+      selectionPosition === undefined ||
+      shift === undefined ||
+      shift === 'D'
+    )
+      return {};
     const unavailable: Record<string, string> = {};
     for (const distribution of state?.membership_distributions ?? []) {
       const applies =
@@ -390,13 +432,35 @@ export function AnnualLiveControls(props: Props) {
         if (reason) unavailable[aDay] = reason;
       }
     }
+    for (const constraint of state?.a_day_scoped_constraints ?? []) {
+      if (constraint.shifts && !constraint.shifts.includes(shift)) continue;
+      const matches = (candidateId: number, positionId: string) =>
+        constraint.memberIds.includes(candidateId) ||
+        constraint.positionIds.includes(positionId) ||
+        constraint.ranks.includes(props.members[String(candidateId)]?.rank ?? '');
+      if (!matches(memberId, selectionPosition.id)) continue;
+      for (const aDay of aDayOptions(selectionPosition, undefined, state?.a_day_combat_groups)) {
+        const assigned = Object.entries(state?.fills ?? {}).filter(
+          ([positionId, fill]) =>
+            props.positions?.find((position) => position.id === positionId)?.shift === shift &&
+            fill.a_day === aDay &&
+            matches(fill.member_id, positionId),
+        ).length;
+        if (assigned >= constraint.maximum) {
+          unavailable[aDay] ??=
+            `${constraint.label} already has its maximum on ${shift} shift for that A-Day`;
+        }
+      }
+    }
     return unavailable;
   }, [
     membershipChoice,
     props.positions,
+    props.members,
     selectionMember?.member_id,
     selectionPosition,
     state?.a_day_combat_groups,
+    state?.a_day_scoped_constraints,
     state?.fills,
     state?.membership_distributions,
   ]);
@@ -460,12 +524,15 @@ export function AnnualLiveControls(props: Props) {
         body && 'error' in body ? body.error : `Live controls returned ${response.status}.`,
       );
     const next = body as SpecialtyState;
+    if (lastLoadedSequence.current !== null && next.sequence > lastLoadedSequence.current)
+      props.onCanonicalChange?.();
+    lastLoadedSequence.current = next.sequence;
     if (orderSequence.current !== next.sequence) {
       orderSequence.current = next.sequence;
       setOrder(remainingOrderEntries(next.remaining_order));
     }
     setState(next);
-  }, [props.bidSessionId]);
+  }, [props.bidSessionId, props.onCanonicalChange]);
 
   useEffect(() => {
     void load().catch((error: unknown) =>
@@ -817,11 +884,18 @@ export function AnnualLiveControls(props: Props) {
               Contact attempts and disposition outcomes are audited canonical commands. An
               unreachable outcome requires the evidence reference above.
             </p>
-            {state?.current_bidder ? (
+            {dispositionMember ? (
               <div className="mt-3 space-y-3 text-sm">
                 <p>
-                  Current bidder: <strong>{name(state.current_bidder)}</strong>
+                  {state?.returning_member ? 'Returned bidder: ' : 'Current bidder: '}
+                  <strong>{name(dispositionMember)}</strong>
                 </p>
+                {state?.returning_member && state.current_bidder ? (
+                  <p className="text-xs text-muted-foreground">
+                    {name(state.current_bidder)} remains next in the ordinary order. Finish the
+                    returned bidder’s action first.
+                  </p>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                   {(['PHONE', 'TEXT'] as const).map((method) => (
                     <Button
@@ -830,7 +904,7 @@ export function AnnualLiveControls(props: Props) {
                       disabled={busy}
                       onClick={() =>
                         void command('live.record_contact_attempt', {
-                          memberId: state.current_bidder?.member_id,
+                          memberId: dispositionMember.member_id,
                           method,
                         })
                       }
@@ -840,7 +914,7 @@ export function AnnualLiveControls(props: Props) {
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {(state.dispositions ?? []).map((entry) => (
+                  {(state?.dispositions ?? []).map((entry) => (
                     <Button
                       key={entry.disposition}
                       type="button"
@@ -857,6 +931,31 @@ export function AnnualLiveControls(props: Props) {
             ) : (
               <p className="mt-2 text-sm text-muted-foreground">No bidder is currently active.</p>
             )}
+            {state?.current_phase === 'position_bid' &&
+            state.selection_stage?.all_opportunities_filled &&
+            state.selection_stage.next_stage &&
+            !state.returning_member &&
+            (state.unresolved_members?.length ?? 0) === 0 ? (
+              <div className="mt-4 border-t border-border pt-3">
+                <h4 className="font-semibold text-foreground">Stage complete</h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Every {state.selection_stage.label} opportunity is filled. Advancing skips the
+                  remaining turns in this stage and records the transition in the session audit.
+                </p>
+                <Button
+                  type="button"
+                  className="mt-2"
+                  disabled={busy}
+                  onClick={() =>
+                    void command('live.transition_stage', {
+                      stageId: state.selection_stage?.next_stage?.id,
+                    })
+                  }
+                >
+                  Advance to {state.selection_stage.next_stage.label}
+                </Button>
+              </div>
+            ) : null}
             {(state?.unresolved_members ?? []).length > 0 ? (
               <div className="mt-4 border-t border-border pt-3">
                 <h4 className="font-semibold text-foreground">Return an unresolved bidder</h4>
@@ -889,7 +988,7 @@ export function AnnualLiveControls(props: Props) {
               This action is available only after the frozen Timeline-controlled position phase has
               completed. Capacity and constraints are rechecked by the canonical server command.
             </p>
-            {state?.current_phase !== 'a_day_bid' || pendingADay === null ? (
+            {pendingADay === null ? (
               <p className="mt-2 text-sm text-muted-foreground">
                 No controlled A-Day selection is awaiting an authorized operator.
               </p>
@@ -1277,8 +1376,27 @@ export function AnnualLiveControls(props: Props) {
                 : 'Record current bidder selection'}
             </h3>
             <p className="text-xs text-muted-foreground">
-              Canonical selection for the active member; the frozen stage policy remains enforced.
+              {selectionMember
+                ? `${name(selectionMember)} selects from the frozen stage's eligible opportunities.`
+                : 'The frozen stage policy remains enforced.'}
             </p>
+            {state?.selection_stage ? (
+              <p className="mt-2 text-xs font-medium text-foreground">
+                Current stage: {state.selection_stage.label}
+              </p>
+            ) : null}
+            {pendingADay !== null ? (
+              <p className="mt-2 text-sm text-warning">
+                {memberName(pendingADay.member_id)} already holds {pendingADay.position_id}.
+                Complete the deferred A-Day through Record A-Day before the next position selection.
+              </p>
+            ) : null}
+            {state?.selection_stage && state.selection_stage.eligible_position_ids.length === 0 ? (
+              <p className="mt-1 text-xs text-amber-800">
+                No open opportunity in this stage is currently eligible for this member. Use the
+                reviewed disposition or fallback controls.
+              </p>
+            ) : null}
             <NativeSelect
               aria-label="Position selected by current bidder"
               value={selectionPoolId ? '' : selectionPositionId}
@@ -1290,6 +1408,13 @@ export function AnnualLiveControls(props: Props) {
             >
               <option value="">Open opportunity</option>
               {props.positions
+                ?.filter(
+                  (position) =>
+                    !position.bidParticipation || position.bidParticipation === 'BIDDABLE',
+                )
+                ?.filter((position) =>
+                  state?.selection_stage?.eligible_position_ids.includes(position.id),
+                )
                 ?.filter((position) => !poolSlots.has(position.id))
                 .filter((position) =>
                   state === null
@@ -1317,16 +1442,24 @@ export function AnnualLiveControls(props: Props) {
                   }}
                 >
                   <option value="">Select a pool</option>
-                  {state.opportunity_pools.map((pool) => (
-                    <option
-                      key={pool.id}
-                      value={pool.id}
-                      disabled={!pool.valid || pool.resolvedPositionId === null}
-                    >
-                      {pool.label} · {pool.remaining}/{pool.capacity} available
-                      {pool.code ? ` · ${pool.code}` : ''}
-                    </option>
-                  ))}
+                  {state.opportunity_pools
+                    .filter(
+                      (pool) =>
+                        pool.resolvedPositionId !== null &&
+                        state.selection_stage?.eligible_position_ids.includes(
+                          pool.resolvedPositionId,
+                        ),
+                    )
+                    .map((pool) => (
+                      <option
+                        key={pool.id}
+                        value={pool.id}
+                        disabled={!pool.valid || pool.resolvedPositionId === null}
+                      >
+                        {pool.label} · {pool.remaining}/{pool.capacity} available
+                        {pool.code ? ` · ${pool.code}` : ''}
+                      </option>
+                    ))}
                 </NativeSelect>
                 {selectionPoolId ? (
                   <span className="mt-1 block text-xs text-muted-foreground">
@@ -1382,6 +1515,7 @@ export function AnnualLiveControls(props: Props) {
                 busy ||
                 state === null ||
                 selectionMember === null ||
+                pendingADay !== null ||
                 !selectionPositionId ||
                 (selectionRequiresSimultaneousADay &&
                   (!selectionADay || selectionUnavailableADays[selectionADay] !== undefined))
@@ -1412,11 +1546,13 @@ export function AnnualLiveControls(props: Props) {
               className="mt-2 block w-full rounded border border-border px-2 py-2 text-sm"
             >
               <option value="">Original filled opportunity</option>
-              {filled.map(([id, memberId]) => (
-                <option key={id} value={id}>
-                  {id} · {props.members[String(memberId)]?.lastName ?? `Member ${memberId}`}
-                </option>
-              ))}
+              {filled
+                .filter(([id]) => id === state?.amendable_selection?.from_position_id)
+                .map(([id, memberId]) => (
+                  <option key={id} value={id}>
+                    {id} · {props.members[String(memberId)]?.lastName ?? `Member ${memberId}`}
+                  </option>
+                ))}
             </NativeSelect>
             <NativeSelect
               aria-label="New open opportunity"
@@ -1429,6 +1565,13 @@ export function AnnualLiveControls(props: Props) {
             >
               <option value="">New open opportunity</option>
               {props.positions
+                ?.filter(
+                  (position) =>
+                    !position.bidParticipation || position.bidParticipation === 'BIDDABLE',
+                )
+                ?.filter((position) =>
+                  state?.amendable_selection?.eligible_position_ids.includes(position.id),
+                )
                 ?.filter((position) => !poolSlots.has(position.id))
                 .filter((position) =>
                   state === null
@@ -1456,15 +1599,23 @@ export function AnnualLiveControls(props: Props) {
                   }}
                 >
                   <option value="">Select a pool</option>
-                  {state.opportunity_pools.map((pool) => (
-                    <option
-                      key={pool.id}
-                      value={pool.id}
-                      disabled={!pool.valid || pool.resolvedPositionId === null}
-                    >
-                      {pool.label} · {pool.remaining}/{pool.capacity} available
-                    </option>
-                  ))}
+                  {state.opportunity_pools
+                    .filter(
+                      (pool) =>
+                        pool.resolvedPositionId !== null &&
+                        state.amendable_selection?.eligible_position_ids.includes(
+                          pool.resolvedPositionId,
+                        ),
+                    )
+                    .map((pool) => (
+                      <option
+                        key={pool.id}
+                        value={pool.id}
+                        disabled={!pool.valid || pool.resolvedPositionId === null}
+                      >
+                        {pool.label} · {pool.remaining}/{pool.capacity} available
+                      </option>
+                    ))}
                 </NativeSelect>
               </Label>
             ) : null}

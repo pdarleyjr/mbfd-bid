@@ -54,6 +54,13 @@ export function AdminBoard({
   const observedSequence = useStore(store, (s: BidStoreState) => s.lastSeq);
   const refreshedSequence = useRef(initialSeq);
   const { pickMode, selectedMemberId, submitPick } = useManualPick();
+  const biddablePositions = useMemo(
+    () =>
+      positions?.filter(
+        (position) => !position.bidParticipation || position.bidParticipation === 'BIDDABLE',
+      ),
+    [positions],
+  );
 
   // Position cells are interactive only when pick mode is on AND the admin
   // has already selected a member. The cell will be open-only (the filled-
@@ -85,7 +92,7 @@ export function AdminBoard({
       <BidAdvisoryPanel advisory={advisory} />
       <StationGroupedGrid
         members={members}
-        positions={positions}
+        positions={biddablePositions}
         snapshotBound
         onPositionClick={positionClickHandler}
       />

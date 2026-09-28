@@ -128,6 +128,7 @@ export const BidDefinitionSourceDecisionSchema = z
       .enum([
         'BLOCKS_APPLICATION_RELEASE',
         'BLOCKS_FINAL_2026_CONFIGURATION',
+        'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
         'BLOCKS_REAL_BID_ACTIVATION',
       ])
       .optional(),

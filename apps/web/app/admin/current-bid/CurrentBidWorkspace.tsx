@@ -14,6 +14,7 @@ import { BidChangeReview } from './BidChangeReview';
 import { FieldSection } from './BidFields';
 import { BidImpactReview } from './BidImpactReview';
 import { BidLiveReview } from './BidLiveReview';
+import { BidMarineReview } from './BidMarineReview';
 import { BidMockReview } from './BidMockReview';
 import { BidOpportunityFields } from './BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
@@ -25,6 +26,7 @@ import { BidVersionHistory } from './BidVersionHistory';
 import { NewAnnualBidFromStructure } from './NewAnnualBidFromStructure';
 import { StageParticipantPreview } from './StageParticipantPreview';
 import {
+  BidEvidenceFreezeResponseSchema,
   type BidLiveResult,
   BidLiveResultSchema,
   type BidMockPreview,
@@ -41,6 +43,7 @@ import {
   CurrentBidSchema,
   type HistoricalBid,
   HistoricalBidSchema,
+  Reviewed2026CandidateSchema,
   bidRequest,
 } from './bid-client';
 import {
@@ -65,10 +68,11 @@ const sections = [
   ['authority', 'Authority & permissions'],
 ] as const;
 type Section = (typeof sections)[number][0];
-type View = 'edit' | 'blueprint' | 'mock' | 'live' | 'results' | 'versions';
+type View = 'edit' | 'blueprint' | 'marine' | 'mock' | 'live' | 'results' | 'versions';
 const views: { id: View; label: string }[] = [
   { id: 'edit', label: 'Edit Bid' },
   { id: 'blueprint', label: 'Bid Blueprint' },
+  { id: 'marine', label: 'Marine evidence' },
   { id: 'mock', label: 'Mock Bid' },
   { id: 'live', label: 'Live Bid' },
   { id: 'results', label: 'Results' },
@@ -348,6 +352,142 @@ export function CurrentBidWorkspace({
       finishWork();
     }
   }
+  async function prepareReviewed2026Candidate() {
+    const current = draftRef.current;
+    const version = current?.base.version;
+    if (
+      year !== 2026 ||
+      !current ||
+      !version ||
+      version.versionNumber !== 8 ||
+      version.contentSha256 !==
+        '74ee775dbae3508c16f82bb93e4e2a68a5b3f84a976f05be85c89a0800e3f666' ||
+      !same(current.content, current.base.content) ||
+      current.pending ||
+      stale ||
+      !startWork()
+    )
+      return;
+    try {
+      const candidate = await bidRequest(
+        year,
+        'reviewed-2026-candidate',
+        Reviewed2026CandidateSchema,
+        { body: {} },
+      );
+      if (
+        candidate.sourceVersionId !== version.id ||
+        candidate.sourceSha256 !== version.contentSha256 ||
+        candidate.content.bidYear !== year
+      )
+        throw new BidRequestError('reviewed_2026_predecessor_changed', 409, false);
+      const next: BidDraft = {
+        ...current,
+        content: candidate.content,
+        reason:
+          'Reviewed 2026 source reconciliation for pre-cutoff rehearsal; final evidence certification remains pending.',
+      };
+      preserveBidDraft(window.sessionStorage, next);
+      install(next);
+      setPreview(null);
+      setPreviewContent(null);
+      setBlueprintImpact(null);
+      setBlueprintImpactContent(null);
+      setNotice(
+        `${candidate.label}. Review the changes and save a new version before creating a Mock.`,
+      );
+      selectView('edit');
+    } catch (caught) {
+      setError(message(caught));
+    } finally {
+      finishWork();
+    }
+  }
+  async function prepareFinalEvidenceDraft() {
+    const current = draftRef.current;
+    const version = current?.base.version;
+    if (
+      year !== 2026 ||
+      !current ||
+      !version ||
+      version.versionNumber <= 8 ||
+      !same(current.content, current.base.content) ||
+      current.pending ||
+      stale ||
+      !startWork()
+    )
+      return;
+    try {
+      const { freeze } = await bidRequest(year, 'evidence-freeze', BidEvidenceFreezeResponseSchema);
+      if (!freeze) throw new BidRequestError('final_evidence_freeze_pending', 409, false);
+      if (
+        freeze.sourceVersionId !== version.id ||
+        freeze.sourceVersionSha256 !== version.contentSha256
+      )
+        throw new BidRequestError('final_evidence_source_version_changed', 409, false);
+      if (current.content.settings?.v !== 3)
+        throw new BidRequestError('final_evidence_settings_required', 409, false);
+      const decision = current.content.sourceDecisions.find(
+        (item) => item.issueId === '2026-eligibility-cutoff-evidence',
+      );
+      if (!decision || decision.status !== 'OPEN')
+        throw new BidRequestError('final_evidence_decision_unavailable', 409, false);
+      const approvedAt = new Date().toISOString();
+      const next: BidDraft = {
+        ...current,
+        content: {
+          ...current.content,
+          settings: {
+            ...current.content.settings,
+            evidenceFreeze: {
+              freezeId: freeze.freezeId,
+              evaluationSha256: freeze.evaluationSha256,
+              sourceVersionId: freeze.sourceVersionId,
+              sourceVersionSha256: freeze.sourceVersionSha256,
+              evidenceCutoffAt: freeze.evidenceCutoffAt,
+              timeZone: freeze.timeZone,
+              approvedAt,
+              sourceImports: freeze.sourceImports,
+              personnelSnapshot: {
+                sha256: freeze.personnelSha256,
+                asOfAt: freeze.evidenceCutoffAt,
+                capturedAt: freeze.capturedAt,
+              },
+              credentialSnapshot: {
+                sha256: freeze.credentialSha256,
+                asOfAt: freeze.evidenceCutoffAt,
+                capturedAt: freeze.capturedAt,
+              },
+            },
+          },
+          sourceDecisions: current.content.sourceDecisions.map((item) =>
+            item.issueId === decision.issueId
+              ? {
+                  ...item,
+                  status: 'RESOLVED' as const,
+                  decision: `Approved the immutable 2026-09-30 17:00 Eastern evidence capture ${freeze.freezeId}; personnel ${freeze.personnelSha256}; credentials ${freeze.credentialSha256}; evaluation ${freeze.evaluationSha256}.`,
+                  sourceRef: `bid_evidence_freezes:${freeze.freezeId}`,
+                  effectiveOn: '2026-09-30',
+                }
+              : item,
+          ),
+        },
+        reason: `Approve immutable 2026-09-30 17:00 Eastern eligibility evidence ${freeze.freezeId}; final 2026 Bid configuration.`,
+      };
+      preserveBidDraft(window.sessionStorage, next);
+      install(next);
+      setPreview(null);
+      setPreviewContent(null);
+      setNotice(
+        'Frozen 17:00 evidence loaded into this draft. Review the hashes, changes, and final readiness before saving a new immutable version.',
+      );
+      selectView('edit');
+    } catch (caught) {
+      setError(message(caught));
+    } finally {
+      finishWork();
+    }
+  }
   async function reviewMock() {
     const version = draftRef.current?.base.version;
     if (!version || !startWork()) return;
@@ -513,6 +653,30 @@ export function CurrentBidWorkspace({
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
+          {year === 2026 &&
+            draft?.base.version?.versionNumber === 8 &&
+            draft.base.version.contentSha256 ===
+              '74ee775dbae3508c16f82bb93e4e2a68a5b3f84a976f05be85c89a0800e3f666' && (
+              <Button
+                type="button"
+                disabled={locked || dirty || stale}
+                onClick={() => void prepareReviewed2026Candidate()}
+              >
+                Prepare reviewed 2026 rehearsal
+              </Button>
+            )}
+          {year === 2026 &&
+            (draft?.base.version?.versionNumber ?? 0) > 8 &&
+            draft?.content.settings?.v === 3 &&
+            !draft.content.settings.evidenceFreeze && (
+              <Button
+                type="button"
+                disabled={locked || dirty || stale}
+                onClick={() => void prepareFinalEvidenceDraft()}
+              >
+                Apply frozen 17:00 evidence
+              </Button>
+            )}
           <NewAnnualBidFromStructure
             sourceYear={year}
             sourceVersion={draft?.base.version ?? null}
@@ -551,12 +715,14 @@ export function CurrentBidWorkspace({
       {draft && !loading && year === 2026 && (
         <BidReadinessSummary
           year={year}
+          content={draft.content}
           policyReady={
             draft.content.policy !== null &&
             draft.content.sourceDecisions.every(
               (decision) =>
                 decision.status === 'RESOLVED' ||
-                decision.blockingClassification === 'BLOCKS_REAL_BID_ACTIVATION',
+                decision.blockingClassification === 'BLOCKS_REAL_BID_ACTIVATION' ||
+                decision.blockingClassification === 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
             )
           }
           realActivationReviewCount={
@@ -821,6 +987,13 @@ export function CurrentBidWorkspace({
               {...{ busy, locked, dirty, stale, mockPreview, createdMock, reviewMock, execute }}
             />
           )}
+          {view === 'marine' && (
+            <BidMarineReview
+              year={year}
+              versionId={draft.base.version?.id ?? null}
+              versionSha256={draft.base.version?.contentSha256 ?? null}
+            />
+          )}
           {view === 'live' && (
             <BidLiveReview
               key={liveReviewGeneration}
@@ -828,6 +1001,10 @@ export function CurrentBidWorkspace({
               year={year}
               execute={execute}
               createdLive={createdLive}
+              onOpenAuthority={() => {
+                setSection('authority');
+                selectView('edit');
+              }}
               {...{
                 busy,
                 locked,

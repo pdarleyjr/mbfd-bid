@@ -1,4 +1,7 @@
 import type { BidDefinitionContent, BidDefinitionIssue } from '@mbfd/shared';
+import { isFinal2026ManagedConfiguration } from './2026-opportunity-inventory.js';
+import { definitionRuleBookMaterial } from './bid-definition-content.js';
+import { evaluateRuleBookCoverage } from './bid-policy.js';
 import { bidSourceDecisionReviewIssues } from './bid-source-decision-review.js';
 
 /** Save permits incomplete drafts. Check actual FK dependencies separately
@@ -8,6 +11,39 @@ export async function bidDefinitionReferenceIssues(
   content: BidDefinitionContent,
 ) {
   const issues: BidDefinitionIssue[] = bidSourceDecisionReviewIssues(content.sourceDecisions);
+  if (
+    isFinal2026ManagedConfiguration(content.bidYear, {
+      sourceDecisions: content.sourceDecisions,
+    }) &&
+    content.rules.length > 0
+  ) {
+    const catalog = await database
+      .prepare(`SELECT c.name FROM credentials c
+        LEFT JOIN credential_catalog_metadata m ON m.credential_id = c.id
+        WHERE m.retired_on IS NULL`)
+      .all<{ name: string }>();
+    const coverage = evaluateRuleBookCoverage({
+      ...definitionRuleBookMaterial(content),
+      ruleBookVersion: 'bid-definition-content-v1',
+      declaredTemplateVersion: 'bid-definition-content-v1',
+      credentialCatalogNames: catalog.results.map((row) => row.name),
+      enforcePositionRank: true,
+    });
+    for (const positionId of coverage.rankMismatchPositionIds) {
+      issues.push({
+        path: ['rules'],
+        code: 'rule_rank_position_mismatch',
+        message: `Rule rank does not include the Bid rank of position ${positionId}`,
+      });
+    }
+    for (const reference of coverage.unresolvedCredentialReferences) {
+      issues.push({
+        path: ['rules'],
+        code: 'rule_credential_not_in_catalog',
+        message: `Rule credential reference is absent from the active catalog: ${reference}`,
+      });
+    }
+  }
   for (const distribution of content.policy?.executionPolicy.annualOperations
     ?.membershipDistributions ?? []) {
     if (distribution.membershipSource !== 'REVIEWED_QUALIFIED_POOL') continue;

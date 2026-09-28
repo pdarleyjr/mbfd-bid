@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { emptyBidSessionState } from '../../src/durable/bid-session-state.js';
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
@@ -225,6 +226,75 @@ describe('GET /api/admin/placements/export', () => {
     const body = await res.text();
     expect(body).toContain('ordinal,member_id');
     expect(body).toContain('snapshot-member-100');
+  });
+
+  it('exports canonical awards and progress from the command state', async () => {
+    const nowMs = Date.parse('2026-09-27T23:00:00Z');
+    await h.db.run('DELETE FROM bids WHERE bid_session_id=?', [sessionId]);
+    const canonical = {
+      ...emptyBidSessionState(sessionId),
+      currentPhase: 'complete' as const,
+      lastSeq: 1,
+      fills: {
+        A101: { memberId: 100, ordinal: 1, bidId: 'canonical-award-1', aDay: 'G2' as const },
+      },
+    };
+    await h.db.run(
+      `INSERT INTO canonical_bid_session_state
+       (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at)
+       VALUES (?,1,?,'canonical-command-1',?,?)`,
+      [sessionId, JSON.stringify(canonical), nowMs, nowMs],
+    );
+    await h.db.run(
+      `INSERT INTO bid_command_receipts
+       (command_id,bid_session_id,command_type,request_sha256,actor_id,expected_seq,result_seq,outcome,result_json,created_at)
+       VALUES ('canonical-command-1',?,'live.record_selection',?,101,0,1,'accepted','{}',?)`,
+      [sessionId, 'a'.repeat(64), nowMs],
+    );
+    await h.db.run(
+      `INSERT INTO audit_log
+       (id,bid_session_id,seq,actor_type,actor_id,action,reason,created_at)
+       VALUES ('canonical-audit-1',?,1,'admin',101,'bid_select','Synthetic canonical award',?)`,
+      [sessionId, Math.floor(nowMs / 1000)],
+    );
+    await h.db.run(
+      `INSERT INTO bid_command_events
+       (id,bid_session_id,command_id,audit_log_id,seq,event_type,event_json,actor_id,created_at)
+       VALUES ('canonical-event-1',?,'canonical-command-1','canonical-audit-1',1,'live_command_applied',?,101,?)`,
+      [
+        sessionId,
+        JSON.stringify({
+          operation: 'record_selection',
+          bidId: 'canonical-award-1',
+          memberId: 100,
+          positionId: 'A101',
+        }),
+        nowMs,
+      ],
+    );
+    const headers = { Authorization: `Bearer ${await adminJwt()}` };
+    const exportResponse = await app.fetch(
+      new Request(`http://x/api/admin/placements/export?session_id=${sessionId}&format=csv`, {
+        headers,
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(exportResponse.status).toBe(200);
+    const lines = (await exportResponse.text()).split('\r\n').filter(Boolean);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain(
+      '1,100,snapshot-member-100,FF,A101,Engine 1 FF,A,1,Engine 1,FF,G2,false,,',
+    );
+    expect(lines[1]).not.toContain('B202');
+    const progressResponse = await app.fetch(
+      new Request(`http://x/api/admin/exports/${sessionId}/progress.csv`, { headers }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(progressResponse.status).toBe(200);
+    const [progressHeader, progressRow] = (await progressResponse.text()).split('\r\n');
+    const awardsIndex = progressHeader?.split(',').indexOf('awards_committed') ?? -1;
+    expect(awardsIndex).toBeGreaterThanOrEqual(0);
+    expect(progressRow?.split(',')[awardsIndex]).toBe('1');
   });
 
   it('fails closed when a legacy snapshot lacks immutable export material', async () => {
