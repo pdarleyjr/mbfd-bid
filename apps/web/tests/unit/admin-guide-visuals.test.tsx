@@ -40,7 +40,8 @@ describe('annotated administrator help', () => {
     const markup = renderToStaticMarkup(<GuideVisuals topicId="current-bid-mock" />);
     expect(markup).toContain('Visual instructions');
     expect(markup).toContain('Check Mock readiness');
-    expect(markup).toContain('Pre-cutoff production reference');
+    expect(markup).toContain('Production capture · 0c360901');
+    expect(markup).toContain('Pre-cutoff production capture · exact build not recorded');
     expect(markup).toContain('Mock Bid check');
   });
 });

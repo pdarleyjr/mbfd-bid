@@ -173,6 +173,108 @@ function responded(f: ReturnType<typeof fixture>, tierId: string, memberIds: num
 }
 
 describe('frozen fallback policy tiers', () => {
+  it('limits the 2026 Investigator forced tier to qualified current assignees in reverse Firefighter service order', () => {
+    const f = fixture([
+      tier('investigator-current-assignee', {
+        label: 'Reverse seniority among minimum-qualified members currently assigned',
+        mode: 'FORCED',
+        eligibility: { kind: 'MINIMUM_QUALIFIED' },
+        currentlyAssignedOnly: true,
+        comparator: [{ key: 'DEPARTMENT_SERVICE_BID_ORDINAL', direction: 'DESC' }],
+      }),
+    ]);
+    if (f.snapshot.settings.v !== 3) throw new Error('Expected frozen V3 settings');
+    const fallback = f.snapshot.settings.livePolicy.annualOperations?.fallbackPolicies?.[0];
+    if (!fallback) throw new Error('Expected Investigator fallback policy');
+    fallback.positionIds = ['A305', 'B305', 'C305'];
+    fallback.sourceRef = 'Final July 2026 Bid Policy Procedure 3(e)(ii)';
+    f.snapshot.ruleBookMaterial.positions = f.snapshot.ruleBookMaterial.positions.map(
+      (position) => ({
+        ...position,
+        id: 'A305',
+        positionName: 'Fire Investigator',
+      }),
+    );
+    f.snapshot.ruleBookMaterial.rules = f.snapshot.ruleBookMaterial.rules.map((rule) => ({
+      ...rule,
+      positionId: 'A305',
+      requiredCriteriaJson: JSON.stringify({
+        rank: ['FF'],
+        credentials: ['Fire Investigator (FL cert issued 2015 or later)', 'Firesafety Inspector I'],
+        custom: [],
+      }),
+    }));
+    f.positionId = 'A305';
+    const first = f.snapshot.members[0];
+    const second = f.snapshot.members[1];
+    const third = f.snapshot.members[2];
+    if (!first || !second || !third) throw new Error('Expected synthetic Firefighter members');
+    f.snapshot.members = [
+      {
+        ...first,
+        credentialNames: [
+          'Fire Investigator (FL cert issued 2015 or later)',
+          'Firesafety Inspector I',
+        ],
+        currentBidPositionIds: ['A305'],
+        bidOrdinalEvidence: {
+          datasetId: 'reviewed-ff-order',
+          sourceSha256: 'a'.repeat(64),
+          timeInGrade: 1,
+          departmentService: 1,
+        },
+      },
+      {
+        ...second,
+        credentialNames: [
+          'Fire Investigator (FL cert issued 2015 or later)',
+          'Firesafety Inspector I',
+        ],
+        currentBidPositionIds: ['B305'],
+        bidOrdinalEvidence: {
+          datasetId: 'reviewed-ff-order',
+          sourceSha256: 'a'.repeat(64),
+          timeInGrade: 2,
+          departmentService: 5,
+        },
+      },
+      {
+        ...third,
+        credentialNames: ['Fire Investigator (FL cert issued 2015 or later)'],
+        currentBidPositionIds: ['C305'],
+        bidOrdinalEvidence: {
+          datasetId: 'reviewed-ff-order',
+          sourceSha256: 'a'.repeat(64),
+          timeInGrade: 3,
+          departmentService: 10,
+        },
+      },
+      {
+        ...second,
+        memberId: 4,
+        currentBidPositionIds: [],
+        bidOrdinalEvidence: {
+          datasetId: 'reviewed-ff-order',
+          sourceSha256: 'a'.repeat(64),
+          timeInGrade: 4,
+          departmentService: 20,
+        },
+      },
+    ];
+    expect(evaluateBidFallback(f)).toMatchObject({
+      ok: true,
+      tierId: 'investigator-current-assignee',
+      mode: 'FORCED',
+      candidateMemberIds: [2, 1],
+      sourceRef: 'Final July 2026 Bid Policy Procedure 3(e)(ii)',
+    });
+    f.snapshot.members = f.snapshot.members.map((member) =>
+      member.memberId === 2
+        ? { ...member, credentialNames: ['Fire Investigator (FL cert issued 2015 or later)'] }
+        : member,
+    );
+    expect(evaluateBidFallback(f)).toMatchObject({ ok: true, candidateMemberIds: [1] });
+  });
   it('requires reviewed full Days tour history and excludes members with a completed tour', () => {
     const f = fixture([
       tier('days-history', {

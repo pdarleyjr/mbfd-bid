@@ -3,6 +3,7 @@ export type GuideVisual = {
   alt: string;
   caption: string;
   markers: readonly string[];
+  captureReference: string;
 };
 
 const visual = (
@@ -10,9 +11,35 @@ const visual = (
   alt: string,
   caption: string,
   markers: readonly string[],
-): GuideVisual => ({ src: `/manual/guide/${name}.png`, alt, caption, markers });
+): GuideVisual => ({
+  src: `/manual/guide/${name}.png`,
+  alt,
+  caption,
+  markers,
+  captureReference: [
+    'audit-export',
+    'verified-exports',
+    'investigator-fallback',
+    'console-actions',
+    'a-day-config',
+    'points-editor',
+    'operator-authority',
+    'participants-flow',
+  ].includes(name)
+    ? 'Production capture · e60c03a'
+    : [
+          'opportunity-edit',
+          'requirement-edit',
+          'live-readiness',
+          'results-detail',
+          'mock-ready-detail',
+          'credential-comparison',
+        ].includes(name)
+      ? 'Pre-cutoff production capture · exact build not recorded'
+      : 'Production capture · 0c360901',
+});
 
-/** Cropped, redacted production captures from release 0c360901. */
+/** Cropped, redacted production captures with per-figure provenance. */
 export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
   '2026-bid-quick-start': [
     visual(
@@ -26,6 +53,12 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Mock Bid readiness control',
       'Check Mock readiness before creating a rehearsal.',
       ['Run the read-only Mock check.'],
+    ),
+    visual(
+      'participants-flow',
+      'Saved 2026 Bid stage ordering domains',
+      'Review the rank and seniority domain before the Mock.',
+      ['Check stage order.', 'Confirm Firefighter department-service order.'],
     ),
   ],
   'current-bid-edit': [
@@ -47,6 +80,18 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Live readiness is a separate check and does not start Real.',
       ['Check Managed Live readiness only when reviewing blockers.'],
     ),
+    visual(
+      'participation',
+      'Review opportunity participation control',
+      'Open participant and opportunity reviews from the saved Bid workspace.',
+      ['Review opportunity participation.', 'Review participants.'],
+    ),
+    visual(
+      'participants-flow',
+      'Saved stage seniority domains',
+      'Firefighters use the reviewed department-service Bid ordinal.',
+      ['Review each stage order.', 'Inspect participant counts in the live review.'],
+    ),
   ],
   'current-bid-blueprint': [
     visual(
@@ -62,6 +107,33 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       ['Confirm the B703 Lieutenant label and picked status.'],
     ),
   ],
+  'current-bid-versions': [
+    visual(
+      'versions',
+      'Version history control on the saved 2026 Bid',
+      'Open version history to confirm the exact saved source and hash.',
+      ['Open Version history.', 'Read back the selected saved version.'],
+    ),
+  ],
+  'current-bid-new-annual': [
+    visual(
+      'versions',
+      'New Annual Bid control beside the saved version',
+      'Start future-year rollover from a reviewed saved structure.',
+      [
+        'Confirm the source year and version.',
+        'Choose New Annual Bid only for the intended new year.',
+      ],
+    ),
+  ],
+  'bid-evidence': [
+    visual(
+      'bid-evidence',
+      'Bid ordinal and completed Days tour evidence editor',
+      'Use reviewed source evidence for Bid order and completed Days tours.',
+      ['Inspect certified Bid ordinals.', 'Record reviewed Days tour evidence.'],
+    ),
+  ],
   'current-bid-mock': [
     visual(
       'mock',
@@ -69,13 +141,27 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Run the Mock check, then create and open a rehearsal from this saved version.',
       ['Select Check Mock readiness.'],
     ),
-  ],
-  'current-bid-live-preflight': [
     visual(
-      'live',
-      'Read-only Managed Live preflight control',
-      'The Live check evaluates blockers. It does not create or start Real.',
-      ['Select Check Managed Live readiness.'],
+      'mock-ready-detail',
+      'Version 9 Mock readiness and creation controls',
+      'Create a Mock only after the exact saved version passes readiness.',
+      ['Check Mock readiness.', 'Create the isolated Mock.'],
+    ),
+  ],
+  'catalog-import': [
+    visual(
+      'credential-import',
+      'Qualification import and saved comparison controls',
+      'Preview source changes before applying reviewed member evidence.',
+      ['Choose an approved report.', 'Review the saved comparison.'],
+    ),
+  ],
+  'member-import': [
+    visual(
+      'credential-import',
+      'Import workflow entry and source review controls',
+      'Use the approved import workflow for the intended personnel source.',
+      ['Choose the source.', 'Review the comparison before apply.'],
     ),
   ],
   'current-bid-results': [
@@ -84,6 +170,26 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Results tab in the saved 2026 Bid workspace',
       'Open Results and select the exact run before reviewing awards.',
       ['Open Results.'],
+    ),
+    visual(
+      'results-detail',
+      'Results panel with exact Mock run selector',
+      'Choose the exact run before reading completion and exports.',
+      ['Confirm Mock run identity.', 'Review completion and projection.'],
+    ),
+  ],
+  'rules-list': [
+    visual(
+      'requirement-edit',
+      'Required qualification checklist in opportunity editor',
+      'Required qualifications belong to the annual opportunity rule.',
+      ['Select the opportunity.', 'Review requirements and points separately.'],
+    ),
+    visual(
+      'points-editor',
+      'Annual Bid scoring channels and cumulative preference controls',
+      'Points and preferences are edited in the annual opportunity, not the credential catalog.',
+      ['Choose a scoring channel.', 'Review its cumulative preferences.'],
     ),
   ],
   'department-credentials': [
@@ -101,6 +207,12 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Compare an approved TeleStaff or TargetSolutions report before applying it.',
       ['Choose an approved source report.', 'Resume a saved comparison if one exists.'],
     ),
+    visual(
+      'credential-comparison',
+      'Saved credential comparison counts and exception review',
+      'Review reconciled and rejected source rows before applying ready records.',
+      ['Inspect the source date and comparison.', 'Resolve rejected records individually.'],
+    ),
   ],
   'qualification-review': [
     visual(
@@ -112,10 +224,13 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
   ],
   'eligibility-preview': [
     visual(
-      'eligibility',
-      'Qualification source fields and review workflow',
-      'Review authoritative evidence before interpreting the server eligibility preview.',
-      ['Verify the source and dates.', 'Review accepted evidence.'],
+      'requirement-edit',
+      'Annual opportunity required qualification controls',
+      'Confirm the saved rule before reviewing the server eligibility result.',
+      [
+        'Inspect required qualifications.',
+        'Use the server preview for member-specific eligibility.',
+      ],
     ),
   ],
   'positions-rules': [
@@ -124,6 +239,18 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Bid Blueprint Opportunities lens',
       'For a saved annual Bid, inspect the versioned opportunity topology here.',
       ['Open Opportunities.', 'Inspect a position node.'],
+    ),
+    visual(
+      'opportunity-edit',
+      'Annual opportunity participation and staffing connection fields',
+      'Edit participation and Department connection in the saved Bid workspace.',
+      ['Select an opportunity.', 'Review bid participation and staffing connection.'],
+    ),
+    visual(
+      'requirement-edit',
+      'Annual position required qualification fields',
+      'Review the position rule and qualification requirements before saving.',
+      ['Inspect required qualifications.'],
     ),
     visual(
       'b703',
@@ -147,21 +274,37 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Always verify the red MOCK banner and current turn before an action.',
       ['Confirm MOCK, not live.', 'Review the current turn.', 'Confirm isolated writeback.'],
     ),
+    visual(
+      'console-actions',
+      'Completed isolated Mock console action controls',
+      'The named operator panels separate selection, A-Day, specialty, and correction actions.',
+      ['Open the intended panel.', 'Verify the canonical receipt after action.'],
+    ),
+    visual(
+      'a-day',
+      'Mock normal selection form with A-Day choices',
+      'A normal selection uses a displayed valid A-Day.',
+      ['Choose an eligible position.', 'Select a displayed A-Day.'],
+    ),
+    visual(
+      'contact-return',
+      'Mock disposition, contact and return dialog',
+      'Record simulated contact or return only through the audited action panel.',
+      ['Enter a reason and evidence when required.', 'Review the current member before commit.'],
+    ),
   ],
   'live-bid': [
     visual(
-      'console',
-      'Redacted Mock operator console with current turn controls',
-      'This production capture demonstrates the rehearsal controls.',
-      ['Confirm the run type.', 'Review member and stage.', 'Check finalization status.'],
+      'live-readiness',
+      'Managed Live readiness blocker panel',
+      'Read the server Live preflight and resolve each listed blocker before any Real start.',
+      ['Run Check Managed Live readiness.', 'Follow the blocker evidence path.'],
     ),
-  ],
-  'specialty-adjudication': [
     visual(
-      'specialties',
-      'Bid Blueprint lenses for specialty and opportunity structure',
-      'Inspect saved specialty and opportunity rules before a Mock choice.',
-      ['Open the Specialty lens.', 'Open Opportunities to inspect affected seats.'],
+      'operator-authority',
+      'Annual Bid authority and permission editor',
+      'Action grants must be reviewed before Live.',
+      ['Confirm named operator grants.', 'Rerun read-only preflight.'],
     ),
   ],
   'current-bid-execution-rules': [
@@ -171,13 +314,23 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'The A-Day options depend on the selected eligible seat.',
       ['Choose the opportunity.', 'Choose a displayed A-Day.'],
     ),
-  ],
-  'results-audit': [
     visual(
-      'results',
-      '2026 Results workspace tab',
-      'Select the exact session to inspect awards and audit.',
-      ['Open Results.'],
+      'investigator-fallback',
+      'Fire Investigator fallback tier configuration in the saved 2026 Bid',
+      'The frozen Investigator tier uses current assignees and reverse department-service order while retaining opportunity minimums.',
+      ['Confirm current-assignee scope.', 'Confirm higher Bid ordinals first.'],
+    ),
+    visual(
+      'a-day-config',
+      'A-Day timing exception and policy source in the saved 2026 Bid',
+      'The specialized-award timing exception is source-backed and separate from normal selection.',
+      ['Review the exception name and source.', 'Verify its timing in the saved Bid.'],
+    ),
+    visual(
+      'points-editor',
+      'Annual Bid point and preference editor',
+      'Use the Bid rule scoring channels for this version.',
+      ['Select the correct channel.', 'Review points before saving.'],
     ),
   ],
   exports: [
@@ -186,6 +339,206 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       '2026 Results workspace tab',
       'From the reviewed session, open its exports.',
       ['Choose the exact run.'],
+    ),
+    visual(
+      'verified-exports',
+      'Verified September 28 shift PDFs and audit CSV in the export list',
+      'Use the regenerated shift PDFs and complete audit export for the exact Mock session.',
+      ['Check generated file timestamps.', 'Keep the earlier invalid PDFs quarantined.'],
+    ),
+    visual(
+      'audit-export',
+      'Completed full audit CSV export receipt',
+      'Generate the full audit file from the reviewed run.',
+      ['Generate Full Audit CSV.', 'Verify the completed export receipt.'],
+    ),
+  ],
+  'source-decisions': [
+    visual(
+      'source-review',
+      '2026 source decisions and changes review page',
+      'Open the source decision record and inspect its policy basis.',
+      ['Review source checks.', 'Record an approved resolution with its reason.'],
+    ),
+  ],
+  readiness: [
+    visual(
+      'mock-ready-detail',
+      'Read-only Version 9 Mock readiness result',
+      'Mock readiness verifies the saved version used for rehearsal.',
+      ['Run the check.', 'Read the exact version and blockers.'],
+    ),
+  ],
+  'bid-setup': [
+    visual(
+      'current-bid',
+      'Saved 2026 Bid workspace',
+      'The current Bid workspace holds versioned setup and readiness.',
+      ['Confirm 2026 and Version 9.', 'Open the intended editing section.'],
+    ),
+  ],
+  'annual-policy': [
+    visual(
+      'investigator-fallback',
+      'Saved 2026 Investigator fallback policy controls',
+      'Review the exact source-backed fallback tier in the annual policy.',
+      ['Confirm the source decision.', 'Verify candidate scope and comparator.'],
+    ),
+  ],
+  'rule-books': [
+    visual(
+      'requirement-edit',
+      'Opportunity requirements in the saved Bid rule editor',
+      'Rule changes require a reviewed saved version before a new Mock.',
+      ['Review requirements.', 'Preview affected seats before saving.'],
+    ),
+    visual(
+      'points-editor',
+      'Annual opportunity scoring channels',
+      'Points belong to the annual Bid rule.',
+      ['Choose total, Special Operations, or Marine channel.', 'Review cumulative preferences.'],
+    ),
+  ],
+  'specialty-adjudication': [
+    visual(
+      'specialties',
+      'Bid Blueprint specialty structure',
+      'Inspect saved specialty rules before operating an interruption.',
+      ['Open the Specialty lens.', 'Inspect affected opportunities.'],
+    ),
+    visual(
+      'specialty-contact',
+      'Specialty and contact review panel with a rejected attempted interruption',
+      'Start specialty review only for a displayed eligible interruption; this captured attempt was rejected by frozen policy.',
+      ['Check member and target opportunity.', 'Treat a rejection as no recorded award.'],
+    ),
+  ],
+  'current-bid-live-preflight': [
+    visual(
+      'live-readiness',
+      'Read-only Managed Live preflight blocker panel',
+      'Inspect server blockers and linked source evidence before a Real session.',
+      ['Check Managed Live readiness.', 'Review each named blocker.'],
+    ),
+    visual(
+      'operator-authority',
+      'Annual Bid operator authority editor',
+      'Confirm named action grants separately from general admin access.',
+      ['Review operator grants.', 'Run the server preflight again.'],
+    ),
+  ],
+  'results-audit': [
+    visual(
+      'results-detail',
+      'Exact Mock run selected in Results',
+      'Review completion, awards and projection for the selected session.',
+      ['Confirm the run ID.', 'Inspect completion and finalization.'],
+    ),
+    visual(
+      'audit-export',
+      'Full audit export completion receipt',
+      'Audit exports are tied to the selected run.',
+      ['Generate the full audit file.', 'Verify the completed receipt.'],
+    ),
+  ],
+  'bid-advisory': [
+    visual(
+      'console-actions',
+      'Mock operator console with named action panels',
+      'The advisory explains frozen state beside canonical controls.',
+      ['Read the current member and state.', 'Use the named canonical action panel.'],
+    ),
+  ],
+  'live-presentation': [
+    visual(
+      'console-actions',
+      'Isolated Mock console action panels',
+      'Use the presentation panel only within the run type shown by its banner.',
+      ['Confirm Mock or Live.', 'Open Presentation.'],
+    ),
+  ],
+  'troubleshooting-safety': [
+    visual(
+      'console-actions',
+      'Mock correction and recovery entry points',
+      'After an uncertain response, check the canonical roster and audit before retrying.',
+      ['Open Correct selection when needed.', 'Check the existing receipt.'],
+    ),
+    visual(
+      'audit-export',
+      'Audit export receipt',
+      'Use the audited result to resolve uncertain commands.',
+      ['Confirm the exact session.', 'Compare its sequence and audit.'],
+    ),
+    visual(
+      'contact-return',
+      'Disposition, contact and return panel',
+      'Recover an interrupted contact action from its recorded receipt.',
+      ['Check whether the action persisted.', 'Retry only when no canonical receipt exists.'],
+    ),
+  ],
+  tenure: [
+    visual(
+      'live-readiness',
+      'Managed Live assignment-term evidence blocker',
+      'Supply reviewed term evidence in the linked source workspace before Live.',
+      ['Read the named blocker.', 'Review the assignment term evidence.'],
+    ),
+  ],
+  'award-transition': [
+    visual(
+      'results-detail',
+      'Mock Results completion and assignment transition panel',
+      'A Mock projection stays separate from Department assignments.',
+      ['Review the exact run.', 'Resolve Live-only transition blockers separately.'],
+    ),
+  ],
+  'department-roster': [
+    visual(
+      'participation',
+      'Saved Bid opportunity participation review',
+      'Bid participation is separate from Department staffing.',
+      ['Review biddable and administrative participation.', 'Confirm the staffing connection.'],
+    ),
+  ],
+  'service-evidence': [
+    visual(
+      'bid-evidence',
+      'Reviewed Bid ordinals and Days tour controls',
+      'Service and tour evidence must come from an accepted source.',
+      ['Inspect the source-certified ordinals.', 'Review completed Days tour evidence.'],
+    ),
+  ],
+  'qualification-evidence': [
+    visual(
+      'eligibility',
+      'Dated qualification evidence review controls',
+      'Review member evidence before interpreting an eligibility result.',
+      ['Confirm source and dates.', 'Review exceptions.'],
+    ),
+  ],
+  'personnel-operations': [
+    visual(
+      'bid-evidence',
+      'Bid evidence capture controls',
+      'Review dated assignment and service facts before a personnel change affects a future Bid.',
+      ['Check source evidence.', 'Review the effective date.'],
+    ),
+  ],
+  'annual-plan': [
+    visual(
+      'versions',
+      'New Annual Bid and version history controls',
+      'Carry forward a reviewed saved structure for the next annual Bid.',
+      ['Read back the current saved version.', 'Choose New Annual Bid for the future year.'],
+    ),
+  ],
+  'common-workflows': [
+    visual(
+      'current-bid',
+      'Current Bid workspace',
+      'Start in the saved Bid and follow the workflow link for the intended task.',
+      ['Confirm year and version.', 'Open the matching workspace.'],
     ),
   ],
 };

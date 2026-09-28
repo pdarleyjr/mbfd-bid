@@ -1,0 +1,32 @@
+﻿workflow,guideTopicId,route,visualAssets,status,evidenceAndLimit
+2026 Quick Start,2026-bid-quick-start,/admin/current-bid?year=2026,quick-start;mock;participants-flow,COVERED,"Current Bid, version, Mock readiness, stage order"
+Current Bid,current-bid-edit,/admin/current-bid,current-bid;participation;participants-flow,COVERED,Saved workspace and participant review
+Version history,current-bid-versions,/admin/current-bid?view=versions,versions,COVERED,Version-history control; hash text remains in live UI
+Participant review,current-bid-edit,/admin/current-bid,participation;participants-flow,COVERED,Review buttons and frozen ordering domains
+Bid Blueprint,current-bid-blueprint,/admin/current-bid?view=blueprint,positions;b703,COVERED,Opportunities lens and reviewed B703 seat
+Credentials and catalog,department-credentials,/admin/department/credentials,credentials,COVERED,Catalog and member evidence entry
+Qualification evidence,qualification-review,/admin/personnel/reviews,eligibility,COVERED,Dated source review controls
+Credential import and comparison,targetsolutions,/admin/targetsolutions,credential-import;credential-comparison,COVERED,"Upload, saved comparison, reconciled and rejected rows"
+Eligibility preview,eligibility-preview,/admin/eligibility,requirement-edit,PARTIAL,Saved requirements pictured; member-specific server preview screenshot still needed
+Position and rule editing,positions-rules,/admin/positions,opportunity-edit;requirement-edit,COVERED,"Participation, staffing connection and required qualification editor"
+Points and preferences editing,rules-list,/admin/rules,points-editor,COVERED,Annual scoring channel and cumulative preference controls
+A-Day configuration,current-bid-execution-rules,/admin/current-bid,a-day-config,COVERED,Saved source-backed timing exception
+Specialty configuration,current-bid-execution-rules,/admin/current-bid,investigator-fallback;specialties,PARTIAL,Investigator fallback and Blueprint pictured; broader specialty editor screenshot still needed
+Mock readiness,current-bid-mock,/admin/current-bid?view=mock,mock;mock-ready-detail,COVERED,Version 9 readiness control and result
+Mock creation,current-bid-mock,/admin/current-bid?view=mock,mock-ready-detail,COVERED,Creation control after readiness
+Operator console,mock-bids,/admin/rehearsal,console;console-actions,COVERED,Isolated Mock banner and named action panels
+Normal selection,mock-bids,/admin/rehearsal,a-day;console,COVERED,Position and A-Day selection form
+Deferred A-Day,current-bid-execution-rules,/admin/current-bid,a-day-config;console-actions,OPEN,Actual production deferred command and persisted audit are pending separate Mock
+Specialty interruption,specialty-adjudication,/admin/specialty-adjudication,specialty-contact,PARTIAL,Actual panel and rejected attempt pictured; successful interruption pending separate Mock
+Contact unreachable return,mock-bids,/admin/rehearsal,contact-return,COVERED,Disposition and return controls with evidence
+Correction and amendment,mock-bids,/admin/rehearsal,console-actions,PARTIAL,Entry control pictured; amendment form and receipt still needed
+Results,current-bid-results,/admin/current-bid?view=results,results-detail,COVERED,Exact-run selection and completion panel
+Finalize Results,results-audit,/admin/audit,results-detail,PARTIAL,Completion panel pictured; finalization control receipt still needed
+All report exports,exports,/admin/exports,audit-export;verified-exports,COVERED,"Progress/final CSV controls, four verified shift PDFs and full audit"
+Live readiness,current-bid-live-preflight,/admin/current-bid?view=live,live-readiness,COVERED,Read-only Managed Live blocker panel
+Operator authority,current-bid-live-preflight,/admin/current-bid?view=live,operator-authority,COVERED,Named annual action-grant editor
+Assignment-term evidence,tenure,/admin/personnel/tenure,live-readiness,PARTIAL,Managed Live evidence blocker pictured; term source form still needed
+History and audit,results-audit,/admin/audit,audit-export,COVERED,Exact-run audit export receipt
+Recovery and retry,troubleshooting-safety,/admin/system,console-actions;audit-export,PARTIAL,Canonical roster/audit guidance; uncertain-response example still needed
+Annual rollover,current-bid-new-annual,/admin/current-bid,versions,COVERED,New Annual Bid and version history controls
+Bid ordinals and Days tours,bid-evidence,/admin/personnel/bid-evidence,bid-evidence,COVERED,Source-certified order and tour evidence controls
