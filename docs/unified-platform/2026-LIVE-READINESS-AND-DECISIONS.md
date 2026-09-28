@@ -45,6 +45,8 @@ The deterministic audit is `2026-rank-capacity-candidate.json`. It lists all 231
 
 The two Marine obligations are separate immutable rule terms. The no-deadline term remains pending until an audited review records completion. Generic MMC, IADRS, or Public Safety Diver labels do not prove OUPV authority, a passing watermanship result, or a DRI/PADI issuer. Person-specific evidence remains blocked unless separately verified. Current HazMat Operations may satisfy Awareness in the approved one-way direction only.
 
+The final policy establishes a three-year Days Specialty period, but the supplied 2026-08-24 TeleStaff assignment export has only name, employee ID, shift, division, station, unit, position and A/R Day columns. It identifies the D102-D104 incumbents without an appointment or term-start date. The 2026 shift template and certificate PDF also provide no term-start date for these seats. An `Assigned` workbook label and a current occupant do not establish whether a three-year term has completed, so the production Live preflight keeps these terms under review.
+
 ## Engineering and operational gates
 
 The release resolves employee `18148` by stable employee identity with a unique-match guard. Position remapping touches schema-declared references and leaves narrative/source text intact. The unused zero-holder `NFPA 1123` duplicate was retired through the authenticated production catalog UI on 2026-09-27 at 19:24 Eastern; audit sequence 409 attributes the retirement to actor `credential:619`. The canonical `NFPA1123 Outdoor Fireworks` remains active. Operator authority and Real-only settings have versioned UI/review controls; authenticated production preflight displays the saved grants.
