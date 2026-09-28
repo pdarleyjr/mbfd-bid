@@ -53,13 +53,22 @@ describe('exportAuditCsv (Plan 08 Task 15)', () => {
     const db = makeFakeDb(250);
     let captured: Uint8Array | null = null;
     const r2 = {
-      put: async (_key: string, body: ArrayBuffer | Uint8Array | string) => {
-        captured =
-          typeof body === 'string'
-            ? new TextEncoder().encode(body)
-            : body instanceof Uint8Array
-              ? body
-              : new Uint8Array(body);
+      put: async (_key: string, body: ReadableStream<Uint8Array>) => {
+        const chunks: Uint8Array[] = [];
+        const reader = body.getReader();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        const length = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+        const bytes = new Uint8Array(length);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        captured = bytes;
       },
     } as unknown as R2Bucket;
     await exportAuditCsv({
@@ -88,5 +97,37 @@ describe('exportAuditCsv (Plan 08 Task 15)', () => {
       now: () => Date.now(),
     });
     expect(out.rowCount).toBe(0);
+  });
+
+  it('pages large audit states without requesting the entire session at once', async () => {
+    const state = 'x'.repeat(96_000);
+    const db: AuditCsvDb = {
+      pageRows: vi.fn(async (offset, limit) =>
+        Array.from({ length: Math.max(0, Math.min(limit, 235 - offset)) }, (_, i) => ({
+          id: `evt_${offset + i}`,
+          after_state: state,
+        })),
+      ),
+      count: vi.fn(async () => 235),
+    };
+    const out = await exportAuditCsv({
+      bidSessionId: '01HF3',
+      year: 2026,
+      db,
+      r2: {
+        put: async (_key: string, body: ReadableStream<Uint8Array>) => {
+          const reader = body.getReader();
+          while (!(await reader.read()).done) {
+            /* consume upload */
+          }
+        },
+      } as unknown as R2Bucket,
+      signUrl: async () => 'x',
+      now: () => Date.now(),
+    });
+    expect(out.rowCount).toBe(235);
+    expect(db.pageRows).toHaveBeenCalledTimes(10);
+    expect(db.pageRows).toHaveBeenCalledWith(0, 25);
+    expect(out.bytesGzipped).toBeGreaterThan(0);
   });
 });

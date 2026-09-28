@@ -36,6 +36,10 @@ interface RosterStation {
 interface RosterPayload {
   year: number;
   shift: Shift;
+  is_mock: boolean;
+  session_id: string;
+  canonical_sequence: number | null;
+  award_count: number;
   station_count: number;
   position_count: number;
   stations: RosterStation[];
@@ -79,12 +83,19 @@ export default async function RosterRenderPage({
     >
       <header className="roster-header">
         <h1>
-          {roster.year} {shift} Shift Roster
+          {roster.year} {shift} Shift Roster {roster.is_mock ? '— MOCK REHEARSAL' : ''}
         </h1>
         <p className="roster-meta">
-          {roster.station_count} stations · {roster.position_count} positions · Generated{' '}
-          {new Date().toISOString()}
+          Session {roster.session_id} · {roster.station_count} stations · {roster.position_count}{' '}
+          positions · {roster.award_count} awards
+          {roster.canonical_sequence === null ? '' : ` · Sequence ${roster.canonical_sequence}`} ·
+          Generated {new Date().toISOString()}
         </p>
+        {roster.is_mock && (
+          <p className="roster-mock-notice">
+            Training simulation. Do not use for staffing assignments.
+          </p>
+        )}
       </header>
       {roster.stations.map((station) => (
         <section key={station.station} className="station-block" data-station={station.station}>
