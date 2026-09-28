@@ -200,7 +200,7 @@ describe('frozen fallback policy tiers', () => {
       positionId: 'A305',
       requiredCriteriaJson: JSON.stringify({
         rank: ['FF'],
-        credentials: ['State Certified Fire Investigator', 'FL State Certified Fire Inspector'],
+        credentials: ['Fire Investigator (FL cert issued 2015 or later)', 'Firesafety Inspector I'],
         custom: [],
       }),
     }));
@@ -212,7 +212,10 @@ describe('frozen fallback policy tiers', () => {
     f.snapshot.members = [
       {
         ...first,
-        credentialNames: ['State Certified Fire Investigator', 'FL State Certified Fire Inspector'],
+        credentialNames: [
+          'Fire Investigator (FL cert issued 2015 or later)',
+          'Firesafety Inspector I',
+        ],
         currentBidPositionIds: ['A305'],
         bidOrdinalEvidence: {
           datasetId: 'reviewed-ff-order',
@@ -223,7 +226,10 @@ describe('frozen fallback policy tiers', () => {
       },
       {
         ...second,
-        credentialNames: ['State Certified Fire Investigator', 'FL State Certified Fire Inspector'],
+        credentialNames: [
+          'Fire Investigator (FL cert issued 2015 or later)',
+          'Firesafety Inspector I',
+        ],
         currentBidPositionIds: ['B305'],
         bidOrdinalEvidence: {
           datasetId: 'reviewed-ff-order',
@@ -234,7 +240,7 @@ describe('frozen fallback policy tiers', () => {
       },
       {
         ...third,
-        credentialNames: ['State Certified Fire Investigator'],
+        credentialNames: ['Fire Investigator (FL cert issued 2015 or later)'],
         currentBidPositionIds: ['C305'],
         bidOrdinalEvidence: {
           datasetId: 'reviewed-ff-order',
@@ -264,7 +270,7 @@ describe('frozen fallback policy tiers', () => {
     });
     f.snapshot.members = f.snapshot.members.map((member) =>
       member.memberId === 2
-        ? { ...member, credentialNames: ['State Certified Fire Investigator'] }
+        ? { ...member, credentialNames: ['Fire Investigator (FL cert issued 2015 or later)'] }
         : member,
     );
     expect(evaluateBidFallback(f)).toMatchObject({ ok: true, candidateMemberIds: [1] });
