@@ -1,10 +1,10 @@
-// Plan 08 Task 15 — Stream audit_log from D1 → gzip → R2.
+// Plan 08 Task 15 — Page audit_log from D1 → gzip → R2.
 //
-// Pages through D1 in bounded chunks, compresses the CSV as a stream, uploads under
+// Pages through D1 in bounded chunks, compresses the CSV, uploads under
 // `<year>/<session_id>/audit_full_<nowMs>.csv.gz`, and returns the (signed)
 // public URL. Performance target: 250 rows < 2 seconds end-to-end.
 
-import type { R2Bucket } from '@cloudflare/workers-types';
+import type { R2Bucket, R2MultipartUpload, R2UploadedPart } from '@cloudflare/workers-types';
 import Papa from 'papaparse';
 
 export interface AuditCsvDb {
@@ -31,6 +31,7 @@ export interface AuditCsvResult {
 }
 
 const PAGE_SIZE = 25;
+const R2_PART_SIZE = 5 * 1024 * 1024;
 export const AUDIT_CSV_FIELDS = [
   'id',
   'bid_session_id',
@@ -74,25 +75,58 @@ export async function exportAuditCsv(args: AuditCsvArgs): Promise<AuditCsvResult
       if (rows.length < PAGE_SIZE) controller.close();
     },
   });
-  const [uploadStream, countStream] = csv.pipeThrough(new CompressionStream('gzip')).tee();
-  const countBytes = (async () => {
-    let total = 0;
-    const reader = countStream.getReader();
+  const r2Key = `${args.year}/${args.bidSessionId}/audit_full_${startedAt}.csv.gz`;
+  const options = {
+    httpMetadata: { contentType: 'text/csv', contentEncoding: 'gzip' },
+  };
+  // R2 cannot accept a generated ReadableStream with unknown length. Buffer one
+  // fixed-size part at a time; small exports use put and large exports use R2's
+  // multipart API. Both receive a Uint8Array with a known length.
+  const reader = csv.pipeThrough(new CompressionStream('gzip')).getReader();
+  let part = new Uint8Array(R2_PART_SIZE);
+  let partLength = 0;
+  let bytesGzipped = 0;
+  let multipart: R2MultipartUpload | undefined;
+  const uploadedParts: R2UploadedPart[] = [];
+  try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      total += value.byteLength;
+      bytesGzipped += value.byteLength;
+      let offset = 0;
+      while (offset < value.byteLength) {
+        const count = Math.min(R2_PART_SIZE - partLength, value.byteLength - offset);
+        part.set(value.subarray(offset, offset + count), partLength);
+        partLength += count;
+        offset += count;
+        if (partLength === R2_PART_SIZE) {
+          multipart ??= await args.r2.createMultipartUpload(r2Key, options);
+          uploadedParts.push(await multipart.uploadPart(uploadedParts.length + 1, part));
+          part = new Uint8Array(R2_PART_SIZE);
+          partLength = 0;
+        }
+      }
     }
-    return total;
-  })();
-  const r2Key = `${args.year}/${args.bidSessionId}/audit_full_${startedAt}.csv.gz`;
-  await args.r2.put(r2Key, uploadStream as Parameters<R2Bucket['put']>[1], {
-    httpMetadata: {
-      contentType: 'text/csv',
-      contentEncoding: 'gzip',
-    },
-  });
-  const bytesGzipped = await countBytes;
+    if (multipart) {
+      if (partLength > 0) {
+        uploadedParts.push(
+          await multipart.uploadPart(uploadedParts.length + 1, part.subarray(0, partLength)),
+        );
+      }
+      await multipart.complete(uploadedParts);
+    } else {
+      await args.r2.put(r2Key, part.subarray(0, partLength), options);
+    }
+  } catch (error) {
+    if (multipart) {
+      try {
+        await multipart.abort();
+      } catch {
+        // Keep the original export failure; R2 also expires orphaned uploads.
+      }
+    }
+    throw error;
+  }
   const signedUrl = await args.signUrl(r2Key);
   return {
     r2Key,

@@ -28,9 +28,11 @@ function makeFakeDb(rowCount: number): AuditCsvDb {
 }
 
 describe('exportAuditCsv (Plan 08 Task 15)', () => {
-  it('streams 250 rows, gzips, uploads, returns r2Key + signed URL', async () => {
+  it('pages 250 rows, gzips, uploads a known-length body, returns r2Key + signed URL', async () => {
     const db = makeFakeDb(250);
-    const r2Put = vi.fn(async () => {});
+    const r2Put = vi.fn(async (_key: string, body: Uint8Array) => {
+      if (!(body instanceof Uint8Array)) throw new Error('R2 requires a known-length body');
+    });
     const signed = vi.fn(async () => 'https://signed.example.com/x');
     const t0 = Date.now();
     const out = await exportAuditCsv({
@@ -44,6 +46,7 @@ describe('exportAuditCsv (Plan 08 Task 15)', () => {
     const elapsed = Date.now() - t0;
     expect(elapsed).toBeLessThan(2000);
     expect(r2Put).toHaveBeenCalledTimes(1);
+    expect(r2Put.mock.calls[0]?.[1].byteLength).toBe(out.bytesGzipped);
     expect(out.r2Key).toMatch(/^2026\/01HF3\/audit_full_\d+\.csv\.gz$/);
     expect(out.signedUrl).toBe('https://signed.example.com/x');
     expect(out.rowCount).toBe(250);
@@ -53,22 +56,9 @@ describe('exportAuditCsv (Plan 08 Task 15)', () => {
     const db = makeFakeDb(250);
     let captured: Uint8Array | null = null;
     const r2 = {
-      put: async (_key: string, body: ReadableStream<Uint8Array>) => {
-        const chunks: Uint8Array[] = [];
-        const reader = body.getReader();
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-        }
-        const length = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
-        const bytes = new Uint8Array(length);
-        let offset = 0;
-        for (const chunk of chunks) {
-          bytes.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-        captured = bytes;
+      put: async (_key: string, body: Uint8Array) => {
+        if (!(body instanceof Uint8Array)) throw new Error('R2 requires a known-length body');
+        captured = body;
       },
     } as unknown as R2Bucket;
     await exportAuditCsv({
@@ -115,11 +105,8 @@ describe('exportAuditCsv (Plan 08 Task 15)', () => {
       year: 2026,
       db,
       r2: {
-        put: async (_key: string, body: ReadableStream<Uint8Array>) => {
-          const reader = body.getReader();
-          while (!(await reader.read()).done) {
-            /* consume upload */
-          }
+        put: async (_key: string, body: Uint8Array) => {
+          if (!(body instanceof Uint8Array)) throw new Error('R2 requires a known-length body');
         },
       } as unknown as R2Bucket,
       signUrl: async () => 'x',
@@ -129,5 +116,49 @@ describe('exportAuditCsv (Plan 08 Task 15)', () => {
     expect(db.pageRows).toHaveBeenCalledTimes(10);
     expect(db.pageRows).toHaveBeenCalledWith(0, 25);
     expect(out.bytesGzipped).toBeGreaterThan(0);
+  });
+
+  it('uses uniform known-length R2 parts when gzip output exceeds 5 MiB', async () => {
+    let seed = 0x12345678;
+    const random = new Uint8Array(12 * 1024 * 1024);
+    for (let i = 0; i < random.length; i += 1) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      random[i] = seed & 0xff;
+    }
+    const payload = Array.from(random, (byte) => String.fromCharCode(33 + (byte % 90))).join('');
+    const db: AuditCsvDb = {
+      pageRows: vi.fn(async (offset) =>
+        offset === 0 ? [{ id: 'evt_large', after_state: payload }] : [],
+      ),
+      count: vi.fn(async () => 1),
+    };
+    const parts: Uint8Array[] = [];
+    const abort = vi.fn();
+    const complete = vi.fn(async () => ({}));
+    const uploadPart = vi.fn(async (number: number, body: Uint8Array) => {
+      if (!(body instanceof Uint8Array)) throw new Error('R2 requires a known-length part');
+      parts.push(body.slice());
+      return { partNumber: number, etag: String(number) };
+    });
+    const createMultipartUpload = vi.fn(async () => ({ uploadPart, complete, abort }));
+    const put = vi.fn();
+    const out = await exportAuditCsv({
+      bidSessionId: '01HF3',
+      year: 2026,
+      db,
+      r2: { put, createMultipartUpload } as unknown as R2Bucket,
+      signUrl: async () => 'x',
+      now: () => Date.now(),
+    });
+    expect(out.rowCount).toBe(1);
+    expect(put).not.toHaveBeenCalled();
+    expect(createMultipartUpload).toHaveBeenCalledTimes(1);
+    expect(parts.length).toBeGreaterThan(1);
+    for (const part of parts.slice(0, -1)) expect(part.byteLength).toBe(5 * 1024 * 1024);
+    expect(parts.reduce((sum, part) => sum + part.byteLength, 0)).toBe(out.bytesGzipped);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(abort).not.toHaveBeenCalled();
   });
 });
