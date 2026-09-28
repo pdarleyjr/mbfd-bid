@@ -69,4 +69,6 @@ The production migration guard also verified 69 canonical migrations, and a clea
 
 A separate production UI Mock was created from Version 9 as session `01M3K556YKNMQSQMCB9G6RK3GH`, started, and used to record one explicitly simulated D101 selection with MON A-Day. Readback showed 222 bidders, 221 remaining and one picked; the rehearsal-only freeze command left it paused. This is a partial pre-cutoff UI control test, not the final full Mock or an asserted member preference. The Mock console displayed its no-Portal-writeback boundary throughout. Private screenshot and command receipts are stored under `E:\Organized Files\BID Software\_working`.
 
+A post-deployment read-only production D1 query found zero `bid_sessions` rows for year 2026 with `is_mock=0`. The inspected pre-cutoff session row is explicitly `is_mock=1`. This corroborates that no Real 2026 session was created; the browser's canonical Mock projection is the source for its paused status.
+
 **Next work:** complete staging authentication and the visual operator guides, capture the actual September 30 cutoff evidence, create the final immutable version, run a separate final Mock and repeat the server Live preflight. The final September 30 evidence decision remains OPEN until the actual cutoff snapshot is verified.
