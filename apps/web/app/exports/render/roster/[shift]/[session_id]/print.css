@@ -26,6 +26,15 @@ body {
 .roster-meta {
   font-size: 9pt;
   color: #555;
+  margin: 0 0 8pt;
+}
+
+.roster-mock-notice {
+  font-size: 11pt;
+  font-weight: 700;
+  color: #b91c1c;
+  border: 1pt solid #b91c1c;
+  padding: 6pt;
   margin: 0 0 16pt;
 }
 

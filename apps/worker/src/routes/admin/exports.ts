@@ -82,15 +82,32 @@ router.get('/roster-data', async (c) => {
     );
   }
 
-  const [session, allBids] = await Promise.all([
-    db
-      .select({ bidYear: bidSessions.bidYear })
-      .from(bidSessions)
-      .where(eq(bidSessions.id, sessionId))
-      .get(),
-    db.select().from(bids).where(eq(bids.bidSessionId, sessionId)).all(),
-  ]);
+  const session = await db
+    .select({ bidYear: bidSessions.bidYear, isMock: bidSessions.isMock })
+    .from(bidSessions)
+    .where(eq(bidSessions.id, sessionId))
+    .get();
   if (session === undefined) return c.json({ error: 'session_not_found' }, 404);
+
+  let canonical: Awaited<ReturnType<typeof loadCanonicalBidSessionState>>;
+  try {
+    canonical = await loadCanonicalBidSessionState(c.env.DB, sessionId);
+  } catch {
+    return c.json({ error: 'canonical_state_invalid' }, 409);
+  }
+  // Canonical commands do not write legacy `bids` rows. Even an empty fills
+  // object is authoritative; legacy rows are only for pre-canonical sessions.
+  const awards =
+    canonical === null
+      ? await db
+          .select({ memberId: bids.memberId, positionId: bids.positionId })
+          .from(bids)
+          .where(eq(bids.bidSessionId, sessionId))
+          .all()
+      : Object.entries(canonical.fills).map(([positionId, fill]) => ({
+          memberId: fill.memberId,
+          positionId,
+        }));
 
   const snapshot = frozen.snapshot;
   const positionById = new Map(
@@ -105,8 +122,8 @@ router.get('/roster-data', async (c) => {
       .sort((a, b) => a.memberId - b.memberId)
       .map((member, index) => [member.memberId, `M-${String(index + 1).padStart(3, '0')}`]),
   );
-  const bidByPosition = new Map<string, (typeof allBids)[number]>();
-  for (const bid of allBids) {
+  const bidByPosition = new Map<string, (typeof awards)[number]>();
+  for (const bid of awards) {
     // Bid records are session history, but every reference must still resolve
     // inside the immutable material before the export can be trusted.
     const frozenPosition = positionById.get(bid.positionId);
@@ -195,6 +212,10 @@ router.get('/roster-data', async (c) => {
   return c.json({
     year: session.bidYear,
     shift,
+    is_mock: session.isMock,
+    session_id: sessionId,
+    canonical_sequence: canonical?.lastSeq ?? null,
+    award_count: flatMembers.length,
     station_count: stations.length,
     position_count: snapshotPositions.length,
     stations,

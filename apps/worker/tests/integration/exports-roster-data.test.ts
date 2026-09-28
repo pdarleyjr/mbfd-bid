@@ -269,6 +269,84 @@ describe('GET /api/admin/exports/roster-data (W35)', () => {
     expect(body.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it('prints canonical awards when legacy bids are empty', async () => {
+    await h.db.run('DELETE FROM bids WHERE bid_session_id = ?;', [sessionId]);
+    const canonical = {
+      bidSessionId: sessionId,
+      currentPhase: 'complete',
+      currentBidderId: null,
+      turnStartedAtMs: 1,
+      turnTimerSeconds: 180,
+      lastSeq: 8,
+      fills: { A101: { memberId: 1, ordinal: 1, bidId: 'canonical-a101' } },
+      bidOrder: [],
+      queueCursor: 0,
+      frozenAt: 1,
+      aDay: null,
+    };
+    await h.db.run(
+      'INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) VALUES (?,8,?,NULL,1,1);',
+      [sessionId, JSON.stringify(canonical)],
+    );
+    const token = mintPrintToken(
+      { kind: 'roster', shift: 'A', session_id: sessionId },
+      PRINT_SECRET,
+    );
+    const request = new Request(
+      `http://x/api/admin/exports/roster-data?session_id=${sessionId}&shift=A&token=${encodeURIComponent(token)}`,
+    );
+    const response = await app.fetch(request, {
+      ...h.env,
+      PRINT_TOKEN_SECRET: PRINT_SECRET,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      award_count: number;
+      canonical_sequence: number;
+      members: Array<{ positionId: string }>;
+      stations: Array<{ rows: Array<{ position_id: string; member_name: string | null }> }>;
+    };
+    expect(body.award_count).toBe(1);
+    expect(body.canonical_sequence).toBe(8);
+    expect(body.members.map((member) => member.positionId)).toEqual(['A101']);
+    expect(body.stations.flatMap((station) => station.rows)).toContainEqual(
+      expect.objectContaining({ position_id: 'A101', member_name: 'Member M-001' }),
+    );
+  });
+
+  it('fails closed on an invalid canonical award reference', async () => {
+    await h.db.run('DELETE FROM bids WHERE bid_session_id = ?;', [sessionId]);
+    const canonical = {
+      bidSessionId: sessionId,
+      currentPhase: 'complete',
+      currentBidderId: null,
+      turnStartedAtMs: 1,
+      turnTimerSeconds: 180,
+      lastSeq: 8,
+      fills: { A101: { memberId: 6, ordinal: 1, bidId: 'invalid-excluded' } },
+      bidOrder: [],
+      queueCursor: 0,
+      frozenAt: 1,
+      aDay: null,
+    };
+    await h.db.run(
+      'INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) VALUES (?,8,?,NULL,1,1);',
+      [sessionId, JSON.stringify(canonical)],
+    );
+    const token = mintPrintToken(
+      { kind: 'roster', shift: 'A', session_id: sessionId },
+      PRINT_SECRET,
+    );
+    const response = await app.fetch(
+      new Request(
+        `http://x/api/admin/exports/roster-data?session_id=${sessionId}&shift=A&token=${encodeURIComponent(token)}`,
+      ),
+      { ...h.env, PRINT_TOKEN_SECRET: PRINT_SECRET },
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'session_bid_reference_invalid' });
+  });
+
   it('fails closed when the session snapshot has no immutable V3 material', async () => {
     const capturedAtMs = Date.now();
     await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?;', [
