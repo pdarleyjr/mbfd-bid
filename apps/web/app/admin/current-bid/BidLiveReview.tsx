@@ -52,12 +52,18 @@ function PolicyBlock({
     <div role="alert" className="space-y-2 rounded border border-warning p-4 text-sm">
       {assignmentTermBlock ? (
         <>
-          <p className="font-semibold">Blocked: assignment terms need reviewed evidence.</p>
+          <p className="font-semibold">NEEDS ADMIN EVIDENCE — assignment terms.</p>
           <p>
             The listed Days opportunities have no approved assignment term. Review the governing
             source and record each term in Edit Bid, then save a new version and check Managed Live
-            readiness again.
+            readiness again. This is a Real Bid readiness item; Mock training remains available.
           </p>
+          <Link
+            href="/admin/source-review"
+            className="inline-flex min-h-11 items-center font-semibold underline"
+          >
+            Review source decisions and evidence
+          </Link>
           <Button type="button" variant="secondary" onClick={onOpenAssignmentTerms}>
             Open Edit Bid - Specialty rules - Assignment terms
           </Button>
