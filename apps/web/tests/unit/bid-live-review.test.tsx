@@ -223,6 +223,7 @@ async function render(
         begin={begin}
         finish={finish}
         onOpenAuthority={vi.fn()}
+        onOpenAssignmentTerms={vi.fn()}
         {...props}
       />,
     ),
@@ -375,12 +376,34 @@ describe('BidLiveReview', () => {
     await click('Check Managed Live readiness');
 
     expect(container.textContent).toContain(
-      'Live policy preparation is blocked: bid_configuration_annual_policy_document_invalid.',
+      'Live policy preparation is blocked: bid configuration annual policy document invalid.',
     );
     expect(container.textContent).toContain('Opportunities requiring review: synthetic-live-seat');
     expect(container.textContent).toContain('synthetic-live-seat: missing start');
     expect(container.textContent).not.toContain('Server Live readiness:');
     expect(requests.map((request) => request.url)).toEqual([`/api/admin/bid/${YEAR}/preview`]);
+  });
+
+  it('explains an assignment-term block and opens the exact editing section', async () => {
+    const onOpenAssignmentTerms = vi.fn();
+    result = {
+      wouldAllowCreateLive: false,
+      policyError: 'assignment_term_evidence_requires_review',
+      positionIds: ['D102'],
+      termIssues: [
+        {
+          positionId: 'D102',
+          code: 'term_evidence_required',
+          sourceRef: 'PDF p1 Procedure1 and footnote1',
+        },
+      ],
+    };
+    await mount(base(), { onOpenAssignmentTerms });
+    await click('Check Managed Live readiness');
+    expect(container.textContent).toContain('Blocked: assignment terms need reviewed evidence.');
+    expect(container.textContent).toContain('D102: Record the reviewed assignment term.');
+    await click('Open Edit Bid - Specialty rules - Assignment terms');
+    expect(onOpenAssignmentTerms).toHaveBeenCalledOnce();
   });
 
   it('requires a saved immutable version before a Managed Live preflight', async () => {

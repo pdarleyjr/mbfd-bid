@@ -88,9 +88,23 @@ export function BidReadinessSummary({
     JSON.stringify(rankCapacity.bidders) === JSON.stringify({ CPT: 22, LT: 39, FF: 161 }) &&
     JSON.stringify(rankCapacity.expectedVacancies) === JSON.stringify({ CPT: 1, LT: 0, FF: 0 }) &&
     rankCapacity.shortages.length === 0;
+  const shiftCounts = { A: 0, B: 0, C: 0, D: 0 };
+  const participation = new Map(
+    content.participation.map((item) => [item.positionId, item.bidParticipation]),
+  );
+  for (const position of content.positions) {
+    if (participation.get(position.id) !== 'BIDDABLE') continue;
+    if (position.shift in shiftCounts) shiftCounts[position.shift as keyof typeof shiftCounts] += 1;
+  }
+  const shiftInventoryReady =
+    rankCapacity !== null &&
+    shiftCounts.A === 73 &&
+    shiftCounts.B === 73 &&
+    shiftCounts.C === 73 &&
+    shiftCounts.D === 4 &&
+    Object.values(shiftCounts).reduce((sum, count) => sum + count, 0) === 223;
   const mockReady =
     policyReady && positionsReady && participantStagesConfigured && aDayConfigured && ranksReady;
-  const liveReady = mockReady && realActivationReviewCount === 0;
   return (
     <section
       aria-labelledby="bid-readiness-heading"
@@ -105,9 +119,11 @@ export function BidReadinessSummary({
             What to do next
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Prepare and practice a Mock with saved working assumptions. Real remains separately
-            fail-closed until every activation review is resolved. {realActivationReviewCount} Real
-            activation {realActivationReviewCount === 1 ? 'review remains' : 'reviews remain'}.
+            Prepare and practice a Mock with saved working assumptions. The saved configuration has{' '}
+            {realActivationReviewCount} open source or evidence{' '}
+            {realActivationReviewCount === 1 ? 'review' : 'reviews'}. Open Live Bid and run its
+            read-only server preflight for the specific blockers, sources and fix path. Real remains
+            closed until that check passes.
           </p>
         </div>
         <Link
@@ -150,6 +166,22 @@ export function BidReadinessSummary({
             ? 'Every current biddable opportunity has a valid rule.'
             : 'At least one biddable opportunity is missing or has an invalid rule.'}
         </ReadinessItem>
+        {year === 2026 && (
+          <ReadinessItem
+            label="Biddable seat inventory"
+            status={shiftInventoryReady ? 'Ready' : 'Blocking'}
+            tone={shiftInventoryReady ? 'ready' : 'blocking'}
+            action={
+              <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
+                Review opportunity participation
+              </Button>
+            }
+          >
+            A {shiftCounts.A} · B {shiftCounts.B} · C {shiftCounts.C} · Days {shiftCounts.D}.
+            Expected: 73 per shift, four open Days seats, 223 total. Division Chiefs, the Union
+            President and closed Days seats do not bid.
+          </ReadinessItem>
+        )}
         <ReadinessItem
           label="Rank opportunities and bidders"
           status={ranksReady ? 'Ready' : 'Blocking'}
@@ -249,8 +281,7 @@ export function BidReadinessSummary({
         </ReadinessItem>
         <ReadinessItem
           label="Operating settings"
-          status={realActivationReviewCount > 0 ? 'Needs Confirmation' : 'Ready'}
-          tone={realActivationReviewCount > 0 ? 'review' : 'ready'}
+          status="Needs Confirmation"
           action={
             <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
               Review operating settings
@@ -277,15 +308,15 @@ export function BidReadinessSummary({
         </ReadinessItem>
         <ReadinessItem
           label="Live readiness"
-          status={liveReady ? 'Ready' : 'Needs Confirmation'}
-          tone={liveReady ? 'ready' : 'review'}
+          status="Needs Confirmation"
           action={
             <Button type="button" variant="secondary" onClick={onOpenLive}>
               Check Managed Live readiness
             </Button>
           }
         >
-          The Managed Live check is read-only. It does not create or start the real Bid.
+          Run the server check to see the exact blockers and their sources. It does not create or
+          start the real Bid.
         </ReadinessItem>
       </ul>
     </section>

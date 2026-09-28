@@ -1299,7 +1299,7 @@ describe('Current Bid Managed Live preflight', () => {
       },
     ]);
     expect(container.textContent).toContain(
-      'Live policy preparation is blocked: bid_configuration_annual_policy_document_invalid.',
+      'Live policy preparation is blocked: bid configuration annual policy document invalid.',
     );
     expect(writes()).toHaveLength(0);
     expect(container.textContent).not.toContain('Create Live');

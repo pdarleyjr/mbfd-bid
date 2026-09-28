@@ -97,8 +97,15 @@ export function BidMarineReview({
               </select>
             </label>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+          <section className="overflow-x-auto" aria-label="Marine evidence actions">
+            <table className="w-full min-w-[1150px] table-fixed text-left text-sm">
+              <colgroup>
+                <col className="w-[15%]" />
+                <col className="w-[15%]" />
+                <col className="w-[28%]" />
+                <col className="w-[20%]" />
+                <col className="w-[22%]" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-border">
                   <th scope="col" className="p-2">
@@ -124,7 +131,7 @@ export function BidMarineReview({
                     key={`${row.employeeId}:${row.positionId}`}
                     className="border-b border-border align-top"
                   >
-                    <td className="p-2 font-medium">
+                    <td className="break-words p-2 font-medium">
                       {row.member}
                       <span className="block text-xs text-muted-foreground">{row.employeeId}</span>
                     </td>
@@ -153,7 +160,7 @@ export function BidMarineReview({
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
           {visible.length === 0 && <p className="text-sm">No matching evidence actions.</p>}
         </>
       )}

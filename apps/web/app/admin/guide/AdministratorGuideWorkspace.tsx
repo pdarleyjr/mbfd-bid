@@ -180,6 +180,68 @@ export function AdministratorGuideWorkspace() {
         </div>
       </header>
 
+      <section aria-labelledby="guide-2026-path" className="border-b border-border py-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-destructive">
+              2026 operator path
+            </p>
+            <h2 id="guide-2026-path" className="mt-1 font-heading text-2xl text-foreground">
+              Start with the saved Bid
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Each step opens the real workspace. Readiness checks inspect evidence; session
+              creation and session start are separate actions.
+            </p>
+          </div>
+          <a className="text-sm font-semibold underline" href="#2026-bid-quick-start">
+            Read the complete 2026 quick start
+          </a>
+        </div>
+        <ol className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              step: '1',
+              title: 'Verify the year',
+              detail: 'Open 2026 Current Bid. Check the saved version, seats, bidders and reviews.',
+              href: '/admin/current-bid?year=2026',
+            },
+            {
+              step: '2',
+              title: 'Review evidence',
+              detail: 'Check qualifications and the sources behind member eligibility.',
+              href: '/admin/targetsolutions',
+            },
+            {
+              step: '3',
+              title: 'Practice in Mock',
+              detail: 'Check Mock readiness and run a separate rehearsal from a saved version.',
+              href: '/admin/current-bid?view=mock&year=2026',
+            },
+            {
+              step: '4',
+              title: 'Check Live',
+              detail: 'Run the read-only server preflight. Do not start a Real session to test.',
+              href: '/admin/current-bid?view=live&year=2026',
+            },
+          ].map((item) => (
+            <li key={item.step} className="rounded-lg border border-border bg-card p-4">
+              <span className="inline-flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+                {item.step}
+              </span>
+              <h3 className="mt-3 font-semibold text-foreground">{item.title}</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.detail}</p>
+              <Link
+                href={item.href as Route}
+                className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold underline"
+              >
+                Open workspace
+              </Link>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       <section aria-label="Guide categories" className="py-5">
         <div className="flex items-center justify-between gap-4">
           <h2 className="font-heading text-lg text-foreground">Browse by task</h2>

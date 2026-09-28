@@ -56,6 +56,8 @@ describe('Administrator Guide workspace', () => {
     const html = renderToStaticMarkup(<AdministratorGuidePage />);
     expect(html).toContain('Administrator Guide');
     expect(html).toContain('Browse by task');
+    expect(html).toContain('2026 operator path');
+    expect(html).toContain('Start with the saved Bid');
     expect(html).toContain('Search the Administrator Guide');
     expect(html).toContain('href="#telestaff"');
   });

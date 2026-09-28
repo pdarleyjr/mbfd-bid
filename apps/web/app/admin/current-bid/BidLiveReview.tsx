@@ -40,12 +40,31 @@ function message(error: unknown) {
       : 'The Managed Live preflight could not be completed.';
 }
 
-function PolicyBlock({ result }: { result: Extract<BidLivePreview, { policyError: string }> }) {
+function PolicyBlock({
+  result,
+  onOpenAssignmentTerms,
+}: {
+  result: Extract<BidLivePreview, { policyError: string }>;
+  onOpenAssignmentTerms(): void;
+}) {
+  const assignmentTermBlock = result.policyError === 'assignment_term_evidence_requires_review';
   return (
     <div role="alert" className="space-y-2 rounded border border-warning p-4 text-sm">
-      <p>
-        Live policy preparation is blocked: <code>{result.policyError}</code>.
-      </p>
+      {assignmentTermBlock ? (
+        <>
+          <p className="font-semibold">Blocked: assignment terms need reviewed evidence.</p>
+          <p>
+            The listed Days opportunities have no approved assignment term. Review the governing
+            source and record each term in Edit Bid, then save a new version and check Managed Live
+            readiness again.
+          </p>
+          <Button type="button" variant="secondary" onClick={onOpenAssignmentTerms}>
+            Open Edit Bid - Specialty rules - Assignment terms
+          </Button>
+        </>
+      ) : (
+        <p>Live policy preparation is blocked: {words(result.policyError)}.</p>
+      )}
       {result.positionIds && result.positionIds.length > 0 && (
         <p className="break-words">
           Opportunities requiring review: {result.positionIds.join(', ')}
@@ -106,6 +125,7 @@ export type BidLiveReviewProps = {
   execute?(write: PendingBidWrite): Promise<void>;
   createdLive?: BidLiveResult | null;
   onOpenAuthority(): void;
+  onOpenAssignmentTerms(): void;
 };
 
 /**
@@ -125,6 +145,7 @@ export function BidLiveReview({
   execute,
   createdLive,
   onOpenAuthority,
+  onOpenAssignmentTerms,
 }: BidLiveReviewProps) {
   const grants =
     base.content.settings?.v === 3 ? base.content.settings.livePolicy.actionPermissions : [];
@@ -263,7 +284,7 @@ export function BidLiveReview({
       {error && <p role="alert">{error}</p>}
       {reviewed &&
         ('policyError' in reviewed ? (
-          <PolicyBlock result={reviewed} />
+          <PolicyBlock result={reviewed} onOpenAssignmentTerms={onOpenAssignmentTerms} />
         ) : (
           <ReadinessReview result={reviewed} />
         ))}

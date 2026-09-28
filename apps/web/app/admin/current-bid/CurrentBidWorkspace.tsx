@@ -669,13 +669,19 @@ export function CurrentBidWorkspace({
             (draft?.base.version?.versionNumber ?? 0) > 8 &&
             draft?.content.settings?.v === 3 &&
             !draft.content.settings.evidenceFreeze && (
-              <Button
-                type="button"
-                disabled={locked || dirty || stale}
-                onClick={() => void prepareFinalEvidenceDraft()}
-              >
-                Apply frozen 17:00 evidence
-              </Button>
+              <div className="flex flex-col gap-1">
+                <Button
+                  type="button"
+                  disabled={locked || dirty || stale}
+                  onClick={() => void prepareFinalEvidenceDraft()}
+                >
+                  Load sealed 17:00 evidence
+                </Button>
+                <span className="max-w-56 text-xs text-muted-foreground">
+                  Requires the September 30, 17:00 Eastern server capture. Loading does not save a
+                  final version.
+                </span>
+              </div>
             )}
           <NewAnnualBidFromStructure
             sourceYear={year}
@@ -726,11 +732,7 @@ export function CurrentBidWorkspace({
             )
           }
           realActivationReviewCount={
-            draft.content.sourceDecisions.filter(
-              (decision) =>
-                decision.status === 'OPEN' &&
-                decision.blockingClassification === 'BLOCKS_REAL_BID_ACTIVATION',
-            ).length
+            draft.content.sourceDecisions.filter((decision) => decision.status === 'OPEN').length
           }
           positionsReady={draft.base.coverage.valid}
           participantStagesConfigured={
@@ -1003,6 +1005,10 @@ export function CurrentBidWorkspace({
               createdLive={createdLive}
               onOpenAuthority={() => {
                 setSection('authority');
+                selectView('edit');
+              }}
+              onOpenAssignmentTerms={() => {
+                setSection('specialties');
                 selectView('edit');
               }}
               {...{
