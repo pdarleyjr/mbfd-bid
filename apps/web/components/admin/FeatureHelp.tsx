@@ -6,6 +6,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
+import { GuideVisuals } from './GuideVisuals';
 import { TaskPanel } from './TaskPanel';
 
 /** Keyboard/touch-accessible task explanations on every administrator page. */
@@ -39,6 +40,7 @@ export function FeatureHelp() {
             <section key={topic.id}>
               <h2 className="font-semibold">{topic.title}</h2>
               <p>{topic.summary}</p>
+              <GuideVisuals topicId={topic.id} />
               <ol className="mt-2 list-decimal space-y-2 pl-5">
                 {topic.steps.map((step) => (
                   <li key={step}>{step}</li>

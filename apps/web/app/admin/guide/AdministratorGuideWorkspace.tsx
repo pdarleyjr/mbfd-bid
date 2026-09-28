@@ -1,5 +1,6 @@
 'use client';
 
+import { GuideVisuals } from '@/components/admin/GuideVisuals';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -57,6 +58,7 @@ function GuideSectionPanel({
         >
           <div>
             <h3 className="font-semibold text-foreground">How to use it</h3>
+            <GuideVisuals topicId={section.id} />
             <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-foreground">
               {section.steps.map((step) => (
                 <li key={step}>{step}</li>
@@ -146,8 +148,8 @@ export function AdministratorGuideWorkspace() {
           Download complete manual (HTML)
         </Button>
         <p className="text-sm text-muted-foreground">
-          Both downloads work offline. The PDF and this Docs page use the same complete
-          instructions.
+          Both downloads work offline. The PDF contains the written topics; this Docs page adds
+          annotated production screenshots for key workflows.
         </p>
       </div>
       <header className="border-b border-border pb-6">

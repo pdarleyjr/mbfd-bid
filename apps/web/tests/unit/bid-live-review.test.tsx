@@ -400,7 +400,11 @@ describe('BidLiveReview', () => {
     };
     await mount(base(), { onOpenAssignmentTerms });
     await click('Check Managed Live readiness');
-    expect(container.textContent).toContain('Blocked: assignment terms need reviewed evidence.');
+    expect(container.textContent).toContain('NEEDS ADMIN EVIDENCE — assignment terms.');
+    expect(container.textContent).toContain('Mock training remains available.');
+    expect(container.querySelector('a[href="/admin/source-review"]')?.textContent).toContain(
+      'Review source decisions and evidence',
+    );
     expect(container.textContent).toContain('D102: Record the reviewed assignment term.');
     await click('Open Edit Bid - Specialty rules - Assignment terms');
     expect(onOpenAssignmentTerms).toHaveBeenCalledOnce();
