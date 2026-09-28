@@ -29,7 +29,7 @@ export function GuideVisuals({ topicId }: { topicId: string }) {
             ))}
           </ol>
           <p className="mt-2 text-xs text-muted-foreground">
-            Pre-cutoff production reference · release 0c360901. Confirm current state before acting.
+            {visual.captureReference}. Confirm current state before acting.
           </p>
         </figure>
       ))}
