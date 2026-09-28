@@ -120,8 +120,16 @@ auth.post('/revalidate', async (c) => {
     result: 'success',
     environment: c.env.ENV,
   });
+  // The isolated local rehearsal uses a non-routable synthetic federation
+  // origin. Its already verified token remains valid for the WebSocket ticket
+  // exchange; deployed Hub origins still require a freshly issued Hub JWT.
+  const renewedJwt =
+    result.jwt ??
+    (env.ENV === 'staging' && env.PORTAL_BASE_URL === 'https://test.invalid'
+      ? authorization.slice(7)
+      : null);
   return c.json(
-    { jwt: result.jwt, role: result.claims.role },
+    { jwt: renewedJwt, role: result.claims.role },
     { headers: { 'cache-control': 'no-store' } },
   );
 });

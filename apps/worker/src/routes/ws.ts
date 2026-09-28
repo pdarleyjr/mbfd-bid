@@ -37,7 +37,7 @@ ws.get('/session/:id', async (c) => {
 
   // CORS middleware does not enforce WebSocket upgrades. Browser clients
   // must therefore present the exact public origin for this environment.
-  if (!isExpectedPublicWebOrigin(env, c.req.header('Origin'))) {
+  if (!isExpectedPublicWebOrigin(c.env, c.req.header('Origin'))) {
     return c.json({ error: 'websocket_origin_forbidden' }, 403);
   }
 

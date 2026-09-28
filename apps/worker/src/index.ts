@@ -155,6 +155,7 @@ export { BidSessionDO } from './durable/bid-session.js';
 import type { MessageBatch as CfMessageBatch } from '@cloudflare/workers-types';
 import { BidDefinitionManagedWriteError } from './lib/bid-definition-legacy-write.js';
 
+import { capture2026BidEvidenceFreeze } from './lib/bid-evidence-freeze-capture.js';
 import { handlePortalQueueBatch } from './portal-writeback/queue-handler.js';
 import { handleCanonicalAuditArchive, handlePortalReconciliation } from './scheduled.js';
 
@@ -186,6 +187,11 @@ const handler = {
           console.error('[scheduled] task failed', { name, reason: result.reason });
         }
       }
+    }
+    if (event.cron === '0 21 30 9 *' && env.ENV === 'production') {
+      const result = await capture2026BidEvidenceFreeze(env.DB, 'system:2026-cutoff-cron');
+      if (!result.ok)
+        console.error('[scheduled] 2026 evidence cutoff capture failed', result.error);
     }
   },
   /** Plan 08 Task 22 — Cloudflare Queue consumer for portal write-backs. */

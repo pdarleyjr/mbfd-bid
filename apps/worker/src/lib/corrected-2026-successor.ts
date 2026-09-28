@@ -1,10 +1,12 @@
-import type { BidDefinitionContent } from '@mbfd/shared';
+import type { BidDefinitionContent, FrozenAnnualOperationsPolicy } from '@mbfd/shared';
 import { CredentialEvaluationDateSchema } from '@mbfd/shared';
+import finalPositions from '../../seed/fixtures/final_2026_positions.json';
 import { evaluate2026OpportunityInventory } from './2026-opportunity-inventory.js';
 import { evaluate2026RankCapacity } from './2026-rank-capacity.js';
 import { buildCorrected2026DraftRules } from './corrected-2026-draft-rules.js';
 import { buildCorrected2026SemanticRoles } from './corrected-2026-semantic-roles.js';
 import {
+  CORRECTED_2026_B_RESCUE_FLOAT_SOURCE_DECISION,
   CORRECTED_2026_TOPOLOGY_SOURCE_DECISION,
   buildCorrected2026Topology,
 } from './corrected-2026-topology.js';
@@ -59,23 +61,53 @@ function semanticKey(position: ReviewedPosition): string {
  * source order within their exact semantic signature. */
 export function map2026VersionPositionsByRole(
   previous: BidDefinitionContent['positions'],
-): Map<string, string> {
+): Map<string, string | null> {
   const corrected = buildCorrected2026Topology().filter(
     (position) => position.canonicalIdentity === undefined,
   );
+  const bIds = new Set(['B701', 'B702', 'B703', 'B704', 'B705', 'B706']);
+  const rawB = (finalPositions as ReviewedPosition[]).filter((position) => bIds.has(position.id));
+  const oldB = previous.filter(
+    (position) =>
+      position.shift === 'B' &&
+      position.station === 'Rescue Float Pool' &&
+      position.division === 'Rescue' &&
+      position.unit === 'Rescue Float' &&
+      position.isFloating,
+  );
+  if (rawB.length !== 6 || oldB.length !== 6)
+    throw new Error('corrected_2026_b_rescue_float_crosswalk_source_mismatch');
+  const bMapping = new Map<string, string | null>();
+  const targetByRaw = new Map<string, string | null>([
+    ['B701', 'B701'],
+    ['B702', 'B702'],
+    ['B703', 'B704'],
+    ['B704', 'B705'],
+    ['B705', 'B706'],
+    ['B706', null],
+  ]);
+  for (const raw of rawB) {
+    const matches = oldB.filter((position) => semanticKey(position) === semanticKey(raw));
+    if (matches.length !== 1 || !matches[0])
+      throw new Error(`corrected_2026_b_rescue_float_crosswalk_role_mismatch:${raw.id}`);
+    bMapping.set(matches[0].id, targetByRaw.get(raw.id) ?? null);
+  }
+  if (bMapping.size !== 6) throw new Error('corrected_2026_b_rescue_float_crosswalk_not_unique');
   const groups = new Map<string, string[]>();
   for (const position of corrected) {
+    if (bIds.has(position.id)) continue;
     const key = semanticKey(position);
     groups.set(key, [...(groups.get(key) ?? []), position.id].sort(compareId));
   }
   const previousGroups = new Map<string, string[]>();
   for (const position of previous) {
+    if (bMapping.has(position.id)) continue;
     const key = semanticKey(position);
     previousGroups.set(key, [...(previousGroups.get(key) ?? []), position.id].sort(compareId));
   }
   if (previous.length !== 228 || corrected.length !== 228)
     throw new Error('corrected_2026_source_position_count_mismatch');
-  const mapped = new Map<string, string>();
+  const mapped = new Map<string, string | null>(bMapping);
   for (const [key, oldIds] of previousGroups) {
     const newIds = groups.get(key);
     if (!newIds || oldIds.length !== newIds.length)
@@ -86,7 +118,7 @@ export function map2026VersionPositionsByRole(
       mapped.set(id, target);
     });
   }
-  if (mapped.size !== 228 || new Set(mapped.values()).size !== 228)
+  if (mapped.size !== 228 || new Set([...mapped.values()].filter((id) => id !== null)).size !== 227)
     throw new Error('corrected_2026_semantic_role_mapping_not_bijective');
   return mapped;
 }
@@ -95,15 +127,15 @@ export function map2026VersionPositionsByRole(
  * member identities, and arbitrary strings remain byte-for-byte intact. */
 export function remap2026PositionReferences(
   content: BidDefinitionContent,
-  ids: ReadonlyMap<string, string>,
+  ids: ReadonlyMap<string, string | null>,
   observedReferences?: string[],
 ): BidDefinitionContent {
   const result = structuredClone(content);
   const map = (id: string) => {
     observedReferences?.push(id);
-    return ids.get(id) ?? id;
+    return ids.has(id) ? (ids.get(id) ?? null) : id;
   };
-  const mapAll = (values: string[]) => values.map(map);
+  const mapAll = (values: string[]) => values.map(map).filter((id): id is string => id !== null);
   for (const policy of [
     result.policy?.executionPolicy,
     result.pendingPolicy?.executionPolicy,
@@ -128,7 +160,12 @@ export function remap2026PositionReferences(
     for (const constraint of operations.aDay.execution?.constraints ?? [])
       constraint.positionIds = mapAll(constraint.positionIds);
   }
-  for (const binding of result.staffingBindings) binding.positionId = map(binding.positionId);
+  for (const binding of result.staffingBindings) {
+    const next = map(binding.positionId);
+    if (next === null)
+      throw new Error(`corrected_2026_retired_position_has_staffing_binding:${binding.positionId}`);
+    binding.positionId = next;
+  }
   return result;
 }
 
@@ -147,6 +184,90 @@ export interface Corrected2026SuccessorOptions {
   memberIdentities: readonly { memberId: number; employeeId: string }[];
 }
 
+export interface ReviewedAdministrativeStaffingSlot {
+  id: string;
+  stableSlotKey: string;
+  shift: string;
+  station: string;
+  unit: string;
+  positionName: string;
+  applicableRank: string;
+  reviewStatus: string;
+  activeFrom: string | null;
+  activeTo: string | null;
+}
+
+/** The four administrative seats were absent from Version 8's bindings.
+ * Require one already approved Department slot for each reviewed role before
+ * proposing its audited saved-version connection. The B-shift command slot is
+ * occupied by an acting Captain in the accepted operational source. */
+export function withReviewed2026AdministrativeConnections(
+  content: BidDefinitionContent,
+  slots: readonly ReviewedAdministrativeStaffingSlot[],
+): BidDefinitionContent {
+  const required = [
+    {
+      positionId: 'A211',
+      shift: 'A Shift',
+      station: 'Division Chief',
+      unit: 'Division Chief 300',
+      positionName: 'Division Chief',
+      applicableRank: 'DC',
+    },
+    {
+      positionId: 'B211',
+      shift: 'B Shift',
+      station: 'Division Chief',
+      unit: 'Division Chief 300',
+      positionName: 'Division Chief',
+      applicableRank: 'CPT',
+    },
+    {
+      positionId: 'C211',
+      shift: 'C Shift',
+      station: 'Division Chief',
+      unit: 'Division Chief 300',
+      positionName: 'Division Chief',
+      applicableRank: 'DC',
+    },
+    {
+      positionId: 'A801',
+      shift: 'A Shift',
+      station: 'Fire Union',
+      unit: 'Union Position',
+      positionName: 'Union President',
+      applicableRank: 'CPT',
+    },
+  ] as const;
+  const next = structuredClone(content);
+  for (const role of required) {
+    if (next.staffingBindings.some((binding) => binding.positionId === role.positionId))
+      throw new Error(`reviewed_2026_administrative_connection_already_present:${role.positionId}`);
+    const matching = slots.filter(
+      (slot) =>
+        slot.shift === role.shift &&
+        slot.station === role.station &&
+        slot.unit === role.unit &&
+        slot.positionName === role.positionName &&
+        slot.applicableRank === role.applicableRank &&
+        slot.reviewStatus === 'approved' &&
+        slot.stableSlotKey.startsWith('TELSTAFF/v1/') &&
+        (slot.activeFrom === null || slot.activeFrom <= '2026-09-30') &&
+        (slot.activeTo === null || slot.activeTo >= '2026-09-30'),
+    );
+    if (matching.length !== 1 || !matching[0])
+      throw new Error(`reviewed_2026_administrative_connection_not_unique:${role.positionId}`);
+    next.staffingBindings.push({
+      positionId: role.positionId,
+      staffingPositionId: matching[0].id,
+      authoritativeSourceRef: `Reviewed 2026 non-biddable Department connection; approved TeleStaff slot ${matching[0].stableSlotKey}`,
+      reviewStatus: 'approved',
+    });
+  }
+  next.staffingBindings.sort((left, right) => left.positionId.localeCompare(right.positionId));
+  return next;
+}
+
 export function resolveReturned2026CaptainMemberId(
   identities: readonly { memberId: number; employeeId: string }[],
 ): number {
@@ -162,6 +283,26 @@ export function resolveReturned2026CaptainMemberId(
   )
     throw new Error('returned_2026_captain_employee_identity_not_unique');
   return match.memberId;
+}
+
+export function addReviewedBRescueLieutenantPolicySeat(
+  operations: FrozenAnnualOperationsPolicy,
+): void {
+  const pools = operations.opportunityPools?.filter((pool) => pool.id === 'rescue-float-B-lt');
+  if (pools?.length !== 1 || pools[0]?.positionIds.join(',') !== 'B701,B702')
+    throw new Error('corrected_2026_b_rescue_lieutenant_pool_unreviewed');
+  pools[0].positionIds = ['B701', 'B702', 'B703'];
+  const fallbacks = operations.fallbackPolicies?.filter(
+    (item) => item.id === 'fallback-rescue-float',
+  );
+  if (
+    fallbacks?.length !== 1 ||
+    !fallbacks[0]?.positionIds.includes('B701') ||
+    !fallbacks[0]?.positionIds.includes('B702') ||
+    fallbacks[0]?.positionIds.includes('B703')
+  )
+    throw new Error('corrected_2026_b_rescue_lieutenant_fallback_unreviewed');
+  fallbacks[0].positionIds = [...fallbacks[0].positionIds, 'B703'].sort(compareId);
 }
 
 /** Pure candidate construction. This does not save a version or start a Bid.
@@ -223,6 +364,7 @@ export function buildCorrected2026Successor(
   content.authoring = null;
   content.settings.credentialEvaluationOn = options.evaluationOn;
   content.settings.personnelEvaluationOn = options.evaluationOn;
+  content.settings.evidenceCutoffAt = APPROVED_2026_ELIGIBILITY_CUTOFF_AT;
   const biddable = semantic.filter((role) => role.bidParticipation === 'BIDDABLE');
   const expectedByStage = new Map([
     [
@@ -272,6 +414,7 @@ export function buildCorrected2026Successor(
     policy.annualOperations.requiredTopologyPositionIds = biddable
       .map((role) => role.positionId)
       .sort(compareId);
+    addReviewedBRescueLieutenantPolicySeat(policy.annualOperations);
   }
   for (const source of content.policy.stageParticipantSources ?? []) {
     if (
@@ -316,6 +459,26 @@ export function buildCorrected2026Successor(
     }
   }
   content.sourceDecisions.push(CORRECTED_2026_TOPOLOGY_SOURCE_DECISION);
+  if (
+    content.sourceDecisions.some(
+      (decision) => decision.issueId === CORRECTED_2026_B_RESCUE_FLOAT_SOURCE_DECISION.issueId,
+    )
+  )
+    throw new Error('corrected_2026_b_rescue_float_source_decision_already_present');
+  content.sourceDecisions.push(CORRECTED_2026_B_RESCUE_FLOAT_SOURCE_DECISION);
+  content.sourceDecisions.push({
+    issueId: '2026-b211-substantive-captain',
+    title: 'B211 acting assignment and substantive Captain Bid participation',
+    question:
+      'Does the current B211 command assignment remove employee 18148 from the Captain Bid?',
+    area: 'annual-policy',
+    status: 'RESOLVED',
+    decision:
+      'Employee 18148 retains a substantive Captain Bid rank and participates in the 2026 Captain Bid. The current acting B211 command assignment remains protected and non-biddable; it is not an individual exclusion.',
+    sourceRef:
+      'Final MASTER Personnel row 19, Bid Pick row 4, and Tables exclusion list; administrator 2026-09-26 source reconciliation',
+    effectiveOn: '2026-09-26',
+  });
   content.sourceDecisions.push({
     issueId: '2026-eligibility-cutoff-evidence',
     title: 'September 30 at 17:00 eligibility evidence boundary',
@@ -327,7 +490,7 @@ export function buildCorrected2026Successor(
     sourceRef:
       'Administrator direct instruction 2026-09-27; final post-September 30 source reconciliation',
     effectiveOn: '2026-09-27',
-    blockingClassification: 'BLOCKS_FINAL_2026_CONFIGURATION',
+    blockingClassification: 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
     affectedScopes: ['annual-policy'],
   });
   const participation = new Map(

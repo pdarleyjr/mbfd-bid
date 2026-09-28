@@ -85,6 +85,14 @@ describe('corrected 2026 draft rules from semantic roles', () => {
       );
   });
 
+  it('places B703 in the Lieutenant rule family and B704-B706 in Firefighter rules', () => {
+    expect(rule('B703').requiredCriteria.rank).toEqual(['LT']);
+    for (const id of ['B704', 'B705', 'B706'])
+      expect(rule(id).requiredCriteria.rank).toEqual(['FF']);
+    for (const id of ['B703', 'B704', 'B705', 'B706'])
+      expect(rule(id).requiredCriteria.custom).toContain('paramedic');
+  });
+
   it('gives every Station #2 Float 2 seat Special Ops scoring and gates Technician points', () => {
     for (const shift of ['A', 'B', 'C']) {
       for (const suffix of ['213', '214', '215', '718']) {

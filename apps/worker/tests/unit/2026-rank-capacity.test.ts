@@ -21,23 +21,21 @@ const stages = [
 ];
 
 describe('2026 rank-specific capacity gate', () => {
-  it('detects the reviewed 39-Lieutenant versus 38-seat contradiction', () => {
+  it('reconciles the reviewed final cohort with one expected Captain vacancy', () => {
     expect(evaluate2026RankCapacity({ positions, participation }, stages)).toEqual({
-      capacity: { CPT: 23, LT: 38, FF: 162 },
+      capacity: { CPT: 23, LT: 39, FF: 161 },
       bidders: { CPT: 22, LT: 39, FF: 161 },
-      shortages: [{ rank: 'LT', bidders: 39, capacity: 38 }],
+      expectedVacancies: { CPT: 1, LT: 0, FF: 0 },
+      shortages: [],
     });
   });
 
-  it('calculates the B703 rank-correction hypothesis without changing approved source', () => {
-    const hypothetical = positions.map((position) =>
-      position.id === 'B703' ? { ...position, rankRequired: 'LT' as const } : position,
+  it('requires a rank-compatible seat for every bidder', () => {
+    const invalid = positions.map((position) =>
+      position.id === 'B703' ? { ...position, rankRequired: 'FF' as const } : position,
     );
-    expect(evaluate2026RankCapacity({ positions: hypothetical, participation }, stages)).toEqual({
-      capacity: { CPT: 23, LT: 39, FF: 161 },
-      bidders: { CPT: 22, LT: 39, FF: 161 },
-      shortages: [],
-    });
-    expect(positions.find((position) => position.id === 'B703')?.rankRequired).toBe('FF');
+    expect(
+      evaluate2026RankCapacity({ positions: invalid, participation }, stages).shortages,
+    ).toEqual([{ rank: 'LT', bidders: 39, capacity: 38 }]);
   });
 });

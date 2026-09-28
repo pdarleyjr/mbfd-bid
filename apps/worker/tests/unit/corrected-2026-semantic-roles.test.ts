@@ -37,4 +37,22 @@ describe('corrected 2026 role reconciliation', () => {
     expect(corrected2026Role({ ...operator, id: 'A699' }).roleFamily).toBe('MARINE_OPERATOR');
     expect(corrected2026Role({ ...captain, id: 'A799' }).roleFamily).toBe('COMBAT_FLOAT_CAPTAIN');
   });
+
+  it('keeps the reviewed B Rescue Float ranks and source correction distinct from raw MASTER', () => {
+    const positions = buildCorrected2026Topology();
+    const roles = buildCorrected2026SemanticRoles();
+    for (const [id, rank, name, family] of [
+      ['B703', 'LT', 'Lieutenant #3 (R)', 'RESCUE_FLOAT_LT'],
+      ['B704', 'FF', 'Firefighter #1', 'RESCUE_FLOAT_FF'],
+      ['B705', 'FF', 'Firefighter #2', 'RESCUE_FLOAT_FF'],
+      ['B706', 'FF', 'Firefighter #3', 'RESCUE_FLOAT_FF'],
+    ]) {
+      const position = positions.find((item) => item.id === id);
+      const role = roles.find((item) => item.positionId === id);
+      expect(position?.rankRequired).toBe(rank);
+      expect(position?.positionName).toBe(name);
+      expect(position?.source?.correction).toContain('2026-b-rescue-float-rank-correction');
+      expect(role?.roleFamily).toBe(family);
+    }
+  });
 });

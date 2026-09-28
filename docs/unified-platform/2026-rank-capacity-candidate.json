@@ -1,6 +1,6 @@
 {
-  "status": "CANDIDATE_BLOCKED_BY_RANK_CAPACITY_SOURCE_CONFLICT",
-  "sourceHierarchy": "Final July 2026 policy; MASTER workbook for topology; calculation workbook and historical diagrams as reconciliation evidence; assignment export for occupancy only",
+  "status": "REVIEWED_APPLICATION_TOPOLOGY_PRE_CUTOFF",
+  "sourceHierarchy": "Final July 2026 policy; immutable MASTER workbook for source topology; administrator-approved B703-B706 correction from current assignments, B-shift roster, historical diagram, and rank reconciliation",
   "bidderCohortReviewedBeforeCutoff": {
     "CPT": 22,
     "LT": 39,
@@ -15,8 +15,8 @@
       },
       "B": {
         "CPT": 7,
-        "LT": 12,
-        "FF": 54
+        "LT": 13,
+        "FF": 53
       },
       "C": {
         "CPT": 7,
@@ -31,11 +31,16 @@
     },
     "grand": {
       "CPT": 23,
-      "LT": 38,
-      "FF": 162
+      "LT": 39,
+      "FF": 161
     }
   },
-  "unresolvedSourceConflict": "B703 is Firefighter #1 in final MASTER Positions row 134 and 2026 Shift Template; historical B-shift diagram and September staffing export show a third B Rescue Float Lieutenant. No approved 2026 rank correction is established by these sources.",
+  "expectedVacancies": {
+    "CPT": 1,
+    "LT": 0,
+    "FF": 0
+  },
+  "reviewedSourceCorrection": "B703-B706 raw MASTER labels are preserved in rawMasterValue. Administrator-approved application correction on 2026-09-27 makes B703 LT #3 and B704-B706 FF #1/#2/#3.",
   "rows": [
     {
       "canonicalPositionId": "A101",
@@ -49,7 +54,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A102",
@@ -63,7 +69,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A103",
@@ -77,7 +84,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A104",
@@ -91,7 +99,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A105",
@@ -105,7 +114,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A106",
@@ -119,7 +129,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A107",
@@ -133,7 +144,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A108",
@@ -147,7 +159,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A109",
@@ -161,7 +174,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A110",
@@ -175,7 +189,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A111",
@@ -189,7 +204,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A112",
@@ -203,7 +219,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A113",
@@ -217,7 +234,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A114",
@@ -231,7 +249,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A201",
@@ -245,7 +264,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A202",
@@ -259,7 +279,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A203",
@@ -273,7 +294,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A204",
@@ -287,7 +309,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A205",
@@ -301,7 +324,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A206",
@@ -315,7 +339,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A207",
@@ -329,7 +354,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A208",
@@ -343,7 +369,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A209",
@@ -357,7 +384,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A210",
@@ -371,7 +399,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A211",
@@ -385,7 +414,8 @@
       "biddable": false,
       "participation": "ADMIN_ASSIGNED",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A212",
@@ -399,7 +429,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A213",
@@ -413,7 +444,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A214",
@@ -427,7 +459,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A215",
@@ -441,7 +474,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A301",
@@ -455,7 +489,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A302",
@@ -469,7 +504,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A303",
@@ -483,7 +519,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A304",
@@ -497,7 +534,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A305",
@@ -511,7 +549,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A306",
@@ -525,7 +564,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A307",
@@ -539,7 +579,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A308",
@@ -553,7 +594,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A309",
@@ -567,7 +609,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A310",
@@ -581,7 +624,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A311",
@@ -595,7 +639,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A401",
@@ -609,7 +654,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A402",
@@ -623,7 +669,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A403",
@@ -637,7 +684,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A404",
@@ -651,7 +699,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A405",
@@ -665,7 +714,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A406",
@@ -679,7 +729,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A407",
@@ -693,7 +744,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A408",
@@ -707,7 +759,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A409",
@@ -721,7 +774,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A410",
@@ -735,7 +789,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A601",
@@ -749,7 +804,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A602",
@@ -763,7 +819,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A603",
@@ -777,7 +834,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A604",
@@ -791,7 +849,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A605",
@@ -805,7 +864,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A606",
@@ -819,7 +879,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A701",
@@ -833,7 +894,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A702",
@@ -847,7 +909,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A703",
@@ -861,7 +924,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A704",
@@ -875,7 +939,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A705",
@@ -889,7 +954,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A706",
@@ -903,7 +969,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A707",
@@ -917,7 +984,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A708",
@@ -931,7 +999,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A709",
@@ -945,7 +1014,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A710",
@@ -959,7 +1029,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A711",
@@ -973,7 +1044,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A712",
@@ -987,7 +1059,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A713",
@@ -1001,7 +1074,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A714",
@@ -1015,7 +1089,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A715",
@@ -1029,7 +1104,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A716",
@@ -1043,7 +1119,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A717",
@@ -1057,7 +1134,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A801",
@@ -1071,7 +1149,8 @@
       "biddable": false,
       "participation": "ADMIN_ASSIGNED",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B101",
@@ -1085,7 +1164,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B102",
@@ -1099,7 +1179,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B103",
@@ -1113,7 +1194,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B104",
@@ -1127,7 +1209,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B105",
@@ -1141,7 +1224,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B106",
@@ -1155,7 +1239,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B107",
@@ -1169,7 +1254,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B108",
@@ -1183,7 +1269,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B109",
@@ -1197,7 +1284,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B110",
@@ -1211,7 +1299,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B111",
@@ -1225,7 +1314,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B112",
@@ -1239,7 +1329,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B113",
@@ -1253,7 +1344,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B114",
@@ -1267,7 +1359,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B201",
@@ -1281,7 +1374,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B202",
@@ -1295,7 +1389,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B203",
@@ -1309,7 +1404,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B204",
@@ -1323,7 +1419,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B205",
@@ -1337,7 +1434,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B206",
@@ -1351,7 +1449,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B207",
@@ -1365,7 +1464,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B208",
@@ -1379,7 +1479,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B209",
@@ -1393,7 +1494,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B210",
@@ -1407,7 +1509,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B211",
@@ -1421,7 +1524,8 @@
       "biddable": false,
       "participation": "ADMIN_ASSIGNED",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B212",
@@ -1435,7 +1539,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B213",
@@ -1449,7 +1554,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B214",
@@ -1463,7 +1569,11 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": "2026-09-24 administrative decision: runtime Division is Combat; raw MASTER label retained"
+      "sourceCorrection": "2026-09-24 administrative decision: runtime Division is Combat; raw MASTER label retained",
+      "rawMasterValue": {
+        "rank": "FF",
+        "role": "Firefighter #1 (C)"
+      }
     },
     {
       "canonicalPositionId": "B215",
@@ -1477,7 +1587,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B301",
@@ -1491,7 +1602,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B302",
@@ -1505,7 +1617,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B303",
@@ -1519,7 +1632,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B304",
@@ -1533,7 +1647,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B305",
@@ -1547,7 +1662,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B306",
@@ -1561,7 +1677,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B307",
@@ -1575,7 +1692,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B308",
@@ -1589,7 +1707,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B309",
@@ -1603,7 +1722,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B310",
@@ -1617,7 +1737,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B311",
@@ -1631,7 +1752,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B401",
@@ -1645,7 +1767,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B402",
@@ -1659,7 +1782,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B403",
@@ -1673,7 +1797,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B404",
@@ -1687,7 +1812,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B405",
@@ -1701,7 +1827,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B406",
@@ -1715,7 +1842,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B407",
@@ -1729,7 +1857,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B408",
@@ -1743,7 +1872,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B409",
@@ -1757,7 +1887,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B410",
@@ -1771,7 +1902,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B601",
@@ -1785,7 +1917,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B602",
@@ -1799,7 +1932,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B603",
@@ -1813,7 +1947,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B604",
@@ -1827,7 +1962,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B605",
@@ -1841,7 +1977,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B606",
@@ -1855,7 +1992,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B701",
@@ -1869,7 +2007,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B702",
@@ -1883,11 +2022,30 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B703",
       "sourceIdentity": "MASTER Positions row 134; source ID B703",
+      "shift": "B",
+      "station": "Rescue Float Pool",
+      "unit": "Rescue Float",
+      "role": "Lieutenant #3 (R)",
+      "rank": "LT",
+      "specialtyContext": "RESCUE_FLOAT_LT",
+      "biddable": true,
+      "participation": "BIDDABLE",
+      "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
+      "sourceCorrection": "2026-b-rescue-float-rank-correction: raw MASTER FF Firefighter #1; reviewed application LT Lieutenant #3 (R). MASTER B703-B706 source rows conflict with reviewed B-shift operational topology. Current assignment evidence, B-shift roster evidence, historical B-shift diagram, and final rank-capacity reconciliation establish a 3 LT / 3 FF Rescue Float Pool. Raw MASTER remains preserved; application semantics are corrected through an audited 2026 source decision.",
+      "rawMasterValue": {
+        "rank": "FF",
+        "role": "Firefighter #1"
+      }
+    },
+    {
+      "canonicalPositionId": "B704",
+      "sourceIdentity": "MASTER Positions row 135; source ID B704",
       "shift": "B",
       "station": "Rescue Float Pool",
       "unit": "Rescue Float",
@@ -1897,11 +2055,15 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": "2026-b-rescue-float-rank-correction: raw MASTER FF Firefighter #2; reviewed application FF Firefighter #1. MASTER B703-B706 source rows conflict with reviewed B-shift operational topology. Current assignment evidence, B-shift roster evidence, historical B-shift diagram, and final rank-capacity reconciliation establish a 3 LT / 3 FF Rescue Float Pool. Raw MASTER remains preserved; application semantics are corrected through an audited 2026 source decision.",
+      "rawMasterValue": {
+        "rank": "FF",
+        "role": "Firefighter #2"
+      }
     },
     {
-      "canonicalPositionId": "B704",
-      "sourceIdentity": "MASTER Positions row 135; source ID B704",
+      "canonicalPositionId": "B705",
+      "sourceIdentity": "MASTER Positions row 136; source ID B705",
       "shift": "B",
       "station": "Rescue Float Pool",
       "unit": "Rescue Float",
@@ -1911,11 +2073,15 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": "2026-b-rescue-float-rank-correction: raw MASTER FF Firefighter #3; reviewed application FF Firefighter #2. MASTER B703-B706 source rows conflict with reviewed B-shift operational topology. Current assignment evidence, B-shift roster evidence, historical B-shift diagram, and final rank-capacity reconciliation establish a 3 LT / 3 FF Rescue Float Pool. Raw MASTER remains preserved; application semantics are corrected through an audited 2026 source decision.",
+      "rawMasterValue": {
+        "rank": "FF",
+        "role": "Firefighter #3"
+      }
     },
     {
-      "canonicalPositionId": "B705",
-      "sourceIdentity": "MASTER Positions row 136; source ID B705",
+      "canonicalPositionId": "B706",
+      "sourceIdentity": "MASTER Positions row 137; source ID B706",
       "shift": "B",
       "station": "Rescue Float Pool",
       "unit": "Rescue Float",
@@ -1925,21 +2091,11 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
-    },
-    {
-      "canonicalPositionId": "B706",
-      "sourceIdentity": "MASTER Positions row 137; source ID B706",
-      "shift": "B",
-      "station": "Rescue Float Pool",
-      "unit": "Rescue Float",
-      "role": "Firefighter #4",
-      "rank": "FF",
-      "specialtyContext": "RESCUE_FLOAT_FF",
-      "biddable": true,
-      "participation": "BIDDABLE",
-      "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": "2026-b-rescue-float-rank-correction: raw MASTER FF Firefighter #4; reviewed application FF Firefighter #3. MASTER B703-B706 source rows conflict with reviewed B-shift operational topology. Current assignment evidence, B-shift roster evidence, historical B-shift diagram, and final rank-capacity reconciliation establish a 3 LT / 3 FF Rescue Float Pool. Raw MASTER remains preserved; application semantics are corrected through an audited 2026 source decision.",
+      "rawMasterValue": {
+        "rank": "FF",
+        "role": "Firefighter #4"
+      }
     },
     {
       "canonicalPositionId": "B707",
@@ -1953,7 +2109,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B708",
@@ -1967,7 +2124,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B709",
@@ -1981,7 +2139,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B710",
@@ -1995,7 +2154,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B711",
@@ -2009,7 +2169,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B712",
@@ -2023,7 +2184,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B713",
@@ -2037,7 +2199,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B714",
@@ -2051,7 +2214,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B715",
@@ -2065,7 +2229,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B716",
@@ -2079,7 +2244,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B717",
@@ -2093,7 +2259,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C101",
@@ -2107,7 +2274,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C102",
@@ -2121,7 +2289,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C103",
@@ -2135,7 +2304,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C104",
@@ -2149,7 +2319,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C105",
@@ -2163,7 +2334,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C106",
@@ -2177,7 +2349,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C107",
@@ -2191,7 +2364,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C108",
@@ -2205,7 +2379,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C109",
@@ -2219,7 +2394,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C110",
@@ -2233,7 +2409,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C111",
@@ -2247,7 +2424,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C112",
@@ -2261,7 +2439,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C113",
@@ -2275,7 +2454,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C114",
@@ -2289,7 +2469,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C201",
@@ -2303,7 +2484,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C202",
@@ -2317,7 +2499,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C203",
@@ -2331,7 +2514,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C204",
@@ -2345,7 +2529,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C205",
@@ -2359,7 +2544,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C206",
@@ -2373,7 +2559,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C207",
@@ -2387,7 +2574,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C208",
@@ -2401,7 +2589,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C209",
@@ -2415,7 +2604,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C210",
@@ -2429,7 +2619,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C211",
@@ -2443,7 +2634,8 @@
       "biddable": false,
       "participation": "ADMIN_ASSIGNED",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C212",
@@ -2457,7 +2649,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C213",
@@ -2471,7 +2664,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C214",
@@ -2485,7 +2679,11 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": "2026-09-24 administrative decision: runtime Division is Combat; raw MASTER label retained"
+      "sourceCorrection": "2026-09-24 administrative decision: runtime Division is Combat; raw MASTER label retained",
+      "rawMasterValue": {
+        "rank": "FF",
+        "role": "Firefighter #1 (C)"
+      }
     },
     {
       "canonicalPositionId": "C215",
@@ -2499,7 +2697,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C301",
@@ -2513,7 +2712,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C302",
@@ -2527,7 +2727,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C303",
@@ -2541,7 +2742,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C304",
@@ -2555,7 +2757,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C305",
@@ -2569,7 +2772,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C306",
@@ -2583,7 +2787,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C307",
@@ -2597,7 +2802,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C308",
@@ -2611,7 +2817,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C309",
@@ -2625,7 +2832,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C310",
@@ -2639,7 +2847,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C311",
@@ -2653,7 +2862,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C401",
@@ -2667,7 +2877,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C402",
@@ -2681,7 +2892,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C403",
@@ -2695,7 +2907,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C404",
@@ -2709,7 +2922,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C405",
@@ -2723,7 +2937,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C406",
@@ -2737,7 +2952,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C407",
@@ -2751,7 +2967,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C408",
@@ -2765,7 +2982,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C409",
@@ -2779,7 +2997,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C410",
@@ -2793,7 +3012,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C601",
@@ -2807,7 +3027,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C602",
@@ -2821,7 +3042,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C603",
@@ -2835,7 +3057,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C604",
@@ -2849,7 +3072,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C605",
@@ -2863,7 +3087,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C606",
@@ -2877,7 +3102,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C701",
@@ -2891,7 +3117,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C702",
@@ -2905,7 +3132,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C703",
@@ -2919,7 +3147,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C704",
@@ -2933,7 +3162,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C705",
@@ -2947,7 +3177,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C706",
@@ -2961,7 +3192,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C707",
@@ -2975,7 +3207,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C708",
@@ -2989,7 +3222,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C709",
@@ -3003,7 +3237,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C710",
@@ -3017,7 +3252,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C711",
@@ -3031,7 +3267,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C712",
@@ -3045,7 +3282,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C713",
@@ -3059,7 +3297,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C714",
@@ -3073,7 +3312,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C715",
@@ -3087,7 +3327,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C716",
@@ -3101,7 +3342,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C717",
@@ -3115,7 +3357,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "D101",
@@ -3129,7 +3372,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "D102",
@@ -3143,7 +3387,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "D103",
@@ -3157,7 +3402,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "D104",
@@ -3171,7 +3417,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "D201",
@@ -3185,7 +3432,8 @@
       "biddable": false,
       "participation": "CLOSED",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "D301",
@@ -3199,7 +3447,8 @@
       "biddable": false,
       "participation": "CLOSED",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "D401",
@@ -3213,7 +3462,8 @@
       "biddable": false,
       "participation": "CLOSED",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "D402",
@@ -3227,7 +3477,8 @@
       "biddable": false,
       "participation": "CLOSED",
       "authority": "MASTER 2026 Bid Positions Selection V2.xlsx sha256:0aa4441f03c13f93a1d48833581a9a9a370743b76f1f20198ed59cf58b33146a",
-      "sourceCorrection": null
+      "sourceCorrection": null,
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "A718",
@@ -3241,7 +3492,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "Reviewed 2025 Station #2 Float 2 Captain #1 (C); final policy Procedures 7 and 11",
-      "sourceCorrection": "Final MASTER omits the counted Captain; legacy A213/B213/C213 now belong to different final roles. Application IDs A718/B718/C718 preserve the reviewed Station #2 / Float 2 placement without reusing occupied IDs."
+      "sourceCorrection": "Final MASTER omits the counted Captain; legacy A213/B213/C213 now belong to different final roles. Application IDs A718/B718/C718 preserve the reviewed Station #2 / Float 2 placement without reusing occupied IDs.",
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "B718",
@@ -3255,7 +3507,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "Reviewed 2025 Station #2 Float 2 Captain #1 (C); final policy Procedures 7 and 11",
-      "sourceCorrection": "Final MASTER omits the counted Captain; legacy A213/B213/C213 now belong to different final roles. Application IDs A718/B718/C718 preserve the reviewed Station #2 / Float 2 placement without reusing occupied IDs."
+      "sourceCorrection": "Final MASTER omits the counted Captain; legacy A213/B213/C213 now belong to different final roles. Application IDs A718/B718/C718 preserve the reviewed Station #2 / Float 2 placement without reusing occupied IDs.",
+      "rawMasterValue": null
     },
     {
       "canonicalPositionId": "C718",
@@ -3269,7 +3522,8 @@
       "biddable": true,
       "participation": "BIDDABLE",
       "authority": "Reviewed 2025 Station #2 Float 2 Captain #1 (C); final policy Procedures 7 and 11",
-      "sourceCorrection": "Final MASTER omits the counted Captain; legacy A213/B213/C213 now belong to different final roles. Application IDs A718/B718/C718 preserve the reviewed Station #2 / Float 2 placement without reusing occupied IDs."
+      "sourceCorrection": "Final MASTER omits the counted Captain; legacy A213/B213/C213 now belong to different final roles. Application IDs A718/B718/C718 preserve the reviewed Station #2 / Float 2 placement without reusing occupied IDs.",
+      "rawMasterValue": null
     }
   ]
 }

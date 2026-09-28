@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { BidDefinitionContent } from '@mbfd/shared';
 import { evaluate2026OpportunityInventory } from '../src/lib/2026-opportunity-inventory.js';
+import { evaluate2026RankCapacity } from '../src/lib/2026-rank-capacity.js';
 import { canonicalBidDefinition } from '../src/lib/bid-definition-content.js';
 import {
   APPROVED_2026_ELIGIBILITY_CUTOFF_AT,
@@ -29,6 +30,39 @@ const candidate = buildCorrected2026Successor(previous, {
   approvedBidStartOn,
   memberIdentities,
 });
+const stages = candidate.policy?.executionPolicy.stages;
+if (!stages) throw new Error('corrected_2026_stage_policy_missing');
+const rankCapacity = evaluate2026RankCapacity(candidate, stages);
+if (
+  JSON.stringify(rankCapacity.capacity) !== JSON.stringify({ CPT: 23, LT: 39, FF: 161 }) ||
+  JSON.stringify(rankCapacity.bidders) !== JSON.stringify({ CPT: 22, LT: 39, FF: 161 }) ||
+  JSON.stringify(rankCapacity.expectedVacancies) !== JSON.stringify({ CPT: 1, LT: 0, FF: 0 }) ||
+  rankCapacity.shortages.length > 0
+)
+  throw new Error('corrected_2026_final_rank_reconciliation_invalid');
+const stageById = new Map(stages.map((stage) => [stage.id, stage]));
+for (const [id, rank, stageId] of [
+  ['B703', 'LT', 'lieutenants'],
+  ['B704', 'FF', 'firefighters'],
+  ['B705', 'FF', 'firefighters'],
+  ['B706', 'FF', 'firefighters'],
+]) {
+  const position = candidate.positions.find((row) => row.id === id);
+  const rule = candidate.rules.find((row) => row.positionId === id);
+  if (
+    position?.rankRequired !== rank ||
+    !stageById.get(stageId)?.opportunityPositionIds.includes(id) ||
+    !rule ||
+    !JSON.parse(rule.requiredCriteriaJson).rank.includes(rank)
+  )
+    throw new Error(`corrected_2026_b_rescue_float_stage_rule_invalid:${id}`);
+}
+if (
+  candidate.positions.some(
+    (row) => row.id.startsWith('B70') && row.positionName === 'Firefighter #4',
+  )
+)
+  throw new Error('corrected_2026_b_rescue_float_stale_fourth_firefighter');
 const cutoffDecision = candidate.sourceDecisions.find(
   (decision) => decision.issueId === '2026-eligibility-cutoff-evidence',
 );
@@ -36,7 +70,7 @@ if (
   evaluationOn !== '2026-09-30' ||
   approvedBidStartOn !== '2026-10-24' ||
   cutoffDecision?.status !== 'OPEN' ||
-  cutoffDecision.blockingClassification !== 'BLOCKS_FINAL_2026_CONFIGURATION' ||
+  cutoffDecision.blockingClassification !== 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION' ||
   !cutoffDecision.decision.includes(APPROVED_2026_ELIGIBILITY_CUTOFF_AT)
 )
   throw new Error('corrected_2026_cutoff_provenance_or_date_mismatch');
@@ -91,6 +125,7 @@ if (!canonical.ok) {
         ruleCount: candidate.rules.length,
         coverageValid: canonical.coverage.valid,
         inventory,
+        rankCapacity,
         retiredPositionReferences: retiredReferences.length,
         specialOperationsOrMarineFloatPoolReferences: outOfPoolContext.length,
         sourceDecisions: {
@@ -103,7 +138,7 @@ if (!canonical.ok) {
           openFinalConfiguration: candidate.sourceDecisions.filter(
             (item) =>
               item.status === 'OPEN' &&
-              item.blockingClassification === 'BLOCKS_FINAL_2026_CONFIGURATION',
+              item.blockingClassification === 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
           ).length,
         },
         stages: candidate.policy?.executionPolicy.stages.map((stage) => ({

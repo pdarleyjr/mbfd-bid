@@ -410,7 +410,8 @@ router.get('/:session_id/progress.csv', async (c) => {
     rosterSnapshotAt: new Date(frozen.snapshot.capturedAtMs).toISOString(),
     lastCommittedCommandId: canonicalRow?.lastCommandId ?? null,
     lastCommittedCommandSequence: canonical?.lastSeq ?? 0,
-    awardsCommitted: awards?.count ?? 0,
+    awardsCommitted:
+      canonical === null ? (awards?.count ?? 0) : Object.keys(canonical.fills).length,
     exportedAt: new Date().toISOString(),
   };
 

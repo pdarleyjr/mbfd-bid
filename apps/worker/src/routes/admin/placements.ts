@@ -1,8 +1,9 @@
 import type { JwtPayload } from '@mbfd/shared';
 import { asc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
-import { bidSessions, bids } from '../../db/schema.js';
+import { bidCommandEvents, bidSessions, bids } from '../../db/schema.js';
 import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
 import type { WorkerEnv } from '../../types/env.js';
@@ -46,15 +47,27 @@ router.get('/export', async (c) => {
     frozenPolicy.snapshot.ruleBookMaterial.positions.map((position) => [position.id, position]),
   );
   const frozenBiddablePositionIds = new Set(frozenPolicy.coverage.validRulePositionIds);
+  let canonical: Awaited<ReturnType<typeof loadCanonicalBidSessionState>>;
+  try {
+    canonical = await loadCanonicalBidSessionState(c.env.DB, sessionId);
+  } catch {
+    return c.json({ error: 'canonical_state_invalid' }, 409);
+  }
 
   // Validate every persisted placement before opening the CSV response. A
   // stream cannot change its HTTP status after it starts, so unresolved frozen
   // references must be detected before any bytes are emitted.
-  const placementReferences = await db
-    .select({ memberId: bids.memberId, positionId: bids.positionId })
-    .from(bids)
-    .where(eq(bids.bidSessionId, sessionId))
-    .all();
+  const placementReferences =
+    canonical === null
+      ? await db
+          .select({ memberId: bids.memberId, positionId: bids.positionId })
+          .from(bids)
+          .where(eq(bids.bidSessionId, sessionId))
+          .all()
+      : Object.entries(canonical.fills).map(([positionId, fill]) => ({
+          memberId: fill.memberId,
+          positionId,
+        }));
   const hasMissingFrozenReference = placementReferences.some(
     (placement) =>
       !frozenMembersById.has(placement.memberId) || !frozenPositionsById.has(placement.positionId),
@@ -106,7 +119,98 @@ router.get('/export', async (c) => {
     pickedAt: Date;
   };
 
+  const canonicalRows: Row[] = [];
+  if (canonical !== null) {
+    const eventRows = await db
+      .select({
+        eventJson: bidCommandEvents.eventJson,
+        actorId: bidCommandEvents.actorId,
+        createdAt: bidCommandEvents.createdAt,
+      })
+      .from(bidCommandEvents)
+      .where(eq(bidCommandEvents.bidSessionId, sessionId))
+      .all();
+    const eventsByBidId = new Map<
+      string,
+      {
+        memberId: number;
+        positionId: string;
+        actorId: number;
+        createdAt: Date;
+        forced: boolean;
+      }
+    >();
+    for (const event of eventRows) {
+      let payload: unknown;
+      try {
+        payload = JSON.parse(event.eventJson);
+      } catch {
+        return c.json({ error: 'canonical_award_event_invalid' }, 409);
+      }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
+      const record = payload as Record<string, unknown>;
+      const bidId = record.operation === 'amend_selection' ? record.replacementBidId : record.bidId;
+      const positionId =
+        record.operation === 'amend_selection' ? record.toPositionId : record.positionId;
+      if (typeof bidId !== 'string') continue;
+      if (
+        typeof positionId !== 'string' ||
+        typeof record.memberId !== 'number' ||
+        eventsByBidId.has(bidId)
+      )
+        return c.json({ error: 'canonical_award_event_invalid' }, 409);
+      eventsByBidId.set(bidId, {
+        memberId: record.memberId,
+        positionId,
+        actorId: event.actorId,
+        createdAt: event.createdAt,
+        forced: record.operation === 'force_selection',
+      });
+    }
+    const names = new Map(
+      frozenPolicy.snapshot.operatorIdentityProjection?.map((person) => [
+        person.memberId,
+        `${person.firstName} ${person.lastName}`.trim(),
+      ]) ?? [],
+    );
+    for (const [positionId, fill] of Object.entries(canonical.fills)) {
+      const position = frozenPositionsById.get(positionId);
+      const event = eventsByBidId.get(fill.bidId);
+      if (
+        !position ||
+        !event ||
+        event.memberId !== fill.memberId ||
+        event.positionId !== positionId
+      )
+        return c.json({ error: 'canonical_award_event_missing' }, 409);
+      canonicalRows.push({
+        ordinal: fill.ordinal,
+        memberId: fill.memberId,
+        memberLabel: names.get(fill.memberId) ?? `snapshot-member-${fill.memberId}`,
+        memberRank: frozenMembersById.get(fill.memberId)?.rank ?? '',
+        positionId,
+        positionName: position.positionName,
+        shift: position.shift,
+        station: position.station,
+        unit: position.unit,
+        rankRequired: position.rankRequired,
+        aDay:
+          canonical.aDay?.picks.find((pick) => pick.memberId === fill.memberId)?.aDay ??
+          fill.aDay ??
+          null,
+        forced: event.forced,
+        adminActorId: event.forced ? event.actorId : null,
+        pickedAt: event.createdAt,
+      });
+    }
+    canonicalRows.sort((a, b) => a.ordinal - b.ordinal || a.positionId.localeCompare(b.positionId));
+  }
+
   async function* rows(): AsyncIterable<Row> {
+    if (canonical !== null) {
+      yield* canonicalRows;
+      return;
+    }
     let offset = 0;
     while (true) {
       const page = await db

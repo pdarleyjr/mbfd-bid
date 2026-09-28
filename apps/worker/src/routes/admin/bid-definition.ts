@@ -2,6 +2,9 @@ import { zValidator } from '@hono/zod-validator';
 import type { JwtPayload } from '@mbfd/shared';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
+import { getDb } from '../../db/index.js';
+import { loadAdminEligibilityListContext } from '../../lib/admin-eligibility-list.js';
+import { canonicalBidDefinition } from '../../lib/bid-definition-content.js';
 import {
   bidDefinitionSummary,
   bidVersionMetadata,
@@ -34,10 +37,20 @@ import {
   BidDefinitionVersionRowSchema,
   loadBidDefinitionVersion,
 } from '../../lib/bid-definition-version.js';
+import { loadBidEligibilityEvidence } from '../../lib/bid-eligibility-evidence.js';
+import {
+  capture2026BidEvidenceFreeze,
+  read2026BidEvidenceFreeze,
+} from '../../lib/bid-evidence-freeze-capture.js';
 import {
   BidProfileReviewRequestSchema,
   previewBidProfiles,
 } from '../../lib/bid-profile-preview.js';
+import {
+  type ReviewedAdministrativeStaffingSlot,
+  buildCorrected2026Successor,
+  withReviewed2026AdministrativeConnections,
+} from '../../lib/corrected-2026-successor.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -118,6 +131,9 @@ for (const path of [
   '/:year/restore',
   '/:year/mock-sessions',
   '/:year/live-sessions',
+  '/:year/reviewed-2026-candidate',
+  '/:year/evidence-freeze',
+  '/:year/marine-evidence-review',
 ]) {
   router.use(path, requireAdmin, yearContext);
 }
@@ -161,6 +177,146 @@ router.get('/:year/versions/:versionId', async (c) => {
     version: bidVersionMetadata(version.row),
     content: version.content,
     ...bidDefinitionSummary(version.content, version.coverage),
+  });
+});
+router.get('/:year/evidence-freeze', async (c) => {
+  if (c.get('bidYear') !== 2026) return c.json({ error: 'reviewed_2026_year_required' }, 400);
+  const freeze = await read2026BidEvidenceFreeze(c.env.DB);
+  return c.json({ bidYear: 2026, freeze });
+});
+router.post('/:year/evidence-freeze', requireStepUpAuth(), async (c) => {
+  if (c.get('bidYear') !== 2026) return c.json({ error: 'reviewed_2026_year_required' }, 400);
+  const result = await capture2026BidEvidenceFreeze(c.env.DB, String(c.get('claims').sub));
+  return result.ok ? c.json(result) : c.json(result, 409);
+});
+router.get('/:year/marine-evidence-review', async (c) => {
+  if (c.get('bidYear') !== 2026) return c.json({ error: 'reviewed_2026_year_required' }, 400);
+  const current = await loadCurrentBidDefinition(c.env.DB, 2026);
+  if (!current.ok) return c.json({ error: current.error }, errorStatus(current.error));
+  const version = current.response.version;
+  if (!version || version.versionNumber <= 8)
+    return c.json({ error: 'reviewed_2026_version_required' }, 409);
+  const verified = await loadBidDefinitionVersion(c.env.DB, 2026, version.id);
+  if (!verified.ok || verified.sha256 !== version.contentSha256)
+    return c.json({ error: 'bid_version_integrity_failed' }, 409);
+  const db = getDb(c.env.DB);
+  const evidence = await loadBidEligibilityEvidence(db);
+  const marineNames =
+    /\b(?:MMC|Marine|Boat|IADRS|Watermanship|Public Safety Diver|Open Water|OUPV|PADI|DRI)\b/i;
+  const candidateIds = new Set([
+    ...evidence.credentialRows
+      .filter((row) => marineNames.test(row.name))
+      .map((row) => row.memberId),
+    ...evidence.qualificationEventRows
+      .filter(
+        (row) =>
+          (row.credentialName && marineNames.test(row.credentialName)) ||
+          (row.specialtyCode && marineNames.test(row.specialtyCode)),
+      )
+      .map((row) => row.memberId),
+  ]);
+  const candidateEmployees = new Set(
+    evidence.memberRows
+      .filter((member) => candidateIds.has(member.id))
+      .map((member) => member.employeeId),
+  );
+  const marinePositions = verified.content.positions.filter(
+    (position) =>
+      position.station === 'Station #6' &&
+      position.shift !== 'D' &&
+      verified.content.participation.some(
+        (entry) => entry.positionId === position.id && entry.bidParticipation === 'BIDDABLE',
+      ),
+  );
+  const asOf =
+    verified.content.settings && verified.content.settings.v !== 1
+      ? verified.content.settings.credentialEvaluationOn
+      : '2026-09-30';
+  const context = await loadAdminEligibilityListContext({
+    db,
+    ruleBookVersion: verified.row.rule_book_version,
+    asOf,
+    bidYear: 2026,
+  });
+  const rows = marinePositions
+    .flatMap((position) => {
+      const evaluated = context.evaluate(position.id);
+      return [...evaluated.dataBlocked, ...evaluated.excluded]
+        .filter((decision) => candidateEmployees.has(decision.member.employeeId))
+        .map((decision) => ({
+          member: `${decision.member.lastName}, ${decision.member.firstName}`,
+          employeeId: decision.member.employeeId,
+          positionId: position.id,
+          marinePosition: `${position.shift} Shift · ${position.unit} · ${position.positionName}`,
+          missingEvidence: [
+            ...decision.result.reasons
+              .filter((reason) => !reason.satisfied)
+              .map((reason) => reason.label),
+            ...decision.dataBlockers,
+          ],
+          sourceReviewed:
+            '2026 Bid certificate PDF and calculations workbook (generic labels); current qualification ledger',
+          requiredAction:
+            'Review person-specific source proof, then record the exact qualification and effective dates in the audited qualification workflow.',
+        }));
+    })
+    .filter((row) => row.missingEvidence.length > 0);
+  return c.json({
+    bidYear: 2026,
+    versionId: version.id,
+    versionSha256: version.contentSha256,
+    asOf,
+    candidateMemberCount: candidateEmployees.size,
+    marinePositionCount: marinePositions.length,
+    rows,
+  });
+});
+/** Read-only construction of the reviewed successor. The normal preview/save
+ * workflow remains responsible for creating a new immutable version. */
+router.post('/:year/reviewed-2026-candidate', requireStepUpAuth(), async (c) => {
+  if (c.get('bidYear') !== 2026) return c.json({ error: 'reviewed_2026_year_required' }, 400);
+  const current = await loadCurrentBidDefinition(c.env.DB, 2026);
+  if (!current.ok) return c.json({ error: current.error }, errorStatus(current.error));
+  const source = current.response;
+  const version = source.version;
+  if (
+    source.state !== 'VERSIONED' ||
+    !version ||
+    version.versionNumber !== 8 ||
+    version.contentSha256 !== '74ee775dbae3508c16f82bb93e4e2a68a5b3f84a976f05be85c89a0800e3f666'
+  )
+    return c.json({ error: 'reviewed_2026_predecessor_changed' }, 409);
+  const identities = await c.env.DB.prepare(
+    'SELECT id AS memberId, employee_id AS employeeId FROM members ORDER BY id',
+  ).all<{ memberId: number; employeeId: string }>();
+  const staffing = await c.env.DB.prepare(
+    `SELECT id,stable_slot_key AS stableSlotKey,shift,station,unit,
+    position_name AS positionName,applicable_rank AS applicableRank,
+    review_status AS reviewStatus,active_from AS activeFrom,active_to AS activeTo
+    FROM staffing_positions WHERE review_status='approved' ORDER BY id`,
+  ).all<ReviewedAdministrativeStaffingSlot>();
+  let candidate: ReturnType<typeof buildCorrected2026Successor>;
+  try {
+    candidate = withReviewed2026AdministrativeConnections(
+      buildCorrected2026Successor(source.content, {
+        evaluationOn: '2026-09-30',
+        approvedBidStartOn: '2026-10-24',
+        memberIdentities: identities.results,
+      }),
+      staffing.results,
+    );
+  } catch {
+    return c.json({ error: 'reviewed_2026_candidate_reconciliation_failed' }, 409);
+  }
+  const canonical = canonicalBidDefinition(candidate);
+  if (!canonical.ok)
+    return c.json({ error: 'reviewed_2026_candidate_invalid', issues: canonical.issues }, 409);
+  return c.json({
+    sourceVersionId: version.id,
+    sourceSha256: version.contentSha256,
+    candidateSha256: canonical.sha256,
+    content: canonical.content,
+    label: '2026 PRE-CUTOFF REHEARSAL CANDIDATE — final evidence not certified',
   });
 });
 router.post('/:year/preview', requireStepUpAuth(), zValidator('json', PreviewBody), async (c) => {

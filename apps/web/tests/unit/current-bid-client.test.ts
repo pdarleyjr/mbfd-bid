@@ -249,6 +249,25 @@ describe('Current Bid managed Mock request contracts', () => {
     expect(new Headers(init?.headers).get('X-MBFD-CSRF')).toBe(CSRF);
   });
 
+  it('accepts an open final-evidence cutoff review for a pre-cutoff Mock', async () => {
+    const preview = {
+      ...mockPreview(),
+      sourceDecisionBlockers: [
+        {
+          issueId: '2026-eligibility-cutoff-evidence',
+          classification: 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
+          affectedScopes: ['annual-policy'],
+        },
+      ],
+    };
+    serve(preview);
+    expect(
+      await client.bidRequest(YEAR, 'preview', client.BidMockPreviewSchema, {
+        body: { kind: 'mock', versionId: mockRequest().versionId, versionSha256: DIGEST },
+      }),
+    ).toEqual(preview);
+  });
+
   it('preserves an actual blocked readiness result without manufacturing allowed pins or counts', async () => {
     const blocked = {
       wouldAllowCreateMock: false,

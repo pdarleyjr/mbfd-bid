@@ -17,9 +17,11 @@ import {
   isFinal2026OrdinaryBidderRank,
 } from '@mbfd/shared';
 import { and, eq, sql } from 'drizzle-orm';
+import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import { isFinal2026ManagedConfiguration } from './2026-opportunity-inventory.js';
 import { assignmentTermReviewBlocksPurpose, evaluateAssignmentTerms } from './assignment-terms.js';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
+import { APPROVED_2026_CUTOFF_AT, loadBidEvidenceFreeze } from './bid-evidence-freeze.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { type BidOrdinalDatasetRow, projectBidOrdinals } from './bid-ordinal-evidence.js';
 import {
@@ -999,6 +1001,7 @@ export type BidSessionPolicySnapshotPreparation =
         | 'tenure_evidence_requires_review'
         | 'assignment_term_evidence_requires_review'
         | 'authoritative_staffing_baseline_required'
+        | 'bid_evidence_freeze_integrity_failed'
         | ConfiguredBidYearPolicyError;
       positionIds?: readonly string[];
       tenureIssues?: readonly { staffingPositionId: string; code: string; recordId: string }[];
@@ -1662,6 +1665,15 @@ export async function prepareCapturedBidEvaluation(
       const termPosition = administrativeAssignment
         ? positionByStaffingId.get(administrativeAssignment.staffingPositionId)
         : undefined;
+      const reviewed2026ActingCaptain =
+        policy.bidYear === 2026 &&
+        member.employeeId === '18148' &&
+        bidRank === 'CPT' &&
+        termPosition === 'B211' &&
+        policy.sourceDecisions.some(
+          (decision) =>
+            decision.issueId === '2026-b211-substantive-captain' && decision.status === 'RESOLVED',
+        );
       const relevantTermReview = termReview.find((term) => term.positionId === termPosition);
       const voluntaryTerm =
         relevantTermReview?.status === 'EVALUATED' && relevantTermReview.memberMayLeave === true
@@ -1802,7 +1814,8 @@ export async function prepareCapturedBidEvaluation(
       if (
         administrativeAssignment !== undefined &&
         termParticipation === undefined &&
-        !hasAssignmentTermAssumption
+        !hasAssignmentTermAssumption &&
+        !reviewed2026ActingCaptain
       ) {
         return {
           memberId: member.id,
@@ -1850,7 +1863,9 @@ export async function prepareCapturedBidEvaluation(
         rscSeniority: member.rscSeniority,
         rankSeniority: member.rankSeniority,
         exclusionReason: null,
-        authoritativeAssignmentId: null,
+        authoritativeAssignmentId: reviewed2026ActingCaptain
+          ? (administrativeAssignment?.id ?? null)
+          : null,
         ...(hasAssignmentTermAssumption
           ? { mockParticipationEvidence: 'ASSIGNMENT_TERM_ASSUMPTION' as const }
           : hasAcceptedMockParticipationEvidence
@@ -1959,11 +1974,68 @@ export async function prepareConfiguredBidPolicySnapshot(
   mode: BidSessionMode,
   sourceDecisions?: BidDefinitionContent['sourceDecisions'],
 ): Promise<BidSessionPolicySnapshotPreparation> {
-  const [evidence, material] = await Promise.all([
-    loadBidEvaluationEvidence(db, policy.bidYear),
-    loadPersistedBidEvaluationMaterial(db, policy, sourceDecisions),
-  ]);
-  const prepared = await prepareCapturedBidEvaluation(db, material, evidence, capturedAtMs, mode);
+  const material = await loadPersistedBidEvaluationMaterial(db, policy, sourceDecisions);
+  let prepared: BidEvaluationPreparation;
+  const freeze = policy.settings.v === 3 ? policy.settings.evidenceFreeze : undefined;
+  if (freeze) {
+    try {
+      const saved = await loadBidEvidenceFreeze(db, policy.bidYear);
+      const serial = (value: unknown) =>
+        canonicalize(JSON.parse(JSON.stringify(value)) as JsonValue);
+      const beforeSettings = { ...saved?.evaluation.settings, evidenceFreeze: undefined };
+      const afterSettings = { ...policy.settings, evidenceFreeze: undefined };
+      const materialWithoutVersion = (value: BidEvaluation['ruleBookMaterial']) => ({
+        ...value,
+        positions: value.positions.map(
+          ({ templateVersion: _templateVersion, ...position }) => position,
+        ),
+        rules: value.rules.map(
+          ({ ruleBookVersion: _ruleBookVersion, templateVersion: _templateVersion, ...rule }) =>
+            rule,
+        ),
+      });
+      if (
+        !saved ||
+        freeze.freezeId !== saved.row.id ||
+        freeze.evaluationSha256 !== saved.row.evaluation_sha256 ||
+        freeze.personnelSnapshot.sha256 !== saved.row.personnel_sha256 ||
+        freeze.credentialSnapshot.sha256 !== saved.row.credential_sha256 ||
+        freeze.sourceVersionId !== saved.row.source_version_id ||
+        freeze.sourceVersionSha256 !== saved.row.source_version_sha256 ||
+        freeze.evidenceCutoffAt !== APPROVED_2026_CUTOFF_AT ||
+        freeze.personnelSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
+        freeze.credentialSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
+        Date.parse(freeze.approvedAt) < saved.row.captured_at ||
+        serial(freeze.sourceImports) !== serial(saved.sourceImports) ||
+        serial(beforeSettings) !== serial(afterSettings) ||
+        serial(materialWithoutVersion(saved.evaluation.ruleBookMaterial)) !==
+          serial(materialWithoutVersion(material.ruleBookMaterial)) ||
+        material.coverage.valid !== true
+      )
+        return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
+      const evaluation = BidEvaluationSchema.parse({
+        ...saved.evaluation,
+        ruleBookVersion: material.coverage.ruleBookVersion,
+        positionTemplateVersion: material.coverage.templateVersion,
+        ruleBookMaterial: material.ruleBookMaterial,
+        settings: policy.settings,
+        capturedAtMs,
+      });
+      if (
+        material.sourceDecisions.some((decision) =>
+          bidSourceDecisionBlocksPurpose(decision, mode),
+        ) ||
+        bidSourceDecisionReviewIssues(material.sourceDecisions).length > 0
+      )
+        return { ok: false, code: 'policy_source_decision_required' };
+      prepared = { ok: true, evaluation, coverage: material.coverage };
+    } catch {
+      return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
+    }
+  } else {
+    const evidence = await loadBidEvaluationEvidence(db, policy.bidYear);
+    prepared = await prepareCapturedBidEvaluation(db, material, evidence, capturedAtMs, mode);
+  }
   if (!prepared.ok) return prepared;
   const settings =
     prepared.evaluation.settings.v === 3

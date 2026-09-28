@@ -32,6 +32,30 @@ type FrozenADayEvaluationInput = {
   finalize: boolean;
 };
 
+export function frozenADayConstraints(
+  annual: FrozenAnnualOperationsPolicy,
+): ADayScopedConstraint[] {
+  const execution = annual.aDay.execution;
+  if (!execution) return [];
+  return [
+    ...execution.constraints,
+    ...(annual.aDay.captainDcMax === null
+      ? []
+      : ([
+          {
+            id: 'captain-division-chief-limit',
+            label: 'Captain and Division Chief limit',
+            sourceRef: execution.sourceRef,
+            maximum: annual.aDay.captainDcMax,
+            positionIds: [],
+            memberIds: [],
+            ranks: ['CPT', 'DC'],
+            shifts: ['A', 'B', 'C'],
+          },
+        ] satisfies ADayScopedConstraint[])),
+  ];
+}
+
 function timingForPosition(
   execution: NonNullable<FrozenAnnualOperationsPolicy['aDay']['execution']>,
   positionId: string,
@@ -98,23 +122,7 @@ export function evaluateFrozenADays(
     G3: availableGroups.has('G3') ? cap : unavailableCap,
     G4: availableGroups.has('G4') ? cap : unavailableCap,
   };
-  const constraints: ADayScopedConstraint[] = [
-    ...execution.constraints,
-    ...(annual.aDay.captainDcMax === null
-      ? []
-      : ([
-          {
-            id: 'captain-division-chief-limit',
-            label: 'Captain and Division Chief limit',
-            sourceRef: execution.sourceRef,
-            maximum: annual.aDay.captainDcMax,
-            positionIds: [],
-            memberIds: [],
-            ranks: ['CPT', 'DC'],
-            shifts: ['A', 'B', 'C'],
-          },
-        ] satisfies ADayScopedConstraint[])),
-  ];
+  const constraints = frozenADayConstraints(annual);
   const phase1Picks: { positionId: string; memberId: number; shift: 'A' | 'B' | 'C' | 'D' }[] = [];
   const simultaneousPicks: ADayPick[] = [];
   const deferredMemberIds = new Set<number>();

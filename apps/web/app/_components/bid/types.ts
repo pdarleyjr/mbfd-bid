@@ -32,7 +32,7 @@ export interface PositionMeta {
   /** Present for the immutable session material returned by /api/board. */
   templateVersion?: string;
   /** Present for the immutable session material returned by /api/board. */
-  bidParticipation?: 'BIDDABLE' | 'ADMIN_ASSIGNED_NON_BIDDABLE';
+  bidParticipation?: 'BIDDABLE' | 'ADMIN_ASSIGNED_NON_BIDDABLE' | 'RESERVED_NON_BIDDABLE';
 }
 
 export const ALL_SHIFTS: ReadonlyArray<Shift> = ['A', 'B', 'C', 'D'];

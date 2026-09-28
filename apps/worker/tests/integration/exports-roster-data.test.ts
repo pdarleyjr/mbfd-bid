@@ -270,6 +270,7 @@ describe('GET /api/admin/exports/roster-data (W35)', () => {
   });
 
   it('fails closed when the session snapshot has no immutable V3 material', async () => {
+    const capturedAtMs = Date.now();
     await h.db.run('DELETE FROM bid_session_policy_snapshots WHERE bid_session_id = ?;', [
       sessionId,
     ]);
@@ -283,10 +284,10 @@ describe('GET /api/admin/exports/roster-data (W35)', () => {
           v: 1,
           ruleBookVersion: '2026.roster',
           positionTemplateVersion: '2026.v1',
-          capturedAtMs: Date.now(),
+          capturedAtMs,
           members: [],
         }),
-        Date.now(),
+        capturedAtMs,
       ],
     );
     const token = mintPrintToken(

@@ -60,6 +60,8 @@ of these gaps calls for an administrator to choose an internal position ID.
 
 ## Superseding candidate finding
 
+**RESOLVED 2026-09-27:** The administrator explicitly approved the B703-B706 application correction from the reviewed source package. The current decision, raw-vs-corrected audit, and 23/39/161 rank reconciliation are in `2026-LIVE-READINESS-AND-DECISIONS.md` and `2026-rank-capacity-candidate.json`. The following paragraph is retained as historical evidence of the earlier unresolved state.
+
 The live release decision is now tracked in
 `2026-LIVE-READINESS-AND-DECISIONS.md`. That register supersedes this
 2026-09-26 candidate summary wherever newer source reconciliation or code

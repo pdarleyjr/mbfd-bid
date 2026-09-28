@@ -1167,6 +1167,48 @@ export const BidConfigurationSettingsV2Schema = z
   .strict();
 export type BidConfigurationSettingsV2 = z.infer<typeof BidConfigurationSettingsV2Schema>;
 
+/** The instant is retained with its source offset. A final freeze also seals
+ * the accepted source revisions and the two evaluated evidence snapshots. */
+export const BidEvidenceFreezeSchema = z
+  .object({
+    freezeId: z.string().min(1),
+    evaluationSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+    sourceVersionId: z.string().min(1),
+    sourceVersionSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+    evidenceCutoffAt: z.string().datetime({ offset: true }),
+    timeZone: z.literal('America/New_York'),
+    approvedAt: z.string().datetime({ offset: true }),
+    sourceImports: z
+      .array(
+        z
+          .object({
+            source: z.string().min(1),
+            importId: z.string().min(1),
+            revision: z.string().min(1),
+            sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+            acceptedAt: z.string().datetime({ offset: true }),
+          })
+          .strict(),
+      )
+      .min(1),
+    personnelSnapshot: z
+      .object({
+        sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+        asOfAt: z.string().datetime({ offset: true }),
+        capturedAt: z.string().datetime({ offset: true }),
+      })
+      .strict(),
+    credentialSnapshot: z
+      .object({
+        sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+        asOfAt: z.string().datetime({ offset: true }),
+        capturedAt: z.string().datetime({ offset: true }),
+      })
+      .strict(),
+  })
+  .strict();
+export type BidEvidenceFreeze = z.infer<typeof BidEvidenceFreezeSchema>;
+
 /**
  * A live-capable annual configuration. Mock sessions remain compatible with
  * V2, but a real session must carry this fully explicit policy material.
@@ -1179,6 +1221,8 @@ export const BidConfigurationSettingsV3Schema = z
     credentialEvaluationOn: CredentialEvaluationDateSchema,
     personnelEvaluationOn: CredentialEvaluationDateSchema.optional(),
     livePolicy: FrozenLiveBidPolicySchema,
+    evidenceCutoffAt: z.string().datetime({ offset: true }).optional(),
+    evidenceFreeze: BidEvidenceFreezeSchema.optional(),
   })
   .strict();
 export type BidConfigurationSettingsV3 = z.infer<typeof BidConfigurationSettingsV3Schema>;

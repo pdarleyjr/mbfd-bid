@@ -27,7 +27,9 @@ export function bidSourceDecisionBlocksPurpose(
 ) {
   if (decision.status !== 'OPEN') return false;
   if (purpose === 'live') return true;
-  return decision.blockingClassification !== 'BLOCKS_REAL_BID_ACTIVATION';
+  return !['BLOCKS_REAL_BID_ACTIVATION', 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION'].includes(
+    decision.blockingClassification ?? '',
+  );
 }
 
 /** Preserve recorded content bytes and allow unfinished OPEN drafts. A resolved

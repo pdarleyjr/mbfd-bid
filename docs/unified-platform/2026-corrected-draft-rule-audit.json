@@ -167,7 +167,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -187,7 +187,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -207,7 +207,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -227,7 +227,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -247,7 +247,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -267,7 +267,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -1399,7 +1399,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -1673,7 +1673,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -1947,7 +1947,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -2221,7 +2221,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -2495,7 +2495,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -2769,7 +2769,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4381,7 +4381,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4401,7 +4401,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4421,7 +4421,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4521,7 +4521,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4541,7 +4541,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4561,7 +4561,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4581,7 +4581,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4601,7 +4601,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4621,7 +4621,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -4648,7 +4648,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Officer Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -4689,7 +4699,17 @@
           "Metal Craft Boat Operator Credential",
           "Driver Engineer Qualified"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -4736,7 +4756,17 @@
           "Metal Craft Engineer Credential",
           "Driver Engineer Qualified"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -4782,7 +4812,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -4828,7 +4868,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -4874,7 +4924,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -5413,7 +5473,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -5433,7 +5493,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -5453,7 +5513,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -5473,7 +5533,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -5493,7 +5553,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -5513,7 +5573,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -6645,7 +6705,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -6919,7 +6979,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -7193,7 +7253,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -7467,7 +7527,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -7741,7 +7801,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -8015,7 +8075,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9627,7 +9687,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9647,7 +9707,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9667,7 +9727,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9767,7 +9827,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9787,7 +9847,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9807,7 +9867,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9827,7 +9887,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9847,7 +9907,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9867,7 +9927,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -9894,7 +9954,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Officer Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -9935,7 +10005,17 @@
           "Metal Craft Boat Operator Credential",
           "Driver Engineer Qualified"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -9982,7 +10062,17 @@
           "Metal Craft Engineer Credential",
           "Driver Engineer Qualified"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -10028,7 +10118,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -10074,7 +10174,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -10120,7 +10230,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -10197,7 +10317,7 @@
       "positionId": "B703",
       "ruleBookVersion": "2026.corrected.draft",
       "requiredCriteria": {
-        "rank": ["FF"],
+        "rank": ["LT"],
         "credentials": [],
         "custom": ["paramedic"]
       },
@@ -10211,7 +10331,7 @@
           "mo": []
         }
       },
-      "tieBreakChain": ["points", "department_service_bid_ordinal"]
+      "tieBreakChain": ["points", "time_in_grade_bid_ordinal"]
     },
     {
       "positionId": "B704",
@@ -10659,7 +10779,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -10679,7 +10799,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -10699,7 +10819,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -10719,7 +10839,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -10739,7 +10859,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -10759,7 +10879,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -11891,7 +12011,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -12165,7 +12285,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -12439,7 +12559,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -12713,7 +12833,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -12987,7 +13107,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -13261,7 +13381,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -14873,7 +14993,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -14893,7 +15013,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -14913,7 +15033,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -15013,7 +15133,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -15033,7 +15153,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -15053,7 +15173,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -15073,7 +15193,7 @@
       "requiredCriteria": {
         "rank": ["LT"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -15093,7 +15213,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -15113,7 +15233,7 @@
       "requiredCriteria": {
         "rank": ["FF"],
         "credentials": [],
-        "custom": ["paramedic"]
+        "custom": []
       },
       "pointsPreference": {
         "max": 0,
@@ -15140,7 +15260,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Officer Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -15181,7 +15311,17 @@
           "Metal Craft Boat Operator Credential",
           "Driver Engineer Qualified"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -15228,7 +15368,17 @@
           "Metal Craft Engineer Credential",
           "Driver Engineer Qualified"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -15274,7 +15424,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -15320,7 +15480,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -15366,7 +15536,17 @@
           "Hazardous Materials Awareness",
           "Metal Craft Deckhand Credential"
         ],
-        "custom": []
+        "custom": [],
+        "postAward": [
+          {
+            "id": "2026-marine-padi-to-dri-continuing-training",
+            "credential": "DRI Public Safety Diver",
+            "sourceRef": "Final July 2026 Bid Policy Procedure 8(f)(ii)",
+            "appliesWhenMissingAll": ["DRI Public Safety Diver"],
+            "appliesWhenHoldingAny": ["PADI Public Safety Diver"],
+            "deadline": null
+          }
+        ]
       },
       "pointsPreference": {
         "max": 0,
@@ -16727,7 +16907,7 @@
     {
       "issue": "Ordinary and Float Rescue paramedic minimum",
       "classification": "SOURCE_CAN_RESOLVE",
-      "finding": "July policy Procedure 11(b) explicitly requires Rescue Float paramedics; the historical 2026 Rules and Points source requires Paramedic for the Rescue track and the final policy has no contrary ordinary-Rescue exception."
+      "finding": "July policy Procedure 11(b) explicitly requires Rescue Float paramedics. The supplied final policy and calculation workbook do not establish a Paramedic Bid minimum for ordinary Rescue or Station #2 Rescue positions, so this draft does not impose one on those roles. A staffing assignment requirement does not become a Bid eligibility rule without source authority."
     },
     {
       "issue": "Station #2 Special Ops cumulative scoring and Float 2 Captain placement",

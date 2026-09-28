@@ -15,11 +15,15 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, '../migrations');
 
 /** Wraps better-sqlite3 to look like a D1Database for Drizzle's D1 driver. */
-type TestD1Database = D1Database & { failNextBatchAt(statementIndex: number): void };
+type TestD1Database = D1Database & {
+  failNextBatchAt(statementIndex: number): void;
+  reportZeroChangesOnce(): void;
+};
 
 function makeD1Adapter(sqlite: Database.Database): TestD1Database {
   const synchronousRuns = new WeakMap<object, () => D1Result>();
   let nextBatchFailureAt: number | null = null;
+  let reportZeroChanges = false;
   return {
     prepare: (query: string) => {
       const stmt = sqlite.prepare(query);
@@ -66,6 +70,10 @@ function makeD1Adapter(sqlite: Database.Database): TestD1Database {
           results.push(run());
         }
       })();
+      if (reportZeroChanges && results[0]) {
+        results[0].meta.changes = 0;
+        reportZeroChanges = false;
+      }
       return results;
     },
     exec: async (q: string) => {
@@ -75,6 +83,9 @@ function makeD1Adapter(sqlite: Database.Database): TestD1Database {
     dump: async () => new ArrayBuffer(0),
     failNextBatchAt(statementIndex: number) {
       nextBatchFailureAt = statementIndex;
+    },
+    reportZeroChangesOnce() {
+      reportZeroChanges = true;
     },
   } as unknown as TestD1Database;
 }
@@ -130,6 +141,53 @@ const BASE_PAYLOAD = {
 };
 
 describe('admin credentials routes', () => {
+  it('retires an unused duplicate with a durable catalog receipt and audit row', async () => {
+    const { app, sqlite } = makeApp();
+    sqlite.exec(
+      "INSERT INTO credentials (id,name,fy_points_default) VALUES (901,'NFPA 1123',0),(902,'NFPA1123 Outdoor Fireworks',0)",
+    );
+    const jwt = await signJwt({ ...BASE_PAYLOAD, role: 'admin' }, KEY);
+    const env = mkEnv(sqlite);
+    // D1 may report a zero change count on a committed metadata update.
+    env.DB.reportZeroChangesOnce();
+    const response = await app.request(
+      '/admin/credentials/901',
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'retire-nfpa-duplicate',
+        },
+        body: JSON.stringify({
+          name: 'NFPA 1123',
+          fy_points_default: 0,
+          expected_revision: 0,
+          retired_on: '2026-09-27',
+          reason: 'Retire unused duplicate; preserve canonical outdoor fireworks identity.',
+        }),
+      },
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      credential: { retiredOn: '2026-09-27', revision: 1 },
+    });
+    expect(
+      sqlite
+        .prepare('SELECT retired_on FROM credential_catalog_metadata WHERE credential_id=901')
+        .get(),
+    ).toEqual({ retired_on: '2026-09-27' });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM credential_catalog_receipts').get()).toEqual({
+      n: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 1 });
+    expect(
+      sqlite
+        .prepare('SELECT COUNT(*) AS n FROM credential_catalog_metadata WHERE credential_id=902')
+        .get(),
+    ).toEqual({ n: 0 });
+  });
   it('allows one of two edits, replays the exact receipt, and rejects cross-target key reuse', async () => {
     const { app, sqlite } = makeApp();
     sqlite.exec(

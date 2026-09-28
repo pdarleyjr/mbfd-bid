@@ -10,6 +10,21 @@ import type { ReviewedPosition } from './reviewed-2026-source.js';
  * identify reviewed roles added by the application, never workbook rows. */
 export const CORRECTED_2026_FLOAT_CAPTAIN_IDS = ['A718', 'B718', 'C718'] as const;
 
+export const CORRECTED_2026_B_RESCUE_FLOAT_DECISION_ID = '2026-b-rescue-float-rank-correction';
+export const CORRECTED_2026_B_RESCUE_FLOAT_PROVENANCE =
+  'MASTER B703-B706 source rows conflict with reviewed B-shift operational topology. Current assignment evidence, B-shift roster evidence, historical B-shift diagram, and final rank-capacity reconciliation establish a 3 LT / 3 FF Rescue Float Pool. Raw MASTER remains preserved; application semantics are corrected through an audited 2026 source decision.';
+export const CORRECTED_2026_B_RESCUE_FLOAT_SOURCE_DECISION = {
+  issueId: CORRECTED_2026_B_RESCUE_FLOAT_DECISION_ID,
+  title: 'Reviewed B-shift Rescue Float Pool rank and numbering',
+  question: 'What are the approved ranks and labels for B703-B706?',
+  area: 'positions',
+  status: 'RESOLVED',
+  decision:
+    'B701/B702/B703 are Rescue Float Lieutenants #1/#2/#3; B704/B705/B706 are Rescue Float Firefighters #1/#2/#3. B703 is an LT opportunity and B704-B706 are FF opportunities.',
+  sourceRef: CORRECTED_2026_B_RESCUE_FLOAT_PROVENANCE,
+  effectiveOn: '2026-09-27',
+} as const;
+
 /** Include this reviewed decision in the successor's sealed sourceDecisions.
  * Versions 7/8 remain unchanged, and only the corrected successor opts into
  * the strict final-topology inventory contract. */
@@ -45,6 +60,30 @@ export interface Corrected2026Position extends ReviewedPosition {
 
 export function buildCorrected2026Topology(): Corrected2026Position[] {
   const positions = structuredClone(finalPositions) as Corrected2026Position[];
+  const corrected = new Map([
+    ['B703', { rank: 'LT', name: 'Lieutenant #3 (R)', rawRank: 'FF', rawName: 'Firefighter #1' }],
+    ['B704', { rank: 'FF', name: 'Firefighter #1', rawRank: 'FF', rawName: 'Firefighter #2' }],
+    ['B705', { rank: 'FF', name: 'Firefighter #2', rawRank: 'FF', rawName: 'Firefighter #3' }],
+    ['B706', { rank: 'FF', name: 'Firefighter #3', rawRank: 'FF', rawName: 'Firefighter #4' }],
+  ] as const);
+  for (const position of positions) {
+    const correction = corrected.get(position.id as 'B703' | 'B704' | 'B705' | 'B706');
+    if (!correction) continue;
+    if (
+      position.shift !== 'B' ||
+      position.station !== 'Rescue Float Pool' ||
+      position.division !== 'Rescue' ||
+      !position.isFloating ||
+      position.rankRequired !== correction.rawRank ||
+      position.positionName !== correction.rawName ||
+      !position.source ||
+      position.source.correction !== null
+    )
+      throw new Error(`corrected_2026_b_rescue_float_source_changed:${position.id}`);
+    position.rankRequired = correction.rank;
+    position.positionName = correction.name;
+    position.source.correction = `${CORRECTED_2026_B_RESCUE_FLOAT_DECISION_ID}: raw MASTER ${correction.rawRank} ${correction.rawName}; reviewed application ${correction.rank} ${correction.name}. ${CORRECTED_2026_B_RESCUE_FLOAT_PROVENANCE}`;
+  }
   const occupiedIds = new Set([...positions, ...legacyPositions].map((position) => position.id));
   for (const shift of ['A', 'B', 'C'] as const) {
     const id = `${shift}718`;

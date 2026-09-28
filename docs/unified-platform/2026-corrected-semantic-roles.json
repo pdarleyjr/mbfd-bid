@@ -21,8 +21,8 @@
     "MARINE_OPERATOR": 3,
     "ORDINARY_COMBAT": 42,
     "ORDINARY_RESCUE": 45,
-    "RESCUE_FLOAT_FF": 15,
-    "RESCUE_FLOAT_LT": 9,
+    "RESCUE_FLOAT_FF": 14,
+    "RESCUE_FLOAT_LT": 10,
     "SPECIAL_OPS_COMBAT": 6,
     "SPECIAL_OPS_RESCUE": 18,
     "UNION_PRESIDENT": 1
@@ -1230,10 +1230,10 @@
     },
     {
       "positionId": "B703",
-      "roleFamily": "RESCUE_FLOAT_FF",
+      "roleFamily": "RESCUE_FLOAT_LT",
       "policyRef": "Final July 2026 Bid Policy Procedure 11(b)",
       "bidParticipation": "BIDDABLE",
-      "rank": "FF",
+      "rank": "LT",
       "identityOrigin": "MASTER_WORKBOOK",
       "ruleReview": "REQUIRED"
     },

@@ -29,6 +29,26 @@ const SNAPSHOT_POSITIONS = [
 ];
 
 describe('BidRoster SSR', () => {
+  it('shows one bidder row when the frozen order includes Days and shift turns', () => {
+    const html = renderToString(
+      <BidRoster
+        bidOrder={[
+          ...ORDER.slice(0, 2),
+          { ordinal: 3, memberId: 1, pool: 'OFC' },
+          { ordinal: 4, memberId: 3, pool: 'FF' },
+        ]}
+        members={MEMBERS}
+        currentBidderId={null}
+        fills={{}}
+        preview
+      />,
+    );
+    expect(html).toMatch(/3(?:<!-- -->)? bidders/);
+    expect(html.match(/data-testid="bid-roster-row-/g)).toHaveLength(3);
+    expect(html).not.toContain('data-testid="bid-roster-row-3"');
+    expect(html).toContain('data-testid="bid-roster-row-4"');
+  });
+
   it('renders rows for every bidder with rank and name', () => {
     const html = renderToString(
       <BidRoster
@@ -73,6 +93,23 @@ describe('BidRoster SSR', () => {
     );
     expect(html).toMatch(/data-testid="bid-roster-row-1"[^>]*data-status="picked"/);
     expect(html).toMatch(/data-testid="bid-roster-row-2"[^>]*data-status="waiting"/);
+  });
+
+  it('shows unawarded members clearly after the bid is complete', () => {
+    const html = renderToString(
+      <BidRoster
+        bidOrder={ORDER}
+        members={MEMBERS}
+        currentBidderId={null}
+        currentPhase="complete"
+        fills={{ A101: { memberId: 1, ordinal: 1, bidId: 'b1' } }}
+        preview={false}
+      />,
+    );
+    expect(html).toContain('without award');
+    expect(html).toContain('No award');
+    expect(html).toMatch(/data-testid="bid-roster-row-2"[^>]*data-status="unawarded"/);
+    expect(html).not.toContain('>Waiting</span>');
   });
 
   it('shows the preview badge when the worker computed bidOrder on-the-fly', () => {

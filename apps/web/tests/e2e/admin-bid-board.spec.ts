@@ -279,14 +279,15 @@ test('independent board views preserve source boundaries at phone, tablet and de
     window.dispatchEvent(new Event('visibilitychange'));
   });
   await expect.poll(() => currentReads, { timeout: 10_000 }).toBeGreaterThan(beforeFocus);
+  await expect(page.getByText('Refreshing board…')).toBeHidden();
   expect(previousReads).toBe(immutableReads);
   fail = true;
   const before = currentReads;
   await page.clock.setFixedTime(new Date(cacheClock + 62_000));
-  await page.evaluate(() => {
-    window.dispatchEvent(new Event('offline'));
-    window.dispatchEvent(new Event('online'));
-  });
+  // Give the query manager one task to register the offline transition before
+  // simulating reconnect. Dispatching both events in one task can coalesce.
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect.poll(() => currentReads, { timeout: 10_000 }).toBeGreaterThan(before);
   await expect(
     page.getByRole('alert').filter({ hasText: 'Showing the last successful data' }),

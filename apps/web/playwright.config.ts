@@ -40,6 +40,9 @@ export default defineConfig({
         // provide test separation without changing React's runtime environment.
         NODE_ENV: process.env.E2E_USE_BUILT_WEB === '1' ? 'production' : 'development',
         ENV: 'staging',
+        // The operator's ignored local rehearsal origin must not change the
+        // staging-origin contract exercised by this isolated E2E server.
+        MBFD_LOCAL_REHEARSAL_ORIGIN: '',
         // An explicit controlled API wins. Otherwise browser tests use only
         // the loopback annual mock below and never fall back to shared staging.
         NEXT_PUBLIC_WORKER_BASE: workerBase,

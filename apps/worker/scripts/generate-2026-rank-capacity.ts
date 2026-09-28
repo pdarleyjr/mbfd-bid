@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import finalPositions from '../seed/fixtures/final_2026_positions.json';
 import { buildCorrected2026SemanticRoles } from '../src/lib/corrected-2026-semantic-roles.js';
 import { buildCorrected2026Topology } from '../src/lib/corrected-2026-topology.js';
 
@@ -31,6 +32,13 @@ const rows = positions.map((position) => {
       : role.policyRef,
     sourceCorrection:
       position.source?.correction ?? position.canonicalIdentity?.discrepancy ?? null,
+    rawMasterValue: position.source?.correction
+      ? (() => {
+          const raw = finalPositions.find((item) => item.id === position.id);
+          if (!raw) throw new Error(`missing_raw_master_position:${position.id}`);
+          return { rank: raw.rankRequired, role: raw.positionName };
+        })()
+      : null,
   };
 });
 const rankCounts = Object.fromEntries(
@@ -51,13 +59,14 @@ const grand = Object.fromEntries(
   ]),
 );
 const result = {
-  status: 'CANDIDATE_BLOCKED_BY_RANK_CAPACITY_SOURCE_CONFLICT',
+  status: 'REVIEWED_APPLICATION_TOPOLOGY_PRE_CUTOFF',
   sourceHierarchy:
-    'Final July 2026 policy; MASTER workbook for topology; calculation workbook and historical diagrams as reconciliation evidence; assignment export for occupancy only',
+    'Final July 2026 policy; immutable MASTER workbook for source topology; administrator-approved B703-B706 correction from current assignments, B-shift roster, historical diagram, and rank reconciliation',
   bidderCohortReviewedBeforeCutoff: { CPT: 22, LT: 39, FF: 161 },
   biddableSeatCounts: { byShift: rankCounts, grand },
-  unresolvedSourceConflict:
-    'B703 is Firefighter #1 in final MASTER Positions row 134 and 2026 Shift Template; historical B-shift diagram and September staffing export show a third B Rescue Float Lieutenant. No approved 2026 rank correction is established by these sources.',
+  expectedVacancies: { CPT: 1, LT: 0, FF: 0 },
+  reviewedSourceCorrection:
+    'B703-B706 raw MASTER labels are preserved in rawMasterValue. Administrator-approved application correction on 2026-09-27 makes B703 LT #3 and B704-B706 FF #1/#2/#3.',
   rows,
 };
 await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');

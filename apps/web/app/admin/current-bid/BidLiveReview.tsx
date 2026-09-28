@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FieldSection } from './BidFields';
 import { BidTermIssues } from './BidTermIssues';
 import {
@@ -105,6 +105,7 @@ export type BidLiveReviewProps = {
   finish(): void;
   execute?(write: PendingBidWrite): Promise<void>;
   createdLive?: BidLiveResult | null;
+  onOpenAuthority(): void;
 };
 
 /**
@@ -123,7 +124,46 @@ export function BidLiveReview({
   finish,
   execute,
   createdLive,
+  onOpenAuthority,
 }: BidLiveReviewProps) {
+  const grants =
+    base.content.settings?.v === 3 ? base.content.settings.livePolicy.actionPermissions : [];
+  const hasOperatorGrants = grants.some((grant) => grant.actorMemberIds.length > 0);
+  const [names, setNames] = useState<Map<number, string>>(new Map());
+  useEffect(() => {
+    if (!hasOperatorGrants) return;
+    let cancelled = false;
+    void (async () => {
+      const entries = new Map<number, string>();
+      let offset = 0;
+      let total = 1;
+      while (offset < total) {
+        const response = await fetch(`/api/admin/members?limit=500&offset=${offset}`, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!response.ok) return;
+        const body = (await response.json()) as {
+          total: number;
+          members: { id: number; firstName: string; lastName: string; employeeId: string }[];
+        };
+        if (
+          !Array.isArray(body.members) ||
+          !Number.isSafeInteger(body.total) ||
+          (body.members.length === 0 && offset < body.total)
+        )
+          return;
+        for (const member of body.members)
+          entries.set(member.id, `${member.lastName}, ${member.firstName} · ${member.employeeId}`);
+        offset += body.members.length;
+        total = body.total;
+      }
+      if (!cancelled) setNames(entries);
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [hasOperatorGrants]);
   const version = immutableCurrentVersion(base);
   const sourceStamp = version
     ? `${version.id}:${version.versionNumber}:${version.contentSha256}`
@@ -171,6 +211,33 @@ export function BidLiveReview({
       title="Managed Live preflight"
       description="Review the immutable current saved version against server policy and readiness. This check has no activation authority."
     >
+      <section
+        className="space-y-2 rounded border border-border bg-card p-4"
+        aria-label="Saved operator authority"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">Saved operator authority</h3>
+          <Button type="button" variant="secondary" onClick={onOpenAuthority}>
+            Edit authority in Bid configuration
+          </Button>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          These grants belong to the immutable annual configuration. Operator authority is separate
+          from bidder participation.
+        </p>
+        <ul className="space-y-1 text-sm">
+          {grants.map((grant) => (
+            <li key={grant.action}>
+              <strong>{words(grant.action)}:</strong>{' '}
+              {grant.actorMemberIds.length
+                ? grant.actorMemberIds
+                    .map((id) => names.get(id) ?? `Member ${id} — catalog review required`)
+                    .join(', ')
+                : 'No members granted'}
+            </li>
+          ))}
+        </ul>
+      </section>
       <p className="text-sm">
         {base.version === null
           ? 'No saved Bid version exists. Save the first Bid version before checking Managed Live readiness.'

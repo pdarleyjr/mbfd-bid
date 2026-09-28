@@ -326,6 +326,51 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
       );
   }
   const issues: BidDefinitionIssue[] = [];
+  if (content.bidYear === 2026 && content.settings?.v === 3) {
+    const settings = content.settings;
+    const freeze = settings.evidenceFreeze;
+    const cutoffDecision = content.sourceDecisions.find(
+      (decision) => decision.issueId === '2026-eligibility-cutoff-evidence',
+    );
+    if (cutoffDecision?.status === 'RESOLVED' && !freeze)
+      issues.push({
+        path: ['settings', 'evidenceFreeze'],
+        code: 'evidence_freeze_required_for_resolved_cutoff',
+        message:
+          'The cutoff decision cannot be resolved without sealed source and evidence snapshots.',
+      });
+    if (freeze) {
+      const cutoff = settings.evidenceCutoffAt;
+      const cutoffMs = cutoff ? Date.parse(cutoff) : Number.NaN;
+      if (!cutoff || freeze.evidenceCutoffAt !== cutoff || !Number.isFinite(cutoffMs))
+        issues.push({
+          path: ['settings', 'evidenceFreeze'],
+          code: 'evidence_freeze_cutoff_mismatch',
+          message: 'The sealed source snapshot must use the configured exact cutoff instant.',
+        });
+      if (Date.parse(freeze.approvedAt) < cutoffMs)
+        issues.push({
+          path: ['settings', 'evidenceFreeze', 'approvedAt'],
+          code: 'evidence_freeze_approval_before_cutoff',
+          message: 'Final evidence approval cannot precede the cutoff.',
+        });
+      if (freeze.sourceImports.some((source) => Date.parse(source.acceptedAt) > cutoffMs))
+        issues.push({
+          path: ['settings', 'evidenceFreeze', 'sourceImports'],
+          code: 'evidence_source_after_cutoff',
+          message: 'Post-cutoff source imports cannot enter the frozen Bid.',
+        });
+      for (const field of ['personnelSnapshot', 'credentialSnapshot'] as const) {
+        const snapshot = freeze[field];
+        if (snapshot.asOfAt !== cutoff || Date.parse(snapshot.capturedAt) < cutoffMs)
+          issues.push({
+            path: ['settings', 'evidenceFreeze', field],
+            code: 'evidence_snapshot_cutoff_mismatch',
+            message: 'The captured snapshot must explicitly represent the configured cutoff.',
+          });
+      }
+    }
+  }
   const positionIds = unique(content.positions, (row) => row.id, 'positions', issues);
   unique(content.rules, (row) => row.positionId, 'rules', issues);
   unique(content.participation, (row) => row.positionId, 'participation', issues);
