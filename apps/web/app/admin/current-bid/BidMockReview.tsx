@@ -82,8 +82,9 @@ export function BidMockReview({
             {mockPreview.sourceDecisionBlockers.length > 0 ? (
               <output className="block rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
                 <p className="font-medium">
-                  Working Mock only — {mockPreview.sourceDecisionBlockers.length} Real activation{' '}
-                  {mockPreview.sourceDecisionBlockers.length === 1 ? 'review' : 'reviews'} remain.
+                  Working Mock only — {mockPreview.sourceDecisionBlockers.length} open source or
+                  evidence {mockPreview.sourceDecisionBlockers.length === 1 ? 'review' : 'reviews'}{' '}
+                  remain.
                 </p>
                 <p className="mt-1 text-muted-foreground">
                   This rehearsal preserves those open questions as visible assumptions. They still
