@@ -1,32 +1,32 @@
-﻿workflow,guideTopicId,route,visualAssets,status,evidenceAndLimit
+workflow,guideTopicId,route,visualAssets,status,evidenceAndLimit
 2026 Quick Start,2026-bid-quick-start,/admin/current-bid?year=2026,quick-start;mock;participants-flow,COVERED,"Current Bid, version, Mock readiness, stage order"
-Current Bid,current-bid-edit,/admin/current-bid,current-bid;participation;participants-flow,COVERED,Saved workspace and participant review
+Current Bid,current-bid-edit,/admin/current-bid,current-bid;participation;participants-flow;contextual_help,COVERED,"Saved workspace, participant review and authenticated contextual visual help"
 Version history,current-bid-versions,/admin/current-bid?view=versions,versions,COVERED,Version-history control; hash text remains in live UI
 Participant review,current-bid-edit,/admin/current-bid,participation;participants-flow,COVERED,Review buttons and frozen ordering domains
 Bid Blueprint,current-bid-blueprint,/admin/current-bid?view=blueprint,positions;b703,COVERED,Opportunities lens and reviewed B703 seat
 Credentials and catalog,department-credentials,/admin/department/credentials,credentials,COVERED,Catalog and member evidence entry
 Qualification evidence,qualification-review,/admin/personnel/reviews,eligibility,COVERED,Dated source review controls
 Credential import and comparison,targetsolutions,/admin/targetsolutions,credential-import;credential-comparison,COVERED,"Upload, saved comparison, reconciled and rejected rows"
-Eligibility preview,eligibility-preview,/admin/eligibility,requirement-edit,PARTIAL,Saved requirements pictured; member-specific server preview screenshot still needed
+Eligibility preview,eligibility-preview,/admin/eligibility,requirement-edit;eligibility_result,COVERED,"Server member-specific result captured for the displayed designated rule book; this secondary tool uses an older template, not saved Version 9"
 Position and rule editing,positions-rules,/admin/positions,opportunity-edit;requirement-edit,COVERED,"Participation, staffing connection and required qualification editor"
 Points and preferences editing,rules-list,/admin/rules,points-editor,COVERED,Annual scoring channel and cumulative preference controls
 A-Day configuration,current-bid-execution-rules,/admin/current-bid,a-day-config,COVERED,Saved source-backed timing exception
-Specialty configuration,current-bid-execution-rules,/admin/current-bid,investigator-fallback;specialties,PARTIAL,Investigator fallback and Blueprint pictured; broader specialty editor screenshot still needed
+Specialty configuration,current-bid-execution-rules,/admin/current-bid,investigator-fallback;specialties;specialty_editor,COVERED,"Investigator fallback, Blueprint and reviewed specialty membership source editor captured"
 Mock readiness,current-bid-mock,/admin/current-bid?view=mock,mock;mock-ready-detail,COVERED,Version 9 readiness control and result
 Mock creation,current-bid-mock,/admin/current-bid?view=mock,mock-ready-detail,COVERED,Creation control after readiness
 Operator console,mock-bids,/admin/rehearsal,console;console-actions,COVERED,Isolated Mock banner and named action panels
 Normal selection,mock-bids,/admin/rehearsal,a-day;console,COVERED,Position and A-Day selection form
-Deferred A-Day,current-bid-execution-rules,/admin/current-bid,a-day-config;console-actions,OPEN,Actual production deferred command and persisted audit are pending separate Mock
-Specialty interruption,specialty-adjudication,/admin/specialty-adjudication,specialty-contact,PARTIAL,Actual panel and rejected attempt pictured; successful interruption pending separate Mock
+Deferred A-Day,current-bid-execution-rules,/admin/current-bid,a-day-config;deferred_aday_form;deferred_aday_receipt;deferred_aday_results;deferred_aday_audit,COVERED,"Isolated production Mock 01M3N79DQD8BT5X8WMS4AEQKTV: Bryan Layton A305 early award, G1 at deferred turn, persisted single award, audit seq 152 and 288"
+Specialty interruption,specialty-adjudication,/admin/specialty-adjudication,specialty_award;deferred_aday_audit,COVERED,Isolated production Mock: Michelle Henson PASS then Bryan Layton ACCEPT for A305; canonical specialty resolution audit seq 151-152
 Contact unreachable return,mock-bids,/admin/rehearsal,contact-return,COVERED,Disposition and return controls with evidence
-Correction and amendment,mock-bids,/admin/rehearsal,console-actions,PARTIAL,Entry control pictured; amendment form and receipt still needed
+Correction and amendment,mock-bids,/admin/rehearsal,correction_form;correction_audit,COVERED,Separate Mock 01M3NEP3CVT1Q48JQ5VXBCST62: D101 MON to D102 TUE accepted; one persisted award; audit live.amend_selection seq 4
 Results,current-bid-results,/admin/current-bid?view=results,results-detail,COVERED,Exact-run selection and completion panel
-Finalize Results,results-audit,/admin/audit,results-detail,PARTIAL,Completion panel pictured; finalization control receipt still needed
+Finalize Results,results-audit,/admin/audit,finalization_form;finalization_receipt,COVERED,Control/form captured; completed 199-award Mock has accepted live.complete_session audit seq 230. Sparse specialty-only Mock correctly rejected by saved allocation policy
 All report exports,exports,/admin/exports,audit-export;verified-exports,COVERED,"Progress/final CSV controls, four verified shift PDFs and full audit"
 Live readiness,current-bid-live-preflight,/admin/current-bid?view=live,live-readiness,COVERED,Read-only Managed Live blocker panel
 Operator authority,current-bid-live-preflight,/admin/current-bid?view=live,operator-authority,COVERED,Named annual action-grant editor
-Assignment-term evidence,tenure,/admin/personnel/tenure,live-readiness,PARTIAL,Managed Live evidence blocker pictured; term source form still needed
+Assignment-term evidence,tenure,/admin/personnel/tenure,live-readiness;term_source,COVERED,Source form with inclusive dates and provenance captured; D102-D104 values remain NEEDS ADMIN EVIDENCE
 History and audit,results-audit,/admin/audit,audit-export,COVERED,Exact-run audit export receipt
-Recovery and retry,troubleshooting-safety,/admin/system,console-actions;audit-export,PARTIAL,Canonical roster/audit guidance; uncertain-response example still needed
+Recovery and retry,troubleshooting-safety,/admin/system,recovery_receipt;correction_audit,PARTIAL,Actual Recover the interrupted request UI was observed during Mock creation and resolved to one created-run link; transient prompt was not captured as an image
 Annual rollover,current-bid-new-annual,/admin/current-bid,versions,COVERED,New Annual Bid and version history controls
 Bid ordinals and Days tours,bid-evidence,/admin/personnel/bid-evidence,bid-evidence,COVERED,Source-certified order and tour evidence controls

@@ -17,26 +17,41 @@ const visual = (
   caption,
   markers,
   captureReference: [
-    'audit-export',
-    'verified-exports',
-    'investigator-fallback',
-    'console-actions',
-    'a-day-config',
-    'points-editor',
-    'operator-authority',
-    'participants-flow',
+    'member-eligibility-result',
+    'specialty-configuration-review',
+    'specialty-interruption-review',
+    'specialty-no-immediate-aday',
+    'deferred-aday-control',
+    'deferred-aday-result',
+    'correction-review',
+    'correction-audit',
+    'finalization-control',
+    'finalization-audit',
+    'assignment-term-source',
+    'recovered-mock-receipt',
   ].includes(name)
-    ? 'Production capture · e60c03a'
+    ? 'Cropped and redacted production capture · September 2026'
     : [
-          'opportunity-edit',
-          'requirement-edit',
-          'live-readiness',
-          'results-detail',
-          'mock-ready-detail',
-          'credential-comparison',
+          'audit-export',
+          'verified-exports',
+          'investigator-fallback',
+          'console-actions',
+          'a-day-config',
+          'points-editor',
+          'operator-authority',
+          'participants-flow',
         ].includes(name)
-      ? 'Pre-cutoff production capture · exact build not recorded'
-      : 'Production capture · 0c360901',
+      ? 'Production capture · e60c03a'
+      : [
+            'opportunity-edit',
+            'requirement-edit',
+            'live-readiness',
+            'results-detail',
+            'mock-ready-detail',
+            'credential-comparison',
+          ].includes(name)
+        ? 'Pre-cutoff production capture · exact build not recorded'
+        : 'Production capture · 0c360901',
 });
 
 /** Cropped, redacted production captures with per-figure provenance. */
@@ -232,6 +247,15 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
         'Use the server preview for member-specific eligibility.',
       ],
     ),
+    visual(
+      'member-eligibility-result',
+      'Cropped secondary eligibility preview with its evaluated rule and reason',
+      'Read the server result for the selected member and rule book. This illustrative secondary-tool capture does not establish eligibility in the saved Current Bid.',
+      [
+        'Confirm the member and rule book.',
+        'Read the rule reason before changing source evidence.',
+      ],
+    ),
   ],
   'positions-rules': [
     visual(
@@ -292,6 +316,18 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Record simulated contact or return only through the audited action panel.',
       ['Enter a reason and evidence when required.', 'Review the current member before commit.'],
     ),
+    visual(
+      'correction-review',
+      'Redacted Mock correction review showing the original and proposed selection',
+      'Confirm the exact member, seat and A-Day before recording a correction.',
+      ['Review the original selection.', 'Confirm the replacement and reason.'],
+    ),
+    visual(
+      'correction-audit',
+      'Cropped audit receipt for an accepted Mock correction',
+      'A correction appends an audited event to the same isolated Mock.',
+      ['Verify the corrected award.', 'Read the audit receipt.'],
+    ),
   ],
   'live-bid': [
     visual(
@@ -325,6 +361,24 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'A-Day timing exception and policy source in the saved 2026 Bid',
       'The specialized-award timing exception is source-backed and separate from normal selection.',
       ['Review the exception name and source.', 'Verify its timing in the saved Bid.'],
+    ),
+    visual(
+      'specialty-configuration-review',
+      'Cropped annual specialty rule configuration and source review',
+      'Review the frozen specialty scope and source before an interruption.',
+      ['Confirm the affected opportunity.', 'Read the policy source.'],
+    ),
+    visual(
+      'deferred-aday-control',
+      'Cropped deferred A-Day action control for an accepted specialty award',
+      'A source-backed exception can postpone the A-Day until after the position award.',
+      ['Confirm the frozen exception.', 'Open the later A-Day action for the awarded member.'],
+    ),
+    visual(
+      'deferred-aday-result',
+      'Cropped receipt after a deferred A-Day was recorded',
+      'Verify the later A-Day receipt before treating the selection as complete.',
+      ['Read the recorded A-Day.', 'Verify the audited result.'],
     ),
     visual(
       'points-editor',
@@ -412,6 +466,18 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Start specialty review only for a displayed eligible interruption; this captured attempt was rejected by frozen policy.',
       ['Check member and target opportunity.', 'Treat a rejection as no recorded award.'],
     ),
+    visual(
+      'specialty-interruption-review',
+      'Redacted accepted specialty interruption and ordered candidate review',
+      'Read the candidate order and suspended bidder state before each response.',
+      ['Confirm the requested specialty seat.', 'Review the current candidate and queue.'],
+    ),
+    visual(
+      'specialty-no-immediate-aday',
+      'Cropped accepted specialty award with a deferred A-Day state',
+      'The approved timing exception permits the award before its later A-Day.',
+      ['Verify one accepted award.', 'Check the pending A-Day state.'],
+    ),
   ],
   'current-bid-live-preflight': [
     visual(
@@ -439,6 +505,18 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Full audit export completion receipt',
       'Audit exports are tied to the selected run.',
       ['Generate the full audit file.', 'Verify the completed receipt.'],
+    ),
+    visual(
+      'finalization-control',
+      'Cropped Mock finalization control for the selected run',
+      'Review the exact run and its completion checks before finalizing.',
+      ['Confirm the Mock run.', 'Read the completion control.'],
+    ),
+    visual(
+      'finalization-audit',
+      'Cropped immutable completion receipt for a finalized Mock',
+      'Use the finalization event and export to reconcile the selected run.',
+      ['Verify the completion event.', 'Compare award totals with the export.'],
     ),
   ],
   'bid-advisory': [
@@ -476,6 +554,12 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Recover an interrupted contact action from its recorded receipt.',
       ['Check whether the action persisted.', 'Retry only when no canonical receipt exists.'],
     ),
+    visual(
+      'recovered-mock-receipt',
+      'Cropped canonical Mock receipt after a reconnect',
+      'After an uncertain response, verify whether the action was accepted before retrying.',
+      ['Read the current session state.', 'Match the existing audit receipt.'],
+    ),
   ],
   tenure: [
     visual(
@@ -483,6 +567,12 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'Managed Live assignment-term evidence blocker',
       'Supply reviewed term evidence in the linked source workspace before Live.',
       ['Read the named blocker.', 'Review the assignment term evidence.'],
+    ),
+    visual(
+      'assignment-term-source',
+      'Cropped assignment-term evidence source and inclusive-date controls',
+      'A reviewed source must support the exact protected term and dates.',
+      ['Select the authorized seat.', 'Enter the source and inclusive dates.'],
     ),
   ],
   'award-transition': [
