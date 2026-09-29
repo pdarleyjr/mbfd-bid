@@ -323,6 +323,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'In Specialty rules, configure station or float pools only when their capacity slots are interchangeable. Enter the pool name, kind, source clause and source decision; choose the slots in reservation order. Their requirements, ranking, shift and applicable policy scopes must agree. Daily apparatus placement remains separate.',
       'Configure fallback policies with the affected opportunities and source decision. Add tiers in the approved order, their qualification requirements and seniority direction. The system derives the next eligible candidate and advances only after the earlier tier is exhausted; a force action does not waive qualification rules.',
       'In A-Day, enable the source-backed execution model. Ordinary selections may choose an A-Day with the position; an approved Specialized Timeline can instead defer an exact opportunity or shared-profile scope until after position selection. Every exception needs its source and concrete frozen opportunity scope; overlapping scopes are rejected. Enter any exact officer count. Name each limit and select its actual positions, members, ranks and shifts. A label does not choose members automatically.',
+      'When an approved timing exception applies, verify the position award first, then use the displayed later A-Day action for the same member and frozen opportunity. Read back its receipt and group-limit result. A later A-Day does not create a second award.',
       'In Specialty membership distribution, choose Reviewed existing members or Wider qualified pool only after the population decision is resolved. The existing-team option distributes its reviewed members. The wider-pool option permits reviewed qualified candidates to elect membership with their selection. Select the members, required specialty qualification where applicable, shifts and limits explicitly; membership does not add another staffing position. The SWAT choice between the current six and a wider qualified pool must be resolved before Real activation.',
     ],
     important:
@@ -359,6 +360,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     steps: [
       'Open Results for the intended Bid year and choose a Bid run. Check whether it is Mock or Live before interpreting its awards.',
       'Review the recorded member, opportunity, pool or membership details and A-Day. Read the source and completion status; unavailable award evidence is shown as unavailable rather than replaced with records from another run.',
+      'For a Mock, confirm the selected run’s finalization state and compare its award count with the full audit export. A completed Mock remains an isolated rehearsal.',
       'Use Refresh results to reload that selection. Use Decision history to open History for that run and inspect the recorded actions and their reasons and evidence.',
       'For a verified completed Live run, Generate final result package makes its frozen results available as JSON and CSV. An authorized operator distributes them externally by email and TargetSolutions. Generating or downloading the package does not send or publish it.',
       'Record authorized external publication evidence separately for Email distribution and TargetSolutions bulletin. Review the outcome, publication date, evidence reference and reason, then confirm. Recording evidence requires current administrator access and the run’s publication authority. Corrections add history; they do not erase prior reviews. Retry an interrupted unchanged request to recover the same review.',
@@ -885,6 +887,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Record the reviewed status. For a protected term, identify the member and exact inclusive dates from the source. Use unknown when a decision is unresolved.',
       'When the source includes term totals, enable Record service and bid cycles. Enter the term member, accumulated service months and consecutive bid cycles together. For a protected seat, the term member must match the protected member. Enter reviewed totals, including a verified zero; do not estimate them from dates or seniority.',
       'Provide the source and review reason. Saving appends a revision; it does not change an assignment.',
+      'Read back the seat, member, inclusive dates, reviewed status and source reference in Evidence history. If the source does not establish a term, leave it unresolved and seek administrator evidence.',
       'In Annual Bid, review the seat participation and canonical holder. Active protection blocks biddable participation and mismatched holder evidence. Expired protection does not close a future annual seat automatically.',
     ],
     important:
@@ -1482,9 +1485,9 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Eligibility Preview shows how current configuration evaluates eligibility before an award is made.',
     controls: ['Eligibility form', 'Position and member inputs', 'Preview result'],
     steps: [
-      'Select the applicable configuration and subject.',
-      'Run the preview.',
-      'Review why the result is eligible, ineligible, or unavailable.',
+      'Select the applicable preview configuration and member. Confirm its rule-book version and qualification evidence source.',
+      'Run the server preview for that member and opportunity.',
+      'Review why the result is eligible, ineligible, or unavailable. A secondary rule-book result may describe a different configuration; it does not establish eligibility for a saved Current Bid version.',
       'Correct the underlying controlled record if authoritative review requires it.',
     ],
     important: 'A preview is not an award and does not change a live session.',
@@ -1585,6 +1588,8 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     steps: [
       'Create or select a Mock session and open its session controls.',
       'For a Mock using reviewed annual policy, select Start session, then Open session operator console. Confirm the intended Mock and record its selections, A-Day choices, fallback responses and amendments there.',
+      'To correct a recorded Mock selection, open Correct selection for the exact member. Review the existing award, replacement seat and A-Day, enter the reason, then verify the amended award and appended audit event.',
+      'If a command response is interrupted, reopen the same Mock and inspect its canonical roster and audit sequence before retrying. An accepted receipt means the action already occurred.',
       'Legacy Auto Bid and manual simulations reject runs that require these command controls. Use them only for supported legacy rehearsals. Record findings for the workflow you actually exercised.',
       'Freeze, reset, or close the mock using the explicit control when appropriate.',
       'Verify the mock audit before treating the rehearsal as complete.',
@@ -1623,7 +1628,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Confirm the session, phase, active bidder, and on-deck order.',
       'Only the authorized Admin or operator records a live selection.',
       'For a pooled opportunity, use Station or float pool and check its remaining capacity. The system reserves the next available reviewed slot; daily apparatus placement is separate. For an amendment, use Corrected station or float pool when appropriate.',
-      'When the policy uses simultaneous A-Day selection, choose Selection A-Day with the award. Fallback, specialty acceptance and corrected selections also require their A-Day. The system checks group limits before recording the change and checks final minimums at completion.',
+      'When the frozen policy uses simultaneous A-Day selection, choose Selection A-Day with the award. A source-backed exception can defer the A-Day for an exact specialty opportunity or shared-profile scope; record it later using the displayed A-Day action. Corrected selections preserve the policy timing for the corrected award. The system checks group limits before recording an A-Day and final minimums at completion.',
       'For fallback, review the source, active tier and ordered candidates. Record contacts, reason and required evidence before a decline or unreachable response. Choose the displayed next candidate; earlier-tier exhaustion is calculated from recorded responses. Confirm a forced award explicitly.',
       'Use protected skip, override, or freeze controls only with the required operational reason.',
       'Use session controls for pause or resume where the session state permits.',
@@ -1667,7 +1672,8 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Start the specialty review from the live controls when authorized.',
       'Review the original bidder, requested position, candidate order, policy status and any available advisory.',
       'Record each contact attempt and disposition.',
-      'Complete the adjudication and confirm the suspended bidder resumes at the recorded queue state.',
+      'Record an accepted specialty award once for the displayed candidate. If the frozen policy permits deferred A-Day timing for that opportunity, confirm the award receipt and pending A-Day state, then record its later A-Day through the displayed action.',
+      'Complete the adjudication and confirm the suspended bidder resumes at the recorded queue state. Review the audit sequence for the candidate responses, single award and resumption.',
     ],
     important:
       'This area includes synthetic rehearsal support. Keep synthetic and real activity distinct, and do not substitute a synthetic result for live evidence.',
@@ -1739,6 +1745,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Search for the relevant record.',
       'Review the recorded action and supporting context.',
       'Use History to inspect saved Bid changes and canonical Live actions, including selections, corrections, fallback responses and completion. Filter the intended session and action rather than assuming the newest event belongs to the run you are reviewing.',
+      'For a completed Mock, inspect the finalization receipt and reconcile its award count to the run-specific roster and full audit export. An unfilled simulated specialty opportunity needs source review before being called a final staffing shortage.',
       'Use the related Exports or Award Transition workspace when appropriate.',
     ],
     important:
@@ -1873,6 +1880,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Button unavailable or step-up required: confirm authorization and the required state before retrying.',
       'Policy blocking or unconfigured: complete the approved policy/configuration work.',
       'Advisory sequence behind the board: reload Live Bid and verify the authoritative sequence before acting.',
+      'Uncertain response after a reconnect: reopen the same session and read its canonical state and audit receipt. Retry only if the action is absent; never assume a timeout means no award was recorded.',
     ],
     important:
       'Never start a real Bid merely to test it, and never treat Mock Bid behavior as proof of live authorization or a canonical staffing change.',

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -43,5 +44,31 @@ describe('annotated administrator help', () => {
     expect(markup).toContain('Production capture · 0c360901');
     expect(markup).toContain('Pre-cutoff production capture · exact build not recorded');
     expect(markup).toContain('Mock Bid check');
+  });
+
+  it('keeps the new production help captures tied to their reviewed source receipts', () => {
+    const provenancePath = join(
+      process.cwd(),
+      '..',
+      '..',
+      'docs',
+      'unified-platform',
+      '2026-inapp-help-capture-provenance-20260929.json',
+    );
+    const provenance = JSON.parse(readFileSync(provenancePath, 'utf8')) as {
+      assets: Array<{ name: string; outputSha256: string }>;
+    };
+    expect(provenance.assets).toHaveLength(12);
+    const referenced = new Set(
+      Object.values(GUIDE_VISUALS)
+        .flat()
+        .map((visual) => visual.src),
+    );
+    for (const asset of provenance.assets) {
+      const src = `/manual/guide/${asset.name}.png`;
+      expect(referenced.has(src)).toBe(true);
+      const bytes = readFileSync(join(process.cwd(), 'public', src));
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(asset.outputSha256);
+    }
   });
 });
