@@ -44,6 +44,36 @@ const opportunityRows = (page: Page) => opportunityList(page).locator('button[ar
 const historyRows = (page: Page) => workspace(page).getByRole('button', { name: /^Version \d+\b/ });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+test('landing identifies the accepted MASTER V4 source', async ({ page }) => {
+  const state = await installCurrentBidFixtures(page);
+  state.current.content.sourceDecisions.push(
+    {
+      issueId: '2026-latest-substantive-ranks',
+      title: 'Latest source ranks',
+      question: 'Which source governs?',
+      area: 'annual-policy',
+      status: 'RESOLVED',
+      sourceRef: 'Reviewed MASTER source',
+      effectiveOn: '2026-09-30',
+      decision: 'Use the reviewed source ranks.',
+    },
+    {
+      issueId: '2026-master-v4-supersession',
+      title: 'MASTER V4 supersedes V3',
+      question: 'Has V4 been accepted?',
+      area: 'annual-policy',
+      status: 'RESOLVED',
+      sourceRef: 'Reviewed MASTER V4',
+      effectiveOn: '2026-09-30',
+      decision: 'V4 supersedes V3 after review.',
+    },
+  );
+  await openBid(page);
+  await expect(page.getByText('MASTER V4 · Annual v5', { exact: false })).toBeVisible();
+  await expect(page.getByText('MASTER V3 · Annual v5', { exact: false })).toHaveCount(0);
+  assertNoWrites(state);
+});
+
 test('operator navigation reveals and focuses every destination without manual scrolling', async ({
   page,
 }) => {

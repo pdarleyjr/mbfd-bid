@@ -51,6 +51,11 @@ export function BidOperations({
   const latest = content.sourceDecisions.some(
     (d) => d.issueId === '2026-latest-substantive-ranks' && d.status === 'RESOLVED',
   );
+  const masterSource = content.sourceDecisions.some(
+    (d) => d.issueId === '2026-master-v4-supersession' && d.status === 'RESOLVED',
+  )
+    ? 'MASTER V4'
+    : 'MASTER V3';
   const realOnly = content.sourceDecisions.filter(
     (d) =>
       d.status === 'OPEN' &&
@@ -84,7 +89,8 @@ export function BidOperations({
       </div>
       {latest && (
         <p>
-          <strong>Latest source:</strong> MASTER V3 · Annual v5 · Credential revision shown below
+          <strong>Latest source:</strong> {masterSource} · Annual v5 · Credential revision shown
+          below
         </p>
       )}
       {ranks && (
