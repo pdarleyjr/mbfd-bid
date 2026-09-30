@@ -85,9 +85,16 @@ export function BidReadinessSummary({
   const ranksReady =
     rankCapacity !== null &&
     JSON.stringify(rankCapacity.capacity) === JSON.stringify({ CPT: 23, LT: 39, FF: 161 }) &&
-    JSON.stringify(rankCapacity.bidders) === JSON.stringify({ CPT: 22, LT: 39, FF: 161 }) &&
-    JSON.stringify(rankCapacity.expectedVacancies) === JSON.stringify({ CPT: 1, LT: 0, FF: 0 }) &&
-    rankCapacity.shortages.length === 0;
+    (rankCapacity.shortages.length === 0 ||
+      (rankCapacity.shortages.every(
+        (s) => s.rank === 'LT' && s.bidders === 40 && s.capacity === 39,
+      ) &&
+        content.sourceDecisions.some(
+          (d) =>
+            d.issueId === '2026-latest-lieutenant-capacity' &&
+            d.status === 'OPEN' &&
+            d.blockingClassification === 'BLOCKS_REAL_BID_ACTIVATION',
+        )));
   const shiftCounts = { A: 0, B: 0, C: 0, D: 0 };
   const participation = new Map(
     content.participation.map((item) => [item.positionId, item.bidParticipation]),
@@ -184,7 +191,13 @@ export function BidReadinessSummary({
         )}
         <ReadinessItem
           label="Rank opportunities and bidders"
-          status={ranksReady ? 'Ready' : 'Blocking'}
+          status={
+            ranksReady && rankCapacity?.shortages.length
+              ? 'Practice assumption — Real only'
+              : ranksReady
+                ? 'Ready'
+                : 'Blocking'
+          }
           tone={ranksReady ? 'ready' : 'blocking'}
           action={
             <Button type="button" variant="secondary" onClick={() => onOpenEdit('flow')}>
@@ -236,9 +249,12 @@ export function BidReadinessSummary({
             </Link>
           }
         >
-          The authoritative annual baseline is evaluated as of September 24, 2026. A later approved
-          TargetSolutions or TeleStaff report can add, renew, correct, revoke, or explicitly remove
-          evidence; omission from a filtered report never removes a qualification.
+          The saved Bid evaluates credentials as of{' '}
+          {content.settings && content.settings.v !== 1
+            ? content.settings.credentialEvaluationOn
+            : 'the configured date'}
+          . A later approved TargetSolutions or TeleStaff report can add, renew, correct, revoke, or
+          explicitly remove evidence; omission from a filtered report never removes a qualification.
         </ReadinessItem>
         <ReadinessItem
           label="Specialty populations"

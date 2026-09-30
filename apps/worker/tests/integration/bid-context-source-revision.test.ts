@@ -181,7 +181,7 @@ describe('pending credential dispute identity invalidation', () => {
     const originalPrepare = h.env.DB.prepare.bind(h.env.DB);
     vi.spyOn(h.env.DB, 'prepare').mockImplementation((sql) => {
       const statement = originalPrepare(sql);
-      if (!remapped && sql.includes('FROM targetsolutions_rows r')) {
+      if (!remapped && sql.includes('FROM targetsolutions_rows r') && !sql.includes('reviewHold')) {
         const originalAll = statement.all.bind(statement);
         vi.spyOn(statement, 'all').mockImplementation(async <T>() => {
           const read = await originalAll<T>();

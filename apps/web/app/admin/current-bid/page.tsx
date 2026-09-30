@@ -4,7 +4,7 @@ import { CurrentBidWorkspace } from './CurrentBidWorkspace';
 export const dynamic = 'force-dynamic';
 export default async function CurrentBidPage({
   searchParams,
-}: { searchParams: Promise<{ year?: string; view?: string }> }) {
+}: { searchParams: Promise<{ year?: string; view?: string; section?: string }> }) {
   const claims = await requireAdmin();
   const search = await searchParams;
   const requested = search.year ?? String(new Date().getFullYear());
@@ -12,7 +12,7 @@ export default async function CurrentBidPage({
     return <p role="alert">Choose a Bid year between 2024 and 2100.</p>;
   const actorScope = `${claims.sub}:${claims.member_id}:${claims.security_version}`;
   const view =
-    (['edit', 'blueprint', 'mock', 'live', 'results', 'versions'] as const).find(
+    (['edit', 'blueprint', 'marine', 'mock', 'live', 'results', 'versions'] as const).find(
       (view) => view === search.view,
     ) ?? 'edit';
   return (
@@ -21,6 +21,21 @@ export default async function CurrentBidPage({
       year={Number(requested)}
       actorScope={actorScope}
       initialView={view}
+      initialSection={
+        (
+          [
+            'language',
+            'flow',
+            'opportunities',
+            'profiles',
+            'specialties',
+            'contact',
+            'a-day',
+            'timing',
+            'authority',
+          ] as const
+        ).find((section) => section === search.section) ?? 'language'
+      }
     />
   );
 }

@@ -16,6 +16,7 @@ import { BidImpactReview } from './BidImpactReview';
 import { BidLiveReview } from './BidLiveReview';
 import { BidMarineReview } from './BidMarineReview';
 import { BidMockReview } from './BidMockReview';
+import { BidOperations } from './BidOperations';
 import { BidOpportunityFields } from './BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
 import { BidProfileReview } from './BidProfileReview';
@@ -55,6 +56,7 @@ import {
   readBidDraft,
   reconcileProfileDraftEdit,
 } from './bid-draft';
+import { useBidNavigation } from './use-bid-navigation';
 
 const sections = [
   ['language', 'Policy & language'],
@@ -67,7 +69,7 @@ const sections = [
   ['timing', 'Timing & evidence dates'],
   ['authority', 'Authority & permissions'],
 ] as const;
-type Section = (typeof sections)[number][0];
+export type Section = (typeof sections)[number][0];
 type View = 'edit' | 'blueprint' | 'marine' | 'mock' | 'live' | 'results' | 'versions';
 const views: { id: View; label: string }[] = [
   { id: 'edit', label: 'Edit Bid' },
@@ -92,11 +94,12 @@ export function CurrentBidWorkspace({
   year,
   actorScope,
   initialView = 'edit',
-}: { year: number; actorScope: string; initialView?: View }) {
+  initialSection = 'language',
+}: { year: number; actorScope: string; initialView?: View; initialSection?: Section }) {
   const router = useRouter();
   const [draft, setDraft] = useState<BidDraft | null>(null);
   const [view, setView] = useState<View>(initialView);
-  const [section, setSection] = useState<Section>('language');
+  const [section, setSection] = useState<Section>(initialSection);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,10 +139,38 @@ export function CurrentBidWorkspace({
     pending ? 'Bid request; its outcome must be recovered' : 'Bid edits',
     retainsDraft,
   );
-  const selectView = (next: View) => {
-    setView(next);
-    router.replace(`/admin/current-bid?year=${year}&view=${next}` as Route, { scroll: false });
-  };
+  const openDestination = useCallback(
+    (next: string, nextSection?: string) => {
+      setView(next as View);
+      if (nextSection) setSection(nextSection as Section);
+      router.replace(
+        `/admin/current-bid?year=${year}&view=${next}${nextSection ? `&section=${nextSection}` : ''}` as Route,
+        { scroll: false },
+      );
+    },
+    [router, year],
+  );
+  const destination = view === 'edit' ? `${view}:${section}` : view;
+  const navigation = useBidNavigation(
+    destination,
+    loading,
+    openDestination,
+    initialView !== 'edit'
+      ? initialView
+      : initialSection !== 'language'
+        ? `edit:${initialSection}`
+        : undefined,
+  );
+  const selectView = (next: View, nextSection?: Section) =>
+    navigation.navigate(next, next === 'edit' ? (nextSection ?? section) : undefined);
+  const destinationTitle =
+    view === 'edit'
+      ? (sections.find(([id]) => id === section)?.[1] ?? 'Edit Bid')
+      : view === 'versions'
+        ? 'Version history'
+        : view === 'marine'
+          ? 'Marine evidence'
+          : (views.find((item) => item.id === view)?.label ?? view);
 
   const install = useCallback((value: BidDraft) => {
     draftRef.current = value;
@@ -479,7 +510,7 @@ export function CurrentBidWorkspace({
       setPreview(null);
       setPreviewContent(null);
       setNotice(
-        'Frozen 17:00 evidence loaded into this draft. Review the hashes, changes, and final readiness before saving a new immutable version.',
+        'Final 5:00 PM personnel and credential snapshot loaded into this draft. Review the hashes, changes, and final readiness before saving a new saved Bid version.',
       );
       selectView('edit');
     } catch (caught) {
@@ -587,7 +618,7 @@ export function CurrentBidWorkspace({
           </p>
           <h1 className="mt-1 font-heading text-3xl">{year} Current Bid</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Edit the policy, understand its effects, rehearse, and run the Bid.
+            Review the saved Bid, update credentials, and practice selections.
           </p>
         </div>
         <form
@@ -632,12 +663,34 @@ export function CurrentBidWorkspace({
           </Button>
         </form>
       </header>
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {navigation.announcement}
+      </div>
+      {draft && !loading && (
+        <BidOperations
+          year={year}
+          content={draft.content}
+          versionId={draft.base.version?.id ?? null}
+          createdMockId={
+            createdMock && createdMock.bidDefinition.versionId === draft.base.version?.id
+              ? createdMock.id
+              : null
+          }
+          disabled={locked || dirty || stale}
+          ready={mockPreview?.wouldAllowCreateMock ?? null}
+          onCheckMock={() => {
+            selectView('mock');
+            void reviewMock();
+          }}
+          onOpen={selectView}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <GitBranch aria-hidden="true" className="size-5 text-primary" />
           <strong>
             {draft?.base.version
-              ? `Version ${draft.base.version.versionNumber}`
+              ? `Saved Bid Version ${draft.base.version.versionNumber}`
               : draft
                 ? 'First version ready to save'
                 : 'Loading current version…'}
@@ -675,7 +728,7 @@ export function CurrentBidWorkspace({
                   disabled={locked || dirty || stale}
                   onClick={() => void prepareFinalEvidenceDraft()}
                 >
-                  Load sealed 17:00 evidence
+                  Load final 5:00 PM snapshot
                 </Button>
                 <span className="max-w-56 text-xs text-muted-foreground">
                   Requires the September 30, 17:00 Eastern server capture. Loading does not save a
@@ -705,19 +758,27 @@ export function CurrentBidWorkspace({
           </Button>
         </div>
       </div>
-      <nav aria-label="Bid workspace" className="flex flex-wrap gap-2 border-b border-border pb-3">
-        {views.map((item) => (
-          <Button
-            type="button"
-            key={item.id}
-            aria-pressed={view === item.id}
-            variant={view === item.id ? 'primary' : 'ghost'}
-            onClick={() => selectView(item.id)}
-          >
-            {item.label}
-          </Button>
-        ))}
-      </nav>
+      <details open>
+        <summary className="min-h-11 cursor-pointer content-center font-semibold">
+          ADVANCED BID CONFIGURATION
+        </summary>
+        <nav
+          aria-label="Bid workspace"
+          className="flex flex-wrap gap-2 border-b border-border pb-3"
+        >
+          {views.map((item) => (
+            <Button
+              type="button"
+              key={item.id}
+              aria-pressed={view === item.id}
+              variant={view === item.id ? 'primary' : 'ghost'}
+              onClick={() => selectView(item.id)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </nav>
+      </details>
       {draft && !loading && year === 2026 && (
         <BidReadinessSummary
           year={year}
@@ -743,8 +804,7 @@ export function CurrentBidWorkspace({
             draft.content.settings.livePolicy.annualOperations?.aDay.execution !== undefined
           }
           onOpenEdit={(nextSection) => {
-            setSection(nextSection);
-            selectView('edit');
+            selectView('edit', nextSection);
           }}
           onOpenMock={() => selectView('mock')}
           onOpenLive={() => selectView('live')}
@@ -784,8 +844,8 @@ export function CurrentBidWorkspace({
       {stale && (
         <div role="alert" className="space-y-2 rounded border border-warning p-4 text-sm">
           <p>
-            A newer saved Bid or source revision exists. Your edits are retained. Review them before
-            discarding and loading the current version.
+            A newer saved Bid exists. Reload it before continuing. Your unsaved edits are retained
+            until you choose to discard them.
           </p>
           <Button
             type="button"
@@ -820,7 +880,19 @@ export function CurrentBidWorkspace({
         </Button>
       )}
       {draft && !loading && (
-        <>
+        <div
+          key={destination}
+          aria-labelledby="bid-destination-heading"
+          className="min-w-0 space-y-4"
+        >
+          <h2
+            id="bid-destination-heading"
+            ref={navigation.heading}
+            tabIndex={-1}
+            className="scroll-mt-4 rounded font-heading text-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            Review {destinationTitle}
+          </h2>
           {view === 'edit' && (
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[210px_minmax(0,1fr)]">
               <nav
@@ -834,7 +906,7 @@ export function CurrentBidWorkspace({
                     variant={section === id ? 'secondary' : 'ghost'}
                     aria-pressed={section === id}
                     className="justify-start text-left"
-                    onClick={() => setSection(id)}
+                    onClick={() => selectView('edit', id)}
                   >
                     {label}
                   </Button>
@@ -1004,12 +1076,10 @@ export function CurrentBidWorkspace({
               execute={execute}
               createdLive={createdLive}
               onOpenAuthority={() => {
-                setSection('authority');
-                selectView('edit');
+                selectView('edit', 'authority');
               }}
               onOpenAssignmentTerms={() => {
-                setSection('specialties');
-                selectView('edit');
+                selectView('edit', 'specialties');
               }}
               {...{
                 busy,
@@ -1022,7 +1092,7 @@ export function CurrentBidWorkspace({
             />
           )}
           {view === 'results' && <BidResults year={year} />}
-        </>
+        </div>
       )}
     </div>
   );

@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '../../src/db/index.js';
 import { app } from '../../src/index.js';
 import {
+  loadBidEligibilityEvidence,
+  projectAnnualMemberEvidence,
+} from '../../src/lib/bid-eligibility-evidence.js';
+import {
   loadFrozenSessionBidPolicy,
   prepareBidSessionPolicySnapshot,
 } from '../../src/lib/bid-policy.js';
@@ -322,6 +326,59 @@ describe('qualification evidence in frozen Bid policy', () => {
 
   afterEach(async () => {
     await teardownTestD1(h);
+  });
+
+  it('withholds one disputed qualification in both review and a new Mock while retaining unrelated evidence', async () => {
+    await seedAcceptedMockParticipationBaseline(h);
+    await h.db.run(`UPDATE rule_books SET status='draft' WHERE version='qualification.v1';
+      INSERT INTO member_credentials(member_id,credential_id,start_date,expiration_date)
+        VALUES(2,10,'2026-08-01',NULL);
+      INSERT INTO targetsolutions_imports(id,filename,observed_on,source_row_count,unique_row_count,coverage_json,status,created_by,created_at)
+        VALUES('unverified-source','synthetic.csv','2026-08-31',1,1,'{}','reviewed','0',4);
+      INSERT INTO targetsolutions_rows(id,import_id,row_number,source_json,member_id,credential_id,classification,before_json,reviewed_at,applied_at)
+        VALUES('unverified-row','unverified-source',1,'{"expiresOn":"2099-05-07"}',1,10,'REJECTED',
+          '{"reviewHold":{"status":"NEEDS ADMIN EVIDENCE","reviewedAt":10}}',10,10);`);
+    const db = getDb(h.env.DB);
+    const review = projectAnnualMemberEvidence(
+      await loadBidEligibilityEvidence(db),
+      '2026-09-01',
+      '2026-09-01',
+    );
+    expect(review.ok).toBe(true);
+    if (!review.ok) return;
+    expect(review.members.find((m) => m.memberId === 1)?.certifications).toEqual([]);
+    expect(review.members.find((m) => m.memberId === 2)?.certifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Synthetic EMT', status: 'active' }),
+      ]),
+    );
+    const mock = await prepareBidSessionPolicySnapshot(db, 2026, CAPTURED_BEFORE_EXPIRY, 'mock');
+    expect(mock.ok).toBe(true);
+    if (!mock.ok) return;
+    expect(mock.snapshot.members.find((m) => m.memberId === 1)).toMatchObject({
+      credentialNames: [],
+      specialtyQualifications: expect.arrayContaining([
+        expect.objectContaining({ specialtyCode: 'SYNTHETIC_MARINE', status: 'active' }),
+      ]),
+    });
+    expect(mock.snapshot.members.find((m) => m.memberId === 2)?.credentialNames).toContain(
+      'Synthetic EMT',
+    );
+    await h.db.run("UPDATE rule_books SET status='active' WHERE version='qualification.v1'");
+    expect(
+      await prepareBidSessionPolicySnapshot(db, 2026, CAPTURED_BEFORE_EXPIRY, 'live'),
+    ).toMatchObject({
+      ok: false,
+      code: 'credential_import_dispute_requires_review',
+    });
+    expect(
+      h.sqlite
+        .prepare('SELECT source_json FROM targetsolutions_rows WHERE id=?')
+        .get('unverified-row'),
+    ).toEqual({ source_json: '{"expiresOn":"2099-05-07"}' });
+    expect(h.sqlite.prepare('SELECT count(*) n FROM member_qualification_events').get()).toEqual({
+      n: 3,
+    });
   });
 
   it('previews a dated expiration with the real evaluator and leaves all evidence unchanged', async () => {

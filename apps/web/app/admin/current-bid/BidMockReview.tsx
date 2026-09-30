@@ -50,7 +50,7 @@ export function BidMockReview({
       </Button>
       {mockPreview && !mockPreview.wouldAllowCreateMock && (
         <div role="alert" className="space-y-2 text-sm">
-          <p>Mock creation is blocked: {mockPreview.policyError.replaceAll('_', ' ')}.</p>
+          <p>MOCK BLOCKER: {mockPreview.policyError.replaceAll('_', ' ')}.</p>
           {mockPreview.positionIds && mockPreview.positionIds.length > 0 && (
             <p className="break-words">
               Opportunities requiring review: {mockPreview.positionIds.join(', ')}
@@ -82,14 +82,21 @@ export function BidMockReview({
             {mockPreview.sourceDecisionBlockers.length > 0 ? (
               <output className="block rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
                 <p className="font-medium">
-                  Working Mock only — {mockPreview.sourceDecisionBlockers.length} open source or
-                  evidence {mockPreview.sourceDecisionBlockers.length === 1 ? 'review' : 'reviews'}{' '}
-                  remain.
+                  REAL-ONLY ITEMS — information still needed before the Real Bid
                 </p>
                 <p className="mt-1 text-muted-foreground">
                   This rehearsal preserves those open questions as visible assumptions. They still
                   block creation of a Real Bid.
                 </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {mockPreview.sourceDecisionBlockers.map((item) => (
+                    <li key={item.issueId}>
+                      {base.content.sourceDecisions.find(
+                        (decision) => decision.issueId === item.issueId,
+                      )?.title ?? 'Reviewed information is still required before the Real Bid.'}
+                    </li>
+                  ))}
+                </ul>
               </output>
             ) : null}
             <p className="text-sm">
