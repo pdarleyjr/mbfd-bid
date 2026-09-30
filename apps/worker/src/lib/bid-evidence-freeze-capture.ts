@@ -12,6 +12,7 @@ import {
   frozenEvaluationFromRun,
   loadBidEvidenceFreeze,
 } from './bid-evidence-freeze.js';
+import { encodeBidEvidenceDocument } from './bid-evidence-storage.js';
 import { loadBidEvaluationEvidence } from './bid-policy.js';
 
 /** A later capture is valid only when the immutable mutation log proves that
@@ -168,6 +169,21 @@ export async function capture2026BidEvidenceFreeze(database: D1Database, actorSu
       AND NOT EXISTS(SELECT 1 FROM bid_cutoff_mutations WHERE occurred_at>=1790802000000)
       AND ${run.sourceGuard.sql}`;
   try {
+    const evaluationDocument = encodeBidEvidenceDocument(hashes.evaluationJson);
+    const personnelDocument = encodeBidEvidenceDocument(sourceHashes.personnelSourceJson);
+    const credentialDocument = encodeBidEvidenceDocument(sourceHashes.credentialSourceJson);
+    const importsJson = JSON.stringify(sourceImports);
+    // Reserve space for the scalar metadata and SQLite record header as well
+    // as the three compressed documents. A larger future capture fails closed.
+    const storedBytes = [
+      evaluationDocument,
+      personnelDocument,
+      credentialDocument,
+      importsJson,
+      actorSubject,
+    ].reduce((total, value) => total + new TextEncoder().encode(value).length, 0);
+    if (storedBytes > 1_900_000)
+      return { ok: false as const, error: 'evidence_cutoff_storage_limit_exceeded' };
     await database
       .prepare(sql)
       .bind(
@@ -178,13 +194,13 @@ export async function capture2026BidEvidenceFreeze(database: D1Database, actorSu
         head.id,
         head.sha256,
         run.sourceGuard.token,
-        hashes.evaluationJson,
-        sourceHashes.personnelSourceJson,
-        sourceHashes.credentialSourceJson,
+        evaluationDocument,
+        personnelDocument,
+        credentialDocument,
         hashes.evaluationSha256,
         sourceHashes.personnelSha256,
         sourceHashes.credentialSha256,
-        JSON.stringify(sourceImports),
+        importsJson,
         head.id,
         head.sha256,
         ...run.sourceGuard.parameters,
