@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** One destination for workspace actions, including repeated clicks on the
- * current view. Focus/scroll happen after React installs the requested panel. */
+ * current view. The caller waits for the URL commit and requested panel. */
 export function useBidNavigation(
   rendered: string,
   loading: boolean,
@@ -28,10 +28,16 @@ export function useBidNavigation(
   );
   useEffect(() => {
     if (!request || loading || request.destination !== rendered || !heading.current) return;
-    const destination = heading.current;
-    destination.scrollIntoView?.({ block: 'start', behavior: 'instant' });
-    destination.focus({ preventScroll: true });
-    setAnnouncement(`${destination.textContent} opened.`);
+    // The admin shell resets its scroll container when a route commits. Wait
+    // until all commit effects finish so that reset cannot undo this handoff.
+    const frame = requestAnimationFrame(() => {
+      const destination = heading.current;
+      if (!destination) return;
+      destination.scrollIntoView?.({ block: 'start', behavior: 'instant' });
+      destination.focus({ preventScroll: true });
+      setAnnouncement(`${destination.textContent} opened.`);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [request, rendered, loading]);
   return { heading, navigate, announcement };
 }

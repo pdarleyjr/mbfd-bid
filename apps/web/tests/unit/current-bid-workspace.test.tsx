@@ -4,8 +4,16 @@ import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
-vi.mock('next/navigation', () => ({ useRouter: () => navigation }));
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  search: '',
+  delayed: false,
+}));
+vi.mock('next/navigation', () => ({
+  useRouter: () => navigation,
+  useSearchParams: () => new URLSearchParams(navigation.search),
+}));
 // Only the expensive field/catalog children are replaced. Request parsing,
 // draft storage, the workspace controls and its step-up listener remain real.
 vi.mock('../../app/admin/current-bid/BidPolicyFields', () => ({
@@ -294,6 +302,16 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(false);
   navigation.push.mockReset();
   navigation.replace.mockReset();
+  navigation.search = '';
+  navigation.delayed = false;
+  navigation.replace.mockImplementation((url: string) => {
+    if (!navigation.delayed) navigation.search = new URL(url, window.location.origin).search;
+  });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
 });
 
 afterEach(async () => {
@@ -395,6 +413,26 @@ it('moves focus and scroll to rendered view and edit-section destinations, inclu
       `Review ${title} opened.`,
     );
   }
+});
+
+it('waits for the destination URL commit before handing off focus and scroll', async () => {
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scroll,
+  });
+  await mount();
+  navigation.delayed = true;
+  await click('Bid Blueprint');
+  expect(container.querySelector('#bid-destination-heading')?.textContent).toBe(
+    'Review Bid Blueprint',
+  );
+  expect(scroll).not.toHaveBeenCalled();
+  expect(document.activeElement?.id).not.toBe('bid-destination-heading');
+  navigation.search = '?year=2027&view=blueprint';
+  await settle(() => root?.render(<CurrentBidWorkspace year={YEAR} actorScope={ACTOR} />));
+  expect(scroll).toHaveBeenCalledOnce();
+  expect(document.activeElement?.id).toBe('bid-destination-heading');
 });
 
 function stored() {

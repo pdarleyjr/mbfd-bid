@@ -7,7 +7,7 @@ import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import type { BidDefinitionContent, BidImpactResponse } from '@mbfd/shared';
 import { ArrowRight, BookOpen, GitBranch, History, Save } from 'lucide-react';
 import type { Route } from 'next';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BidBlueprint } from './BidBlueprint';
 import { BidChangeReview } from './BidChangeReview';
@@ -97,6 +97,7 @@ export function CurrentBidWorkspace({
   initialSection = 'language',
 }: { year: number; actorScope: string; initialView?: View; initialSection?: Section }) {
   const router = useRouter();
+  const search = useSearchParams();
   const [draft, setDraft] = useState<BidDraft | null>(null);
   const [view, setView] = useState<View>(initialView);
   const [section, setSection] = useState<Section>(initialSection);
@@ -151,9 +152,12 @@ export function CurrentBidWorkspace({
     [router, year],
   );
   const destination = view === 'edit' ? `${view}:${section}` : view;
+  const committedView = search.get('view') ?? 'edit';
+  const committedDestination =
+    committedView === 'edit' ? `edit:${search.get('section') ?? 'language'}` : committedView;
   const navigation = useBidNavigation(
     destination,
-    loading,
+    loading || destination !== committedDestination,
     openDestination,
     initialView !== 'edit'
       ? initialView
