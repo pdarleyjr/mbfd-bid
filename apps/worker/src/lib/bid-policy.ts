@@ -1155,7 +1155,7 @@ export async function loadBidEvaluationEvidence(db: DB, bidYear: number) {
         json_extract(r.source_json,'$.expiresOn') AS expiresOn
       FROM targetsolutions_rows r JOIN targetsolutions_imports i ON i.id=r.import_id
       JOIN credentials c ON c.id=r.credential_id
-      WHERE r.applied_at IS NULL AND r.classification IN ('CONFLICT','EXPIRATION_REVIEW','REVOCATION_REVIEW')
+      WHERE r.applied_at IS NULL AND r.classification IN ('CONFLICT','ANOMALOUS_DATE_REVIEW','EXPIRATION_REVIEW','REVOCATION_REVIEW')
     `),
     db.all<BidOrdinalDatasetRow>(
       sql`SELECT id,bid_year AS bidYear,source_sha256 AS sourceSha256,source_ref AS sourceRef,entries_json AS entriesJson FROM bid_ordinal_datasets WHERE bid_year=${bidYear} ORDER BY revision DESC LIMIT 1`,
@@ -1587,6 +1587,7 @@ export async function prepareCapturedBidEvaluation(
           firstName: member.firstName,
           lastName: member.lastName,
           rank: member.rank,
+          bidCategory: member.bidCategory as 'OFC' | 'FF' | 'EXCLUDED',
           employmentStatus: member.employmentStatus,
           employmentStatusEffectiveOn: member.employmentStatusEffectiveOn,
           separationType: member.separationType,
@@ -1599,6 +1600,7 @@ export async function prepareCapturedBidEvaluation(
           rankAfter: event.rankAfter,
           separationType: event.separationType,
           beforeState: event.beforeState,
+          afterState: event.afterState,
           createdAt: event.createdAt.getTime(),
         })),
         capturedOn,
@@ -1843,8 +1845,8 @@ export async function prepareCapturedBidEvaluation(
       // value outside the two biddable pools must not become eligible merely
       // because a source constraint was bypassed or a legacy row is malformed.
       const pool: FrozenBidPoolMember['pool'] =
-        member.bidCategory === 'OFC' || member.bidCategory === 'FF'
-          ? member.bidCategory
+        personnelState?.bidCategory === 'OFC' || personnelState?.bidCategory === 'FF'
+          ? personnelState.bidCategory
           : 'EXCLUDED';
       if (pool === 'EXCLUDED') {
         return {

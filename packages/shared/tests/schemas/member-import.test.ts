@@ -15,6 +15,28 @@ const BASE_ROW = {
 };
 
 describe('MemberImportRowSchema', () => {
+  it('normalizes Firefighter DE as FF despite blank cached Bid lookup cells', () => {
+    const result = MemberImportRowSchema.parse({
+      ...BASE_ROW,
+      current_rank: null,
+      jobnamech: 'Firefighter DE',
+      bid_rank: null,
+      bid_category: null,
+    });
+    expect(result.rank).toBe('FF');
+    expect(result.bidCategory).toBe('FF');
+    expect(result).not.toHaveProperty('credentials');
+  });
+  it('accepts an explicit Firefighter DE label without adding a Bid rank', () => {
+    expect(
+      MemberImportRowSchema.parse({
+        ...BASE_ROW,
+        current_rank: 'Firefighter DE',
+        bid_rank: '',
+        bid_category: '',
+      }).rank,
+    ).toBe('FF');
+  });
   it('happy path: Division Chief OFC → bidCategory OFC, rank DC', () => {
     const result = MemberImportRowSchema.safeParse(BASE_ROW);
     expect(result.success).toBe(true);

@@ -10,7 +10,11 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { AnnualRequestError, annualGet, annualPost } from '../annual-plan/annual-plan-client';
-import { credentialSourceText } from './credential-source-file';
+import {
+  type CredentialWorkbook,
+  credentialRowsToCsv,
+  readCredentialWorkbook,
+} from './credential-source-file';
 import { retryImportGroup } from './import-retry';
 
 type Row = {
@@ -48,12 +52,24 @@ type Detail = {
   };
   counts: Record<string, number>;
   rows: Row[];
+  source_receipt?: {
+    workbook_hash: string;
+    selected_sheet: string;
+    source_revision: number;
+    row_count: number;
+    unique_employee_count: number;
+    observed_at: string;
+    source_filename: string;
+    approved_at: number | null;
+  } | null;
 };
 const labels: Record<string, string> = {
   NEW_QUALIFICATION: 'New qualifications',
   UNCHANGED: 'Unchanged',
   FILL_MISSING_DATE: 'Missing dates filled',
   RENEWAL: 'Renewals',
+  FUTURE_RENEWAL: 'Scheduled renewals (current interval retained)',
+  ANOMALOUS_DATE_REVIEW: 'Unusual source dates to verify',
   EXPIRATION_REVIEW: 'Expiration review',
   REVOCATION_REVIEW: 'Revocation review',
   CONFLICT: 'Conflicting evidence',
@@ -86,6 +102,9 @@ export function TargetSolutionsWorkspace({
   const departmentMode = basePath.split('?', 1)[0]?.startsWith('/admin/department/');
   const Heading = departmentMode ? 'h2' : 'h1';
   const [file, setFile] = useState<File | null>(null);
+  const [workbook, setWorkbook] = useState<CredentialWorkbook | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState('');
+  const fileReadGeneration = useRef(0);
   const [retainedFile, setRetainedFile] = useState<File | null>(null);
   const [date, setDate] = useState('');
   const [category, setCategory] = useState('');
@@ -188,13 +207,27 @@ export function TargetSolutionsWorkspace({
   }
   async function upload() {
     if (!file) return;
+    const selected = workbook?.revisions.find((revision) => revision.sheet === selectedSheet);
+    if (/\.xlsx$/i.test(file.name) && !selected) return;
     await action(async () => {
       const result = await annualPost<{ id: string }>(
         'targetsolutions/imports',
         {
-          csv: await credentialSourceText(file),
+          csv: selected ? credentialRowsToCsv(selected.data) : await file.text(),
           filename: file.name,
           ...(date ? { observed_on: date } : {}),
+          ...(selected && workbook
+            ? {
+                source_receipt: {
+                  workbook_hash: workbook.hash,
+                  selected_sheet: selected.sheet,
+                  source_revision: selected.revision,
+                  row_count: selected.rowCount,
+                  unique_employee_count: selected.employeeCount,
+                  source_filename: file.name,
+                },
+              }
+            : {}),
         },
         crypto.randomUUID(),
       );
@@ -279,10 +312,14 @@ export function TargetSolutionsWorkspace({
   }
   const batch = detail.data;
   const safeCount = batch
-    ? ['NEW_QUALIFICATION', 'FILL_MISSING_DATE', 'RENEWAL', 'UNCHANGED', 'REFERENCE_ONLY'].reduce(
-        (n, k) => n + (batch.counts[k] ?? 0),
-        0,
-      )
+    ? [
+        'NEW_QUALIFICATION',
+        'FILL_MISSING_DATE',
+        'RENEWAL',
+        'FUTURE_RENEWAL',
+        'UNCHANGED',
+        'REFERENCE_ONLY',
+      ].reduce((n, k) => n + (batch.counts[k] ?? 0), 0)
     : 0;
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -304,7 +341,33 @@ export function TargetSolutionsWorkspace({
               type="file"
               accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               disabled={busy}
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                const generation = ++fileReadGeneration.current;
+                setFile(next);
+                setWorkbook(null);
+                setSelectedSheet('');
+                setMessage('');
+                if (next && /\.xlsx$/i.test(next.name)) {
+                  setBusy(true);
+                  void readCredentialWorkbook(next)
+                    .then((result) => {
+                      if (generation !== fileReadGeneration.current) return;
+                      setWorkbook(result);
+                      setSelectedSheet(result.revisions[0]?.sheet ?? '');
+                    })
+                    .catch((error: unknown) => {
+                      if (generation !== fileReadGeneration.current) return;
+                      setFailed(true);
+                      setMessage(
+                        error instanceof Error ? error.message : 'The workbook could not be read.',
+                      );
+                    })
+                    .finally(() => {
+                      if (generation === fileReadGeneration.current) setBusy(false);
+                    });
+                }
+              }}
             />
           </Label>
           <Label>
@@ -317,9 +380,55 @@ export function TargetSolutionsWorkspace({
             />
           </Label>
         </div>
-        <Button className="mt-4" disabled={!file || busy} onClick={() => void upload()}>
+        {workbook && (
+          <div className="mt-4">
+            <Label htmlFor="credential-source-revision">Credential revision</Label>
+            <NativeSelect
+              id="credential-source-revision"
+              value={selectedSheet}
+              disabled={busy}
+              onChange={(e) => setSelectedSheet(e.target.value)}
+            >
+              {workbook.revisions.map((revision, index) => (
+                <option key={revision.sheet} value={revision.sheet}>
+                  Version {revision.revision}
+                  {index === 0 ? ' — Latest in this workbook' : ''} ·{' '}
+                  {revision.rowCount.toLocaleString()} rows · {revision.employeeCount} employees
+                </option>
+              ))}
+            </NativeSelect>
+            <p className="mt-2 text-sm text-muted-foreground">
+              The selected revision will be saved with the workbook hash. Earlier revisions remain
+              available for comparison.
+            </p>
+          </div>
+        )}
+        <Button
+          className="mt-4"
+          disabled={!file || busy || (/\.xlsx$/i.test(file.name) && !selectedSheet)}
+          onClick={() => void upload()}
+        >
           Upload and compare
         </Button>
+        {batch?.source_receipt && (
+          <div className="mt-4 text-sm">
+            <p>
+              Saved source: {batch.source_receipt.source_filename} · Version{' '}
+              {batch.source_receipt.source_revision} · {batch.source_receipt.selected_sheet}
+            </p>
+            <p>
+              {batch.source_receipt.row_count.toLocaleString()} rows ·{' '}
+              {batch.source_receipt.unique_employee_count} employees · observed{' '}
+              {batch.source_receipt.observed_at}
+            </p>
+            <p className="break-all">SHA-256: {batch.source_receipt.workbook_hash}</p>
+            <p>
+              {batch.source_receipt.approved_at
+                ? `Last approved application: ${new Date(batch.source_receipt.approved_at).toLocaleString()}`
+                : 'No records applied yet.'}
+            </p>
+          </div>
+        )}
         <Label className="mt-5 block">
           Resume a saved import
           <NativeSelect

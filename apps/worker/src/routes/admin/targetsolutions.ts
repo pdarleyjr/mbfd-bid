@@ -22,7 +22,24 @@ import { mapEvent } from './qualification-lifecycle.js';
 
 const router = new Hono<{ Bindings: WorkerEnv; Variables: { claims: JwtPayload } }>();
 router.use('*', requireAdmin);
-const SAFE = ['NEW_QUALIFICATION', 'FILL_MISSING_DATE', 'RENEWAL', 'UNCHANGED', 'REFERENCE_ONLY'];
+const SAFE = [
+  'NEW_QUALIFICATION',
+  'FILL_MISSING_DATE',
+  'RENEWAL',
+  'FUTURE_RENEWAL',
+  'UNCHANGED',
+  'REFERENCE_ONLY',
+];
+const SourceReceiptSchema = z
+  .object({
+    workbook_hash: z.string().regex(/^[0-9a-f]{64}$/),
+    selected_sheet: z.string().regex(/^2026_BID_Credentials_Version_\d+_$/),
+    source_revision: z.number().int().positive(),
+    row_count: z.number().int().positive().max(25000),
+    unique_employee_count: z.number().int().positive().max(25000),
+    source_filename: z.string().trim().min(1).max(160),
+  })
+  .strict();
 type Import = {
   id: string;
   filename: string;
@@ -63,7 +80,7 @@ const chunks = <T>(items: T[], size = 100): T[][] =>
   );
 
 async function state(db: D1Database) {
-  const [members, catalog, mappings, baseline, eventRows] = await Promise.all([
+  const [members, catalog, mappings, baseline, eventRows, inferredDates] = await Promise.all([
     all<{ id: number; employee_id: string; first_name: string; last_name: string }>(
       db,
       'SELECT id,employee_id,first_name,last_name FROM members',
@@ -84,11 +101,22 @@ async function state(db: D1Database) {
       db,
       'SELECT event.*,credential.name AS credential_name FROM member_qualification_events event LEFT JOIN credentials credential ON credential.id=event.credential_id ORDER BY event.effective_on,event.created_at,event.id',
     ),
+    all<{ eventId: string }>(
+      db,
+      "SELECT applied_event_id AS eventId FROM targetsolutions_rows WHERE applied_event_id IS NOT NULL AND json_extract(source_json,'$.effectiveOn') IS NULL",
+    ),
   ]);
   const events = eventRows.map(mapEvent);
   if (events.some((v) => v === null))
     throw new Error('Qualification history requires review before import.');
-  return { members, catalog, mappings, baseline, events: events.filter((v) => v !== null) };
+  return {
+    members,
+    catalog,
+    mappings,
+    baseline,
+    events: events.filter((v) => v !== null),
+    inferredEffectiveEventIds: new Set(inferredDates.map((row) => row.eventId)),
+  };
 }
 type State = Awaited<ReturnType<typeof state>>;
 function assess(raw: TargetCredentialRow, snapshot: State, observedOn: string) {
@@ -129,6 +157,13 @@ function assess(raw: TargetCredentialRow, snapshot: State, observedOn: string) {
     base,
     events: events.map((e) => e.id),
   });
+  // Active-only reports prove presence on their observation date, not the
+  // credential's issue date. Original immutable source rows distinguish that
+  // inferred date from a conflicting, explicitly recorded issue date.
+  const currentEffectiveWasObserved =
+    !!current?.eventId && snapshot.inferredEffectiveEventIds.has(current.eventId);
+  const comparisonCurrent =
+    current && currentEffectiveWasObserved ? { ...current, effectiveOn: null } : current;
   let classification: string = !member
     ? 'UNKNOWN_MEMBER'
     : mapping?.treatment === 'reference_only'
@@ -137,16 +172,28 @@ function assess(raw: TargetCredentialRow, snapshot: State, observedOn: string) {
         ? 'REFERENCE_REVIEW'
         : !credential
           ? 'UNKNOWN_QUALIFICATION'
-          : events.some((e) => e.effectiveOn > observedOn)
-            ? 'CONFLICT'
-            : classifyTargetCredential(raw, current, observedOn);
+          : raw.expiresOn && Number(raw.expiresOn.slice(0, 4)) > Number(observedOn.slice(0, 4)) + 20
+            ? 'ANOMALOUS_DATE_REVIEW'
+            : events.some((e) => e.effectiveOn > observedOn)
+              ? events
+                  .filter((e) => e.effectiveOn > observedOn)
+                  .every(
+                    (e) =>
+                      e.kind === 'CERTIFICATION_GAINED' &&
+                      e.effectiveOn === raw.effectiveOn &&
+                      e.expiresOn === raw.expiresOn &&
+                      raw.status === 'active',
+                  )
+                ? 'UNCHANGED'
+                : 'CONFLICT'
+              : classifyTargetCredential(raw, comparisonCurrent, observedOn);
   if (members.length > 1) classification = 'AMBIGUOUS_MEMBER';
   return {
     memberId: member?.id ?? null,
     memberName: member ? `${member.last_name}, ${member.first_name}` : null,
     credentialId: credential?.id ?? null,
     classification,
-    before: { fingerprint, current: current ?? null },
+    before: { fingerprint, current: current ?? null, currentEffectiveWasObserved },
   };
 }
 
@@ -268,6 +315,7 @@ router.post('/imports', requireStepUpAuth(), async (c) => {
       csv: z.string().min(1).max(10000000),
       filename: z.string().trim().min(1).max(160),
       observed_on: z.string().optional(),
+      source_receipt: SourceReceiptSchema.optional(),
     })
     .strict()
     .safeParse(await c.req.json().catch(() => null));
@@ -286,7 +334,21 @@ router.post('/imports', requireStepUpAuth(), async (c) => {
       { error: 'source_file_requires_correction', errors: report.errors.slice(0, 100) },
       422,
     );
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input.data.csv));
+  const receipt = input.data.source_receipt;
+  if (
+    receipt &&
+    (receipt.selected_sheet !== `2026_BID_Credentials_Version_${receipt.source_revision}_` ||
+      receipt.row_count !== report.sourceRowCount ||
+      receipt.unique_employee_count !== new Set(report.rows.map((row) => row.employeeId)).size ||
+      receipt.source_filename !== input.data.filename)
+  )
+    return c.json({ error: 'source_receipt_does_not_match_selected_revision' }, 422);
+  const hash = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(
+      receipt ? JSON.stringify({ csv: input.data.csv, sourceReceipt: receipt }) : input.data.csv,
+    ),
+  );
   const id = Array.from(new Uint8Array(hash), (v) => v.toString(16).padStart(2, '0')).join('');
   const prior = await getImport(c.env.DB, id);
   if (prior && prior.observed_on !== observedOn)
@@ -302,7 +364,13 @@ router.post('/imports', requireStepUpAuth(), async (c) => {
       observedOn,
       report.sourceRowCount,
       report.rows.length,
-      JSON.stringify({ ...report.coverage, runDate: report.runDate }),
+      JSON.stringify({
+        ...report.coverage,
+        runDate: report.runDate,
+        ...(receipt
+          ? { sourceReceipt: { ...receipt, observed_at: new Date().toISOString() } }
+          : {}),
+      }),
       actor,
       Date.now(),
     )
@@ -339,9 +407,20 @@ router.get('/imports/:id', async (c) => {
     ...(category && !['APPLIED', 'REJECTED'].includes(category) ? [category] : []),
     offset,
   );
+  const coverage = JSON.parse(batch.coverage_json);
+  const approval = coverage.sourceReceipt
+    ? await c.env.DB.prepare(
+        'SELECT MAX(applied_at) AS approved_at FROM targetsolutions_rows WHERE import_id=?',
+      )
+        .bind(batch.id)
+        .first<{ approved_at: number | null }>()
+    : null;
   return c.json({
     ...batch,
-    coverage: JSON.parse(batch.coverage_json),
+    coverage,
+    source_receipt: coverage.sourceReceipt
+      ? { ...coverage.sourceReceipt, approved_at: approval?.approved_at ?? null }
+      : null,
     counts: Object.fromEntries(counts.map((r) => [r.classification, r.n])),
     rows: rows.map((r) => ({
       ...r,
@@ -593,7 +672,10 @@ router.post('/imports/:id/apply', requireStepUpAuth(), async (c) => {
     )
       return c.json({ error: 'member_evidence_changed_refresh_review', rowId: row.id }, 409);
     // A conflict is not resolved merely by clicking approval: the source/current evidence needs an explicit correction first.
-    if (row.classification === 'CONFLICT' || checked.classification === 'CONFLICT')
+    if (
+      ['CONFLICT', 'ANOMALOUS_DATE_REVIEW'].includes(row.classification) ||
+      ['CONFLICT', 'ANOMALOUS_DATE_REVIEW'].includes(checked.classification)
+    )
       return c.json(
         {
           error: 'conflicting_evidence_requires_individual_qualification_correction',
@@ -618,6 +700,12 @@ router.post('/imports/:id/apply', requireStepUpAuth(), async (c) => {
             : 'CERTIFICATION_GAINED';
       let effective =
         source.effectiveOn ?? checked.before.current?.effectiveOn ?? batch.observed_on;
+      if (
+        checked.before.currentEffectiveWasObserved &&
+        checked.before.current?.effectiveOn &&
+        effective < batch.observed_on
+      )
+        effective = batch.observed_on;
       let eventExpires = expires;
       if (adverse === 'CERTIFICATION_EXPIRED') {
         effective = source.expiresOn
@@ -625,6 +713,8 @@ router.post('/imports/:id/apply', requireStepUpAuth(), async (c) => {
               .toISOString()
               .slice(0, 10)
           : batch.observed_on;
+        if (checked.before.currentEffectiveWasObserved && effective < batch.observed_on)
+          effective = batch.observed_on;
         eventExpires = effective;
       }
       if (adverse === 'CERTIFICATION_REVOKED') {
@@ -641,6 +731,7 @@ router.post('/imports/:id/apply', requireStepUpAuth(), async (c) => {
         rowId: row.id,
         sourceObservedOn: batch.observed_on,
         sourceExpiresOn: source.expiresOn,
+        sourceEffectiveOn: source.effectiveOn,
         kind: adverse,
         effectiveOn: effective,
         expiresOn: eventExpires,

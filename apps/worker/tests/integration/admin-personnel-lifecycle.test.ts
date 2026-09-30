@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import { derivePersonnelMemberAsOf } from '../../src/lib/personnel-lifecycle.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const KEY = 'p'.repeat(64);
@@ -69,6 +70,123 @@ describe('personnel lifecycle administration', () => {
       vi.useRealTimers();
     }
   });
+
+  it.each([
+    ['DC', 'EXCLUDED', 'CPT', 'OFC'],
+    ['FF', 'FF', 'LT', 'OFC'],
+    ['CPT', 'OFC', 'DC', 'EXCLUDED'],
+  ])(
+    'audits %s to %s source corrections without changing assignments or promotion dates',
+    async (beforeRank, beforePool, rankAfter, poolAfter) => {
+      await h.env.DB.prepare('UPDATE members SET rank=?,bid_category=? WHERE id=1')
+        .bind(beforeRank, beforePool)
+        .run();
+      const body = {
+        kind: 'CORRECTION',
+        member_id: 1,
+        rank_after: rankAfter,
+        bid_category_after: poolAfter,
+        effective_on: '2026-08-28',
+        reason:
+          'Reviewed substantive rank and Bid pool source observation; historical promotion date unknown.',
+      };
+      const headers = {
+        Authorization: `Bearer ${await adminJwt()}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'rank-source-correction',
+      };
+      const preview = await request(h, '/api/admin/personnel/changes/preview', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      expect(preview.status).toBe(200);
+      expect(await preview.json()).toMatchObject({
+        proposed: {
+          assignmentClosures: [],
+          assignmentCreation: null,
+          memberProjection: { rank: rankAfter, bidCategory: poolAfter },
+        },
+      });
+      const committed = await request(h, '/api/admin/personnel/changes', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      expect(committed.status).toBe(201);
+      expect(
+        await h.env.DB.prepare(
+          'SELECT rank,bid_category,promoted_at FROM members WHERE id=1',
+        ).first(),
+      ).toMatchObject({ rank: rankAfter, bid_category: poolAfter, promoted_at: null });
+      expect(
+        await h.env.DB.prepare(
+          "SELECT status,effective_from,effective_to FROM member_assignments WHERE id='assignment-current'",
+        ).first(),
+      ).toMatchObject({ status: 'active', effective_from: '2026-01-01', effective_to: null });
+      const saved = (await h.env.DB.prepare(
+        'SELECT id,kind,effective_on,employment_status_after,rank_after,separation_type,before_state,after_state,created_at FROM personnel_lifecycle_events',
+      ).first()) as {
+        id: string;
+        kind: 'CORRECTION';
+        effective_on: string;
+        employment_status_after: 'active';
+        rank_after: 'CPT' | 'LT' | 'DC';
+        separation_type: null;
+        before_state: string;
+        after_state: string;
+        created_at: number;
+      };
+      const member = {
+        id: 1,
+        employeeId: 'synthetic-001',
+        firstName: 'Synthetic',
+        lastName: 'Member',
+        rank: saved.rank_after,
+        bidCategory: poolAfter as 'OFC' | 'EXCLUDED',
+        employmentStatus: 'active' as const,
+        employmentStatusEffectiveOn: '2026-01-01',
+        separationType: null,
+      };
+      const events = [
+        {
+          id: saved.id,
+          kind: saved.kind,
+          effectiveOn: saved.effective_on,
+          employmentStatusAfter: saved.employment_status_after,
+          rankAfter: saved.rank_after,
+          separationType: saved.separation_type,
+          beforeState: saved.before_state,
+          afterState: saved.after_state,
+          createdAt: saved.created_at,
+        },
+      ];
+      expect(derivePersonnelMemberAsOf(member, events, '2026-08-27')).toMatchObject({
+        rank: beforeRank,
+        bidCategory: beforePool,
+      });
+      expect(derivePersonnelMemberAsOf(member, events, '2026-08-28')).toMatchObject({
+        rank: rankAfter,
+        bidCategory: poolAfter,
+      });
+      const replay = await request(h, '/api/admin/personnel/changes', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toMatchObject({ replayed: true });
+      const changed = await request(h, '/api/admin/personnel/changes', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...body,
+          bid_category_after: poolAfter === 'OFC' ? 'EXCLUDED' : 'OFC',
+        }),
+      });
+      expect(changed.status).toBe(409);
+    },
+  );
 
   it('previews a permanent assignment change without writing D1 or changing an established session', async () => {
     const before = await h.db.run('SELECT count(*) AS count FROM personnel_lifecycle_events');

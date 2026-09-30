@@ -43,6 +43,26 @@ function request(overrides: Partial<PersonnelLifecycleInput> = {}): PersonnelLif
 }
 
 describe('personnel lifecycle planning', () => {
+  it('retains assignment closure for an explicit separation correction', () => {
+    const {
+      staffingPositionId: _staffingPositionId,
+      rankAfter: _rankAfter,
+      ...input
+    } = request({
+      kind: 'CORRECTION',
+      employmentStatusAfter: 'separated',
+      separationType: 'Reviewed departure',
+      nowOn: '2026-09-30',
+    });
+    const result = planPersonnelLifecycleChange(input);
+    expect(result).toMatchObject({
+      ok: true,
+      assignmentCreation: null,
+      assignmentClosures: [
+        { id: 'assignment-current', status: 'ended', effectiveTo: '2026-09-14' },
+      ],
+    });
+  });
   it('derives the member state at the requested effective date from immutable lifecycle evidence', () => {
     const events = [
       {
