@@ -9,6 +9,7 @@ import { captureBidDefinitionSource } from '../../src/lib/bid-definition-source.
 import { saveBidDefinition } from '../../src/lib/bid-definition-store.js';
 import { loadBidDefinitionVersion } from '../../src/lib/bid-definition-version.js';
 import { loadBidSessionPolicySnapshot } from '../../src/lib/bid-policy.js';
+import { credentialImportImpact } from '../../src/lib/credential-import-impact.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
@@ -318,6 +319,47 @@ describe('managed Mock preview and atomic creation through the admin router', ()
       h.sqlite.exec(guard.sql);
     }
   }
+
+  it('finds only the signed-in administrator’s unfinished Mock for the requested saved version', async () => {
+    const created = await create(createBody(await preview()));
+    const read = async (auth: string | null, versionId = version.row.id) =>
+      app.fetch(
+        new Request(`http://x/api/admin/bid/${YEAR}/my-mock?versionId=${versionId}`, {
+          headers: auth ? { Authorization: `Bearer ${auth}` } : {},
+        }),
+        h.env,
+      );
+    expect((await read(null)).status).toBe(401);
+    expect((await read(await token(ACTOR, 'member'))).status).toBe(403);
+    expect(await (await read(adminToken)).json()).toEqual({ mock: { id: created.id } });
+    expect(await (await read(await token(10002))).json()).toEqual({ mock: null });
+    expect(await (await read(adminToken, 'different-saved-version')).json()).toEqual({
+      mock: null,
+    });
+    h.sqlite.prepare('UPDATE bid_sessions SET completed_at=10 WHERE id=?').run(created.id);
+    expect(await (await read(adminToken)).json()).toEqual({ mock: null });
+  });
+
+  it('rechecks every list under the current saved policy without creating or modifying a run', async () => {
+    await successor((content) => {
+      const rule = content.rules[0];
+      if (!rule) throw new Error('Synthetic rule missing');
+      const criteria = JSON.parse(rule.requiredCriteriaJson);
+      criteria.credentials = ['Synthetic dated qualification'];
+      rule.requiredCriteriaJson = JSON.stringify(criteria);
+    });
+    h.sqlite.exec(`INSERT INTO targetsolutions_imports(id,filename,observed_on,source_row_count,unique_row_count,coverage_json,status,created_by,created_at)
+      VALUES('impact-source','synthetic.csv','2027-01-01',1,1,'{}','reviewed','10001',100);
+      INSERT INTO member_qualification_events(id,member_id,credential_id,kind,effective_on,expires_on,evidence_source,reason,actor_subject,idempotency_key,before_state,after_state,created_at)
+      VALUES('impact-expiration',10001,7001,'CERTIFICATION_EXPIRED','2027-01-01','2027-01-01','Synthetic approved source','Synthetic verified expiration','10001','impact-expiration','{}','{}',200);`);
+    const before = h.sqlite.serialize();
+    const result = await credentialImportImpact(h.env.DB, 'impact-source', YEAR);
+    expect(result).toMatchObject({
+      positionCount: 1,
+      affectedLists: [{ positionId: 'synthetic-mock-seat-2027', gained: [], lost: [ACTOR] }],
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+  });
 
   it('previews the selected version read-only and creates exactly one pinned ordinary config session', async () => {
     const checked = await preview();

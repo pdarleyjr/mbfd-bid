@@ -179,7 +179,7 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
   await page
     .getByPlaceholder('Source reviewed and reason for the updates')
     .fill('Reviewed synthetic source; unresolved ID stays pending');
-  await page.getByRole('button', { name: /Apply reviewed/ }).click();
+  await page.getByRole('button', { name: /APPLY SAFE CHANGES/ }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Hub authorization' })).toContainText(
     'Retrying this group',
   );

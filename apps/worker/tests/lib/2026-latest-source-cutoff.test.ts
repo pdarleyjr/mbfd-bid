@@ -39,6 +39,19 @@ function reviewedInput() {
 }
 
 describe('latest 2026 cutoff source acceptance', () => {
+  it('rejects the superseded MASTER V3 even when every other acceptance gate passes', () => {
+    const input = reviewedInput();
+    const decision = input.sourceDecisions[0];
+    if (!decision) throw new Error('Missing synthetic source decision');
+    decision.sourceRef = `3631427507fa7ca0280a03e9b0a14a2429bbafad3404d46f5cef4a1ce679b57d; ${LATEST_2026_ANNUAL_HASH}`;
+    expect(latest2026SourceCutoffIssue(input)).toBe('latest_2026_source_version_required');
+  });
+  it('accepts the independently verified MASTER V4 when every other gate passes', () => {
+    expect(LATEST_2026_MASTER_HASH).toBe(
+      'a1bc6309bd7f565b98616226fd3cbe5fae6c6d7ce764188bdbfdd1eb8702e685',
+    );
+    expect(latest2026SourceCutoffIssue(reviewedInput())).toBeNull();
+  });
   it('refuses the older Version 9 even with later source rows present', () => {
     const input = reviewedInput();
     input.versionNumber = 9;

@@ -8,8 +8,7 @@ import { FeatureHelp } from '@/components/admin/FeatureHelp';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
-import type { Route } from 'next';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'mbfd-admin-sidebar-collapsed';
@@ -48,7 +47,6 @@ export function AdminLayoutShell({
   children,
   userName,
 }: { children: ReactNode; userName?: string }) {
-  const router = useRouter();
   const previousRoute = useRef<string | null>(null);
   const mobileToggle = useRef<HTMLButtonElement>(null);
   const mobileNavigation = useRef<HTMLDivElement>(null);
@@ -240,13 +238,7 @@ export function AdminLayoutShell({
                 <X size={20} />
               </Dialog.Close>
               <Suspense>
-                <AdminSideNav
-                  onInternalNavigation={(href) => {
-                    navigationAccepted.current = true;
-                    setMobileNavOpen(false);
-                    router.push(href as Route);
-                  }}
-                />
+                <AdminSideNav />
               </Suspense>
             </Dialog.Popup>
           </Dialog.Portal>

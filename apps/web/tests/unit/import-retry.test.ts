@@ -110,7 +110,7 @@ async function renderImport(basePath?: string, reviewNote = 'Synthetic reviewed 
   );
   await vi.waitFor(async () => {
     await settle();
-    expect(container.textContent).toContain('Apply reviewed records (1)');
+    expect(container.textContent).toContain('APPLY SAFE CHANGES (1)');
   });
   const reason = container.querySelector<HTMLInputElement>(
     'input[placeholder="Source reviewed and reason for the updates"]',
@@ -142,6 +142,69 @@ it.each([429, 503])('recovers from temporary %s without changing the command', a
   expect(result).toEqual({ processed: 20 });
   expect(sendCommand.mock.calls).toEqual([[command], [command]]);
   expect(wait).toHaveBeenCalledTimes(1);
+});
+
+it('rechecks the latest approved file directly from the manual credential return link without a write', async () => {
+  navigation.search = 'recheck=1';
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scroll,
+  });
+  api.get.mockImplementation(async (path: string) => {
+    if (path === 'targetsolutions/imports')
+      return {
+        imports: [],
+        latestApprovedSource: {
+          importId: 'approved-v4',
+          source_filename: 'Synthetic annual.xlsx',
+          selected_sheet: '2026_BID_Credentials_Version_4_',
+          source_revision: 4,
+          approved_at: Date.UTC(2026, 8, 30, 14),
+          row_count: 3884,
+          unique_employee_count: 230,
+          pending_count: 0,
+        },
+      };
+    if (path === 'targetsolutions/catalog') return { credentials: [], mappings: [] };
+    if (path === 'targetsolutions/imports/approved-v4/eligibility-impact')
+      return {
+        positionCount: 223,
+        members: [
+          { memberId: 91, firstName: 'Synthetic', lastName: 'Holder', employeeId: 'synthetic-91' },
+        ],
+        affectedLists: [
+          {
+            positionId: 'A101',
+            positionLabel: 'A shift · Engine 1 · Firefighter',
+            gained: [91],
+            lost: [],
+            orderingChanged: true,
+          },
+        ],
+      };
+    throw new Error(`Unexpected test read ${path}`);
+  });
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await settle(() =>
+    root?.render(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+        createElement(TargetSolutionsWorkspace),
+      ),
+    ),
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(container.textContent).toContain('223 candidate lists checked · 1 changed');
+  });
+  expect(container.textContent).toContain('Synthetic Holder (synthetic-91)');
+  expect(document.activeElement?.textContent).toBe('Eligibility changes');
+  expect(scroll).toHaveBeenCalled();
+  expect(api.post).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -252,9 +315,9 @@ it('refreshes Department after successful TargetSolutions apply and preserves so
     '/admin/department/import?source=targetsolutions',
   );
   const apply = [...container.querySelectorAll('button')].find((button) =>
-    button.textContent?.startsWith('Apply reviewed records'),
+    button.textContent?.startsWith('APPLY SAFE CHANGES'),
   );
-  if (!apply) throw new Error('Apply reviewed records missing');
+  if (!apply) throw new Error('APPLY SAFE CHANGES missing');
   await settle(() => apply.click());
   await vi.waitFor(async () => {
     await settle();
@@ -317,7 +380,7 @@ it('protects review notes and pending apply across source navigation, then honor
       }),
   );
   const apply = [...container.querySelectorAll('button')].find((button) =>
-    button.textContent?.startsWith('Apply reviewed records'),
+    button.textContent?.startsWith('APPLY SAFE CHANGES'),
   );
   if (!apply) throw new Error('Apply action missing');
   await settle(() => apply.click());
@@ -371,7 +434,7 @@ it('protects an unuploaded file and preserves the warning for a missing apply re
   api.post.mockRejectedValueOnce(new TypeError('Synthetic lost response'));
   await settle(() =>
     [...container.querySelectorAll('button')]
-      .find((button) => button.textContent?.startsWith('Apply reviewed records'))
+      .find((button) => button.textContent?.startsWith('APPLY SAFE CHANGES'))
       ?.click(),
   );
   await vi.waitFor(async () => {

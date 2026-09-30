@@ -4,8 +4,16 @@ import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
-vi.mock('next/navigation', () => ({ useRouter: () => navigation }));
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  search: '',
+  delayed: false,
+}));
+vi.mock('next/navigation', () => ({
+  useRouter: () => navigation,
+  useSearchParams: () => new URLSearchParams(navigation.search),
+}));
 // Only the expensive field/catalog children are replaced. Request parsing,
 // draft storage, the workspace controls and its step-up listener remain real.
 vi.mock('../../app/admin/current-bid/BidPolicyFields', () => ({
@@ -41,6 +49,10 @@ vi.mock('../../app/admin/current-bid/BidImpactReview', () => ({
       Inject synthetic Blueprint impact
     </button>
   ),
+}));
+
+vi.mock('../../app/admin/current-bid/BidOperations', () => ({
+  BidOperations: () => <p>Bid tasks</p>,
 }));
 
 import { CurrentBidWorkspace } from '../../app/admin/current-bid/CurrentBidWorkspace';
@@ -290,6 +302,16 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(false);
   navigation.push.mockReset();
   navigation.replace.mockReset();
+  navigation.search = '';
+  navigation.delayed = false;
+  navigation.replace.mockImplementation((url: string) => {
+    if (!navigation.delayed) navigation.search = new URL(url, window.location.origin).search;
+  });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
 });
 
 afterEach(async () => {
@@ -364,6 +386,74 @@ async function change(label: string, value: string) {
 async function click(name: string | RegExp) {
   await settle(() => button(name).click());
 }
+
+it('moves focus and scroll to rendered view and edit-section destinations, including repeated clicks', async () => {
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scroll,
+  });
+  await mount();
+  for (const [label, title, url] of [
+    ['Bid Blueprint', 'Bid Blueprint', 'view=blueprint'],
+    ['Mock Bid', 'Mock Bid', 'view=mock'],
+    ['Edit Bid', 'Policy & language', 'view=edit&section=language'],
+    ['Participants & flow', 'Participants & flow', 'view=edit&section=flow'],
+    ['Participants & flow', 'Participants & flow', 'view=edit&section=flow'],
+  ]) {
+    await click(label as string);
+    const heading = container.querySelector('#bid-destination-heading');
+    expect(heading?.textContent).toBe(`Review ${title}`);
+    expect(document.activeElement).toBe(heading);
+    expect(scroll).toHaveBeenLastCalledWith({ block: 'start', behavior: 'instant' });
+    expect(navigation.replace).toHaveBeenLastCalledWith(expect.stringContaining(url as string), {
+      scroll: false,
+    });
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      `Review ${title} opened.`,
+    );
+  }
+});
+
+it('waits for the destination URL commit before handing off focus and scroll', async () => {
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scroll,
+  });
+  await mount();
+  navigation.delayed = true;
+  await click('Bid Blueprint');
+  expect(container.querySelector('#bid-destination-heading')?.textContent).toBe(
+    'Review Bid Blueprint',
+  );
+  expect(scroll).not.toHaveBeenCalled();
+  expect(document.activeElement?.id).not.toBe('bid-destination-heading');
+  navigation.search = '?year=2027&view=blueprint';
+  await settle(() => root?.render(<CurrentBidWorkspace year={YEAR} actorScope={ACTOR} />));
+  expect(scroll).toHaveBeenCalledOnce();
+  expect(document.activeElement?.id).toBe('bid-destination-heading');
+});
+
+it('preserves newer operator focus while a destination URL is committing', async () => {
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scroll,
+  });
+  await mount();
+  navigation.delayed = true;
+  await click('Bid Blueprint');
+  const nextAction = button('Mock Bid');
+  nextAction.focus();
+  navigation.search = '?year=2027&view=blueprint';
+  await settle(() => root?.render(<CurrentBidWorkspace year={YEAR} actorScope={ACTOR} />));
+  expect(document.activeElement).toBe(nextAction);
+  expect(scroll).not.toHaveBeenCalled();
+  expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+    'Review Bid Blueprint opened.',
+  );
+});
 
 function stored() {
   return readBidDraft(window.sessionStorage, ACTOR, YEAR);
@@ -495,7 +585,9 @@ describe('Current Bid workspace save and recovery protocol', () => {
     expect(field('Bid notes').matches(':disabled')).toBe(true);
     expect(stored()?.pending?.key).toBe(original?.key);
     await remount();
-    expect(container.textContent).toContain('A newer saved Bid or source revision exists');
+    expect(container.textContent).toContain(
+      'A newer saved Bid exists. Reload it before continuing.',
+    );
     expect(button('Load current saved Bid').disabled).toBe(true);
     expect(button('Retry original request').disabled).toBe(false);
     await click('Retry original request');
@@ -1037,9 +1129,7 @@ describe('Current Bid managed Mock workflow', () => {
     await mount();
     await click('Mock Bid');
     await click('Check Mock readiness');
-    expect(container.textContent).toContain(
-      'Mock creation is blocked: pending credential dispute.',
-    );
+    expect(container.textContent).toContain('MOCK BLOCKER: pending credential dispute.');
     expect(container.textContent).toContain('Opportunities requiring review: synthetic-seat');
     expect(container.textContent).toContain('synthetic-seat: missing start');
     expect(container.textContent).not.toContain('officers ·');
@@ -1158,7 +1248,9 @@ describe('Current Bid managed Mock workflow', () => {
     head = current(3, 'Synthetic newer saved Bid');
     await remount();
     await click('Mock Bid');
-    expect(container.textContent).toContain('A newer saved Bid or source revision exists');
+    expect(container.textContent).toContain(
+      'A newer saved Bid exists. Reload it before continuing.',
+    );
     expect(stored()?.pending).toStrictEqual(pending);
     expect(button('Check Mock readiness').disabled).toBe(true);
     expect(button('Retry original request').disabled).toBe(false);

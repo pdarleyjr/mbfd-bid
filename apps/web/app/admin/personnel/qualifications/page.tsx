@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
+import Link from 'next/link';
 
 import {
   type QualificationCredential,
@@ -65,6 +66,17 @@ export default async function QualificationLifecyclePage({
         </p>
       </header>
 
+      <nav className="flex flex-wrap gap-4">
+        <Link
+          className="inline-flex min-h-11 items-center font-semibold underline"
+          href="/admin/targetsolutions?recheck=1"
+        >
+          RECHECK BID ELIGIBILITY
+        </Link>
+        <Link className="inline-flex min-h-11 items-center underline" href="/admin/current-bid">
+          RETURN TO CURRENT BID
+        </Link>
+      </nav>
       {fetchError !== null ? (
         <section className="rounded-xl border border-warning/40 bg-warning-surface p-5 text-sm text-warning">
           <h2 className="font-semibold">Qualification workflow inputs are unavailable</h2>

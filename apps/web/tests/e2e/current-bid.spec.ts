@@ -43,6 +43,50 @@ const opportunityList = (page: Page) => section(page, 'Opportunities & positions
 const opportunityRows = (page: Page) => opportunityList(page).locator('button[aria-pressed]');
 const historyRows = (page: Page) => workspace(page).getByRole('button', { name: /^Version \d+\b/ });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+test('operator navigation reveals and focuses every destination without manual scrolling', async ({
+  page,
+}) => {
+  const state = await installCurrentBidFixtures(page);
+  await openBid(page);
+  await expect(page.getByRole('heading', { name: 'TODAY’S BID TASKS', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'UPDATE CREDENTIALS', exact: true })).toHaveAttribute(
+    'href',
+    '/admin/targetsolutions',
+  );
+  const destination = page.locator('#bid-destination-heading');
+  for (const [action, title, view] of [
+    ['CHECK CURRENT BID / ELIGIBILITY', 'Bid Blueprint', 'blueprint'],
+    ['RUN A MOCK BID', 'Mock Bid', 'mock'],
+    ['VIEW RESULTS', 'Results', 'results'],
+    ['CHECK LIVE READINESS', 'Live Bid', 'live'],
+    ['CHECK & CREATE MOCK', 'Mock Bid', 'mock'],
+  ] as const) {
+    await page.getByRole('button', { name: action, exact: true }).click();
+    await expect(destination).toHaveText(`Review ${title}`);
+    await expect(destination).toBeFocused();
+    await expect(destination).toBeInViewport();
+    await expect(page).toHaveURL(new RegExp(`view=${view}`));
+    await expect(workspace(page).locator('[aria-live="polite"][aria-atomic="true"]')).toHaveText(
+      `Review ${title} opened.`,
+    );
+  }
+  await page.getByRole('button', { name: 'Version history', exact: true }).click();
+  await expect(destination).toHaveText('Review Version history');
+  await expect(destination).toBeFocused();
+  await expect(destination).toBeInViewport();
+  await viewButton(page, 'Edit Bid').click();
+  await sectionButton(page, 'Participants & flow').click();
+  await expect(destination).toHaveText('Review Participants & flow');
+  await expect(destination).toBeFocused();
+  await expect(destination).toBeInViewport();
+  await expect(page).toHaveURL(/view=edit&section=flow/);
+  await page.reload();
+  await expect(destination).toHaveText('Review Participants & flow');
+  await expect(destination).toBeFocused();
+  await expect(destination).toBeInViewport();
+  assertNoWrites(state);
+});
 const impactSection = (page: Page, title: string) =>
   workspace(page).getByRole('heading', { name: title, exact: true }).locator('..').locator('..');
 const impactDetails = (page: Page, title: string) =>

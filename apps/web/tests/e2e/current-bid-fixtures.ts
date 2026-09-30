@@ -919,6 +919,9 @@ export async function installCurrentBidFixtures(
       state.writeRequests.push(entry);
     const json = (body: unknown, status = 200) =>
       route.fulfill({ status, json: body, headers: { 'Cache-Control': 'private, no-store' } });
+    if (entry.method === 'GET' && entry.path.endsWith('/my-mock')) return json({ mock: null });
+    if (entry.method === 'GET' && entry.path === '/api/admin/targetsolutions/imports')
+      return json({ imports: [], latestApprovedSource: null });
     if (entry.method === 'POST' && entry.path === '/api/auth/csrf')
       return json({ token: BID_CSRF });
     if (

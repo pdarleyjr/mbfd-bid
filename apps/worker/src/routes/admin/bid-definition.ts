@@ -125,6 +125,7 @@ const yearContext: MiddlewareHandler<Env> = async (c, next) => {
 // empty suffix, which would otherwise consume the existing /bid/freeze command.
 for (const path of [
   '/:year/current',
+  '/:year/my-mock',
   '/:year/versions',
   '/:year/versions/:versionId',
   '/:year/preview',
@@ -141,6 +142,18 @@ for (const path of [
 router.get('/:year/current', async (c) => {
   const result = await loadCurrentBidDefinition(c.env.DB, c.get('bidYear'));
   return result.ok ? c.json(result.response) : c.json(result, errorStatus(result.error));
+});
+router.get('/:year/my-mock', async (c) => {
+  const versionId = BidIdentitySchema.safeParse(c.req.query('versionId'));
+  if (!versionId.success) return c.json({ error: 'invalid_version_id' }, 400);
+  const mock = await c.env.DB.prepare(`SELECT s.id FROM bid_sessions s
+    JOIN bid_session_policy_snapshots p ON p.bid_session_id=s.id
+    WHERE s.bid_year=? AND s.is_mock=1 AND s.completed_at IS NULL AND p.bid_version_id=?
+    AND EXISTS(SELECT 1 FROM audit_log a WHERE a.bid_session_id=s.id AND a.action='session_start' AND a.actor_id=?)
+    ORDER BY p.captured_at DESC LIMIT 1`)
+    .bind(c.get('bidYear'), versionId.data, c.get('claims').member_id)
+    .first<{ id: string }>();
+  return c.json({ mock: mock ?? null });
 });
 router.get('/:year/versions', async (c) => {
   const query = z

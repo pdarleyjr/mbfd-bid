@@ -28,6 +28,7 @@ import {
   bidSourceDecisionBlocksPurpose,
   bidSourceDecisionReviewIssues,
 } from './bid-source-decision-review.js';
+import { unresolvedQualificationHolds } from './qualification-review-hold.js';
 import { serviceCreditsAsOf } from './service-evidence.js';
 import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence.js';
 
@@ -1649,6 +1650,16 @@ export async function prepareCapturedBidEvaluation(
     events: qualificationEvents,
   });
 
+  const held = unresolvedQualificationHolds(
+    evidence.qualificationHolds ?? [],
+    qualificationEvents,
+    credentialEvaluationOn,
+  );
+  if (mode === 'live' && held.length > 0)
+    return { ok: false, code: 'credential_import_dispute_requires_review' };
+  const heldNames = (memberId: number) =>
+    new Set(held.filter((row) => row.memberId === memberId).map((row) => row.credentialName));
+
   const bidOrdinals = projectBidOrdinals(evidence.ordinalDatasets?.[0], memberRows);
   const frozenMembers: FrozenBidEligibilityMember[] = memberRows
     .map<FrozenBidEligibilityMember>((member) => {
@@ -1758,7 +1769,9 @@ export async function prepareCapturedBidEvaluation(
           : {}),
         rank: bidRank,
         isProbationary: member.isProbationary,
-        credentialNames: credentialNamesByMember.get(member.id) ?? [],
+        credentialNames: (credentialNamesByMember.get(member.id) ?? []).filter(
+          (name) => !heldNames(member.id).has(name),
+        ),
         scoringEvidence: {
           evaluationOn: credentialEvaluationOn,
           completedCredentialNames: completedCredentialNamesAsOf({
@@ -1772,7 +1785,7 @@ export async function prepareCapturedBidEvaluation(
               startDate: c.startDate,
               expirationDate: c.expirationDate,
             })),
-          }),
+          }).filter((name) => !heldNames(member.id).has(name)),
         },
         serviceCredits: serviceCreditsAsOf(serviceRows, member.id, capturedOn),
         specialtyQualifications: (specialtyQualificationsByMember.get(member.id) ?? []).map(

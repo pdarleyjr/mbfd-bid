@@ -43,6 +43,41 @@ describe('TargetSolutions reviewed import', () => {
   }
   const csv =
     'Credentials\nRun Date:,"Sep 7, 2026 4:34 PM"\nFilters:,Credential Status,Active\nFirst Name,Last Name,Employee ID,Credential Name\nTest,Member,0012,Synthetic Certification\nTest,Unknown,0999,Synthetic Certification';
+  it('records a specific unverified qualification hold without a false revocation or source edit', async () => {
+    const uploaded = await request('/imports', {
+      csv: 'Employee ID,Credential Name,Credential Status,Start Date,Expiration Date\n0012,Synthetic Certification,Active,2023-01-01,2099-05-07',
+      filename: 'synthetic-unverified.csv',
+      observed_on: '2026-09-29',
+    });
+    expect(uploaded.status).toBe(201);
+    const { id } = (await uploaded.json()) as { id: string };
+    await request(`/imports/${id}/review`, { accept: true });
+    const detail = (await (await request(`/imports/${id}`)).json()) as {
+      rows: { id: string; source_json: string }[];
+    };
+    const row = detail.rows[0];
+    expect(row).toBeDefined();
+    const held = await request(`/imports/${id}/reject`, {
+      row_ids: [row?.id],
+      needs_admin_evidence: true,
+      reason: 'Administrator evidence needed for unusual PSD date',
+    });
+    expect(held.status).toBe(200);
+    await request(`/imports/${id}/review`, { accept: true });
+    const readback = (await (await request(`/imports/${id}`)).json()) as {
+      rows: {
+        source_json: string;
+        classification: string;
+        before: { reviewHold: { status: string } };
+      }[];
+    };
+    expect(readback.rows[0]?.source_json).toBe(row?.source_json);
+    expect(readback.rows[0]?.classification).toBe('REJECTED');
+    expect(readback.rows[0]?.before.reviewHold.status).toBe('NEEDS ADMIN EVIDENCE');
+    expect(
+      await h.env.DB.prepare('SELECT COUNT(*) AS n FROM member_qualification_events').first(),
+    ).toEqual({ n: 0 });
+  });
   it.each([
     ['2028-01-01', 'FILL_MISSING_DATE', 'active'],
     ['2026-08-01', 'EXPIRATION_REVIEW', 'expired'],
@@ -158,6 +193,7 @@ describe('TargetSolutions reviewed import', () => {
         observed_on: '2026-09-30',
         source_receipt: receipt,
       });
+      expect(uploaded.status).toBe(201);
       expect(uploaded.status).toBe(201);
       const { id } = (await uploaded.json()) as { id: string };
       await request(`/imports/${id}/review`, { accept: true });

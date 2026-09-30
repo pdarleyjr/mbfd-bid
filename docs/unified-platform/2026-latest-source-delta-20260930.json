@@ -53,7 +53,9 @@
       "C": 73,
       "Days": 4
     },
-    "capacityDecision": "NEEDS ADMIN EVIDENCE: 40 Lieutenant bidders and 39 reviewed Lieutenant opportunities"
+    "capacityDecision": "NEEDS ADMIN EVIDENCE: 40 Lieutenant bidders and 39 reviewed Lieutenant opportunities",
+    "v4Rows": 228,
+    "v3ToV4LogicallyEqual": true
   },
   "personnel": {
     "sourcePeople": 233,
@@ -118,7 +120,40 @@
       "Jeremy Bloomfield retains approved Captain Bid rank",
       "Adonis Garcia excluded"
     ],
-    "historicalPromotionDates": "Not supplied for the three rank changes; use an explicitly identified source observation correction, not invented promotion dates"
+    "historicalPromotionDates": "Not supplied for the three rank changes; use an explicitly identified source observation correction, not invented promotion dates",
+    "ffDeLatestProvenance": {
+      "employeeIds": [
+        "17029",
+        "17527",
+        "17531",
+        "17604",
+        "17605",
+        "17830",
+        "18914",
+        "18909",
+        "18911",
+        "19544",
+        "19730",
+        "20343",
+        "20727",
+        "20729",
+        "20740",
+        "21910",
+        "21908",
+        "21901",
+        "21912",
+        "23294",
+        "23297",
+        "24507",
+        "24509",
+        "20952",
+        "25611"
+      ],
+      "count": 25,
+      "sourceJobRetained": "Firefighter DE",
+      "bidRank": "FF",
+      "rule": "FF-DE is ordinary Firefighter rank with DE qualification tracked separately"
+    }
   },
   "credentials": {
     "revisions": {
@@ -283,5 +318,94 @@
       ]
     }
   ],
-  "realBidStatus": "NOT STARTED"
+  "realBidStatus": "NOT STARTED",
+  "latestMasterSupersession": {
+    "observedAt": "2026-09-30T17:05:43.389868+00:00",
+    "latestMaster": {
+      "filename": "MASTER 2026 Bid Positions Selection V4.xlsx",
+      "sha256": "a1bc6309bd7f565b98616226fd3cbe5fae6c6d7ce764188bdbfdd1eb8702e685"
+    },
+    "supersededMaster": {
+      "filename": "MASTER 2026 Bid Positions Selection V3.xlsx",
+      "sha256": "3631427507fa7ca0280a03e9b0a14a2429bbafad3404d46f5cef4a1ce679b57d"
+    },
+    "sheetChangeCounts": {
+      "Template": 0,
+      "A Shift - Bid": 34,
+      "B Shift - Bid": 34,
+      "C Shift - Bid": 34,
+      "D Shift - Bid": 0,
+      "A Shift - A Day": 0,
+      "B Shift - A Day": 0,
+      "C Shift - A Day": 0,
+      "D Shift - A Day": 0,
+      "Issues Log": 0,
+      "Statistics": 0,
+      "Positions": 0,
+      "Bid Pick": 0,
+      "Check": 0,
+      "A Days": 0,
+      "Tables": 0,
+      "Personnel": 25,
+      "Test Data": 0,
+      "Manual": 0,
+      "Notes": 0
+    },
+    "ffDeNormalization": {
+      "employeeIds": [
+        "17029",
+        "17527",
+        "17531",
+        "17604",
+        "17605",
+        "17830",
+        "18914",
+        "18909",
+        "18911",
+        "19544",
+        "19730",
+        "20343",
+        "20727",
+        "20729",
+        "20740",
+        "21910",
+        "21908",
+        "21901",
+        "21912",
+        "23294",
+        "23297",
+        "24507",
+        "24509",
+        "20952",
+        "25611"
+      ],
+      "count": 25,
+      "sourceJobRetained": "Firefighter DE",
+      "bidRank": "FF",
+      "rule": "FF-DE is ordinary Firefighter rank with DE qualification tracked separately"
+    },
+    "floatLookupRepair": {
+      "formulas": 102,
+      "columns": ["AN", "AO"],
+      "sheets": ["A Shift - Bid", "B Shift - Bid", "C Shift - Bid"],
+      "positionIdColumn": "AK",
+      "engineFormulaImport": false
+    },
+    "remainingRefFormulas": {
+      "A Shift - A Day": 3,
+      "B Shift - A Day": 1,
+      "C Shift - A Day": 3,
+      "Statistics": 36,
+      "Bid Pick": 222
+    },
+    "topologyChanged": false,
+    "candidateCounts": {
+      "CPT": 22,
+      "LT": 40,
+      "FF": 160,
+      "total": 222
+    },
+    "credentialReconciliationReset": false,
+    "state": "MECHANICALLY_VERIFIED_PENDING_NEW_PRODUCTION_VERSION"
+  }
 }

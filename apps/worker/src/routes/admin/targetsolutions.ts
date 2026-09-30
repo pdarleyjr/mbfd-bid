@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 import { auditInsertStatement } from '../../lib/audit.js';
+import { credentialImportImpact } from '../../lib/credential-import-impact.js';
 import { operationalDate } from '../../lib/operational-date.js';
 import {
   type LegacyCredentialBaseline,
@@ -197,14 +198,32 @@ function assess(raw: TargetCredentialRow, snapshot: State, observedOn: string) {
   };
 }
 
-router.get('/imports', async (c) =>
-  c.json({
+router.get('/imports', async (c) => {
+  const latest = await c.env.DB.prepare(`SELECT i.id,i.coverage_json,
+    MAX(r.applied_at) AS approved_at,SUM(CASE WHEN r.applied_at IS NULL THEN 1 ELSE 0 END) AS pending_count
+    FROM targetsolutions_imports i JOIN targetsolutions_rows r ON r.import_id=i.id
+    WHERE json_extract(i.coverage_json,'$.sourceReceipt') IS NOT NULL
+    GROUP BY i.id HAVING MAX(r.applied_at) IS NOT NULL ORDER BY i.created_at DESC LIMIT 1`).first<{
+    id: string;
+    coverage_json: string;
+    approved_at: number;
+    pending_count: number;
+  }>();
+  return c.json({
+    latestApprovedSource: latest
+      ? {
+          importId: latest.id,
+          ...JSON.parse(latest.coverage_json).sourceReceipt,
+          approved_at: latest.approved_at,
+          pending_count: latest.pending_count,
+        }
+      : null,
     imports: await all(
       c.env.DB,
       'SELECT id,filename,observed_on,status,source_row_count,unique_row_count,created_at FROM targetsolutions_imports ORDER BY created_at DESC LIMIT 50',
     ),
-  }),
-);
+  });
+});
 router.get('/catalog', async (c) =>
   c.json({
     credentials: await all(
@@ -217,6 +236,13 @@ router.get('/catalog', async (c) =>
     ),
   }),
 );
+router.get('/imports/:id/eligibility-impact', async (c) => {
+  const year = Number(c.req.query('year') ?? new Date().getUTCFullYear());
+  if (!Number.isInteger(year) || year < 2024 || year > 2100)
+    return c.json({ error: 'invalid_bid_year' }, 400);
+  const result = await credentialImportImpact(c.env.DB, c.req.param('id'), year);
+  return 'error' in result ? c.json(result, 409) : c.json(result);
+});
 
 router.get('/imports/:id/names', async (c) => {
   if (!(await getImport(c.env.DB, c.req.param('id'))))
@@ -585,6 +611,7 @@ router.post('/imports/:id/reject', requireStepUpAuth(), async (c) => {
     .object({
       row_ids: z.array(z.string()).min(1).max(100),
       reason: z.string().trim().min(4).max(500),
+      needs_admin_evidence: z.boolean().default(false),
     })
     .strict()
     .safeParse(await c.req.json().catch(() => null));
@@ -593,10 +620,43 @@ router.post('/imports/:id/reject', requireStepUpAuth(), async (c) => {
   const now = Date.now();
   const importId = c.req.param('id');
   if (!(await getImport(c.env.DB, importId))) return c.json({ error: 'import_not_found' }, 404);
+  if (input.data.needs_admin_evidence) {
+    const rows = await all<SourceRow>(
+      c.env.DB,
+      'SELECT * FROM targetsolutions_rows WHERE import_id=? AND id IN (SELECT value FROM json_each(?))',
+      importId,
+      JSON.stringify(input.data.row_ids),
+    );
+    if (
+      rows.length !== input.data.row_ids.length ||
+      rows.some(
+        (row) =>
+          !row.member_id ||
+          !row.credential_id ||
+          !row.before_json ||
+          (!['CONFLICT', 'ANOMALOUS_DATE_REVIEW'].includes(row.classification) &&
+            !JSON.parse(row.before_json).reviewHold),
+      )
+    )
+      return c.json({ error: 'individual_unverified_qualification_required' }, 409);
+  }
   await c.env.DB.batch([
     c.env.DB.prepare(
-      "UPDATE targetsolutions_rows SET classification='REJECTED',applied_at=?,applied_by=? WHERE import_id=? AND id IN (SELECT value FROM json_each(?)) AND applied_at IS NULL",
-    ).bind(now, actor, importId, JSON.stringify(input.data.row_ids)),
+      `UPDATE targetsolutions_rows SET classification='REJECTED',applied_at=?,applied_by=?,
+       before_json=CASE WHEN ? THEN json_set(before_json,'$.reviewHold',json(?)) ELSE before_json END
+       WHERE import_id=? AND id IN (SELECT value FROM json_each(?)) AND applied_at IS NULL`,
+    ).bind(
+      now,
+      actor,
+      input.data.needs_admin_evidence ? 1 : 0,
+      JSON.stringify({
+        status: 'NEEDS ADMIN EVIDENCE',
+        reviewedAt: now,
+        reason: input.data.reason,
+      }),
+      importId,
+      JSON.stringify(input.data.row_ids),
+    ),
     auditInsertStatement(c.env.DB, {
       bidSessionId: null,
       actorType: 'admin',
@@ -605,7 +665,12 @@ router.post('/imports/:id/reject', requireStepUpAuth(), async (c) => {
       targetKind: 'qualification_import',
       targetId: importId,
       reason: input.data.reason,
-      afterState: { decision: 'reject_source_keep_current', rows: input.data.row_ids },
+      afterState: {
+        decision: input.data.needs_admin_evidence
+          ? 'needs_admin_evidence_withhold_eligibility'
+          : 'reject_source_keep_current',
+        rows: input.data.row_ids,
+      },
     }),
   ]);
   return c.json({

@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { AnnualRequestError, annualGet, annualPost } from '../annual-plan/annual-plan-client';
+import { LatestCredentialSource } from './LatestCredentialSource';
 import {
   type CredentialWorkbook,
   credentialRowsToCsv,
@@ -33,6 +34,7 @@ type Row = {
     expiresOn: string | null;
   };
   before: {
+    reviewHold?: { status: string; reason: string };
     current: { status: string; effectiveOn: string | null; expiresOn: string | null } | null;
   } | null;
 };
@@ -101,6 +103,24 @@ export function TargetSolutionsWorkspace({
   const id = params.get('import') ?? '';
   const departmentMode = basePath.split('?', 1)[0]?.startsWith('/admin/department/');
   const Heading = departmentMode ? 'h2' : 'h1';
+  const [impact, setImpact] = useState<{
+    positionCount: number;
+    members: { memberId: number; firstName: string; lastName: string; employeeId: string }[];
+    affectedLists: {
+      positionId: string;
+      positionLabel: string;
+      gained: number[];
+      lost: number[];
+      orderingChanged: boolean;
+    }[];
+  } | null>(null);
+  const impactHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (impact) {
+      impactHeading.current?.scrollIntoView?.({ block: 'start' });
+      impactHeading.current?.focus({ preventScroll: true });
+    }
+  }, [impact]);
   const [file, setFile] = useState<File | null>(null);
   const [workbook, setWorkbook] = useState<CredentialWorkbook | null>(null);
   const [selectedSheet, setSelectedSheet] = useState('');
@@ -135,8 +155,39 @@ export function TargetSolutionsWorkspace({
     queryFn: () =>
       annualGet<{
         imports: { id: string; filename: string; observed_on: string; status: string }[];
+        latestApprovedSource?: { importId: string } | null;
       }>('targetsolutions/imports'),
   });
+
+  const recheckImportId = id || list.data?.latestApprovedSource?.importId;
+  const requestedRecheck = params.get('recheck') === '1';
+  useEffect(() => {
+    if (!requestedRecheck || !recheckImportId) return;
+    let active = true;
+    setBusy(true);
+    annualGet<NonNullable<typeof impact>>(
+      `targetsolutions/imports/${recheckImportId}/eligibility-impact`,
+    )
+      .then((result) => {
+        if (active) setImpact(result);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setFailed(true);
+          setMessage(
+            error instanceof Error
+              ? error.message
+              : 'Eligibility check could not be loaded. Retry the check.',
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setBusy(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [requestedRecheck, recheckImportId]);
   const detail = useQuery({
     queryKey: ['targetsolutions', id, category, offset],
     queryFn: () =>
@@ -332,8 +383,85 @@ export function TargetSolutionsWorkspace({
           qualifications retain their history.
         </p>
       </header>
+      <LatestCredentialSource />
+      <nav aria-label="Credential update tasks" className="flex flex-wrap gap-3">
+        <Link
+          href="/admin/current-bid?view=blueprint"
+          className="inline-flex min-h-11 items-center font-semibold underline"
+        >
+          RETURN TO CURRENT BID
+        </Link>
+        <Button
+          disabled={!recheckImportId || busy}
+          onClick={() =>
+            void action(async () => {
+              setImpact(
+                await annualGet(`targetsolutions/imports/${recheckImportId}/eligibility-impact`),
+              );
+            })
+          }
+        >
+          RECHECK BID ELIGIBILITY
+        </Button>
+      </nav>
+      <ol className="flex flex-wrap gap-x-6 gap-y-2 rounded border border-border p-4 text-sm">
+        <li>1. Upload latest credential file</li>
+        <li>2. Select source revision</li>
+        <li>3. Compare</li>
+        <li>4. Apply safe changes</li>
+        <li>5. Review only exceptions</li>
+        <li>6. Verify eligibility changes</li>
+      </ol>
+      {impact && (
+        <section className="rounded border border-border p-4">
+          <h2 ref={impactHeading} tabIndex={-1} className="font-semibold">
+            Eligibility changes
+          </h2>
+          <p>
+            {impact.positionCount} candidate lists checked · {impact.affectedLists.length} changed
+          </p>
+          <ul className="space-y-2">
+            {impact.affectedLists.map((list) => (
+              <li key={list.positionId}>
+                {list.positionLabel}: {list.gained.length} gained eligibility · {list.lost.length}{' '}
+                lost eligibility ·{' '}
+                {list.orderingChanged ? 'candidate order changed' : 'candidate order unchanged'}
+                {(list.gained.length > 0 || list.lost.length > 0) && (
+                  <details>
+                    <summary className="min-h-11 cursor-pointer content-center">
+                      See affected members
+                    </summary>
+                    {(['gained', 'lost'] as const).map(
+                      (change) =>
+                        list[change].length > 0 && (
+                          <p key={change}>
+                            {change === 'gained' ? 'Gained' : 'Lost'}:{' '}
+                            {list[change]
+                              .map((id) => {
+                                const member = impact.members.find((m) => m.memberId === id);
+                                return member
+                                  ? `${member.firstName} ${member.lastName} (${member.employeeId})`
+                                  : 'Member identity unavailable';
+                              })
+                              .join(', ')}
+                          </p>
+                        ),
+                    )}
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+          <Link
+            className="inline-flex min-h-11 items-center underline"
+            href="/admin/current-bid?view=mock"
+          >
+            RUN A MOCK BID
+          </Link>
+        </section>
+      )}
       <section className="rounded-lg border border-border bg-card p-5">
-        <h2 className="text-lg font-semibold">1. Upload or resume</h2>
+        <h2 className="text-lg font-semibold">1–3. Upload latest file and compare</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Label>
             Credential report (CSV or approved Excel workbook)
@@ -460,6 +588,8 @@ export function TargetSolutionsWorkspace({
               <a
                 className="underline"
                 href={`/api/auth/start?returnTo=${encodeURIComponent(importHref(basePath, id))}`}
+                target="_blank"
+                rel="noreferrer"
               >
                 Sign in again and return to this import
               </a>
@@ -611,7 +741,7 @@ export function TargetSolutionsWorkspace({
       {batch && (
         <>
           <section className="rounded-lg border border-border bg-card p-5">
-            <h2 className="text-lg font-semibold">2. Review changes and exceptions</h2>
+            <h2 className="text-lg font-semibold">5. Review only exceptions</h2>
             <p className="mt-2">
               {batch.filename} · observed {batch.observed_on} ·{' '}
               {batch.source_row_count.toLocaleString()} source rows ·{' '}
@@ -672,7 +802,7 @@ export function TargetSolutionsWorkspace({
             </Button>
           </section>
           <section className="rounded-lg border border-border bg-card p-5">
-            <h2 className="text-lg font-semibold">3. Apply the reviewed changes</h2>
+            <h2 className="text-lg font-semibold">4. Apply safe changes</h2>
 
             <p className="my-3 text-sm">
               Apply processes ready records in resumable groups. Expiration, revocation, conflicting
@@ -685,7 +815,7 @@ export function TargetSolutionsWorkspace({
                 }
                 onClick={() => void applySafe()}
               >
-                Apply reviewed records ({safeCount.toLocaleString()})
+                APPLY SAFE CHANGES ({safeCount.toLocaleString()})
               </Button>
               {busy && (
                 <Button
@@ -706,11 +836,13 @@ export function TargetSolutionsWorkspace({
                 <div className="flex flex-wrap justify-between gap-2">
                   <h3 className="font-semibold">{row.source.credentialName}</h3>
                   <span className="text-sm">
-                    {row.classification === 'REJECTED'
-                      ? 'Rejected source record'
-                      : row.applied_at
-                        ? 'Reconciled'
-                        : label(row.classification)}
+                    {row.before?.reviewHold
+                      ? 'NEEDS ADMIN EVIDENCE — qualification withheld from Bid eligibility'
+                      : row.classification === 'REJECTED'
+                        ? 'Rejected source record'
+                        : row.applied_at
+                          ? 'Reconciled'
+                          : label(row.classification)}
                   </span>
                 </div>
                 <p className="text-sm">
@@ -788,6 +920,27 @@ export function TargetSolutionsWorkspace({
                       }
                     >
                       Keep current record — reject this source assertion
+                    </Button>
+                  )}
+                {!row.applied_at &&
+                  ['CONFLICT', 'ANOMALOUS_DATE_REVIEW'].includes(row.classification) && (
+                    <Button
+                      variant="secondary"
+                      disabled={busy || reason.trim().length < 4}
+                      onClick={() =>
+                        void action(async () => {
+                          await annualPost(
+                            `targetsolutions/imports/${id}/reject`,
+                            { row_ids: [row.id], reason, needs_admin_evidence: true },
+                            crypto.randomUUID(),
+                          );
+                          setMessage(
+                            'NEEDS ADMIN EVIDENCE recorded. Only this qualification is withheld from Bid eligibility until later approved evidence resolves it; source history is preserved.',
+                          );
+                        })
+                      }
+                    >
+                      Needs admin evidence — withhold this qualification
                     </Button>
                   )}
                 {!row.applied_at && row.classification === 'CONFLICT' && (
