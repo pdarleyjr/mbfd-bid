@@ -60,8 +60,8 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
     visual(
       'quick-start',
       'Saved 2026 Current Bid with highlighted version and Mock tab',
-      'Start at the saved 2026 Bid.',
-      ['Confirm Version 9.', 'Open Mock Bid for training.'],
+      'Historical Version 9 capture. The final V4 Bid is Version 11; verify the current saved version before practice.',
+      ['Version 9 shown is historical.', 'Open Mock Bid for training.'],
     ),
     visual(
       'mock',
@@ -158,8 +158,8 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
     ),
     visual(
       'mock-ready-detail',
-      'Version 9 Mock readiness and creation controls',
-      'Create a Mock only after the exact saved version passes readiness.',
+      'Historical Version 9 Mock readiness and creation controls',
+      'Historical Version 9 capture. Create a Mock only after the current exact saved version passes readiness.',
       ['Check Mock readiness.', 'Create the isolated Mock.'],
     ),
   ],
@@ -418,8 +418,8 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
   readiness: [
     visual(
       'mock-ready-detail',
-      'Read-only Version 9 Mock readiness result',
-      'Mock readiness verifies the saved version used for rehearsal.',
+      'Historical read-only Version 9 Mock readiness result',
+      'Historical Version 9 capture. Mock readiness verifies the saved version used for rehearsal.',
       ['Run the check.', 'Read the exact version and blockers.'],
     ),
   ],
@@ -428,7 +428,10 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'current-bid',
       'Saved 2026 Bid workspace',
       'The current Bid workspace holds versioned setup and readiness.',
-      ['Confirm 2026 and Version 9.', 'Open the intended editing section.'],
+      [
+        'Historical capture; confirm the current 2026 version.',
+        'Open the intended editing section.',
+      ],
     ),
   ],
   'annual-policy': [
