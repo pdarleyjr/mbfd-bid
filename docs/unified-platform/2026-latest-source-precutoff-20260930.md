@@ -36,4 +36,6 @@ David Sola's PSD expiration `2099-05-07` remains an anomalous source value requi
 - After deployment and source approval: regenerate every eligible list and specialty order through the canonical evaluator, compare against Version 9, save/read back the new pre-cutoff version and hash, and create/start a separate Mock with red MOCK indication and writeback off.
 - At or after **2026-09-30 17:00 America/New_York**: verify relevant intervening writes and exact accepted sources, seal evidence, save/read back the final immutable version, run a new complete Mock and reconcile exports, then rerun Managed Live readiness and update the year-specific guide. Existing cutoff and continuation automations now target this latest-source chat.
 
+The scheduled capture now refuses Version 9 or an older/unreviewed credential source. It requires the newer source decision with both original file hashes, the three corrected production rank/pool records, and recorded approval/rejection outcomes for all 3,884 rows of the original Version 4 workbook. Individual rejected values remain preserved as source evidence and retain their explicit Real-only decision; they are not converted into approved qualification facts.
+
 Real Bid: **NOT STARTED**. No production data update, final freeze, or new production Mock is claimed by this implementation report.

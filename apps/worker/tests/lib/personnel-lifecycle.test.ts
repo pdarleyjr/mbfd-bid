@@ -44,16 +44,17 @@ function request(overrides: Partial<PersonnelLifecycleInput> = {}): PersonnelLif
 
 describe('personnel lifecycle planning', () => {
   it('retains assignment closure for an explicit separation correction', () => {
-    const result = planPersonnelLifecycleChange(
-      request({
-        kind: 'CORRECTION',
-        staffingPositionId: undefined,
-        rankAfter: undefined,
-        employmentStatusAfter: 'separated',
-        separationType: 'Reviewed departure',
-        nowOn: '2026-09-30',
-      }),
-    );
+    const {
+      staffingPositionId: _staffingPositionId,
+      rankAfter: _rankAfter,
+      ...input
+    } = request({
+      kind: 'CORRECTION',
+      employmentStatusAfter: 'separated',
+      separationType: 'Reviewed departure',
+      nowOn: '2026-09-30',
+    });
+    const result = planPersonnelLifecycleChange(input);
     expect(result).toMatchObject({
       ok: true,
       assignmentCreation: null,

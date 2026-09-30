@@ -1,5 +1,6 @@
 import { ulid } from 'ulid';
 import { getDb } from '../db/index.js';
+import { latest2026SourceCutoffIssue } from './2026-latest-source-cutoff.js';
 import { bidContentHash } from './bid-definition-content.js';
 import { prepareBidDefinitionRun } from './bid-definition-run.js';
 import { loadBidDefinitionVersion } from './bid-definition-version.js';
@@ -56,6 +57,18 @@ export async function capture2026BidEvidenceFreeze(database: D1Database, actorSu
     return { ok: false as const, error: 'evidence_cutoff_evaluation_failed', detail: run.code };
   const evaluation = frozenEvaluationFromRun(run.snapshot);
   const rawEvidence = await loadBidEvaluationEvidence(getDb(database), 2026);
+  const reviewedCredentialImports = await database
+    .prepare(`SELECT i.coverage_json AS coverageJson,COUNT(r.id) AS rowCount,
+      COUNT(r.applied_at) AS reviewedCount FROM targetsolutions_imports i
+      JOIN targetsolutions_rows r ON r.import_id=i.id GROUP BY i.id`)
+    .all<{ coverageJson: string; rowCount: number; reviewedCount: number }>();
+  const latestSourceIssue = latest2026SourceCutoffIssue({
+    versionNumber: head.versionNumber,
+    sourceDecisions: version.content.sourceDecisions,
+    members: rawEvidence.memberRows,
+    credentialImports: reviewedCredentialImports.results,
+  });
+  if (latestSourceIssue) return { ok: false as const, error: latestSourceIssue };
   const baseline = evaluation.staffingBaseline;
   if (!baseline) return { ok: false as const, error: 'authoritative_staffing_baseline_required' };
   const sourceImports = [
