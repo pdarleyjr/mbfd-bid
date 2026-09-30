@@ -1,4 +1,6 @@
 import {
+  type BidConfigurationSettingsV3,
+  type BidDefinitionContent,
   BidDispositionSchema,
   type BidEvaluation,
   BidEvaluationSchema,
@@ -8,6 +10,10 @@ import {
   StageParticipantSourceDefinitionsSchema,
 } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
+import {
+  bidEvidenceFreezeSettingsMatch,
+  compileBidDefinitionStagePolicy,
+} from '../../src/lib/bid-definition-context.js';
 import { computeBidEvaluationStageOrder } from '../../src/lib/live-bid-policy.js';
 import {
   compileFrozenStageParticipants,
@@ -191,6 +197,111 @@ function orderingAuthority(
 }
 
 describe('adaptive stage participant compiler', () => {
+  function frozenSettingsFixture() {
+    const policy = executionPolicy();
+    const settings: BidConfigurationSettingsV3 = {
+      v: 3,
+      expectedDurationDays: 2,
+      turnTimerSeconds: 180,
+      credentialEvaluationOn: '2027-01-01',
+      personnelEvaluationOn: '2027-01-01',
+      livePolicy: policy,
+    };
+    const authority = orderingAuthority();
+    if (authority.v !== 1) throw new Error('Synthetic legacy authority required');
+    const content: Pick<BidDefinitionContent, 'settings' | 'policy' | 'sourceDecisions'> = {
+      settings,
+      policy: {
+        policyText: 'Synthetic stage authority',
+        executionPolicy: policy,
+        stageParticipantSources: sources(),
+        orderingAuthority: {
+          v: 1,
+          sourceDecisionId: authority.sourceDecision.issueId,
+          comparator: authority.comparator,
+        },
+      },
+      sourceDecisions: [
+        {
+          issueId: authority.sourceDecision.issueId,
+          title: 'Synthetic ordering',
+          question: '',
+          area: 'annual-policy',
+          status: 'RESOLVED',
+          decision: 'Synthetic reviewed comparator',
+          sourceRef: 'synthetic:ordering',
+          effectiveOn: '2027-01-01',
+          resolution: { v: 1, kind: 'BID_ORDERING_COMPARATOR', comparator: authority.comparator },
+        },
+      ],
+    };
+    const evaluation = pinnedEvaluation();
+    const compiled = compileBidDefinitionStagePolicy({ pinnedEvaluation: evaluation, content });
+    if (!compiled.ok || !('executionPolicy' in compiled)) throw new Error(JSON.stringify(compiled));
+    return {
+      content,
+      settings,
+      evaluation: {
+        ...evaluation,
+        settings: { ...settings, livePolicy: compiled.executionPolicy },
+      },
+    };
+  }
+
+  it('accepts a sealed compiled capture with the same typed authoring and resolved membership', () => {
+    const fixture = frozenSettingsFixture();
+    expect(fixture.evaluation.settings.livePolicy.stages[0]?.memberIds).toEqual([10002, 10001]);
+    expect(fixture.settings.livePolicy.stages[0]?.memberIds).toEqual([10001]);
+    expect(
+      bidEvidenceFreezeSettingsMatch({ pinnedEvaluation: fixture.evaluation, ...fixture }),
+    ).toBe(true);
+  });
+
+  it('rejects a changed non-policy setting after the sealed capture', () => {
+    const fixture = frozenSettingsFixture();
+    fixture.settings.turnTimerSeconds = 300;
+    expect(
+      bidEvidenceFreezeSettingsMatch({ pinnedEvaluation: fixture.evaluation, ...fixture }),
+    ).toBe(false);
+  });
+
+  it('rejects changed typed participant membership after the sealed capture', () => {
+    const fixture = frozenSettingsFixture();
+    const source = fixture.content.policy?.stageParticipantSources?.[0];
+    if (!source) throw new Error('Synthetic captain source missing');
+    source.participantSource = {
+      type: 'EXPLICIT_MEMBERS',
+      memberIds: [10001],
+    };
+    expect(
+      bidEvidenceFreezeSettingsMatch({ pinnedEvaluation: fixture.evaluation, ...fixture }),
+    ).toBe(false);
+  });
+
+  it('retains the exact legacy settings comparison when definition authoring is unavailable', () => {
+    const fixture = frozenSettingsFixture();
+    expect(
+      bidEvidenceFreezeSettingsMatch({
+        pinnedEvaluation: fixture.evaluation,
+        settings: fixture.settings,
+      }),
+    ).toBe(false);
+    expect(
+      bidEvidenceFreezeSettingsMatch({
+        pinnedEvaluation: fixture.evaluation,
+        settings: fixture.evaluation.settings,
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects an authoring bundle that does not match the loaded settings', () => {
+    const fixture = frozenSettingsFixture();
+    fixture.content.settings = { ...fixture.settings, expectedDurationDays: 3 };
+    expect(
+      bidEvidenceFreezeSettingsMatch({ pinnedEvaluation: fixture.evaluation, ...fixture }),
+    ).toBe(false);
+  });
+
   it('keeps a legacy explicit-member policy unchanged when no adaptive source exists', () => {
     const policy = executionPolicy();
     const result = compileStageParticipantsFromPinnedEvaluation({

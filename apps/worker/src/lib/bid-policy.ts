@@ -62,6 +62,7 @@ import {
 } from './authoritative-staffing-baseline.js';
 import {
   bidDefinitionContextHash,
+  bidEvidenceFreezeSettingsMatch,
   snapshotMatchesBidDefinition,
 } from './bid-definition-context.js';
 import { validateBidDefinitionSnapshotPin } from './bid-definition-pin.js';
@@ -1988,6 +1989,7 @@ export async function prepareConfiguredBidPolicySnapshot(
   capturedAtMs: number,
   mode: BidSessionMode,
   sourceDecisions?: BidDefinitionContent['sourceDecisions'],
+  definitionContent?: BidDefinitionContent,
 ): Promise<BidSessionPolicySnapshotPreparation> {
   const material = await loadPersistedBidEvaluationMaterial(db, policy, sourceDecisions);
   let prepared: BidEvaluationPreparation;
@@ -1997,8 +1999,6 @@ export async function prepareConfiguredBidPolicySnapshot(
       const saved = await loadBidEvidenceFreeze(db, policy.bidYear);
       const serial = (value: unknown) =>
         canonicalize(JSON.parse(JSON.stringify(value)) as JsonValue);
-      const beforeSettings = { ...saved?.evaluation.settings, evidenceFreeze: undefined };
-      const afterSettings = { ...policy.settings, evidenceFreeze: undefined };
       const materialWithoutVersion = (value: BidEvaluation['ruleBookMaterial']) => ({
         ...value,
         positions: value.positions.map(
@@ -2022,7 +2022,11 @@ export async function prepareConfiguredBidPolicySnapshot(
         freeze.credentialSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
         Date.parse(freeze.approvedAt) < saved.row.captured_at ||
         serial(freeze.sourceImports) !== serial(saved.sourceImports) ||
-        serial(beforeSettings) !== serial(afterSettings) ||
+        !bidEvidenceFreezeSettingsMatch({
+          pinnedEvaluation: saved.evaluation,
+          settings: policy.settings,
+          ...(definitionContent === undefined ? {} : { content: definitionContent }),
+        }) ||
         serial(materialWithoutVersion(saved.evaluation.ruleBookMaterial)) !==
           serial(materialWithoutVersion(material.ruleBookMaterial)) ||
         material.coverage.valid !== true

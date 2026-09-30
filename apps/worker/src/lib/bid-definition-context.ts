@@ -1,4 +1,5 @@
 import {
+  type BidConfigurationSettings,
   type BidDefinitionContent,
   type BidEvaluation,
   type BidSessionPolicySnapshot,
@@ -27,7 +28,7 @@ const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : a.id 
  */
 export function compileBidDefinitionStagePolicy(input: {
   pinnedEvaluation: Pick<BidEvaluation, 'capturedAtMs' | 'members'>;
-  content: BidDefinitionContent;
+  content: Pick<BidDefinitionContent, 'settings' | 'policy' | 'sourceDecisions'>;
 }):
   | {
       ok: true;
@@ -74,6 +75,37 @@ export function compileBidDefinitionStagePolicy(input: {
     kind: compiled.kind,
     executionPolicy: compiled.executionPolicy,
   };
+}
+
+/** Compare execution settings to execution settings using only sealed evidence.
+ * Typed authoring may contain unresolved member references, while the capture
+ * already contains compiled membership and ordering provenance. Every other
+ * setting remains in the comparison; only the new freeze binding is omitted. */
+export function bidEvidenceFreezeSettingsMatch(input: {
+  pinnedEvaluation: Pick<BidEvaluation, 'capturedAtMs' | 'members' | 'settings'>;
+  settings: BidConfigurationSettings;
+  content?: Pick<BidDefinitionContent, 'settings' | 'policy' | 'sourceDecisions'>;
+}) {
+  let expected = input.settings;
+  if (input.content) {
+    if (canonical(input.content.settings) !== canonical(input.settings)) return false;
+    const compiled = compileBidDefinitionStagePolicy({
+      pinnedEvaluation: input.pinnedEvaluation,
+      content: input.content,
+    });
+    if (!compiled.ok) return false;
+    if ('executionPolicy' in compiled) {
+      if (expected.v !== 3) return false;
+      expected = { ...expected, livePolicy: compiled.executionPolicy };
+    }
+  }
+  const withoutFreeze = (settings: BidConfigurationSettings) => {
+    const { evidenceFreeze: _evidenceFreeze, ...rest } = JSON.parse(JSON.stringify(settings));
+    return rest;
+  };
+  return (
+    canonical(withoutFreeze(input.pinnedEvaluation.settings)) === canonical(withoutFreeze(expected))
+  );
 }
 
 /** Identity of the frozen execution context, separate from policy content.
