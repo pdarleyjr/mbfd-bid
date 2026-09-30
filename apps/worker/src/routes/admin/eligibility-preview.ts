@@ -21,6 +21,7 @@ import {
   EligibilityListLoadError,
   loadAdminEligibilityListContext,
 } from '../../lib/admin-eligibility-list.js';
+import { loadFrozenEligibilityListContext } from '../../lib/frozen-eligibility-list.js';
 import { operationalDate } from '../../lib/operational-date.js';
 import { isIsoCalendarDate } from '../../lib/personnel-lifecycle.js';
 import { decodeRuleBookRows } from '../../lib/position-rule.js';
@@ -36,6 +37,50 @@ type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 const router = new Hono<Env>();
 router.use('*', requireAdmin);
 
+const SessionId = z.string().trim().min(1).max(80);
+router.get(
+  '/context',
+  zValidator('query', z.object({ session_id: SessionId }).strict()),
+  async (c) => {
+    try {
+      return c.json(
+        (await loadFrozenEligibilityListContext(getDb(c.env.DB), c.req.valid('query').session_id))
+          .context,
+      );
+    } catch (error) {
+      if (error instanceof EligibilityListLoadError) return c.json(error.body, error.status);
+      throw error;
+    }
+  },
+);
+
+async function listContext(
+  db: ReturnType<typeof getDb>,
+  query: {
+    session_id?: string | undefined;
+    rule_book_version: string;
+    as_of?: string | undefined;
+    bid_year: number;
+  },
+) {
+  if (query.session_id) {
+    const context = await loadFrozenEligibilityListContext(db, query.session_id);
+    if (
+      context.context.ruleBookVersion !== query.rule_book_version ||
+      (query.as_of !== undefined && context.context.asOf !== query.as_of) ||
+      Number(context.context.ruleBookVersion.slice(0, 4)) !== query.bid_year
+    )
+      throw new EligibilityListLoadError(409, { error: 'session_eligibility_context_mismatch' });
+    return context;
+  }
+  return loadAdminEligibilityListContext({
+    db,
+    ruleBookVersion: query.rule_book_version,
+    asOf: query.as_of ?? operationalDate(),
+    bidYear: query.bid_year,
+  });
+}
+
 const EligibilityListQuerySchema = z
   .object({
     position_id: z.string().regex(/^[A-D]\d{3}$/),
@@ -45,6 +90,7 @@ const EligibilityListQuerySchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional(),
     bid_year: z.coerce.number().int().min(2024).max(2100).default(2026),
+    session_id: SessionId.optional(),
   })
   .strict();
 
@@ -57,6 +103,7 @@ const EligibilityExportQuerySchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional(),
     bid_year: z.coerce.number().int().min(2024).max(2100).default(2026),
+    session_id: SessionId.optional(),
     position_id: z
       .string()
       .regex(/^[A-D]\d{3}$/)
@@ -74,14 +121,9 @@ router.get('/export', zValidator('query', EligibilityExportQuerySchema), async (
   const asOf = query.as_of ?? operationalDate();
   if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
   const db = getDb(c.env.DB);
-  let context: Awaited<ReturnType<typeof loadAdminEligibilityListContext>>;
+  let context: Awaited<ReturnType<typeof listContext>>;
   try {
-    context = await loadAdminEligibilityListContext({
-      db,
-      ruleBookVersion: query.rule_book_version,
-      asOf,
-      bidYear: query.bid_year,
-    });
+    context = await listContext(db, query);
   } catch (error) {
     if (error instanceof EligibilityListLoadError) return c.json(error.body, error.status);
     throw error;
@@ -97,7 +139,7 @@ router.get('/export', zValidator('query', EligibilityExportQuerySchema), async (
     if (error instanceof EligibilityListLoadError) return c.json(error.body, error.status);
     throw error;
   }
-  const stamp = asOf.replaceAll('-', '');
+  const stamp = lists[0]?.asOf.replaceAll('-', '') ?? asOf.replaceAll('-', '');
   const scope = query.scope === 'all' ? 'all-positions' : positionIds[0];
   if (query.format === 'xlsx') {
     const blob = await generateEligibilityWorkbook(lists);
@@ -124,12 +166,7 @@ router.get('/list', zValidator('query', EligibilityListQuerySchema), async (c) =
   if (!isIsoCalendarDate(asOf)) return c.json({ error: 'invalid_as_of' }, 400);
   const db = getDb(c.env.DB);
   try {
-    const context = await loadAdminEligibilityListContext({
-      db,
-      ruleBookVersion: query.rule_book_version,
-      asOf,
-      bidYear: query.bid_year,
-    });
+    const context = await listContext(db, query);
     return c.json(context.evaluate(query.position_id));
   } catch (error) {
     if (error instanceof EligibilityListLoadError) return c.json(error.body, error.status);

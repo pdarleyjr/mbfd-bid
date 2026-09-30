@@ -19,7 +19,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderForm() {
+function renderForm(frozen = false) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -30,6 +30,7 @@ function renderForm() {
       <EligibilityPreviewForm
         ruleBookVersion="2027.2"
         positionTemplateVersion="2027.1"
+        {...(frozen ? { sessionId: 'frozen-list', frozenAsOf: '2027-01-01' } : {})}
         members={[{ id: 80, firstName: 'Jamie', lastName: 'Rivera', rank: 'LT' }]}
         positions={[
           {
@@ -83,6 +84,48 @@ async function submit(form: HTMLFormElement) {
 }
 
 describe('EligibilityPreviewForm', () => {
+  it('binds review and every download to the same frozen session, year and evidence date', async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL) =>
+        new Response(
+          JSON.stringify({
+            eligible: [
+              {
+                member: { memberId: 80, employeeId: '80080' },
+                result: { eligible: true, reasons: [], points: 4 },
+                priority: 1,
+                dataBlockers: [],
+              },
+            ],
+            excluded: [],
+            dataBlocked: [],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { container, form, memberId, positionId, asOf } = renderForm(true);
+    expect(asOf.disabled).toBe(true);
+    expect(asOf.value).toBe('2027-01-01');
+    await setInput(memberId, '80');
+    await setInput(positionId, 'A205');
+    await submit(form);
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://x');
+    expect(url.pathname).toBe('/api/admin/eligibility/list');
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      session_id: 'frozen-list',
+      bid_year: '2027',
+      as_of: '2027-01-01',
+      rule_book_version: '2027.2',
+    });
+    expect(container.textContent).toContain('YES');
+    for (const link of container.querySelectorAll<HTMLAnchorElement>('a')) {
+      const query = new URL(link.href).searchParams;
+      expect(query.get('session_id')).toBe('frozen-list');
+      expect(query.get('bid_year')).toBe('2027');
+      expect(query.get('as_of')).toBe('2027-01-01');
+    }
+  });
   it('does not send a preview request until a human-readable member and selected-template position are chosen', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

@@ -18,11 +18,14 @@ export interface EligibilityExportList {
   eligible: EligibilityExportDecision[];
   excluded: EligibilityExportDecision[];
   dataBlocked: EligibilityExportDecision[];
+  sessionId?: string;
 }
 
 function rowsForList(list: EligibilityExportList): SheetData {
   const metadata: SheetData = [
-    ['MBFD 2026 Bid eligibility list'],
+    [
+      `MBFD ${list.ruleBookVersion.slice(0, 4)} Bid eligibility list${list.sessionId ? ` - frozen session ${list.sessionId}` : ''}`,
+    ],
     ['Position', list.positionId],
     ['Rule book', list.ruleBookVersion],
     ['As of', list.asOf],
@@ -113,8 +116,9 @@ export function generateEligibilityPdf(lists: readonly EligibilityExportList[]):
   const allLines: string[] = [];
   for (const list of lists) {
     allLines.push(
-      `MBFD 2026 Bid Eligibility - Position ${list.positionId}`,
+      `MBFD ${list.ruleBookVersion.slice(0, 4)} Bid Eligibility - Position ${list.positionId}`,
       `Rule book ${list.ruleBookVersion} | As of ${list.asOf}`,
+      ...(list.sessionId ? [`Frozen session ${list.sessionId}`] : []),
       '',
     );
     const add = (status: string, decision: EligibilityExportDecision) => {
@@ -163,16 +167,22 @@ export function generateEligibilityPdf(lists: readonly EligibilityExportList[]):
       `<< /Length ${new TextEncoder().encode(commands).length} >>\nstream\n${commands}\nendstream`,
     );
   }
-  let pdf = '%PDF-1.4\n';
+  const encoder = new TextEncoder();
+  const parts = ['%PDF-1.4\n'];
+  let byteLength = encoder.encode(parts[0]).length;
   const offsets = [0];
   for (let id = 1; id <= objectCount; id++) {
-    offsets[id] = new TextEncoder().encode(pdf).length;
-    pdf += `${id} 0 obj\n${objects.get(id)}\nendobj\n`;
+    offsets[id] = byteLength;
+    const part = `${id} 0 obj\n${objects.get(id)}\nendobj\n`;
+    parts.push(part);
+    byteLength += encoder.encode(part).length;
   }
-  const xref = new TextEncoder().encode(pdf).length;
-  pdf += `xref\n0 ${objectCount + 1}\n0000000000 65535 f \n`;
+  const xref = byteLength;
+  let trailer = `xref\n0 ${objectCount + 1}\n0000000000 65535 f \n`;
   for (let id = 1; id <= objectCount; id++)
-    pdf += `${String(offsets[id]).padStart(10, '0')} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return new TextEncoder().encode(pdf);
+    trailer += `${String(offsets[id]).padStart(10, '0')} 00000 n \n`;
+  parts.push(
+    `${trailer}trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`,
+  );
+  return encoder.encode(parts.join(''));
 }

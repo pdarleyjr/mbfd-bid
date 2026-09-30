@@ -64,10 +64,52 @@ async function loadSelectorOptions(
 export default async function EligibilityPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<BoundToolSearchParams>;
+  searchParams: Promise<BoundToolSearchParams & { session_id?: string }>;
 }) {
   await requireAdmin();
-  const binding = await loadBoundBidConfiguration(await searchParams);
+  const parameters = await searchParams;
+  if (parameters.session_id) {
+    const response = await serverWorkerFetch(
+      `/api/admin/eligibility/context?session_id=${encodeURIComponent(parameters.session_id)}`,
+    );
+    if (!response.ok)
+      return (
+        <div>
+          <h1 className="font-heading text-2xl">Bid session eligibility</h1>
+          <p role="alert">
+            This session’s frozen eligibility evidence could not be verified. Return to the Mock and
+            review its status.
+          </p>
+        </div>
+      );
+    const context = (await response.json()) as {
+      sessionId: string;
+      ruleBookVersion: string;
+      positionTemplateVersion: string;
+      asOf: string;
+      members: EligibilityMemberOption[];
+      positions: EligibilityPositionOption[];
+    };
+    return (
+      <div className="mx-auto max-w-6xl">
+        <h1 className="font-heading text-2xl">Bid session eligibility</h1>
+        <p className="mt-2">
+          Frozen Mock/Bid cohort: {context.members.length} members · evidence date {context.asOf}.
+          Lists and downloads retain this session’s accepted rules, qualifications and ordering
+          evidence.
+        </p>
+        <EligibilityPreviewForm
+          ruleBookVersion={context.ruleBookVersion}
+          positionTemplateVersion={context.positionTemplateVersion}
+          sessionId={context.sessionId}
+          frozenAsOf={context.asOf}
+          members={context.members}
+          positions={context.positions}
+        />
+      </div>
+    );
+  }
+  const binding = await loadBoundBidConfiguration(parameters);
 
   if (binding.error !== null) {
     return (

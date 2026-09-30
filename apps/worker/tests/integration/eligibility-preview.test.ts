@@ -44,6 +44,85 @@ async function seedRulebookAndMember(h: TestD1) {
   );
 }
 
+async function seedFrozenList(h: TestD1, identities = true) {
+  const capturedAtMs = Date.UTC(2026, 8, 24);
+  const snapshot = {
+    v: 3,
+    ruleBookVersion: '2026.1',
+    ruleBookRevision: 0,
+    positionTemplateVersion: '2026.1',
+    configurationRevision: 1,
+    settings: {
+      v: 2,
+      expectedDurationDays: 2,
+      turnTimerSeconds: 180,
+      credentialEvaluationOn: '2026-09-24',
+    },
+    credentialEvaluationOn: '2026-09-24',
+    capturedAtMs,
+    members: [
+      {
+        memberId: 80,
+        pool: 'OFC',
+        rscSeniority: 50,
+        rankSeniority: 1,
+        exclusionReason: null,
+        authoritativeAssignmentId: null,
+        rank: 'LT',
+        isProbationary: false,
+        credentialNames: ['Paramedic'],
+        scoringEvidence: { evaluationOn: '2026-09-24', completedCredentialNames: ['Paramedic'] },
+      },
+    ],
+    ...(identities
+      ? {
+          operatorIdentityProjection: [
+            {
+              memberId: 80,
+              employeeId: '80080',
+              firstName: 'Eligi',
+              lastName: 'Frozen',
+              rank: 'CPT',
+            },
+          ],
+        }
+      : {}),
+    ruleBookMaterial: {
+      v: 1,
+      positions: [
+        {
+          id: 'A205',
+          templateVersion: '2026.1',
+          bidParticipation: 'BIDDABLE',
+          isExcludedFromCount: false,
+          shift: 'A',
+          station: '2',
+          unit: 'Rescue 2',
+          rankRequired: 'LT',
+          positionName: 'Rescue 2 LT',
+        },
+      ],
+      rules: [
+        {
+          ruleBookVersion: '2026.1',
+          positionId: 'A205',
+          templateVersion: '2026.1',
+          requiredCriteriaJson: '{"rank":["LT"],"credentials":[],"custom":["paramedic"]}',
+          pointsPreferenceJson: '{"max":0,"items":[]}',
+          tieBreakChainJson: '["rsc_seniority"]',
+        },
+      ],
+    },
+  };
+  await h.db.run(
+    "INSERT INTO bid_sessions(id,bid_year,started_at,current_phase,turn_timer_seconds,expected_duration_days,day_count,is_mock) VALUES ('frozen-list',2026,1,'position_bid',180,2,0,1)",
+  );
+  await h.db.run(
+    'INSERT INTO bid_session_policy_snapshots(bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES (?, ?, ?, 0, ?, ?)',
+    ['frozen-list', '2026.1', '2026.1', JSON.stringify(snapshot), capturedAtMs],
+  );
+}
+
 describe('POST /api/admin/eligibility/preview', () => {
   let h: TestD1;
   beforeEach(async () => {
@@ -146,6 +225,88 @@ describe('POST /api/admin/eligibility/preview', () => {
     );
     expect(massExport.status).toBe(200);
     expect(massExport.headers.get('content-disposition')).toContain('all-positions');
+  });
+
+  it('retains annual participants with unknown global employment status and frozen rank, identity, qualifications and ordering', async () => {
+    await seedFrozenList(h);
+    await h.db.run(
+      "UPDATE members SET rank='DC', first_name='Changed', last_name='Directory', employment_status='unknown' WHERE id=80",
+    );
+    const headers = { Authorization: `Bearer ${await adminJwt()}` };
+    const query =
+      'position_id=A205&rule_book_version=2026.1&as_of=2026-09-24&bid_year=2026&session_id=frozen-list';
+    const list = await app.fetch(
+      new Request(`http://x/api/admin/eligibility/list?${query}`, { headers }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({
+      eligible: [
+        {
+          priority: 1,
+          member: {
+            memberId: 80,
+            employeeId: '80080',
+            firstName: 'Eligi',
+            lastName: 'Frozen',
+            rank: 'LT',
+          },
+        },
+      ],
+      excluded: [],
+      dataBlocked: [],
+      sessionId: 'frozen-list',
+    });
+    for (const format of ['xlsx', 'pdf']) {
+      const exportResult = await app.fetch(
+        new Request(`http://x/api/admin/eligibility/export?${query}&scope=all&format=${format}`, {
+          headers,
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(exportResult.status).toBe(200);
+      expect((await exportResult.arrayBuffer()).byteLength).toBeGreaterThan(500);
+    }
+    const context = await app.fetch(
+      new Request('http://x/api/admin/eligibility/context?session_id=frozen-list', { headers }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    await expect(context.json()).resolves.toMatchObject({
+      asOf: '2026-09-24',
+      members: [{ id: 80, rank: 'LT', lastName: 'Frozen' }],
+    });
+  });
+
+  it('rejects mismatched dates, rule books and missing session evidence without falling back to the global roster', async () => {
+    await seedFrozenList(h);
+    const headers = { Authorization: `Bearer ${await adminJwt()}` };
+    for (const suffix of [
+      'as_of=2026-09-30&session_id=frozen-list',
+      'rule_book_version=2026.2&session_id=frozen-list',
+      'session_id=missing',
+    ]) {
+      const params = new URLSearchParams('position_id=A205&rule_book_version=2026.1&bid_year=2026');
+      for (const [key, value] of new URLSearchParams(suffix)) params.set(key, value);
+      const response = await app.fetch(
+        new Request(`http://x/api/admin/eligibility/list?${params}`, { headers }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(response.status).toBe(409);
+    }
+  });
+
+  it('requires frozen identity evidence instead of inventing names or employee IDs', async () => {
+    await seedFrozenList(h, false);
+    const response = await app.fetch(
+      new Request('http://x/api/admin/eligibility/context?session_id=frozen-list', {
+        headers: { Authorization: `Bearer ${await adminJwt()}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'session_identity_evidence_missing',
+    });
   });
 
   it('uses effective-dated qualification evidence instead of a timeless legacy credential row', async () => {
