@@ -471,7 +471,10 @@ export function planPersonnelLifecycleChange(
     );
     if (matching === undefined) return failure('staffing_position_not_assigned_to_member');
   }
-  const preservesAssignment = input.kind === 'CORRECTION' && input.staffingPositionId === undefined;
+  const preservesAssignment =
+    input.kind === 'CORRECTION' &&
+    input.staffingPositionId === undefined &&
+    input.employmentStatusAfter === undefined;
   if (
     !preservesAssignment &&
     inEffect.some((assignment) => assignment.effectiveFrom >= input.effectiveOn)
