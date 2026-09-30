@@ -126,7 +126,7 @@ export function BidOperations({
         </p>
         {mock ? (
           <Link
-            href={`/admin/sessions/${encodeURIComponent(mock.id)}` as Route}
+            href={`/admin/bid?session_id=${encodeURIComponent(mock.id)}` as Route}
             className="inline-flex min-h-12 items-center rounded bg-primary px-4 font-semibold text-primary-foreground"
           >
             OPEN MY MOCK
