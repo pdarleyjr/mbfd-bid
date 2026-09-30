@@ -137,6 +137,14 @@ export function BidOperations({
           </Button>
         )}
         <p className="w-full text-sm">MOCK SESSION — NOT LIVE · Portal/staffing writeback OFF</p>
+        {mock && (
+          <Link
+            href={`/admin/eligibility?session_id=${encodeURIComponent(mock.id)}` as Route}
+            className="inline-flex min-h-11 items-center underline"
+          >
+            Review my Mock’s eligibility / download lists
+          </Link>
+        )}
       </div>
       {realOnly.length > 0 && (
         <details>

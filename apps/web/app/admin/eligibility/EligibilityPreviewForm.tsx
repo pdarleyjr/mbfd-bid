@@ -51,6 +51,8 @@ interface Props {
   positionTemplateVersion: string;
   members: readonly EligibilityMemberOption[];
   positions: readonly EligibilityPositionOption[];
+  sessionId?: string;
+  frozenAsOf?: string;
 }
 
 export function EligibilityPreviewForm({
@@ -58,6 +60,8 @@ export function EligibilityPreviewForm({
   positionTemplateVersion,
   members,
   positions,
+  sessionId,
+  frozenAsOf,
 }: Props) {
   const [memberId, setMemberId] = useState('');
   const [positionId, setPositionId] = useState('');
@@ -65,7 +69,7 @@ export function EligibilityPreviewForm({
   const [listResult, setListResult] = useState<PositionListResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [asOf, setAsOf] = useState(() => new Date().toISOString().slice(0, 10));
+  const [asOf, setAsOf] = useState(() => frozenAsOf ?? new Date().toISOString().slice(0, 10));
   const [listSearch, setListSearch] = useState('');
   const [listCategory, setListCategory] = useState<'all' | 'eligible' | 'excluded' | 'blocked'>(
     'all',
@@ -120,6 +124,35 @@ export function EligibilityPreviewForm({
     setResult(null);
     setListResult(null);
     try {
+      if (sessionId) {
+        const query = new URLSearchParams({
+          position_id: positionId,
+          rule_book_version: ruleBookVersion,
+          as_of: asOf,
+          bid_year: ruleBookVersion.slice(0, 4),
+          session_id: sessionId,
+        });
+        const response = await fetch(`/api/admin/eligibility/list?${query}`, {
+          credentials: 'include',
+        });
+        const body = (await response.json()) as PositionListResult & { error?: string };
+        if (!response.ok) {
+          setError(body.error ?? `Preview failed (${response.status})`);
+          return;
+        }
+        const list = body as PositionListResult;
+        const decision = [...list.eligible, ...list.excluded, ...list.dataBlocked].find(
+          (entry) =>
+            entry.member.id === Number(memberId) ||
+            (entry.member as { memberId?: number }).memberId === Number(memberId),
+        );
+        if (!decision) {
+          setError('Member is outside this frozen Bid cohort.');
+          return;
+        }
+        setResult(decision.result);
+        return;
+      }
       const body: Record<string, unknown> = {
         member_id: Number(memberId),
         position_id: positionId,
@@ -157,8 +190,9 @@ export function EligibilityPreviewForm({
         position_id: positionId,
         rule_book_version: ruleBookVersion,
         as_of: asOf,
-        bid_year: '2026',
+        bid_year: ruleBookVersion.slice(0, 4),
       });
+      if (sessionId) query.set('session_id', sessionId);
       const response = await fetch(`/api/admin/eligibility/list?${query}`, {
         credentials: 'include',
       });
@@ -179,8 +213,9 @@ export function EligibilityPreviewForm({
       scope,
       rule_book_version: ruleBookVersion,
       as_of: asOf,
-      bid_year: '2026',
+      bid_year: ruleBookVersion.slice(0, 4),
     });
+    if (sessionId) query.set('session_id', sessionId);
     if (scope === 'single' && positionId !== '') query.set('position_id', positionId);
     return `/api/admin/eligibility/export?${query}`;
   };
@@ -210,6 +245,7 @@ export function EligibilityPreviewForm({
           <input
             type="date"
             value={asOf}
+            disabled={!!sessionId}
             onChange={(event) => setAsOf(event.target.value)}
             data-testid="eligibility-as-of"
             className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-foreground"

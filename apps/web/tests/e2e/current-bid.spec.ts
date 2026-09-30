@@ -44,6 +44,23 @@ const opportunityRows = (page: Page) => opportunityList(page).locator('button[ar
 const historyRows = (page: Page) => workspace(page).getByRole('button', { name: /^Version \d+\b/ });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+test('personal Mock eligibility link retains its exact session', async ({ page }) => {
+  const state = await installCurrentBidFixtures(page);
+  await page.route('**/api/admin/bid/2027/my-mock?*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ mock: { id: 'SYNTHETIC-PERSONAL-MOCK' } }),
+    }),
+  );
+  await openBid(page);
+  await expect(page.getByRole('link', { name: 'OPEN MY MOCK', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Review my Mock’s eligibility / download lists', exact: true }),
+  ).toHaveAttribute('href', '/admin/eligibility?session_id=SYNTHETIC-PERSONAL-MOCK');
+  assertNoWrites(state);
+});
+
 test('landing identifies the accepted MASTER V4 source', async ({ page }) => {
   const state = await installCurrentBidFixtures(page);
   state.current.content.sourceDecisions.push(
