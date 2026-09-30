@@ -54,7 +54,10 @@ test('personal Mock eligibility link retains its exact session', async ({ page }
     }),
   );
   await openBid(page);
-  await expect(page.getByRole('link', { name: 'OPEN MY MOCK', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'OPEN MY MOCK', exact: true })).toHaveAttribute(
+    'href',
+    '/admin/bid?session_id=SYNTHETIC-PERSONAL-MOCK',
+  );
   await expect(
     page.getByRole('link', { name: 'Review my Mock’s eligibility / download lists', exact: true }),
   ).toHaveAttribute('href', '/admin/eligibility?session_id=SYNTHETIC-PERSONAL-MOCK');
