@@ -113,9 +113,9 @@ function expectAnnualBidStructureCloneStateIntegrity(sqlite: Database.Database):
   ).toHaveLength(1);
 }
 
-describe('integration migration chain 0038 through 0069', () => {
+describe('integration migration chain 0038 through 0070', () => {
   it('is gap-free and applies from a fresh database through the final candidate', () => {
-    expect(migrationFiles().slice(-32)).toEqual([
+    expect(migrationFiles().slice(-33)).toEqual([
       '0038_live_policy_participation_and_amendments.sql',
       '0039_restore_rule_book_participation_guards.sql',
       '0040_annual_bid_operations.sql',
@@ -148,12 +148,13 @@ describe('integration migration chain 0038 through 0069', () => {
       '0067_bid_evidence_insert_seals.sql',
       '0068_annual_bid_structure_clone_state.sql',
       '0069_bid_evidence_freeze.sql',
+      '0070_credential_anomaly_review_revision.sql',
     ]);
 
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
-    const applied = applyThrough(sqlite, '0069_bid_evidence_freeze.sql');
-    expect(applied.at(-1)).toBe('0069_bid_evidence_freeze.sql');
+    const applied = applyThrough(sqlite, '0070_credential_anomaly_review_revision.sql');
+    expect(applied.at(-1)).toBe('0070_credential_anomaly_review_revision.sql');
     expectFinalIntegrity(sqlite);
     expectAnnualBidStructureCloneStateIntegrity(sqlite);
 

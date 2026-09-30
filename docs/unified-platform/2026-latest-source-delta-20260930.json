@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-09-30T12:27:47.904343+00:00",
+  "state": "PRE_CUTOFF_SOURCE_ANALYSIS_NOT_PRODUCTION_ACCEPTANCE",
+  "sourcePackage": {
+    "filename": "OneDrive_1_9-29-2026.zip",
+    "sha256": "5c9c2424801a88c080621ea6fc836e9b454cf449a9b58aac30c7d9efd07a0f3c",
+    "files": [
+      {
+        "filename": "(EX) Export Assignments - 2026-08-24.xls",
+        "sha256": "1adb6c119dd08b3812b0b282647e37a04c2d85e60cb1dacb75fdbaaefcfc0354"
+      },
+      {
+        "filename": "2026 Annual Bid Calculations v5.xlsx",
+        "sha256": "37e6b2c65696eca2f8ce66c4d5a7ffc4e879264814ffc87725989c0b81ac451c"
+      },
+      {
+        "filename": "2026 Bid Policy.pdf",
+        "sha256": "a28e73c403fb2b8e5ece4559cf16324f9e4dfe56425d16ac6f1559080ec6befc"
+      },
+      {
+        "filename": "MASTER 2026 Bid Positions Selection V3.xlsx",
+        "sha256": "3631427507fa7ca0280a03e9b0a14a2429bbafad3404d46f5cef4a1ce679b57d"
+      }
+    ],
+    "selectedCredentialSheet": "2026_BID_Credentials_Version_4_"
+  },
+  "policy": {
+    "changed": false,
+    "comparison": "Byte-for-byte equal to previously supplied July policy",
+    "suppliedExpectedHashMatches": false
+  },
+  "assignments": {
+    "changed": false,
+    "currentSeptemberEvidence": false,
+    "sourceDate": "2026-08-24"
+  },
+  "positions": {
+    "v2Rows": 228,
+    "v3Rows": 228,
+    "logicallyEqual": true,
+    "reviewedCorrectionsRetained": [
+      "Float Captains A718/B718/C718",
+      "Reviewed B703 third Rescue Float Lieutenant"
+    ],
+    "reviewedCapacity": {
+      "CPT": 23,
+      "LT": 39,
+      "FF": 161,
+      "total": 223,
+      "A": 73,
+      "B": 73,
+      "C": 73,
+      "Days": 4
+    },
+    "capacityDecision": "NEEDS ADMIN EVIDENCE: 40 Lieutenant bidders and 39 reviewed Lieutenant opportunities"
+  },
+  "personnel": {
+    "sourcePeople": 233,
+    "added": [],
+    "removed": [
+      {
+        "employeeId": "16573",
+        "name": " Frazier, David"
+      },
+      {
+        "employeeId": "16584",
+        "name": " Bell, Darryl"
+      },
+      {
+        "employeeId": "16613",
+        "name": " Anderson, David"
+      },
+      {
+        "employeeId": "16617",
+        "name": " Page, Desmond"
+      },
+      {
+        "employeeId": "20734",
+        "name": " Lewis, Derek"
+      }
+    ],
+    "substantiveRankChanges": [
+      {
+        "employeeId": "17836",
+        "name": " Mederos, Aurelio",
+        "old": "Firefighter",
+        "new": "Lieutenant",
+        "promotionDate": null,
+        "sourceBid": "Include"
+      },
+      {
+        "employeeId": "17594",
+        "name": " Fisikelli, Matthew",
+        "old": "Division Chief",
+        "new": "Captain",
+        "promotionDate": null,
+        "sourceBid": "Include"
+      },
+      {
+        "employeeId": "18148",
+        "name": " Nicholas, Dwight",
+        "old": "Captain",
+        "new": "Division Chief",
+        "promotionDate": null,
+        "sourceBid": "Include"
+      }
+    ],
+    "firefighterDELabels": 25,
+    "candidateCounts": {
+      "CPT": 22,
+      "LT": 40,
+      "FF": 160
+    },
+    "candidateTotal": 222,
+    "preservedDecisions": [
+      "Hans Estrada excluded by prior administrator departure instruction",
+      "Jeremy Bloomfield retains approved Captain Bid rank",
+      "Adonis Garcia excluded"
+    ],
+    "historicalPromotionDates": "Not supplied for the three rank changes; use an explicitly identified source observation correction, not invented promotion dates"
+  },
+  "credentials": {
+    "revisions": {
+      "1": {
+        "rows": 3871,
+        "keys": 3871,
+        "employees": 230,
+        "names": 65
+      },
+      "2": {
+        "rows": 3883,
+        "keys": 3883,
+        "employees": 230,
+        "names": 65
+      },
+      "3": {
+        "rows": 3885,
+        "keys": 3885,
+        "employees": 230,
+        "names": 65
+      },
+      "4": {
+        "rows": 3884,
+        "keys": 3884,
+        "employees": 230,
+        "names": 65
+      }
+    },
+    "deltas": {
+      "1->2": {
+        "keys": 19,
+        "employees": 12,
+        "types": {
+          "updated": 7,
+          "added": 12
+        }
+      },
+      "2->3": {
+        "keys": 3,
+        "employees": 2,
+        "types": {
+          "updated": 1,
+          "added": 2
+        }
+      },
+      "3->4": {
+        "keys": 22,
+        "employees": 18,
+        "types": {
+          "omitted": 9,
+          "updated": 5,
+          "added": 8
+        }
+      },
+      "1->4": {
+        "keys": 43,
+        "employees": 30,
+        "types": {
+          "omitted": 9,
+          "updated": 12,
+          "added": 22
+        }
+      }
+    },
+    "productionComparisonBeforeApproval": {
+      "rows": 3884,
+      "counts": {
+        "FILL_MISSING_DATE": 3779,
+        "EXPIRATION_REVIEW": 43,
+        "UNKNOWN_QUALIFICATION": 18,
+        "NEW_QUALIFICATION": 21,
+        "UNCHANGED": 12,
+        "REFERENCE_ONLY": 8,
+        "CONFLICT": 2,
+        "ANOMALOUS_DATE_REVIEW": 1
+      },
+      "accepted": false
+    },
+    "futureEffective": [
+      {
+        "employeeId": "17605",
+        "credential": "Public Safety Diver",
+        "firstName": "Brian",
+        "lastName": "Galletta",
+        "start": "2029-06-25",
+        "expiration": "2029-08-31"
+      },
+      {
+        "employeeId": "25611",
+        "credential": "FL State - EMT - Basic",
+        "firstName": "Christopher",
+        "lastName": "Nodarse",
+        "start": "2026-12-01",
+        "expiration": "2028-12-01"
+      },
+      {
+        "employeeId": "25615",
+        "credential": "FL State - Paramedic",
+        "firstName": "Taj",
+        "lastName": "Thomas",
+        "start": "2026-12-01",
+        "expiration": "2028-12-01"
+      }
+    ],
+    "anomalous": [
+      {
+        "employeeId": "19952",
+        "credential": "Public Safety Diver",
+        "firstName": "David",
+        "lastName": "Sola",
+        "start": "2023-05-07",
+        "expiration": "2099-05-07"
+      }
+    ],
+    "omissionMeaning": "Source omission only; no automatic revocation"
+  },
+  "eligibilityImpact": {
+    "state": "NOT YET PRODUCTION RECONCILED",
+    "reason": "Audited credential, personnel and ordinal updates require an authenticated administrator session before final lists can be regenerated"
+  },
+  "adminEvidence": [
+    {
+      "scope": "Lieutenant capacity",
+      "missingFact": "Approved seat/rank topology change or explicit participation decision explaining the one-Lieutenant shortfall",
+      "checked": [
+        "MASTER V2/V3 unchanged Positions",
+        "Existing reviewed B703 correction",
+        "September 4 C-shift roster",
+        "Production Mederos third-Lieutenant assignment",
+        "Supplied September 23 directory"
+      ]
+    },
+    {
+      "scope": "Fire Investigator A/B/C seats",
+      "missingFact": "Current approved assignee-to-seat bindings",
+      "checked": [
+        "Historical Annual Assignments: Michelle Viera/Henson, Claudio Navas, Michael Sica",
+        "Production current assignments: Henson A Ladder 3, Navas Days Training, Sica Days Training",
+        "Accepted TeleStaff observation and existing binding table"
+      ]
+    },
+    {
+      "scope": "D102-D104",
+      "missingFact": "Reviewed appointment/term-start dates and applicable current assignees",
+      "checked": [
+        "Annual assignment material",
+        "Production staffing bindings",
+        "No accepted tenure evidence"
+      ]
+    },
+    {
+      "scope": "David Sola PSD",
+      "missingFact": "Verification or corrected source for expiration 2099-05-07",
+      "checked": ["Exact Version 4 row retained", "No automatic correction or bulk approval"]
+    },
+    {
+      "scope": "Brian Galletta PSD",
+      "missingFact": "Verification of future start 2029-06-25 and a dated current interval; production has no current issue or expiration date",
+      "checked": [
+        "Exact Version 4 row retained",
+        "Current interval is unknown; future source remains a conflict"
+      ]
+    }
+  ],
+  "realBidStatus": "NOT STARTED"
+}

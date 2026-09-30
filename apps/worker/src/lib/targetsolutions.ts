@@ -17,6 +17,8 @@ export type TargetClassification =
   | 'UNCHANGED'
   | 'FILL_MISSING_DATE'
   | 'RENEWAL'
+  | 'FUTURE_RENEWAL'
+  | 'ANOMALOUS_DATE_REVIEW'
   | 'EXPIRATION_REVIEW'
   | 'REVOCATION_REVIEW'
   | 'CONFLICT';
@@ -158,11 +160,24 @@ export function classifyTargetCredential(
   current: { status: string; effectiveOn: string | null; expiresOn: string | null } | undefined,
   observedOn: string,
 ): TargetClassification {
-  if (
-    (row.effectiveOn && row.effectiveOn > observedOn) ||
-    (row.status === 'expired' && row.expiresOn && row.expiresOn >= observedOn)
-  )
-    return 'CONFLICT';
+  if (row.expiresOn && Number(row.expiresOn.slice(0, 4)) > Number(observedOn.slice(0, 4)) + 20)
+    return 'ANOMALOUS_DATE_REVIEW';
+  if (row.effectiveOn && row.effectiveOn > observedOn) {
+    const nextDay = current?.expiresOn
+      ? new Date(Date.parse(`${current.expiresOn}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
+      : null;
+    return row.status === 'active' &&
+      current?.status === 'active' &&
+      current.expiresOn &&
+      current.expiresOn >= observedOn &&
+      nextDay &&
+      row.effectiveOn <= nextDay &&
+      row.expiresOn &&
+      row.expiresOn > current.expiresOn
+      ? 'FUTURE_RENEWAL'
+      : 'CONFLICT';
+  }
+  if (row.status === 'expired' && row.expiresOn && row.expiresOn >= observedOn) return 'CONFLICT';
   if (row.status === 'revoked')
     return current?.status === 'revoked' ? 'UNCHANGED' : 'REVOCATION_REVIEW';
   if (row.status === 'expired' || (row.expiresOn && row.expiresOn < observedOn))

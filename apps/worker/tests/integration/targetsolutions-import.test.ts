@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import { deriveMemberQualificationProjection } from '../../src/lib/qualification-lifecycle.js';
+import { mapEvent } from '../../src/routes/admin/qualification-lifecycle.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 const KEY = 't'.repeat(64);
 describe('TargetSolutions reviewed import', () => {
@@ -15,10 +17,13 @@ describe('TargetSolutions reviewed import', () => {
     await teardownTestD1(h);
   });
   async function request(path: string, body?: unknown) {
+    const identity = await h.env.DB.prepare('SELECT employee_id FROM members WHERE id=1').first<{
+      employee_id: string;
+    }>();
     const token = await signJwt(
       {
         sub: 0,
-        emp: '0012',
+        emp: identity?.employee_id ?? '0012',
         role: 'admin',
         rank: 'CHIEF',
         first_name: 'Test',
@@ -38,6 +43,238 @@ describe('TargetSolutions reviewed import', () => {
   }
   const csv =
     'Credentials\nRun Date:,"Sep 7, 2026 4:34 PM"\nFilters:,Credential Status,Active\nFirst Name,Last Name,Employee ID,Credential Name\nTest,Member,0012,Synthetic Certification\nTest,Unknown,0999,Synthetic Certification';
+  it.each([
+    ['2028-01-01', 'FILL_MISSING_DATE', 'active'],
+    ['2026-08-01', 'EXPIRATION_REVIEW', 'expired'],
+  ])(
+    'reconciles dated evidence expiring %s without treating the old report date as an issue date',
+    async (expiresOn, classification, status) => {
+      const initial = (await (
+        await request('/imports', { csv, filename: 'active-only.csv' })
+      ).json()) as { id: string };
+      await request(`/imports/${initial.id}/review`, { accept: true });
+      await request(`/imports/${initial.id}/apply`, {
+        safe: true,
+        reason: 'Original active-only observation',
+      });
+      const dated = (await (
+        await request('/imports', {
+          csv: `Employee ID,Credential Name,Credential Status,Start Date,Expiration Date\n0012,Synthetic Certification,Active,2023-01-01,${expiresOn}`,
+          filename: 'dated-source.csv',
+          observed_on: '2026-09-29',
+        })
+      ).json()) as { id: string };
+      await request(`/imports/${dated.id}/review`, { accept: true });
+      const detail = (await (await request(`/imports/${dated.id}`)).json()) as {
+        counts: Record<string, number>;
+        rows: { id: string }[];
+      };
+      expect(detail.counts[classification]).toBe(1);
+      const applied = await request(
+        `/imports/${dated.id}/apply`,
+        status === 'active'
+          ? { safe: true, reason: 'Fill original source dates' }
+          : {
+              row_ids: [detail.rows[0]?.id],
+              accept_adverse: true,
+              reason: 'Verify source expiration',
+            },
+      );
+      expect(applied.status).toBe(200);
+      const persisted = await h.env.DB.prepare(
+        'SELECT event.*, credential.name AS credential_name FROM member_qualification_events event JOIN credentials credential ON credential.id=event.credential_id ORDER BY event.created_at,event.id',
+      ).all<Parameters<typeof mapEvent>[0]>();
+      const events = persisted.results.map(mapEvent).filter((event) => event !== null);
+      const project = (asOf: string) =>
+        deriveMemberQualificationProjection({ memberId: 1, asOf, legacyCredentials: [], events })
+          .certifications[0];
+      expect(project('2026-09-28')).toMatchObject({
+        status: 'active',
+        expiresOn: null,
+        effectiveOn: '2026-09-07',
+      });
+      expect(project('2026-09-30')).toMatchObject({ status, expiresOn });
+      if (status === 'active') expect(project('2026-09-30')?.effectiveOn).toBe('2023-01-01');
+      expect(events.at(-1)?.effectiveOn).toBe('2026-09-29');
+      await request(`/imports/${dated.id}/review`, { accept: true });
+      const repeated = (await (await request(`/imports/${dated.id}`)).json()) as {
+        counts: Record<string, number>;
+      };
+      expect(repeated.counts.APPLIED).toBe(1);
+    },
+  );
+  it('keeps a genuinely conflicting explicit issue date in individual review', async () => {
+    await h.db.run(
+      "INSERT INTO member_credentials(member_id,credential_id,start_date,expiration_date) VALUES(1,10,'2024-01-01','2028-01-01')",
+    );
+    const uploaded = (await (
+      await request('/imports', {
+        csv: 'Employee ID,Credential Name,Credential Status,Start Date,Expiration Date\n0012,Synthetic Certification,Active,2023-01-01,2028-01-01',
+        filename: 'conflicting-date.csv',
+        observed_on: '2026-09-29',
+      })
+    ).json()) as { id: string };
+    await request(`/imports/${uploaded.id}/review`, { accept: true });
+    const detail = (await (await request(`/imports/${uploaded.id}`)).json()) as {
+      counts: Record<string, number>;
+    };
+    expect(detail.counts.CONFLICT).toBe(1);
+    await request(`/imports/${uploaded.id}/apply`, { safe: true, reason: 'Safe records only' });
+    expect(
+      (
+        await h.env.DB.prepare('SELECT COUNT(*) n FROM member_qualification_events').first<{
+          n: number;
+        }>()
+      )?.n,
+    ).toBe(0);
+  });
+  it.each([
+    ['25611', 'Christopher', 'Nodarse', 'FL State - EMT - Basic'],
+    ['25615', 'Taj', 'Thomas', 'FL State - Paramedic'],
+  ])(
+    'retains the current interval and schedules employee %s renewal idempotently',
+    async (employeeId, firstName, lastName, credentialName) => {
+      await h.env.DB.prepare('UPDATE members SET employee_id=?,first_name=?,last_name=? WHERE id=1')
+        .bind(employeeId, firstName, lastName)
+        .run();
+      await h.env.DB.prepare('INSERT INTO credentials(id,name) VALUES(11,?)')
+        .bind(credentialName)
+        .run();
+      await h.db.run(
+        "INSERT INTO member_credentials(member_id,credential_id,start_date,expiration_date) VALUES(1,11,'2024-12-01','2026-12-01')",
+      );
+      const renewal = `First Name,Last Name,Employee ID,Rank,Credential Name,Expiration Date,Start Date\n${firstName},${lastName},${employeeId},Firefighter,${credentialName},2028-12-01,2026-12-01`;
+      const receipt = {
+        workbook_hash: 'a'.repeat(64),
+        selected_sheet: '2026_BID_Credentials_Version_4_',
+        source_revision: 4,
+        row_count: 1,
+        unique_employee_count: 1,
+        source_filename: 'annual-v5.xlsx',
+      };
+      const uploaded = await request('/imports', {
+        csv: renewal,
+        filename: 'annual-v5.xlsx',
+        observed_on: '2026-09-30',
+        source_receipt: receipt,
+      });
+      expect(uploaded.status).toBe(201);
+      const { id } = (await uploaded.json()) as { id: string };
+      await request(`/imports/${id}/review`, { accept: true });
+      const detail = (await (await request(`/imports/${id}`)).json()) as {
+        counts: Record<string, number>;
+        source_receipt: unknown;
+      };
+      expect(detail.counts.FUTURE_RENEWAL).toBe(1);
+      expect(detail.source_receipt).toMatchObject({ ...receipt, approved_at: null });
+      expect(
+        (
+          await request(`/imports/${id}/apply`, {
+            safe: true,
+            reason: 'Approved contiguous future renewal',
+          })
+        ).status,
+      ).toBe(200);
+      const event = await h.env.DB.prepare(
+        'SELECT id,member_id AS memberId,credential_id AS credentialId,kind,effective_on AS effectiveOn,expires_on AS expiresOn,evidence_source AS evidenceSource,evidence_reference AS evidenceReference,reason,actor_subject AS actorSubject,idempotency_key AS idempotencyKey,before_state AS beforeState,after_state AS afterState,created_at AS createdAt FROM member_qualification_events',
+      ).first<Parameters<typeof deriveMemberQualificationProjection>[0]['events'][number]>();
+      if (!event) throw new Error('Expected scheduled renewal event');
+      const projection = (asOf: string) =>
+        deriveMemberQualificationProjection({
+          memberId: 1,
+          asOf,
+          legacyCredentials: [
+            {
+              memberId: 1,
+              credentialId: 11,
+              credentialName,
+              startDate: '2024-12-01',
+              expirationDate: '2026-12-01',
+            },
+          ],
+          events: [{ ...event, credentialName, specialtyCode: null }],
+        }).certifications[0];
+      expect(projection('2026-09-30')).toMatchObject({
+        status: 'active',
+        effectiveOn: '2024-12-01',
+        expiresOn: '2026-12-01',
+        origin: 'legacy_projection',
+      });
+      expect(projection('2026-12-01')).toMatchObject({
+        status: 'active',
+        effectiveOn: '2026-12-01',
+        expiresOn: '2028-12-01',
+        origin: 'lifecycle_evidence',
+      });
+      await request(`/imports/${id}/review`, { accept: true });
+      await request(`/imports/${id}/apply`, { safe: true, reason: 'Retry scheduled renewal' });
+      expect(
+        (
+          await h.env.DB.prepare('SELECT COUNT(*) AS n FROM member_qualification_events').first<{
+            n: number;
+          }>()
+        )?.n,
+      ).toBe(1);
+    },
+  );
+  it('rejects a receipt whose revision or counts disagree with the selected CSV', async () => {
+    const result = await request('/imports', {
+      csv,
+      filename: 'annual.xlsx',
+      source_receipt: {
+        workbook_hash: 'a'.repeat(64),
+        selected_sheet: '2026_BID_Credentials_Version_4_',
+        source_revision: 1,
+        row_count: 2,
+        unique_employee_count: 2,
+        source_filename: 'annual.xlsx',
+      },
+    });
+    expect(result.status).toBe(422);
+  });
+  it('requires individual verification of an anomalous date even with blanket adverse approval', async () => {
+    const anomaly =
+      'Employee ID,Credential Name,Credential Status,Start Date,Expiration Date\n0012,Synthetic Certification,Active,2023-05-07,2099-05-07';
+    const { id } = (await (
+      await request('/imports', {
+        csv: anomaly,
+        filename: 'anomaly.csv',
+        observed_on: '2026-09-30',
+      })
+    ).json()) as { id: string };
+    const before = await h.env.DB.prepare(
+      'SELECT revision FROM annual_source_revision WHERE id=1',
+    ).first<{ revision: number }>();
+    await request(`/imports/${id}/review`, { accept: true });
+    const detail = (await (await request(`/imports/${id}`)).json()) as {
+      counts: Record<string, number>;
+      rows: { id: string }[];
+    };
+    expect(detail.counts.ANOMALOUS_DATE_REVIEW).toBe(1);
+    expect(
+      (
+        await h.env.DB.prepare('SELECT revision FROM annual_source_revision WHERE id=1').first<{
+          revision: number;
+        }>()
+      )?.revision,
+    ).toBeGreaterThan(before?.revision ?? -1);
+    expect(
+      (
+        await request(`/imports/${id}/apply`, {
+          row_ids: [detail.rows[0]?.id],
+          accept_adverse: true,
+          reason: 'Attempt blanket anomaly approval',
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await h.env.DB.prepare('SELECT COUNT(*) AS n FROM member_qualification_events').first<{
+          n: number;
+        }>()
+      )?.n,
+    ).toBe(0);
+  });
   it('matches exact IDs, applies approved evidence once and preserves unresolved rows on replay', async () => {
     const upload = await request('/imports', { csv, filename: 'test.csv' });
     expect(upload.status).toBe(201);

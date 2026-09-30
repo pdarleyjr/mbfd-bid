@@ -98,12 +98,15 @@ export async function capture2026BidEvidenceFreeze(database: D1Database, actorSu
   }
   const credentialRows = await database
     .prepare(`SELECT i.id AS importId,i.created_at AS createdAt,
+    i.coverage_json AS coverageJson,i.filename AS filename,
     r.row_number AS rowNumber,r.source_json AS sourceJson,r.applied_at AS appliedAt
     FROM targetsolutions_imports i JOIN targetsolutions_rows r ON r.import_id=i.id
     WHERE r.applied_at IS NOT NULL ORDER BY i.id,r.row_number`)
     .all<{
       importId: string;
       createdAt: number;
+      coverageJson: string;
+      filename: string;
       rowNumber: number;
       sourceJson: string;
       appliedAt: number;
@@ -112,13 +115,27 @@ export async function capture2026BidEvidenceFreeze(database: D1Database, actorSu
   for (const row of credentialRows.results)
     credentialImports.set(row.importId, [...(credentialImports.get(row.importId) ?? []), row]);
   for (const [importId, rows] of credentialImports) {
-    const createdAt = rows[0]?.createdAt;
-    if (createdAt === undefined) continue;
+    const first = rows[0];
+    if (!first) continue;
+    const createdAt = first.createdAt;
+    const receipt = JSON.parse(first.coverageJson).sourceReceipt as
+      | {
+          workbook_hash: string;
+          selected_sheet: string;
+          source_revision: number;
+        }
+      | undefined;
     sourceImports.push({
-      source: 'TargetSolutions applied qualification import',
+      source: receipt
+        ? `Approved credential workbook: ${first.filename}`
+        : 'TargetSolutions applied qualification import',
       importId,
-      revision: `upload-${createdAt}`,
-      sha256: bidContentHash(JSON.stringify(rows.map((row) => [row.rowNumber, row.sourceJson]))),
+      revision: receipt
+        ? `${receipt.selected_sheet} (revision ${receipt.source_revision})`
+        : `upload-${createdAt}`,
+      sha256:
+        receipt?.workbook_hash ??
+        bidContentHash(JSON.stringify(rows.map((row) => [row.rowNumber, row.sourceJson]))),
       acceptedAt: new Date(Math.max(...rows.map((row) => row.appliedAt))).toISOString(),
     });
   }

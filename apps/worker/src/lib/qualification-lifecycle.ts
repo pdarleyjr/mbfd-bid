@@ -196,9 +196,7 @@ function certificationExpiration(event: QualificationLifecycleEvent): string | n
     if (
       typeof source.sourceExpiresOn === 'string' &&
       isQualificationCalendarDate(source.sourceExpiresOn) &&
-      new Date(Date.parse(`${source.sourceExpiresOn}T00:00:00Z`) + 86400000)
-        .toISOString()
-        .slice(0, 10) === event.effectiveOn
+      source.sourceExpiresOn < event.effectiveOn
     )
       return source.sourceExpiresOn;
   } catch {
@@ -376,13 +374,33 @@ function certificationFromEvent(
     credentialId: event.credentialId as number,
     credentialName: event.credentialName,
     status: event.expiresOn !== null && event.expiresOn < asOf ? 'expired' : 'active',
-    effectiveOn: event.effectiveOn,
+    effectiveOn: certificationIssueDate(event),
     expiresOn: event.expiresOn,
     evidenceSource: event.evidenceSource,
     evidenceReference: event.evidenceReference,
     eventId: event.id,
     origin: 'lifecycle_evidence',
   };
+}
+
+/** Preserve the source issue date separately from when a dated report corrected an active-only observation. */
+function certificationIssueDate(event: QualificationLifecycleEvent): string {
+  if (event.evidenceSource !== 'TargetSolutions') return event.effectiveOn;
+  try {
+    const source = JSON.parse(event.afterState) as Record<string, unknown>;
+    if (
+      source.v === 1 &&
+      source.kind === 'CERTIFICATION_GAINED' &&
+      typeof source.importId === 'string' &&
+      typeof source.rowId === 'string' &&
+      isQualificationCalendarDate(source.sourceEffectiveOn) &&
+      source.sourceEffectiveOn <= event.effectiveOn
+    )
+      return source.sourceEffectiveOn;
+  } catch {
+    /* Historical events retain their original interpretation. */
+  }
+  return event.effectiveOn;
 }
 
 function isSpecialtyLifecycleKind(kind: QualificationLifecycleKind): boolean {

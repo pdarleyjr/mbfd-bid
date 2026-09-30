@@ -37,6 +37,7 @@ export type EmploymentStatus = (typeof EMPLOYMENT_STATUSES)[number];
 export const MEMBER_RANKS = ['FF', 'LT', 'CPT', 'DC', 'DEP_CHIEF', 'CHIEF'] as const;
 export type MemberRank = (typeof MEMBER_RANKS)[number];
 export type PersonnelClassification = MemberRank | 'CIVILIAN';
+export type PersonnelBidCategory = 'OFC' | 'FF' | 'EXCLUDED';
 
 export type AssignmentStatus = 'planned' | 'active' | 'superseded' | 'cancelled' | 'ended';
 export type AssignmentOriginType =
@@ -53,6 +54,7 @@ export interface PersonnelMemberState {
   firstName: string;
   lastName: string;
   rank: PersonnelClassification;
+  bidCategory?: PersonnelBidCategory;
   employmentStatus: EmploymentStatus;
   employmentStatusEffectiveOn: string | null;
   separationType: string | null;
@@ -81,6 +83,7 @@ export interface PersonnelLifecycleProjectionEvent {
   rankAfter: MemberRank | null;
   separationType: string | null;
   beforeState: string | Record<string, unknown>;
+  afterState?: string | Record<string, unknown>;
   createdAt: number;
 }
 
@@ -96,6 +99,8 @@ export interface PersonnelLifecycleInput {
   staffingPositionId?: string;
   /** Required for a rank-changing action and new hire. */
   rankAfter?: MemberRank;
+  /** Explicit reviewed participation correction; never inferred from rank. */
+  bidCategoryAfter?: PersonnelBidCategory;
   /** Required by retirement/separation; a correction may also explicitly set it. */
   separationType?: string;
   /** Only accepted for an explicit CORRECTION. */
@@ -113,6 +118,7 @@ export interface LifecycleMemberProjection {
   employmentStatusEffectiveOn?: string;
   separationType?: string | null;
   rank?: PersonnelClassification;
+  bidCategory?: PersonnelBidCategory;
   promotedAt?: string;
 }
 
@@ -208,6 +214,9 @@ function isEmploymentStatus(value: unknown): value is EmploymentStatus {
 function isMemberRank(value: unknown): value is MemberRank {
   return typeof value === 'string' && (MEMBER_RANKS as readonly string[]).includes(value);
 }
+function isBidCategory(value: unknown): value is PersonnelBidCategory {
+  return value === 'OFC' || value === 'FF' || value === 'EXCLUDED';
+}
 
 function parseStateRecord(value: string | Record<string, unknown>): Record<string, unknown> {
   if (typeof value !== 'string') return value;
@@ -249,9 +258,13 @@ export function derivePersonnelMemberAsOf(
     );
   const firstEvent = ordered[0];
   const firstBefore = firstEvent === undefined ? {} : parseStateRecord(firstEvent.beforeState);
+  const categoryBefore = ordered
+    .map((event) => parseStateRecord(event.beforeState).bidCategory)
+    .find(isBidCategory);
   const projected: PersonnelMemberState = {
     ...member,
     rank: isMemberRank(firstBefore.rank) ? firstBefore.rank : member.rank,
+    ...(categoryBefore === undefined ? {} : { bidCategory: categoryBefore }),
     employmentStatus: isEmploymentStatus(firstBefore.employmentStatus)
       ? firstBefore.employmentStatus
       : member.employmentStatus,
@@ -269,6 +282,9 @@ export function derivePersonnelMemberAsOf(
   for (const event of ordered) {
     if (event.effectiveOn > asOf) break;
     if (event.rankAfter !== null) projected.rank = event.rankAfter;
+    const afterCategory =
+      event.afterState === undefined ? undefined : parseStateRecord(event.afterState).bidCategory;
+    if (isBidCategory(afterCategory)) projected.bidCategory = afterCategory;
     if (event.employmentStatusAfter !== null)
       projected.employmentStatus = event.employmentStatusAfter;
     if (isStatusChanging(event.kind)) {
@@ -404,6 +420,16 @@ export function planPersonnelLifecycleChange(
   ) {
     return failure('invalid_correction');
   }
+  if (
+    input.bidCategoryAfter !== undefined &&
+    (input.kind !== 'CORRECTION' ||
+      !isBidCategory(input.bidCategoryAfter) ||
+      !isBidCategory(input.member.bidCategory) ||
+      input.rankAfter === undefined ||
+      (input.bidCategoryAfter === 'FF' && input.rankAfter !== 'FF') ||
+      (input.bidCategoryAfter === 'OFC' && input.rankAfter === 'FF'))
+  )
+    return failure('invalid_correction');
 
   if (input.kind === 'REACTIVATION' && input.member.employmentStatus === 'active') {
     return failure('member_already_active');
@@ -445,14 +471,19 @@ export function planPersonnelLifecycleChange(
     );
     if (matching === undefined) return failure('staffing_position_not_assigned_to_member');
   }
-  if (inEffect.some((assignment) => assignment.effectiveFrom >= input.effectiveOn)) {
+  const preservesAssignment = input.kind === 'CORRECTION' && input.staffingPositionId === undefined;
+  if (
+    !preservesAssignment &&
+    inEffect.some((assignment) => assignment.effectiveFrom >= input.effectiveOn)
+  ) {
     return failure('assignment_transition_precedes_active_assignment');
   }
 
   const assignmentClosures = inEffect
     .filter(
       (assignment) =>
-        input.kind !== 'VACATE' || assignment.staffingPositionId === input.staffingPositionId,
+        !preservesAssignment &&
+        (input.kind !== 'VACATE' || assignment.staffingPositionId === input.staffingPositionId),
     )
     .map((assignment) => ({
       id: assignment.id,
@@ -500,6 +531,7 @@ export function planPersonnelLifecycleChange(
       projection.rank = nextRank;
     }
     if (input.kind === 'PROMOTION') projection.promotedAt = input.effectiveOn;
+    if (input.bidCategoryAfter !== undefined) projection.bidCategory = input.bidCategoryAfter;
     memberProjection = Object.keys(projection).length > 0 ? projection : null;
   }
 
@@ -510,6 +542,7 @@ export function planPersonnelLifecycleChange(
     employmentStatusEffectiveOn: input.member.employmentStatusEffectiveOn,
     separationType: input.member.separationType,
     rank: input.member.rank === 'CIVILIAN' ? null : input.member.rank,
+    ...(input.bidCategoryAfter === undefined ? {} : { bidCategory: input.member.bidCategory }),
     ...(input.member.rank === 'CIVILIAN' ? { personnelClassification: 'CIVILIAN' } : {}),
     assignment:
       priorAssignment === null
@@ -527,10 +560,14 @@ export function planPersonnelLifecycleChange(
     employmentStatus: nextEmploymentStatus,
     separationType: nextSeparationType,
     rank: nextRank === 'CIVILIAN' ? null : nextRank,
+    ...(input.bidCategoryAfter === undefined ? {} : { bidCategory: input.bidCategoryAfter }),
     ...(nextRank === 'CIVILIAN' ? { personnelClassification: 'CIVILIAN' } : {}),
-    staffingPositionId: assignmentCreation?.staffingPositionId ?? input.staffingPositionId ?? null,
-    assignment:
-      assignmentCreation === null
+    staffingPositionId: preservesAssignment
+      ? (priorAssignment?.staffingPositionId ?? null)
+      : (assignmentCreation?.staffingPositionId ?? input.staffingPositionId ?? null),
+    assignment: preservesAssignment
+      ? beforeState.assignment
+      : assignmentCreation === null
         ? null
         : {
             staffingPositionId: assignmentCreation.staffingPositionId,

@@ -5,6 +5,7 @@ type Rank = (typeof RANKS)[number];
 
 const RANK_FROM_LABEL: Record<string, Rank> = {
   Firefighter: 'FF',
+  'Firefighter DE': 'FF',
   Lieutenant: 'LT',
   Captain: 'CPT',
   'Division Chief': 'DC',
@@ -24,6 +25,16 @@ export const MemberImportRowSchema = z.preprocess(
   (raw) => {
     if (raw === null || typeof raw !== 'object') return raw;
     const row = { ...(raw as Record<string, unknown>) };
+    // MASTER V3's cached lookup does not recognize the DE designation.
+    // Preserve the source row and normalize only its substantive Bid rank;
+    // this never creates DE certification evidence.
+    if ((row.current_rank == null || row.current_rank === '') && row.jobnamech === 'Firefighter DE')
+      row.current_rank = row.jobnamech;
+    if (
+      row.current_rank === 'Firefighter DE' &&
+      (row.bid_category == null || row.bid_category === '')
+    )
+      row.bid_category = 'FF';
     for (const [alias, canonical] of Object.entries(COLUMN_ALIASES)) {
       if (row[canonical] === undefined && row[alias] !== undefined) {
         row[canonical] = row[alias];

@@ -165,6 +165,7 @@ const PersonnelChangeSchema = z
     staffing_position_id: z.string().trim().min(1).max(128).optional(),
     staffing_position: StaffingPositionCreateSchema.optional(),
     rank_after: RankSchema.optional(),
+    bid_category_after: z.enum(['OFC', 'FF', 'EXCLUDED']).optional(),
     employment_status_after: EmploymentStatusSchema.optional(),
     separation_type: z.string().trim().min(1).max(256).optional(),
     effective_on: z.string(),
@@ -272,6 +273,7 @@ function toMemberState(row: MemberDbRow): PersonnelMemberState {
     firstName: row.first_name,
     lastName: row.last_name,
     rank: row.rank,
+    bidCategory: row.bid_category as 'OFC' | 'FF' | 'EXCLUDED',
     employmentStatus: row.employment_status,
     employmentStatusEffectiveOn: row.employment_status_effective_on,
     separationType: row.separation_type,
@@ -456,6 +458,10 @@ function sameReceipt(
     existing.effective_on === body.effective_on &&
     existing.reason === body.reason.trim() &&
     (expectedRank === undefined || existing.rank_after === expectedRank) &&
+    sameNullableValue(
+      afterState.bidCategory,
+      body.bid_category_after ?? body.new_member?.bid_category,
+    ) &&
     (expectedEmploymentStatus === undefined ||
       existing.employment_status_after === expectedEmploymentStatus) &&
     existing.separation_type === (body.separation_type ?? null) &&
@@ -556,6 +562,7 @@ async function loadMemberAsOf(
       rankAfter: event.rank_after,
       separationType: event.separation_type,
       beforeState: event.before_state,
+      afterState: event.after_state,
       createdAt: event.created_at,
     })),
     asOf,
@@ -563,6 +570,7 @@ async function loadMemberAsOf(
   return {
     ...member,
     rank: projected.rank,
+    bid_category: projected.bidCategory ?? member.bid_category,
     employment_status: projected.employmentStatus,
     employment_status_effective_on: projected.employmentStatusEffectiveOn,
     separation_type: projected.separationType,
@@ -1151,6 +1159,7 @@ router.post('/changes/preview', async (c) => {
       ? {}
       : { staffingPositionId: body.staffing_position_id }),
     ...(body.rank_after === undefined ? {} : { rankAfter: body.rank_after }),
+    ...(body.bid_category_after === undefined ? {} : { bidCategoryAfter: body.bid_category_after }),
     ...(body.separation_type === undefined ? {} : { separationType: body.separation_type }),
     ...(body.employment_status_after === undefined
       ? {}
@@ -1244,6 +1253,10 @@ function memberUpdateStatement(
   if (projection.rank !== undefined) {
     updates.push('rank = ?');
     bindings.push(projection.rank);
+  }
+  if (projection.bidCategory !== undefined) {
+    updates.push('bid_category = ?');
+    bindings.push(projection.bidCategory);
   }
   if (projection.promotedAt !== undefined) {
     updates.push('promoted_at = ?');
@@ -1534,6 +1547,7 @@ router.post('/changes', requireStepUpAuth(), async (c) => {
       ? {}
       : { staffingPositionId: body.staffing_position_id }),
     ...(requestedRankAfter === undefined ? {} : { rankAfter: requestedRankAfter }),
+    ...(body.bid_category_after === undefined ? {} : { bidCategoryAfter: body.bid_category_after }),
     ...(body.employment_status_after === undefined
       ? {}
       : { employmentStatusAfter: body.employment_status_after }),

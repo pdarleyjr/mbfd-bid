@@ -46,6 +46,7 @@ export async function loadBidEligibilityEvidence(db: DB) {
           rankAfter: personnelLifecycleEvents.rankAfter,
           separationType: personnelLifecycleEvents.separationType,
           beforeState: personnelLifecycleEvents.beforeState,
+          afterState: personnelLifecycleEvents.afterState,
           createdAt: personnelLifecycleEvents.createdAt,
         })
         .from(personnelLifecycleEvents)
@@ -122,7 +123,7 @@ export function projectAnnualMemberEvidence(
   }));
   const members = evidence.memberRows.map((member) => {
     const projected = derivePersonnelMemberAsOf(
-      member,
+      { ...member, bidCategory: member.bidCategory as 'OFC' | 'FF' | 'EXCLUDED' },
       evidence.personnelEventRows
         .filter((e) => e.memberId === member.id)
         .map((e) => ({ ...e, createdAt: e.createdAt.getTime() })),
@@ -141,7 +142,7 @@ export function projectAnnualMemberEvidence(
       lastName: member.lastName,
       rank: projected.rank,
       employmentStatus: projected.employmentStatus,
-      bidCategory: member.bidCategory,
+      bidCategory: projected.bidCategory ?? member.bidCategory,
       isProbationary: member.isProbationary,
       rscSeniority: member.rscSeniority,
       rankSeniority: member.rankSeniority,
