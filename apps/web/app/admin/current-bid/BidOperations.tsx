@@ -63,6 +63,7 @@ export function BidOperations({
         d.blockingClassification === 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION'),
   );
   const mock = createdMockId ? { id: createdMockId } : existing.data?.mock;
+  const evidenceSealed = content.settings?.v === 3 && !!content.settings.evidenceFreeze;
   return (
     <section
       aria-labelledby="bid-operations-heading"
@@ -110,7 +111,7 @@ export function BidOperations({
                 {s.bidders - s.capacity} {s.rank === 'LT' ? 'Lieutenant' : s.rank} capacity
                 shortfall
               </strong>{' '}
-              — PRE-CUTOFF REHEARSAL CAPACITY ASSUMPTION. Real Bid requires an approved resolution.
+              — Mock capacity assumption. Real Bid requires an approved resolution.
             </p>
           ))}
         </div>
@@ -160,8 +161,9 @@ export function BidOperations({
       )}
       {year === 2026 && (
         <p className="text-sm">
-          Final personnel &amp; credential snapshot — September 30, 5:00 PM Eastern cutoff. Reviewed
-          updates remain open until then.
+          {evidenceSealed
+            ? 'Final personnel & credential snapshot sealed for the September 30, 5:00 PM Eastern cutoff and pinned to this saved Bid. Later evidence requires a separate audited review.'
+            : 'Final personnel & credential snapshot — September 30, 5:00 PM Eastern cutoff. Use the sealed server receipt when available, then save and verify the final Bid version.'}
         </p>
       )}
     </section>
