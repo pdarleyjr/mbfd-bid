@@ -54,6 +54,8 @@ test('landing identifies the accepted MASTER V4 source', async ({ page }) => {
       area: 'annual-policy',
       status: 'RESOLVED',
       sourceRef: 'Reviewed MASTER source',
+      effectiveOn: '2026-09-30',
+      decision: 'Use the reviewed source ranks.',
     },
     {
       issueId: '2026-master-v4-supersession',
@@ -62,6 +64,8 @@ test('landing identifies the accepted MASTER V4 source', async ({ page }) => {
       area: 'annual-policy',
       status: 'RESOLVED',
       sourceRef: 'Reviewed MASTER V4',
+      effectiveOn: '2026-09-30',
+      decision: 'V4 supersedes V3 after review.',
     },
   );
   await openBid(page);

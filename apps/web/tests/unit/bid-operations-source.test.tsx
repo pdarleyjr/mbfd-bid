@@ -17,6 +17,8 @@ function render(status?: 'OPEN' | 'RESOLVED') {
       area: 'annual-policy',
       status: 'RESOLVED',
       sourceRef: 'Reviewed MASTER V3',
+      effectiveOn: '2026-09-30',
+      decision: 'Use the reviewed source ranks.',
     },
   ];
   if (status)
@@ -27,6 +29,8 @@ function render(status?: 'OPEN' | 'RESOLVED') {
       area: 'annual-policy',
       status,
       sourceRef: 'Reviewed MASTER V4',
+      effectiveOn: '2026-09-30',
+      decision: 'V4 supersedes V3 after review.',
     });
   return renderToStaticMarkup(
     <BidOperations
