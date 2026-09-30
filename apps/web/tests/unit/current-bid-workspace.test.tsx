@@ -435,6 +435,26 @@ it('waits for the destination URL commit before handing off focus and scroll', a
   expect(document.activeElement?.id).toBe('bid-destination-heading');
 });
 
+it('preserves newer operator focus while a destination URL is committing', async () => {
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scroll,
+  });
+  await mount();
+  navigation.delayed = true;
+  await click('Bid Blueprint');
+  const nextAction = button('Mock Bid');
+  nextAction.focus();
+  navigation.search = '?year=2027&view=blueprint';
+  await settle(() => root?.render(<CurrentBidWorkspace year={YEAR} actorScope={ACTOR} />));
+  expect(document.activeElement).toBe(nextAction);
+  expect(scroll).not.toHaveBeenCalled();
+  expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+    'Review Bid Blueprint opened.',
+  );
+});
+
 function stored() {
   return readBidDraft(window.sessionStorage, ACTOR, YEAR);
 }
