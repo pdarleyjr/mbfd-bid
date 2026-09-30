@@ -93,6 +93,7 @@ export async function prepareBidDefinitionRun(
     input.capturedAtMs,
     input.mode,
     version.content.sourceDecisions,
+    version.content,
   );
   if (!prepared.ok) return prepared;
   const compiledStagePolicy = compileBidDefinitionStagePolicy({
