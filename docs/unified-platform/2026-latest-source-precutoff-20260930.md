@@ -39,3 +39,13 @@ David Sola's PSD expiration `2099-05-07` remains an anomalous source value requi
 The scheduled capture now refuses Version 9 or an older/unreviewed credential source. It requires the newer source decision with both original file hashes, the three corrected production rank/pool records, and recorded approval/rejection outcomes for all 3,884 rows of the original Version 4 workbook. Individual rejected values remain preserved as source evidence and retain their explicit Real-only decision; they are not converted into approved qualification facts.
 
 Real Bid: **NOT STARTED**. No production data update, final freeze, or new production Mock is claimed by this implementation report.
+
+## September 30 MASTER V4 supersession
+
+Independently verified at 2026-09-30T17:05:43.389868+00:00: MASTER V4 SHA-256 `a1bc6309bd7f565b98616226fd3cbe5fae6c6d7ce764188bdbfdd1eb8702e685` supersedes V3 `3631427507fa7ca0280a03e9b0a14a2429bbafad3404d46f5cef4a1ce679b57d`. Original workbooks are unchanged and V3 history is retained. The complete cell comparison found exactly 25 Personnel `AO` corrections from derived Firefighter DE to Firefighter while preserving the source job, plus 34 Float lookup formulas on each A/B/C Bid sheet (102 total, AN/AO now use AK position IDs). Positions, Template, all A-Day sheets, Days Bid, Bid Pick, A Days, Tables, Manual and Test Data have no cell changes. The existing reviewed 73/73/73 plus four Days opportunities remain governing.
+
+All 25 FF-DE members were mechanically checked; this corroborates the existing semantic FF rank rule, without member-specific code. V4 includes 22 Captains, 40 Lieutenants and 161 Firefighters; Hans's existing administrator exclusion gives 22/40/160, 222 participants. V4 adds no Lieutenant opportunity: 40 bidders/39 opportunities remains a visible Real-only blocker for today's rehearsal.
+
+Remaining formula references containing `#REF!` are unchanged: A A-Day 3, B A-Day 1, C A-Day 3, Statistics 36, Bid Pick 222. The workbook is not formula-clean; reviewed policy and business facts drive the application, and Excel errors/formulas are not imported into the engine. Annual v5 and its original Credential V4 sheet remain the credential source; completed approvals are retained.
+
+The final cutoff guard now rejects V3-only source acceptance and requires accepted MASTER V4 plus Annual v5, corrected personnel and complete credential review. It still refuses Version 9 and incomplete receipts. Final capture must use V4 at or after 17:00 Eastern; no early freeze is authorized.

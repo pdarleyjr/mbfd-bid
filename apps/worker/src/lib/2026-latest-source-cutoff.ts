@@ -1,9 +1,9 @@
-/** September 29 evidence supersedes the earlier Version 9 rehearsal. The
+/** September 30 MASTER V4 supersedes V3 and the earlier Version 9 rehearsal. The
  * scheduled cutoff must fail closed until the reviewed source is actually
  * accepted, rather than sealing the older production population. These are
  * source identities, not inferred promotion dates or participant targets. */
 export const LATEST_2026_MASTER_HASH =
-  '3631427507fa7ca0280a03e9b0a14a2429bbafad3404d46f5cef4a1ce679b57d';
+  'a1bc6309bd7f565b98616226fd3cbe5fae6c6d7ce764188bdbfdd1eb8702e685';
 export const LATEST_2026_ANNUAL_HASH =
   '37e6b2c65696eca2f8ce66c4d5a7ffc4e879264814ffc87725989c0b81ac451c';
 
