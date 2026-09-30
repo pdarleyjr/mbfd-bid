@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import type { DB } from '../db/index.js';
+import { decodeBidEvidenceDocument } from './bid-evidence-storage.js';
 
 export const APPROVED_2026_CUTOFF_AT = '2026-09-30T17:00:00-04:00';
 export const APPROVED_2026_CUTOFF_MS = Date.parse(APPROVED_2026_CUTOFF_AT);
@@ -105,7 +106,13 @@ export function frozenEvaluationFromRun(snapshot: Record<string, unknown>) {
 export async function loadBidEvidenceFreeze(database: DB, year: number) {
   const raw = await database.get(sql`SELECT * FROM bid_evidence_freezes WHERE bid_year=${year}`);
   if (!raw) return null;
-  const row = FreezeRow.parse(raw);
+  const stored = FreezeRow.parse(raw);
+  const row = {
+    ...stored,
+    evaluation_json: decodeBidEvidenceDocument(stored.evaluation_json),
+    personnel_source_json: decodeBidEvidenceDocument(stored.personnel_source_json),
+    credential_source_json: decodeBidEvidenceDocument(stored.credential_source_json),
+  };
   const evaluation = BidEvaluationSchema.parse(JSON.parse(row.evaluation_json));
   const digests = evidenceFreezeDigests(evaluation);
   const personnelSha256 = hash(canonical(JSON.parse(row.personnel_source_json)));
