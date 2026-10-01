@@ -594,7 +594,8 @@ export function reduceLiveBidCommand(
   const annualPolicy = policy.annualOperations;
   if (command.type === 'live.record_fallback_response') {
     if (!fallbackAuthorized) return { ok: false, code: 'FALLBACK_REVIEW_REQUIRED' };
-    if (state.currentPhase !== 'position_bid') return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (state.currentPhase !== 'position_bid' && state.currentPhase !== 'complete')
+      return { ok: false, code: 'SESSION_NOT_ACTIVE' };
     if (live.specialty) return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
     const disposition = command.outcome === 'DECLINE' ? 'DECLINED' : command.outcome;
     const rule = policy.dispositions.find((candidate) => candidate.disposition === disposition);
@@ -926,10 +927,17 @@ export function reduceLiveBidCommand(
     (state.currentPhase === 'a_day_bid' || state.currentPhase === 'complete') &&
     (command.type === 'live.disposition' ||
       (command.type === 'live.record_selection' && command.memberId === annual.returningMemberId));
+  // Queue exhaustion is separate from the sealed annual result. Only the
+  // canonical fallback authority can authorize an award in this interval.
+  const exhaustedQueueFallback =
+    state.currentPhase === 'complete' &&
+    fallbackAuthorized &&
+    (command.type === 'live.record_selection' || command.type === 'live.force_selection');
   if (
     state.currentPhase !== 'position_bid' &&
     !(command.type === 'live.disposition' && isOrdinaryADayTurn(state, policy)) &&
-    !returningMemberCommand
+    !returningMemberCommand &&
+    !exhaustedQueueFallback
   )
     return { ok: false, code: 'SESSION_NOT_ACTIVE' };
   if (live.specialty !== null && live.specialty !== undefined)

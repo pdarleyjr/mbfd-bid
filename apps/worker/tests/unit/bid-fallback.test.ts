@@ -26,6 +26,11 @@ function fixture(tiers: Tier[] = [tier('minimum-marine')]) {
     sourceRef: 'synthetic:marine-minimum-source',
     sourceDecisionId: 'marine-order-source',
     positionIds: ['marine-seat'],
+    activation: {
+      v: 1,
+      prerequisite: 'NO_QUALIFIED_VOLUNTEER_REMAINS',
+      sourceRef: 'Synthetic ordinary opportunity exhaustion',
+    },
     tiers,
   };
   const livePolicy = {
@@ -146,12 +151,26 @@ function fixture(tiers: Tier[] = [tier('minimum-marine')]) {
   if (snapshot.v !== 3) throw new Error('Expected V3');
   const state: BidSessionState = {
     ...emptyBidSessionState('synthetic'),
+    currentPhase: 'position_bid',
+    queueCursor: 3,
+    bidOrder: [1, 2, 3].map((memberId) => ({
+      ordinal: memberId,
+      memberId,
+      pool: 'FF',
+      stageId: 'ff',
+    })),
     live: {
       currentStageId: 'ff',
       completedStageIds: [],
       pausedPhase: null,
       lastSelectionBidId: null,
-      dispositions: [],
+      dispositions: [1, 2, 3].map((memberId) => ({
+        memberId,
+        stageId: 'ff',
+        disposition: 'DECLINED',
+        reason: 'Synthetic ordinary decline',
+        evidenceReference: null,
+      })),
     },
   };
   return { snapshot, state, positionId: 'marine-seat' };
@@ -187,6 +206,9 @@ describe('frozen fallback policy tiers', () => {
     const fallback = f.snapshot.settings.livePolicy.annualOperations?.fallbackPolicies?.[0];
     if (!fallback) throw new Error('Expected Investigator fallback policy');
     fallback.positionIds = ['A305', 'B305', 'C305'];
+    const stage = f.snapshot.settings.livePolicy.stages[0];
+    if (!stage) throw new Error('Ordinary stage required');
+    stage.opportunityPositionIds = ['A305'];
     fallback.sourceRef = 'Final July 2026 Bid Policy Procedure 3(e)(ii)';
     f.snapshot.ruleBookMaterial.positions = f.snapshot.ruleBookMaterial.positions.map(
       (position) => ({
@@ -378,7 +400,7 @@ describe('frozen fallback policy tiers', () => {
         {
           tierId: 'current-voluntary',
           eligibleMemberIds: [1],
-          reason: 'ALL_ELIGIBLE_CANDIDATES_RESPONDED',
+          reason: 'ALL_ELIGIBLE_CANDIDATES_DECLINED',
         },
       ],
     });

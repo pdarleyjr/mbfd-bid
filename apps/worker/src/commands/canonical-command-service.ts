@@ -1172,6 +1172,7 @@ export async function commitLiveBidCommand(
       tierId: fallbackReview.tierId,
       sourceRef: fallbackReview.sourceRef,
       sourceDecisionId: fallbackReview.sourceDecisionId,
+      activation: fallbackReview.activation,
       comparator: fallbackReview.comparator,
       exhausted: fallbackReview.exhausted,
       eligibleMemberIds: fallbackReview.eligibleMemberIds,
