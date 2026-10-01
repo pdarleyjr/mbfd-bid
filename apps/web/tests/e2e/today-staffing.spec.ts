@@ -200,39 +200,43 @@ async function assertGeometry(page: Page, desktop: boolean) {
     true,
   );
   if (!desktop) return;
-  const geometry = await page.getByTestId('today-roster').evaluate((element) => {
-    const main = element.closest('main');
-    if (!main) throw new Error('Today must be inside the application main content');
-    const mainBounds = main.getBoundingClientRect();
-    const rosterBounds = element.getBoundingClientRect();
-    const clippedRows = Array.from(element.querySelectorAll('[data-position-id]')).flatMap(
-      (row) => {
-        const bounds = row.getBoundingClientRect();
-        return bounds.top < Math.max(mainBounds.top, rosterBounds.top) - 1 ||
-          bounds.bottom > Math.min(mainBounds.bottom, rosterBounds.bottom, innerHeight) + 1 ||
-          bounds.left < rosterBounds.left - 1 ||
-          bounds.right > rosterBounds.right + 1
-          ? [row.getAttribute('data-position-id')]
-          : [];
-      },
-    );
-    const nestedOverflow = [element, ...Array.from(element.querySelectorAll('*'))]
-      .filter((node) => {
-        const style = getComputedStyle(node);
-        return (
-          ['auto', 'scroll'].includes(style.overflowY) && node.scrollHeight > node.clientHeight + 1
-        );
-      })
-      .map((node) => node.getAttribute('data-testid') ?? node.tagName);
-    return {
-      mainOverflow: main.scrollHeight - main.clientHeight,
-      rosterOverflow: element.scrollHeight - element.clientHeight,
-      bottom: rosterBounds.bottom,
-      visibleBottom: Math.min(mainBounds.bottom, innerHeight),
-      clippedRows,
-      nestedOverflow,
-    };
-  });
+  const geometry = await page
+    .getByRole('main')
+    .getByTestId('today-roster')
+    .evaluate((element) => {
+      const main = element.closest('main');
+      if (!main) throw new Error('Today must be inside the application main content');
+      const mainBounds = main.getBoundingClientRect();
+      const rosterBounds = element.getBoundingClientRect();
+      const clippedRows = Array.from(element.querySelectorAll('[data-position-id]')).flatMap(
+        (row) => {
+          const bounds = row.getBoundingClientRect();
+          return bounds.top < Math.max(mainBounds.top, rosterBounds.top) - 1 ||
+            bounds.bottom > Math.min(mainBounds.bottom, rosterBounds.bottom, innerHeight) + 1 ||
+            bounds.left < rosterBounds.left - 1 ||
+            bounds.right > rosterBounds.right + 1
+            ? [row.getAttribute('data-position-id')]
+            : [];
+        },
+      );
+      const nestedOverflow = [element, ...Array.from(element.querySelectorAll('*'))]
+        .filter((node) => {
+          const style = getComputedStyle(node);
+          return (
+            ['auto', 'scroll'].includes(style.overflowY) &&
+            node.scrollHeight > node.clientHeight + 1
+          );
+        })
+        .map((node) => node.getAttribute('data-testid') ?? node.tagName);
+      return {
+        mainOverflow: main.scrollHeight - main.clientHeight,
+        rosterOverflow: element.scrollHeight - element.clientHeight,
+        bottom: rosterBounds.bottom,
+        visibleBottom: Math.min(mainBounds.bottom, innerHeight),
+        clippedRows,
+        nestedOverflow,
+      };
+    });
   expect(
     geometry.mainOverflow,
     'Desktop Today must not scroll the application main',
@@ -254,8 +258,8 @@ async function assertGeometry(page: Page, desktop: boolean) {
 
 async function visitEveryPosition(page: Page, shift: string, desktop: boolean) {
   await page.getByRole('combobox', { name: 'Shift', exact: true }).selectOption(shift);
-  const workspace = page.getByTestId('today-workspace');
-  const rows = page.getByTestId('today-roster').locator('[data-position-id]');
+  const workspace = page.getByRole('main').getByTestId('today-workspace');
+  const rows = page.getByRole('main').getByTestId('today-roster').locator('[data-position-id]');
   const previous = workspace.getByRole('button', { name: 'Previous roster page', exact: true });
   const next = workspace.getByRole('button', { name: 'Next roster page', exact: true });
   await expect(previous).toBeDisabled();
@@ -315,14 +319,16 @@ for (const viewport of [
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/admin');
-    await expect(page.getByTestId('today-workspace')).toBeVisible();
+    await expect(page.getByRole('main').getByTestId('today-workspace')).toHaveCount(1);
+    await expect(page.getByRole('main').getByTestId('today-roster')).toHaveCount(1);
+    await expect(page.getByRole('main').getByTestId('today-workspace')).toBeVisible();
     await expect(
-      page.getByTestId('today-roster').locator('[data-position-id]').first(),
+      page.getByRole('main').getByTestId('today-roster').locator('[data-position-id]').first(),
     ).toBeVisible();
     const desktop = viewport.width >= 1440;
     await assertGeometry(page, desktop);
-    await expect(page.getByTestId('today-workspace')).toContainText(LONG_STATION);
-    await expect(page.getByTestId('today-workspace')).toContainText(LONG_MEMBER);
+    await expect(page.getByRole('main').getByTestId('today-workspace')).toContainText(LONG_STATION);
+    await expect(page.getByRole('main').getByTestId('today-workspace')).toContainText(LONG_MEMBER);
     await page.screenshot({ path: info.outputPath(`today-${viewport.width}.png`), fullPage: true });
     await visitEveryPosition(page, 'A', desktop);
     await visitEveryPosition(page, 'E', desktop);
@@ -381,7 +387,11 @@ test('an oversized record widens before exposing complete temporary context in a
       : route.abort(),
   );
   await page.goto('/admin');
-  const row = page.getByTestId('today-roster').locator(`[data-position-id="${extreme.id}"]`);
+  await expect(page.getByRole('main').getByTestId('today-roster')).toHaveCount(1);
+  const row = page
+    .getByRole('main')
+    .getByTestId('today-roster')
+    .locator(`[data-position-id="${extreme.id}"]`);
   await expect(row).toBeVisible();
   await expect(row).toContainText(LONG_MEMBER);
   await expect(row).toContainText(extreme.positionName ?? '');
