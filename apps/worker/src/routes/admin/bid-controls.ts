@@ -35,6 +35,7 @@ import {
 import { unresolvedSpecialtyPriority } from '../../lib/canonical-specialty-priority.js';
 import { frozenADayConstraints } from '../../lib/frozen-a-day.js';
 import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
+import { currentLiveBidStage, liveBidSelectionStages } from '../../lib/live-bid-stages.js';
 import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { adviseFrozenSpecialtyCoverage } from '../../lib/specialty-coverage-advisory.js';
@@ -411,12 +412,15 @@ router.get('/:id/specialty-live', async (c) => {
     canonical.fills,
   );
   const selectionMemberId = canonical.annual?.returningMemberId ?? canonical.currentBidderId;
-  const selectionStageId =
-    canonical.bidOrder[canonical.queueCursor]?.stageId ?? canonical.live?.currentStageId;
-  const selectionStage = policy.stages.find((stage) => stage.id === selectionStageId);
-  const nextSelectionStage = selectionStage
+  const selectionStages = liveBidSelectionStages(canonical, policy);
+  const selectionStage = selectionStages[0];
+  const selectionPositionIds = [
+    ...new Set(selectionStages.flatMap((stage) => stage.opportunityPositionIds)),
+  ];
+  const currentStage = currentLiveBidStage(canonical, policy);
+  const nextSelectionStage = currentStage
     ? policy.stages
-        .filter((stage) => stage.order > selectionStage.order)
+        .filter((stage) => stage.order > currentStage.order)
         .sort((left, right) => left.order - right.order)[0]
     : undefined;
   const selectionMember =
@@ -425,7 +429,7 @@ router.get('/:id/specialty-live', async (c) => {
       : frozenEligibilityMemberForSession(frozen.snapshot, selectionMemberId);
   const selectionEligiblePositionIds =
     selectionStage && selectionMember
-      ? selectionStage.opportunityPositionIds.filter((positionId) => {
+      ? selectionPositionIds.filter((positionId) => {
           if (canonical.fills[positionId] !== undefined) return false;
           const rule = frozen.coverage.rules.find((item) => item.positionId === positionId);
           return (
@@ -503,10 +507,10 @@ router.get('/:id/specialty-live', async (c) => {
     selection_stage: selectionStage
       ? {
           id: selectionStage.id,
-          label: selectionStage.label,
-          opportunity_position_ids: selectionStage.opportunityPositionIds,
+          label: selectionStages.map((stage) => stage.label).join(' / '),
+          opportunity_position_ids: selectionPositionIds,
           eligible_position_ids: selectionEligiblePositionIds,
-          all_opportunities_filled: selectionStage.opportunityPositionIds.every(
+          all_opportunities_filled: selectionPositionIds.every(
             (positionId) => canonical.fills[positionId] !== undefined,
           ),
           next_stage: nextSelectionStage
