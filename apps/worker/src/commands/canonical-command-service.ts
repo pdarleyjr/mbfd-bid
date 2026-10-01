@@ -28,6 +28,7 @@ import {
 } from '../lib/bid-policy.js';
 import { unresolvedSpecialtyPriority } from '../lib/canonical-specialty-priority.js';
 import { evaluateFrozenADays } from '../lib/frozen-a-day.js';
+import { validateBidCorrectionLineage } from './bid-correction-lineage.js';
 import { reduceLiveBidCommand } from './live-bid-reducer.js';
 
 interface CanonicalStateRow {
@@ -677,6 +678,9 @@ export async function commitMockFreezeCommand(
 }
 
 export interface CommitLiveBidCommandInput {
+  /** Read-only correction preview; final confirmation still uses the sequenced
+   * atomic command bundle. This mode is unavailable to other command types. */
+  previewOnly?: boolean;
   db: D1Database;
   command: LiveBidCommand;
   state: BidSessionState;
@@ -690,6 +694,11 @@ export interface CommitLiveBidCommandInput {
 export async function commitLiveBidCommand(
   input: CommitLiveBidCommandInput,
 ): Promise<{ result: LiveBidCommandResult; canonicalState: BidSessionState | null }> {
+  if (input.previewOnly && input.command.type !== 'live.correct_bid')
+    throw new Error('Only audited corrections support read-only preview');
+  const recordRejectedReceipt = input.previewOnly
+    ? async (..._args: Parameters<typeof insertRejectedReceipt>) => {}
+    : insertRejectedReceipt;
   await assertBidDefinitionRunIntegrity(input.db, input.command.bidSessionId, input.policy);
   const now = (input.nowMs ?? Date.now)();
   const newId = input.newId ?? ulid;
@@ -729,7 +738,7 @@ export async function commitLiveBidCommand(
       code: 'STALE_SEQUENCE',
       currentSeq: current.lastSeq,
     };
-    await insertRejectedReceipt(
+    await recordRejectedReceipt(
       input.db,
       input.command as unknown as MockFreezeCommand,
       requestSha256,
@@ -737,6 +746,25 @@ export async function commitLiveBidCommand(
       now,
     );
     return { result, canonicalState: null };
+  }
+  if (input.command.type === 'live.correct_bid') {
+    const lineage = await validateBidCorrectionLineage(input.db, current, input.command);
+    if (!lineage.ok) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code: lineage.code,
+        currentSeq: current.lastSeq,
+      };
+      await recordRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
   }
   if (
     input.command.type === 'live.record_selection' &&
@@ -766,7 +794,7 @@ export async function commitLiveBidCommand(
         code: 'FROZEN_PREFERENCE_SHEET_INVALID',
         currentSeq: current.lastSeq,
       };
-      await insertRejectedReceipt(
+      await recordRejectedReceipt(
         input.db,
         input.command as unknown as MockFreezeCommand,
         requestSha256,
@@ -807,7 +835,7 @@ export async function commitLiveBidCommand(
         code,
         currentSeq: current.lastSeq,
       };
-      await insertRejectedReceipt(
+      await recordRejectedReceipt(
         input.db,
         input.command as unknown as MockFreezeCommand,
         requestSha256,
@@ -827,7 +855,7 @@ export async function commitLiveBidCommand(
       code: 'FALLBACK_REVIEW_REQUIRED',
       currentSeq: current.lastSeq,
     };
-    await insertRejectedReceipt(
+    await recordRejectedReceipt(
       input.db,
       input.command as unknown as MockFreezeCommand,
       requestSha256,
@@ -878,7 +906,7 @@ export async function commitLiveBidCommand(
         code,
         currentSeq: current.lastSeq,
       };
-      await insertRejectedReceipt(
+      await recordRejectedReceipt(
         input.db,
         input.command as unknown as MockFreezeCommand,
         requestSha256,
@@ -889,6 +917,7 @@ export async function commitLiveBidCommand(
     }
   }
   const requiresFrozenADayEvaluation =
+    input.command.type === 'live.correct_bid' ||
     input.command.type === 'live.record_a_day' ||
     input.policy.annualOperations?.aDay.execution !== undefined ||
     input.policy.annualOperations?.membershipDistributions !== undefined ||
@@ -908,7 +937,7 @@ export async function commitLiveBidCommand(
         code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE',
         currentSeq: current.lastSeq,
       };
-      await insertRejectedReceipt(
+      await recordRejectedReceipt(
         input.db,
         input.command as unknown as MockFreezeCommand,
         requestSha256,
@@ -927,7 +956,7 @@ export async function commitLiveBidCommand(
         code: 'A_DAY_TIMING_WORKFLOW_UNAVAILABLE',
         currentSeq: current.lastSeq,
       };
-      await insertRejectedReceipt(
+      await recordRejectedReceipt(
         input.db,
         input.command as unknown as MockFreezeCommand,
         requestSha256,
@@ -959,7 +988,7 @@ export async function commitLiveBidCommand(
       code: reduction.code,
       currentSeq: current.lastSeq,
     };
-    await insertRejectedReceipt(
+    await recordRejectedReceipt(
       input.db,
       input.command as unknown as MockFreezeCommand,
       requestSha256,
@@ -968,6 +997,24 @@ export async function commitLiveBidCommand(
     );
     return { result, canonicalState: null };
   }
+  // A correction releases only its affected award while evaluating pooled
+  // capacity and specialty priority. Every unrelated canonical fill remains.
+  const correctionCommand = input.command.type === 'live.correct_bid' ? input.command : null;
+  const selectionReviewState =
+    correctionCommand !== null
+      ? {
+          ...current,
+          fills: Object.fromEntries(
+            Object.entries(current.fills).filter(
+              ([positionId, fill]) =>
+                !(
+                  positionId === correctionCommand.originalPositionId &&
+                  fill.bidId === correctionCommand.originalBidId
+                ),
+            ),
+          ),
+        }
+      : current;
   // Every accepted award, including amendment and specialty interruption, must
   // pass the same frozen evaluator as ordinary picks. A stage grant alone is
   // not evidence of eligibility. Evaluate the proposed changes before D1 writes.
@@ -986,7 +1033,7 @@ export async function commitLiveBidCommand(
           ? resolveBidPoolSelection({
               material: frozen.snapshot.ruleBookMaterial,
               policy: input.policy,
-              fills: current.fills,
+              fills: selectionReviewState.fills,
               positionId,
               ...('pool' in input.command && input.command.pool
                 ? { poolId: input.command.pool.poolId }
@@ -1003,7 +1050,7 @@ export async function commitLiveBidCommand(
           code: pooled.code,
           currentSeq: current.lastSeq,
         };
-        await insertRejectedReceipt(
+        await recordRejectedReceipt(
           input.db,
           input.command as unknown as MockFreezeCommand,
           requestSha256,
@@ -1051,7 +1098,7 @@ export async function commitLiveBidCommand(
         code,
         currentSeq: current.lastSeq,
       };
-      await insertRejectedReceipt(
+      await recordRejectedReceipt(
         input.db,
         input.command as unknown as MockFreezeCommand,
         requestSha256,
@@ -1071,7 +1118,7 @@ export async function commitLiveBidCommand(
       try {
         const pending = unresolvedSpecialtyPriority({
           snapshot: target.snapshot,
-          state: current,
+          state: selectionReviewState,
           memberId: fill.memberId,
           positionId,
           rule: target.rule,
@@ -1088,7 +1135,7 @@ export async function commitLiveBidCommand(
           code: priorityCode,
           currentSeq: current.lastSeq,
         };
-        await insertRejectedReceipt(
+        await recordRejectedReceipt(
           input.db,
           input.command as unknown as MockFreezeCommand,
           requestSha256,
@@ -1126,7 +1173,7 @@ export async function commitLiveBidCommand(
         code: allocation.code,
         currentSeq: current.lastSeq,
       };
-      await insertRejectedReceipt(
+      await recordRejectedReceipt(
         input.db,
         input.command as unknown as MockFreezeCommand,
         requestSha256,
@@ -1171,6 +1218,7 @@ export async function commitLiveBidCommand(
     seq: reduction.state.lastSeq,
     envelope,
   };
+  if (input.previewOnly) return { result, canonicalState: reduction.state };
   const eventJson = canonicalJson(reduction.payload);
   const archivePayload = canonicalJson({
     v: 1,

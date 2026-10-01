@@ -53,6 +53,22 @@ export interface Fill {
 /** Durable, reconstructible live-only projection.  Policy itself remains in
  * the immutable snapshot; this stores only progress and supersession facts. */
 export interface LiveBidProgress {
+  /** Append-only compensating projection; immutable receipts/events retain
+   * every original award. A revocation stays pending until explicitly replaced. */
+  corrections?: readonly {
+    bidId: string;
+    commandId: string;
+    originalBidId: string;
+    originalCommandId: string;
+    originalADayCommandId: string | null;
+    before: { positionId: string; fill: Fill; aDay: ADayPick | null };
+    after: { positionId: string; fill: Fill } | null;
+    resolvesCorrectionBidId: string | null;
+    actorMemberId: number;
+    reason: string;
+    sequence: number;
+    atMs: number;
+  }[];
   specialtyResponses?: readonly {
     specialtyId: string;
     positionId: string;

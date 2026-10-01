@@ -12,6 +12,7 @@ import {
   returnAtCurrentSequence,
   validateUnreachableContact,
 } from '../lib/annual-bid-operations.js';
+import { unresolvedBidCorrections } from '../lib/bid-corrections.js';
 
 function settleReturnedMember(
   state: AnnualOperationsState,
@@ -46,6 +47,7 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
     case 'live.record_selection':
       return 'record_selection';
     case 'live.amend_selection':
+    case 'live.correct_bid':
       return 'amend_selection';
     case 'live.disposition':
       return command.disposition === 'UNREACHABLE' ? 'mark_unreachable' : 'skip_defer';
@@ -215,6 +217,8 @@ export function reduceLiveBidCommand(
   // must never mutate awards, A-Day, disposition, or staging afterwards.
   if (state.annual?.completion !== null && state.annual?.completion !== undefined)
     return { ok: false, code: 'ANNUAL_COMPLETION_SEALED' };
+  if (command.type === 'live.complete_session' && unresolvedBidCorrections(state).length > 0)
+    return { ok: false, code: 'UNRESOLVED_CORRECTIONS_BLOCK_COMPLETION' };
   const live = progress(state);
   const currentStageId = stageFor(state);
   const annual = state.annual ?? initializeAnnualOperations({ preferenceSheets: [] });
@@ -707,6 +711,142 @@ export function reduceLiveBidCommand(
         ...(settledReturnMemberId === null ? {} : { settledReturnMemberId }),
       },
       supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.correct_bid') {
+    const executionPhase = state.currentPhase === 'paused' ? live.pausedPhase : state.currentPhase;
+    if (
+      executionPhase !== 'position_bid' &&
+      executionPhase !== 'a_day_bid' &&
+      executionPhase !== 'complete'
+    )
+      return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (live.specialty != null) return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
+    if (!command.reason.trim()) return { ok: false, code: 'CORRECTION_REASON_REQUIRED' };
+    if ((command.operation === 'REVOKE') !== (command.replacement === null))
+      return { ok: false, code: 'CORRECTION_OPERATION_INVALID' };
+    const active = state.fills[command.originalPositionId];
+    const pending = unresolvedBidCorrections(state).find(
+      (entry) =>
+        entry.bidId === command.originalBidId &&
+        entry.commandId === command.originalCommandId &&
+        entry.before.positionId === command.originalPositionId,
+    );
+    const prior = active?.bidId === command.originalBidId ? active : pending?.before.fill;
+    if (prior === undefined || (pending !== undefined && command.operation === 'REVOKE'))
+      return { ok: false, code: 'CORRECTION_SOURCE_NOT_ACTIVE' };
+    if (prior.memberId !== command.memberId)
+      return { ok: false, code: 'CORRECTION_MEMBER_MISMATCH' };
+    if (
+      Object.entries(state.fills).some(
+        ([positionId, fill]) =>
+          !(positionId === command.originalPositionId && fill.bidId === command.originalBidId) &&
+          fill.memberId === command.memberId,
+      )
+    )
+      return { ok: false, code: 'MEMBER_ALREADY_SELECTED' };
+    const priorADay =
+      state.aDay?.picks.find((pick) => pick.memberId === prior.memberId) ??
+      pending?.before.aDay ??
+      null;
+    const fills = { ...state.fills };
+    if (active?.bidId === command.originalBidId) delete fills[command.originalPositionId];
+    let after: { positionId: string; fill: Fill } | null = null;
+    if (command.replacement !== null) {
+      const replacement = command.replacement;
+      if (fills[replacement.positionId] !== undefined)
+        return { ok: false, code: 'POSITION_FILLED' };
+      const reachedStageId =
+        state.bidOrder[state.queueCursor]?.stageId ??
+        state.bidOrder[Math.min(state.queueCursor, state.bidOrder.length) - 1]?.stageId ??
+        currentStageId;
+      const reachedStage = policy.stages.find((stage) => stage.id === reachedStageId);
+      const legalStage = policy.stages.find(
+        (stage) =>
+          stage.memberIds.includes(prior.memberId) &&
+          stage.opportunityPositionIds.includes(replacement.positionId) &&
+          reachedStage !== undefined &&
+          stage.order <= reachedStage.order,
+      );
+      if (!legalStage) return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
+      const ordinaryIndex = state.bidOrder.findIndex((entry) => entry.memberId === prior.memberId);
+      const owesEarlyADay =
+        positionUsesDeferredADay(policy, command.originalPositionId) &&
+        prior.aDay === undefined &&
+        priorADay === null &&
+        ordinaryIndex >= state.queueCursor;
+      if (
+        owesEarlyADay &&
+        (replacement.aDay !== null || !positionUsesDeferredADay(policy, replacement.positionId))
+      )
+        return { ok: false, code: 'CORRECTION_ORDINARY_A_DAY_NOT_REACHED' };
+      if ((prior.aDay !== undefined || priorADay !== null) && replacement.aDay === null)
+        return { ok: false, code: 'CORRECTION_A_DAY_REQUIRED' };
+      const { aDay: _oldADay, ...preserved } = prior;
+      const fill: Fill = {
+        ...preserved,
+        bidId,
+        ...(replacement.membershipIds === undefined
+          ? {}
+          : { membershipIds: replacement.membershipIds }),
+        ...(replacement.aDay === null ? {} : { aDay: replacement.aDay }),
+      };
+      fills[replacement.positionId] = fill;
+      after = { positionId: replacement.positionId, fill };
+    }
+    const correction = {
+      bidId,
+      commandId: command.commandId,
+      originalBidId: command.originalBidId,
+      originalCommandId: command.originalCommandId,
+      originalADayCommandId: command.originalADayCommandId,
+      before: { positionId: command.originalPositionId, fill: prior, aDay: priorADay },
+      after,
+      resolvesCorrectionBidId: pending?.bidId ?? null,
+      actorMemberId: command.actor.id,
+      reason: command.reason,
+      sequence: state.lastSeq + 1,
+      atMs: now,
+    };
+    return {
+      ok: true,
+      state: {
+        ...state,
+        fills,
+        aDay:
+          state.aDay === null
+            ? null
+            : {
+                ...state.aDay,
+                picks: state.aDay.picks.filter((pick) => pick.memberId !== prior.memberId),
+              },
+        live: {
+          ...live,
+          corrections: [...(live.corrections ?? []), correction],
+          lastSelectionBidId:
+            after !== null
+              ? bidId
+              : live.lastSelectionBidId === prior.bidId
+                ? null
+                : live.lastSelectionBidId,
+        },
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'correct_bid',
+        correctionOperation: command.operation,
+        bidId,
+        memberId: prior.memberId,
+        originalCommandId: command.originalCommandId,
+        originalADayCommandId: command.originalADayCommandId,
+        supersedesBidId: command.originalBidId,
+        replacementBidId: after?.fill.bidId ?? null,
+        before: correction.before,
+        after,
+        resolvesCorrectionBidId: correction.resolvesCorrectionBidId,
+      },
+      supersedesBidId: command.originalBidId,
     };
   }
   if (command.type === 'live.amend_selection') {
