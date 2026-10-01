@@ -129,6 +129,7 @@ type SpecialtyState = {
     requiresEvidence: boolean;
   }>;
   unresolved_members?: Candidate[];
+  completion_blockers?: Candidate[];
   returning_member?: Candidate | null;
   remaining_order: number[];
   fills: Record<string, { member_id: number; a_day?: string | null; membership_ids?: string[] }>;
@@ -1727,9 +1728,20 @@ export function AnnualLiveControls(props: Props) {
               This seals the completed canonical result for Results, exports, and the read-only
               staffing transition preview. It does not publish to Portal or change staffing.
             </p>
+            {state?.completion_blockers?.length ? (
+              <p className="mt-2 text-sm text-warning">
+                Every participant needs a position or a disposition that ends their selection
+                rights. Still unresolved:{' '}
+                {state.completion_blockers.map((candidate) => name(candidate)).join(', ')}.
+              </p>
+            ) : null}
             <Button
               type="button"
-              disabled={busy || state?.current_phase !== 'complete'}
+              disabled={
+                busy ||
+                state?.current_phase !== 'complete' ||
+                (state?.completion_blockers?.length ?? 0) > 0
+              }
               onClick={() => void command('live.complete_session')}
               className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
             >

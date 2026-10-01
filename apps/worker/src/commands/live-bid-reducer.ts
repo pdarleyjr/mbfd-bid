@@ -149,6 +149,35 @@ function isOrdinaryADayTurn(state: BidSessionState, policy: FrozenLiveBidPolicy)
     memberHasDeferredOrdinaryTurn(state, policy, state.currentBidderId)
   );
 }
+function latestDispositionRule(
+  live: LiveBidProgress,
+  policy: FrozenLiveBidPolicy,
+  memberId: number,
+): FrozenLiveBidPolicy['dispositions'][number] | undefined {
+  const latest = [...live.dispositions].reverse().find((entry) => entry.memberId === memberId);
+  return latest === undefined
+    ? undefined
+    : policy.dispositions.find((rule) => rule.disposition === latest.disposition);
+}
+function hasAward(state: BidSessionState, memberId: number): boolean {
+  return Object.values(state.fills).some((fill) => fill.memberId === memberId);
+}
+/** Frozen stage participants with neither an award nor a disposition ending their rights. */
+export function participantCoverageGaps(
+  state: BidSessionState,
+  live: LiveBidProgress,
+  policy: FrozenLiveBidPolicy,
+  annual: AnnualOperationsState,
+): number[] {
+  const participants = [...new Set(policy.stages.flatMap((stage) => stage.memberIds))];
+  return participants.filter((memberId) => {
+    if (hasAward(state, memberId)) return false;
+    if (annual.returningMemberId === memberId || annual.unresolvedMemberIds.includes(memberId))
+      return true;
+    const rule = latestDispositionRule(live, policy, memberId);
+    return rule === undefined || (!rule.terminal && rule.retainsLaterSelectionRights);
+  });
+}
 function stageFor(state: BidSessionState): string | null {
   return state.bidOrder[state.queueCursor]?.stageId ?? state.live?.currentStageId ?? null;
 }
@@ -614,6 +643,9 @@ export function reduceLiveBidCommand(
     const result = returnAtCurrentSequence(annual, {
       memberId: command.memberId,
       sequence: state.lastSeq,
+      retainsSelectionRights:
+        !hasAward(state, command.memberId) &&
+        latestDispositionRule(live, policy, command.memberId)?.retainsLaterSelectionRights === true,
     });
     if (!result.ok) return result;
     return {
@@ -649,6 +681,11 @@ export function reduceLiveBidCommand(
   if (command.type === 'live.complete_session') {
     if (state.currentPhase !== 'complete') return { ok: false, code: 'SESSION_NOT_COMPLETE' };
     if (annualPolicy === undefined) return { ok: false, code: 'ANNUAL_OPERATIONS_POLICY_MISSING' };
+    if (
+      annual.unresolvedMemberIds.length === 0 &&
+      participantCoverageGaps(state, live, policy, annual).length > 0
+    )
+      return { ok: false, code: 'PARTICIPANT_COVERAGE_INCOMPLETE' };
     const settledReturnMemberId = annual.returningMemberId;
     const settledAnnual: AnnualOperationsState = {
       ...annual,
@@ -717,9 +754,15 @@ export function reduceLiveBidCommand(
       supersedesBidId: prior.bidId,
     };
   }
+  const returningMemberCommand =
+    annual.returningMemberId !== null &&
+    (state.currentPhase === 'a_day_bid' || state.currentPhase === 'complete') &&
+    (command.type === 'live.disposition' ||
+      (command.type === 'live.record_selection' && command.memberId === annual.returningMemberId));
   if (
     state.currentPhase !== 'position_bid' &&
-    !(command.type === 'live.disposition' && isOrdinaryADayTurn(state, policy))
+    !(command.type === 'live.disposition' && isOrdinaryADayTurn(state, policy)) &&
+    !returningMemberCommand
   )
     return { ok: false, code: 'SESSION_NOT_ACTIVE' };
   if (live.specialty !== null && live.specialty !== undefined)
@@ -801,8 +844,25 @@ export function reduceLiveBidCommand(
   if (state.fills[positionId]) return { ok: false, code: 'POSITION_FILLED' };
   if (Object.values(state.fills).some((fill) => fill.memberId === memberId))
     return { ok: false, code: 'MEMBER_ALREADY_SELECTED' };
-  const stage = policy.stages.find((candidate) => candidate.id === currentStageId);
-  if (!stage) return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
+  const currentStageOrder = policy.stages.find(
+    (candidate) => candidate.id === currentStageId,
+  )?.order;
+  // A returned member keeps the rights of the stages already reached, never later ones.
+  const stage = isReturnedAtCurrentSequence
+    ? policy.stages.find(
+        (candidate) =>
+          candidate.memberIds.includes(memberId) &&
+          candidate.opportunityPositionIds.includes(positionId) &&
+          (currentStageOrder === undefined || candidate.order <= currentStageOrder),
+      )
+    : policy.stages.find((candidate) => candidate.id === currentStageId);
+  if (!stage)
+    return {
+      ok: false,
+      code: isReturnedAtCurrentSequence
+        ? 'LIVE_STAGE_NOT_ELIGIBLE'
+        : 'LIVE_STAGE_POLICY_INCOMPLETE',
+    };
   if (
     !fallbackAuthorized &&
     (!stage.memberIds.includes(memberId) || !stage.opportunityPositionIds.includes(positionId))
@@ -819,7 +879,7 @@ export function reduceLiveBidCommand(
   }
   const entry =
     state.bidOrder.find(
-      (candidate) => candidate.memberId === memberId && candidate.stageId === currentStageId,
+      (candidate) => candidate.memberId === memberId && candidate.stageId === stage.id,
     ) ?? state.bidOrder.find((candidate) => candidate.memberId === memberId);
   if (!entry) return { ok: false, code: 'MEMBER_NOT_IN_FROZEN_ORDER' };
   const nextFills = {
@@ -852,7 +912,7 @@ export function reduceLiveBidCommand(
       bidId,
       memberId,
       positionId,
-      stageId: currentStageId,
+      stageId: stage.id,
       ...(command.type === 'live.record_selection' && command.preferenceSheetId
         ? { preferenceSheetId: command.preferenceSheetId }
         : {}),

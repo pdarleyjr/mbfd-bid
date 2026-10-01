@@ -139,7 +139,7 @@ describe('canonical annual completion projection', () => {
           id: 'annual',
           label: 'Annual',
           order: 0,
-          memberIds: [101, 202, 303],
+          memberIds: [101, 202],
           opportunityPositionIds: ['P-ENGINE-1', 'P-RESCUE-1', 'P-RESCUE-2'],
           kind: 'FIREFIGHTER',
         },
