@@ -1,4 +1,8 @@
-import { credentialSatisfiesMinimum, requiredCredsSatisfied } from './criteria/certs.js';
+import {
+  credentialIsActiveOn,
+  credentialSatisfiesMinimum,
+  requiredCredsSatisfied,
+} from './criteria/certs.js';
 import { driverEngineerSatisfied } from './criteria/driver-engineer.js';
 import { nonProbationarySatisfied } from './criteria/non-probationary.js';
 import { paramedicSatisfied } from './criteria/paramedic.js';
@@ -43,17 +47,8 @@ function evaluateWithChannels(
   const evaluationOn = member.scoringEvidence?.evaluationOn;
   const activeMember: Member = {
     ...member,
-    credentials: member.credentials.filter(
-      (credential) =>
-        (credential.status === undefined || credential.status === 'active') &&
-        (evaluationOn === undefined ||
-          credential.effectiveOn === undefined ||
-          credential.effectiveOn === null ||
-          credential.effectiveOn <= evaluationOn) &&
-        (evaluationOn === undefined ||
-          credential.expiresOn === undefined ||
-          credential.expiresOn === null ||
-          credential.expiresOn >= evaluationOn),
+    credentials: member.credentials.filter((credential) =>
+      credentialIsActiveOn(credential, evaluationOn),
     ),
   };
 
