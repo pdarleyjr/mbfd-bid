@@ -1,3 +1,4 @@
+import { operatorSessionKey } from '@/lib/operator-step-up';
 import { requireAdmin } from '@/lib/require-admin';
 import { AdminLayoutShell } from './_components/AdminLayoutShell';
 import { AdminQueryProvider } from './_components/AdminQueryProvider';
@@ -10,7 +11,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground print:block">
       <AdminQueryProvider key={`${claims.sub}:${claims.member_id}:${claims.security_version}`}>
-        <StepUpProvider>
+        <StepUpProvider
+          initialStatus={{
+            operatorKey: operatorSessionKey(claims),
+            freshAuthAtSec: claims.fresh_auth_at,
+            serverNowSec: Math.floor(Date.now() / 1000),
+          }}
+        >
           <AdminLayoutShell userName={`${claims.first_name} ${claims.last_name}`}>
             {children}
           </AdminLayoutShell>
