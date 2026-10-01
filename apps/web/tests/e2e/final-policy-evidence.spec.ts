@@ -40,7 +40,8 @@ test('pending source procedures remain visible and cannot be promoted with unres
     },
   });
   await page.goto(`/admin/current-bid?year=${BID_YEAR}`);
-  const workspace = page.getByTestId('current-bid-workspace');
+  const workspace = page.getByRole('main').getByTestId('current-bid-workspace');
+  await expect(workspace).toHaveCount(1);
   await expect(
     workspace.getByRole('heading', { name: 'Source policy awaiting operational decisions' }),
   ).toBeVisible();
