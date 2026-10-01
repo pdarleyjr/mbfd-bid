@@ -321,384 +321,395 @@ async function persistedCorrectionRows() {
 }
 
 describe('audited corrections on actual Workers D1 and Durable Object runtime', () => {
-  it('reconstructs correction and revocation after eviction, replays exactly, and seals only the corrected final award', async () => {
-    const { policy, snapshotJson } = await seedFrozenSource();
-    let counter = 0;
-    const common = (seq: number) => ({
-      v: 1 as const,
-      commandId: `cccccccc-cccc-4ccc-accc-${String(++counter).padStart(12, '0')}`,
-      bidSessionId: SESSION,
-      expectedSeq: seq,
-      actor: { id: MEMBERS[0], role: 'admin' as const },
-      reason: 'Synthetic runtime correction',
-      evidenceReference: null,
-    });
-    let initial = {
-      ...emptyBidSessionState(SESSION),
-      currentPhase: 'position_bid' as const,
-      currentBidderId: MEMBERS[0] as number | null,
-      bidOrder: MEMBERS.map((memberId, index) => ({
-        memberId,
-        ordinal: index + 1,
-        pool: 'FF' as const,
-        stageId: 'ff',
-      })),
-    };
-    const sourceCommands: LiveBidCommand[] = [];
-    for (const [index, memberId] of MEMBERS.entries()) {
-      const command = {
-        ...common(initial.lastSeq),
-        type: 'live.record_selection',
-        memberId,
-        positionId: POSITIONS[index],
-        aDay: index === 0 ? 'G1' : 'G2',
-      } as LiveBidCommand;
-      sourceCommands.push(command);
-      const awarded = await commitLiveBidCommand({ db: env.DB, command, state: initial, policy });
-      expect(awarded.result.kind).toBe('accepted');
-      if (!awarded.canonicalState) throw new Error('Runtime canonical award missing');
-      initial = awarded.canonicalState as typeof initial;
-    }
-    const stub = env.BID_SESSION.get(env.BID_SESSION.idFromName(SESSION));
-    const send = async (command: LiveBidCommand) => {
-      const response = await stub.fetch('https://do/admin/commands/live', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(command),
+  it(
+    'reconstructs correction and revocation after eviction, replays exactly, and seals only the corrected final award',
+    { timeout: 30_000 },
+    async () => {
+      const { policy, snapshotJson } = await seedFrozenSource();
+      let counter = 0;
+      const common = (seq: number) => ({
+        v: 1 as const,
+        commandId: `cccccccc-cccc-4ccc-accc-${String(++counter).padStart(12, '0')}`,
+        bidSessionId: SESSION,
+        expectedSeq: seq,
+        actor: { id: MEMBERS[0], role: 'admin' as const },
+        reason: 'Synthetic runtime correction',
+        evidenceReference: null,
       });
-      return response.json<LiveBidCommandResult>();
-    };
-    const original = initial.fills['runtime-one'];
-    if (!original || !sourceCommands[0]) throw new Error('Runtime source award missing');
-    const sourceEvents = (
-      await env.DB.prepare('SELECT * FROM bid_command_events WHERE bid_session_id=? ORDER BY seq')
-        .bind(SESSION)
-        .all()
-    ).results;
-    const correction = {
-      ...common(initial.lastSeq),
-      type: 'live.correct_bid',
-      memberId: MEMBERS[0],
-      originalCommandId: sourceCommands[0].commandId,
-      originalBidId: original.bidId,
-      originalPositionId: 'runtime-one',
-      originalADayCommandId: null,
-      operation: 'REPLACE',
-      replacement: { positionId: 'runtime-one', aDay: 'G3' },
-    } as LiveBidCommand;
-    for (const [override, code] of [
-      [{ expectedSeq: 0 }, 'STALE_SEQUENCE'],
-      [
-        { originalCommandId: 'ffffffff-ffff-4fff-afff-ffffffffffff' },
-        'CORRECTION_SOURCE_RECEIPT_INVALID',
-      ],
-      [{ replacement: { positionId: 'runtime-one', aDay: 'G2' } }, 'SCOPED_A_DAY_MAXIMUM'],
-    ] as const) {
-      expect(
-        await send({
-          ...correction,
-          ...override,
-          commandId: common(initial.lastSeq).commandId,
-        } as LiveBidCommand),
-      ).toMatchObject({ kind: 'rejected', code });
-      expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(initial);
-    }
-    const token = await adminToken();
-    const beforePreview = await persistedCorrectionRows();
-    const preview = await app.fetch(
-      new Request(`http://x/api/admin/bid-session/${SESSION}/corrections/preview`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify(correction),
-      }),
-      readbackEnv(),
-    );
-    expect(preview.status).toBe(200);
-    expect(await preview.json()).toMatchObject({
-      valid: true,
-      expectedSeq: initial.lastSeq,
-      before: { positionId: 'runtime-one' },
-      after: { positionId: 'runtime-one', fill: { aDay: 'G3' } },
-    });
-    expect(await persistedCorrectionRows()).toEqual(beforePreview);
-    const corrected = await send(correction);
-    expect(corrected.kind).toBe('accepted');
-    const beforeEviction = await loadCanonicalBidSessionState(env.DB, SESSION);
-    let oldInstance: unknown;
-    await runInDurableObject(stub, (instance) => {
-      oldInstance = instance;
-    });
-    await evictDurableObject(stub);
-    expect(await send(correction)).toEqual(corrected);
-    await runInDurableObject(stub, (instance) => {
-      expect(instance).not.toBe(oldInstance);
-    });
-    expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(beforeEviction);
-    const active = beforeEviction?.fills['runtime-one'];
-    if (!active || !beforeEviction) throw new Error('Runtime corrected award missing');
-    const revoke = {
-      ...correction,
-      ...common(beforeEviction.lastSeq),
-      originalCommandId: correction.commandId,
-      originalBidId: active.bidId,
-      operation: 'REVOKE',
-      replacement: null,
-    } as LiveBidCommand;
-    const revoked = await send(revoke);
-    expect(revoked.kind).toBe('accepted');
-    if (revoked.kind !== 'accepted') throw new Error('Runtime revocation rejected');
-    await evictDurableObject(stub);
-    expect(await send({ ...common(revoked.seq), type: 'live.complete_session' })).toMatchObject({
-      kind: 'rejected',
-      code: 'UNRESOLVED_CORRECTIONS_BLOCK_COMPLETION',
-    });
-    const revokedBidId = (revoked.envelope.payload as { bidId: string }).bidId;
-    const restored = await send({
-      ...correction,
-      ...common(revoked.seq),
-      originalCommandId: revoke.commandId,
-      originalBidId: revokedBidId,
-      replacement: { positionId: 'runtime-spare', aDay: 'G4' },
-    } as LiveBidCommand);
-    expect(restored.kind).toBe('accepted');
-    if (restored.kind !== 'accepted') throw new Error('Runtime replacement rejected');
-    const finalState = await loadCanonicalBidSessionState(env.DB, SESSION);
-    expect(finalState?.fills['runtime-one']).toBeUndefined();
-    expect(finalState?.fills['runtime-spare']).toMatchObject({
-      memberId: MEMBERS[0],
-      aDay: 'G4',
-      ordinal: 1,
-    });
-    expect(finalState?.aDay?.picks.find((pick) => pick.memberId === MEMBERS[0])?.aDay).toBe('G4');
-    expect(await loadCanonicalAmendmentLinks(env.DB, SESSION)).toHaveLength(3);
-    expect(
-      (
-        await env.DB.prepare(
-          'SELECT * FROM bid_command_events WHERE bid_session_id=? ORDER BY seq LIMIT 2',
-        )
-          .bind(SESSION)
-          .all()
-      ).results,
-    ).toEqual(sourceEvents);
-    expect(
-      (
-        await env.DB.prepare(
-          'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?',
-        )
-          .bind(SESSION)
-          .first<{ snapshot_json: string }>()
-      )?.snapshot_json,
-    ).toBe(snapshotJson);
-    expect(await send({ ...common(restored.seq), type: 'live.complete_session' })).toMatchObject({
-      kind: 'accepted',
-    });
-    const sealed = await loadCanonicalBidSessionState(env.DB, SESSION);
-    const results = await app.fetch(
-      new Request(`http://x/api/admin/bid-session/${SESSION}/results`, {
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      readbackEnv(),
-    );
-    expect(results.status).toBe(200);
-    const awards = (
-      await results.json<{
-        awards: Array<{
-          memberId: number;
-          positionId: string;
-          aDay: string;
-          correctionLineage: unknown[];
-        }>;
-      }>()
-    ).awards;
-    expect(awards.find((award) => award.memberId === MEMBERS[0])).toMatchObject({
-      positionId: 'runtime-spare',
-      aDay: 'G4',
-      correctionLineage: [
-        { originalBidId: original.bidId },
-        { after: null, replacementBidId: null },
-        { after: { positionId: 'runtime-spare' } },
-      ],
-    });
-    expect(awards.some((award) => award.positionId === 'runtime-one')).toBe(false);
-    const printToken = mintPrintToken(
-      { kind: 'roster', shift: 'A', session_id: SESSION },
-      env.JWT_SIGNING_KEY,
-    );
-    const roster = await app.fetch(
-      new Request(
-        `http://x/api/admin/exports/roster-data?session_id=${SESSION}&shift=A&token=${printToken}`,
-      ),
-      readbackEnv(),
-    );
-    expect(roster.status).toBe(200);
-    const rows = (
-      await roster.json<{
-        stations: Array<{
-          rows: Array<{ position_id: string; member_id: string | null; a_day: string | null }>;
-        }>;
-      }>()
-    ).stations.flatMap((station) => station.rows);
-    expect(rows.find((row) => row.position_id === 'runtime-one')?.member_id).toBeNull();
-    expect(rows.find((row) => row.position_id === 'runtime-spare')).toMatchObject({ a_day: 'G4' });
-    expect(
-      await send({
-        ...correction,
-        ...common(sealed?.lastSeq ?? 0),
-        originalCommandId: (restored as Extract<LiveBidCommandResult, { kind: 'accepted' }>)
-          .commandId,
-        originalBidId: finalState?.fills['runtime-spare']?.bidId ?? '',
-        originalPositionId: 'runtime-spare',
-      } as LiveBidCommand),
-    ).toMatchObject({ kind: 'rejected', code: 'ANNUAL_COMPLETION_SEALED' });
-  });
-  it('keeps an early specialty winner in ordinary A-Day order and corrects the later pick using its exact receipt after eviction', async () => {
-    const SESSION = 'synthetic-runtime-correction-early';
-    const { policy, snapshotJson } = await seedFrozenSource(true, SESSION);
-    let counter = 0;
-    const common = (seq: number) => ({
-      v: 1 as const,
-      commandId: `dddddddd-dddd-4ddd-addd-${String(++counter).padStart(12, '0')}`,
-      bidSessionId: SESSION,
-      expectedSeq: seq,
-      actor: { id: MEMBERS[0], role: 'admin' as const },
-      reason: 'Synthetic early specialty correction',
-      evidenceReference: null,
-    });
-    let initial = {
-      ...emptyBidSessionState(SESSION),
-      currentPhase: 'position_bid' as const,
-      currentBidderId: MEMBERS[0] as number | null,
-      bidOrder: MEMBERS.map((memberId, index) => ({
-        memberId,
-        ordinal: index + 1,
-        pool: 'FF' as const,
-        stageId: 'ff',
-      })),
-    };
-    const requestCommand: LiveBidCommand = {
-      ...common(0),
-      type: 'live.start_specialty_adjudication',
-      specialtyId: 'runtime-specialty',
-      positionId: 'runtime-one',
-      candidateMemberIds: [MEMBERS[1]],
-    };
-    const awardCommand: LiveBidCommand = {
-      ...common(1),
-      type: 'live.resolve_specialty_candidate',
-      memberId: MEMBERS[1],
-      outcome: 'ACCEPT',
-    };
-    for (const command of [requestCommand, awardCommand]) {
-      const applied = await commitLiveBidCommand({ db: env.DB, state: initial, command, policy });
-      expect(applied.result.kind, JSON.stringify(applied.result)).toBe('accepted');
-      if (!applied.canonicalState) throw new Error('Runtime early specialty award missing');
-      initial = applied.canonicalState as typeof initial;
-    }
-    const original = initial.fills['runtime-one'];
-    if (!original) throw new Error('Runtime early source award missing');
-    const stub = env.BID_SESSION.get(env.BID_SESSION.idFromName(SESSION));
-    const send = async (command: LiveBidCommand) =>
-      (
-        await stub.fetch('https://do/admin/commands/live', {
+      let initial = {
+        ...emptyBidSessionState(SESSION),
+        currentPhase: 'position_bid' as const,
+        currentBidderId: MEMBERS[0] as number | null,
+        bidOrder: MEMBERS.map((memberId, index) => ({
+          memberId,
+          ordinal: index + 1,
+          pool: 'FF' as const,
+          stageId: 'ff',
+        })),
+      };
+      const sourceCommands: LiveBidCommand[] = [];
+      for (const [index, memberId] of MEMBERS.entries()) {
+        const command = {
+          ...common(initial.lastSeq),
+          type: 'live.record_selection',
+          memberId,
+          positionId: POSITIONS[index],
+          aDay: index === 0 ? 'G1' : 'G2',
+        } as LiveBidCommand;
+        sourceCommands.push(command);
+        const awarded = await commitLiveBidCommand({ db: env.DB, command, state: initial, policy });
+        expect(awarded.result.kind).toBe('accepted');
+        if (!awarded.canonicalState) throw new Error('Runtime canonical award missing');
+        initial = awarded.canonicalState as typeof initial;
+      }
+      const stub = env.BID_SESSION.get(env.BID_SESSION.idFromName(SESSION));
+      const send = async (command: LiveBidCommand) => {
+        const response = await stub.fetch('https://do/admin/commands/live', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(command),
-        })
-      ).json<LiveBidCommandResult>();
-    const earlyCorrection = {
-      ...common(initial.lastSeq),
-      type: 'live.correct_bid',
-      memberId: MEMBERS[1],
-      originalCommandId: awardCommand.commandId,
-      originalBidId: original.bidId,
-      originalPositionId: 'runtime-one',
-      originalADayCommandId: null,
-      operation: 'REPLACE',
-      replacement: { positionId: 'runtime-one', aDay: null },
-    } as LiveBidCommand;
-    expect(
-      await send({
-        ...earlyCorrection,
-        commandId: common(initial.lastSeq).commandId,
-        replacement: { positionId: 'runtime-one', aDay: 'G3' },
-      } as LiveBidCommand),
-    ).toMatchObject({ kind: 'rejected', code: 'CORRECTION_ORDINARY_A_DAY_NOT_REACHED' });
-    expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(initial);
-    const acceptedEarly = await send(earlyCorrection);
-    expect(acceptedEarly.kind, JSON.stringify(acceptedEarly)).toBe('accepted');
-    if (acceptedEarly.kind !== 'accepted') throw new Error('Runtime early correction rejected');
-    await evictDurableObject(stub);
-    expect(await send(earlyCorrection)).toEqual(acceptedEarly);
-    const beforeOrdinary = await loadCanonicalBidSessionState(env.DB, SESSION);
-    expect(beforeOrdinary).toMatchObject({ queueCursor: 0, currentBidderId: MEMBERS[0] });
-    expect(beforeOrdinary?.bidOrder).toEqual(initial.bidOrder);
-    expect(beforeOrdinary?.aDay?.picks.some((pick) => pick.memberId === MEMBERS[1]) ?? false).toBe(
-      false,
-    );
-    const ordinary = await send({
-      ...common(acceptedEarly.seq),
-      type: 'live.record_selection',
-      memberId: MEMBERS[0],
-      positionId: 'runtime-two',
-      aDay: 'G1',
-    });
-    expect(ordinary.kind, JSON.stringify(ordinary)).toBe('accepted');
-    if (ordinary.kind !== 'accepted') throw new Error('Runtime original ordinary bidder rejected');
-    expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toMatchObject({
-      currentPhase: 'a_day_bid',
-      currentBidderId: MEMBERS[1],
-      queueCursor: 1,
-    });
-    const aDayCommand: LiveBidCommand = {
-      ...common(ordinary.seq),
-      type: 'live.record_a_day',
-      memberId: MEMBERS[1],
-      aDay: 'G2',
-    };
-    const picked = await send(aDayCommand);
-    expect(picked.kind, JSON.stringify(picked)).toBe('accepted');
-    if (picked.kind !== 'accepted') throw new Error('Runtime deferred A-Day rejected');
-    const beforeCorrection = await loadCanonicalBidSessionState(env.DB, SESSION);
-    const active = beforeCorrection?.fills['runtime-one'];
-    if (!active) throw new Error('Runtime deferred active award missing');
-    const correction = {
-      ...earlyCorrection,
-      ...common(picked.seq),
-      originalCommandId: earlyCorrection.commandId,
-      originalBidId: active.bidId,
-      replacement: { positionId: 'runtime-one', aDay: 'G3' },
-    } as LiveBidCommand;
-    expect(await send(correction)).toMatchObject({
-      kind: 'rejected',
-      code: 'CORRECTION_A_DAY_RECEIPT_REQUIRED',
-    });
-    expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(beforeCorrection);
-    const receiptBound = {
-      ...correction,
-      commandId: common(picked.seq).commandId,
-      originalADayCommandId: aDayCommand.commandId,
-    };
-    const corrected = await send(receiptBound);
-    expect(corrected.kind, JSON.stringify(corrected)).toBe('accepted');
-    await evictDurableObject(stub);
-    expect(await send(receiptBound)).toEqual(corrected);
-    const final = await loadCanonicalBidSessionState(env.DB, SESSION);
-    expect(final?.aDay?.picks.find((pick) => pick.memberId === MEMBERS[1])).toMatchObject({
-      aDay: 'G3',
-    });
-    expect(final?.live?.corrections?.at(-1)?.specialtyRequest).toMatchObject({
-      requesterMemberId: MEMBERS[0],
-      requestCommandId: requestCommand.commandId,
-      positionId: 'runtime-one',
-    });
-    expect(
-      (
-        await env.DB.prepare(
-          'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?',
-        )
+        });
+        return response.json<LiveBidCommandResult>();
+      };
+      const original = initial.fills['runtime-one'];
+      if (!original || !sourceCommands[0]) throw new Error('Runtime source award missing');
+      const sourceEvents = (
+        await env.DB.prepare('SELECT * FROM bid_command_events WHERE bid_session_id=? ORDER BY seq')
           .bind(SESSION)
-          .first<{ snapshot_json: string }>()
-      )?.snapshot_json,
-    ).toBe(snapshotJson);
-  });
+          .all()
+      ).results;
+      const correction = {
+        ...common(initial.lastSeq),
+        type: 'live.correct_bid',
+        memberId: MEMBERS[0],
+        originalCommandId: sourceCommands[0].commandId,
+        originalBidId: original.bidId,
+        originalPositionId: 'runtime-one',
+        originalADayCommandId: null,
+        operation: 'REPLACE',
+        replacement: { positionId: 'runtime-one', aDay: 'G3' },
+      } as LiveBidCommand;
+      for (const [override, code] of [
+        [{ expectedSeq: 0 }, 'STALE_SEQUENCE'],
+        [
+          { originalCommandId: 'ffffffff-ffff-4fff-afff-ffffffffffff' },
+          'CORRECTION_SOURCE_RECEIPT_INVALID',
+        ],
+        [{ replacement: { positionId: 'runtime-one', aDay: 'G2' } }, 'SCOPED_A_DAY_MAXIMUM'],
+      ] as const) {
+        expect(
+          await send({
+            ...correction,
+            ...override,
+            commandId: common(initial.lastSeq).commandId,
+          } as LiveBidCommand),
+        ).toMatchObject({ kind: 'rejected', code });
+        expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(initial);
+      }
+      const token = await adminToken();
+      const beforePreview = await persistedCorrectionRows();
+      const preview = await app.fetch(
+        new Request(`http://x/api/admin/bid-session/${SESSION}/corrections/preview`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify(correction),
+        }),
+        readbackEnv(),
+      );
+      expect(preview.status).toBe(200);
+      expect(await preview.json()).toMatchObject({
+        valid: true,
+        expectedSeq: initial.lastSeq,
+        before: { positionId: 'runtime-one' },
+        after: { positionId: 'runtime-one', fill: { aDay: 'G3' } },
+      });
+      expect(await persistedCorrectionRows()).toEqual(beforePreview);
+      const corrected = await send(correction);
+      expect(corrected.kind).toBe('accepted');
+      const beforeEviction = await loadCanonicalBidSessionState(env.DB, SESSION);
+      let oldInstance: unknown;
+      await runInDurableObject(stub, (instance) => {
+        oldInstance = instance;
+      });
+      await evictDurableObject(stub);
+      expect(await send(correction)).toEqual(corrected);
+      await runInDurableObject(stub, (instance) => {
+        expect(instance).not.toBe(oldInstance);
+      });
+      expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(beforeEviction);
+      const active = beforeEviction?.fills['runtime-one'];
+      if (!active || !beforeEviction) throw new Error('Runtime corrected award missing');
+      const revoke = {
+        ...correction,
+        ...common(beforeEviction.lastSeq),
+        originalCommandId: correction.commandId,
+        originalBidId: active.bidId,
+        operation: 'REVOKE',
+        replacement: null,
+      } as LiveBidCommand;
+      const revoked = await send(revoke);
+      expect(revoked.kind).toBe('accepted');
+      if (revoked.kind !== 'accepted') throw new Error('Runtime revocation rejected');
+      await evictDurableObject(stub);
+      expect(await send({ ...common(revoked.seq), type: 'live.complete_session' })).toMatchObject({
+        kind: 'rejected',
+        code: 'UNRESOLVED_CORRECTIONS_BLOCK_COMPLETION',
+      });
+      const revokedBidId = (revoked.envelope.payload as { bidId: string }).bidId;
+      const restored = await send({
+        ...correction,
+        ...common(revoked.seq),
+        originalCommandId: revoke.commandId,
+        originalBidId: revokedBidId,
+        replacement: { positionId: 'runtime-spare', aDay: 'G4' },
+      } as LiveBidCommand);
+      expect(restored.kind).toBe('accepted');
+      if (restored.kind !== 'accepted') throw new Error('Runtime replacement rejected');
+      const finalState = await loadCanonicalBidSessionState(env.DB, SESSION);
+      expect(finalState?.fills['runtime-one']).toBeUndefined();
+      expect(finalState?.fills['runtime-spare']).toMatchObject({
+        memberId: MEMBERS[0],
+        aDay: 'G4',
+        ordinal: 1,
+      });
+      expect(finalState?.aDay?.picks.find((pick) => pick.memberId === MEMBERS[0])?.aDay).toBe('G4');
+      expect(await loadCanonicalAmendmentLinks(env.DB, SESSION)).toHaveLength(3);
+      expect(
+        (
+          await env.DB.prepare(
+            'SELECT * FROM bid_command_events WHERE bid_session_id=? ORDER BY seq LIMIT 2',
+          )
+            .bind(SESSION)
+            .all()
+        ).results,
+      ).toEqual(sourceEvents);
+      expect(
+        (
+          await env.DB.prepare(
+            'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+          )
+            .bind(SESSION)
+            .first<{ snapshot_json: string }>()
+        )?.snapshot_json,
+      ).toBe(snapshotJson);
+      expect(await send({ ...common(restored.seq), type: 'live.complete_session' })).toMatchObject({
+        kind: 'accepted',
+      });
+      const sealed = await loadCanonicalBidSessionState(env.DB, SESSION);
+      const results = await app.fetch(
+        new Request(`http://x/api/admin/bid-session/${SESSION}/results`, {
+          headers: { authorization: `Bearer ${token}` },
+        }),
+        readbackEnv(),
+      );
+      expect(results.status).toBe(200);
+      const awards = (
+        await results.json<{
+          awards: Array<{
+            memberId: number;
+            positionId: string;
+            aDay: string;
+            correctionLineage: unknown[];
+          }>;
+        }>()
+      ).awards;
+      expect(awards.find((award) => award.memberId === MEMBERS[0])).toMatchObject({
+        positionId: 'runtime-spare',
+        aDay: 'G4',
+        correctionLineage: [
+          { originalBidId: original.bidId },
+          { after: null, replacementBidId: null },
+          { after: { positionId: 'runtime-spare' } },
+        ],
+      });
+      expect(awards.some((award) => award.positionId === 'runtime-one')).toBe(false);
+      const printToken = mintPrintToken(
+        { kind: 'roster', shift: 'A', session_id: SESSION },
+        env.JWT_SIGNING_KEY,
+      );
+      const roster = await app.fetch(
+        new Request(
+          `http://x/api/admin/exports/roster-data?session_id=${SESSION}&shift=A&token=${printToken}`,
+        ),
+        readbackEnv(),
+      );
+      expect(roster.status).toBe(200);
+      const rows = (
+        await roster.json<{
+          stations: Array<{
+            rows: Array<{ position_id: string; member_id: string | null; a_day: string | null }>;
+          }>;
+        }>()
+      ).stations.flatMap((station) => station.rows);
+      expect(rows.find((row) => row.position_id === 'runtime-one')?.member_id).toBeNull();
+      expect(rows.find((row) => row.position_id === 'runtime-spare')).toMatchObject({
+        a_day: 'G4',
+      });
+      expect(
+        await send({
+          ...correction,
+          ...common(sealed?.lastSeq ?? 0),
+          originalCommandId: (restored as Extract<LiveBidCommandResult, { kind: 'accepted' }>)
+            .commandId,
+          originalBidId: finalState?.fills['runtime-spare']?.bidId ?? '',
+          originalPositionId: 'runtime-spare',
+        } as LiveBidCommand),
+      ).toMatchObject({ kind: 'rejected', code: 'ANNUAL_COMPLETION_SEALED' });
+    },
+  );
+  it(
+    'keeps an early specialty winner in ordinary A-Day order and corrects the later pick using its exact receipt after eviction',
+    { timeout: 30_000 },
+    async () => {
+      const SESSION = 'synthetic-runtime-correction-early';
+      const { policy, snapshotJson } = await seedFrozenSource(true, SESSION);
+      let counter = 0;
+      const common = (seq: number) => ({
+        v: 1 as const,
+        commandId: `dddddddd-dddd-4ddd-addd-${String(++counter).padStart(12, '0')}`,
+        bidSessionId: SESSION,
+        expectedSeq: seq,
+        actor: { id: MEMBERS[0], role: 'admin' as const },
+        reason: 'Synthetic early specialty correction',
+        evidenceReference: null,
+      });
+      let initial = {
+        ...emptyBidSessionState(SESSION),
+        currentPhase: 'position_bid' as const,
+        currentBidderId: MEMBERS[0] as number | null,
+        bidOrder: MEMBERS.map((memberId, index) => ({
+          memberId,
+          ordinal: index + 1,
+          pool: 'FF' as const,
+          stageId: 'ff',
+        })),
+      };
+      const requestCommand: LiveBidCommand = {
+        ...common(0),
+        type: 'live.start_specialty_adjudication',
+        specialtyId: 'runtime-specialty',
+        positionId: 'runtime-one',
+        candidateMemberIds: [MEMBERS[1]],
+      };
+      const awardCommand: LiveBidCommand = {
+        ...common(1),
+        type: 'live.resolve_specialty_candidate',
+        memberId: MEMBERS[1],
+        outcome: 'ACCEPT',
+      };
+      for (const command of [requestCommand, awardCommand]) {
+        const applied = await commitLiveBidCommand({ db: env.DB, state: initial, command, policy });
+        expect(applied.result.kind, JSON.stringify(applied.result)).toBe('accepted');
+        if (!applied.canonicalState) throw new Error('Runtime early specialty award missing');
+        initial = applied.canonicalState as typeof initial;
+      }
+      const original = initial.fills['runtime-one'];
+      if (!original) throw new Error('Runtime early source award missing');
+      const stub = env.BID_SESSION.get(env.BID_SESSION.idFromName(SESSION));
+      const send = async (command: LiveBidCommand) =>
+        (
+          await stub.fetch('https://do/admin/commands/live', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(command),
+          })
+        ).json<LiveBidCommandResult>();
+      const earlyCorrection = {
+        ...common(initial.lastSeq),
+        type: 'live.correct_bid',
+        memberId: MEMBERS[1],
+        originalCommandId: awardCommand.commandId,
+        originalBidId: original.bidId,
+        originalPositionId: 'runtime-one',
+        originalADayCommandId: null,
+        operation: 'REPLACE',
+        replacement: { positionId: 'runtime-one', aDay: null },
+      } as LiveBidCommand;
+      expect(
+        await send({
+          ...earlyCorrection,
+          commandId: common(initial.lastSeq).commandId,
+          replacement: { positionId: 'runtime-one', aDay: 'G3' },
+        } as LiveBidCommand),
+      ).toMatchObject({ kind: 'rejected', code: 'CORRECTION_ORDINARY_A_DAY_NOT_REACHED' });
+      expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(initial);
+      const acceptedEarly = await send(earlyCorrection);
+      expect(acceptedEarly.kind, JSON.stringify(acceptedEarly)).toBe('accepted');
+      if (acceptedEarly.kind !== 'accepted') throw new Error('Runtime early correction rejected');
+      await evictDurableObject(stub);
+      expect(await send(earlyCorrection)).toEqual(acceptedEarly);
+      const beforeOrdinary = await loadCanonicalBidSessionState(env.DB, SESSION);
+      expect(beforeOrdinary).toMatchObject({ queueCursor: 0, currentBidderId: MEMBERS[0] });
+      expect(beforeOrdinary?.bidOrder).toEqual(initial.bidOrder);
+      expect(
+        beforeOrdinary?.aDay?.picks.some((pick) => pick.memberId === MEMBERS[1]) ?? false,
+      ).toBe(false);
+      const ordinary = await send({
+        ...common(acceptedEarly.seq),
+        type: 'live.record_selection',
+        memberId: MEMBERS[0],
+        positionId: 'runtime-two',
+        aDay: 'G1',
+      });
+      expect(ordinary.kind, JSON.stringify(ordinary)).toBe('accepted');
+      if (ordinary.kind !== 'accepted')
+        throw new Error('Runtime original ordinary bidder rejected');
+      expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toMatchObject({
+        currentPhase: 'a_day_bid',
+        currentBidderId: MEMBERS[1],
+        queueCursor: 1,
+      });
+      const aDayCommand: LiveBidCommand = {
+        ...common(ordinary.seq),
+        type: 'live.record_a_day',
+        memberId: MEMBERS[1],
+        aDay: 'G2',
+      };
+      const picked = await send(aDayCommand);
+      expect(picked.kind, JSON.stringify(picked)).toBe('accepted');
+      if (picked.kind !== 'accepted') throw new Error('Runtime deferred A-Day rejected');
+      const beforeCorrection = await loadCanonicalBidSessionState(env.DB, SESSION);
+      const active = beforeCorrection?.fills['runtime-one'];
+      if (!active) throw new Error('Runtime deferred active award missing');
+      const correction = {
+        ...earlyCorrection,
+        ...common(picked.seq),
+        originalCommandId: earlyCorrection.commandId,
+        originalBidId: active.bidId,
+        replacement: { positionId: 'runtime-one', aDay: 'G3' },
+      } as LiveBidCommand;
+      expect(await send(correction)).toMatchObject({
+        kind: 'rejected',
+        code: 'CORRECTION_A_DAY_RECEIPT_REQUIRED',
+      });
+      expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(beforeCorrection);
+      const receiptBound = {
+        ...correction,
+        commandId: common(picked.seq).commandId,
+        originalADayCommandId: aDayCommand.commandId,
+      };
+      const corrected = await send(receiptBound);
+      expect(corrected.kind, JSON.stringify(corrected)).toBe('accepted');
+      await evictDurableObject(stub);
+      expect(await send(receiptBound)).toEqual(corrected);
+      const final = await loadCanonicalBidSessionState(env.DB, SESSION);
+      expect(final?.aDay?.picks.find((pick) => pick.memberId === MEMBERS[1])).toMatchObject({
+        aDay: 'G3',
+      });
+      expect(final?.live?.corrections?.at(-1)?.specialtyRequest).toMatchObject({
+        requesterMemberId: MEMBERS[0],
+        requestCommandId: requestCommand.commandId,
+        positionId: 'runtime-one',
+      });
+      expect(
+        (
+          await env.DB.prepare(
+            'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+          )
+            .bind(SESSION)
+            .first<{ snapshot_json: string }>()
+        )?.snapshot_json,
+      ).toBe(snapshotJson);
+    },
+  );
 });
