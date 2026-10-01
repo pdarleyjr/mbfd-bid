@@ -1,4 +1,8 @@
-import { beforeOperatorCommand, observeOperatorResponse } from './operator-step-up';
+import {
+  beforeOperatorCommand,
+  observeOperatorResponse,
+  operatorAuthGeneration,
+} from './operator-step-up';
 
 const CSRF_BOOTSTRAP_PATH = '/api/auth/csrf';
 const CSRF_HEADER_NAME = 'X-MBFD-CSRF';
@@ -65,8 +69,13 @@ export function createCsrfAwareFetch(
   getCurrentOrigin: () => string,
 ): typeof fetch {
   let tokenPromise: Promise<string> | null = null;
+  let authGeneration = operatorAuthGeneration();
 
   async function getToken(): Promise<string> {
+    if (authGeneration !== operatorAuthGeneration()) {
+      authGeneration = operatorAuthGeneration();
+      tokenPromise = null;
+    }
     if (tokenPromise === null) {
       tokenPromise = readCsrfToken(originalFetch).catch((error: unknown) => {
         tokenPromise = null;
@@ -89,6 +98,10 @@ export function createCsrfAwareFetch(
     }
 
     const token = await getToken();
+    if (operatorMutation) {
+      const error = beforeOperatorCommand();
+      if (error !== null) return Response.json({ error }, { status: 401 });
+    }
     const inheritedHeaders = input instanceof Request ? input.headers : undefined;
     const headers = new Headers(init?.headers ?? inheritedHeaders);
     headers.set(CSRF_HEADER_NAME, token);

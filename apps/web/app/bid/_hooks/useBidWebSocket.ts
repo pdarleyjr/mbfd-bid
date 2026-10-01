@@ -1,4 +1,5 @@
 'use client';
+import { OPERATOR_AUTH_REFRESHED } from '@/lib/operator-step-up';
 import {
   type BidEventEnvelope,
   BidEventEnvelopeSchema,
@@ -67,6 +68,7 @@ export function useBidWebSocket(
   useEffect(() => {
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let generation = 0;
 
     // The specialty workspace can use the same authenticated transport without
     // a normal Bid store. Tests and server-like renderers may not provide a
@@ -96,19 +98,22 @@ export function useBidWebSocket(
 
     async function connect() {
       if (cancelled) return;
+      const connectionGeneration = ++generation;
+      const isCurrent = () => !cancelled && generation === connectionGeneration;
       setStatus('connecting');
       let ticket: string;
       try {
         ticket = await requestWebSocketTicket(opts.bidSessionId);
       } catch {
-        scheduleReconnect();
+        if (isCurrent()) scheduleReconnect();
         return;
       }
-      if (cancelled) return;
+      if (!isCurrent()) return;
 
       const ws = new WebSocket(buildWsUrl(opts.wsBase, opts.bidSessionId), ['mbfd-bid-v1', ticket]);
       wsRef.current = ws;
       ws.onopen = () => {
+        if (!isCurrent()) return;
         attemptRef.current = 0;
         setStatus('open');
         ws.send(
@@ -119,6 +124,7 @@ export function useBidWebSocket(
         );
       };
       ws.onmessage = (ev) => {
+        if (!isCurrent()) return;
         try {
           const raw = JSON.parse(String(ev.data));
           const bidEnvelope = BidEventEnvelopeSchema.safeParse(raw);
@@ -136,14 +142,29 @@ export function useBidWebSocket(
         }
       };
       ws.onclose = () => {
+        if (!isCurrent()) return;
         if (wsRef.current === ws) wsRef.current = null;
         scheduleReconnect();
       };
       ws.onerror = () => ws.close();
     }
+    function reconnectAfterAuthentication() {
+      if (cancelled) return;
+      generation += 1;
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      attemptRef.current = 0;
+      const previous = wsRef.current;
+      wsRef.current = null;
+      previous?.close();
+      void connect();
+    }
+    window.addEventListener(OPERATOR_AUTH_REFRESHED, reconnectAfterAuthentication);
     void connect();
     return () => {
       cancelled = true;
+      generation += 1;
+      window.removeEventListener(OPERATOR_AUTH_REFRESHED, reconnectAfterAuthentication);
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
       wsRef.current?.close();
       wsRef.current = null;

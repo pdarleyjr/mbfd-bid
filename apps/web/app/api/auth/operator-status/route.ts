@@ -32,6 +32,7 @@ export async function GET() {
       : null;
   const current = currentToken ? await verifyJwt(currentToken, key).catch(() => null) : null;
   if (
+    !currentToken ||
     !current ||
     current.role !== 'admin' ||
     operatorSessionKey(current) !== operatorSessionKey(original)

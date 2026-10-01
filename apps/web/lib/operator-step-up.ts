@@ -5,6 +5,17 @@ export const OPERATOR_STEP_UP_MAX_AGE_SEC = 300;
 export const BEFORE_OPERATOR_COMMAND = 'mbfd-before-operator-command';
 export const OPERATOR_STEP_UP_REQUIRED = 'mbfd-operator-step-up-required';
 export const OPERATOR_AUTH_REFRESHED = 'mbfd-operator-auth-refreshed';
+export const OPERATOR_REAUTH_STARTED = 'mbfd-operator-reauth-started';
+
+let authGeneration = 0;
+/** Cache invalidation marker only; it never grants command authority. */
+export function operatorAuthGeneration(): number {
+  return authGeneration;
+}
+export function notifyOperatorAuthRefreshed(): void {
+  authGeneration += 1;
+  window.dispatchEvent(new Event(OPERATOR_AUTH_REFRESHED));
+}
 
 export type OperatorStepUpStatus = {
   operatorKey: string;
@@ -54,7 +65,20 @@ export async function observeOperatorResponse(response: Response): Promise<Respo
       .clone()
       .json()
       .catch(() => null);
-    if (body && typeof body === 'object' && 'error' in body && body.error === 'step_up_required')
+    if (
+      body &&
+      typeof body === 'object' &&
+      'error' in body &&
+      typeof body.error === 'string' &&
+      [
+        'step_up_required',
+        'missing_auth',
+        'invalid_session',
+        'invalid_identity',
+        'invalid_token',
+        'session_revalidation_required',
+      ].includes(body.error)
+    )
       window.dispatchEvent(new Event(OPERATOR_STEP_UP_REQUIRED));
   }
   return response;

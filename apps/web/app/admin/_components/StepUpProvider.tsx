@@ -4,10 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   BEFORE_OPERATOR_COMMAND,
-  OPERATOR_AUTH_REFRESHED,
+  OPERATOR_REAUTH_STARTED,
   OPERATOR_STEP_UP_REQUIRED,
   type OperatorStepUpStatus,
   beforeOperatorCommand,
+  notifyOperatorAuthRefreshed,
   observeOperatorResponse,
   operatorSignInRemaining,
   parseOperatorStepUpStatus,
@@ -48,8 +49,9 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
   const initialOperator = useRef(initialStatus?.operatorKey ?? null);
   const clock = useRef({ status: initialStatus ?? null, receivedAt: Date.now() });
   const blocked = useRef(false);
-  const required = useRef(false);
+  const required = useRef(initialStatus === undefined);
   const checking = useRef(false);
+  const rejectionGeneration = useRef(0);
   const [remaining, setRemaining] = useState(
     initialStatus ? operatorSignInRemaining(initialStatus) : null,
   );
@@ -68,7 +70,7 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
           );
     }
     function beforeCommand(event: Event) {
-      if (blocked.current || required.current || remainingNow() === 0) {
+      if (blocked.current || required.current || checking.current || remainingNow() === 0) {
         event.preventDefault();
         (event as CustomEvent<{ error: string }>).detail.error = blocked.current
           ? 'operator_changed'
@@ -77,6 +79,7 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
       }
     }
     const needStepUp = () => {
+      rejectionGeneration.current += 1;
       required.current = true;
       setRemaining(0);
       setOpen(true);
@@ -105,9 +108,17 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
     };
   }, []);
 
+  function startReauthentication() {
+    required.current = true;
+    setRemaining(0);
+    window.dispatchEvent(new Event(OPERATOR_REAUTH_STARTED));
+  }
+
   async function recheck() {
     if (checking.current || blocked.current) return;
     checking.current = true;
+    startReauthentication();
+    const recheckGeneration = rejectionGeneration.current;
     setBusy(true);
     setMessage('');
     try {
@@ -132,14 +143,18 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
           'The sign-in is still expired. Complete a fresh Hub sign-in, then recheck.',
         );
       clock.current = { status, receivedAt: Date.now() };
-      required.current = false;
+      await client.invalidateQueries();
+      if (rejectionGeneration.current !== recheckGeneration)
+        throw new Error(
+          'The session could not be verified while refreshing the console. Recheck sign-in before recording a command. Your unfinished work is retained.',
+        );
       setRemaining(operatorSignInRemaining(status));
       setOpen(false);
       setMessage(
         'Operator sign-in refreshed. Review the latest state, then retry the command deliberately.',
       );
-      await client.invalidateQueries();
-      window.dispatchEvent(new Event(OPERATOR_AUTH_REFRESHED));
+      notifyOperatorAuthRefreshed();
+      required.current = false;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Sign-in could not be verified.');
     } finally {
@@ -172,11 +187,7 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
           >
             Refresh operator sign-in
           </Button>
-          {message && (
-            <p role="status" className="w-full">
-              {message}
-            </p>
-          )}
+          {message && <output className="w-full">{message}</output>}
         </aside>
       )}
       <Dialog
@@ -196,14 +207,11 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
             href={stepUpAuthenticationPath('/admin/step-up', '')}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={startReauthentication}
           >
             Sign in through Hub
           </a>
-          {message && (
-            <p role="status" className="mt-3 text-sm">
-              {message}
-            </p>
-          )}
+          {message && <output className="mt-3 block text-sm">{message}</output>}
           <div className="mt-4 flex flex-wrap gap-3">
             <Button type="button" disabled={busy || identityChanged} onClick={() => void recheck()}>
               {busy ? 'Checking…' : 'Recheck sign-in'}
