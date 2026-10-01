@@ -381,4 +381,69 @@ describe('early specialty award A-Day at the ordinary seniority turn', () => {
     const fifth = apply(fourth, command('live.disposition', { disposition: 'PASS' }), 'pass-5');
     expect(fifth).toMatchObject({ currentPhase: 'a_day_bid', currentBidderId: 2 });
   });
+
+  it('settles unreachable contact after the early winner later records their owed A-Day', () => {
+    let state = earlyAward(initial(), 2, 's1');
+    state = apply(
+      state,
+      command('live.record_selection', { memberId: 1, positionId: 'p3', aDay: 'G1' }),
+      'ordinary-1',
+    );
+    state = apply(
+      state,
+      command('live.record_contact_attempt', { memberId: 2, method: 'PHONE' }),
+      'contact-2',
+    );
+    state = apply(
+      state,
+      command('live.disposition', { disposition: 'UNREACHABLE' }),
+      'unreachable-2',
+    );
+    expect(state.annual?.unresolvedMemberIds).toEqual([2]);
+    state = apply(
+      state,
+      command('live.record_selection', { memberId: 3, positionId: 'p4', aDay: 'G3' }),
+      'ordinary-3',
+    );
+    state = apply(
+      state,
+      command('live.record_selection', { memberId: 4, positionId: 'p5', aDay: 'G4' }),
+      'ordinary-4',
+    );
+    state = apply(state, command('live.disposition', { disposition: 'PASS' }), 'pass-5');
+    state = JSON.parse(JSON.stringify(state)) as BidSessionState;
+    state = apply(state, command('live.record_a_day', { memberId: 2, aDay: 'G2' }), 'deferred-2');
+    expect(state).toMatchObject({ currentPhase: 'complete', annual: { unresolvedMemberIds: [] } });
+    expect(state.annual?.contactAttempts).toEqual([
+      expect.objectContaining({ memberId: 2, method: 'PHONE' }),
+    ]);
+    expect(state.live?.dispositions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ memberId: 2, disposition: 'UNREACHABLE' }),
+      ]),
+    );
+    expect(Object.values(state.fills).filter((fill) => fill.memberId === 2)).toHaveLength(1);
+    expect(
+      reduceLiveBidCommand(
+        state,
+        policy,
+        command('live.complete_session', { expectedSeq: state.lastSeq }),
+        9_000,
+        'complete',
+        false,
+        aDayMembers,
+      ),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('permits contact tracking for an awarded member while their deferred A-Day remains owed', () => {
+    const state = earlyAward(initial(), 2, 's1');
+    const unreachable = apply(
+      state,
+      command('live.declare_unreachable', { memberId: 2 }),
+      'unreachable-early-2',
+    );
+    expect(unreachable.annual?.unresolvedMemberIds).toEqual([2]);
+    expect(unreachable.fills.s1).toMatchObject({ memberId: 2 });
+  });
 });
