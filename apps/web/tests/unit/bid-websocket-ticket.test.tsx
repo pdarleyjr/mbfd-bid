@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createBidStore } from '../../app/bid/_hooks/useBidStore';
 import { useBidWebSocket } from '../../app/bid/_hooks/useBidWebSocket';
+import { OPERATOR_AUTH_REFRESHED } from '../../lib/operator-step-up';
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -124,6 +125,7 @@ describe('useBidWebSocket ticket protocol', () => {
     });
     document.body.replaceChildren();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('obtains a same-origin opaque ticket, sends it only as a WebSocket subprotocol, and never sends a JWT in the URL or hello frame', async () => {
@@ -179,5 +181,63 @@ describe('useBidWebSocket ticket protocol', () => {
 
     expect(onSyntheticSpecialtyState).toHaveBeenCalledTimes(1);
     expect(onSyntheticSpecialtyState).toHaveBeenCalledWith(completeSyntheticSpecialtyStateSignal);
+  });
+
+  it('reconnects with a new ticket after verified reauthentication, preserves sequence and ignores the old close callback', async () => {
+    vi.useFakeTimers();
+    let ticketSequence = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ticket: `opaque-${++ticketSequence}` })),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    act(() => root.render(<Harness />));
+    await settle();
+    const original = FakeWebSocket.instances[0];
+    await act(async () => original?.open());
+    await act(async () => window.dispatchEvent(new Event(OPERATOR_AUTH_REFRESHED)));
+    await settle();
+    expect(original?.readyState).toBe(3);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const recovered = FakeWebSocket.instances[1];
+    expect(recovered?.protocols).toEqual(['mbfd-bid-v1', 'opaque-2']);
+    await act(async () => recovered?.open());
+    expect(recovered?.sent).toEqual([JSON.stringify({ type: 'hello', lastSeq: 9 })]);
+    await act(async () => {
+      original?.onclose?.();
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it('discards a late preauthentication ticket response after recovery has established the new transport', async () => {
+    let finishOldTicket: ((response: Response) => void) | undefined;
+    const pending = new Promise<Response>((resolve) => {
+      finishOldTicket = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockReturnValueOnce(pending)
+        .mockResolvedValue(Response.json({ ticket: 'new-ticket' })),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    act(() => root.render(<Harness />));
+    await settle();
+    await act(async () => window.dispatchEvent(new Event(OPERATOR_AUTH_REFRESHED)));
+    await settle();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(FakeWebSocket.instances[0]?.protocols).toEqual(['mbfd-bid-v1', 'new-ticket']);
+    await act(async () => finishOldTicket?.(Response.json({ ticket: 'old-ticket' })));
+    await settle();
+    expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });
