@@ -120,17 +120,29 @@ export function LiveCommandBar({
 
   return (
     <header data-testid="live-command-bar" className="border-b border-border bg-white">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 text-foreground">
-        <div className="flex items-baseline gap-2">
+      <div
+        className={
+          managed
+            ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-2 text-foreground'
+            : 'flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 text-foreground'
+        }
+      >
+        <div className="flex min-w-0 flex-wrap items-baseline gap-2">
           <h1 className="font-heading text-lg font-bold">
-            {isMock ? 'Mock rehearsal — MBFD Annual Bid' : 'MBFD Annual Bid'}
+            {managed
+              ? isMock
+                ? 'Mock rehearsal'
+                : 'Annual bid'
+              : isMock
+                ? 'Mock rehearsal — MBFD Annual Bid'
+                : 'MBFD Annual Bid'}
           </h1>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-foreground">
             {currentPhase}
           </span>
         </div>
 
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex shrink-0 items-center gap-4 whitespace-nowrap text-sm">
           <span title="Session uptime">
             <span className="text-muted-foreground">Session</span>{' '}
             <span data-testid="session-uptime" className="font-mono tabular-nums">
@@ -149,12 +161,22 @@ export function LiveCommandBar({
           </span>
         </div>
 
-        <div className="min-w-0 flex-1 text-sm">
+        <div
+          className={
+            managed ? 'col-span-2 min-w-0 text-sm md:col-span-1' : 'min-w-0 flex-1 text-sm'
+          }
+        >
           <span className="mr-2 text-muted-foreground">Active:</span>
-          <BidderCard bidder={currentBidder} fallbackMemberId={currentBidderId} />
+          <BidderCard bidder={currentBidder} fallbackMemberId={currentBidderId} compact={managed} />
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div
+          className={
+            managed
+              ? 'col-span-2 flex flex-wrap items-center gap-1.5 md:col-span-1 md:justify-end'
+              : 'flex items-center gap-1.5'
+          }
+        >
           {managed ? (
             <Button
               type="button"

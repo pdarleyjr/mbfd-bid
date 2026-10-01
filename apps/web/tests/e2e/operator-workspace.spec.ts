@@ -81,6 +81,16 @@ test('member details, historical assignment and explicit bid confirmation work i
     await expect(panel.getByText('Historical Rescue Lieutenant', { exact: true })).toBeVisible();
     await expect(panel.getByText(/old-A109.*Group 4/)).toBeVisible();
     const available = page.getByRole('region', { name: 'Available positions' });
+    await expect(available.getByRole('button', { name: /Engine 2/ })).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(`operator-initial-${width}.png`),
+      fullPage: false,
+    });
+    if (width >= 810) {
+      const firstSeat = await available.getByRole('button', { name: /Engine 2/ }).boundingBox();
+      expect(firstSeat).not.toBeNull();
+      expect((firstSeat?.y ?? height) + (firstSeat?.height ?? 0)).toBeLessThanOrEqual(height);
+    }
     await available.getByRole('button', { name: /Engine 2/ }).click();
     expect(commands).toHaveLength(0);
     const group = page.getByRole('combobox', { name: 'Selection A-Day' });
