@@ -292,19 +292,39 @@ describe('server-authoritative fallback activation', () => {
   });
 
   it.each([
-    ['fallback-designated-de', 'PDF p7 Procedure12'],
-    ['fallback-rescue-float', 'PDF p7 Procedure11b'],
-    ['fallback-fire-investigator', 'PDF p2 Procedure3e; Rules & Points!A176:C189'],
-    ['fallback-main-airtech', 'PDF p4 Procedure7(a), final minimum-qualified sentence'],
-    ['fallback-captain5', 'PDF p3 Procedure6b; Rules & Points!A3:C14; Points!BZ5:CE5'],
+    [
+      'fallback-designated-de',
+      'PDF p7 Procedure12',
+      ['103', '104', '202', '303', '304', '402', '707', '708'],
+    ],
+    [
+      'fallback-rescue-float',
+      'PDF p7 Procedure11b',
+      ['213', '215', '701', '702', '703', '704', '705', '706'],
+    ],
+    ['fallback-fire-investigator', 'PDF p2 Procedure3e; Rules & Points!A176:C189', ['305']],
+    ['fallback-main-airtech', 'PDF p4 Procedure7(a), final minimum-qualified sentence', ['203']],
+    ['fallback-captain5', 'PDF p3 Procedure6b; Rules & Points!A3:C14; Points!BZ5:CE5', ['212']],
     [
       'fallback-marine-officer',
       'PDF pp4-6 Procedure8; user clarification2026-09-19 minimum-qualified only',
+      ['601'],
     ],
   ])(
     'recognizes source-backed Version 11 timing for %s without changing immutable input',
-    (id, sourceRef) => {
+    (id, sourceRef, suffixes) => {
       const f = fixture(null);
+      const positionIds = ['A', 'B', 'C'].flatMap((shift) =>
+        suffixes.map((suffix) => `${shift}${suffix}`),
+      );
+      const positionId = positionIds[0];
+      if (!positionId) throw new Error('Reviewed target required');
+      f.positionId = positionId;
+      const sourceRule = f.snapshot.ruleBookMaterial.rules[0];
+      const sourceStage = f.snapshot.settings.livePolicy.stages[0];
+      if (!sourceRule || !sourceStage) throw new Error('Target rule and stage required');
+      sourceRule.positionId = positionId;
+      sourceStage.opportunityPositionIds = [positionId];
       f.snapshot.settings.livePolicy.policyRevision = 'final2026-july-source-reconciliation';
       f.snapshot.annualPolicyEvidence = {
         documentId: 'sealed-policy',
@@ -313,7 +333,7 @@ describe('server-authoritative fallback activation', () => {
         executablePolicyRevision: 'final2026-july-source-reconciliation',
         policyText: 'Final governing July 2026 Bid policy',
       };
-      Object.assign(f.fallback, { id, sourceDecisionId: id, sourceRef });
+      Object.assign(f.fallback, { id, sourceDecisionId: id, sourceRef, positionIds });
       const sourceTier = f.fallback.tiers[0];
       if (!sourceTier) throw new Error('Forced tier required');
       sourceTier.comparator = [{ key: 'DEPARTMENT_SERVICE_BID_ORDINAL', direction: 'DESC' }];
@@ -332,7 +352,7 @@ describe('server-authoritative fallback activation', () => {
         tier.currentlyAssignedOnly = true;
         f.snapshot.members = f.snapshot.members.map((member) => ({
           ...member,
-          currentBidPositionIds: ['seat'],
+          currentBidPositionIds: [positionId],
         }));
       }
       exhaustOrdinary(f);
@@ -340,6 +360,12 @@ describe('server-authoritative fallback activation', () => {
       expect(evaluateBidFallback(f)).toMatchObject({ ok: true });
       expect(JSON.stringify(f.snapshot)).toBe(before);
       expect(f.fallback).not.toHaveProperty('activation');
+      f.fallback.positionIds = [...positionIds, 'copied-source-unapproved-scope'];
+      expect(evaluateBidFallback(f)).toMatchObject({
+        ok: false,
+        code: 'FALLBACK_TIMING_NEEDS_ADMIN_DECISION',
+      });
+      f.fallback.positionIds = positionIds;
       sourceTier.comparator = [{ key: 'RSC_SENIORITY', direction: 'DESC' }];
       expect(evaluateBidFallback(f)).toMatchObject({
         ok: false,

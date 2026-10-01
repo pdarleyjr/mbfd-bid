@@ -7,6 +7,24 @@ type Fallback = NonNullable<FrozenAnnualOperationsPolicy['fallbackPolicies']>[nu
 type Activation = NonNullable<Fallback['activation']>;
 type Snapshot = Extract<BidSessionPolicySnapshot, { v: 3 }>;
 
+function combatPositions(...suffixes: string[]): string[] {
+  return ['A', 'B', 'C'].flatMap((shift) => suffixes.map((suffix) => `${shift}${suffix}`));
+}
+
+/** Reviewed Version11 source scopes, not the currently displayed catalog. */
+const july2026PositionScopes: Readonly<Record<string, readonly string[]>> = {
+  'fallback-captain5': combatPositions('212'),
+  'fallback-designated-de': combatPositions('103', '104', '202', '303', '304', '402', '707', '708'),
+  'fallback-fire-investigator': combatPositions('305'),
+  'fallback-main-airtech': combatPositions('203'),
+  'fallback-marine-deckhand': combatPositions('604'),
+  'fallback-marine-engineer': combatPositions('603'),
+  'fallback-marine-float': combatPositions('605', '606'),
+  'fallback-marine-officer': combatPositions('601'),
+  'fallback-marine-operator': combatPositions('602'),
+  'fallback-rescue-float': combatPositions('213', '215', '701', '702', '703', '704', '705', '706'),
+};
+
 /** Exact source references read back from the sealed July-policy configuration.
  * This compatibility interpretation is returned only; it never alters saved
  * definitions, their hashes, or historical session snapshots. */
@@ -56,6 +74,7 @@ const july2026References: Readonly<
 function sourceActivation(snapshot: Snapshot, fallback: Fallback): Activation | null {
   if (fallback.activation !== undefined) return fallback.activation;
   const reference = july2026References[fallback.id];
+  const positionScope = july2026PositionScopes[fallback.id];
   const tier = fallback.tiers[0];
   if (
     snapshot.settings.v !== 3 ||
@@ -64,6 +83,9 @@ function sourceActivation(snapshot: Snapshot, fallback: Fallback): Activation | 
       'final2026-july-source-reconciliation' ||
     snapshot.annualPolicyEvidence.ruleBookVersion !== snapshot.ruleBookVersion ||
     reference === undefined ||
+    positionScope === undefined ||
+    fallback.positionIds.length !== positionScope.length ||
+    !positionScope.every((id) => fallback.positionIds.includes(id)) ||
     fallback.sourceDecisionId !== fallback.id ||
     fallback.sourceRef !== reference.sourceRef ||
     fallback.tiers.length !== 1 ||
