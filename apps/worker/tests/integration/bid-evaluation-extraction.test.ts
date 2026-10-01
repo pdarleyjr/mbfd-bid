@@ -5,7 +5,9 @@ import {
   BidEvaluationSchema,
   type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
+  FrozenLiveBidPolicySchema,
   LiveBidActionSchema,
+  evaluate2026RankCapacity,
 } from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDb } from '../../src/db/index.js';
@@ -18,6 +20,7 @@ import {
   prepareCapturedBidEvaluation,
   referencedBidEvaluationDisputes,
 } from '../../src/lib/bid-policy.js';
+import { resolveStageParticipantMembership } from '../../src/lib/stage-participant-selector.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const CAPTURED_AT = Date.parse('2027-02-10T14:23:45.678Z');
@@ -525,6 +528,351 @@ describe('Bid evaluation extraction with a real common Department capture', () =
     deepStrictEqual(h.sqlite.serialize(), bytes);
     return result;
   }
+
+  async function reservedHolder() {
+    const candidate = material();
+    const seat = first(candidate.ruleBookMaterial.positions);
+    seat.rankRequired = 'LT';
+    first(candidate.ruleBookMaterial.rules).requiredCriteriaJson =
+      '{"rank":["LT"],"credentials":[],"custom":[]}';
+    candidate.ruleBookMaterial.positions.push({
+      ...seat,
+      id: 'synthetic-closed-training',
+      shift: 'D',
+      division: 'Days',
+      bidParticipation: 'RESERVED_NON_BIDDABLE',
+    });
+    candidate.coverage = evaluateRuleBookCoverage({
+      ruleBookVersion: '2027.1',
+      rules: candidate.ruleBookMaterial.rules,
+      positions: candidate.ruleBookMaterial.positions,
+    });
+    candidate.bindings.push({
+      positionId: 'synthetic-closed-training',
+      staffingPositionId: 'synthetic-training-staffing',
+      reviewStatus: 'approved',
+      authoritativeSourceRef: 'synthetic:approved-training-crosswalk',
+    });
+    const livePolicy = FrozenLiveBidPolicySchema.parse({
+      v: 1,
+      policyRevision: 'synthetic-retained-holder-policy',
+      stages: [
+        {
+          id: 'lieutenants',
+          label: 'Synthetic LT stage',
+          order: 0,
+          memberIds: [10001, 10003],
+          opportunityPositionIds: ['synthetic-seat'],
+          kind: 'LIEUTENANT',
+        },
+      ],
+      dispositions: BidDispositionSchema.options.map((disposition) => ({
+        disposition,
+        advances: true,
+        returns: false,
+        returnStageId: null,
+        retainsLaterSelectionRights: false,
+        terminal: false,
+        requiresReason: true,
+        requiresEvidence: false,
+        contactPolicyReference: null,
+      })),
+      actionPermissions: LiveBidActionSchema.options.map((action) => ({
+        action,
+        actorMemberIds: [10003],
+      })),
+      specialtyCatalogReference: null,
+      aDayPolicyReference: null,
+      transitionPolicyReference: null,
+      publicationPolicyReference: null,
+      annualOperations: {
+        v: 1,
+        stageOrder: ['lieutenants'],
+        requiredTopologyPositionIds: ['synthetic-seat'],
+        assignmentTerms: [
+          {
+            id: 'synthetic-training-term',
+            positionIds: ['synthetic-closed-training'],
+            requiredServiceMonths: 36,
+            reopenAfterConsecutiveCycles: 3,
+            closedForThisBid: true,
+            sourceRef: 'synthetic:annual-training-closure',
+          },
+        ],
+        contact: { minimumAttempts: 1, timingMode: 'OPERATOR_DISCRETION', durationSeconds: null },
+        aDay: {
+          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          min: 0,
+          max: 20,
+          captainDcMax: 5,
+          specialtyMaximums: { MARINE_ASSIGNED: 5, MARINE_FLOAT: 5, DE: 5, SWAT: 5 },
+        },
+      },
+    });
+    candidate.settings = { ...candidate.settings, v: 3, livePolicy };
+    const evidence = await readOnly(() => loadBidEvaluationEvidence(getDb(h.env.DB), 2027));
+    for (const member of evidence.memberRows) {
+      if (member.id === 10001 || member.id === 10003) {
+        member.rank = 'LT';
+        member.bidCategory = 'OFC';
+      }
+    }
+    for (const event of evidence.personnelEventRows) {
+      if (event.memberId === 10003) {
+        event.rankAfter = 'LT';
+        event.beforeState = JSON.stringify({ ...JSON.parse(event.beforeState), rank: 'LT' });
+        event.afterState = JSON.stringify({ ...JSON.parse(event.afterState), rank: 'LT' });
+      }
+    }
+    evidence.staffingRows.push({
+      id: 'synthetic-training-staffing',
+      reviewStatus: 'approved',
+      activeFrom: '2020-01-01',
+      activeTo: null,
+    });
+    evidence.assignmentRows.push({
+      id: 'synthetic-training-assignment',
+      memberId: 10001,
+      staffingPositionId: 'synthetic-training-staffing',
+      originType: 'ADMIN_TRANSFER',
+      acceptedImportId: null,
+      acceptedImportSnapshotAsOf: null,
+      status: 'active',
+      effectiveFrom: '2026-01-01',
+      effectiveTo: null,
+    });
+    return { candidate, evidence, livePolicy };
+  }
+
+  it.each(['live', 'mock', 'participant_preview'] as const)(
+    'retains the approved closed RESERVED holder in %s without inventing tenure or consuming an open LT award',
+    async (purpose) => {
+      const { candidate, evidence, livePolicy } = await reservedHolder();
+      const originals = structuredClone({ candidate, evidence });
+      const result = await readOnly(() =>
+        prepareCapturedBidEvaluation(getDb(h.env.DB), candidate, evidence, CAPTURED_AT, purpose),
+      );
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      if (!result.ok) throw new Error(result.code);
+      expect(first(result.evaluation.members)).toMatchObject({
+        memberId: 10001,
+        pool: 'EXCLUDED',
+        exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+        authoritativeAssignmentId: 'synthetic-training-assignment',
+        rank: 'LT',
+      });
+      expect(first(result.evaluation.members)).not.toHaveProperty('termParticipation');
+      expect(result.evaluation.tenureEvidence).toEqual([]);
+      const membership = resolveStageParticipantMembership({
+        pinnedEvaluation: result.evaluation,
+        executionPolicy: livePolicy,
+        stageParticipantSources: [
+          {
+            stageId: 'lieutenants',
+            sourceRef: 'synthetic:ordinary-LT-population',
+            participantSource: {
+              type: 'FILTER',
+              ranks: ['LT'],
+              active: true,
+              bidParticipation: 'BIDDABLE',
+            },
+            ordering: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+          },
+        ],
+      });
+      expect(membership, JSON.stringify(membership)).toMatchObject({
+        ok: true,
+        stages: [{ matchedMemberIds: [10003] }],
+      });
+      if (!membership.ok) throw new Error(membership.code);
+      expect(
+        resolveStageParticipantMembership({
+          pinnedEvaluation: result.evaluation,
+          executionPolicy: livePolicy,
+          stageParticipantSources: [
+            {
+              stageId: 'lieutenants',
+              sourceRef: 'synthetic:explicit-population-cannot-override-retention',
+              participantSource: { type: 'EXPLICIT_MEMBERS', memberIds: [10001, 10003] },
+              ordering: [{ key: 'RANK_SENIORITY', direction: 'ASC' }],
+            },
+          ],
+        }),
+      ).toMatchObject({
+        ok: false,
+        code: 'stage_authoring_member_not_participant',
+        memberIds: [10001],
+      });
+      const capacity = evaluate2026RankCapacity(
+        {
+          positions: candidate.ruleBookMaterial.positions.map((position) => ({
+            ...position,
+            division: position.division ?? 'Combat',
+            isFloating: position.isFloating ?? false,
+            isVacantByDesign: position.isVacantByDesign ?? false,
+          })),
+          participation: candidate.ruleBookMaterial.positions.map((position) => ({
+            positionId: position.id,
+            bidParticipation: position.bidParticipation,
+            authoritativeSourceRef: 'synthetic:reviewed-position-participation',
+          })),
+        },
+        membership.stages.map((stage) => ({
+          id: stage.stageId,
+          memberIds: stage.matchedMemberIds,
+        })),
+      );
+      expect(capacity).toMatchObject({ capacity: { LT: 1 }, bidders: { LT: 1 }, shortages: [] });
+      expect({ candidate, evidence }).toStrictEqual(originals);
+    },
+  );
+
+  it.each(['missing binding', 'unapproved binding', 'unapproved staffing'] as const)(
+    'fails closed for a reserved role with %s rather than inventing holder exclusion',
+    async (fault) => {
+      const { candidate, evidence } = await reservedHolder();
+      if (fault === 'missing binding') candidate.bindings = [];
+      if (fault === 'unapproved binding') first(candidate.bindings).reviewStatus = 'draft';
+      if (fault === 'unapproved staffing') first(evidence.staffingRows).reviewStatus = 'draft';
+      const expectedCode =
+        fault === 'missing binding'
+          ? 'non_biddable_position_staffing_binding_missing'
+          : fault === 'unapproved binding'
+            ? 'non_biddable_position_staffing_binding_not_approved'
+            : 'non_biddable_staffing_position_not_approved';
+      expect(
+        await readOnly(() =>
+          prepareCapturedBidEvaluation(getDb(h.env.DB), candidate, evidence, CAPTURED_AT, 'live'),
+        ),
+      ).toMatchObject({
+        ok: false,
+        code: expectedCode,
+        positionIds: ['synthetic-closed-training'],
+      });
+    },
+  );
+
+  it.each(['vacant', 'future assignment', 'ended before evaluation', 'cancelled'] as const)(
+    'does not create a retained holder from %s',
+    async (state) => {
+      const { candidate, evidence } = await reservedHolder();
+      if (state === 'vacant') evidence.assignmentRows = [];
+      if (state === 'future assignment')
+        first(evidence.assignmentRows).effectiveFrom = '2027-02-01';
+      if (state === 'ended before evaluation')
+        Object.assign(first(evidence.assignmentRows), {
+          status: 'ended',
+          effectiveTo: '2026-12-31',
+        });
+      if (state === 'cancelled') first(evidence.assignmentRows).status = 'cancelled';
+      const result = await readOnly(() =>
+        prepareCapturedBidEvaluation(getDb(h.env.DB), candidate, evidence, CAPTURED_AT, 'live'),
+      );
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      if (!result.ok) throw new Error(result.code);
+      expect(first(result.evaluation.members)).toMatchObject({
+        pool: 'OFC',
+        exclusionReason: null,
+        authoritativeAssignmentId: null,
+      });
+    },
+  );
+
+  it('rejects overlapping current reserved holders even when annual closure needs no tenure', async () => {
+    const { candidate, evidence } = await reservedHolder();
+    evidence.assignmentRows.push({
+      ...first(evidence.assignmentRows),
+      id: 'synthetic-conflicting-holder',
+      memberId: 10003,
+    });
+    expect(
+      await readOnly(() =>
+        prepareCapturedBidEvaluation(getDb(h.env.DB), candidate, evidence, CAPTURED_AT, 'live'),
+      ),
+    ).toMatchObject({
+      ok: false,
+      code: 'assignment_term_evidence_requires_review',
+      termIssues: [{ positionId: 'synthetic-closed-training', code: 'term_holder_ambiguous' }],
+    });
+  });
+
+  it('fails closed when one member holds two current reserved assignments', async () => {
+    const { candidate, evidence } = await reservedHolder();
+    candidate.ruleBookMaterial.positions.push({
+      ...first(candidate.ruleBookMaterial.positions),
+      id: 'synthetic-second-reserved',
+      bidParticipation: 'RESERVED_NON_BIDDABLE',
+    });
+    candidate.coverage = evaluateRuleBookCoverage({
+      ruleBookVersion: '2027.1',
+      rules: candidate.ruleBookMaterial.rules,
+      positions: candidate.ruleBookMaterial.positions,
+    });
+    candidate.bindings.push({
+      ...first(candidate.bindings),
+      positionId: 'synthetic-second-reserved',
+      staffingPositionId: 'synthetic-second-staffing',
+    });
+    evidence.staffingRows.push({
+      ...first(evidence.staffingRows),
+      id: 'synthetic-second-staffing',
+    });
+    evidence.assignmentRows.push({
+      ...first(evidence.assignmentRows),
+      id: 'synthetic-second-assignment',
+      staffingPositionId: 'synthetic-second-staffing',
+    });
+    expect(
+      await readOnly(() =>
+        prepareCapturedBidEvaluation(getDb(h.env.DB), candidate, evidence, CAPTURED_AT, 'live'),
+      ),
+    ).toMatchObject({
+      ok: false,
+      code: 'non_biddable_assignment_ambiguous',
+      positionIds: ['synthetic-closed-training', 'synthetic-second-reserved'],
+    });
+  });
+
+  it.each([12, 36])(
+    'preserves evidence-backed term leave rules for a reserved holder with %s service months',
+    async (months) => {
+      const { candidate, evidence, livePolicy } = await reservedHolder();
+      const term = first(livePolicy.annualOperations?.assignmentTerms ?? []);
+      term.closedForThisBid = false;
+      evidence.tenureRows.push({
+        id: 'synthetic-reviewed-tenure',
+        staffingPositionId: 'synthetic-training-staffing',
+        revision: 1,
+        effectiveOn: '2026-01-01',
+        status: 'PROTECTED',
+        memberId: 10001,
+        protectedFrom: '2026-01-01',
+        protectedThrough: '2028-12-31',
+        sourceRef: 'synthetic:reviewed-service-facts',
+        reason: 'Synthetic service and cycle evidence',
+        actorSubject: 'synthetic-editor',
+        termMemberId: 10001,
+        accumulatedServiceMonths: months,
+        consecutiveBidCycles: 1,
+      });
+      const result = await readOnly(() =>
+        prepareCapturedBidEvaluation(getDb(h.env.DB), candidate, evidence, CAPTURED_AT, 'live'),
+      );
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      if (!result.ok) throw new Error(result.code);
+      const holder = first(result.evaluation.members);
+      expect(holder.pool).toBe(months === 36 ? 'OFC' : 'EXCLUDED');
+      if (months === 36)
+        expect(holder.termParticipation).toMatchObject({
+          memberMayLeave: true,
+          protected: true,
+          voluntaryOnly: true,
+          assignmentId: 'synthetic-training-assignment',
+          evidenceId: 'synthetic-reviewed-tenure',
+        });
+      else expect(holder).not.toHaveProperty('termParticipation');
+    },
+  );
 
   function dispute(
     input: {

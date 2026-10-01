@@ -373,15 +373,18 @@ test('independent board views preserve source boundaries at phone, tablet and de
     await page.screenshot({ path: testInfo.outputPath(`roster-colors-${nextShift}.png`) });
   }
   await page.goto('/admin');
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible({
+  const today = page.getByRole('main');
+  await expect(today).toHaveCount(1);
+  await expect(today.getByRole('heading', { name: 'Today', exact: true })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByLabel('Staffing date')).toBeVisible();
-  await expect(page.getByText('No reviewed staffing positions for this date')).toBeVisible();
+  await expect(today.getByLabel('Staffing date')).toHaveCount(1);
+  await expect(today.getByLabel('Staffing date')).toBeVisible();
+  await expect(today.getByText('No reviewed staffing positions for this date')).toBeVisible();
   for (const width of [390, 646, 1486, 1857]) {
     await page.setViewportSize({ width, height: 970 });
     if (width >= 1486) {
-      const card = await page.getByRole('heading', { name: 'Today', exact: true }).boundingBox();
+      const card = await today.getByRole('heading', { name: 'Today', exact: true }).boundingBox();
       const main = await page.getByRole('main').boundingBox();
       if (!card || !main) throw new Error('Missing Today bounds');
       expect(card.y - main.y).toBeLessThan(170);
