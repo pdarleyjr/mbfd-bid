@@ -6,7 +6,12 @@ afterEach(() => {
 });
 
 it('reuses the CSRF bootstrap across a bulk import and preserves each command key', async () => {
-  vi.stubGlobal('window', { location: { origin: 'https://bid.mbfdhub.com' } });
+  vi.stubGlobal(
+    'window',
+    Object.assign(new EventTarget(), {
+      location: { origin: 'https://bid.mbfdhub.com' },
+    }),
+  );
   let bootstraps = 0;
   const writes: RequestInit[] = [];
   vi.stubGlobal(
