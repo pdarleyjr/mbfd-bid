@@ -8,7 +8,6 @@ import {
   returnAtCurrentSequence,
   upsertPreferenceSheet,
   validateAnnualOperationsReadiness,
-  validateSpecialtyADayMaximum,
   validateUnreachableContact,
 } from '../../src/lib/annual-bid-operations.js';
 
@@ -249,12 +248,6 @@ describe('annual bid operations', () => {
         credentialNames: ['SWAT'],
       }),
     ).toEqual({ ok: false, code: 'MEMBERSHIP_SPECIALTY_MUST_NOT_INVENT_POSITION' });
-    expect(
-      validateSpecialtyADayMaximum({ specialty: 'SWAT', existingCount: 1, policy: operations }),
-    ).toEqual({
-      ok: false,
-      code: 'SPECIALTY_A_DAY_MAX_REACHED',
-    });
   });
 
   it('rejects changes after the preference sheet has been frozen', () => {

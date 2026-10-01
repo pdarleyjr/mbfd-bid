@@ -184,7 +184,6 @@ export function applyKnown2026Setup(
         min: null,
         max: null,
         captainDcMax: null,
-        specialtyMaximums: { ...annual.aDay.specialtyMaximums, MARINE_FLOAT: 2 },
         execution: {
           ...(existingADayExecution ?? {
             timing: 'SIMULTANEOUS' as const,

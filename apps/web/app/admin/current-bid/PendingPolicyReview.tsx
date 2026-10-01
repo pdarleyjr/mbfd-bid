@@ -181,21 +181,11 @@ export function PendingPolicyReview({
               )}
             </div>
           ))}
-          {numberInput(
-            'Marine float maximum per group',
-            annual.aDay.specialtyMaximums.MARINE_FLOAT,
-            (value) =>
-              update({
-                ...policy,
-                annualOperations: {
-                  ...annual,
-                  aDay: {
-                    ...annual.aDay,
-                    specialtyMaximums: { ...annual.aDay.specialtyMaximums, MARINE_FLOAT: value },
-                  },
-                },
-              }),
-          )}
+          <p>
+            Review source-backed A-Day limits and membership distribution in the A-Day and Specialty
+            rules sections. Historical unscoped specialty maxima are retained only for version
+            readback.
+          </p>
           <p>
             {annual.aDay.execution?.constraints.length ?? 0} source-specific A-Day constraints,{' '}
             {annual.fallbackPolicies?.length ?? 0} fallback policies,{' '}
