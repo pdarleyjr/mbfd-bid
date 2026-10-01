@@ -12,6 +12,7 @@ import { TableHead } from '@/components/ui/table';
 import { TableBody } from '@/components/ui/table';
 import { TableCell } from '@/components/ui/table';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
+import { OPERATOR_AUTH_REFRESHED, OPERATOR_REAUTH_STARTED } from '@/lib/operator-step-up';
 import { ADayGroupIdSchema, WeekdaySchema } from '@mbfd/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -699,13 +700,13 @@ export function AnnualLiveControls(props: Props) {
         setAuthRefreshing(false);
       }
     }
-    window.addEventListener('mbfd-operator-reauth-started', started);
-    window.addEventListener('mbfd-operator-auth-refreshed', refreshed);
+    window.addEventListener(OPERATOR_REAUTH_STARTED, started);
+    window.addEventListener(OPERATOR_AUTH_REFRESHED, refreshed);
     return () => {
       disposed = true;
       generation += 1;
-      window.removeEventListener('mbfd-operator-reauth-started', started);
-      window.removeEventListener('mbfd-operator-auth-refreshed', refreshed);
+      window.removeEventListener(OPERATOR_REAUTH_STARTED, started);
+      window.removeEventListener(OPERATOR_AUTH_REFRESHED, refreshed);
     };
   }, [load, props.onCanonicalChange]);
 
