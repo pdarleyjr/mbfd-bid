@@ -793,6 +793,32 @@ describe('canonical finalization control', () => {
 });
 
 describe('server-ordered fallback awards', () => {
+  it.each([
+    ['FALLBACK_TIMING_NEEDS_ADMIN_DECISION', 'NEEDS ADMIN DECISION'],
+    [
+      'FALLBACK_ORDINARY_PATH_NOT_EXHAUSTED',
+      'Qualified ordinary contenders still have selection rights.',
+    ],
+  ])(
+    'explains unavailable timing %s without exposing award controls',
+    async (code, explanation) => {
+      live.fallbacks = [
+        {
+          ok: false,
+          policyId: 'synthetic-policy',
+          positionId: 'abc',
+          label: 'Synthetic fallback',
+          sourceRef: 'Reviewed source clause',
+          code,
+        },
+      ];
+      await mount('Fallback awards');
+      await choose('Fallback opportunity', JSON.stringify(['synthetic-policy', 'abc']));
+      expect(container.textContent).toContain(explanation);
+      expect(container.querySelector('ol[aria-label="Ordered fallback candidates"]')).toBeNull();
+      expect(commands).toHaveLength(0);
+    },
+  );
   const key = JSON.stringify(['synthetic-policy', 'abc']);
   it('refuses to force a member whose frozen term right permits only voluntary departure', async () => {
     live.term_participation['17'] = {

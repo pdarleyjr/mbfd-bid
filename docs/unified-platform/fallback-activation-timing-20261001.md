@@ -1,0 +1,11 @@
+# Canonical fallback activation timing
+
+The fallback candidate evaluator previously identified a forced candidate without proving that qualified ordinary contenders had finished the target opportunity path. Availability and canonical command validation now share one server timing evaluator. It requires target-stage queue entries and recorded outcomes that end selection rights; stage flags, cursor position, deferred or unresolved contact do not independently establish exhaustion. Unreachable fallback responses also remain eligible until an explicit decline.
+
+New immutable authoring may specify a versioned activation condition and source reference. Absence remains absent for historical compatibility. The reviewed July policy revision and its exact existing source references, minimum-qualified tier, assignee scope and reverse department ordinal comparator permit a read-only interpretation of the ten Version11 policies. Other absent or unrecognized timing returns `FALLBACK_TIMING_NEEDS_ADMIN_DECISION`; no saved definition, Version11 hash or frozen snapshot is rewritten.
+
+Queue exhaustion can leave an unsealed session in `complete` while an unfilled fallback opportunity remains. The narrow canonical fallback commands can finish that work after proven exhaustion. A sealed annual completion, frozen session or active specialty interruption remains closed to this path.
+
+Policy evidence: July PDF pp2–7, Investigator3(e)(ii), Captain6(b), AirTech7(a), Marine8(i), RescueFloat11(b), designatedDE12. The external source authority receipt is under the October1 production acceptance artifact directory; it contains exact source hashes and the unresolved evidence boundaries.
+
+Local verification: shared activation schema6 tests; worker activation/fallback/canonical/full synthetic rehearsal42 passed,17 mode-inapplicable cases skipped; web current-bid editor47 and annual controls27 passed; shared package build and worker/web typechecks passed. Tests include early contender protection, target-specific exhaustion, unresolved contact, unknown timing, read-only legacy compatibility, queue-complete fallback and sealed completion rejection. The private real-source rehearsal and production acceptance remain separate release gates. No successor version, production change or personnel fact was created by this candidate.

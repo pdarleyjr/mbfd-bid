@@ -238,6 +238,9 @@ describe('canonical managed Mock from Save through verified completion', () => {
       pool: { poolId: 'station-pool' },
       aDay: 'G3',
     });
+    // A fallback offer cannot bypass the final ordinary turn.
+    await command('live.disposition', { disposition: 'DECLINED' });
+    expect((await state()).currentPhase).toBe('complete');
     await command('live.record_fallback_response', {
       memberId: mockMember(8),
       positionId: mockSeats.pool[2],
