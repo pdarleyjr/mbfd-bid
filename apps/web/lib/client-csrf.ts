@@ -1,3 +1,5 @@
+import { beforeOperatorCommand, observeOperatorResponse } from './operator-step-up';
+
 const CSRF_BOOTSTRAP_PATH = '/api/auth/csrf';
 const CSRF_HEADER_NAME = 'X-MBFD-CSRF';
 
@@ -78,10 +80,19 @@ export function createCsrfAwareFetch(
     const currentOrigin = getCurrentOrigin();
     if (!isScopedUnsafeRequest(input, init, currentOrigin)) return originalFetch(input, init);
 
+    // Some feature clients capture fetch before the provider mounts. Keep the
+    // operator recovery guard on this shared mutation path as well.
+    const operatorMutation = requestUrl(input, currentOrigin)?.pathname !== '/api/auth/ws-ticket';
+    if (operatorMutation) {
+      const error = beforeOperatorCommand();
+      if (error !== null) return Response.json({ error }, { status: 401 });
+    }
+
     const token = await getToken();
     const inheritedHeaders = input instanceof Request ? input.headers : undefined;
     const headers = new Headers(init?.headers ?? inheritedHeaders);
     headers.set(CSRF_HEADER_NAME, token);
-    return originalFetch(input, { ...init, headers });
+    const response = await originalFetch(input, { ...init, headers });
+    return operatorMutation ? observeOperatorResponse(response) : response;
   };
 }
