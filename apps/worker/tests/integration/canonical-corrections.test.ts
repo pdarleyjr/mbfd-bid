@@ -17,7 +17,6 @@ import { getDb } from '../../src/db/index.js';
 import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
 import { mintPrintToken } from '../../src/exports/print-token.js';
 import { app } from '../../src/index.js';
-import { projectCanonicalMockCompletion } from '../../src/lib/annual-completion-result.js';
 import { bidDefinitionContextHash } from '../../src/lib/bid-definition-context.js';
 import type { PinnedBidSessionPolicySnapshot } from '../../src/lib/bid-definition-pin.js';
 import { captureBidDefinitionSource } from '../../src/lib/bid-definition-source.js';
