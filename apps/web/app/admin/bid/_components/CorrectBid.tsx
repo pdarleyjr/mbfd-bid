@@ -106,6 +106,7 @@ export function CorrectBid(props: {
   );
   const [open, setOpen] = useState(false);
   const [readback, setReadback] = useState<Readback | null>(null);
+  const [readbackFresh, setReadbackFresh] = useState(false);
   const [sourceId, setSourceId] = useState('');
   const [operation, setOperation] = useState<'REPLACE' | 'REVOKE'>('REPLACE');
   const [positionId, setPositionId] = useState('');
@@ -117,6 +118,7 @@ export function CorrectBid(props: {
   const [notice, setNotice] = useState<string | null>(null);
   const [review, setReview] = useState<{ preview: Preview; command: Command } | null>(null);
   const inFlight = useRef(false);
+  const draftBlocked = busy || !readbackFresh;
   const source = readback?.sources.find((entry) => entry.bidId === sourceId);
   const memberName = (id: number) => {
     const member = props.members[String(id)];
@@ -151,12 +153,14 @@ export function CorrectBid(props: {
     if (!response.ok) throw new Error(failure(body?.error));
     const data = body as Readback;
     setReadback(data);
+    setReadbackFresh(true);
     choose(data.sources[0]);
   }
   async function start() {
     setOpen(true);
     setNotice(null);
     setBusy(true);
+    setReadbackFresh(false);
     try {
       await load();
     } catch (error) {
@@ -168,6 +172,7 @@ export function CorrectBid(props: {
   async function refresh() {
     if (inFlight.current) return;
     setBusy(true);
+    setReadbackFresh(false);
     setReview(null);
     setNotice(null);
     try {
@@ -181,7 +186,7 @@ export function CorrectBid(props: {
     }
   }
   async function preview() {
-    if (!source || !readback || inFlight.current) return;
+    if (!source || !readback || !readbackFresh || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setNotice(null);
@@ -237,7 +242,7 @@ export function CorrectBid(props: {
     }
   }
   async function confirm() {
-    if (!review || inFlight.current) return;
+    if (!review || !readbackFresh || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setNotice(null);
@@ -256,10 +261,18 @@ export function CorrectBid(props: {
         setReview(null);
         return;
       }
-      props.onCanonicalChange?.();
-      await load();
       setReview(null);
-      setNotice('Correction recorded. The award and capacity have been updated.');
+      setReadbackFresh(false);
+      setNotice('Correction recorded. Refreshing awards…');
+      try {
+        props.onCanonicalChange?.();
+        await load();
+        setNotice('Correction recorded. The award and capacity have been updated.');
+      } catch {
+        setNotice(
+          'Correction recorded. Awards could not be refreshed. Refresh awards before recording another correction.',
+        );
+      }
     } catch {
       setNotice(
         'Delivery is uncertain. Confirm again to retry the same reviewed correction safely.',
@@ -294,7 +307,7 @@ export function CorrectBid(props: {
   }
   return (
     <>
-      <Button variant="secondary" onClick={() => void start()}>
+      <Button variant="secondary" disabled={busy} onClick={() => void start()}>
         Correct a bid
       </Button>
       <TaskPanel
@@ -322,7 +335,7 @@ export function CorrectBid(props: {
               <NativeSelect
                 id="correction-source"
                 value={sourceId}
-                disabled={busy}
+                disabled={draftBlocked}
                 onChange={(event) => {
                   choose(readback?.sources.find((entry) => entry.bidId === event.target.value));
                   setNotice(null);
@@ -344,7 +357,7 @@ export function CorrectBid(props: {
                   <NativeSelect
                     id="correction-operation"
                     value={operation}
-                    disabled={busy}
+                    disabled={draftBlocked}
                     onChange={(event) => {
                       edit();
                       setOperation(event.target.value as 'REPLACE' | 'REVOKE');
@@ -363,7 +376,7 @@ export function CorrectBid(props: {
                       <NativeSelect
                         id="correction-position"
                         value={positionId}
-                        disabled={busy}
+                        disabled={draftBlocked}
                         onChange={(event) => {
                           edit();
                           setPositionId(event.target.value);
@@ -382,7 +395,7 @@ export function CorrectBid(props: {
                       <NativeSelect
                         id="correction-a-day"
                         value={aDay}
-                        disabled={busy}
+                        disabled={draftBlocked}
                         onChange={(event) => {
                           edit();
                           setADay(event.target.value);
@@ -404,7 +417,7 @@ export function CorrectBid(props: {
                       <input
                         type="checkbox"
                         checked={termConfirmed}
-                        disabled={busy}
+                        disabled={draftBlocked}
                         onChange={(event) => {
                           edit();
                           setTermConfirmed(event.target.checked);
@@ -416,7 +429,7 @@ export function CorrectBid(props: {
                     <Input
                       id="correction-term-evidence"
                       value={termEvidence}
-                      disabled={busy}
+                      disabled={draftBlocked}
                       onChange={(event) => {
                         edit();
                         setTermEvidence(event.target.value);
@@ -429,7 +442,7 @@ export function CorrectBid(props: {
                   <textarea
                     id="correction-reason"
                     value={reason}
-                    disabled={busy}
+                    disabled={draftBlocked}
                     maxLength={500}
                     className="min-h-24 w-full rounded-md border border-input bg-background p-3"
                     onChange={(event) => {
@@ -448,7 +461,7 @@ export function CorrectBid(props: {
                 {!review ? (
                   <Button
                     disabled={
-                      busy ||
+                      draftBlocked ||
                       !reason.trim() ||
                       (operation === 'REPLACE' &&
                         (!positionId ||
@@ -494,7 +507,7 @@ export function CorrectBid(props: {
                         Checks passed: {review.preview.validated.join(', ')}.
                       </p>
                     </div>
-                    <Button disabled={busy} onClick={() => void confirm()}>
+                    <Button disabled={draftBlocked} onClick={() => void confirm()}>
                       {busy ? 'Recording…' : 'Confirm correction'}
                     </Button>
                   </section>

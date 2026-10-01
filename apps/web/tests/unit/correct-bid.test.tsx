@@ -13,6 +13,7 @@ let container: HTMLDivElement;
 let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
 let failConfirm: boolean;
+let failReload: boolean;
 const commands: Record<string, unknown>[] = [];
 const source = {
   bidId: 'award-1',
@@ -88,6 +89,7 @@ beforeEach(async () => {
   document.body.appendChild(container);
   root = createRoot(container);
   failConfirm = false;
+  failReload = false;
   commands.length = 0;
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -101,6 +103,10 @@ beforeEach(async () => {
         throw new Error('Synthetic network loss');
       }
       return Response.json({ kind: 'accepted', seq: 5 });
+    }
+    if (failReload && commands.length > 0) {
+      failReload = false;
+      throw new Error('Synthetic refresh loss');
     }
     return Response.json(readback);
   });
@@ -177,5 +183,25 @@ describe('guided audited correction', () => {
     await click('Refresh awards');
     expect(container.textContent).not.toContain('Confirm correction');
     expect(commands).toHaveLength(0);
+  });
+
+  it('preserves accepted acknowledgement and blocks another correction until failed readback is refreshed', async () => {
+    await click('Correct a bid');
+    await change('correction-reason', 'Recorded wrong A-Day');
+    await change('correction-a-day', 'G2');
+    await click('Review correction');
+    failReload = true;
+    await click('Confirm correction');
+    expect(commands).toHaveLength(1);
+    expect(container.textContent).toContain('Correction recorded');
+    expect(container.textContent).not.toContain('Delivery is uncertain');
+    expect(container.textContent).not.toContain('Confirm correction');
+    const reviewButton = [...container.querySelectorAll('button')].find((item) =>
+      item.textContent?.includes('Review correction'),
+    );
+    expect(reviewButton?.disabled).toBe(true);
+    await click('Refresh awards');
+    expect(reviewButton?.disabled).toBe(false);
+    expect(commands).toHaveLength(1);
   });
 });
