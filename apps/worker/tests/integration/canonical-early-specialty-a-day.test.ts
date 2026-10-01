@@ -471,6 +471,87 @@ describe.each(['scoped', 'membership'] as const)(
       expect(h.sqlite.prepare('SELECT count(*) AS count FROM bids').get()).toEqual({ count: 0 });
     });
 
+    it('settles unreachable A-Day contact after restart and preserves receipt replay', async () => {
+      await earlyAward();
+      expect(
+        (
+          await apply({
+            ...common(),
+            type: 'live.record_selection',
+            memberId: SENIOR,
+            positionId: SECOND,
+            aDay: 'G1',
+          })
+        ).result.kind,
+      ).toBe('accepted');
+      expect(
+        (
+          await apply({
+            ...common(),
+            type: 'live.record_contact_attempt',
+            memberId: EARLY,
+            method: 'PHONE',
+          })
+        ).result.kind,
+      ).toBe('accepted');
+      expect(
+        (await apply({ ...common(), type: 'live.disposition', disposition: 'UNREACHABLE' })).result
+          .kind,
+      ).toBe('accepted');
+      expect(state.annual?.unresolvedMemberIds).toEqual([EARLY]);
+      expect(
+        (
+          await apply({
+            ...common(),
+            type: 'live.record_selection',
+            memberId: JUNIOR,
+            positionId: THIRD,
+            aDay: 'G3',
+          })
+        ).result.kind,
+      ).toBe('accepted');
+      const restarted = await loadCanonicalBidSessionState(h.env.DB, SESSION);
+      if (!restarted) throw new Error('Persisted state required');
+      state = restarted;
+      expect(state).toMatchObject({ currentPhase: 'a_day_bid', currentBidderId: EARLY });
+      const aDayCommand: LiveBidCommand = {
+        ...common(),
+        type: 'live.record_a_day',
+        memberId: EARLY,
+        aDay: 'G2',
+      };
+      const recorded = await apply(aDayCommand);
+      expect(recorded.result.kind).toBe('accepted');
+      expect(state).toMatchObject({
+        currentPhase: 'complete',
+        annual: { unresolvedMemberIds: [] },
+      });
+      expect(state.annual?.contactAttempts).toEqual([
+        expect.objectContaining({ memberId: EARLY, method: 'PHONE' }),
+      ]);
+      expect(state.live?.dispositions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ memberId: EARLY, disposition: 'UNREACHABLE' }),
+        ]),
+      );
+      const afterADay = structuredClone(state);
+      expect(await apply(aDayCommand)).toEqual(recorded);
+      expect(state).toEqual(afterADay);
+      expect((await apply({ ...aDayCommand, commandId: common().commandId })).result).toMatchObject(
+        { kind: 'rejected', code: 'STALE_SEQUENCE' },
+      );
+      expect((await apply({ ...common(), type: 'live.complete_session' })).result.kind).toBe(
+        'accepted',
+      );
+      expect(await loadCanonicalBidSessionState(h.env.DB, SESSION)).toEqual(state);
+      expect(await loadBidSessionPolicySnapshot(getDb(h.env.DB), SESSION)).toEqual({
+        snapshot,
+        error: null,
+      });
+      expect(Object.values(state.fills).filter((fill) => fill.memberId === EARLY)).toHaveLength(1);
+      expect(h.sqlite.prepare('SELECT count(*) AS count FROM bids').get()).toEqual({ count: 0 });
+    });
+
     it('selects the specialty seat and A-Day together when the requester takes it at their own turn', async () => {
       expect(
         (
