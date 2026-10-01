@@ -64,7 +64,11 @@ export type {
   ADayServerMessage,
 } from './schemas/a-day.js';
 export { HistoricalBidSchema, HistoricalBidReceiptSchema } from './schemas/historical-bid.js';
-export type { HistoricalBid, HistoricalBidReceipt } from './schemas/historical-bid.js';
+export type {
+  HistoricalBid,
+  HistoricalBidReceipt,
+  MemberHistoricalContext,
+} from './schemas/historical-bid.js';
 
 export type {
   DepartmentRosterPosition,

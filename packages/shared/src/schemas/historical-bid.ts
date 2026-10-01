@@ -92,3 +92,19 @@ export const HistoricalBidReceiptSchema = z
   .strict();
 export type HistoricalBid = z.infer<typeof HistoricalBidSchema>;
 export type HistoricalBidReceipt = z.infer<typeof HistoricalBidReceiptSchema>;
+
+/** Read-only documentary context. Historical IDs must never resolve through live position metadata. */
+export type MemberHistoricalContext = {
+  year: number;
+  evidenceStatus: 'RECORDED' | 'NO_PRIOR_BID_OR_ASSIGNMENT' | 'UNLINKED' | 'UNAVAILABLE';
+  historicalPositionId: string | null;
+  positionLabel: string | null;
+  shift: string | null;
+  station: string | null;
+  unit: string | null;
+  aDayGroup: string | null;
+  sourceName: string | null;
+  sourceSha256: string | null;
+  sourceLocation: string | null;
+  archiveSha256: string | null;
+};
