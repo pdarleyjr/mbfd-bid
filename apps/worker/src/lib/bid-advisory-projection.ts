@@ -101,9 +101,12 @@ export function projectAuthoritativeBidAdvisory(
     Object.keys(input.fills).filter((positionId) => biddableIds.has(positionId)),
   );
   const filledMemberIds = new Set(Object.values(input.fills).map((fill) => fill.memberId));
-  const remainingCount = input.bidOrder.filter(
-    (entry) => !filledMemberIds.has(entry.memberId),
-  ).length;
+  // Annual stages can give one member several turns; the card counts people.
+  const remainingCount = new Set(
+    input.bidOrder
+      .filter((entry) => !filledMemberIds.has(entry.memberId))
+      .map((entry) => entry.memberId),
+  ).size;
 
   const eligibility =
     input.currentBidderId === null

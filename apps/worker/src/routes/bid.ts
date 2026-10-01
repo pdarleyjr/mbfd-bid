@@ -29,7 +29,7 @@ import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-el
 import { verifyJwt } from '../lib/jwt.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
 import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
-import { computeOnDeck } from '../lib/on-deck.js';
+import { computeOnDeck, currentBidOrderEntry } from '../lib/on-deck.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
 import type { WorkerEnv } from '../types/env.js';
 
@@ -614,7 +614,13 @@ bid.get('/board', async (c) => {
   const onDeckEntries =
     body.currentPhase === 'complete'
       ? []
-      : computeOnDeck(bidOrder, currentBidderId, filledMemberIds);
+      : computeOnDeck(
+          bidOrder,
+          currentBidderId,
+          filledMemberIds,
+          undefined,
+          canonicalState?.bidOrder.length ? canonicalState.queueCursor : undefined,
+        );
   const snapshotMembersById = new Map(
     frozenBoardPolicy.snapshot.members.map((member) => [member.memberId, member]),
   );
@@ -627,7 +633,6 @@ bid.get('/board', async (c) => {
           ]),
         )
       : new Map();
-  const bidOrderIndex = new Map(bidOrder.map((entry) => [entry.memberId, entry]));
   const lookupIds = new Set<number>();
   for (const entry of bidOrder) lookupIds.add(entry.memberId);
   for (const memberId of filledMemberIds) lookupIds.add(memberId);
@@ -649,7 +654,7 @@ bid.get('/board', async (c) => {
   }
   if (currentBidderId !== null) {
     const member = snapshotMembersById.get(currentBidderId);
-    const order = bidOrderIndex.get(currentBidderId);
+    const order = currentBidOrderEntry(bidOrder, currentBidderId, canonicalState?.queueCursor);
     const identity = operatorIdentityByMember.get(currentBidderId);
     if (member !== undefined && order !== undefined) {
       currentBidder = {

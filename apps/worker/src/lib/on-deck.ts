@@ -15,17 +15,32 @@ export interface BidOrderEntry {
   pool: 'OFC' | 'FF';
 }
 
+/** Prefer the canonical turn when annual stages repeat a member. */
+export function currentBidOrderEntry(
+  bidOrder: ReadonlyArray<BidOrderEntry>,
+  memberId: number,
+  queueCursor: number | undefined,
+): BidOrderEntry | undefined {
+  const current = queueCursor === undefined ? undefined : bidOrder[queueCursor];
+  if (current?.memberId === memberId) return current;
+  // Specialty interruptions can temporarily select someone outside the cursor.
+  return [...bidOrder].reverse().find((entry) => entry.memberId === memberId);
+}
+
 export function computeOnDeck(
   bidOrder: ReadonlyArray<BidOrderEntry>,
   currentBidderId: number | null,
   filledMemberIds: ReadonlySet<number>,
   count: number = DEFAULT_ON_DECK_COUNT,
+  queueCursor?: number,
 ): BidOrderEntry[] {
   if (bidOrder.length === 0) return [];
   const startIndex =
-    currentBidderId === null
-      ? 0
-      : bidOrder.findIndex((entry) => entry.memberId === currentBidderId) + 1;
+    queueCursor !== undefined && Number.isInteger(queueCursor) && queueCursor >= 0
+      ? queueCursor + 1
+      : currentBidderId === null
+        ? 0
+        : bidOrder.findIndex((entry) => entry.memberId === currentBidderId) + 1;
   // findIndex returns -1 when the current bidder isn't in bidOrder (e.g. an
   // admin-forced pick from outside Phase 1 ordering). +1 gives 0 — we still
   // surface the next 5 from the top of the queue.
