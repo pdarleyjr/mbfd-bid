@@ -128,6 +128,7 @@ export default async function AdminBidPage({
     <div data-testid="bid-board-header" className="min-h-screen bg-background text-foreground">
       <MockBanner isMock={board.isMock === true} sessionId={board.bidSessionId} />
       <AdminBidShell
+        key={board.bidSessionId}
         bidSessionId={board.bidSessionId}
         lastSeq={board.lastSeq}
         currentPhase={board.currentPhase}

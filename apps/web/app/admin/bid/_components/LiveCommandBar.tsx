@@ -2,6 +2,7 @@
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { BidderCard, type BidderContext } from '../../../_components/bid/BidderCard';
+import { useBidOperator } from './BidOperatorContext';
 import { FreezeConfirmDialog } from './FreezeConfirmDialog';
 import { useManualPick } from './ManualPickContext';
 import { MockFreezeButton } from './MockFreezeButton';
@@ -18,6 +19,7 @@ interface Props {
   currentBidder: BidderContext | null;
   currentBidderId: number | null;
   onDeck: ReadonlyArray<BidderContext>;
+  managed?: boolean;
 }
 
 function formatDuration(ms: number): string {
@@ -64,7 +66,9 @@ export function LiveCommandBar({
   currentBidder,
   currentBidderId,
   onDeck,
+  managed = false,
 }: Props) {
+  const operator = useBidOperator();
   const now = useTick(1000);
   const [open, setOpen] = useState<'override' | 'freeze' | null>(null);
   const [busy, setBusy] = useState(false);
@@ -151,30 +155,44 @@ export function LiveCommandBar({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            data-testid="admin-action-pick-mode"
-            onClick={() => setPickMode(!pickMode)}
-            aria-pressed={pickMode}
-            className={
-              pickMode
-                ? 'rounded border border-blue-700 bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-600'
-                : 'rounded border border-blue-700 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-100'
-            }
-          >
-            {pickMode ? 'Pick mode: ON' : 'Pick for member'}
-          </Button>
+          {managed ? (
+            <Button
+              type="button"
+              variant="default"
+              onClick={() => {
+                if (currentBidderId !== null) operator?.selectMember(currentBidderId);
+              }}
+            >
+              Current bidder
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              data-testid="admin-action-pick-mode"
+              onClick={() => setPickMode(!pickMode)}
+              aria-pressed={pickMode}
+              className={
+                pickMode
+                  ? 'rounded border border-blue-700 bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-600'
+                  : 'rounded border border-blue-700 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-100'
+              }
+            >
+              {pickMode ? 'Pick mode: ON' : 'Pick for member'}
+            </Button>
+          )}
           {isMock ? (
             <>
               <MockFreezeButton bidSessionId={bidSessionId} expectedSeq={lastSeq} />
-              <span
-                data-testid="mock-command-boundary"
-                className="max-w-xs text-xs text-muted-foreground"
-              >
-                Skip and override are live-only. Use rehearsal controls for mock commands.
-              </span>
+              {!managed && (
+                <span
+                  data-testid="mock-command-boundary"
+                  className="max-w-xs text-xs text-muted-foreground"
+                >
+                  Skip and override are live-only. Use rehearsal controls for mock commands.
+                </span>
+              )}
             </>
-          ) : (
+          ) : !managed ? (
             <>
               <Button
                 type="button"
@@ -202,7 +220,7 @@ export function LiveCommandBar({
                 Freeze
               </Button>
             </>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -214,7 +232,7 @@ export function LiveCommandBar({
           <span className="shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             On deck
           </span>
-          {onDeck.map((b, i) => (
+          {(managed ? onDeck.slice(0, 1) : onDeck).map((b, i) => (
             <span key={b.memberId} className="flex shrink-0 items-baseline gap-1 text-foreground">
               <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-foreground">
                 {i + 1}

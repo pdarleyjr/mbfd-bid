@@ -14,7 +14,9 @@ import { TableCell } from '@/components/ui/table';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { ADayGroupIdSchema, WeekdaySchema } from '@mbfd/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
+import { useBidOperator } from './BidOperatorContext';
 
 type Candidate = {
   member_id: number;
@@ -197,6 +199,7 @@ interface Props {
   members: Record<string, MemberLite>;
   positions?: readonly PositionMeta[] | undefined;
   onCanonicalChange?: (() => void) | undefined;
+  workspace?: boolean;
 }
 
 function name(candidate: Candidate): string {
@@ -211,7 +214,7 @@ function aDayOptions(
   const effectiveShift = position?.shift ?? shift;
   if (effectiveShift === 'D') return WeekdaySchema.options;
   if (effectiveShift !== undefined) return combatGroups ?? ADayGroupIdSchema.options;
-  return [...ADayGroupIdSchema.options, ...WeekdaySchema.options];
+  return [];
 }
 
 function useAwardADay(identity: string) {
@@ -254,7 +257,7 @@ function ADayChoice({
         <option value="">Select A-Day</option>
         {aDayOptions(position, shift, combatGroups).map((option) => (
           <option key={option} value={option} disabled={unavailable?.[option] !== undefined}>
-            {option}
+            {option.replace(/^G(\d+)$/, 'Group $1')}
             {unavailable?.[option] ? ` — unavailable for ${unavailable[option]}` : ''}
           </option>
         ))}
@@ -311,9 +314,46 @@ function commandErrorMessage(
     : `The action could not be recorded. Refresh the session and try again (${status}).`;
 }
 
+function SelectionFrame({
+  inline,
+  children,
+  ...frame
+}: {
+  inline: boolean;
+  children: ReactNode;
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  description: string;
+}) {
+  return inline ? (
+    <div className="flex flex-col gap-3 border-t border-border pt-3" data-testid="selection-review">
+      {children}
+    </div>
+  ) : (
+    <TaskPanel {...frame}>{children}</TaskPanel>
+  );
+}
+
+function OperatorNotes({ optional, children }: { optional: boolean; children: ReactNode }) {
+  return optional ? (
+    <details className="order-last border-t border-border pt-3">
+      <summary className="cursor-pointer text-sm text-muted-foreground">
+        Optional operator notes
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
+  ) : (
+    <>{children}</>
+  );
+}
+
 export function AnnualLiveControls(props: Props) {
+  const operator = useBidOperator();
   const csrfFetch = useMemo(() => createCsrfAwareFetch(fetch, () => window.location.origin), []);
   const [state, setState] = useState<SpecialtyState | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [panel, setPanel] = useState<
     | 'selection'
     | 'disposition'
@@ -321,11 +361,12 @@ export function AnnualLiveControls(props: Props) {
     | 'specialty'
     | 'fallback'
     | 'presentation'
+    | 'session'
     | 'amendment'
     | 'order'
     | 'finalization'
     | null
-  >(null);
+  >(props.workspace ? 'selection' : null);
   const pendingCommand = useRef<{
     fingerprint: string;
     commandId: string;
@@ -384,6 +425,56 @@ export function AnnualLiveControls(props: Props) {
     fallbackMemberId,
   );
   const selectionMember = state?.returning_member ?? state?.current_bidder ?? null;
+  const selectionMemberId = selectionMember?.member_id ?? null;
+  const [availableShift, setAvailableShift] = useState('');
+  const handledIntent = useRef(0);
+  const selectionOwner = useRef<number | null>(null);
+  const loaded = state !== null;
+  useEffect(() => {
+    if (!props.workspace || !loaded) return;
+    const previous = selectionOwner.current;
+    selectionOwner.current = selectionMemberId;
+    if (previous !== null && previous !== selectionMemberId) {
+      setSelectionPositionId('');
+      setSelectionPoolId('');
+      setNotice(
+        'The current bidder changed. Review their details and choose a position for this turn.',
+      );
+    }
+  }, [props.workspace, loaded, selectionMemberId]);
+  useEffect(() => {
+    if (props.workspace && loaded) operator?.setActiveMember(selectionMemberId);
+  }, [props.workspace, loaded, selectionMemberId, operator?.setActiveMember]);
+  useEffect(() => {
+    const intent = operator?.positionIntent;
+    if (!props.workspace || !intent || state === null || handledIntent.current >= intent.nonce)
+      return;
+    handledIntent.current = intent.nonce;
+    if (intent.memberId !== selectionMemberId) {
+      setNotice('This member is not up now. Return to the current bidder to record a selection.');
+      return;
+    }
+    if (
+      state.fills[intent.positionId] !== undefined ||
+      !state.selection_stage?.eligible_position_ids.includes(intent.positionId)
+    ) {
+      setNotice(
+        'This position is not available to this member in the current stage. Choose one of the eligible openings shown here.',
+      );
+      return;
+    }
+    const pool = state.opportunity_pools?.find((entry) =>
+      entry.positionIds.includes(intent.positionId),
+    );
+    if (pool && (!pool.valid || pool.resolvedPositionId === null)) {
+      setNotice('This pool is unavailable. Review its current capacity before selecting.');
+      return;
+    }
+    setSelectionPositionId(pool?.resolvedPositionId ?? intent.positionId);
+    setSelectionPoolId(pool?.id ?? '');
+    setPanel('selection');
+    setNotice(null);
+  }, [operator?.positionIntent, props.workspace, selectionMemberId, state]);
   const dispositionMember = selectionMember;
   const termMemberId =
     panel === 'selection'
@@ -547,6 +638,7 @@ export function AnnualLiveControls(props: Props) {
         body && 'error' in body ? body.error : `Live controls returned ${response.status}.`,
       );
     const next = body as SpecialtyState;
+    if (lastLoadedSequence.current !== null && next.sequence < lastLoadedSequence.current) return;
     if (lastLoadedSequence.current !== null && next.sequence > lastLoadedSequence.current)
       props.onCanonicalChange?.();
     lastLoadedSequence.current = next.sequence;
@@ -555,22 +647,32 @@ export function AnnualLiveControls(props: Props) {
       setOrder(remainingOrderEntries(next.remaining_order));
     }
     setState(next);
+    setLoadedAt(Date.now());
+    setLoadError(null);
   }, [props.bidSessionId, props.onCanonicalChange]);
 
   useEffect(() => {
-    void load().catch((error: unknown) =>
-      setNotice(error instanceof Error ? error.message : 'Live controls unavailable.'),
-    );
-    const timer = setInterval(() => void load().catch(() => undefined), 2500);
+    const refresh = () =>
+      void load().catch((error: unknown) =>
+        setLoadError(error instanceof Error ? error.message : 'Live controls unavailable.'),
+      );
+    refresh();
+    const timer = setInterval(refresh, 2500);
     return () => clearInterval(timer);
   }, [load]);
 
   useEffect(() => {
-    if (selectionPositionId && state?.fills[selectionPositionId] !== undefined) {
+    if (
+      selectionPositionId &&
+      state !== null &&
+      (state.fills[selectionPositionId] !== undefined ||
+        (props.workspace &&
+          !state.selection_stage?.eligible_position_ids.includes(selectionPositionId)))
+    ) {
       setSelectionPositionId('');
       setSelectionPoolId('');
     }
-  }, [selectionPositionId, state]);
+  }, [selectionPositionId, state, props.workspace]);
 
   const selectedSpecialty =
     state?.specialties.find((specialty) => specialty.id === specialtyId) ?? null;
@@ -587,6 +689,12 @@ export function AnnualLiveControls(props: Props) {
   );
 
   async function command(type: string, inputDetail: Record<string, unknown> = {}) {
+    if (loadError !== null) {
+      setNotice(
+        'Reconnect and refresh the bid before recording an action. Your selection is preserved.',
+      );
+      return;
+    }
     let detail = inputDetail;
     if (
       type === 'live.record_selection' &&
@@ -594,7 +702,12 @@ export function AnnualLiveControls(props: Props) {
       membershipChoice.ids.length
     )
       detail = { ...detail, membershipIds: membershipChoice.ids };
-    if (reason.trim().length < 1 || state === null) {
+    const commandReason =
+      reason.trim() ||
+      (props.workspace && type === 'live.record_selection'
+        ? `Operator recorded member ${String(inputDetail.memberId)} selection of ${String(inputDetail.positionId)}${inputDetail.aDay ? `, A-Day ${String(inputDetail.aDay)}` : ''}.`
+        : '');
+    if (commandReason.length < 1 || state === null) {
       setNotice('Enter an operator reason and wait for the current bid to load.');
       return;
     }
@@ -654,7 +767,7 @@ export function AnnualLiveControls(props: Props) {
     const fingerprint = JSON.stringify({
       type,
       detail,
-      reason: reason.trim(),
+      reason: commandReason,
       evidenceReference: evidenceReference.trim(),
     });
     if (pendingCommand.current?.fingerprint !== fingerprint)
@@ -674,7 +787,7 @@ export function AnnualLiveControls(props: Props) {
             type,
             commandId: pendingCommand.current.commandId,
             expectedSeq: pendingCommand.current.expectedSeq,
-            reason: reason.trim(),
+            reason: commandReason,
             evidenceReference: evidenceReference.trim() || null,
             ...detail,
           }),
@@ -695,6 +808,10 @@ export function AnnualLiveControls(props: Props) {
         setAmendADay('');
         setSpecialtyADay('');
         setFallbackADay('');
+        if (props.workspace) {
+          setSelectionPositionId('');
+          setSelectionPoolId('');
+        }
       }
       setNotice('Action recorded.');
       await load();
@@ -723,19 +840,159 @@ export function AnnualLiveControls(props: Props) {
       : `Member ${memberId}`;
   }
 
+  const availablePositions = (props.positions ?? []).filter(
+    (position) =>
+      state?.selection_stage?.eligible_position_ids.includes(position.id) &&
+      state.fills[position.id] === undefined &&
+      !poolSlots.has(position.id),
+  );
+  const availablePools = (state?.opportunity_pools ?? []).filter(
+    (pool) =>
+      pool.valid &&
+      pool.resolvedPositionId !== null &&
+      state?.selection_stage?.eligible_position_ids.includes(pool.resolvedPositionId),
+  );
+  const shifts = [
+    ...new Set([
+      ...availablePositions.map((position) => position.shift),
+      ...availablePools.flatMap((pool) => (pool.shift ? [pool.shift] : [])),
+    ]),
+  ];
+  const visibleShift = shifts.includes(availableShift) ? availableShift : shifts[0];
+  const canSelectViewedMember =
+    !props.workspace || operator?.selectedMemberId === selectionMemberId;
+
   return (
     <section className="border-y border-border bg-card p-3" data-testid="annual-live-controls">
+      {loadError !== null ? (
+        <div role="alert" className="mb-3 border border-warning/30 bg-warning/10 p-3 text-sm">
+          <p>
+            Bid updates are unavailable. Showing the last loaded information; actions are blocked
+            until the connection recovers.
+          </p>
+          <Button
+            type="button"
+            className="mt-2"
+            onClick={() =>
+              void load().catch((error: unknown) =>
+                setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
+              )
+            }
+          >
+            Retry bid updates
+          </Button>
+        </div>
+      ) : null}
       {state?.active && (
         <output className="mb-3 block text-sm font-semibold text-amber-800">
           {state.active.specialty_label} review is active. Open Specialty and contact to continue.
         </output>
       )}
-      {props.isMock ? (
+      {props.workspace ? (
+        <section aria-label="Available positions" className="mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {state?.selection_stage?.label ?? 'Loading bid stage'}
+              </p>
+              <h2 className="mt-1 font-heading text-lg font-bold">Available positions</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {availablePositions.length + availablePools.length} choices
+              {loadedAt !== null ? (
+                <span className="block text-xs">
+                  Updated {new Date(loadedAt).toLocaleTimeString()}
+                </span>
+              ) : null}
+            </p>
+          </div>
+          {state === null ? (
+            <output className="mt-3 block text-sm">Loading current bidder and openings…</output>
+          ) : selectionMember ? (
+            <p className="mt-2 text-sm">
+              Selecting for <strong>{name(selectionMember)}</strong>
+            </p>
+          ) : (
+            <p className="mt-2 text-sm">No member is currently selecting a position.</p>
+          )}
+          {shifts.length > 1 ? (
+            <fieldset className="mt-3 flex flex-wrap gap-2" aria-label="Available shift">
+              <span className="sr-only">Choose shift</span>
+              {shifts.map((shift) => (
+                <Button
+                  key={shift}
+                  type="button"
+                  variant={visibleShift === shift ? 'primary' : 'default'}
+                  aria-pressed={visibleShift === shift}
+                  onClick={() => setAvailableShift(shift)}
+                >
+                  {shift === 'D' ? 'Days' : `${shift} shift`}
+                </Button>
+              ))}
+            </fieldset>
+          ) : null}
+          <div className="mt-3 grid max-h-56 gap-2 overflow-y-auto overscroll-contain sm:grid-cols-2">
+            {availablePositions
+              .filter((position) => position.shift === visibleShift)
+              .map((position) => (
+                <button
+                  key={position.id}
+                  type="button"
+                  disabled={!canSelectViewedMember || busy || pendingADay !== null}
+                  onClick={() => {
+                    setSelectionPositionId(position.id);
+                    setSelectionPoolId('');
+                    setPanel('selection');
+                    setNotice(null);
+                  }}
+                  aria-pressed={selectionPositionId === position.id && !selectionPoolId}
+                  className="min-h-16 border border-border bg-card px-3 py-2 text-left hover:border-info hover:bg-info/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-info aria-pressed:bg-info/10"
+                >
+                  <span className="block text-sm font-semibold">
+                    {position.unit} · {position.positionName}
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {position.station} · {position.id}
+                  </span>
+                </button>
+              ))}
+            {availablePools
+              .filter((pool) => pool.shift === visibleShift)
+              .map((pool) => (
+                <button
+                  key={pool.id}
+                  type="button"
+                  disabled={!canSelectViewedMember || busy || pendingADay !== null}
+                  onClick={() => {
+                    setSelectionPoolId(pool.id);
+                    setSelectionPositionId(pool.resolvedPositionId ?? '');
+                    setPanel('selection');
+                    setNotice(null);
+                  }}
+                  aria-pressed={selectionPoolId === pool.id}
+                  className="min-h-16 border border-border bg-card px-3 py-2 text-left hover:border-info hover:bg-info/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 aria-pressed:border-info aria-pressed:bg-info/10"
+                >
+                  <span className="block text-sm font-semibold">{pool.label}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {pool.remaining} of {pool.capacity} available · pool selection
+                  </span>
+                </button>
+              ))}
+          </div>
+          {state !== null && availablePositions.length + availablePools.length === 0 ? (
+            <p className="mt-3 text-sm text-warning">
+              No eligible openings in this stage. Use Disposition and return to record the member’s
+              next action.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+      {props.isMock && !props.workspace ? (
         <p className="mb-4 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-900">
           MOCK REHEARSAL — canonical commands remain isolated from staffing and portal write-back.
         </p>
       ) : null}
-      {state?.specialty_coverage ? (
+      {state?.specialty_coverage && !props.workspace ? (
         <section
           className="mb-4 rounded border border-border bg-muted/30 px-3 py-2 text-sm"
           data-testid="specialty-coverage-advisory"
@@ -778,32 +1035,41 @@ export function AnnualLiveControls(props: Props) {
           )}
         </section>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        {(
-          [
-            ['selection', 'Record selection'],
-            ['disposition', 'Disposition and return'],
-            ['a-day', 'Record A-Day'],
-            ['specialty', 'Specialty and contact'],
-            ['fallback', 'Fallback awards'],
-            ['presentation', 'Presentation'],
-            ['amendment', 'Correct selection'],
-            ['order', 'Remaining order'],
-            ...(state?.current_phase === 'complete' && !state.finalization_ready
-              ? ([['finalization', 'Finalize results']] as const)
-              : []),
-          ] as const
-        ).map(([id, label]) => (
-          <Button
-            key={id}
-            type="button"
-            aria-expanded={panel === id}
-            onClick={() => setPanel(panel === id ? null : id)}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
+      <details
+        open={props.workspace ? undefined : true}
+        className={props.workspace ? 'mb-3 border-t border-border pt-3' : ''}
+      >
+        {props.workspace ? (
+          <summary className="cursor-pointer text-sm font-semibold">Other bid actions</summary>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              ['selection', 'Record selection'],
+              ['disposition', 'Disposition and return'],
+              ['a-day', 'Record A-Day'],
+              ['specialty', 'Specialty and contact'],
+              ['fallback', 'Fallback awards'],
+              ['presentation', 'Presentation'],
+              ['session', 'Pause or resume bid'],
+              ['amendment', 'Correct selection'],
+              ['order', 'Remaining order'],
+              ...(state?.current_phase === 'complete' && !state.finalization_ready
+                ? ([['finalization', 'Finalize results']] as const)
+                : []),
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              type="button"
+              aria-expanded={panel === id}
+              onClick={() => setPanel(panel === id ? null : id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </details>
       {state?.active && (
         <p className="mt-2 text-sm text-warning">
           Specialty review in progress: {state.active.specialty_label}.{' '}
@@ -813,7 +1079,8 @@ export function AnnualLiveControls(props: Props) {
         </p>
       )}
       {notice && <output className="mt-2 block text-sm">{notice}</output>}
-      <TaskPanel
+      <SelectionFrame
+        inline={props.workspace === true && panel === 'selection'}
         open={panel !== null}
         onClose={() => {
           setPanel(null);
@@ -829,13 +1096,15 @@ export function AnnualLiveControls(props: Props) {
                   ? 'Fallback awards'
                   : panel === 'presentation'
                     ? 'Department presentation'
-                    : panel === 'amendment'
-                      ? 'Correct a recorded selection'
-                      : panel === 'order'
-                        ? 'Remaining bid order'
-                        : panel === 'finalization'
-                          ? 'Finalize completed results'
-                          : 'Record selection'
+                    : panel === 'session'
+                      ? 'Pause or resume bid'
+                      : panel === 'amendment'
+                        ? 'Correct a recorded selection'
+                        : panel === 'order'
+                          ? 'Remaining bid order'
+                          : panel === 'finalization'
+                            ? 'Finalize completed results'
+                            : 'Record selection'
         }
         description="Actions follow this session’s approved policy and your operator authority. Enter a reason and review the selected member or position before recording an action."
       >
@@ -879,30 +1148,34 @@ export function AnnualLiveControls(props: Props) {
             </p>
           </fieldset>
         )}
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="mr-auto">
-            <p className="text-xs font-bold uppercase tracking-wide text-red-700">
-              Bid-day actions
-            </p>
-            <h2 className="font-heading text-lg text-foreground">Review and record an action</h2>
+        <OperatorNotes optional={props.workspace === true && panel === 'selection'}>
+          <div
+            className={`flex flex-wrap items-end gap-3 ${props.workspace && panel === 'selection' ? 'order-3' : ''}`}
+          >
+            <div className="mr-auto">
+              <p className="text-xs font-bold uppercase tracking-wide text-red-700">
+                Bid-day actions
+              </p>
+              <h2 className="font-heading text-lg text-foreground">Review and record an action</h2>
+            </div>
+            <Label className="min-w-0 w-full text-xs text-muted-foreground">
+              Operator reason
+              <Input
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
+              />
+            </Label>
+            <Label className="min-w-0 w-full text-xs text-muted-foreground">
+              Evidence reference (when policy requires)
+              <Input
+                value={evidenceReference}
+                onChange={(event) => setEvidenceReference(event.target.value)}
+                className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
+              />
+            </Label>
           </div>
-          <Label className="min-w-0 w-full text-xs text-muted-foreground">
-            Operator reason
-            <Input
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
-            />
-          </Label>
-          <Label className="min-w-0 w-full text-xs text-muted-foreground">
-            Evidence reference (when policy requires)
-            <Input
-              value={evidenceReference}
-              onChange={(event) => setEvidenceReference(event.target.value)}
-              className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
-            />
-          </Label>
-        </div>
+        </OperatorNotes>
 
         <div className="mt-4 space-y-4">
           <article hidden={panel !== 'disposition'} className="rounded border border-border p-3">
@@ -1222,11 +1495,50 @@ export function AnnualLiveControls(props: Props) {
               </div>
             ) : null}
           </article>
+          <article hidden={panel !== 'session'} className="rounded border border-border p-3">
+            <h3 className="font-semibold text-foreground">Pause or resume bid</h3>
+            <p className="mt-1 text-sm">
+              Pausing stops bid execution. Enter an operator reason before confirming.
+            </p>
+            <Button
+              type="button"
+              disabled={busy || state === null || state.current_phase === 'complete'}
+              className="mt-3"
+              onClick={() =>
+                void command(state?.current_phase === 'paused' ? 'live.resume' : 'live.pause')
+              }
+            >
+              {state?.current_phase === 'paused' ? 'Resume bid' : 'Pause bid'}
+            </Button>
+          </article>
           <article hidden={panel !== 'presentation'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Department presentation</h3>
             <p className="text-xs text-muted-foreground">
               Display controls never pause Bid execution.
             </p>
+            <div className="mt-3 flex flex-wrap gap-3 text-sm">
+              <a
+                href="/live"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-11 items-center font-semibold underline"
+              >
+                Open presentation
+              </a>
+              <Button
+                type="button"
+                onClick={() =>
+                  void navigator.clipboard
+                    .writeText(`${window.location.origin}/live`)
+                    .then(() => setNotice('Presentation link copied.'))
+                    .catch(() =>
+                      setNotice('Copy unavailable. Open the presentation and copy its address.'),
+                    )
+                }
+              >
+                Copy presentation link
+              </Button>
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {[
                 ['OFF', 'OFF'],
@@ -1404,16 +1716,20 @@ export function AnnualLiveControls(props: Props) {
 
           <article hidden={panel !== 'selection'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">
-              {state?.returning_member
-                ? 'Record returned bidder selection'
-                : 'Record current bidder selection'}
+              {props.workspace
+                ? 'Review selection'
+                : state?.returning_member
+                  ? 'Record returned bidder selection'
+                  : 'Record current bidder selection'}
             </h3>
-            <p className="text-xs text-muted-foreground">
-              {selectionMember
-                ? `${name(selectionMember)} selects from the frozen stage's eligible opportunities.`
-                : 'The frozen stage policy remains enforced.'}
-            </p>
-            {state?.selection_stage ? (
+            {!props.workspace ? (
+              <p className="text-xs text-muted-foreground">
+                {selectionMember
+                  ? `${name(selectionMember)} selects from the frozen stage's eligible opportunities.`
+                  : 'The frozen stage policy remains enforced.'}
+              </p>
+            ) : null}
+            {state?.selection_stage && !props.workspace ? (
               <p className="mt-2 text-xs font-medium text-foreground">
                 Current stage: {state.selection_stage.label}
               </p>
@@ -1430,37 +1746,45 @@ export function AnnualLiveControls(props: Props) {
                 reviewed disposition or fallback controls.
               </p>
             ) : null}
-            <NativeSelect
-              aria-label="Position selected by current bidder"
-              value={selectionPoolId ? '' : selectionPositionId}
-              onChange={(event) => {
-                setSelectionPositionId(event.target.value);
-                setSelectionPoolId('');
-              }}
-              className="mt-2 block w-full rounded border border-border px-2 py-2 text-sm"
-            >
-              <option value="">Open opportunity</option>
-              {props.positions
-                ?.filter(
-                  (position) =>
-                    !position.bidParticipation || position.bidParticipation === 'BIDDABLE',
-                )
-                ?.filter((position) =>
-                  state?.selection_stage?.eligible_position_ids.includes(position.id),
-                )
-                ?.filter((position) => !poolSlots.has(position.id))
-                .filter((position) =>
-                  state === null
-                    ? props.fills[position.id] === undefined
-                    : state.fills[position.id] === undefined,
-                )
-                .map((position) => (
-                  <option key={position.id} value={position.id}>
-                    {position.id} · {position.positionName}
-                  </option>
-                ))}
-            </NativeSelect>
-            {state?.opportunity_pools?.length ? (
+            {props.workspace ? (
+              <p className="mt-2 text-sm">
+                {selectionPosition
+                  ? `${selectionPosition.id} · ${selectionPosition.station} · ${selectionPosition.unit} · ${selectionPosition.positionName}`
+                  : 'Choose an available position above.'}
+              </p>
+            ) : (
+              <NativeSelect
+                aria-label="Position selected by current bidder"
+                value={selectionPoolId ? '' : selectionPositionId}
+                onChange={(event) => {
+                  setSelectionPositionId(event.target.value);
+                  setSelectionPoolId('');
+                }}
+                className="mt-2 block w-full rounded border border-border px-2 py-2 text-sm"
+              >
+                <option value="">Open opportunity</option>
+                {props.positions
+                  ?.filter(
+                    (position) =>
+                      !position.bidParticipation || position.bidParticipation === 'BIDDABLE',
+                  )
+                  ?.filter((position) =>
+                    state?.selection_stage?.eligible_position_ids.includes(position.id),
+                  )
+                  ?.filter((position) => !poolSlots.has(position.id))
+                  .filter((position) =>
+                    state === null
+                      ? props.fills[position.id] === undefined
+                      : state.fills[position.id] === undefined,
+                  )
+                  .map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {position.id} · {position.positionName}
+                    </option>
+                  ))}
+              </NativeSelect>
+            )}
+            {state?.opportunity_pools?.length && !props.workspace ? (
               <Label className="mt-2 block text-sm">
                 Station or float pool
                 <NativeSelect
@@ -1503,9 +1827,13 @@ export function AnnualLiveControls(props: Props) {
                 ) : null}
               </Label>
             ) : null}
-            {selectionRequiresSimultaneousADay ? (
+            {selectionRequiresSimultaneousADay && selectionPosition !== undefined ? (
               <ADayChoice
-                label="Selection A-Day"
+                label={
+                  props.workspace && selectionPosition.shift === 'D'
+                    ? 'Selection R-Day'
+                    : 'Selection A-Day'
+                }
                 position={selectionPosition}
                 combatGroups={state?.a_day_combat_groups}
                 value={selectionADay}
@@ -1546,8 +1874,10 @@ export function AnnualLiveControls(props: Props) {
               type="button"
               disabled={
                 busy ||
+                loadError !== null ||
                 state === null ||
                 selectionMember === null ||
+                !canSelectViewedMember ||
                 pendingADay !== null ||
                 !selectionPositionId ||
                 (selectionRequiresSimultaneousADay &&
@@ -1563,7 +1893,7 @@ export function AnnualLiveControls(props: Props) {
               }
               className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
             >
-              Commit selection
+              {props.workspace ? 'Confirm bid' : 'Commit selection'}
             </Button>
           </article>
 
@@ -1750,7 +2080,7 @@ export function AnnualLiveControls(props: Props) {
           </article>
         </div>
         {notice ? <output className="mt-3 block text-sm text-foreground">{notice}</output> : null}
-      </TaskPanel>
+      </SelectionFrame>
     </section>
   );
 }
