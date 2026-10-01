@@ -26,7 +26,9 @@ const IMPACT_RESULT_TIMEOUT_MS = 30_000;
 // Impact previews call the real service over migrated SQLite; legacy Save and
 // Restore presentation fixtures check intent, while D1 writer tests prove commits.
 type Fixture = Awaited<ReturnType<typeof installCurrentBidFixtures>>;
-const workspace = (page: Page) => page.getByTestId('current-bid-workspace');
+// Next may retain hidden streamed markup outside the accessible application main.
+// Operate the committed workspace and still fail if it contains duplicate active copies.
+const workspace = (page: Page) => page.getByRole('main').getByTestId('current-bid-workspace');
 const editNavigation = (page: Page) =>
   workspace(page).getByRole('navigation', { name: 'Edit Bid sections', exact: true });
 const sectionButton = (page: Page, name: string) =>
@@ -253,6 +255,7 @@ function assertNoWrites(state: Fixture) {
 
 async function openBid(page: Page) {
   await page.goto(`/admin/current-bid?year=${BID_YEAR}`);
+  await expect(workspace(page)).toHaveCount(1);
   await expect(workspace(page)).toBeVisible();
   await expect(workspace(page).getByRole('heading', { level: 1 })).toHaveText(
     `${BID_YEAR} Current Bid`,

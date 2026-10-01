@@ -1361,7 +1361,13 @@ export async function prepareCapturedBidEvaluation(
   const { coverage, bindings, ruleBookMaterial } = policy;
   const templateVersion = coverage.templateVersion;
   if (!coverage.valid || templateVersion === null) return { ok: false, code: 'rule_book_invalid' };
-  const nonBiddablePositionIds = coverage.administrativelyAssignedPositionIds;
+  // Both categories retain staffing outside the ordinary opportunity set.
+  // Approved bindings and dated holder/term evidence must govern participation
+  // consistently; an annual closure does not manufacture completed service.
+  const nonBiddablePositionIds = uniqueSorted([
+    ...coverage.administrativelyAssignedPositionIds,
+    ...coverage.reservedPositionIds,
+  ]);
   const capturedOn = policy.settings.personnelEvaluationOn ?? snapshotDate(capturedAtMs);
   const credentialEvaluationOn = policy.settings.credentialEvaluationOn;
   const {
@@ -1450,10 +1456,7 @@ export async function prepareCapturedBidEvaluation(
           assignment.effectiveTo !== null) &&
         effectiveOn(capturedOn, assignment.effectiveFrom, assignment.effectiveTo),
     ),
-    nonBiddablePositionIds: [
-      ...coverage.administrativelyAssignedPositionIds,
-      ...coverage.reservedPositionIds,
-    ],
+    nonBiddablePositionIds,
   });
   const blockedTerms = termReview.filter((term) => assignmentTermReviewBlocksPurpose(term, mode));
   if (blockedTerms.length)

@@ -131,6 +131,10 @@ describe.each([2026, 2027])('configured annual stages in %s', (year) => {
         '{"max":0,"items":[]}','["rsc_seniority"]');
       INSERT INTO rule_book_position_participation(rule_book_version,position_id,template_version,bid_participation,authoritative_source_ref,created_at)
       VALUES ('${year}.1','${RESERVED}','${year}.1','RESERVED_NON_BIDDABLE','Synthetic reserved source',1);
+      INSERT INTO staffing_positions(id,stable_slot_key,division,shift,station,unit,position_name,applicable_rank,active_from,review_status,created_at,updated_at)
+      VALUES ('synthetic-reserved-staffing-${year}','SYNTHETIC/${year}/RESERVED','Administration','D','7','Synthetic Office','Synthetic reserved position','FF','2020-01-01','approved',1,1);
+      INSERT INTO position_staffing_bindings(template_version,position_id,staffing_position_id,authoritative_source_ref,review_status,created_at)
+      VALUES ('${year}.1','${RESERVED}','synthetic-reserved-staffing-${year}','Synthetic reviewed reserved binding','approved',1);
     `);
     const source = await captureBidDefinitionSource(h.env.DB, year);
     if (!source.ok) throw new Error(JSON.stringify(source));
