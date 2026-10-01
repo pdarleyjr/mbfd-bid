@@ -8,7 +8,7 @@ import type {
 } from '@cloudflare/workers-types';
 
 export interface WorkerEnv {
-  ENV: 'staging' | 'production';
+  ENV: 'test' | 'production';
   PORTAL_BASE_URL: string;
   /** Literal "true" is required before any Worker path may publish a bid. */
   PORTAL_WRITEBACK_ENABLED?: 'true' | 'false';

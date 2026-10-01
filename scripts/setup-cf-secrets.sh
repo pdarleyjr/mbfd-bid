@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Interactive non-JWT secret bootstrapper for Cloudflare workers.
-# Run once per env (staging, production) when the worker is first deployed.
+# Requires an explicitly authorized production secret change.
 # Inputs are read with -s (no echo); values are piped straight to `wrangler secret put`.
-# JWT_SIGNING_KEY is intentionally excluded: staging JWT rotation must update
-# the API and OpenNext Web Workers together via rotate-staging-jwt-pair.sh.
+# JWT_SIGNING_KEY is intentionally excluded: an authorized rotation must update
+# the production API and Web Workers together and prove a fresh login.
 
 set -euo pipefail
 
-if [[ "${1:-}" != "staging" && "${1:-}" != "production" ]]; then
-  echo "Usage: $0 <staging|production>" >&2
+if [[ "${1:-}" != "production" ]]; then
+  echo "Usage: $0 production" >&2
   exit 1
 fi
 
-ENV="$1"
+BID_ENVIRONMENT="$1"
 WORKER_DIR="apps/worker"
 
 if [[ ! -d "$WORKER_DIR" ]]; then
@@ -28,22 +28,14 @@ Each value is read with hidden input. Leave blank to skip a secret
 EOF
 
 declare -A SECRETS=(
-  [PORTAL_BID_READER]="Portal service token for POST /api/v2/verify-credentials"
+  [PORTAL_BID_FEDERATION_TOKEN]="Dedicated Hub service token for Bid authorization code exchange and identity revalidation"
   [AUDIT_SIGNING_PRIVKEY]="ed25519 private key (PEM) for R2 audit chunk signatures. Plan 08 — can skip until then."
 )
 
 # Preserve insertion order
-ORDER=(PORTAL_BID_READER AUDIT_SIGNING_PRIVKEY)
+ORDER=(PORTAL_BID_FEDERATION_TOKEN AUDIT_SIGNING_PRIVKEY)
 
-# The shared local-admin account is a staging-only bootstrap mechanism for a
-# missing member-PIN record. Never configure it for production.
-if [[ "$ENV" == "staging" ]]; then
-  SECRETS[LOCAL_ADMIN_PASSWORD_HASH]="bcrypt digest of the staging-only local admin password; never enter the plaintext here"
-  ORDER+=(LOCAL_ADMIN_PASSWORD_HASH)
-fi
-
-# Staging must never receive portal write capability. Production writer setup,
-# if separately authorized, is intentionally not part of this bootstrapper.
+# Production writer setup is intentionally outside this bootstrapper.
 
 pushd "$WORKER_DIR" > /dev/null
 
@@ -53,7 +45,7 @@ for name in "${ORDER[@]}"; do
   read -rsp "Value (hidden, empty=skip): " value
   echo
   if [[ -n "$value" ]]; then
-    printf '%s' "$value" | pnpm dlx wrangler secret put "$name" --env "$ENV"
+    printf '%s' "$value" | pnpm exec wrangler secret put "$name" --env "$BID_ENVIRONMENT"
     echo
   else
     echo "  (skipped)"
@@ -64,4 +56,4 @@ done
 
 popd > /dev/null
 
-echo "✅ Done. List with: pnpm --filter @mbfd/worker exec wrangler secret list --env $ENV"
+echo "✅ Done. List names with: pnpm --filter @mbfd/worker exec wrangler secret list --env $BID_ENVIRONMENT"

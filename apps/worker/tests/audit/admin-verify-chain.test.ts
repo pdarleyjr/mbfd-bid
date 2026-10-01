@@ -69,7 +69,7 @@ function inMemDb(): ChainDb {
 
 function makeEnv(r2: FakeR2): WorkerEnv {
   return {
-    ENV: 'staging',
+    ENV: 'test',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'a'.repeat(64),
     PORTAL_BID_READER: 'tok',

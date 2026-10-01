@@ -4,7 +4,7 @@ $originalLastExitCode = $global:LASTEXITCODE
 
 # Exercise the real backup orchestration with an in-process CLI double.
 # No remote operation or runtime credential is used by this test.
-foreach ($scenario in @('production', 'staging', 'lookup-fails', 'malformed-json', 'missing-bookmark', 'export-fails', 'export-throws', 'small-export', 'sql-upload-fails', 'receipt-upload-fails', 'receipt-upload-throws')) {
+foreach ($scenario in @('production', 'retired-env', 'lookup-fails', 'malformed-json', 'missing-bookmark', 'export-fails', 'export-throws', 'small-export', 'sql-upload-fails', 'receipt-upload-fails', 'receipt-upload-throws')) {
   $state = [pscustomobject]@{
     Calls = [System.Collections.Generic.List[string]]::new()
     Receipt = $null
@@ -55,24 +55,24 @@ foreach ($scenario in @('production', 'staging', 'lookup-fails', 'malformed-json
   $caught = $null
   $captured = [System.Collections.Generic.List[string]]::new()
   try {
-    $targetEnv = if ($scenario -eq 'staging') { 'staging' } else { 'production' }
+    $targetEnv = if ($scenario -eq 'retired-env') { 'retired' } else { 'production' }
     & (Join-Path $PSScriptRoot 'd1-backup.ps1') -Env $targetEnv -DbName 'synthetic-db' -BucketName 'synthetic-private-bucket' *>&1 | ForEach-Object { $captured.Add("$_") }
   } catch { $caught = $_ }
   $outputText = ($captured -join "`n") + ($caught | Out-String)
   if ($outputText -match '00000001-00000002|private-cli-error|private-invalid-json|synthetic\.invalid|X-Amz-Signature|private-export-|private-upload-') { throw "$scenario leaked private CLI or recovery output." }
   if ($state.Directory -and (Test-Path -LiteralPath $state.Directory)) { throw "$scenario left temporary backup data behind." }
-  $shouldPass = $scenario -in @('production', 'staging')
+  $shouldPass = $scenario -eq 'production'
   if ($shouldPass -ne ($null -eq $caught)) { throw "$scenario returned the wrong success/failure outcome: $caught" }
   if (-not $shouldPass -and $outputText -match '\[d1-backup\] OK') { throw "$scenario falsely reported backup success." }
   if ($scenario -eq 'production') {
     if ($state.Calls.Count -ne 4 -or $state.Calls[0] -notmatch 'time-travel info') { throw 'Recovery bookmark must precede the export and both uploads.' }
     if ($state.Receipt.time_travel_bookmark -ne '00000001-00000002-00000003-0123456789abcdef' -or $state.Receipt.backup_sha256 -ne $state.SqlHash -or $state.Receipt.backup_bytes -lt 1024 -or $state.Receipt.environment -ne 'production' -or $state.Receipt.backup_key -notmatch '^d1/.+\.sql$' -or -not $state.Receipt.bookmark_captured_at) { throw 'Private recovery receipt did not match the exported snapshot and bookmark.' }
   }
-  if ($scenario -eq 'staging' -and ($state.Calls.Count -ne 2 -or $null -ne $state.Receipt)) { throw 'Existing staging backup behavior changed.' }
+  if ($scenario -eq 'retired-env' -and $state.Calls.Count -ne 0) { throw 'Retired environment must be rejected before any remote command.' }
   if ($scenario -in @('lookup-fails', 'malformed-json', 'missing-bookmark') -and $state.Calls.Count -ne 1) { throw 'Backup continued without valid recovery evidence.' }
   if ($scenario -in @('export-fails', 'export-throws', 'small-export') -and $state.Calls.Count -ne 2) { throw 'Backup uploaded an invalid SQL export.' }
   if ($scenario -eq 'sql-upload-fails' -and $null -ne $state.Receipt) { throw 'Receipt published before successful SQL upload.' }
 }
 Remove-Item Function:pnpm
 $global:LASTEXITCODE = $originalLastExitCode
-Write-Host '[PASS] D1 private recovery receipt: success, CLI stream confidentiality, cleanup, unchanged staging and nine failure paths.'
+Write-Host '[PASS] D1 private recovery receipt: production success, retired scope rejection, CLI confidentiality, cleanup and nine failure paths.'

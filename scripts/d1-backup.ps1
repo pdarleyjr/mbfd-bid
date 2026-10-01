@@ -9,13 +9,13 @@
     and deletes the temp file. Production also stores a private recovery
     receipt containing the pre-export Time Travel bookmark and SQL hash.
     Designed to be invoked by the
-    `.github/workflows/d1-backup.yml` GitHub Actions cron.
+    manually dispatched `.github/workflows/d1-backup.yml` workflow.
 
     DO NOT run this script against production D1 from a dev workstation
-    without an approval ticket — Phase A is local + staging-code-only.
+    without authorization for that production backup.
 
 .PARAMETER Env
-    `staging` or `production`. Selects the wrangler environment.
+    Explicit `production` scope. Selects the wrangler environment.
 
 .PARAMETER DbName
     Database name as declared in wrangler.toml.
@@ -24,10 +24,10 @@
     R2 bucket name (e.g. `mbfd-bid-prod-backups`).
 
 .EXAMPLE
-    ./scripts/d1-backup.ps1 -Env staging -DbName mbfd-bid-staging -BucketName mbfd-bid-staging-backups
+    ./scripts/d1-backup.ps1 -Env production -DbName mbfd-bid-production -BucketName mbfd-bid-prod-backups
 #>
 param(
-  [Parameter(Mandatory)][ValidateSet('staging', 'production')][string]$Env,
+  [Parameter(Mandatory)][ValidateSet('production')][string]$Env,
   [Parameter(Mandatory)][string]$DbName,
   [Parameter(Mandatory)][string]$BucketName
 )

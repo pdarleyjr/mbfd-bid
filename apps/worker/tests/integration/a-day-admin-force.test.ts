@@ -36,11 +36,12 @@ describe('POST /api/admin/bid-session/:id/force-a-day (Plan 07 Task 14)', () => 
 
   beforeAll(async () => {
     worker = await unstable_dev('src/index.ts', {
+      config: 'wrangler.test.toml',
       experimental: { disableExperimentalWarning: true },
       local: true,
       vars: {
         JWT_SIGNING_KEY: SIGNING_KEY,
-        ENV: 'staging',
+        ENV: 'test',
         PORTAL_BASE_URL: 'https://example.org',
         PORTAL_BID_FEDERATION_TOKEN: 'x',
       },

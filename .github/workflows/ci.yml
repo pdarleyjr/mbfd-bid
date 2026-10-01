@@ -52,19 +52,35 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Build OpenNext staging artifact (non-deploy)
+      - name: Build OpenNext production artifact (non-deploy)
         working-directory: apps/web
-        # The staging API base is intentionally fixed at build time; this
-        # job only proves the deployable Worker artifact and makes no remote
-        # Cloudflare, D1, DNS, or portal change.
+        # Build the actual release configuration without remote access.
+        # No deployment or Cloudflare/D1/Hub mutation occurs in this step.
         env:
-          NEXT_PUBLIC_WORKER_BASE: https://api.staging.bid.mbfdhub.com
-        run: pnpm build:opennext:staging
+          NEXT_PUBLIC_WORKER_BASE: https://api.bid.mbfdhub.com
+        run: pnpm build:opennext:production
+      - name: Smoke isolated local Worker
+        working-directory: apps/worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_key="$(openssl rand -hex 32)"
+          pnpm exec wrangler dev --config wrangler.test.toml --local --ip 127.0.0.1 --port 8788 --persist-to .wrangler/ci-test-state --log-level error --var "JWT_SIGNING_KEY:$test_key" --var "PORTAL_BID_FEDERATION_TOKEN:test-fixture-only" > worker-local.log 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8788/api/health | node --input-type=module -e 'let data=""; for await (const part of process.stdin) data+=part; const body=JSON.parse(data); if(body.ok!==true || body.env!=="test") process.exit(1);'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat worker-local.log
+          exit 1
       - name: Verify D1 backup preflight
         shell: pwsh
         run: ./scripts/test-d1-backup-preflight.ps1
-      - name: Verify ordinary staging deployment migration guard
-        run: node scripts/test-deploy-staging-migration-guard.mjs
+      - name: Verify retired environment cannot be deployed or used by tests
+        run: node scripts/test-staging-retirement.mjs
       - name: Verify production release workflow guard
         run: node scripts/test-deploy-production-migration-guard.mjs
       - run: pnpm test

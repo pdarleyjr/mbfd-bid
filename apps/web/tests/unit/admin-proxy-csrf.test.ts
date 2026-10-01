@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   cfEnv: vi.fn(),
   cookies: vi.fn(),
   fetch: vi.fn(),
-  getWorkerBase: vi.fn(() => 'https://api.staging.bid.mbfdhub.com'),
+  getWorkerBase: vi.fn(() => 'https://api.bid.test.invalid'),
   requireAdmin: vi.fn(),
 }));
 
@@ -17,7 +17,7 @@ vi.mock('@/lib/require-admin', () => ({ requireAdmin: mocks.requireAdmin }));
 
 function request({
   path,
-  origin = 'https://staging.bid.mbfdhub.com',
+  origin = 'https://bid.test.invalid',
   fetchSite = 'same-origin',
   csrf = csrfToken,
 }: {
@@ -30,7 +30,7 @@ function request({
   if (origin !== null) headers.set('Origin', origin);
   if (fetchSite !== null) headers.set('Sec-Fetch-Site', fetchSite);
   if (csrf !== null) headers.set('X-MBFD-CSRF', csrf);
-  return new Request(`https://staging.bid.mbfdhub.com${path}`, {
+  return new Request(`https://bid.test.invalid${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ example: true }),
@@ -39,7 +39,7 @@ function request({
 
 describe('cookie-authenticated admin mutation CSRF enforcement', () => {
   beforeEach(() => {
-    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'staging' : undefined));
+    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'test' : undefined));
     mocks.cookies.mockReset();
     mocks.cookies.mockResolvedValue({
       get: vi.fn((name: string) => {
@@ -62,8 +62,8 @@ describe('cookie-authenticated admin mutation CSRF enforcement', () => {
   it.each([
     ['foreign Origin', 'https://evil.example', 'cross-site'],
     ['missing Origin', null, 'same-origin'],
-    ['cross-site Fetch Metadata', 'https://staging.bid.mbfdhub.com', 'cross-site'],
-    ['same-site Fetch Metadata', 'https://staging.bid.mbfdhub.com', 'same-site'],
+    ['cross-site Fetch Metadata', 'https://bid.test.invalid', 'cross-site'],
+    ['same-site Fetch Metadata', 'https://bid.test.invalid', 'same-site'],
   ])(
     'rejects an unsafe generic admin proxy request with %s before reading a cookie or contacting the Worker',
     async (_label, origin, fetchSite) => {
@@ -105,7 +105,7 @@ describe('cookie-authenticated admin mutation CSRF enforcement', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.fetch).toHaveBeenCalledWith(
-      'https://api.staging.bid.mbfdhub.com/api/admin/bid/skip',
+      'https://api.bid.test.invalid/api/admin/bid/skip',
       expect.objectContaining({
         method: 'POST',
         duplex: 'half',

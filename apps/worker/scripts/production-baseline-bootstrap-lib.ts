@@ -284,7 +284,7 @@ function sqlLiteral(value: SqlRow[string]): string {
 export function buildProductionBaselineSql(plan: ProductionBaselinePlan): string {
   if (plan.summary.insertsRequired === 0) return '-- no-op: production baseline already matches\n';
   const statements = [
-    '-- Generated transiently by production-baseline-bootstrap.ts.',
+    '-- Generated from the reviewed production baseline plan.',
     '-- Contains reviewed canonical data; do not commit this file.',
   ];
   for (const table of TABLE_ORDER) {

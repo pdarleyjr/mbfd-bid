@@ -1,7 +1,7 @@
 import type { WorkerEnv } from '../types/env.js';
 
 /**
- * Portal publication is deliberately opt-in. In particular, a staging Worker
+ * Portal publication is deliberately opt-in. In particular, a test Worker
  * may still use PORTAL_BASE_URL for read-only authentication without gaining
  * permission to send an award to that portal.
  */
@@ -33,7 +33,7 @@ function isSecureWritebackUrl(value: string): boolean {
 
 /**
  * Resolve the only configuration that can permit an outbound portal write.
- * Publication is production-only: no staging configuration or credential can
+ * Publication is production-only: no test configuration or credential can
  * override that boundary. Every missing, malformed, or non-literal value also
  * fails closed.
  */

@@ -14,8 +14,7 @@
     "test:e2e": "pnpm --filter @mbfd/web test:e2e",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "typecheck": "pnpm -r --filter \"./packages/*\" build && pnpm -r typecheck",
-    "deploy:staging": "pnpm -r deploy:staging"
+    "typecheck": "pnpm -r --filter \"./packages/*\" build && pnpm -r typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

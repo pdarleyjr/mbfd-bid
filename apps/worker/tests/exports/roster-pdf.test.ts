@@ -42,7 +42,7 @@ describe('generateRosterPdf (Browser Rendering refactor)', () => {
       year: 2026,
       browser: browserBinding,
       printTokenSecret: 'PRINT_SECRET',
-      webBaseUrl: 'https://staging.bid.mbfdhub.com',
+      webBaseUrl: 'https://bid.test.invalid',
       r2: { put: r2Put } as unknown as R2Bucket,
       now: () => 1730000000000,
     });

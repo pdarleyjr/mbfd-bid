@@ -5,13 +5,13 @@
  */
 export function publicWebOrigin(env: string | undefined): string | null {
   if (
-    env === 'staging' &&
+    env === 'test' &&
     process.env.NODE_ENV === 'development' &&
     process.env.MBFD_LOCAL_REHEARSAL_ORIGIN === 'http://127.0.0.1:3000'
   )
     return 'http://127.0.0.1:3000';
   if (env === 'production') return 'https://bid.mbfdhub.com';
-  if (env === 'staging') return 'https://staging.bid.mbfdhub.com';
+  if (env === 'test') return 'https://bid.test.invalid';
   return null;
 }
 
