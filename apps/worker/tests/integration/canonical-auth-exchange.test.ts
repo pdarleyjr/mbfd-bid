@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { signJwt } from '../../src/lib/jwt.js';
+import { signJwt, verifyJwt } from '../../src/lib/jwt.js';
 import auth from '../../src/routes/auth';
 import bid from '../../src/routes/bid';
 import type { WorkerEnv } from '../../src/types/env';
@@ -213,6 +213,21 @@ describe('POST /api/auth/revalidate', () => {
       'A'.repeat(64),
     );
   }
+
+  it('revalidates authorization without renewing the five-minute interactive freshness', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(hubSuccess({ role: 'admin' }));
+    const response = await app().request(
+      '/api/auth/revalidate',
+      { method: 'POST', headers: { Authorization: `Bearer ${await sessionToken()}` } },
+      env(),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { jwt: string };
+    const claims = await verifyJwt(body.jwt, 'A'.repeat(64));
+    expect(claims.fresh_auth_at).toBe(1_700_000_000);
+    expect(claims.authz_checked_at).toBeGreaterThan(claims.fresh_auth_at);
+    expect(claims).toMatchObject({ sub: 901, member_id: 555, security_version: 3, role: 'admin' });
+  });
 
   it('uses the federation credential and adopts Hub role downgrade without changing identities', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
