@@ -1167,6 +1167,12 @@ describe('BidPolicyFields', () => {
       'Synthetic approved fallback authority',
     );
     await setValue(control(policy, 'Fallback source decision'), 'synthetic-source-decision');
+    expect(ops(state.value()).fallbackPolicies?.[0]).not.toHaveProperty('activation');
+    await setValue(control(policy, 'Fallback becomes available'), 'NO_QUALIFIED_VOLUNTEER_REMAINS');
+    await setValue(
+      control(policy, 'Fallback timing source'),
+      'Synthetic reviewed no-volunteers clause',
+    );
     await click(
       control(
         group(policy, 'Fallback opportunities'),
@@ -1192,6 +1198,11 @@ describe('BidPolicyFields', () => {
     expect(configured).toMatchObject({
       id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
       sourceDecisionId: 'synthetic-source-decision',
+      activation: {
+        v: 1,
+        prerequisite: 'NO_QUALIFIED_VOLUNTEER_REMAINS',
+        sourceRef: 'Synthetic reviewed no-volunteers clause',
+      },
       positionIds: ['synthetic-seat-1'],
       tiers: [
         {

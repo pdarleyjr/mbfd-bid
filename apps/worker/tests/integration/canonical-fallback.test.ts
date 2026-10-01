@@ -94,7 +94,12 @@ function syntheticPolicy(mode: 'VOLUNTARY' | 'FORCED' | 'EMPTY' | 'LEGACY') {
                       label: 'Synthetic minimum qualified fallback',
                       sourceRef: 'synthetic:approved-fallback-source',
                       sourceDecisionId: 'synthetic-fallback-source',
-                      positionIds: [SEAT],
+                      positionIds: [SEAT, PRIOR_SEAT],
+                      activation: {
+                        v: 1,
+                        prerequisite: 'NO_QUALIFIED_VOLUNTEER_REMAINS',
+                        sourceRef: 'Synthetic approved opportunity exhaustion condition',
+                      },
                       tiers: [
                         ...(mode === 'VOLUNTARY'
                           ? [
@@ -314,6 +319,24 @@ describe.each(['VOLUNTARY', 'FORCED', 'EMPTY', 'LEGACY'] as const)(
           { ordinal: 1, memberId: MEMBER, pool: 'FF', stageId: 'synthetic-ff' },
           { ordinal: 2, memberId: SECOND, pool: 'FF', stageId: 'synthetic-ff' },
         ],
+        ...(mode === 'FORCED' || mode === 'VOLUNTARY'
+          ? {
+              queueCursor: 2,
+              live: {
+                currentStageId: 'synthetic-ff',
+                completedStageIds: [],
+                pausedPhase: null,
+                lastSelectionBidId: null,
+                dispositions: [MEMBER, SECOND].map((memberId) => ({
+                  memberId,
+                  stageId: 'synthetic-ff',
+                  disposition: 'DECLINED',
+                  reason: 'Synthetic ordinary turn declined',
+                  evidenceReference: 'synthetic:ordinary-decline',
+                })),
+              },
+            }
+          : {}),
       };
     });
 
@@ -393,6 +416,10 @@ describe.each(['VOLUNTARY', 'FORCED', 'EMPTY', 'LEGACY'] as const)(
     it.skipIf(mode !== 'VOLUNTARY').each(['fallback', 'ordinary'] as const)(
       'persists %s UNREACHABLE only on the target member latest contact in this session',
       async (path) => {
+        if (path === 'ordinary') {
+          state.queueCursor = 0;
+          state.live = null;
+        }
         const target = path === 'fallback' ? SECOND : MEMBER;
         const otherSession = 'synthetic-other-contact-session';
         h.sqlite
@@ -468,6 +495,64 @@ describe.each(['VOLUNTARY', 'FORCED', 'EMPTY', 'LEGACY'] as const)(
         expectNoAwardEvidence();
       }
     });
+    it.skipIf(mode !== 'FORCED')(
+      'rejects early forcing at the canonical boundary without awarding or advancing',
+      async () => {
+        state.queueCursor = 0;
+        if (!state.live) throw new Error('Synthetic progress required');
+        state.live = { ...state.live, dispositions: [], completedStageIds: ['synthetic-ff'] };
+        const command = fallbackCommand('live.force_selection');
+        const result = await commit(command);
+        expect(result.result).toMatchObject({
+          kind: 'rejected',
+          code: 'FALLBACK_ORDINARY_PATH_NOT_EXHAUSTED',
+          currentSeq: 7,
+        });
+        expect(await commit(command)).toEqual(result);
+        expect(state.lastSeq).toBe(7);
+        expectNoAwardEvidence();
+      },
+    );
+    it.skipIf(mode !== 'FORCED')(
+      'awards final-stage fallback after queue exhaustion but rejects any new award after sealed completion',
+      async () => {
+        state.currentPhase = 'complete';
+        state.currentBidderId = null;
+        const command = fallbackCommand('live.force_selection');
+        const result = await commit(command);
+        expect(result.result).toMatchObject({ kind: 'accepted', seq: 8 });
+        expect(result.canonicalState?.fills[SEAT]).toMatchObject({ memberId: SECOND });
+        if (!result.canonicalState) throw new Error('Award state required');
+        state = result.canonicalState;
+        const completed = await commit({
+          v: 1,
+          type: 'live.complete_session',
+          commandId: 'fe21a643-4e3a-4b01-9738-3d8e4a191ae0',
+          bidSessionId: SESSION,
+          expectedSeq: 8,
+          actor: { id: MEMBER, role: 'admin' },
+          reason: 'Synthetic approved final result',
+          evidenceReference: 'synthetic:completion',
+        });
+        expect(completed.result).toMatchObject({ kind: 'accepted', seq: 9 });
+        if (!completed.canonicalState) throw new Error('Sealed state required');
+        state = completed.canonicalState;
+        const sealed = await commit(
+          fallbackCommand('live.force_selection', {
+            commandId: '8edfa812-36bc-46f1-8eec-9d069613b9ef',
+            expectedSeq: 9,
+            positionId: PRIOR_SEAT,
+          }),
+        );
+        expect(sealed.result).toMatchObject({ kind: 'rejected', code: 'ANNUAL_COMPLETION_SEALED' });
+        expect(
+          h.sqlite
+            .prepare('SELECT COUNT(*) AS n FROM bid_command_events WHERE bid_session_id=?')
+            .get(SESSION),
+        ).toEqual({ n: 2 });
+        expect(state.fills[PRIOR_SEAT]).toBeUndefined();
+      },
+    );
     it('rejects absent policy, incorrect tier, candidate, and action mode before award persistence', async () => {
       if (mode === 'EMPTY' || mode === 'LEGACY') {
         expect((await commit(fallbackCommand('live.force_selection'))).result).toMatchObject({
@@ -607,16 +692,36 @@ describe.each(['VOLUNTARY', 'FORCED', 'EMPTY', 'LEGACY'] as const)(
           }),
         );
         expect(second.result).toMatchObject({ kind: 'accepted', seq: 9 });
-        const selected = await commit(
+        const unresolved = await commit(
           fallbackCommand('live.force_selection', {
             commandId: '52616e36-3587-4cb0-b697-d4324a3f78bd',
             expectedSeq: 9,
             fallback: { policyId: 'synthetic-fallback', tierId: 'forced' },
           }),
         );
-        expect(selected.result).toMatchObject({ kind: 'accepted', seq: 10 });
+        expect(unresolved.result).toMatchObject({
+          kind: 'rejected',
+          code: 'FALLBACK_TIER_NOT_ACTIVE',
+        });
+        const declined = await commit(
+          fallbackCommand('live.record_fallback_response', {
+            commandId: 'a75e3206-f2a2-4c49-9f6b-97fe78845d0e',
+            expectedSeq: 9,
+            memberId: MEMBER,
+            outcome: 'DECLINE',
+          }),
+        );
+        expect(declined.result).toMatchObject({ kind: 'accepted', seq: 10 });
+        const selected = await commit(
+          fallbackCommand('live.force_selection', {
+            commandId: '65a1af79-83b7-4c3c-a6e5-20d41dc80c7e',
+            expectedSeq: 10,
+            fallback: { policyId: 'synthetic-fallback', tierId: 'forced' },
+          }),
+        );
+        expect(selected.result).toMatchObject({ kind: 'accepted', seq: 11 });
         expect(selected.canonicalState?.fills[SEAT]).toMatchObject({ memberId: SECOND });
-        expect(selected.canonicalState?.live?.fallbackResponses).toHaveLength(2);
+        expect(selected.canonicalState?.live?.fallbackResponses).toHaveLength(3);
       },
     );
   },
