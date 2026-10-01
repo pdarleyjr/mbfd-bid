@@ -73,8 +73,9 @@ function samePick(left: ADayPick, right: ADayPick) {
 
 /**
  * Compile frozen position awards and frozen A-Day timing policy into the one
- * pure A-Day engine. Simultaneous assignments are pre-seeded; a Timeline
- * exception enters that same engine only after position selection completes.
+ * pure A-Day engine. Awards carrying an A-Day are pre-seeded; an early award
+ * under a Timeline exception carries none and enters the same engine when its
+ * ordinary turn (or, failing that, the post-position phase) records it.
  * No timing branch creates a second authority or bypasses capacity rules.
  */
 export function evaluateFrozenADays(
@@ -136,13 +137,10 @@ export function evaluateFrozenADays(
     const selectedADay = fill.aDay;
     if (timing.timing === 'SIMULTANEOUS' && selectedADay === undefined)
       return { ok: false, code: 'A_DAY_REQUIRED_WITH_SELECTION' };
-    if (timing.timing === 'AFTER_POSITION_SELECTION' && selectedADay !== undefined)
-      return { ok: false, code: 'A_DAY_DEFERRED_SELECTION_REQUIRED' };
     seen.add(fill.memberId);
     phase1Picks.push({ positionId, memberId: fill.memberId, shift: position.shift });
-    if (timing.timing === 'AFTER_POSITION_SELECTION') deferredMemberIds.add(fill.memberId);
+    if (selectedADay === undefined) deferredMemberIds.add(fill.memberId);
     else {
-      if (selectedADay === undefined) return { ok: false, code: 'A_DAY_REQUIRED_WITH_SELECTION' };
       const next: ADayPick = {
         memberId: fill.memberId,
         shift: position.shift,
@@ -180,16 +178,17 @@ export function evaluateFrozenADays(
     if (!validation.ok) return { ok: false, code: validation.reasonCode };
     engine = applyPick(engine, pick);
   }
-  // Replay only delayed canonical picks, in canonical cursor order, so restart
-  // reconstruction cannot be influenced by client ordering or React state.
+  // Replay delayed canonical picks in the order the sequenced queue accepted
+  // them; restart reconstruction never depends on client ordering.
+  const phase2Index = (memberId: number) => phase2Order.indexOf(memberId);
   const persistedDeferred = (state.aDay?.picks ?? [])
     .filter((pick) => deferredMemberIds.has(pick.memberId))
     .sort(
-      (left, right) => phase2Order.indexOf(left.memberId) - phase2Order.indexOf(right.memberId),
+      (left, right) =>
+        left.pickedAtMs - right.pickedAtMs ||
+        phase2Index(left.memberId) - phase2Index(right.memberId),
     );
   for (const pick of persistedDeferred) {
-    if (nextBidder(engine) !== pick.memberId)
-      return { ok: false, code: 'A_DAY_PERSISTED_ORDER_INVALID' };
     const validation = canPick(engine, pick.memberId, pick.aDay);
     if (!validation.ok) return { ok: false, code: validation.reasonCode };
     engine = applyPick(engine, pick);

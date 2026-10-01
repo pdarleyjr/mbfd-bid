@@ -370,7 +370,18 @@ export function AnnualLiveControls(props: Props) {
       : (state?.a_day_timing_by_position?.[positionId] ?? state?.a_day_selection ?? null);
   const requiresSimultaneousADay = (positionId: string | undefined) =>
     aDayTimingForPosition(positionId) === 'SIMULTANEOUS';
-  const fallbackRequiresSimultaneousADay = requiresSimultaneousADay(fallback?.positionId);
+  // Only an early award defers its A-Day; an own-turn award selects both together.
+  const requiresADayForAward = (positionId: string | undefined, memberId: unknown) =>
+    requiresSimultaneousADay(positionId) ||
+    (aDayTimingForPosition(positionId) === 'AFTER_POSITION_SELECTION' &&
+      memberId !== undefined &&
+      memberId !== null &&
+      (memberId === state?.current_bidder?.member_id ||
+        memberId === state?.returning_member?.member_id));
+  const fallbackRequiresSimultaneousADay = requiresADayForAward(
+    fallback?.positionId,
+    fallbackMemberId,
+  );
   const selectionMember = state?.returning_member ?? state?.current_bidder ?? null;
   const dispositionMember = selectionMember;
   const termMemberId =
@@ -472,7 +483,10 @@ export function AnnualLiveControls(props: Props) {
     state?.fills,
     state?.membership_distributions,
   ]);
-  const selectionRequiresSimultaneousADay = requiresSimultaneousADay(selectionPositionId);
+  const selectionRequiresSimultaneousADay = requiresADayForAward(
+    selectionPositionId,
+    selectionMember?.member_id,
+  );
   const amendmentPosition = props.positions?.find((position) => position.id === amendTo);
   const amendmentRequiresSimultaneousADay = requiresSimultaneousADay(amendTo);
   const specialtyPosition = props.positions?.find(
@@ -596,14 +610,18 @@ export function AnnualLiveControls(props: Props) {
           : type === 'live.resolve_specialty_candidate'
             ? state.active?.requested_position_id
             : undefined;
-    const requiresADayWithAward = awardsPosition && requiresSimultaneousADay(awardPositionId);
+    const requiresADayWithAward =
+      awardsPosition &&
+      (type === 'live.record_selection' || type === 'live.force_selection'
+        ? requiresADayForAward(awardPositionId, detail.memberId)
+        : requiresSimultaneousADay(awardPositionId));
     if (requiresADayWithAward && !detail.aDay) {
       setNotice('Select an A-Day before recording this award.');
       return;
     }
     if (awardsPosition && !requiresADayWithAward && detail.aDay) {
       setNotice(
-        'This position selects A-Day after position selection; do not record an A-Day now.',
+        'This early award records its A-Day at the member’s ordinary turn; do not record an A-Day now.',
       );
       return;
     }
@@ -993,8 +1011,9 @@ export function AnnualLiveControls(props: Props) {
           <article hidden={panel !== 'a-day'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Controlled A-Day selection</h3>
             <p className="text-xs text-muted-foreground">
-              This action is available only after the frozen Timeline-controlled position phase has
-              completed. Capacity and constraints are rechecked by the canonical server command.
+              An early specialty award records its A-Day here at the member’s ordinary seniority
+              turn (or after position turns when no ordinary turn remains). Capacity and constraints
+              are rechecked by the canonical server command.
             </p>
             {pendingADay === null ? (
               <p className="mt-2 text-sm text-muted-foreground">

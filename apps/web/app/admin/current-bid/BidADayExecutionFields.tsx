@@ -21,7 +21,7 @@ type TimingException = NonNullable<Execution['timingExceptions']>[number];
 
 const timingOptions: { value: Execution['timing']; label: string }[] = [
   { value: 'SIMULTANEOUS', label: 'With position selection' },
-  { value: 'AFTER_POSITION_SELECTION', label: 'After position selection' },
+  { value: 'AFTER_POSITION_SELECTION', label: 'Early award: at ordinary turn' },
 ];
 
 const rankOptions: { value: Constraint['ranks'][number]; label: string }[] = [

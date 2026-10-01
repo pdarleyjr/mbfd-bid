@@ -670,14 +670,19 @@ describe('simultaneous A-Day live awards', () => {
     expect(commands[0]).not.toHaveProperty('aDay');
   });
 
-  it('uses a source-backed position timing exception instead of the global default', async () => {
+  it('still selects the A-Day at the current bidder own turn for an early-award exception position', async () => {
     live = { ...state(true), a_day_timing_by_position: { abc: 'AFTER_POSITION_SELECTION' } };
     await mount('Record selection');
     await choose('Position selected by current bidder', 'abc');
-    expect(container.querySelector('select[aria-label="Selection A-Day"]')).toBeNull();
+    expect(container.querySelector('select[aria-label="Selection A-Day"]')).not.toBeNull();
+    expect(button('Commit selection').disabled).toBe(true);
+    await choose('Selection A-Day', 'G2');
     await settle(() => button('Commit selection').click());
-    expect(commands[0]).toMatchObject({ type: 'live.record_selection', positionId: 'abc' });
-    expect(commands[0]).not.toHaveProperty('aDay');
+    expect(commands[0]).toMatchObject({
+      type: 'live.record_selection',
+      positionId: 'abc',
+      aDay: 'G2',
+    });
   });
 
   it('records a Timeline-controlled A-Day as its own canonical operator command', async () => {

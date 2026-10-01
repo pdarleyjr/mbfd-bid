@@ -109,17 +109,26 @@ function nextAvailableFrom(
 ): Pick<BidSessionState, 'queueCursor' | 'currentBidderId' | 'currentPhase' | 'turnStartedAtMs'> {
   let queueCursor = startIndex;
   const selected = new Set(Object.values(state.fills).map((fill) => fill.memberId));
-  while (state.bidOrder[queueCursor] && selected.has(state.bidOrder[queueCursor]?.memberId ?? -1))
-    queueCursor += 1;
-  const entry = state.bidOrder[queueCursor];
-  if (entry)
-    return {
-      queueCursor,
-      currentBidderId: entry.memberId,
-      currentPhase: 'position_bid',
-      turnStartedAtMs: now,
-    };
   const picked = new Set(state.aDay?.picks.map((pick) => pick.memberId) ?? []);
+  while (state.bidOrder[queueCursor]) {
+    const memberId = state.bidOrder[queueCursor]?.memberId ?? -1;
+    if (!selected.has(memberId))
+      return {
+        queueCursor,
+        currentBidderId: memberId,
+        currentPhase: 'position_bid',
+        turnStartedAtMs: now,
+      };
+    // An early award keeps its ordinary turn for the A-Day it could not select then.
+    if (!picked.has(memberId) && memberHasDeferredOrdinaryTurn(state, policy, memberId))
+      return {
+        queueCursor,
+        currentBidderId: memberId,
+        currentPhase: 'a_day_bid',
+        turnStartedAtMs: now,
+      };
+    queueCursor += 1;
+  }
   const pending = state.bidOrder.find(
     (candidate) =>
       !picked.has(candidate.memberId) &&
@@ -131,6 +140,14 @@ function nextAvailableFrom(
 }
 function next(state: BidSessionState, policy: FrozenLiveBidPolicy, now: number) {
   return nextAvailableFrom(state, policy, state.queueCursor + 1, now);
+}
+function isOrdinaryADayTurn(state: BidSessionState, policy: FrozenLiveBidPolicy): boolean {
+  return (
+    state.currentPhase === 'a_day_bid' &&
+    state.currentBidderId !== null &&
+    state.bidOrder[state.queueCursor]?.memberId === state.currentBidderId &&
+    memberHasDeferredOrdinaryTurn(state, policy, state.currentBidderId)
+  );
 }
 function stageFor(state: BidSessionState): string | null {
   return state.bidOrder[state.queueCursor]?.stageId ?? state.live?.currentStageId ?? null;
@@ -221,16 +238,22 @@ export function reduceLiveBidCommand(
     const settledAnnual = settleReturnedMember(annual, command.memberId);
     const pickedState =
       settledAnnual === annual ? picked.newState : { ...picked.newState, annual: settledAnnual };
+    const resumedState = isOrdinaryADayTurn(state, policy)
+      ? {
+          ...pickedState,
+          ...nextAvailableFrom(pickedState, policy, state.queueCursor + 1, now),
+        }
+      : pickedState;
     return {
       ok: true,
-      state: pickedState,
+      state: resumedState,
       eventType: 'live_command_applied',
       payload: {
         operation: 'record_a_day',
         memberId: command.memberId,
         aDay: command.aDay,
-        nextMemberId: picked.nextMemberId,
-        completed: picked.nextMemberId === null,
+        nextMemberId: resumedState.currentBidderId,
+        completed: resumedState.currentPhase === 'complete',
       },
       supersedesBidId: null,
     };
@@ -417,6 +440,8 @@ export function reduceLiveBidCommand(
       }
     }
     if (command.outcome === 'ACCEPT') {
+      if (command.aDay !== undefined && positionUsesDeferredADay(policy, specialty.positionId))
+        return { ok: false, code: 'A_DAY_DEFERRED_SELECTION_REQUIRED' };
       const existingFills = Object.entries(state.fills).filter(
         ([, candidateFill]) => candidateFill.memberId === command.memberId,
       );
@@ -692,7 +717,11 @@ export function reduceLiveBidCommand(
       supersedesBidId: prior.bidId,
     };
   }
-  if (state.currentPhase !== 'position_bid') return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+  if (
+    state.currentPhase !== 'position_bid' &&
+    !(command.type === 'live.disposition' && isOrdinaryADayTurn(state, policy))
+  )
+    return { ok: false, code: 'SESSION_NOT_ACTIVE' };
   if (live.specialty !== null && live.specialty !== undefined)
     return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
   if (command.type === 'live.disposition') {
@@ -781,6 +810,13 @@ export function reduceLiveBidCommand(
     return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
   if ('fallback' in command && command.fallback && !fallbackAuthorized)
     return { ok: false, code: 'FALLBACK_REVIEW_REQUIRED' };
+  if (positionUsesDeferredADay(policy, positionId)) {
+    const ownTurn = memberId === state.currentBidderId || isReturnedAtCurrentSequence;
+    if (ownTurn && command.aDay === undefined)
+      return { ok: false, code: 'A_DAY_REQUIRED_WITH_SELECTION' };
+    if (!ownTurn && command.aDay !== undefined)
+      return { ok: false, code: 'A_DAY_DEFERRED_SELECTION_REQUIRED' };
+  }
   const entry =
     state.bidOrder.find(
       (candidate) => candidate.memberId === memberId && candidate.stageId === currentStageId,
