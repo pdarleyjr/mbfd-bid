@@ -14,6 +14,7 @@ import {
 } from '../../src/commands/canonical-command-service.js';
 import { getDb } from '../../src/db/index.js';
 import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
+import { app } from '../../src/index.js';
 import { projectCanonicalMockCompletion } from '../../src/lib/annual-completion-result.js';
 import { bidDefinitionContextHash } from '../../src/lib/bid-definition-context.js';
 import type { PinnedBidSessionPolicySnapshot } from '../../src/lib/bid-definition-pin.js';
@@ -21,6 +22,7 @@ import { captureBidDefinitionSource } from '../../src/lib/bid-definition-source.
 import { saveBidDefinition } from '../../src/lib/bid-definition-store.js';
 import { loadBidDefinitionVersion } from '../../src/lib/bid-definition-version.js';
 import { loadBidSessionPolicySnapshot } from '../../src/lib/bid-policy.js';
+import { signJwt } from '../../src/lib/jwt.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 // Synthetic engineering fixture: an unreachable Captain returns after the
@@ -318,6 +320,30 @@ describe('canonical returned member and completion coverage', () => {
   const accepted = async (promise: ReturnType<typeof apply>) =>
     expect((await promise).result.kind).toBe('accepted');
 
+  async function operatorReadback() {
+    const key = 'synthetic-returned-member-jwt-key'.repeat(3);
+    const token = await signJwt(
+      {
+        sub: CPT_A,
+        emp: 'synthetic-cpt-a',
+        role: 'admin',
+        rank: 'CPT',
+        first_name: 'Synthetic',
+        last_name: 'CaptainA',
+        fresh_auth_at: Math.floor(Date.now() / 1000),
+      },
+      key,
+    );
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${SESSION}/specialty-live`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: key },
+    );
+    expect(response.status).toBe(200);
+    return response.json();
+  }
+
   it('restores a returned Captain to an open Captain seat during the Lieutenant stage', async () => {
     await accepted(apply({ ...common(), type: 'live.disposition', disposition: 'UNREACHABLE' }));
     await accepted(select(CPT_B, 'synthetic-c1', 'G1'));
@@ -326,6 +352,11 @@ describe('canonical returned member and completion coverage', () => {
     await accepted(
       apply({ ...common(), type: 'live.return_at_current_sequence', memberId: CPT_A }),
     );
+    expect(await operatorReadback()).toMatchObject({
+      current_bidder: { member_id: LT_A },
+      returning_member: { member_id: CPT_A },
+      selection_stage: { id: 'captains', eligible_position_ids: ['synthetic-c2'] },
+    });
     const stale = await apply({
       ...common(),
       expectedSeq: beforeReturn,
@@ -408,5 +439,102 @@ describe('canonical returned member and completion coverage', () => {
     await accepted(apply({ ...common(), type: 'live.complete_session' }));
     expect(state.annual?.completion).not.toBeNull();
     expect(h.sqlite.prepare('SELECT count(*) AS count FROM bids').get()).toEqual({ count: 0 });
+  });
+
+  it('restores the final-stage Lieutenant after exhaustion and shows their open seat after restart', async () => {
+    await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
+    await accepted(select(CPT_B, 'synthetic-c2', 'G2'));
+    await accepted(apply({ ...common(), type: 'live.disposition', disposition: 'UNREACHABLE' }));
+    await accepted(select(LT_B, 'synthetic-l2', 'G4'));
+    expect(state.currentPhase).toBe('complete');
+    const returnCommand: LiveBidCommand = {
+      ...common(),
+      type: 'live.return_at_current_sequence',
+      memberId: LT_A,
+    };
+    const returned = await apply(returnCommand);
+    expect(returned.result.kind).toBe('accepted');
+    const restarted = await loadCanonicalBidSessionState(h.env.DB, SESSION);
+    if (!restarted) throw new Error('Persisted state required');
+    state = restarted;
+    expect(await operatorReadback()).toMatchObject({
+      current_phase: 'complete',
+      returning_member: { member_id: LT_A },
+      selection_stage: { id: 'lieutenants', eligible_position_ids: ['synthetic-l1'] },
+    });
+    expect(await apply(returnCommand)).toEqual(returned);
+    expect(
+      (await apply({ ...common(), type: 'live.return_at_current_sequence', memberId: LT_A }))
+        .result,
+    ).toMatchObject({ kind: 'rejected', code: 'MEMBER_NOT_UNRESOLVED' });
+    await accepted(select(LT_A, 'synthetic-l1', 'G3'));
+    expect(state).toMatchObject({
+      currentPhase: 'complete',
+      annual: { returningMemberId: null, unresolvedMemberIds: [] },
+    });
+    await accepted(apply({ ...common(), type: 'live.complete_session' }));
+    expect(await loadCanonicalBidSessionState(h.env.DB, SESSION)).toEqual(state);
+    expect(await loadBidSessionPolicySnapshot(getDb(h.env.DB), SESSION)).toEqual({
+      snapshot,
+      error: null,
+    });
+  });
+
+  it('rejects position return for an awarded member with persisted legacy unresolved contact', async () => {
+    state.fills['synthetic-c1'] = {
+      memberId: CPT_A,
+      ordinal: 1,
+      bidId: 'synthetic-legacy-award',
+      aDay: 'G1',
+    };
+    state.queueCursor = 1;
+    state.currentBidderId = CPT_B;
+    if (!state.annual) throw new Error('Annual fixture required');
+    state.annual = { ...state.annual, unresolvedMemberIds: [CPT_A] };
+    await accepted(
+      apply({ ...common(), type: 'live.checkpoint', name: 'Synthetic legacy recovery checkpoint' }),
+    );
+    const beforeReturn = structuredClone(state);
+    const restarted = await loadCanonicalBidSessionState(h.env.DB, SESSION);
+    if (!restarted) throw new Error('Persisted state required');
+    state = restarted;
+    expect(
+      (await apply({ ...common(), type: 'live.return_at_current_sequence', memberId: CPT_A }))
+        .result,
+    ).toMatchObject({ kind: 'rejected', code: 'MEMBER_NOT_UNRESOLVED' });
+    expect(state).toEqual(beforeReturn);
+    expect(await loadCanonicalBidSessionState(h.env.DB, SESSION)).toEqual(beforeReturn);
+  });
+
+  it('marks contact evidence for the returned member without changing the waiting bidder contact', async () => {
+    await accepted(apply({ ...common(), type: 'live.disposition', disposition: 'UNREACHABLE' }));
+    await accepted(select(CPT_B, 'synthetic-c1', 'G1'));
+    await accepted(
+      apply({ ...common(), type: 'live.record_contact_attempt', memberId: LT_A, method: 'PHONE' }),
+    );
+    await accepted(
+      apply({ ...common(), type: 'live.return_at_current_sequence', memberId: CPT_A }),
+    );
+    await accepted(
+      apply({ ...common(), type: 'live.record_contact_attempt', memberId: CPT_A, method: 'TEXT' }),
+    );
+    await accepted(apply({ ...common(), type: 'live.disposition', disposition: 'UNREACHABLE' }));
+    expect(state).toMatchObject({
+      currentBidderId: LT_A,
+      annual: { returningMemberId: null, unresolvedMemberIds: [CPT_A] },
+    });
+    expect(
+      h.sqlite
+        .prepare('SELECT member_id, disposition FROM bid_contact_attempts ORDER BY member_id')
+        .all(),
+    ).toEqual([
+      { member_id: CPT_A, disposition: 'UNREACHABLE' },
+      { member_id: LT_A, disposition: 'RECORDED' },
+    ]);
+    expect(await loadCanonicalBidSessionState(h.env.DB, SESSION)).toEqual(state);
+    await accepted(
+      apply({ ...common(), type: 'live.return_at_current_sequence', memberId: CPT_A }),
+    );
+    expect(state.annual?.returningMemberId).toBe(CPT_A);
   });
 });

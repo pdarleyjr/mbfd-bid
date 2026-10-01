@@ -241,7 +241,6 @@ export function emptyAnnualOperations(policy: Policy): NonNullable<Policy['annua
       min: 0,
       max: 0,
       captainDcMax: 0,
-      specialtyMaximums: { MARINE_ASSIGNED: 0, MARINE_FLOAT: 0, DE: 0, SWAT: 0 },
     },
   };
 }
@@ -767,25 +766,11 @@ export function BidPolicyFields({
                 changeOps({ ...ops, aDay: { ...ops.aDay, captainDcMax } })
               }
             />
-            {(
-              Object.keys(ops.aDay.specialtyMaximums) as (keyof typeof ops.aDay.specialtyMaximums)[]
-            ).map((key) => (
-              <NumberField
-                key={key}
-                label={`${key.replaceAll('_', ' ')} maximum`}
-                value={ops.aDay.specialtyMaximums[key]}
-                max={1000}
-                onChange={(value) =>
-                  changeOps({
-                    ...ops,
-                    aDay: {
-                      ...ops.aDay,
-                      specialtyMaximums: { ...ops.aDay.specialtyMaximums, [key]: value },
-                    },
-                  })
-                }
-              />
-            ))}
+            <p className="text-sm text-muted-foreground sm:col-span-2">
+              Configure specialty capacity with the source-backed A-Day limits above, using explicit
+              opportunities, members, ranks and shifts. SWAT membership distribution is configured
+              under Specialty rules.
+            </p>
           </div>
         ) : (
           <p>A-Day capacity has not been configured.</p>

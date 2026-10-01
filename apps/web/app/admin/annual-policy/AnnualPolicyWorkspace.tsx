@@ -10,7 +10,12 @@ import { invalidateWorkingBidBoards } from '@/lib/admin-projection-refresh';
 
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
-import { type ConfiguredScoring, FrozenLiveBidPolicySchema } from '@mbfd/shared';
+import {
+  type ConfiguredScoring,
+  type FrozenAnnualOperationsPolicy,
+  FrozenAnnualOperationsPolicySchema,
+  FrozenLiveBidPolicySchema,
+} from '@mbfd/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';
@@ -190,14 +195,11 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
   const [durationSeconds, setDurationSeconds] = useState('');
   const [contactEvidenceRequired, setContactEvidenceRequired] = useState(false);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [savedAnnual, setSavedAnnual] = useState<FrozenAnnualOperationsPolicy | null>(null);
   const [aDay, setADay] = useState({
     min: '',
     max: '',
     captainDcMax: '',
-    marineAssigned: '',
-    marineFloat: '',
-    de: '',
-    swat: '',
   });
   const [refs, setRefs] = useState({ specialty: '', aDay: '', transition: '', publication: '' });
   const [reason, setReason] = useState('');
@@ -214,6 +216,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
     durationSeconds,
     contactEvidenceRequired,
     specialties,
+    savedAnnual,
     aDay,
     refs,
     reason,
@@ -332,6 +335,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
       return;
     }
     setLanguage(document.policy_text);
+    setSavedAnnual(annual);
     setPolicyRevision('');
     setStages(
       policy.stages.map((stage) => ({
@@ -405,10 +409,6 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
       min: String(annual.aDay.min),
       max: String(annual.aDay.max),
       captainDcMax: String(annual.aDay.captainDcMax),
-      marineAssigned: String(annual.aDay.specialtyMaximums.MARINE_ASSIGNED),
-      marineFloat: String(annual.aDay.specialtyMaximums.MARINE_FLOAT),
-      de: String(annual.aDay.specialtyMaximums.DE),
-      swat: String(annual.aDay.specialtyMaximums.SWAT),
     });
     setRefs({
       specialty: policy.specialtyCatalogReference ?? '',
@@ -456,6 +456,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
       transitionPolicyReference: refs.transition.trim(),
       publicationPolicyReference: refs.publication.trim(),
       annualOperations: {
+        ...savedAnnual,
         v: 1,
         stageOrder: stages.map((stage) => stage.id.trim()),
         requiredTopologyPositionIds: [
@@ -488,16 +489,10 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
           evidenceRequired: contactEvidenceRequired,
         },
         aDay: {
-          combatGroups: ['G1', 'G2', 'G3', 'G4'],
+          ...(savedAnnual?.aDay ?? { combatGroups: ['G1', 'G2', 'G3', 'G4'] }),
           min: Number(aDay.min),
           max: Number(aDay.max),
           captainDcMax: Number(aDay.captainDcMax),
-          specialtyMaximums: {
-            MARINE_ASSIGNED: Number(aDay.marineAssigned),
-            MARINE_FLOAT: Number(aDay.marineFloat),
-            DE: Number(aDay.de),
-            SWAT: Number(aDay.swat),
-          },
         },
       },
     };
@@ -663,9 +658,14 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
             !draft.permissions ||
             !draft.aDay ||
             !draft.refs ||
+            !Object.hasOwn(draft, 'savedAnnual') ||
             typeof draft.language !== 'string'
           )
             throw new Error('Invalid saved draft');
+          const restoredAnnual =
+            draft.savedAnnual === null
+              ? null
+              : FrozenAnnualOperationsPolicySchema.parse(draft.savedAnnual);
           setLanguage(draft.language);
           setPolicyRevision(draft.policyRevision);
           setStages(draft.stages);
@@ -676,6 +676,7 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
           setDurationSeconds(draft.durationSeconds);
           setContactEvidenceRequired(draft.contactEvidenceRequired);
           setSpecialties(draft.specialties);
+          setSavedAnnual(restoredAnnual);
           setADay(draft.aDay);
           setRefs(draft.refs);
           setReason(draft.reason);
@@ -1318,7 +1319,10 @@ export function AnnualPolicyWorkspace({ year, documents, loadError }: Props) {
           <section className="rounded-lg border border-border bg-card p-5">
             <h2 className="font-heading text-xl text-foreground">A-Day deterministic limits</h2>
             <p className="text-sm text-muted-foreground">
-              Values are intentionally blank until Command Staff supplies approved policy.
+              Values are intentionally blank until Command Staff supplies approved policy. Configure
+              source-backed A-Day limits and membership distribution in{' '}
+              <Link href="/admin/current-bid">Current Bid</Link>. Existing scoped constraints remain
+              preserved when this policy is revised.
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {Object.entries(aDay).map(([key, value]) => (

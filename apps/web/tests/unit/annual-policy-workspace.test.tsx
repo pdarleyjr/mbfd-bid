@@ -21,6 +21,9 @@ describe('AnnualPolicyWorkspace', () => {
     expect(html).toContain('Contact policy');
     expect(html).toContain('Specialty policy');
     expect(html).toContain('A-Day deterministic limits');
+    expect(html).not.toContain('marineAssigned');
+    expect(html).not.toContain('marineFloat');
+    expect(html).toContain('source-backed A-Day limits');
     expect(html).not.toContain('POLICY_STAGE_');
     expect(html).not.toContain('only initial operator');
   });

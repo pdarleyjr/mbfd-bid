@@ -13,6 +13,7 @@ import {
   validateUnreachableContact,
 } from '../lib/annual-bid-operations.js';
 import { unresolvedBidCorrections } from '../lib/bid-corrections.js';
+import { currentLiveBidStage, liveBidSelectionStages } from '../lib/live-bid-stages.js';
 
 function settleReturnedMember(
   state: AnnualOperationsState,
@@ -30,6 +31,21 @@ function settleReturnedMember(
     ),
     returningMemberId: state.returningMemberId === memberId ? null : state.returningMemberId,
   };
+}
+
+/** A successful award/A-Day resolves contact without erasing contact or
+ * disposition evidence. An unavailable returned member is handled separately. */
+function settleSelectedMember(
+  state: AnnualOperationsState,
+  memberId: number,
+): AnnualOperationsState {
+  const settled = settleReturnedMember(state, memberId);
+  return settled.unresolvedMemberIds.includes(memberId)
+    ? {
+        ...settled,
+        unresolvedMemberIds: settled.unresolvedMemberIds.filter((id) => id !== memberId),
+      }
+    : settled;
 }
 
 export type LiveReduction =
@@ -180,13 +196,13 @@ export function participantCoverageGaps(
     return rule === undefined || (!rule.terminal && rule.retainsLaterSelectionRights);
   });
 }
-function stageFor(state: BidSessionState): string | null {
-  return state.bidOrder[state.queueCursor]?.stageId ?? state.live?.currentStageId ?? null;
+function stageFor(state: BidSessionState, policy: FrozenLiveBidPolicy): string | null {
+  return currentLiveBidStage(state, policy)?.id ?? null;
 }
-function progress(state: BidSessionState): LiveBidProgress {
+function progress(state: BidSessionState, policy: FrozenLiveBidPolicy): LiveBidProgress {
   return (
     state.live ?? {
-      currentStageId: stageFor(state),
+      currentStageId: stageFor(state, policy),
       completedStageIds: [],
       pausedPhase: null,
       lastSelectionBidId: null,
@@ -219,8 +235,8 @@ export function reduceLiveBidCommand(
     return { ok: false, code: 'ANNUAL_COMPLETION_SEALED' };
   if (command.type === 'live.complete_session' && unresolvedBidCorrections(state).length > 0)
     return { ok: false, code: 'UNRESOLVED_CORRECTIONS_BLOCK_COMPLETION' };
-  const live = progress(state);
-  const currentStageId = stageFor(state);
+  const live = progress(state, policy);
+  const currentStageId = stageFor(state, policy);
   const annual = state.annual ?? initializeAnnualOperations({ preferenceSheets: [] });
   if (currentStageId === null || !policy.stages.some((stage) => stage.id === currentStageId))
     return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
@@ -268,7 +284,7 @@ export function reduceLiveBidCommand(
       now,
     );
     if (picked.kind === 'rejected') return { ok: false, code: picked.code };
-    const settledAnnual = settleReturnedMember(annual, command.memberId);
+    const settledAnnual = settleSelectedMember(annual, command.memberId);
     const pickedState =
       settledAnnual === annual ? picked.newState : { ...picked.newState, annual: settledAnnual };
     const resumedState = isOrdinaryADayTurn(state, policy)
@@ -629,6 +645,12 @@ export function reduceLiveBidCommand(
     };
   }
   if (command.type === 'live.declare_unreachable') {
+    if (
+      hasAward(state, command.memberId) &&
+      (!memberHasDeferredOrdinaryTurn(state, policy, command.memberId) ||
+        state.aDay?.picks.some((pick) => pick.memberId === command.memberId))
+    )
+      return { ok: false, code: 'MEMBER_ALREADY_SELECTED' };
     const result = declareUnreachable(annual, annualPolicy, {
       memberId: command.memberId,
       actorMemberId: command.actor.id,
@@ -644,6 +666,7 @@ export function reduceLiveBidCommand(
     };
   }
   if (command.type === 'live.return_at_current_sequence') {
+    if (hasAward(state, command.memberId)) return { ok: false, code: 'MEMBER_NOT_UNRESOLVED' };
     const result = returnAtCurrentSequence(annual, {
       memberId: command.memberId,
       sequence: state.lastSeq,
@@ -984,16 +1007,10 @@ export function reduceLiveBidCommand(
   if (state.fills[positionId]) return { ok: false, code: 'POSITION_FILLED' };
   if (Object.values(state.fills).some((fill) => fill.memberId === memberId))
     return { ok: false, code: 'MEMBER_ALREADY_SELECTED' };
-  const currentStageOrder = policy.stages.find(
-    (candidate) => candidate.id === currentStageId,
-  )?.order;
   // A returned member keeps the rights of the stages already reached, never later ones.
   const stage = isReturnedAtCurrentSequence
-    ? policy.stages.find(
-        (candidate) =>
-          candidate.memberIds.includes(memberId) &&
-          candidate.opportunityPositionIds.includes(positionId) &&
-          (currentStageOrder === undefined || candidate.order <= currentStageOrder),
+    ? liveBidSelectionStages(state, policy).find((candidate) =>
+        candidate.opportunityPositionIds.includes(positionId),
       )
     : policy.stages.find((candidate) => candidate.id === currentStageId);
   if (!stage)
@@ -1043,7 +1060,7 @@ export function reduceLiveBidCommand(
       ...advance,
       fills: nextFills,
       live: { ...live, lastSelectionBidId: bidId },
-      annual: isReturnedAtCurrentSequence ? settleReturnedMember(annual, memberId) : annual,
+      annual: settleSelectedMember(annual, memberId),
       lastSeq: state.lastSeq + 1,
     },
     eventType: 'live_command_applied',
