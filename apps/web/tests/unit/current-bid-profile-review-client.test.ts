@@ -123,16 +123,16 @@ function materialized(): Extract<BidProfileReviewResponse, { kind: 'MATERIALIZED
 }
 
 let client: typeof import('../../app/admin/current-bid/bid-client');
-let browser: { fetch: typeof fetch; location: { origin: string } };
+let browser: EventTarget & { fetch: typeof fetch; location: { origin: string } };
 
 beforeEach(async () => {
   vi.resetModules();
-  browser = {
+  browser = Object.assign(new EventTarget(), {
     location: { origin: 'https://synthetic-bid.example.test' },
     fetch: vi.fn(async () => {
       throw new Error('Unexpected unconfigured synthetic request');
     }),
-  };
+  });
   vi.stubGlobal('window', browser);
   vi.stubGlobal('fetch', browser.fetch);
   client = await import('../../app/admin/current-bid/bid-client');

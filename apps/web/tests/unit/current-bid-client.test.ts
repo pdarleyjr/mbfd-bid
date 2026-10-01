@@ -127,16 +127,16 @@ function response(body: unknown, status = 200): Response {
 }
 
 let client: typeof import('../../app/admin/current-bid/bid-client');
-let browser: { fetch: typeof fetch; location: { origin: string } };
+let browser: EventTarget & { fetch: typeof fetch; location: { origin: string } };
 
 beforeEach(async () => {
   vi.resetModules();
-  browser = {
+  browser = Object.assign(new EventTarget(), {
     location: { origin: 'https://synthetic-bid.example.test' },
     fetch: vi.fn(async () => {
       throw new Error('Unexpected unconfigured synthetic request');
     }),
-  };
+  });
   vi.stubGlobal('window', browser);
   vi.stubGlobal('fetch', browser.fetch);
   client = await import('../../app/admin/current-bid/bid-client');
@@ -233,6 +233,18 @@ function mockReceipt(replayed = false) {
 }
 
 describe('Current Bid managed Mock request contracts', () => {
+  it('honors the browser operator guard before CSRF bootstrap or a protected preview', async () => {
+    const { BEFORE_OPERATOR_COMMAND } = await import('../../lib/operator-step-up');
+    const fetcher = serve(mockPreview());
+    browser.addEventListener(BEFORE_OPERATOR_COMMAND, (event) => event.preventDefault());
+    await expect(
+      client.bidRequest(YEAR, 'preview', client.BidMockPreviewSchema, {
+        body: { kind: 'mock', versionId: mockRequest().versionId, versionSha256: DIGEST },
+      }),
+    ).rejects.toMatchObject({ code: 'step_up_required', status: 401, uncertain: false });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('checks readiness using a CSRF-protected preview without a creation key or Live request', async () => {
     const fetcher = serve(mockPreview());
     const body = { kind: 'mock', versionId: mockRequest().versionId, versionSha256: DIGEST };
