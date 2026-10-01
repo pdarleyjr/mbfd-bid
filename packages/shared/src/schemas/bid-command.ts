@@ -126,6 +126,32 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
     fromPositionId: z.string().min(1),
     toPositionId: z.string().min(1),
   }).strict(),
+  /** Compensating correction; the accepted source receipt and active award
+   * are validated by the canonical boundary. Uses the existing amendment grant. */
+  LiveCommandBase.extend({
+    type: z.literal('live.correct_bid'),
+    reason: ReasonSchema.trim().min(1),
+    memberId: z.number().int().positive(),
+    originalCommandId: CommandIdSchema,
+    originalBidId: z.string().min(1),
+    originalPositionId: z.string().min(1),
+    originalADayCommandId: CommandIdSchema.nullable(),
+    operation: z.enum(['REPLACE', 'REVOKE']),
+    termDeparture: TermDepartureElectionSchema.optional(),
+    pool: BidPoolSelectionSchema.optional(),
+    replacement: z
+      .object({
+        positionId: z.string().min(1),
+        aDay: ADayValueSchema.nullable(),
+        membershipIds: z
+          .array(z.string().trim().min(1).max(80))
+          .max(20)
+          .refine((ids) => new Set(ids).size === ids.length)
+          .optional(),
+      })
+      .strict()
+      .nullable(),
+  }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.disposition'),
     disposition: z.enum(['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE']),
