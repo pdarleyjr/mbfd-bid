@@ -188,6 +188,24 @@ function evaluate(
 }
 
 describe('frozen simultaneous A-Day allocation', () => {
+  it('preserves historical specialty metadata without overriding scoped limits, and accepts its absence in new versions', () => {
+    const f = fixture([entry(1), entry(2)], {
+      constraints: [scope('approved-de-limit', 1, ['p1', 'p2'])],
+    });
+    const expected = { ok: false, code: 'SCOPED_A_DAY_MAXIMUM' };
+    expect(evaluate(f)).toEqual(expected);
+    if (f.snapshot.settings.v !== 3) throw new Error('Expected frozen settings');
+    const annual = f.snapshot.settings.livePolicy.annualOperations;
+    if (!annual) throw new Error('Expected annual policy');
+    annual.aDay.specialtyMaximums = { MARINE_ASSIGNED: 999, MARINE_FLOAT: 999, DE: 999, SWAT: 999 };
+    const historical = structuredClone(f.snapshot);
+    expect(BidSessionPolicySnapshotSchema.parse(historical)).toEqual(historical);
+    expect(evaluate(f)).toEqual(expected);
+    const { specialtyMaximums: _historicalMaximums, ...canonicalADay } = annual.aDay;
+    annual.aDay = canonicalADay;
+    expect(BidSessionPolicySnapshotSchema.safeParse(f.snapshot).success).toBe(true);
+    expect(evaluate(f)).toEqual(expected);
+  });
   it.each(['AFTER_POSITION_SELECTION'] as const)(
     'keeps the legacy simultaneous adapter fail-closed for %s',
     (timing) => {

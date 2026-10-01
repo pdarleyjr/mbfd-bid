@@ -232,7 +232,7 @@ describe('known 2026 setup', () => {
         min: null,
         max: null,
         captainDcMax: null,
-        specialtyMaximums: { MARINE_FLOAT: 2 },
+        specialtyMaximums: { MARINE_FLOAT: null },
         execution: {
           timing: 'SIMULTANEOUS',
           timingExceptions: [
