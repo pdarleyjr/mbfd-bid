@@ -50,7 +50,10 @@ describe('annual advisory member count', () => {
       projectAuthoritativeBidAdvisory(value).cards.find((card) => card.kind === 'candidate_order');
     expect(orderCard(input)?.summary).toContain('2 members remain');
     expect(
-      orderCard({ ...input, fills: { A101: { memberId: 10, filledAtMs: 1 } } })?.summary,
+      orderCard({
+        ...input,
+        fills: { A101: { memberId: 10, ordinal: 1, bidId: 'synthetic-award' } },
+      })?.summary,
     ).toContain('1 member remains');
   });
 });
