@@ -13,7 +13,6 @@ import {
   declareUnreachable,
   initializeAnnualOperations,
   validateAnnualOperationsReadiness,
-  validateSpecialtyADayMaximum,
 } from '../src/lib/annual-bid-operations.js';
 import { annualEligibilityImpact } from '../src/lib/annual-eligibility-impact.js';
 import { compileAnnualRules } from '../src/lib/annual-rule-compiler.js';
@@ -483,7 +482,7 @@ describe('unified Bid: supported configuration changes through existing services
     ]);
   });
 
-  it('changes contact-attempt and specialty capacity thresholds by configuration', () => {
+  it('changes contact-attempt thresholds by configuration without changing contact history', () => {
     const state = {
       ...initializeAnnualOperations({ preferenceSheets: [] }),
       contactAttempts: [
@@ -498,21 +497,11 @@ describe('unified Bid: supported configuration changes through existing services
     const amended = {
       ...execution2026,
       contact: { ...execution2026.contact, minimumAttempts: 2 },
-      aDay: {
-        ...execution2026.aDay,
-        specialtyMaximums: { ...execution2026.aDay.specialtyMaximums, SWAT: 2 },
-      },
     };
     expect(declareUnreachable(state, amended, { memberId: 1, actorMemberId: 99 })).toEqual({
       ok: true,
       state: { ...state, unresolvedMemberIds: [1] },
     });
-    expect(
-      validateSpecialtyADayMaximum({ specialty: 'SWAT', existingCount: 1, policy: execution2026 }),
-    ).toEqual({ ok: false, code: 'SPECIALTY_A_DAY_MAX_REACHED' });
-    expect(
-      validateSpecialtyADayMaximum({ specialty: 'SWAT', existingCount: 1, policy: amended }),
-    ).toEqual({ ok: true });
     expect(state.unresolvedMemberIds).toEqual([]);
   });
 });

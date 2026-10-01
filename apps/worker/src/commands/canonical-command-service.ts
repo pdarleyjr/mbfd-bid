@@ -1240,7 +1240,7 @@ export async function commitLiveBidCommand(
       input.command.outcome === 'UNREACHABLE')
       ? input.command.memberId
       : input.command.type === 'live.disposition' && input.command.disposition === 'UNREACHABLE'
-        ? current.currentBidderId
+        ? (current.annual?.returningMemberId ?? current.currentBidderId)
         : null;
   if (unreachableMemberId !== null) {
     statements.push(

@@ -336,14 +336,18 @@ export const FrozenAnnualOperationsPolicySchema = z
           })
           .strict()
           .optional(),
+        // Historical readback only. Executable specialty limits use scoped
+        // execution.constraints and membershipDistributions; never default,
+        // rewrite or compile these unscoped values into runtime authority.
         specialtyMaximums: z
           .object({
             MARINE_ASSIGNED: z.number().int().min(0).max(1_000),
-            MARINE_FLOAT: z.number().int().min(0).max(1_000),
+            MARINE_FLOAT: z.number().int().min(0).max(1_000).nullable(),
             DE: z.number().int().min(0).max(1_000),
             SWAT: z.number().int().min(0).max(1_000),
           })
-          .strict(),
+          .strict()
+          .optional(),
       })
       .strict(),
   })
@@ -873,9 +877,6 @@ const PendingAnnualOperationsSchema = PendingAnnualOperationsBase.extend({
     min: PendingADayBase.shape.min.nullable(),
     max: PendingADayBase.shape.max.nullable(),
     captainDcMax: PendingADayBase.shape.captainDcMax.nullable(),
-    specialtyMaximums: PendingADayBase.shape.specialtyMaximums.extend({
-      MARINE_FLOAT: PendingADayBase.shape.specialtyMaximums.shape.MARINE_FLOAT.nullable(),
-    }),
   }),
 });
 /** Saved, unresolved authoring only. Runtime snapshots always use the strict
@@ -914,7 +915,6 @@ export const PendingLiveBidPolicySchema = FrozenLiveBidPolicySchema.innerType()
           'annualOperations.aDay.min',
           'annualOperations.aDay.max',
           'annualOperations.aDay.captainDcMax',
-          'annualOperations.aDay.specialtyMaximums.MARINE_FLOAT',
         ].includes(issue.path.join('.'));
       if (!unresolvedIds && !unresolvedNumeric) ctx.addIssue(issue);
     }
