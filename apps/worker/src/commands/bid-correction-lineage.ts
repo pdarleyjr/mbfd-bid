@@ -1,6 +1,9 @@
 import type { LiveBidCommand } from '@mbfd/shared';
 import type { BidSessionState } from '../durable/bid-session-state.js';
-import { unresolvedBidCorrections } from '../lib/bid-corrections.js';
+import {
+  type CorrectionSpecialtyRequest,
+  unresolvedBidCorrections,
+} from '../lib/bid-corrections.js';
 
 /** Source receipts are session-bound accepted facts. A current Fill alone is
  * insufficient authority to correct a historical or already superseded bid. */
@@ -8,7 +11,10 @@ export async function validateBidCorrectionLineage(
   db: D1Database,
   state: BidSessionState,
   command: Extract<LiveBidCommand, { type: 'live.correct_bid' }>,
-): Promise<{ ok: true } | { ok: false; code: string }> {
+): Promise<
+  { ok: true; specialtyRequest?: CorrectionSpecialtyRequest } | { ok: false; code: string }
+> {
+  let specialtyRequest: CorrectionSpecialtyRequest | undefined;
   const active = state.fills[command.originalPositionId];
   const pending = unresolvedBidCorrections(state).find(
     (entry) =>
@@ -35,8 +41,11 @@ export async function validateBidCorrectionLineage(
       | null
       | undefined;
     const eventBidId = event.bidId ?? event.replacementBidId;
+    const before = event.before as
+      | { positionId?: string; fill?: { memberId?: number } }
+      | undefined;
     const eventPositionId = pending
-      ? pending.before.positionId
+      ? before?.positionId
       : (after?.positionId ?? event.positionId ?? event.toPositionId);
     if (
       (eventBidId !== command.originalBidId && event.replacementBidId !== command.originalBidId) ||
@@ -45,9 +54,74 @@ export async function validateBidCorrectionLineage(
       (pending &&
         (event.operation !== 'correct_bid' ||
           event.correctionOperation !== 'REVOKE' ||
-          event.after !== null))
+          event.after !== null ||
+          before?.fill?.memberId !== command.memberId))
     )
       return { ok: false, code: 'CORRECTION_SOURCE_RECEIPT_INVALID' };
+    if (event.operation === 'resolve_specialty_candidate' && event.outcome === 'ACCEPT') {
+      const request = await db
+        .prepare(`SELECT r.command_id,e.seq,e.event_json
+        FROM bid_command_receipts r JOIN bid_command_events e ON e.command_id=r.command_id AND e.bid_session_id=r.bid_session_id
+        WHERE r.bid_session_id=? AND r.outcome='accepted' AND r.command_type='live.start_specialty_adjudication'
+        AND e.seq<? AND json_extract(e.event_json,'$.specialtyId')=? AND json_extract(e.event_json,'$.positionId')=?
+        ORDER BY e.seq DESC LIMIT 1`)
+        .bind(command.bidSessionId, row.seq, event.specialtyId, command.originalPositionId)
+        .first<{ command_id: string; seq: number; event_json: string }>();
+      const requestEvent = request
+        ? (JSON.parse(request.event_json) as Record<string, unknown>)
+        : null;
+      if (
+        !request ||
+        typeof event.specialtyId !== 'string' ||
+        !Number.isInteger(event.resumedBidderId) ||
+        requestEvent?.suspendedBidderId !== event.resumedBidderId
+      )
+        return { ok: false, code: 'CORRECTION_SPECIALTY_REQUEST_INVALID' };
+      // Old accepted request events did not include the candidate array. The
+      // accepted response events still prove every candidate whose evidence
+      // can be reused, within this exact request's sequence interval.
+      const responses = await db
+        .prepare(`SELECT e.event_json FROM bid_command_events e
+        JOIN bid_command_receipts r ON r.command_id=e.command_id AND r.bid_session_id=e.bid_session_id
+        WHERE e.bid_session_id=? AND r.outcome='accepted' AND r.command_type='live.resolve_specialty_candidate'
+        AND e.seq>? AND e.seq<=? ORDER BY e.seq`)
+        .bind(command.bidSessionId, request.seq, row.seq)
+        .all<{ event_json: string }>();
+      const candidates = (responses.results ?? [])
+        .map((response) => JSON.parse(response.event_json) as Record<string, unknown>)
+        .filter(
+          (response) =>
+            response.specialtyId === event.specialtyId &&
+            response.positionId === command.originalPositionId,
+        )
+        .map((response) => response.memberId);
+      if (
+        !candidates.includes(command.memberId) ||
+        !candidates.every((id) => Number.isInteger(id) && (id as number) > 0)
+      )
+        return { ok: false, code: 'CORRECTION_SPECIALTY_REQUEST_INVALID' };
+      specialtyRequest = {
+        specialtyId: event.specialtyId,
+        positionId: command.originalPositionId,
+        requesterMemberId: event.resumedBidderId as number,
+        candidateMemberIds: candidates as number[],
+        requestCommandId: request.command_id,
+      };
+    } else if (event.specialtyRequest !== undefined) {
+      const context = event.specialtyRequest as CorrectionSpecialtyRequest;
+      if (
+        context.positionId !== command.originalPositionId ||
+        typeof context.specialtyId !== 'string' ||
+        !Number.isInteger(context.requesterMemberId) ||
+        context.requesterMemberId <= 0 ||
+        !Array.isArray(context.candidateMemberIds) ||
+        !context.candidateMemberIds.includes(command.memberId) ||
+        !context.candidateMemberIds.every((id) => Number.isInteger(id) && id > 0) ||
+        typeof context.requestCommandId !== 'string'
+      )
+        return { ok: false, code: 'CORRECTION_SPECIALTY_REQUEST_INVALID' };
+      specialtyRequest = context;
+    }
   } catch {
     return { ok: false, code: 'CORRECTION_SOURCE_RECEIPT_INVALID' };
   }
@@ -87,5 +161,5 @@ export async function validateBidCorrectionLineage(
     }
   } else if (command.originalADayCommandId !== null)
     return { ok: false, code: 'CORRECTION_A_DAY_RECEIPT_NOT_APPLICABLE' };
-  return { ok: true };
+  return { ok: true, ...(specialtyRequest === undefined ? {} : { specialtyRequest }) };
 }

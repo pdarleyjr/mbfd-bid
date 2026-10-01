@@ -35,6 +35,7 @@ const CPT_A = 10001;
 const CPT_B = 10002;
 const LT_A = 10003;
 const LT_B = 10004;
+const CPT_C = 10005;
 const SEATS = [
   ['synthetic-c1', 'CPT'],
   ['synthetic-c2', 'CPT'],
@@ -187,20 +188,44 @@ describe('canonical audited corrections', () => {
     h.sqlite.pragma('foreign_keys = ON');
     nextId = 0;
     commandCounter = 0;
+    const interrupted = task.name.includes('interrupted specialty');
+    const fixturePolicy = syntheticPolicy(
+      task.name.includes('deferred'),
+      task.name.includes('capacity'),
+    );
+    if (interrupted) fixturePolicy.stages[0]?.memberIds.push(CPT_C);
+    if (task.name.includes('membership')) {
+      if (!fixturePolicy.annualOperations) throw new Error('Synthetic annual policy required');
+      fixturePolicy.annualOperations.membershipDistributions = [
+        {
+          id: 'synthetic-team',
+          label: 'Synthetic fixed team',
+          sourceRef: 'synthetic:team',
+          sourceDecisionId: 'synthetic-team-source',
+          membershipSource: 'REVIEWED_EXISTING_MEMBERS',
+          memberIds: [CPT_A, CPT_B],
+          shifts: ['A'],
+          minimumPerShift: 2,
+          maximumPerShift: 2,
+          maximumPerADay: 1,
+        },
+      ];
+    }
     const settings = {
       v: 3,
       expectedDurationDays: 2,
       turnTimerSeconds: 180,
       credentialEvaluationOn: '2027-01-01',
       personnelEvaluationOn: '2027-01-01',
-      livePolicy: syntheticPolicy(task.name.includes('deferred'), task.name.includes('capacity')),
+      livePolicy: fixturePolicy,
     };
     h.sqlite.exec(`
       INSERT INTO members (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,created_at,updated_at)
         VALUES (${CPT_A},'synthetic-cpt-a','Synthetic','CaptainA','CPT','OFC',1,1,1),
           (${CPT_B},'synthetic-cpt-b','Synthetic','CaptainB','CPT','OFC',2,1,1),
           (${LT_A},'synthetic-lt-a','Synthetic','LieutenantA','LT','OFC',3,1,1),
-          (${LT_B},'synthetic-lt-b','Synthetic','LieutenantB','LT','OFC',4,1,1);
+          (${LT_B},'synthetic-lt-b','Synthetic','LieutenantB','LT','OFC',4,1,1),
+          (${CPT_C},'synthetic-cpt-c','Synthetic','CaptainC','CPT','OFC',5,1,1);
       INSERT INTO position_templates (version,effective_year,notes) VALUES ('2027.1',2027,'Synthetic topology');
       INSERT INTO rule_books (version,effective_year,status,revision,notes) VALUES ('2027.1',2027,'draft',4,'Synthetic rules');
       INSERT INTO bid_years (year,status,rule_book_version,position_template_version,configuration_revision)
@@ -251,14 +276,14 @@ describe('canonical audited corrections', () => {
       settings: version.content.settings,
       credentialEvaluationOn: '2027-01-01',
       capturedAtMs: NOW,
-      members: [CPT_A, CPT_B, LT_A, LT_B].map((memberId) => ({
+      members: [CPT_A, CPT_B, LT_A, LT_B, ...(interrupted ? [CPT_C] : [])].map((memberId) => ({
         memberId,
         pool: 'OFC',
         rscSeniority: memberId - 10000,
         rankSeniority: memberId - 10000,
         exclusionReason: null,
         authoritativeAssignmentId: null,
-        rank: memberId <= CPT_B ? 'CPT' : 'LT',
+        rank: memberId <= CPT_B || memberId === CPT_C ? 'CPT' : 'LT',
         isProbationary: false,
         credentialNames: task.name.includes('deferred') && memberId === CPT_B ? ['IAAI'] : [],
         specialtyQualifications: [],
@@ -347,6 +372,16 @@ describe('canonical audited corrections', () => {
         completion: null,
       },
     };
+    if (interrupted) {
+      state.currentBidderId = CPT_C;
+      state.queueCursor = 2;
+      state.bidOrder = [CPT_A, CPT_B, CPT_C, LT_A, LT_B].map((memberId, index) => ({
+        memberId,
+        ordinal: index + 1,
+        pool: 'OFC',
+        stageId: memberId === LT_A || memberId === LT_B ? 'lieutenants' : 'captains',
+      }));
+    }
   });
 
   afterEach(async () => {
@@ -385,8 +420,10 @@ describe('canonical audited corrections', () => {
       positionId,
       aDay,
     } as LiveBidCommand);
-  const accepted = async (promise: ReturnType<typeof apply>) =>
-    expect((await promise).result.kind).toBe('accepted');
+  const accepted = async (promise: ReturnType<typeof apply>) => {
+    const { result } = await promise;
+    expect(result.kind, JSON.stringify(result)).toBe('accepted');
+  };
 
   function originalCommandFor(bidId: string) {
     const row = h.sqlite
@@ -422,7 +459,8 @@ describe('canonical audited corrections', () => {
   it('corrects same-position A-Day on a previous non-last award with replay, restart and immutable audit lineage', async () => {
     await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
     await accepted(select(CPT_B, 'synthetic-c2', 'G2'));
-    const original = state.fills['synthetic-c1']!;
+    const original = state.fills['synthetic-c1'];
+    if (!original) throw new Error('Synthetic original award required');
     const oldEvents = h.sqlite.prepare('SELECT * FROM bid_command_events ORDER BY seq').all();
     const command = correct('synthetic-c1', { positionId: 'synthetic-c1', aDay: 'G3' });
     expect(LiveBidCommandSchema.safeParse(command).success).toBe(true);
@@ -439,7 +477,7 @@ describe('canonical audited corrections', () => {
       n: 3,
     });
     expect(await loadCanonicalAmendmentLinks(h.env.DB, SESSION)).toEqual([
-      { original_bid_id: original.bidId, replacement_bid_id: state.fills['synthetic-c1']!.bidId },
+      { original_bid_id: original.bidId, replacement_bid_id: state.fills['synthetic-c1']?.bidId },
     ]);
     expect(await loadBidSessionPolicySnapshot(getDb(h.env.DB), SESSION)).toEqual({
       snapshot,
@@ -451,6 +489,54 @@ describe('canonical audited corrections', () => {
   it('rejects stale sequence, source mismatch, wrong session receipt and superseded lineage', async () => {
     await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
     const command = correct('synthetic-c1', { positionId: 'synthetic-c3', aDay: 'G2' });
+    const otherSession = `${SESSION}-other`;
+    const otherSnapshotJson = JSON.stringify({
+      ...snapshot,
+      bidDefinition: { ...snapshot.bidDefinition, bidSessionId: otherSession },
+    });
+    h.sqlite
+      .prepare(`INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,is_mock,turn_timer_seconds,expected_duration_days,config_json)
+      SELECT ?,bid_year,started_at,current_phase,is_mock,turn_timer_seconds,expected_duration_days,config_json FROM bid_sessions WHERE id=?`)
+      .run(otherSession, SESSION);
+    h.sqlite
+      .prepare(`INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at,bid_version_id,bid_version_sha256,snapshot_sha256,context_sha256)
+      SELECT ?,rule_book_version,position_template_version,rule_book_revision,?,captured_at,bid_version_id,bid_version_sha256,?,context_sha256 FROM bid_session_policy_snapshots WHERE bid_session_id=?`)
+      .run(otherSession, otherSnapshotJson, digest(otherSnapshotJson), SESSION);
+    const otherState = {
+      ...state,
+      bidSessionId: otherSession,
+      lastSeq: 0,
+      queueCursor: 0,
+      currentBidderId: CPT_A,
+      fills: {},
+      aDay: null,
+      live: state.live ? { ...state.live, lastSelectionBidId: null } : null,
+    };
+    const otherCommand = {
+      ...common(),
+      bidSessionId: otherSession,
+      expectedSeq: 0,
+      type: 'live.record_selection',
+      memberId: CPT_A,
+      positionId: 'synthetic-c1',
+      aDay: 'G1',
+    } as LiveBidCommand;
+    const otherAward = await commitLiveBidCommand({
+      db: h.env.DB,
+      command: otherCommand,
+      state: otherState,
+      policy,
+    });
+    expect(otherAward.result.kind).toBe('accepted');
+    expect(
+      (
+        await apply({
+          ...command,
+          ...common(),
+          originalCommandId: otherCommand.commandId,
+        } as LiveBidCommand)
+      ).result,
+    ).toMatchObject({ kind: 'rejected', code: 'CORRECTION_SOURCE_RECEIPT_INVALID' });
     expect((await apply({ ...command, expectedSeq: 0 })).result).toMatchObject({
       kind: 'rejected',
       code: 'STALE_SEQUENCE',
@@ -491,7 +577,9 @@ describe('canonical audited corrections', () => {
       kind: 'rejected',
       code: 'UNRESOLVED_CORRECTIONS_BLOCK_COMPLETION',
     });
-    state = (await loadCanonicalBidSessionState(h.env.DB, SESSION))!;
+    const restarted = await loadCanonicalBidSessionState(h.env.DB, SESSION);
+    if (!restarted) throw new Error('Synthetic restart state required');
+    state = restarted;
     await accepted(
       apply({
         ...common(),
@@ -529,6 +617,137 @@ describe('canonical audited corrections', () => {
     expect(state).toEqual(before);
   });
 
+  it('preserves scoped specialty decline evidence when correcting the accepted specialty award', async () => {
+    await accepted(apply({ ...common(), type: 'live.disposition', disposition: 'PASS' }));
+    await accepted(
+      apply({
+        ...common(),
+        type: 'live.start_specialty_adjudication',
+        specialtyId: 'synthetic-specialty',
+        positionId: 'synthetic-specialty',
+        candidateMemberIds: [CPT_A],
+      }),
+    );
+    await accepted(
+      apply({
+        ...common(),
+        type: 'live.resolve_specialty_candidate',
+        memberId: CPT_A,
+        outcome: 'DECLINE',
+      }),
+    );
+    await accepted(select(CPT_B, 'synthetic-specialty', 'G2'));
+    await accepted(
+      apply(correct('synthetic-specialty', { positionId: 'synthetic-specialty', aDay: 'G3' })),
+    );
+    expect(state.aDay?.picks.find((pick) => pick.memberId === CPT_B)?.aDay).toBe('G3');
+  });
+
+  it('preserves original requester evidence when correcting an interrupted specialty winner after a higher candidate declined', async () => {
+    await accepted(
+      apply({
+        ...common(),
+        type: 'live.start_specialty_adjudication',
+        specialtyId: 'synthetic-specialty',
+        positionId: 'synthetic-specialty',
+        candidateMemberIds: [CPT_A, CPT_B],
+      }),
+    );
+    await accepted(
+      apply({
+        ...common(),
+        type: 'live.resolve_specialty_candidate',
+        memberId: CPT_A,
+        outcome: 'DECLINE',
+      }),
+    );
+    await accepted(
+      apply({
+        ...common(),
+        type: 'live.resolve_specialty_candidate',
+        memberId: CPT_B,
+        outcome: 'ACCEPT',
+        aDay: 'G2',
+      }),
+    );
+    expect(state.currentBidderId).toBe(CPT_C);
+    await accepted(
+      apply(correct('synthetic-specialty', { positionId: 'synthetic-specialty', aDay: 'G3' })),
+    );
+    expect(state.aDay?.picks.find((pick) => pick.memberId === CPT_B)?.aDay).toBe('G3');
+    state = (await loadCanonicalBidSessionState(h.env.DB, SESSION)) ?? state;
+    await accepted(
+      apply(correct('synthetic-specialty', { positionId: 'synthetic-specialty', aDay: 'G4' })),
+    );
+    expect(state.live?.corrections?.at(-1)?.specialtyRequest).toMatchObject({
+      requesterMemberId: CPT_C,
+      positionId: 'synthetic-specialty',
+      candidateMemberIds: [CPT_A, CPT_B],
+    });
+  });
+
+  it('offers source receipts and previews read-only through authenticated operator routes', async () => {
+    await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
+    const token = await signJwt(
+      {
+        sub: 0,
+        emp: 'synthetic-cpt-a',
+        rank: 'CPT',
+        first_name: 'Synthetic',
+        last_name: 'Admin',
+        role: 'admin',
+        fresh_auth_at: Math.floor(Date.now() / 1000),
+      },
+      h.env.JWT_SIGNING_KEY,
+    );
+    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+    const readback = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${SESSION}/corrections`, { headers }),
+      h.env,
+    );
+    expect(readback.status).toBe(200);
+    expect(await readback.json()).toMatchObject({
+      sequence: state.lastSeq,
+      sources: [
+        {
+          memberId: CPT_A,
+          originalCommandId: originalCommandFor(state.fills['synthetic-c1']?.bidId ?? ''),
+          originalPositionId: 'synthetic-c1',
+        },
+      ],
+    });
+    const before = createHash('sha256').update(h.sqlite.serialize()).digest('hex');
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${SESSION}/corrections/preview`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(correct('synthetic-c1', { positionId: 'synthetic-c3', aDay: 'G2' })),
+      }),
+      h.env,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      valid: true,
+      before: { positionId: 'synthetic-c1' },
+      after: { positionId: 'synthetic-c3' },
+      constraintEffects: [
+        { group: 'A:G1', before: 1, after: 0 },
+        { group: 'A:G2', before: 0, after: 1 },
+      ],
+    });
+    expect(createHash('sha256').update(h.sqlite.serialize()).digest('hex')).toEqual(before);
+    const rejected = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${SESSION}/corrections/preview`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(correct('synthetic-c1', { positionId: 'synthetic-l1', aDay: 'G2' })),
+      }),
+      h.env,
+    );
+    expect(rejected.status).toBe(409);
+    expect(createHash('sha256').update(h.sqlite.serialize()).digest('hex')).toEqual(before);
+  });
+
   it('rejects frozen eligibility and scoped A-Day capacity violations without partial changes', async () => {
     await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
     await accepted(select(CPT_B, 'synthetic-c2', 'G2'));
@@ -542,6 +761,17 @@ describe('canonical audited corrections', () => {
     ).toMatchObject({ kind: 'rejected', code: 'SCOPED_A_DAY_MAXIMUM' });
     expect(state).toEqual(before);
     expect(await loadCanonicalBidSessionState(h.env.DB, SESSION)).toEqual(before);
+  });
+
+  it('revalidates frozen membership A-Day distribution when correcting a prior award', async () => {
+    await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
+    await accepted(select(CPT_B, 'synthetic-c2', 'G2'));
+    const before = state;
+    expect(
+      (await apply(correct('synthetic-c1', { positionId: 'synthetic-c1', aDay: 'G2' }))).result,
+    ).toMatchObject({ kind: 'rejected', code: 'MEMBERSHIP_A_DAY_MAXIMUM_REACHED' });
+    expect(await loadCanonicalBidSessionState(h.env.DB, SESSION)).toEqual(before);
+    await accepted(apply(correct('synthetic-c1', { positionId: 'synthetic-c1', aDay: 'G3' })));
   });
 
   it('corrects a deferred A-Day only with the active award and original A-Day receipt', async () => {
@@ -640,10 +870,25 @@ describe('canonical audited corrections', () => {
     );
     expect(results.status).toBe(200);
     const body = (await results.json()) as {
-      rows: Array<{ position_id: string; member_id: number; a_day: string }>;
+      awards: Array<{
+        memberId: number;
+        positionId: string;
+        aDay: string;
+        correctionLineage?: unknown[];
+      }>;
     };
-    expect(JSON.stringify(body)).toContain('synthetic-c3');
-    expect(JSON.stringify(body)).toContain('G3');
+    expect(body.awards.find((award) => award.memberId === CPT_A)).toMatchObject({
+      positionId: 'synthetic-c3',
+      aDay: 'G3',
+      correctionLineage: [
+        {
+          reason: 'Synthetic audited correction regression',
+          before: { positionId: 'synthetic-c1' },
+          after: { positionId: 'synthetic-c3' },
+        },
+      ],
+    });
+    expect(body.awards.some((award) => award.positionId === 'synthetic-c1')).toBe(false);
     const printToken = mintPrintToken(
       { kind: 'roster', shift: 'A', session_id: SESSION },
       h.env.JWT_SIGNING_KEY,
@@ -657,10 +902,13 @@ describe('canonical audited corrections', () => {
     expect(roster.status).toBe(200);
     const exported = (await roster.json()) as {
       awards?: unknown;
-      stations: Array<{ rows: Array<{ position_id: string; member_id: string | null }> }>;
+      stations: Array<{
+        rows: Array<{ position_id: string; member_id: string | null; a_day: string | null }>;
+      }>;
     };
     const rows = exported.stations.flatMap((station) => station.rows);
     expect(rows.find((row) => row.position_id === 'synthetic-c1')?.member_id).toBeNull();
     expect(rows.find((row) => row.position_id === 'synthetic-c3')?.member_id).toBeTruthy();
+    expect(rows.find((row) => row.position_id === 'synthetic-c3')?.a_day).toBe('G3');
   });
 });

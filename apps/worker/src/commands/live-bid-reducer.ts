@@ -235,6 +235,13 @@ export function reduceLiveBidCommand(
     return { ok: false, code: 'ANNUAL_COMPLETION_SEALED' };
   if (command.type === 'live.complete_session' && unresolvedBidCorrections(state).length > 0)
     return { ok: false, code: 'UNRESOLVED_CORRECTIONS_BLOCK_COMPLETION' };
+  if (
+    (command.type === 'live.record_selection' ||
+      command.type === 'live.force_selection' ||
+      (command.type === 'live.resolve_specialty_candidate' && command.outcome === 'ACCEPT')) &&
+    unresolvedBidCorrections(state).some((entry) => entry.before.fill.memberId === command.memberId)
+  )
+    return { ok: false, code: 'CORRECTION_REPLACEMENT_REQUIRED' };
   const live = progress(state, policy);
   const currentStageId = stageFor(state, policy);
   const annual = state.annual ?? initializeAnnualOperations({ preferenceSheets: [] });
@@ -779,10 +786,7 @@ export function reduceLiveBidCommand(
       const replacement = command.replacement;
       if (fills[replacement.positionId] !== undefined)
         return { ok: false, code: 'POSITION_FILLED' };
-      const reachedStageId =
-        state.bidOrder[state.queueCursor]?.stageId ??
-        state.bidOrder[Math.min(state.queueCursor, state.bidOrder.length) - 1]?.stageId ??
-        currentStageId;
+      const reachedStageId = currentLiveBidStage(state, policy)?.id;
       const reachedStage = policy.stages.find((stage) => stage.id === reachedStageId);
       const legalStage = policy.stages.find(
         (stage) =>

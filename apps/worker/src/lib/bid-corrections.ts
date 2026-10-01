@@ -2,6 +2,14 @@ import type { BidSessionState, LiveBidProgress } from '../durable/bid-session-st
 
 export type BidCorrection = NonNullable<LiveBidProgress['corrections']>[number];
 
+export interface CorrectionSpecialtyRequest {
+  specialtyId: string;
+  positionId: string;
+  requesterMemberId: number;
+  candidateMemberIds: number[];
+  requestCommandId: string;
+}
+
 /** Revocation is an explicit unresolved selection right, never a contact
  * disposition. Resolve only the exact latest revocation named by replacement. */
 export function unresolvedBidCorrections(state: BidSessionState): BidCorrection[] {

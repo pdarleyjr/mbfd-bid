@@ -61,6 +61,7 @@ export interface LiveBidProgress {
     originalBidId: string;
     originalCommandId: string;
     originalADayCommandId: string | null;
+    specialtyRequest?: import('../lib/bid-corrections.js').CorrectionSpecialtyRequest;
     before: { positionId: string; fill: Fill; aDay: ADayPick | null };
     after: { positionId: string; fill: Fill } | null;
     resolvesCorrectionBidId: string | null;

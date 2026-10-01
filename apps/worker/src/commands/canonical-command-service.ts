@@ -747,6 +747,9 @@ export async function commitLiveBidCommand(
     );
     return { result, canonicalState: null };
   }
+  let correctionSpecialtyRequest:
+    | import('../lib/bid-corrections.js').CorrectionSpecialtyRequest
+    | undefined;
   if (input.command.type === 'live.correct_bid') {
     const lineage = await validateBidCorrectionLineage(input.db, current, input.command);
     if (!lineage.ok) {
@@ -765,6 +768,7 @@ export async function commitLiveBidCommand(
       );
       return { result, canonicalState: null };
     }
+    correctionSpecialtyRequest = lineage.specialtyRequest;
   }
   if (
     input.command.type === 'live.record_selection' &&
@@ -1013,6 +1017,19 @@ export async function commitLiveBidCommand(
                 ),
             ),
           ),
+          ...(current.live
+            ? {
+                live: {
+                  ...current.live,
+                  specialtyResponses: (current.live.specialtyResponses ?? []).filter(
+                    (response) =>
+                      response.outcome !== 'UNREACHABLE' &&
+                      (correctionSpecialtyRequest === undefined ||
+                        correctionSpecialtyRequest.candidateMemberIds.includes(response.memberId)),
+                  ),
+                },
+              }
+            : {}),
         }
       : current;
   // Every accepted award, including amendment and specialty interruption, must
@@ -1122,6 +1139,9 @@ export async function commitLiveBidCommand(
           memberId: fill.memberId,
           positionId,
           rule: target.rule,
+          ...(correctionSpecialtyRequest?.positionId === positionId
+            ? { requestContext: correctionSpecialtyRequest }
+            : {}),
         });
         if (pending.some((entry) => entry.candidateMemberIds.length > 0))
           priorityCode = 'SPECIALTY_HIGHER_PRIORITY_UNRESOLVED';
@@ -1201,6 +1221,38 @@ export async function commitLiveBidCommand(
       };
     }
     if ('aDay' in input.command) reduction.payload.aDay = input.command.aDay ?? null;
+  }
+  if (input.command.type === 'live.correct_bid') {
+    const correction = reduction.state.live?.corrections?.at(-1);
+    const fill =
+      input.command.replacement === null
+        ? null
+        : reduction.state.fills[input.command.replacement.positionId];
+    const correctionLive = reduction.state.live;
+    if (!correction || !correctionLive || (input.command.replacement !== null && !fill))
+      throw new Error('Accepted correction has no replacement projection');
+    const after =
+      input.command.replacement !== null && fill
+        ? { positionId: input.command.replacement.positionId, fill }
+        : null;
+    const preservedRequest =
+      correctionSpecialtyRequest &&
+      (after === null || correctionSpecialtyRequest.positionId === after.positionId)
+        ? correctionSpecialtyRequest
+        : undefined;
+    reduction.payload.after = after;
+    if (preservedRequest) reduction.payload.specialtyRequest = preservedRequest;
+    reduction.state.live = {
+      ...correctionLive,
+      corrections: [
+        ...(reduction.state.live?.corrections?.slice(0, -1) ?? []),
+        {
+          ...correction,
+          after,
+          ...(preservedRequest ? { specialtyRequest: preservedRequest } : {}),
+        },
+      ],
+    };
   }
   const eventId = newId();
   const auditId = newId();

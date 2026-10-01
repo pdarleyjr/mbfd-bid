@@ -1,0 +1,509 @@
+'use client';
+import { TaskPanel } from '@/components/admin/TaskPanel';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { createCsrfAwareFetch } from '@/lib/client-csrf';
+import { WeekdaySchema } from '@mbfd/shared';
+import { useMemo, useRef, useState } from 'react';
+import type { MemberLite } from '../../../_components/bid/types';
+
+type Source = {
+  bidId: string;
+  originalCommandId: string;
+  originalADayCommandId: string | null;
+  originalPositionId: string;
+  memberId: number;
+  status: 'ACTIVE' | 'REVOKED';
+  aDay: string | null;
+  membershipIds: string[];
+  eligiblePositionIds: string[];
+  termParticipation: { assignmentId: string } | null;
+};
+type Readback = {
+  sequence: number;
+  sealed: boolean;
+  sources: Source[];
+  positions: Array<{ id: string; label: string; shift: string }>;
+  combatGroups: string[];
+  opportunityPools: Array<{ id: string; positionIds: string[] }>;
+};
+type Award = {
+  positionId: string;
+  fill: { memberId: number; aDay?: string };
+  aDay?: { aDay: string } | null;
+};
+type Preview = {
+  valid: true;
+  expectedSeq: number;
+  before: Award;
+  after: Award | null;
+  memberId: number;
+  reason: string;
+  constraintEffects: Array<{ group: string; before: number; after: number }>;
+  validated: string[];
+};
+type Command = {
+  v: 1;
+  type: 'live.correct_bid';
+  commandId: string;
+  expectedSeq: number;
+  memberId: number;
+  reason: string;
+  evidenceReference: null;
+  originalCommandId: string;
+  originalADayCommandId: string | null;
+  originalBidId: string;
+  originalPositionId: string;
+  operation: 'REPLACE' | 'REVOKE';
+  replacement: { positionId: string; aDay: string | null; membershipIds: string[] } | null;
+  pool?: { poolId: string };
+  termDeparture?: { assignmentId: string; memberConfirmed: true; evidenceReference: string };
+};
+
+function failure(code: string | undefined) {
+  const messages: Record<string, string> = {
+    STALE_SEQUENCE: 'The bid changed. Refresh the awards and review the correction again.',
+    ANNUAL_COMPLETION_SEALED: 'Final results are sealed. This bid cannot be corrected.',
+    CORRECTION_SOURCE_NOT_ACTIVE:
+      'This award has already changed. Refresh the awards before correcting it.',
+    CORRECTION_SOURCE_RECEIPT_INVALID:
+      'The original award receipt could not be verified. Refresh the awards.',
+    CORRECTION_A_DAY_RECEIPT_REQUIRED:
+      'The original A-Day receipt is required. Refresh the awards.',
+    CORRECTION_ORDINARY_A_DAY_NOT_REACHED:
+      'This early winner chooses A-Day at their ordinary turn. Keep that A-Day due.',
+    POSITION_FILLED: 'That position is already awarded. Choose an open eligible position.',
+    MEMBER_NOT_ELIGIBLE: 'The member does not qualify for that position under the frozen rules.',
+    LIVE_STAGE_NOT_ELIGIBLE: 'That position is outside the member’s reached stages.',
+    SPECIALTY_HIGHER_PRIORITY_UNRESOLVED:
+      'Higher priority specialty candidates must be resolved before this award can be corrected.',
+    SCOPED_A_DAY_MAXIMUM: 'That A-Day has reached a staffing limit. Choose another A-Day.',
+    MEMBERSHIP_A_DAY_MAXIMUM_REACHED:
+      'That group has reached its A-Day limit. Choose another A-Day.',
+    live_action_forbidden: 'Your saved Bid authority does not permit corrections.',
+  };
+  return code && messages[code]
+    ? messages[code]
+    : 'The correction could not be approved under the saved Bid rules. Review the member, position and A-Day.';
+}
+
+/** A focused, compensating workflow. Source references are loaded once from
+ * canonical readback; confirmation submits the exact server-reviewed command. */
+export function CorrectBid(props: {
+  bidSessionId: string;
+  members: Record<string, MemberLite>;
+  onCanonicalChange?: () => void;
+}) {
+  const csrfFetch = useMemo(
+    () =>
+      createCsrfAwareFetch(
+        (...args) => window.fetch(...args),
+        () => window.location.origin,
+      ),
+    [],
+  );
+  const [open, setOpen] = useState(false);
+  const [readback, setReadback] = useState<Readback | null>(null);
+  const [sourceId, setSourceId] = useState('');
+  const [operation, setOperation] = useState<'REPLACE' | 'REVOKE'>('REPLACE');
+  const [positionId, setPositionId] = useState('');
+  const [aDay, setADay] = useState('');
+  const [reason, setReason] = useState('');
+  const [termConfirmed, setTermConfirmed] = useState(false);
+  const [termEvidence, setTermEvidence] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [review, setReview] = useState<{ preview: Preview; command: Command } | null>(null);
+  const inFlight = useRef(false);
+  const source = readback?.sources.find((entry) => entry.bidId === sourceId);
+  const memberName = (id: number) => {
+    const member = props.members[String(id)];
+    return member ? `${member.rank} ${member.firstName} ${member.lastName}`.trim() : `Member ${id}`;
+  };
+  const positionName = (id: string) =>
+    readback?.positions.find((entry) => entry.id === id)?.label ?? id;
+  const options =
+    readback?.positions.find((entry) => entry.id === positionId)?.shift === 'D'
+      ? WeekdaySchema.options
+      : (readback?.combatGroups ?? []);
+  function choose(entry: Source | undefined) {
+    setSourceId(entry?.bidId ?? '');
+    setPositionId(
+      entry?.status === 'ACTIVE' ? entry.originalPositionId : (entry?.eligiblePositionIds[0] ?? ''),
+    );
+    setADay(entry?.aDay ?? '');
+    setOperation('REPLACE');
+    setReview(null);
+    setTermConfirmed(false);
+    setTermEvidence('');
+  }
+  function edit() {
+    setReview(null);
+    setNotice(null);
+  }
+  async function load() {
+    const response = await csrfFetch(`/api/admin/bid-session/${props.bidSessionId}/corrections`, {
+      cache: 'no-store',
+    });
+    const body = (await response.json()) as Readback & { error?: string };
+    if (!response.ok) throw new Error(failure(body?.error));
+    const data = body as Readback;
+    setReadback(data);
+    choose(data.sources[0]);
+  }
+  async function start() {
+    setOpen(true);
+    setNotice(null);
+    setBusy(true);
+    try {
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Awards could not be loaded. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function refresh() {
+    if (inFlight.current) return;
+    setBusy(true);
+    setReview(null);
+    setNotice(null);
+    try {
+      await load();
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : 'Awards could not be refreshed. Try again.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function preview() {
+    if (!source || !readback || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setNotice(null);
+    const pool = readback.opportunityPools.find((entry) => entry.positionIds.includes(positionId));
+    const command: Command = {
+      v: 1,
+      type: 'live.correct_bid',
+      commandId: crypto.randomUUID(),
+      expectedSeq: readback.sequence,
+      memberId: source.memberId,
+      reason: reason.trim(),
+      evidenceReference: null,
+      originalCommandId: source.originalCommandId,
+      originalADayCommandId: source.originalADayCommandId,
+      originalBidId: source.bidId,
+      originalPositionId: source.originalPositionId,
+      operation,
+      replacement:
+        operation === 'REVOKE'
+          ? null
+          : { positionId, aDay: aDay || null, membershipIds: source.membershipIds },
+      ...(pool && operation === 'REPLACE' ? { pool: { poolId: pool.id } } : {}),
+      ...(source.termParticipation && operation === 'REPLACE'
+        ? {
+            termDeparture: {
+              assignmentId: source.termParticipation.assignmentId,
+              memberConfirmed: true,
+              evidenceReference: termEvidence.trim(),
+            },
+          }
+        : {}),
+    };
+    try {
+      const response = await csrfFetch(
+        `/api/admin/bid-session/${props.bidSessionId}/corrections/preview`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(command),
+        },
+      );
+      const body = (await response.json()) as Partial<Preview> & { code?: string; error?: string };
+      if (!response.ok || body?.valid !== true) {
+        setNotice(failure(body?.code ?? body?.error));
+        return;
+      }
+      setReview({ preview: body as Preview, command });
+    } catch {
+      setNotice('The review could not be loaded. Review the correction again when connected.');
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }
+  async function confirm() {
+    if (!review || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const response = await csrfFetch(
+        `/api/admin/bid-session/${props.bidSessionId}/commands/live`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(review.command),
+        },
+      );
+      const body = (await response.json()) as { kind?: string; code?: string; error?: string };
+      if (!response.ok || body?.kind !== 'accepted') {
+        setNotice(failure(body?.code ?? body?.error));
+        setReview(null);
+        return;
+      }
+      props.onCanonicalChange?.();
+      await load();
+      setReview(null);
+      setNotice('Correction recorded. The award and capacity have been updated.');
+    } catch {
+      setNotice(
+        'Delivery is uncertain. Confirm again to retry the same reviewed correction safely.',
+      );
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }
+  function award(value: Award | null) {
+    return value ? (
+      <dl className="space-y-2 text-sm">
+        <div>
+          <dt className="font-medium">Member</dt>
+          <dd>{memberName(value.fill.memberId)}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">Position</dt>
+          <dd>{positionName(value.positionId)}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">A-Day</dt>
+          <dd>{value.fill.aDay ?? value.aDay?.aDay ?? 'Due at ordinary turn'}</dd>
+        </div>
+      </dl>
+    ) : (
+      <p className="text-sm">
+        Award revoked. Position and A-Day capacity returned. A corrected award is required before
+        completion.
+      </p>
+    );
+  }
+  return (
+    <>
+      <Button variant="secondary" onClick={() => void start()}>
+        Correct a bid
+      </Button>
+      <TaskPanel
+        open={open}
+        onClose={() => {
+          if (!busy) setOpen(false);
+        }}
+        title="Correct a bid"
+        description="Review the original award, check the proposed correction and confirm it with an operator reason."
+      >
+        {notice && (
+          <output className="mb-4 block rounded border border-border p-3 text-sm">{notice}</output>
+        )}
+        <Button variant="secondary" disabled={busy} onClick={() => void refresh()}>
+          Refresh awards
+        </Button>
+        {readback?.sealed ? (
+          <p>Final results are sealed. Corrections are closed.</p>
+        ) : readback && readback.sources.length === 0 ? (
+          <p>No verified award is available to correct.</p>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="correction-source">Award to correct</Label>
+              <NativeSelect
+                id="correction-source"
+                value={sourceId}
+                disabled={busy}
+                onChange={(event) => {
+                  choose(readback?.sources.find((entry) => entry.bidId === event.target.value));
+                  setNotice(null);
+                }}
+              >
+                <option value="">Choose an award</option>
+                {readback?.sources.map((entry) => (
+                  <option key={entry.bidId} value={entry.bidId}>
+                    {memberName(entry.memberId)} — {positionName(entry.originalPositionId)}
+                    {entry.status === 'REVOKED' ? ' (revoked)' : ''}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            {source && (
+              <>
+                <div>
+                  <Label htmlFor="correction-operation">Correction</Label>
+                  <NativeSelect
+                    id="correction-operation"
+                    value={operation}
+                    disabled={busy}
+                    onChange={(event) => {
+                      edit();
+                      setOperation(event.target.value as 'REPLACE' | 'REVOKE');
+                    }}
+                  >
+                    <option value="REPLACE">Record corrected award</option>
+                    {source.status === 'ACTIVE' && (
+                      <option value="REVOKE">Undo erroneous award</option>
+                    )}
+                  </NativeSelect>
+                </div>
+                {operation === 'REPLACE' && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="correction-position">Corrected position</Label>
+                      <NativeSelect
+                        id="correction-position"
+                        value={positionId}
+                        disabled={busy}
+                        onChange={(event) => {
+                          edit();
+                          setPositionId(event.target.value);
+                          setADay('');
+                        }}
+                      >
+                        {source.eligiblePositionIds.map((id) => (
+                          <option key={id} value={id}>
+                            {positionName(id)}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                    <div>
+                      <Label htmlFor="correction-a-day">Corrected A-Day</Label>
+                      <NativeSelect
+                        id="correction-a-day"
+                        value={aDay}
+                        disabled={busy}
+                        onChange={(event) => {
+                          edit();
+                          setADay(event.target.value);
+                        }}
+                      >
+                        <option value="">A-Day remains due at ordinary turn</option>
+                        {options.map((day) => (
+                          <option key={day} value={day}>
+                            {day}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  </div>
+                )}
+                {operation === 'REPLACE' && source.termParticipation && (
+                  <fieldset className="space-y-2 rounded border border-border p-3">
+                    <Label>
+                      <input
+                        type="checkbox"
+                        checked={termConfirmed}
+                        disabled={busy}
+                        onChange={(event) => {
+                          edit();
+                          setTermConfirmed(event.target.checked);
+                        }}
+                      />{' '}
+                      Member confirms leaving the current term assignment
+                    </Label>
+                    <Label htmlFor="correction-term-evidence">Election evidence</Label>
+                    <Input
+                      id="correction-term-evidence"
+                      value={termEvidence}
+                      disabled={busy}
+                      onChange={(event) => {
+                        edit();
+                        setTermEvidence(event.target.value);
+                      }}
+                    />
+                  </fieldset>
+                )}
+                <div>
+                  <Label htmlFor="correction-reason">Operator reason</Label>
+                  <textarea
+                    id="correction-reason"
+                    value={reason}
+                    disabled={busy}
+                    maxLength={500}
+                    className="min-h-24 w-full rounded-md border border-input bg-background p-3"
+                    onChange={(event) => {
+                      edit();
+                      setReason(event.target.value);
+                    }}
+                  />
+                </div>
+                <details className="text-sm">
+                  <summary>Original audit reference</summary>
+                  <p className="break-all">Award receipt: {source.originalCommandId}</p>
+                  {source.originalADayCommandId && (
+                    <p className="break-all">A-Day receipt: {source.originalADayCommandId}</p>
+                  )}
+                </details>
+                {!review ? (
+                  <Button
+                    disabled={
+                      busy ||
+                      !reason.trim() ||
+                      (operation === 'REPLACE' &&
+                        (!positionId ||
+                          (source.termParticipation !== null &&
+                            (!termConfirmed || termEvidence.trim().length < 4))))
+                    }
+                    onClick={() => void preview()}
+                  >
+                    {busy ? 'Checking…' : 'Review correction'}
+                  </Button>
+                ) : (
+                  <section
+                    className="space-y-4 rounded-lg border border-border p-4"
+                    aria-label="Correction confirmation"
+                  >
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <h3 className="mb-2 font-semibold">BEFORE</h3>
+                        {source.status === 'REVOKED' ? award(null) : award(review.preview.before)}
+                      </div>
+                      <div>
+                        <h3 className="mb-2 font-semibold">AFTER</h3>
+                        {award(review.preview.after)}
+                      </div>
+                    </div>
+                    <p className="text-sm">
+                      <strong>Reason:</strong> {review.preview.reason}
+                    </p>
+                    <div>
+                      <h3 className="font-semibold">Constraint effects</h3>
+                      {review.preview.constraintEffects.length === 0 ? (
+                        <p className="text-sm">No A-Day capacity totals change.</p>
+                      ) : (
+                        <ul className="text-sm">
+                          {review.preview.constraintEffects.map((entry) => (
+                            <li key={entry.group}>
+                              {entry.group}: {entry.before} → {entry.after}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="mt-2 text-sm">
+                        Checks passed: {review.preview.validated.join(', ')}.
+                      </p>
+                    </div>
+                    <Button disabled={busy} onClick={() => void confirm()}>
+                      {busy ? 'Recording…' : 'Confirm correction'}
+                    </Button>
+                  </section>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </TaskPanel>
+    </>
+  );
+}

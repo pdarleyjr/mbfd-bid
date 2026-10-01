@@ -212,7 +212,7 @@ describe('audited compensating correction commands', () => {
 
   it('preserves an early winner ordinary A-Day right and rejects collecting it before that turn', () => {
     const before = state();
-    delete before.fills.one;
+    before.fills = Object.fromEntries(Object.entries(before.fills).filter(([id]) => id !== 'one'));
     before.fills.early = { memberId: 3, ordinal: 3, bidId: 'early-award' };
     before.currentBidderId = 1;
     before.queueCursor = 0;
@@ -231,6 +231,39 @@ describe('audited compensating correction commands', () => {
     expect(result.state.fills.early?.aDay).toBeUndefined();
   });
 
+  it('requires receipt-bound replacement after revocation and preserves an unrelated reoccupied source seat', () => {
+    const revoked = reduce(state(), correction({ operation: 'REVOKE', replacement: null }));
+    if (!revoked.ok) throw new Error('Synthetic revocation required');
+    expect(
+      reduceLiveBidCommand(
+        revoked.state,
+        policy,
+        {
+          ...correction(),
+          type: 'live.force_selection',
+          memberId: 1,
+          positionId: 'spare',
+          aDay: 'G3',
+        } as unknown as LiveBidCommand,
+        2000,
+        'bypass',
+      ),
+    ).toMatchObject({ ok: false, code: 'CORRECTION_REPLACEMENT_REQUIRED' });
+    revoked.state.fills.one = { memberId: 3, ordinal: 3, bidId: 'unrelated-new-award', aDay: 'G4' };
+    const restored = reduce(
+      revoked.state,
+      correction({
+        originalCommandId: COMMAND,
+        originalBidId: 'correction-1',
+        replacement: { positionId: 'spare', aDay: 'G3' },
+      }),
+      'correction-2',
+    );
+    if (!restored.ok) throw new Error(`Correction rejected: ${restored.code}`);
+    expect(restored.state.fills.one).toEqual(revoked.state.fills.one);
+    expect(restored.state.fills.spare?.memberId).toBe(1);
+  });
+
   it('requires the existing amendment grant and rejects correction after final sealing', () => {
     expect(reduce(state(), correction({ actor: { id: 2, role: 'admin' } }))).toMatchObject({
       ok: false,
@@ -238,7 +271,7 @@ describe('audited compensating correction commands', () => {
     });
     const sealed = state();
     sealed.annual = {
-      ...sealed.annual!,
+      ...initializeAnnualOperations({ preferenceSheets: [] }),
       completion: { readyForFinalizationAtMs: 999, actorMemberId: 1 },
     };
     expect(reduce(sealed)).toMatchObject({ ok: false, code: 'ANNUAL_COMPLETION_SEALED' });
@@ -247,7 +280,8 @@ describe('audited compensating correction commands', () => {
   it('permits correction while paused without resuming or changing the ordinary queue', () => {
     const before = state();
     before.currentPhase = 'paused';
-    before.live = { ...before.live!, pausedPhase: 'position_bid' };
+    if (!before.live) throw new Error('Synthetic live progress required');
+    before.live = { ...before.live, pausedPhase: 'position_bid' };
     const result = reduce(before);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
