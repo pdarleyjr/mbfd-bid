@@ -400,97 +400,63 @@ describe.each([
 
     it('validates the frozen constraint before committing record or force selection', async () => {
       if (timing === 'AFTER_POSITION_SELECTION') {
-        const premature = await commit({
+        // An own-turn award is not early: the deferred timing never removes its A-Day.
+        const withoutADay = await commit({
           v: 1,
           type: 'live.record_selection',
           commandId: KEY,
           bidSessionId: SESSION,
           expectedSeq: 7,
           actor: { id: MEMBER, role: 'admin' },
-          reason: 'Synthetic deferred A-Day position selection proof',
+          reason: 'Synthetic own-turn specialty selection proof',
           evidenceReference: 'synthetic:timeline',
           memberId: MEMBER,
           positionId: SEAT,
-          aDay: 'G1',
         });
-        expect(premature.result).toMatchObject({
+        expect(withoutADay.result).toMatchObject({
           kind: 'rejected',
-          code: 'A_DAY_DEFERRED_SELECTION_REQUIRED',
+          code: 'A_DAY_REQUIRED_WITH_SELECTION',
         });
         expectNoAwardEvidence();
 
-        const selected = await commit({
+        const ownTurn = {
           v: 1,
           type: 'live.record_selection',
           commandId: 'ab61c19-0b60-4dcc-aa6b-eec70a733e65',
           bidSessionId: SESSION,
           expectedSeq: 7,
           actor: { id: MEMBER, role: 'admin' },
-          reason: 'Synthetic deferred A-Day position selection proof',
+          reason: 'Synthetic own-turn specialty selection proof',
           evidenceReference: 'synthetic:timeline',
           memberId: MEMBER,
           positionId: SEAT,
-        });
+          aDay: 'G1',
+        } as const satisfies LiveBidCommand;
+        const selected = await commit(ownTurn);
         expect(selected.result).toMatchObject({ kind: 'accepted', seq: 8 });
         expect(selected.canonicalState).toMatchObject({
-          currentPhase: 'a_day_bid',
-          currentBidderId: MEMBER,
-          fills: { [SEAT]: { memberId: MEMBER } },
-        });
-        state = selected.canonicalState ?? state;
-        const aDay = await commit({
-          v: 1,
-          type: 'live.record_a_day',
-          commandId: 'ba61c19-0b60-4dcc-aa6b-eec70a733e65',
-          bidSessionId: SESSION,
-          expectedSeq: 8,
-          actor: { id: MEMBER, role: 'admin' },
-          reason: 'Synthetic controlled A-Day selection proof',
-          evidenceReference: 'synthetic:timeline',
-          memberId: MEMBER,
-          aDay: 'G1',
-        });
-        expect(aDay.result).toMatchObject({ kind: 'accepted', seq: 9 });
-        expect(aDay.canonicalState).toMatchObject({
           currentPhase: 'complete',
           currentBidderId: null,
+          fills: { [SEAT]: { memberId: MEMBER, aDay: 'G1' } },
           aDay: { picks: [expect.objectContaining({ memberId: MEMBER, aDay: 'G1' })] },
         });
-        const replay = await commit({
-          v: 1,
-          type: 'live.record_a_day',
-          commandId: 'ba61c19-0b60-4dcc-aa6b-eec70a733e65',
-          bidSessionId: SESSION,
-          expectedSeq: 8,
-          actor: { id: MEMBER, role: 'admin' },
-          reason: 'Synthetic controlled A-Day selection proof',
-          evidenceReference: 'synthetic:timeline',
-          memberId: MEMBER,
-          aDay: 'G1',
-        });
-        expect(replay).toEqual(aDay);
+        state = selected.canonicalState ?? state;
+        expect(await commit(ownTurn)).toEqual(selected);
         const stale = await commit({
-          v: 1,
-          type: 'live.record_a_day',
+          ...ownTurn,
           commandId: 'ca61c19-0b60-4dcc-aa6b-eec70a733e65',
-          bidSessionId: SESSION,
-          expectedSeq: 8,
-          actor: { id: MEMBER, role: 'admin' },
-          reason: 'Synthetic stale controlled A-Day rejection proof',
-          evidenceReference: 'synthetic:timeline',
-          memberId: MEMBER,
           aDay: 'G2',
         });
         expect(stale.result).toMatchObject({
           kind: 'rejected',
           code: 'STALE_SEQUENCE',
-          currentSeq: 9,
+          currentSeq: 8,
         });
         expect(
           h.sqlite
             .prepare('SELECT COUNT(*) AS n FROM bid_command_events WHERE bid_session_id=?')
             .get(SESSION),
-        ).toEqual({ n: 2 });
+        ).toEqual({ n: 1 });
         return;
       }
       const result = await commit({
