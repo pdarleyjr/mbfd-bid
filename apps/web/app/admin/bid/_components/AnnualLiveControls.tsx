@@ -354,6 +354,9 @@ export function AnnualLiveControls(props: Props) {
   const [state, setState] = useState<SpecialtyState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const [authRefreshing, setAuthRefreshing] = useState(false);
+  const [authReviewRequired, setAuthReviewRequired] = useState(false);
+  const reauthBaseline = useRef<{ sequence: number | null } | null>(null);
   const [panel, setPanel] = useState<
     | 'selection'
     | 'disposition'
@@ -638,7 +641,8 @@ export function AnnualLiveControls(props: Props) {
         body && 'error' in body ? body.error : `Live controls returned ${response.status}.`,
       );
     const next = body as SpecialtyState;
-    if (lastLoadedSequence.current !== null && next.sequence < lastLoadedSequence.current) return;
+    if (lastLoadedSequence.current !== null && next.sequence < lastLoadedSequence.current)
+      return lastLoadedSequence.current;
     if (lastLoadedSequence.current !== null && next.sequence > lastLoadedSequence.current)
       props.onCanonicalChange?.();
     lastLoadedSequence.current = next.sequence;
@@ -649,6 +653,7 @@ export function AnnualLiveControls(props: Props) {
     setState(next);
     setLoadedAt(Date.now());
     setLoadError(null);
+    return next.sequence;
   }, [props.bidSessionId, props.onCanonicalChange]);
 
   useEffect(() => {
@@ -660,6 +665,49 @@ export function AnnualLiveControls(props: Props) {
     const timer = setInterval(refresh, 2500);
     return () => clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    let disposed = false;
+    let generation = 0;
+    function started() {
+      generation += 1;
+      if (reauthBaseline.current === null)
+        reauthBaseline.current = { sequence: lastLoadedSequence.current };
+      setAuthRefreshing(true);
+    }
+    async function refreshed() {
+      const currentGeneration = ++generation;
+      const baseline = reauthBaseline.current;
+      setAuthRefreshing(true);
+      try {
+        const sequence = await load();
+        if (disposed || generation !== currentGeneration) return;
+        const changed =
+          baseline === null || baseline.sequence === null || baseline.sequence !== sequence;
+        setAuthReviewRequired((current) => current || changed);
+        reauthBaseline.current = null;
+        setAuthRefreshing(false);
+        props.onCanonicalChange?.();
+        if (changed)
+          setNotice(
+            'The bid changed during sign-in. Review the latest member and availability before recording an action.',
+          );
+      } catch (error) {
+        if (disposed || generation !== currentGeneration) return;
+        setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.');
+        setAuthReviewRequired(true);
+        setAuthRefreshing(false);
+      }
+    }
+    window.addEventListener('mbfd-operator-reauth-started', started);
+    window.addEventListener('mbfd-operator-auth-refreshed', refreshed);
+    return () => {
+      disposed = true;
+      generation += 1;
+      window.removeEventListener('mbfd-operator-reauth-started', started);
+      window.removeEventListener('mbfd-operator-auth-refreshed', refreshed);
+    };
+  }, [load, props.onCanonicalChange]);
 
   useEffect(() => {
     if (
@@ -689,6 +737,12 @@ export function AnnualLiveControls(props: Props) {
   );
 
   async function command(type: string, inputDetail: Record<string, unknown> = {}) {
+    if (authRefreshing || authReviewRequired) {
+      setNotice(
+        'Refresh operator sign-in and review the latest bid state before recording an action. Your unfinished work is retained.',
+      );
+      return;
+    }
     if (loadError !== null) {
       setNotice(
         'Reconnect and refresh the bid before recording an action. Your selection is preserved.',
@@ -869,6 +923,28 @@ export function AnnualLiveControls(props: Props) {
 
   return (
     <section className="border-y border-border bg-card p-3" data-testid="annual-live-controls">
+      {authRefreshing || authReviewRequired ? (
+        <div className="mb-3 border border-info/30 bg-info/10 p-3 text-sm">
+          <p aria-live="polite">
+            {authRefreshing
+              ? 'Waiting for verified operator sign-in and current bid updates. Your unfinished work is retained.'
+              : 'The bid changed during sign-in. Review the current member, available positions and your prepared selection.'}
+          </p>
+          {authReviewRequired ? (
+            <Button
+              type="button"
+              className="mt-2"
+              disabled={authRefreshing || loadError !== null}
+              onClick={() => {
+                setAuthReviewRequired(false);
+                setNotice('Latest bid state reviewed. Confirm your prepared action when ready.');
+              }}
+            >
+              I reviewed the latest bid state
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {loadError !== null ? (
         <div role="alert" className="mb-3 border border-warning/30 bg-warning/10 p-3 text-sm">
           <p>
@@ -1879,6 +1955,8 @@ export function AnnualLiveControls(props: Props) {
               type="button"
               disabled={
                 busy ||
+                authRefreshing ||
+                authReviewRequired ||
                 loadError !== null ||
                 state === null ||
                 state.current_phase === 'paused' ||

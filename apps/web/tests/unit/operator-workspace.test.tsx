@@ -108,6 +108,7 @@ let reject = false;
 let updatesUnavailable = false;
 let failReadAfterAward = false;
 let returnedMember = false;
+let liveSequence = 4;
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -122,6 +123,7 @@ beforeEach(() => {
   updatesUnavailable = false;
   failReadAfterAward = false;
   returnedMember = false;
+  liveSequence = 4;
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     requests.push(url);
@@ -130,6 +132,7 @@ beforeEach(() => {
         ? response({ error: 'synthetic_connection_lost' }, 503)
         : response({
             ...live,
+            sequence: liveSequence,
             returning_member: returnedMember
               ? { member_id: 18, first_name: 'New', last_name: 'OperatorFixture', rank: 'CPT' }
               : null,
@@ -221,6 +224,45 @@ async function chooseGroup(value: string) {
   });
 }
 describe('operator workspace interaction and history', () => {
+  it('retains a draft after unchanged verified sign-in without automatically submitting it', async () => {
+    await mount();
+    await settle(() => button('Engine 2').click());
+    await chooseGroup('G2');
+    await settle(() => window.dispatchEvent(new Event('mbfd-operator-reauth-started')));
+    expect(button('Confirm bid').disabled).toBe(true);
+    expect(commands).toHaveLength(0);
+    await settle(() => window.dispatchEvent(new Event('mbfd-operator-auth-refreshed')));
+    expect(button('Confirm bid').disabled).toBe(false);
+    expect(
+      (
+        container.querySelector(
+          'select[aria-label="Selection A-Day"]',
+        ) as unknown as HTMLSelectElement
+      ).value,
+    ).toBe('G2');
+    expect(commands).toHaveLength(0);
+  });
+  it('captures the earliest sign-in sequence and requires deliberate review after intervening updates', async () => {
+    await mount();
+    await settle(() => button('Engine 2').click());
+    await chooseGroup('G3');
+    await settle(() => window.dispatchEvent(new Event('mbfd-operator-reauth-started')));
+    liveSequence = 5;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2600));
+    });
+    await settle(() => window.dispatchEvent(new Event('mbfd-operator-reauth-started')));
+    await settle(() => window.dispatchEvent(new Event('mbfd-operator-auth-refreshed')));
+    expect(container.textContent).toContain('The bid changed during sign-in.');
+    expect(button('Confirm bid').disabled).toBe(true);
+    expect(commands).toHaveLength(0);
+    await settle(() => button('I reviewed the latest bid state').click());
+    expect(button('Confirm bid').disabled).toBe(false);
+    expect(commands).toHaveLength(0);
+    await settle(() => button('Confirm bid').click());
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatchObject({ expectedSeq: 5, aDay: 'G3', positionId: 'Anew' });
+  });
   it('returns to the active returned member instead of the waiting ordinary bidder', async () => {
     returnedMember = true;
     await mount();
