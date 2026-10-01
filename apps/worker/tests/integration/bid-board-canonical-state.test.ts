@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { HistoricalBid, HistoricalBidReceipt } from '@mbfd/shared';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { app } from '../../src/index.js';
 import { signJwt } from '../../src/lib/jwt.js';
@@ -9,6 +10,51 @@ import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 const KEY = 'm'.repeat(64);
 const SESSION_ID = '01HZZ0000000000000BOARDCAN';
 const OLDER_REAL_SESSION_ID = '01HZZ0000000000000BOARDOLD';
+
+async function historicalReceipt(year = 2025): Promise<HistoricalBidReceipt> {
+  const archive: HistoricalBid = {
+    schemaVersion: 1,
+    year,
+    label: 'Prior annual positions',
+    notes: [],
+    sources: [{ id: 'prior-source', name: `${year} shift image`, sha256: 'a'.repeat(64) }],
+    seats: [
+      {
+        id: 'A101',
+        shift: 'A',
+        station: 'Prior station',
+        unit: 'Prior rescue',
+        position: 'Prior lieutenant',
+        name: 'Name as documented last year',
+        group: 'GR4',
+        status: 'AWARDED',
+        sourceId: 'prior-source',
+        sourceLocation: 'Prior source / A101',
+        note: null,
+        employeeReference: {
+          employeeId: '770077',
+          sourceId: 'prior-source',
+          sourceLocation: 'Explicit employee column',
+        },
+      },
+    ],
+  };
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(JSON.stringify(archive)),
+  );
+  return {
+    archive,
+    sha256: Array.from(new Uint8Array(digest), (n) => n.toString(16).padStart(2, '0')).join(''),
+    publishedAt: '2026-09-07T20:10:22.622Z',
+    publishedBy: 'test-publisher',
+  };
+}
+
+function historicalBucket(value: unknown) {
+  const get = vi.fn().mockResolvedValue({ json: async () => value });
+  return { get, binding: { get } as unknown as WorkerEnv['R2_EXPORTS'] };
+}
 
 describe('canonical board order validation', () => {
   const frozen = [
@@ -108,11 +154,11 @@ function sessionAwareBidSessionNamespace(): WorkerEnv['BID_SESSION'] {
   } as unknown as WorkerEnv['BID_SESSION'];
 }
 
-async function jwt(): Promise<string> {
+async function jwt(employeeId = '770077'): Promise<string> {
   return signJwt(
     {
       sub: 0,
-      emp: '770077',
+      emp: employeeId,
       role: 'admin',
       rank: 'CHIEF',
       first_name: 'Test',
@@ -268,6 +314,151 @@ describe('GET /api/board canonical mock state', () => {
 
   afterEach(async () => {
     await teardownTestD1(h);
+  });
+
+  it('adds verified source-bound history without reusing live position metadata or changing state', async () => {
+    const receipt = await historicalReceipt();
+    const bucket = historicalBucket(receipt);
+    const before = await h.env.DB.prepare(
+      'SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id = ?',
+    )
+      .bind(SESSION_ID)
+      .first();
+    const policyBefore = await h.env.DB.prepare(
+      'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id = ?',
+    )
+      .bind(SESSION_ID)
+      .first();
+    await h.db.run(
+      "UPDATE members SET first_name = 'Changed', employee_id = '999999' WHERE id = 77;",
+    );
+    const res = await app.fetch(
+      new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await jwt('770078')}` },
+      }),
+      {
+        ...h.env,
+        JWT_SIGNING_KEY: KEY,
+        BID_SESSION: stubBidSessionNamespace(),
+        R2_EXPORTS: bucket.binding,
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(bucket.get).toHaveBeenCalledExactlyOnceWith('historical-bids/v1/2025.json');
+    expect(await res.json()).toMatchObject({
+      lastSeq: 8,
+      currentPhase: 'paused',
+      frozenAt: 1,
+      members: {
+        '77': {
+          employeeId: '770077',
+          priorPositionId: null,
+          historicalContext: {
+            year: 2025,
+            evidenceStatus: 'RECORDED',
+            historicalPositionId: 'A101',
+            positionLabel: 'Prior lieutenant',
+            station: 'Prior station',
+            unit: 'Prior rescue',
+            aDayGroup: 'GR4',
+            sourceName: '2025 shift image',
+            sourceSha256: 'a'.repeat(64),
+            archiveSha256: receipt.sha256,
+          },
+        },
+      },
+      positions: [
+        expect.objectContaining({ id: 'A101', positionName: 'Firefighter', unit: 'Engine 1' }),
+      ],
+    });
+    expect(
+      await h.env.DB.prepare(
+        'SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id = ?',
+      )
+        .bind(SESSION_ID)
+        .first(),
+    ).toEqual(before);
+    expect(
+      await h.env.DB.prepare(
+        'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id = ?',
+      )
+        .bind(SESSION_ID)
+        .first(),
+    ).toEqual(policyBefore);
+  });
+
+  it('uses the selected session year rather than the current calendar year for history', async () => {
+    await h.db.run("INSERT INTO bid_years (year, status) VALUES (2027, 'configuring');");
+    await h.db.run('UPDATE bid_sessions SET bid_year = 2027 WHERE id = ?;', [SESSION_ID]);
+    const bucket = historicalBucket(await historicalReceipt(2026));
+    const res = await app.fetch(
+      new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await jwt()}` },
+      }),
+      {
+        ...h.env,
+        JWT_SIGNING_KEY: KEY,
+        BID_SESSION: stubBidSessionNamespace(),
+        R2_EXPORTS: bucket.binding,
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(bucket.get).toHaveBeenCalledExactlyOnceWith('historical-bids/v1/2026.json');
+    expect(await res.json()).toMatchObject({
+      members: { '77': { historicalContext: { year: 2026, evidenceStatus: 'RECORDED' } } },
+    });
+  });
+
+  it('keeps canonical board usable when the archive fails integrity verification', async () => {
+    const receipt = await historicalReceipt();
+    const seat = receipt.archive.seats[0];
+    if (!seat) throw new Error('Fixture requires a historical seat');
+    seat.group = 'GR1';
+    const bucket = historicalBucket(receipt);
+    const res = await app.fetch(
+      new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await jwt()}` },
+      }),
+      {
+        ...h.env,
+        JWT_SIGNING_KEY: KEY,
+        BID_SESSION: stubBidSessionNamespace(),
+        R2_EXPORTS: bucket.binding,
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      lastSeq: 8,
+      members: {
+        '77': {
+          historicalContext: {
+            evidenceStatus: 'UNAVAILABLE',
+            historicalPositionId: null,
+            aDayGroup: null,
+            archiveSha256: null,
+          },
+        },
+      },
+    });
+  });
+
+  it('does not read or expose personnel history to ordinary member board requests', async () => {
+    const bucket = historicalBucket(await historicalReceipt());
+    const res = await app.fetch(
+      new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await memberJwt()}` },
+      }),
+      {
+        ...h.env,
+        JWT_SIGNING_KEY: KEY,
+        BID_SESSION: stubBidSessionNamespace(),
+        R2_EXPORTS: bucket.binding,
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(bucket.get).not.toHaveBeenCalled();
+    const body = (await res.json()) as { members: Record<string, { historicalContext?: unknown }> };
+    expect(body.members['77']?.historicalContext).toBeUndefined();
   });
 
   it('retains the existing authenticated-board boundary for unauthenticated requests', async () => {
