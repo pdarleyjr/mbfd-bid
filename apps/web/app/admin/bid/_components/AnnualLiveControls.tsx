@@ -254,7 +254,7 @@ function ADayChoice({
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 block w-full"
       >
-        <option value="">Select A-Day</option>
+        <option value="">{label.includes('R-Day') ? 'Select R-Day' : 'Select A-Day'}</option>
         {aDayOptions(position, shift, combatGroups).map((option) => (
           <option key={option} value={option} disabled={unavailable?.[option] !== undefined}>
             {option.replace(/^G(\d+)$/, 'Group $1')}
@@ -1876,6 +1876,7 @@ export function AnnualLiveControls(props: Props) {
                 busy ||
                 loadError !== null ||
                 state === null ||
+                state.current_phase === 'paused' ||
                 selectionMember === null ||
                 !canSelectViewedMember ||
                 pendingADay !== null ||
