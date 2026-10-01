@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type BidOrderEntry, computeOnDeck } from '../../src/lib/on-deck.js';
+import { type BidOrderEntry, computeOnDeck, currentBidOrderEntry } from '../../src/lib/on-deck.js';
 
 const order: BidOrderEntry[] = [
   { ordinal: 1, memberId: 101, pool: 'OFC' },
@@ -12,6 +12,22 @@ const order: BidOrderEntry[] = [
 ];
 
 describe('computeOnDeck', () => {
+  it('uses the canonical annual turn and queue when a member appears in several stages', () => {
+    const staged: BidOrderEntry[] = [
+      { ordinal: 1, memberId: 101, pool: 'OFC' },
+      { ordinal: 2, memberId: 102, pool: 'OFC' },
+      { ordinal: 3, memberId: 101, pool: 'OFC' },
+      { ordinal: 4, memberId: 104, pool: 'FF' },
+    ];
+    expect(currentBidOrderEntry(staged, 101, 0)?.ordinal).toBe(1);
+    expect(currentBidOrderEntry(staged, 101, 2)?.ordinal).toBe(3);
+    expect(computeOnDeck(staged, 101, new Set(), 5, 2).map((entry) => entry.memberId)).toEqual([
+      104,
+    ]);
+    expect(computeOnDeck(staged, 102, new Set(), 5, 2).map((entry) => entry.memberId)).toEqual([
+      104,
+    ]);
+  });
   it('returns the next 5 bidders after the current one', () => {
     const result = computeOnDeck(order, 102, new Set());
     expect(result.map((e) => e.memberId)).toEqual([103, 104, 105, 106, 107]);

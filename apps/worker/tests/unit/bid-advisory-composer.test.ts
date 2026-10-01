@@ -1,3 +1,4 @@
+import { BidAdvisoryBundleSchema } from '@mbfd/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -110,6 +111,40 @@ describe('composeBidAdvisoryBundle', () => {
 
     expect(summary).toContain('UNMAPPED_FUTURE_REASON_731');
     expect(summary).not.toMatch(/means|because|therefore/i);
+  });
+
+  it('keeps the full advisory valid when many failed requirements exceed the summary limit', () => {
+    const facts = input();
+    const reasons = Array.from(
+      { length: 20 },
+      (_, index) => `Required qualification ${index + 1} needs separately reviewed source evidence`,
+    );
+    const bundle = composeBidAdvisoryBundle({
+      ...facts,
+      positions: {
+        biddableCount: 223,
+        filledCount: 0,
+        unfilledCount: 223,
+        currentBidderEligibility: {
+          memberId: 17,
+          eligibleUnfilledCount: 17,
+          ineligibleUnfilledCount: 206,
+          blockingReasonLabels: reasons,
+        },
+      },
+    });
+    expect(BidAdvisoryBundleSchema.safeParse(bundle).success).toBe(true);
+    expect(bundle.cards.find((card) => card.kind === 'position_options')).toMatchObject({
+      severity: 'ready',
+      summary: expect.stringContaining('17 unfilled positions satisfy'),
+    });
+    const summary = bundle.cards.find((card) => card.kind === 'position_options')?.summary;
+    expect(summary).toContain('206 do not');
+    expect(summary).toContain('20 blocking reasons');
+    expect(summary).toContain('eligibility lists for the full requirements');
+    expect(bundle.cards.map((card) => card.kind)).toContain('candidate_order');
+    expect(bundle.cards.map((card) => card.kind)).toContain('staffing_authority');
+    expect(reasons).toHaveLength(20);
   });
 
   it('contains malformed advisory projection failures without mutating BID state', () => {

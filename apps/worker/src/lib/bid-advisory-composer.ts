@@ -120,11 +120,16 @@ function positionCard(input: BidAdvisoryComposerInput): BidAdvisoryCard {
     currentBidderEligibility.blockingReasonLabels.length === 0
       ? ''
       : `: ${currentBidderEligibility.blockingReasonLabels.join(', ')}`;
+  const fullSummary = `${progress} ${eligibleCount} unfilled ${noun(eligibleCount, 'position')} ${eligibleCount === 1 ? 'satisfies' : 'satisfy'} ${input.ordering.currentBidder.displayName}'s frozen eligibility rules. ${ineligibleCount} ${ineligibleCount === 1 ? 'does' : 'do'} not${reasonText}.`;
+  const reasonCount = currentBidderEligibility.blockingReasonLabels.length;
   return {
     kind: 'position_options',
     severity: eligibleCount > 0 ? 'ready' : 'blocked',
     title: 'Position options',
-    summary: `${progress} ${eligibleCount} unfilled ${noun(eligibleCount, 'position')} ${eligibleCount === 1 ? 'satisfies' : 'satisfy'} ${input.ordering.currentBidder.displayName}'s frozen eligibility rules. ${ineligibleCount} ${ineligibleCount === 1 ? 'does' : 'do'} not${reasonText}.`,
+    summary:
+      fullSummary.length <= 500
+        ? fullSummary
+        : `${progress} ${eligibleCount} unfilled ${noun(eligibleCount, 'position')} ${eligibleCount === 1 ? 'satisfies' : 'satisfy'} the current bidder's frozen eligibility rules; ${ineligibleCount} ${ineligibleCount === 1 ? 'does' : 'do'} not. ${reasonCount} blocking ${noun(reasonCount, 'reason')}; see eligibility lists for the full requirements.`,
     sources: ['selection_result', 'eligibility_engine', 'frozen_policy_snapshot'],
   };
 }
