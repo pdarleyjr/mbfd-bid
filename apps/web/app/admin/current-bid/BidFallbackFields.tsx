@@ -179,6 +179,52 @@ export function BidFallbackFields({
                   options={opportunities}
                   onChange={(positionIds) => patch({ positionIds })}
                 />
+                <ChoiceField
+                  label="Fallback becomes available"
+                  value={policy.activation?.prerequisite ?? ''}
+                  options={[
+                    { value: '', label: 'No saved timing condition · source review required' },
+                    {
+                      value: 'NO_QUALIFIED_VOLUNTEER_REMAINS',
+                      label:
+                        'After qualified volunteers have no ordinary selection rights remaining',
+                    },
+                    {
+                      value: 'ORDINARY_OPPORTUNITY_PATH_EXHAUSTED',
+                      label: 'After this opportunity’s ordinary selection path is exhausted',
+                    },
+                  ]}
+                  onChange={(prerequisite) => {
+                    if (!prerequisite) {
+                      const { activation: _activation, ...remaining } = policy;
+                      onChange(
+                        value.map((entry, index) => (index === policyIndex ? remaining : entry)),
+                      );
+                    } else
+                      patch({
+                        activation: {
+                          v: 1,
+                          prerequisite,
+                          sourceRef: policy.activation?.sourceRef ?? '',
+                        },
+                      });
+                  }}
+                />
+                {policy.activation ? (
+                  <TextField
+                    label="Fallback timing source"
+                    value={policy.activation.sourceRef}
+                    onChange={(sourceRef) => {
+                      if (policy.activation)
+                        patch({ activation: { ...policy.activation, sourceRef } });
+                    }}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    A saved historical condition may be interpreted from its exact reviewed source.
+                    Unknown timing requires an administrator decision before fallback can run.
+                  </p>
+                )}
                 {policy.tiers.map((tier, tierIndex) => {
                   const update = (change: Partial<Tier>) =>
                     patch({

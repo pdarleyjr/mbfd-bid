@@ -195,6 +195,18 @@ export const FrozenAnnualOperationsPolicySchema = z
             sourceRef: z.string().trim().min(4).max(500),
             sourceDecisionId: z.string().trim().min(1).max(160),
             positionIds: z.array(z.string().trim().min(1).max(160)).min(1),
+            /** Absent in sealed historical definitions; never synthesize a saved default. */
+            activation: z
+              .object({
+                v: z.literal(1),
+                prerequisite: z.enum([
+                  'NO_QUALIFIED_VOLUNTEER_REMAINS',
+                  'ORDINARY_OPPORTUNITY_PATH_EXHAUSTED',
+                ]),
+                sourceRef: z.string().trim().min(4).max(500),
+              })
+              .strict()
+              .optional(),
             tiers: z
               .array(
                 z

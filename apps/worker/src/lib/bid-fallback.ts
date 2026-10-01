@@ -1,6 +1,7 @@
 import { type PositionRule, evaluateEligibility } from '@mbfd/eligibility';
 import type { BidSessionPolicySnapshot } from '@mbfd/shared';
 import type { BidSessionState } from '../durable/bid-session-state.js';
+import { evaluateFallbackActivation } from './bid-fallback-activation.js';
 import { eligibilityMemberFromFrozen } from './bid-policy.js';
 import { sortWithFrozenOrdering } from './live-bid-policy.js';
 import { decodePositionRule } from './position-rule.js';
@@ -24,6 +25,8 @@ export function evaluateBidFallback(input: {
   const raw = snapshot.ruleBookMaterial.rules.find((rule) => rule.positionId === positionId);
   const decoded = raw ? decodePositionRule(raw) : null;
   if (!decoded?.ok) return { ok: false as const, code: 'FALLBACK_RULE_MISSING' };
+  const activation = evaluateFallbackActivation({ ...input, fallback: policy, rule: decoded.rule });
+  if (!activation.ok) return activation;
   const awarded = new Set(Object.values(state.fills).map((fill) => fill.memberId));
   const available = snapshot.members.filter(
     (member) => member.pool !== 'EXCLUDED' && !awarded.has(member.memberId),
@@ -76,13 +79,15 @@ export function evaluateBidFallback(input: {
     const responses = state.live?.fallbackResponses ?? [];
     const candidates = ordered.members.filter(
       (member) =>
-        !responses.some(
-          (response) =>
-            response.policyId === policy.id &&
-            response.positionId === positionId &&
-            response.tierId === tier.id &&
-            response.memberId === member.memberId,
-        ),
+        [...responses]
+          .reverse()
+          .find(
+            (response) =>
+              response.policyId === policy.id &&
+              response.positionId === positionId &&
+              response.tierId === tier.id &&
+              response.memberId === member.memberId,
+          )?.outcome !== 'DECLINE',
     );
     if (candidates.length)
       return {
@@ -91,6 +96,7 @@ export function evaluateBidFallback(input: {
         label: policy.label,
         sourceRef: policy.sourceRef,
         sourceDecisionId: policy.sourceDecisionId,
+        activation: activation.activation,
         tierId: tier.id,
         tierLabel: tier.label,
         mode: tier.mode,
@@ -104,7 +110,7 @@ export function evaluateBidFallback(input: {
       tierId: tier.id,
       eligibleMemberIds: ordered.members.map((m) => m.memberId),
       reason: eligible.length
-        ? 'ALL_ELIGIBLE_CANDIDATES_RESPONDED'
+        ? 'ALL_ELIGIBLE_CANDIDATES_DECLINED'
         : 'NO_ELIGIBLE_AVAILABLE_CANDIDATES',
     });
   }

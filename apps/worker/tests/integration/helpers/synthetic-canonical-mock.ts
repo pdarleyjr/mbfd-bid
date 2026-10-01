@@ -199,6 +199,11 @@ export async function seedCanonicalMockInputs(h: TestD1) {
           sourceRef: 'Synthetic reverse minimum-qualified fallback',
           sourceDecisionId: 'fallback-source',
           positionIds: mockSeats.pool,
+          activation: {
+            v: 1,
+            prerequisite: 'ORDINARY_OPPORTUNITY_PATH_EXHAUSTED',
+            sourceRef: 'Synthetic approved ordinary exhaustion condition',
+          },
           tiers: [
             {
               id: 'volunteer',

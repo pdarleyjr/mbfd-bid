@@ -231,7 +231,18 @@ it.skipIf(!sourcePath)(
               activeIds.has(id),
             ),
           fallbackPolicies: policyInput.annualOperations?.fallbackPolicies
-            ?.map((f) => ({ ...f, positionIds: f.positionIds.filter((id) => activeIds.has(id)) }))
+            ?.map((f) => ({
+              ...f,
+              positionIds: f.positionIds.filter((id) => activeIds.has(id)),
+              activation: {
+                v: 1 as const,
+                prerequisite:
+                  f.id === 'fallback-designated-de' || f.id === 'fallback-rescue-float'
+                    ? ('ORDINARY_OPPORTUNITY_PATH_EXHAUSTED' as const)
+                    : ('NO_QUALIFIED_VOLUNTEER_REMAINS' as const),
+                sourceRef: `Synthetic timing case based on ${f.sourceRef}`,
+              },
+            }))
             .filter((f) => f.positionIds.length > 0),
           membershipDistributions: [
             {
@@ -511,6 +522,7 @@ it.skipIf(!sourcePath)(
         (await command('live.return_at_current_sequence', { memberId: firstBidder })).kind,
       ).toBe('accepted');
       let forcedFallback = false;
+      let pendingFallbackPositionId: string | null = null;
       let amended = false;
       let specialtyInterruptions = 0;
       for (let step = 0; step < 230; step++) {
@@ -554,43 +566,19 @@ it.skipIf(!sourcePath)(
           expect(ineligible).toMatchObject({ kind: 'rejected', code: 'MEMBER_NOT_ELIGIBLE' });
         }
         if (!forcedFallback && seat.id === 'final2026-C707') {
-          const response = await request(`bid-session/${sessionId}/specialty-live`);
-          const projected = (await response.json()) as {
-            fallbacks: {
-              ok: boolean;
-              positionId: string;
-              policyId: string;
-              tierId: string;
-              candidateMemberIds: number[];
-            }[];
-          };
-          const fallback = projected.fallbacks.find(
-            (row) =>
-              row.ok && row.positionId === positionId && row.policyId === 'fallback-designated-de',
-          );
-          if (!fallback?.candidateMemberIds[0])
-            throw new Error('Server ordered fallback candidate required');
-          let accepted = false;
-          for (const aDay of await availableADay(
-            fallback.candidateMemberIds[0],
-            positionId,
-            true,
-          )) {
-            const result = await command('live.force_selection', {
-              memberId: fallback.candidateMemberIds[0],
+          expect(
+            await command('live.force_selection', {
+              memberId,
               positionId,
               ...(pool ? { pool: { poolId: pool.id } } : {}),
-              fallback: { policyId: fallback.policyId, tierId: fallback.tierId },
-              aDay,
-            });
-            if (result.kind === 'accepted') {
-              accepted = true;
-              break;
-            }
-            expect(result.code).toMatch(/A_DAY/);
-          }
-          expect(accepted).toBe(true);
-          forcedFallback = true;
+              fallback: { policyId: 'fallback-designated-de', tierId: 'minimum-qualified' },
+              aDay: 'G1',
+            }),
+          ).toMatchObject({ kind: 'rejected', code: 'FALLBACK_ORDINARY_PATH_NOT_EXHAUSTED' });
+          expect((await command('live.disposition', { disposition: 'DECLINED' })).kind).toBe(
+            'accepted',
+          );
+          pendingFallbackPositionId = positionId;
           continue;
         }
         let selected = false;
@@ -664,6 +652,50 @@ it.skipIf(!sourcePath)(
           amended = true;
         }
       }
+      if (!pendingFallbackPositionId)
+        throw new Error('Synthetic unbid fallback opportunity required');
+      const finalFallbackPositionId = pendingFallbackPositionId;
+      const projected = (await (
+        await request(`bid-session/${sessionId}/specialty-live`)
+      ).json()) as {
+        fallbacks: {
+          ok: boolean;
+          positionId: string;
+          policyId: string;
+          tierId: string;
+          candidateMemberIds: number[];
+        }[];
+      };
+      const fallback = projected.fallbacks.find(
+        (row) =>
+          row.ok &&
+          row.positionId === pendingFallbackPositionId &&
+          row.policyId === 'fallback-designated-de',
+      );
+      if (!fallback?.candidateMemberIds[0])
+        throw new Error('Server ordered final-stage fallback candidate required');
+      const fallbackPool = policy.annualOperations?.opportunityPools?.find((p) =>
+        p.positionIds.includes(finalFallbackPositionId),
+      );
+      for (const aDay of await availableADay(
+        fallback.candidateMemberIds[0],
+        pendingFallbackPositionId,
+        true,
+      )) {
+        const result = await command('live.force_selection', {
+          memberId: fallback.candidateMemberIds[0],
+          positionId: pendingFallbackPositionId,
+          ...(fallbackPool ? { pool: { poolId: fallbackPool.id } } : {}),
+          fallback: { policyId: fallback.policyId, tierId: fallback.tierId },
+          aDay,
+        });
+        if (result.kind === 'accepted') {
+          forcedFallback = true;
+          break;
+        }
+        expect(result.code).toMatch(/A_DAY/);
+      }
+      expect(forcedFallback).toBe(true);
       const completed = await command('live.complete_session');
       expect(completed.kind, JSON.stringify(completed)).toBe('accepted');
       const final = await loadCanonicalBidSessionState(h.env.DB, sessionId);
