@@ -160,7 +160,8 @@ export function LiveCommandBar({
               type="button"
               variant="default"
               onClick={() => {
-                if (currentBidderId !== null) operator?.selectMember(currentBidderId);
+                const activeMemberId = operator ? operator.activeMemberId : currentBidderId;
+                if (activeMemberId !== null) operator?.selectMember(activeMemberId);
               }}
             >
               Current bidder

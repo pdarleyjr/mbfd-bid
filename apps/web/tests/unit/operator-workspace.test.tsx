@@ -6,6 +6,7 @@ import type { MemberLite, PositionMeta } from '../../app/_components/bid/types';
 import { AnnualLiveControls } from '../../app/admin/bid/_components/AnnualLiveControls';
 import { BidOperatorProvider } from '../../app/admin/bid/_components/BidOperatorContext';
 import { BidOperatorWorkspace } from '../../app/admin/bid/_components/BidOperatorWorkspace';
+import { LiveCommandBar } from '../../app/admin/bid/_components/LiveCommandBar';
 
 vi.mock('@/components/admin/TaskPanel', () => ({
   TaskPanel: ({ open, children }: { open: boolean; children: ReactNode }) =>
@@ -105,6 +106,8 @@ let requests: string[];
 let originalFetch: typeof fetch;
 let reject = false;
 let updatesUnavailable = false;
+let failReadAfterAward = false;
+let returnedMember = false;
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -117,13 +120,20 @@ beforeEach(() => {
   requests = [];
   reject = false;
   updatesUnavailable = false;
+  failReadAfterAward = false;
+  returnedMember = false;
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     requests.push(url);
     if (url.endsWith('/specialty-live'))
       return updatesUnavailable
         ? response({ error: 'synthetic_connection_lost' }, 503)
-        : response(live);
+        : response({
+            ...live,
+            returning_member: returnedMember
+              ? { member_id: 18, first_name: 'New', last_name: 'OperatorFixture', rank: 'CPT' }
+              : null,
+          });
     if (url === '/api/auth/csrf')
       return response({ token: 'csrf_00000000-0000-0000-0000-000000000001' });
     if (url.startsWith('/api/admin/department/people/'))
@@ -134,6 +144,7 @@ beforeEach(() => {
       });
     if (url.endsWith('/commands/live')) {
       commands.push(JSON.parse(String(init?.body)));
+      if (!reject && failReadAfterAward) updatesUnavailable = true;
       return reject
         ? response({ kind: 'rejected', code: 'LIVE_STAGE_NOT_ELIGIBLE' }, 409)
         : response({ kind: 'accepted' });
@@ -163,6 +174,19 @@ async function mount() {
   await settle(() =>
     root?.render(
       <BidOperatorProvider currentBidderId={17}>
+        <LiveCommandBar
+          bidSessionId="isolated-synthetic"
+          isMock={false}
+          lastSeq={4}
+          currentPhase="position_bid"
+          sessionStartedAt={null}
+          turnStartedAtMs={null}
+          turnTimerSeconds={180}
+          currentBidder={null}
+          currentBidderId={17}
+          onDeck={[]}
+          managed
+        />
         <BidOperatorWorkspace members={members} bidOrder={[{ memberId: 17 }, { memberId: 18 }]}>
           <AnnualLiveControls
             bidSessionId="isolated-synthetic"
@@ -197,6 +221,35 @@ async function chooseGroup(value: string) {
   });
 }
 describe('operator workspace interaction and history', () => {
+  it('returns to the active returned member instead of the waiting ordinary bidder', async () => {
+    returnedMember = true;
+    await mount();
+    await settle(() => button('Current OperatorFixture').click());
+    expect(
+      container.querySelector('[aria-label="Selected member details"]')?.textContent,
+    ).toContain('Current OperatorFixture');
+    await settle(() => button('Current bidder').click());
+    expect(
+      container.querySelector('[aria-label="Selected member details"]')?.textContent,
+    ).toContain('New OperatorFixture');
+    expect(button('Engine 2').disabled).toBe(false);
+    expect(commands).toHaveLength(0);
+  });
+  it('keeps the accepted acknowledgement and blocks actions when the following refresh fails', async () => {
+    await mount();
+    await settle(() => button('Engine 2').click());
+    await chooseGroup('G3');
+    failReadAfterAward = true;
+    await settle(() => button('Confirm bid').click());
+    expect(commands).toHaveLength(1);
+    expect(container.textContent).toContain('Action recorded.');
+    expect(container.textContent).toContain('Bid updates are unavailable');
+    expect(button('Confirm bid').disabled).toBe(true);
+    await settle(() => button('Engine 2').click());
+    await chooseGroup('G2');
+    expect(button('Confirm bid').disabled).toBe(true);
+    expect(commands).toHaveLength(1);
+  });
   it('blocks recording when updates fail and preserves the draft through reconnection', async () => {
     await mount();
     await settle(() => button('Engine 2').click());

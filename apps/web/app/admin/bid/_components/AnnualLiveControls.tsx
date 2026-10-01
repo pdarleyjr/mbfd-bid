@@ -814,7 +814,12 @@ export function AnnualLiveControls(props: Props) {
         }
       }
       setNotice('Action recorded.');
-      await load();
+      try {
+        await load();
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.');
+        setNotice('Action recorded. Refresh bid updates before recording another action.');
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Command failed.');
     } finally {
