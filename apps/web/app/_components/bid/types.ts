@@ -3,6 +3,8 @@
  * page that renders the board grid stays in lockstep with the Worker payload.
  */
 
+import type { MemberHistoricalContext } from '@mbfd/shared';
+
 export type Shift = 'A' | 'B' | 'C' | 'D';
 
 export interface MemberLite {
@@ -14,20 +16,7 @@ export interface MemberLite {
   /** Member's pick from the previous annual bid (e.g. their 2025 assignment
    *  when running the 2026 bid). NULL for new hires / unbackfilled rows. */
   priorPositionId?: string | null;
-  historicalContext?: {
-    year: number;
-    evidenceStatus: 'RECORDED' | 'NO_PRIOR_BID_OR_ASSIGNMENT' | 'UNLINKED' | 'UNAVAILABLE';
-    historicalPositionId: string | null;
-    positionLabel: string | null;
-    shift: string | null;
-    station: string | null;
-    unit: string | null;
-    aDayGroup: string | null;
-    sourceName: string | null;
-    sourceSha256: string | null;
-    sourceLocation: string | null;
-    archiveSha256: string | null;
-  };
+  historicalContext?: MemberHistoricalContext;
 }
 
 export interface PositionMeta {
