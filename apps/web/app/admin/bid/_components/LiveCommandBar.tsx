@@ -211,7 +211,7 @@ export function LiveCommandBar({
           data-testid="on-deck-strip"
           className="flex items-center gap-3 overflow-x-auto border-t border-border bg-background px-4 py-1.5 text-sm"
         >
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <span className="shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             On deck
           </span>
           {onDeck.map((b, i) => (
