@@ -221,6 +221,117 @@ describe('returned unreachable member keeps their own stage rights', () => {
       reduce(state, command('live.return_at_current_sequence', { memberId: 2 })),
     ).toMatchObject({ ok: false, code: 'MEMBER_NOT_UNRESOLVED' });
   });
+
+  it('does not return an awarded member even when legacy contact state remains unresolved', () => {
+    const state = captainUnreachableThenLieutenantStage();
+    if (!state.annual) throw new Error('Annual state required');
+    state.annual = { ...state.annual, unresolvedMemberIds: [1, 2] };
+    expect(
+      reduce(state, command('live.return_at_current_sequence', { memberId: 2 })),
+    ).toMatchObject({ ok: false, code: 'MEMBER_NOT_UNRESOLVED' });
+  });
+
+  it('rejects declaring a fully awarded member unreachable', () => {
+    const state = captainUnreachableThenLieutenantStage();
+    expect(reduce(state, command('live.declare_unreachable', { memberId: 2 }))).toMatchObject({
+      ok: false,
+      code: 'MEMBER_ALREADY_SELECTED',
+    });
+  });
+
+  it('keeps contact unresolved when a returned member is unreachable again', () => {
+    let state = captainUnreachableThenLieutenantStage();
+    state = apply(state, command('live.return_at_current_sequence', { memberId: 1 }));
+    state = apply(state, command('live.disposition', { disposition: 'UNREACHABLE' }));
+    expect(state.annual).toMatchObject({ unresolvedMemberIds: [1], returningMemberId: null });
+    expect(
+      apply(state, command('live.return_at_current_sequence', { memberId: 1 })).annual
+        ?.returningMemberId,
+    ).toBe(1);
+  });
+
+  it('does not grant a returned member rights to a later stage they have not reached', () => {
+    let state = apply(initial(), command('live.disposition', { disposition: 'UNREACHABLE' }));
+    state = apply(state, command('live.return_at_current_sequence', { memberId: 1 }));
+    const configured: FrozenLiveBidPolicy = {
+      ...policy,
+      stages: policy.stages.map((stage) =>
+        stage.id === 'lieutenants' ? { ...stage, memberIds: [...stage.memberIds, 1] } : stage,
+      ),
+    };
+    expect(
+      reduceLiveBidCommand(
+        state,
+        configured,
+        { ...select(1, 'L1'), expectedSeq: state.lastSeq } as LiveBidCommand,
+        2_000,
+        'future-stage',
+      ),
+    ).toMatchObject({ ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' });
+  });
+
+  it.each(['lieutenants', 'firefighters'] as const)(
+    'lets a returned member of the final %s stage select after queue exhaustion',
+    (lastStage) => {
+      const annualOperations = policy.annualOperations;
+      if (!annualOperations) throw new Error('Annual fixture required');
+      const configured: FrozenLiveBidPolicy =
+        lastStage === 'firefighters'
+          ? {
+              ...policy,
+              stages: [
+                ...policy.stages,
+                {
+                  id: 'firefighters',
+                  label: 'Firefighters',
+                  order: 2,
+                  memberIds: [5],
+                  opportunityPositionIds: ['F1'],
+                  kind: 'FIREFIGHTER',
+                },
+              ],
+              annualOperations: {
+                ...annualOperations,
+                stageOrder: ['captains', 'lieutenants', 'firefighters'],
+              },
+            }
+          : policy;
+      let state = initial();
+      if (lastStage === 'firefighters')
+        state.bidOrder = [
+          ...state.bidOrder,
+          { ordinal: 5, memberId: 5, pool: 'FF', stageId: 'firefighters' },
+        ];
+      const applyConfigured = (input: LiveBidCommand) => {
+        const result = reduceLiveBidCommand(
+          state,
+          configured,
+          { ...input, expectedSeq: state.lastSeq } as LiveBidCommand,
+          1_000 + state.lastSeq,
+          `bid-${state.lastSeq + 1}`,
+        );
+        if (!result.ok) throw new Error(result.code);
+        state = result.state;
+      };
+      applyConfigured(select(1, 'C1'));
+      applyConfigured(select(2, 'C2'));
+      if (lastStage === 'lieutenants')
+        applyConfigured(command('live.disposition', { disposition: 'UNREACHABLE' }));
+      else applyConfigured(select(3, 'L1'));
+      applyConfigured(select(4, 'L2'));
+      if (lastStage === 'firefighters')
+        applyConfigured(command('live.disposition', { disposition: 'UNREACHABLE' }));
+      expect(state.currentPhase).toBe('complete');
+      const memberId = lastStage === 'lieutenants' ? 3 : 5;
+      applyConfigured(command('live.return_at_current_sequence', { memberId }));
+      state = JSON.parse(JSON.stringify(state)) as BidSessionState;
+      applyConfigured(select(memberId, lastStage === 'lieutenants' ? 'L1' : 'F1'));
+      expect(state.currentPhase).toBe('complete');
+      expect(state.annual).toMatchObject({ unresolvedMemberIds: [], returningMemberId: null });
+      applyConfigured(command('live.complete_session'));
+      expect(state.annual?.completion).not.toBeNull();
+    },
+  );
 });
 
 describe('completion requires frozen participant coverage', () => {
