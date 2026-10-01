@@ -6,7 +6,7 @@ import {
   canPick,
   computeAllMeters,
 } from '@mbfd/a-day';
-import { SubmitADayPickRequestSchema } from '@mbfd/shared';
+import { type MemberHistoricalContext, SubmitADayPickRequestSchema } from '@mbfd/shared';
 import { desc, eq } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { loadCanonicalBidSessionState } from '../commands/canonical-command-service.js';
@@ -15,6 +15,10 @@ import { bidSessions as bidSessionsTable, bids as bidsTable } from '../db/schema
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
 import { safelyProjectAuthoritativeBidAdvisory } from '../lib/bid-advisory-projection.js';
+import {
+  loadPriorBidHistoricalContext,
+  projectMemberHistoricalContext,
+} from '../lib/bid-historical-context.js';
 import { computeBidOrder } from '../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
@@ -431,6 +435,7 @@ bid.get('/board', async (c) => {
   // those scenarios, leaving phase='config' / currentBidderId=null forever.
   // D1 is the durable source of truth; the DO is a session-scoped buffer.
   let isMock = false;
+  let bidYear: number | null = null;
   let sessionStartedAt: number | null = null;
   let d1Phase: string | null = null;
   let d1CurrentBidderId: number | null = null;
@@ -441,6 +446,7 @@ bid.get('/board', async (c) => {
     const session = await db
       .select({
         isMock: bidSessionsTable.isMock,
+        bidYear: bidSessionsTable.bidYear,
         startedAt: bidSessionsTable.startedAt,
         currentPhase: bidSessionsTable.currentPhase,
         currentBidderId: bidSessionsTable.currentBidderId,
@@ -450,6 +456,7 @@ bid.get('/board', async (c) => {
       .where(eq(bidSessionsTable.id, bidSessionId))
       .get();
     isMock = session?.isMock === true;
+    bidYear = session?.bidYear ?? null;
     if (session?.startedAt instanceof Date) {
       sessionStartedAt = session.startedAt.getTime();
     }
@@ -593,6 +600,7 @@ bid.get('/board', async (c) => {
       rank: string;
       employeeId: string;
       priorPositionId: string | null;
+      historicalContext?: MemberHistoricalContext;
     }
   > = {};
   // When the DO has no materialized order, render the order derived from the
@@ -639,6 +647,11 @@ bid.get('/board', async (c) => {
   if (currentBidderId !== null) lookupIds.add(currentBidderId);
   for (const entry of onDeckEntries) lookupIds.add(entry.memberId);
 
+  const historicalProjection =
+    claims.role === 'admin' && bidYear !== null
+      ? await loadPriorBidHistoricalContext(c.env.R2_EXPORTS, bidYear)
+      : null;
+
   for (const memberId of lookupIds) {
     const member = snapshotMembersById.get(memberId);
     if (member === undefined) continue;
@@ -650,6 +663,14 @@ bid.get('/board', async (c) => {
       rank: identity?.rank ?? member.rank,
       employeeId: identity?.employeeId ?? `#${memberId}`,
       priorPositionId: null,
+      ...(historicalProjection === null
+        ? {}
+        : {
+            historicalContext: projectMemberHistoricalContext(
+              historicalProjection,
+              identity?.employeeId,
+            ),
+          }),
     };
   }
   if (currentBidderId !== null) {
