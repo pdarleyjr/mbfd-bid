@@ -15,6 +15,7 @@ import { eq } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { ulid } from 'ulid';
 import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
+import { participantCoverageGaps } from '../../commands/live-bid-reducer.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions } from '../../db/schema.js';
 import { hydrateADayState } from '../../durable/bid-session-aday-handlers.js';
@@ -524,6 +525,10 @@ router.get('/:id/specialty-live', async (c) => {
         : null,
     dispositions: policy.dispositions,
     unresolved_members: (canonical.annual?.unresolvedMemberIds ?? []).map(member),
+    completion_blockers:
+      canonical.annual && canonical.live
+        ? participantCoverageGaps(canonical, canonical.live, policy, canonical.annual).map(member)
+        : [],
     returning_member:
       canonical.annual?.returningMemberId == null
         ? null

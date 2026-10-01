@@ -219,10 +219,15 @@ export function declareUnreachable(
 
 export function returnAtCurrentSequence(
   state: AnnualOperationsState,
-  input: { memberId: number; sequence: number },
+  input: { memberId: number; sequence: number; retainsSelectionRights?: boolean },
 ): { ok: true; state: AnnualOperationsState } | { ok: false; code: string } {
-  if (!state.unresolvedMemberIds.includes(input.memberId))
+  if (
+    state.returningMemberId === input.memberId ||
+    (!state.unresolvedMemberIds.includes(input.memberId) && input.retainsSelectionRights !== true)
+  )
     return { ok: false, code: 'MEMBER_NOT_UNRESOLVED' };
+  // One returned member is processed at a time so no return is silently displaced.
+  if (state.returningMemberId !== null) return { ok: false, code: 'RETURNING_MEMBER_ACTIVE' };
   if (!Number.isInteger(input.sequence) || input.sequence < 0)
     return { ok: false, code: 'SEQUENCE_INVALID' };
   return {

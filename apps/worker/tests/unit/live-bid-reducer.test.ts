@@ -510,6 +510,11 @@ describe('live canonical reducer', () => {
     const completed = delayedADayState();
     completed.currentPhase = 'complete';
     completed.currentBidderId = null;
+    // Every frozen participant holds an award, so only return normalization is under test.
+    completed.fills = {
+      p1: { memberId: 1, ordinal: 1, bidId: 'award-1' },
+      p2: { memberId: 2, ordinal: 2, bidId: 'award-2' },
+    };
     completed.annual = {
       preferenceSheets: [],
       contactAttempts: [],
