@@ -34,7 +34,7 @@ type FallbackReview = {
   sourceRef: string;
   exhausted?: Array<{ tierId: string; eligibleMemberIds: number[]; reason: string }>;
 } & (
-  | { ok: false; code: string }
+  | { ok: false; code: string; blockingMemberIds?: number[] }
   | {
       ok: true;
       tierId: string;
@@ -1096,7 +1096,27 @@ export function AnnualLiveControls(props: Props) {
                   </div>
                 ) : null}
                 {!fallback.ok ? (
-                  <output>Fallback unavailable: {fallback.code}</output>
+                  fallback.code === 'FALLBACK_TIMING_NEEDS_ADMIN_DECISION' ? (
+                    <output>
+                      NEEDS ADMIN DECISION: The saved policy does not establish when this fallback
+                      may begin. Record the governing source and timing condition in a reviewed
+                      successor Bid configuration.
+                    </output>
+                  ) : fallback.code === 'FALLBACK_ORDINARY_PATH_NOT_EXHAUSTED' ? (
+                    <output>
+                      Qualified ordinary contenders still have selection rights. Complete their
+                      opportunity or resolve retained rights under the saved policy before fallback
+                      can begin.
+                      {fallback.blockingMemberIds?.length ? (
+                        <span>
+                          {' '}
+                          Awaiting: {fallback.blockingMemberIds.map(memberName).join(', ')}.
+                        </span>
+                      ) : null}
+                    </output>
+                  ) : (
+                    <output>Fallback unavailable: {fallback.code}</output>
+                  )
                 ) : (
                   <>
                     <p>
