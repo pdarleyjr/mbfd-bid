@@ -37,6 +37,25 @@ assert.match(
   'the guard must compare the managed D1 ledger with canonical migrations',
 );
 assert.match(guard, /mbfd-bid-production/i, 'the guard must query production D1');
+const workerJob = workflow.slice(
+  workflow.indexOf('\n  deploy-worker:'),
+  workflow.indexOf('\n  deploy-web:'),
+);
+assert.match(
+  workerJob,
+  /node scripts\/assert-production-worker-health\.mjs/,
+  'Worker job must verify production health before Web is admitted',
+);
+assert.ok(
+  workerJob.indexOf('assert-production-worker-health.mjs') >
+    workerJob.indexOf('wrangler deploy --env production'),
+  'health gate must follow Worker deployment',
+);
+assert.match(
+  workflow,
+  /needs: \[validate-artifacts, deploy-worker\]/,
+  'Web must depend on successful Worker deployment and its health gate',
+);
 
 process.stdout.write(
   'PASS: production deployment is manual-only and guarded against batch D1 migration apply.\n',

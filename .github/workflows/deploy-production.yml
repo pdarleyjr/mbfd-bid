@@ -69,6 +69,7 @@ jobs:
           pnpm --filter @mbfd/web test -- tests/unit/opennext-staging-config.test.ts
           pnpm --filter @mbfd/worker exec vitest run --config vitest.config.ts tests/deploy-staging-config.test.ts tests/integration/legacy-password-removal.test.ts
           node scripts/test-deploy-production-migration-guard.mjs
+          node --test scripts/test-production-worker-health.mjs
       - name: Build production OpenNext artifact without deployment
         working-directory: apps/web
         env:
@@ -118,6 +119,8 @@ jobs:
             echo "- Wrangler deployment record:"
             grep -E 'Deployment ID|Version ID|https://' worker-deploy.log || true
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify production Worker API health before admitting Web deployment
+        run: node scripts/assert-production-worker-health.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: production-worker-deployment-${{ inputs.release_sha }}
