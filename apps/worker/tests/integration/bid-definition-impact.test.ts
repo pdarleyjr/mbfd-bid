@@ -826,12 +826,21 @@ describe('actual unsaved Bid impact through the admin facade', () => {
   });
 
   it('returns a non-applicable trace when an unsaved opportunity becomes explicitly reserved', async () => {
+    h.sqlite.exec(`INSERT INTO staffing_positions(id,stable_slot_key,division,shift,station,unit,position_name,applicable_rank,active_from,review_status,created_at,updated_at)
+      VALUES ('synthetic-impact-reserved-staffing','SYNTHETIC/IMPACT/RESERVED','Combat','A','7','Synthetic Engine','Synthetic firefighter A','FF','2020-01-01','approved',1,1);`);
+    await refreshCurrent();
     const candidate = structuredClone(content);
     candidate.rules = candidate.rules.filter((rule) => rule.positionId !== SEAT);
     candidate.participation.push({
       positionId: SEAT,
       bidParticipation: 'RESERVED_NON_BIDDABLE',
       authoritativeSourceRef: 'Synthetic explicit reservation',
+    });
+    candidate.staffingBindings.push({
+      positionId: SEAT,
+      staffingPositionId: 'synthetic-impact-reserved-staffing',
+      authoritativeSourceRef: 'Synthetic reviewed reservation binding',
+      reviewStatus: 'approved',
     });
     const result = await impact(body(candidate, { trace: { memberId: ONE, positionId: SEAT } }));
     expect(result.trace?.after).toMatchObject({
