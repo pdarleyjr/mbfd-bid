@@ -1023,6 +1023,22 @@ describe('BidPolicyFields', () => {
     expect(BidDefinitionContentSchema.safeParse(state.value()).success).toBe(true);
   });
 
+  it('exposes only executable specialty limits and preserves historical maxima when editing capacity', async () => {
+    const original = baseContent();
+    const state = policyEditor(original, 'a-day');
+    for (const label of [
+      'MARINE ASSIGNED maximum',
+      'MARINE FLOAT maximum',
+      'DE maximum',
+      'SWAT maximum',
+    ]) {
+      expect(state.container.textContent).not.toContain(label);
+    }
+    await setValue(control(state.container, 'Maximum group size'), '31');
+    expect(ops(state.value()).aDay.specialtyMaximums).toEqual(ops(original).aDay.specialtyMaximums);
+    expect(state.container.textContent).toContain('source-backed A-Day limits');
+  });
+
   it('authors named A-Day limits using explicit shift and union scopes without inferring membership from the name', async () => {
     const original = baseContent();
     const state = policyEditor(original, 'a-day');

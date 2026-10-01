@@ -24,9 +24,15 @@ export interface AnnualOperationsPolicy {
     readonly min: number | null;
     readonly max: number | null;
     readonly captainDcMax: number | null;
-    readonly specialtyMaximums: Readonly<
-      Record<'MARINE_ASSIGNED' | 'MARINE_FLOAT' | 'DE' | 'SWAT', number>
-    >;
+    /** Deprecated historical metadata; frozen scoped constraints enforce limits. */
+    readonly specialtyMaximums?:
+      | Readonly<{
+          MARINE_ASSIGNED: number;
+          MARINE_FLOAT: number | null;
+          DE: number;
+          SWAT: number;
+        }>
+      | undefined;
   };
 }
 
@@ -73,18 +79,6 @@ export function evaluateSpecialtyEligibility(input: {
   const credentials = new Set(input.credentialNames);
   const missing = input.rule.requiredCredentials.some((credential) => !credentials.has(credential));
   return missing ? { ok: false, code: 'SPECIALTY_CREDENTIAL_REQUIRED' } : { ok: true };
-}
-
-export function validateSpecialtyADayMaximum(input: {
-  specialty: 'MARINE_ASSIGNED' | 'MARINE_FLOAT' | 'DE' | 'SWAT';
-  existingCount: number;
-  policy: AnnualOperationsPolicy | undefined;
-}): { ok: true } | { ok: false; code: string } {
-  if (input.policy === undefined) return { ok: false, code: 'A_DAY_POLICY_MISSING' };
-  const maximum = input.policy.aDay.specialtyMaximums[input.specialty];
-  return input.existingCount < maximum
-    ? { ok: true }
-    : { ok: false, code: 'SPECIALTY_A_DAY_MAX_REACHED' };
 }
 
 export interface ContactAttempt {
