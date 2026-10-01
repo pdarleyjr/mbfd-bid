@@ -1261,27 +1261,6 @@ export async function commitLiveBidCommand(
         ),
     );
   }
-  if (input.command.type === 'live.checkpoint') {
-    const checkpoint = reduction.state.annual?.checkpoint;
-    if (checkpoint === null || checkpoint === undefined)
-      throw new Error('Accepted checkpoint reduction is missing checkpoint state');
-    statements.push(
-      input.db
-        .prepare(
-          'INSERT INTO bid_session_checkpoints (id,bid_session_id,command_id,name,actor_member_id,session_sequence,checkpoint_json,created_at) VALUES (?,?,?,?,?,?,?,?)',
-        )
-        .bind(
-          newId(),
-          input.command.bidSessionId,
-          input.command.commandId,
-          checkpoint.name,
-          checkpoint.actorMemberId,
-          checkpoint.sequence,
-          canonicalJson(reduction.state),
-          now,
-        ),
-    );
-  }
   statements.push(
     input.db
       .prepare(
@@ -1310,6 +1289,32 @@ export async function commitLiveBidCommand(
         canonicalJson(result),
         now,
       ),
+  );
+  // The checkpoint's command_id references this receipt. D1 checks that
+  // foreign key during the statement, while the surrounding batch keeps
+  // receipt, checkpoint and canonical/audit evidence atomic.
+  if (input.command.type === 'live.checkpoint') {
+    const checkpoint = reduction.state.annual?.checkpoint;
+    if (checkpoint === null || checkpoint === undefined)
+      throw new Error('Accepted checkpoint reduction is missing checkpoint state');
+    statements.push(
+      input.db
+        .prepare(
+          'INSERT INTO bid_session_checkpoints (id,bid_session_id,command_id,name,actor_member_id,session_sequence,checkpoint_json,created_at) VALUES (?,?,?,?,?,?,?,?)',
+        )
+        .bind(
+          newId(),
+          input.command.bidSessionId,
+          input.command.commandId,
+          checkpoint.name,
+          checkpoint.actorMemberId,
+          checkpoint.sequence,
+          canonicalJson(reduction.state),
+          now,
+        ),
+    );
+  }
+  statements.push(
     input.db
       .prepare(
         "INSERT INTO audit_log (id,bid_session_id,seq,actor_type,actor_id,action,target_kind,target_id,before_state,after_state,reason,ai_advisory_id,client_meta,created_at) SELECT ?,?,COALESCE(MAX(seq),0)+1,'admin',?,?,'session',?,?,?,?,NULL,NULL,? FROM audit_log WHERE bid_session_id=?",
