@@ -326,6 +326,68 @@ describe.each([
       ).toEqual({ count: 0 });
     }
 
+    it('persists a named checkpoint with its receipt and replays it once with foreign keys enabled', async () => {
+      const command: LiveBidCommand = {
+        v: 1,
+        type: 'live.checkpoint',
+        commandId: KEY,
+        bidSessionId: SESSION,
+        expectedSeq: 7,
+        actor: { id: MEMBER, role: 'admin' },
+        reason: 'Synthetic interruption checkpoint regression',
+        evidenceReference: 'synthetic:checkpoint',
+        name: 'Synthetic named continuation',
+      };
+      const accepted = await commit(command);
+      expect(accepted.result).toMatchObject({ kind: 'accepted', seq: 8 });
+      const checkpoint = h.sqlite
+        .prepare(
+          'SELECT command_id,session_sequence,checkpoint_json FROM bid_session_checkpoints WHERE bid_session_id=?',
+        )
+        .get(SESSION) as { command_id: string; session_sequence: number; checkpoint_json: string };
+      expect(checkpoint).toMatchObject({ command_id: KEY, session_sequence: 8 });
+      expect(JSON.parse(checkpoint.checkpoint_json)).toEqual(accepted.canonicalState);
+      expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
+      state = accepted.canonicalState ?? state;
+      const replay = await commit(command);
+      expect(replay.result).toEqual(accepted.result);
+      for (const table of [
+        'bid_session_checkpoints',
+        'bid_command_receipts',
+        'bid_command_events',
+        'bid_audit_outbox',
+      ]) {
+        expect(
+          h.sqlite
+            .prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE bid_session_id=?`)
+            .get(SESSION),
+        ).toEqual({ n: 1 });
+      }
+    });
+
+    it('rolls back checkpoint, receipt and canonical state together on a later batch failure', async () => {
+      h.failNextBatchAt(5);
+      await expect(
+        commit({
+          v: 1,
+          type: 'live.checkpoint',
+          commandId: KEY,
+          bidSessionId: SESSION,
+          expectedSeq: 7,
+          actor: { id: MEMBER, role: 'admin' },
+          reason: 'Synthetic checkpoint transaction rollback regression',
+          evidenceReference: 'synthetic:checkpoint',
+          name: 'Synthetic interrupted write',
+        }),
+      ).rejects.toThrow('injected D1 batch failure');
+      expectNoAwardEvidence();
+      expect(
+        h.sqlite
+          .prepare('SELECT COUNT(*) AS n FROM bid_session_checkpoints WHERE bid_session_id=?')
+          .get(SESSION),
+      ).toEqual({ n: 0 });
+    });
+
     it('rejects omitted simultaneous A-Day before canonical award persistence', async () => {
       if (timing === 'AFTER_POSITION_SELECTION') return;
       const result = await commit();
