@@ -24,6 +24,7 @@ export function validateTermDeparture(input: {
     !(
       input.command.type === 'live.record_selection' ||
       input.command.type === 'live.amend_selection' ||
+      (input.command.type === 'live.correct_bid' && input.command.operation === 'REPLACE') ||
       (input.command.type === 'live.resolve_specialty_candidate' &&
         input.command.outcome === 'ACCEPT')
     )
@@ -89,9 +90,12 @@ export async function hasAcceptedTermElection(
   if (
     !row ||
     row.actorId !== election.actorMemberId ||
-    !['live.record_selection', 'live.amend_selection', 'live.resolve_specialty_candidate'].includes(
-      row.commandType,
-    )
+    ![
+      'live.record_selection',
+      'live.amend_selection',
+      'live.correct_bid',
+      'live.resolve_specialty_candidate',
+    ].includes(row.commandType)
   )
     return false;
   try {

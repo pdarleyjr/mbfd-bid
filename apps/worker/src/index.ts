@@ -11,6 +11,7 @@ import adminBidAwardTransition from './routes/admin/bid-award-transition.js';
 import adminBidBoard from './routes/admin/bid-board.js';
 import adminBidConfiguration from './routes/admin/bid-configuration.js';
 import adminBidControls from './routes/admin/bid-controls.js';
+import adminBidCorrections from './routes/admin/bid-corrections.js';
 import adminBidDefinition from './routes/admin/bid-definition.js';
 import adminBidOrdinals from './routes/admin/bid-ordinals.js';
 import adminBidSession from './routes/admin/bid-session.js';
@@ -93,6 +94,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/bid-session', adminSpecialtyAdjudication)
   .route('/api/admin/bid-configuration', adminBidConfiguration)
   .route('/api/admin/bid-session', adminBidControls)
+  .route('/api/admin/bid-session', adminBidCorrections)
   .route('/api/admin/bid-session', adminForceADay)
   .route('/api/admin/audit', adminAudit)
   .route('/api/admin/bid-award-transition', adminBidAwardTransition)
