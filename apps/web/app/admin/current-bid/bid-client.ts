@@ -464,6 +464,7 @@ export class BidRequestError extends Error {
     readonly status: number | null,
     readonly uncertain: boolean,
     readonly issues: z.infer<typeof issue>[] = [],
+    readonly recorded: boolean | undefined = undefined,
   ) {
     super(code.replaceAll('_', ' '));
     this.name = 'BidRequestError';
@@ -503,13 +504,18 @@ export async function bidRequest<T>(
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const error = z
-        .object({ error: z.string().optional(), issues: z.array(issue).optional() })
+        .object({
+          error: z.string().optional(),
+          issues: z.array(issue).optional(),
+          recorded: z.boolean().optional(),
+        })
         .safeParse(body);
       throw new BidRequestError(
         error.success ? (error.data.error ?? 'request_failed') : 'request_failed',
         response.status,
         mutation && (response.status >= 500 || response.status === 408),
         error.success ? error.data.issues : [],
+        error.success ? error.data.recorded : undefined,
       );
     }
     const parsed = schema.safeParse(body);
