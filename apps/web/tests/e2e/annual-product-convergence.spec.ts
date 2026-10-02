@@ -59,7 +59,8 @@ test('department presentation stays read-only across OFF, LIVE, and held snapsho
       body: JSON.stringify({
         mode,
         held_at_sequence: mode === 'HOLD' ? 41 : null,
-        sequence: mode === 'HOLD' ? 41 : 44,
+        // The canonical sequence remains current while the displayed snapshot is held.
+        sequence: 44,
         session: { id: 'annual-live-e2e', bid_year: 2027 },
         current_stage: { id: 'abc-ff', label: 'ABC Firefighter' },
         current_bidder: { member_id: 12, name: 'Alex Member', rank: 'FF' },
