@@ -13,6 +13,7 @@ import {
 import { BidOperatorProvider } from './BidOperatorContext';
 import { BidOperatorWorkspace } from './BidOperatorWorkspace';
 import { BidRoster } from './BidRoster';
+import { BidSessionSetup } from './BidSessionSetup';
 import { LiveCommandBar } from './LiveCommandBar';
 import { ManualPickBar } from './ManualPickBar';
 import { ManualPickProvider } from './ManualPickContext';
@@ -57,6 +58,7 @@ export function AdminBidShell(props: Props) {
   const router = useRouter();
   const refreshCanonical = useCallback(() => router.refresh(), [router]);
   const managed = props.annual !== null && props.annual !== undefined;
+  const configuring = props.currentPhase === 'config';
   return (
     <ManualPickProvider
       bidSessionId={props.bidSessionId}
@@ -65,37 +67,52 @@ export function AdminBidShell(props: Props) {
     >
       <BidOperatorProvider currentBidderId={props.currentBidderId}>
         <div className="flex h-full min-h-[calc(100vh-57px)] flex-col">
-          <LiveCommandBar
-            bidSessionId={props.bidSessionId}
-            isMock={props.isMock}
-            lastSeq={props.lastSeq}
-            currentPhase={props.currentPhase}
-            sessionStartedAt={props.sessionStartedAt}
-            turnStartedAtMs={props.turnStartedAtMs > 0 ? props.turnStartedAtMs : null}
-            turnTimerSeconds={props.turnTimerSeconds}
-            currentBidder={props.currentBidder}
-            currentBidderId={props.currentBidderId}
-            onDeck={props.onDeck}
-            managed={managed}
-          />
-          {managed ? (
-            <BidOperatorWorkspace members={props.members} bidOrder={props.bidOrder}>
-              <AnnualLiveControls
-                bidSessionId={props.bidSessionId}
-                isMock={props.isMock}
-                currentBidderId={props.currentBidderId}
-                bidOrder={props.bidOrder}
-                fills={props.initialFills}
-                members={props.members}
-                positions={props.positions}
-                onCanonicalChange={refreshCanonical}
-                workspace
-              />
+          {!configuring && (
+            <LiveCommandBar
+              bidSessionId={props.bidSessionId}
+              isMock={props.isMock}
+              lastSeq={props.lastSeq}
+              currentPhase={props.currentPhase}
+              sessionStartedAt={props.sessionStartedAt}
+              turnStartedAtMs={props.turnStartedAtMs > 0 ? props.turnStartedAtMs : null}
+              turnTimerSeconds={props.turnTimerSeconds}
+              currentBidder={props.currentBidder}
+              currentBidderId={props.currentBidderId}
+              onDeck={props.onDeck}
+              managed={managed}
+            />
+          )}
+          {managed || configuring ? (
+            <BidOperatorWorkspace
+              members={props.members}
+              bidOrder={props.bidOrder}
+              preview={configuring}
+            >
+              {configuring ? (
+                <BidSessionSetup
+                  bidSessionId={props.bidSessionId}
+                  isMock={props.isMock}
+                  memberCount={new Set(props.bidOrder.map((entry) => entry.memberId)).size}
+                  onStarted={refreshCanonical}
+                />
+              ) : (
+                <AnnualLiveControls
+                  bidSessionId={props.bidSessionId}
+                  isMock={props.isMock}
+                  currentBidderId={props.currentBidderId}
+                  bidOrder={props.bidOrder}
+                  fills={props.initialFills}
+                  members={props.members}
+                  positions={props.positions}
+                  onCanonicalChange={refreshCanonical}
+                  workspace
+                />
+              )}
               <details className="border border-border bg-card">
                 <summary className="cursor-pointer px-3 py-3 text-sm font-semibold">
                   Full board, roster, and session status
                 </summary>
-                <AnnualOperationsStatus annual={props.annual} />
+                {!configuring && <AnnualOperationsStatus annual={props.annual} />}
                 <BidRoster
                   bidOrder={props.bidOrder}
                   members={props.members}
@@ -116,7 +133,7 @@ export function AdminBidShell(props: Props) {
                   positions={props.positions}
                   wsBase={props.wsBase}
                   advisory={props.advisory}
-                  managed
+                  managed={!configuring}
                 />
               </details>
             </BidOperatorWorkspace>

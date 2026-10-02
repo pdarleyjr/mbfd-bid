@@ -126,7 +126,7 @@ export function BidMockReview({
         )}
       {createdMock && (
         <Link
-          href={`/admin/sessions/${encodeURIComponent(createdMock.id)}` as Route}
+          href={`/admin/bid?session_id=${encodeURIComponent(createdMock.id)}` as Route}
           className="inline-flex min-h-11 items-center text-sm underline"
         >
           Open created Mock Bid · Version {createdMock.bidDefinition.versionNumber}

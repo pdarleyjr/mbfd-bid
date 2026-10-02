@@ -225,6 +225,30 @@ async function chooseGroup(value: string) {
   });
 }
 describe('operator workspace interaction and history', () => {
+  it('previews member history before Start without presenting the member as a waiting bidder', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await settle(() =>
+      root?.render(
+        <BidOperatorProvider currentBidderId={null}>
+          <BidOperatorWorkspace
+            members={members}
+            bidOrder={[{ memberId: 17 }, { memberId: 18 }]}
+            preview
+          >
+            Session setup
+          </BidOperatorWorkspace>
+        </BidOperatorProvider>,
+      ),
+    );
+    await settle(() => button('Current OperatorFixture').click());
+    expect(container.textContent).toContain('2025 Rescue Lieutenant');
+    expect(container.textContent).toContain('A-Day Group 4');
+    expect(container.textContent).not.toContain('This member is waiting');
+    expect(container.textContent).not.toContain('Up now');
+    expect(commands).toHaveLength(0);
+  });
   it('retains a draft after unchanged verified sign-in without automatically submitting it', async () => {
     await mount();
     await settle(() => button('Engine 2').click());
