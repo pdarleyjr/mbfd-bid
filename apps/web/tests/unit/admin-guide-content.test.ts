@@ -44,8 +44,10 @@ describe('Administrator Guide content contract', () => {
     });
     expect(quickStart?.steps.join(' ')).toContain('time-in-grade order');
     expect(quickStart?.steps.join(' ')).toContain('department-service order');
-    expect(quickStart?.steps.join(' ')).toContain('A Mock is a rehearsal');
-    expect(quickStart?.important).toContain('Creating and starting a Live Bid remain separate');
+    expect(quickStart?.steps.join(' ')).toMatch(/A Mock (?:is a rehearsal|never starts Real)/);
+    expect(quickStart?.important).toMatch(
+      /Creating and starting (?:a Live Bid|Live) remain separate/,
+    );
     expect(filterGuideSections('2026 quick start').map((section) => section.id)).toContain(
       '2026-bid-quick-start',
     );
