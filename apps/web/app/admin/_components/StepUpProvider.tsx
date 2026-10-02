@@ -279,8 +279,9 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
         <DialogContent>
           <DialogTitle className="font-heading text-xl">Refresh operator sign-in</DialogTitle>
           <DialogDescription className="mt-2 text-sm">
-            Your console and unfinished reason remain here. Sign in through Hub in a separate tab,
-            return here, and recheck. No command will be submitted automatically.
+            Your console and unfinished reason remain here. Recheck sign-in first. If the session
+            cannot be verified, sign in through Hub in a separate tab, return here, and recheck. No
+            command will be submitted automatically.
           </DialogDescription>
           <a
             className="mt-4 inline-flex min-h-11 items-center text-info underline"
