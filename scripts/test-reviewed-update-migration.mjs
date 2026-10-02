@@ -24,8 +24,23 @@ const required = [
   'member_qualification_events',
   'personnel_lifecycle_events',
   'member_assignments',
+  'credentials',
+  'credential_catalog_metadata',
+  'member_service_evidence',
+  'member_bid_tour_evidence',
+  'staffing_positions',
+  'staffing_tenure_evidence',
+  'assignment_imports',
+  'assignment_import_rows',
+  'assignment_observations',
+  'assignment_import_missing_observations',
+  'bid_year_staffing_baselines',
+  'bid_ordinal_datasets',
   'targetsolutions_imports',
   'targetsolutions_rows',
+  'targetsolutions_mappings',
+  'targetsolutions_commands',
+  'targetsolutions_mapping_history',
   'portal_writeback_queue',
 ];
 const tables = Object.fromEntries(
@@ -145,6 +160,30 @@ for (const [name, change] of [
     },
   ],
   [
+    'missing-catalog',
+    (v) => {
+      v.before.tables.credential_catalog_metadata = undefined;
+    },
+  ],
+  [
+    'service-fact',
+    (v) => {
+      v.after.tables.member_service_evidence.count++;
+    },
+  ],
+  [
+    'tenure-fact',
+    (v) => {
+      v.after.tables.staffing_tenure_evidence.sha256 = 'f'.repeat(64);
+    },
+  ],
+  [
+    'source-import',
+    (v) => {
+      v.after.tables.assignment_import_rows.sha256 = 'f'.repeat(64);
+    },
+  ],
+  [
     'integrity',
     (v) => {
       v.after.integrity = 'corrupt';
@@ -216,4 +255,4 @@ assert.throws(() =>
     'before',
   ),
 );
-process.stdout.write('Reviewed-update migration receipt verifier: 24 checks PASS.\n');
+process.stdout.write('Reviewed-update migration receipt verifier: 28 checks PASS.\n');
