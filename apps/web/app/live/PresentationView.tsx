@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type Presentation = {
   mode: 'OFF' | 'LIVE' | 'HOLD';
@@ -28,21 +28,70 @@ export type Presentation = {
 
 export function PresentationView({ initial }: { initial: Presentation }) {
   const [view, setView] = useState(initial);
+  const received = useRef(initial);
+  const [updates, setUpdates] = useState<'current' | 'disconnected' | 'stale'>('current');
   useEffect(() => {
-    const timer = setInterval(() => {
-      void fetch('/api/presentation', { cache: 'no-store' })
-        .then(async (response) => {
-          if (response.ok) setView((await response.json()) as Presentation);
-        })
-        .catch(() => undefined);
-    }, 2000);
-    return () => clearInterval(timer);
+    let disposed = false;
+    let pending: AbortController | null = null;
+    async function refresh() {
+      if (disposed) return;
+      if (pending) {
+        setUpdates((status) => (status === 'disconnected' ? status : 'stale'));
+        return;
+      }
+      const controller = new AbortController();
+      pending = controller;
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch('/api/presentation', {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Presentation refresh rejected');
+        const next = (await response.json()) as Presentation;
+        if (disposed) return;
+        const previous = received.current;
+        if (
+          next.mode !== 'OFF' &&
+          previous.session?.id === next.session?.id &&
+          typeof previous.sequence === 'number' &&
+          (!Number.isSafeInteger(next.sequence) || Number(next.sequence) < previous.sequence)
+        ) {
+          setUpdates('stale');
+          return;
+        }
+        received.current = next;
+        setView(next);
+        setUpdates('current');
+      } catch {
+        if (!disposed) setUpdates('disconnected');
+      } finally {
+        clearTimeout(timeout);
+        if (pending === controller) pending = null;
+      }
+    }
+    const timer = setInterval(() => void refresh(), 2000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+      pending?.abort();
+    };
   }, []);
+  const refreshStatus =
+    updates !== 'current' ? (
+      <output className="block rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-amber-950">
+        <strong>
+          {updates === 'disconnected' ? 'Updates disconnected' : 'Waiting for current updates'}
+        </strong>
+        {' · Showing the last received board. Updates will resume automatically.'}
+      </output>
+    ) : null;
 
   if (view.mode === 'OFF') {
     return (
       <main className="grid min-h-screen place-items-center bg-sidebar p-8 text-center text-white">
         <div>
+          {refreshStatus}
           <p className="text-sm font-bold uppercase tracking-[0.3em] text-red-400">
             MBFD Annual Bid
           </p>
@@ -78,15 +127,20 @@ export function PresentationView({ initial }: { initial: Presentation }) {
               <span className="rounded-full bg-amber-400 px-4 py-2 text-sm font-bold text-amber-950">
                 DISPLAY HELD · SEQ {view.held_at_sequence}
               </span>
-            ) : (
+            ) : updates === 'current' ? (
               <span className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-bold text-emerald-950">
                 LIVE DISPLAY
+              </span>
+            ) : (
+              <span className="rounded-full bg-amber-400 px-4 py-2 text-sm font-bold text-amber-950">
+                UPDATES STALE
               </span>
             )}
           </div>
         </div>
       </header>
       <div className="mx-auto max-w-[1500px] space-y-6 p-6">
+        {refreshStatus}
         <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <article className="rounded-2xl border border-border bg-white p-7 shadow-sm">
             <p className="text-sm font-bold uppercase tracking-wide text-red-700">Current stage</p>
