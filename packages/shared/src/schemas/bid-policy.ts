@@ -1181,6 +1181,25 @@ export type BidConfigurationSettingsV2 = z.infer<typeof BidConfigurationSettings
 
 /** The instant is retained with its source offset. A final freeze also seals
  * the accepted source revisions and the two evaluated evidence snapshots. */
+export const RetainedParticipationDerivationSchema = z
+  .object({
+    v: z.literal(1),
+    method: z.literal('VERIFIED_RESERVED_RETENTION'),
+    evaluatorRevision: z.literal('reserved-retention-with-sealed-qualifications-v1'),
+    baselineVersionId: z.string().min(1),
+    baselineVersionSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+    sourceFreezeId: z.string().min(1),
+    sourceEvaluationSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+    sourceVersionId: z.string().min(1),
+    sourceVersionSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+    personnelSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+    credentialSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+    materialSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+    derivedEvaluationSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+  })
+  .strict();
+export type RetainedParticipationDerivation = z.infer<typeof RetainedParticipationDerivationSchema>;
+
 export const BidEvidenceFreezeSchema = z
   .object({
     freezeId: z.string().min(1),
@@ -1217,6 +1236,8 @@ export const BidEvidenceFreezeSchema = z
         capturedAt: z.string().datetime({ offset: true }),
       })
       .strict(),
+    /** Optional successor proof; absence preserves the original sealed evaluation. */
+    derivation: RetainedParticipationDerivationSchema.optional(),
   })
   .strict();
 export type BidEvidenceFreeze = z.infer<typeof BidEvidenceFreezeSchema>;
