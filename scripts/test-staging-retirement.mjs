@@ -77,7 +77,8 @@ assert.match(
 const ci = read('.github/workflows/ci.yml');
 assert.match(ci, /pnpm build:opennext:production/);
 assert.match(ci, /wrangler dev --config wrangler\.test\.toml --local --ip 127\.0\.0\.1/);
-assert.doesNotMatch(ci, /wrangler deploy|secrets\.CLOUDFLARE|staging\.bid|build:opennext:staging/);
+assert.doesNotMatch(ci, /wrangler deploy|secrets\.CLOUDFLARE|build:opennext:staging/);
+assert.equal(ci.includes('staging.bid'), false, 'CI retains a retired network target');
 
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -91,11 +92,13 @@ function files(directory) {
 }
 for (const directory of ['apps/worker/src', 'apps/web/app', 'apps/web/lib']) {
   for (const location of files(join(root, directory))) {
-    assert.doesNotMatch(
-      readFileSync(location, 'utf8'),
-      /(?:api\.)?staging\.bid\.mbfdhub\.com|staging\.mbfdhub\.com/,
-      `Retired network target remains: ${location}`,
-    );
+    const source = readFileSync(location, 'utf8');
+    for (const retiredHost of ['staging.bid.mbfdhub.com', 'staging.mbfdhub.com'])
+      assert.equal(
+        source.includes(retiredHost),
+        false,
+        `Retired network target remains: ${location}`,
+      );
   }
 }
 process.stdout.write(

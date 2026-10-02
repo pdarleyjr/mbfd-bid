@@ -57,7 +57,7 @@ describe('generateRosterPdf (Browser Rendering refactor)', () => {
     >;
     const firstGoto = gotoCalls[0];
     expect(firstGoto).toBeDefined();
-    expect(String(firstGoto?.[0] ?? '')).toMatch(/staging\.bid\.mbfdhub\.com/);
+    expect(new URL(String(firstGoto?.[0])).origin).toBe('https://bid.test.invalid');
     expect(String(firstGoto?.[0] ?? '')).toMatch(/\/exports\/render\/roster\/A\/01HF3/);
     expect(String(firstGoto?.[0] ?? '')).not.toMatch(/\/admin\/exports\/render/);
     expect(String(firstGoto?.[0] ?? '')).toMatch(/token=/);

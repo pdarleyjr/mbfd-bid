@@ -1,3 +1,5 @@
+> Deployment retirement notice — 2026-10-01: references to the obsolete deployment are historical evidence only. Its operating instructions and acceptance gates are withdrawn. Recorded source IDs, counts and policy evidence are preserved; this notice does not change production policy. Current deployment and local test guidance is in the [retirement record](../staging-retirement-20261001.md).
+
 # Production release record — 2026-09-20
 
 This sanitized record establishes the deployed software and final **authored** 2026 configuration. It does not certify an executable configuration, actual personnel eligibility, external publication or permission to start a Real Bid. The [current release status](final-2026-release-status.md) and [coverage matrix](final-2026-coverage-matrix.md) keep those boundaries explicit.

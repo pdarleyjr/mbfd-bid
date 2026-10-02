@@ -32,7 +32,7 @@ export interface WorkerEnv {
   AUDIT_SIGNING_PUBKEY: string;
   /** @deprecated — kept for backwards compat. Replaced by Cloudflare Browser
    *  Rendering (`env.BROWSER`) for roster PDF rendering. Safe to remove once
-   *  staging + production have been redeployed against the new binding. */
+   *  production has been redeployed against the new binding. */
   BROWSERLESS_TOKEN?: string;
   /** Plan 08 — HMAC secret for print-token-authorized roster render URLs;
    *  falls back to JWT_SIGNING_KEY in dev. Still required: the headless

@@ -55,7 +55,7 @@ requires the rule to be in place.
 ## Phase A status
 
 This document is the authoritative record. The actual API call is part of
-the **operator runbook** — Phase A is local + staging-code-only, so the
+the **operator runbook** — the original Phase A was local source review, so the
 branch protection rule is configured by the operator running the `gh api`
 command above out-of-band, not by a CI job.
 
