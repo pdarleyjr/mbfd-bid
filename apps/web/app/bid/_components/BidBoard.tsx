@@ -23,7 +23,7 @@ interface Props {
   members: Record<string, MemberLite>;
   /** Immutable material returned by /api/board for this exact session. */
   positions?: readonly PositionMeta[] | undefined;
-  /** Worker origin (https://api.staging.bid.mbfdhub.com) for the WebSocket
+  /** Worker origin (https://api.bid.mbfdhub.com) for the WebSocket
    *  upgrade. The Pages domain doesn't proxy WS; we must dial the Worker
    *  directly. Pass empty/undefined to fall back to same-origin (tests). */
   wsBase?: string;

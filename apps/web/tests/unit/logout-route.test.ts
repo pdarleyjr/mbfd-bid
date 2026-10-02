@@ -21,17 +21,17 @@ describe('POST /api/auth/logout', () => {
   beforeEach(() => {
     mocks.cookieSet.mockReset();
     mocks.cookies.mockClear();
-    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'staging' : undefined));
+    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'test' : undefined));
   });
 
   it('expires both the JWT and PIN cookies', async () => {
     const { POST } = await import('../../app/api/auth/logout/route');
 
     const response = await POST(
-      new Request('https://staging.bid.mbfdhub.com/api/auth/logout', {
+      new Request('https://bid.test.invalid/api/auth/logout', {
         method: 'POST',
         headers: {
-          Origin: 'https://staging.bid.mbfdhub.com',
+          Origin: 'https://bid.test.invalid',
           'Sec-Fetch-Site': 'same-origin',
         },
       }),
@@ -62,17 +62,17 @@ describe('POST /api/auth/logout', () => {
     ['missing Origin', { 'Sec-Fetch-Site': 'same-origin' }],
     [
       'cross-site Fetch Metadata',
-      { Origin: 'https://staging.bid.mbfdhub.com', 'Sec-Fetch-Site': 'cross-site' },
+      { Origin: 'https://bid.test.invalid', 'Sec-Fetch-Site': 'cross-site' },
     ],
     [
       'same-site Fetch Metadata',
-      { Origin: 'https://staging.bid.mbfdhub.com', 'Sec-Fetch-Site': 'same-site' },
+      { Origin: 'https://bid.test.invalid', 'Sec-Fetch-Site': 'same-site' },
     ],
   ])('rejects %s before any logout cookie mutation', async (_label, headers) => {
     const { POST } = await import('../../app/api/auth/logout/route');
 
     const response = await POST(
-      new Request('https://staging.bid.mbfdhub.com/api/auth/logout', {
+      new Request('https://bid.test.invalid/api/auth/logout', {
         method: 'POST',
         headers,
       }),
@@ -88,10 +88,10 @@ describe('POST /api/auth/logout', () => {
     const { POST } = await import('../../app/api/auth/logout/route');
 
     const response = await POST(
-      new Request('https://staging.bid.mbfdhub.com/api/auth/logout', {
+      new Request('https://bid.test.invalid/api/auth/logout', {
         method: 'POST',
         headers: {
-          Origin: 'https://staging.bid.mbfdhub.com',
+          Origin: 'https://bid.test.invalid',
           'Sec-Fetch-Site': 'same-origin',
         },
       }),

@@ -23,7 +23,7 @@ describe('/login canonical federation entry', () => {
     mocks.redirect.mockReset();
     mocks.requirePin.mockReset();
     mocks.verifyJwt.mockReset();
-    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'staging' : undefined));
+    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'test' : undefined));
     mocks.cookies.mockResolvedValue({ get: vi.fn() });
   });
 

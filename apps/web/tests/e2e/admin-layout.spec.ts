@@ -10,6 +10,9 @@
 
 import { type Page, expect, test } from '@playwright/test';
 import { signJwt } from '../../lib/jwt';
+import { installSyntheticHub } from './synthetic-hub';
+
+test.beforeEach(async ({ page }) => installSyntheticHub(page));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,7 +68,7 @@ async function setAuthCookies(page: Page, jwt: string) {
 test.describe('Admin gate — no JWT', () => {
   test.skip(!!process.env.CI && !process.env.E2E_FULL, 'Skip in CI without E2E_FULL');
 
-  test('navigating to /admin without JWT reaches the canonical staging Hub login', async ({
+  test('navigating to /admin without JWT reaches the isolated synthetic Hub login', async ({
     page,
   }) => {
     await page.context().clearCookies();
@@ -79,7 +82,7 @@ test.describe('Admin gate — no JWT', () => {
       },
     ]);
     await page.goto('/admin', { waitUntil: 'commit' });
-    await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/);
+    await expect(page).toHaveURL(/^https:\/\/hub\.test\.invalid\/login$/);
     await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible();
     await expect(page.getByLabel('Employee ID')).toBeVisible();
   });
@@ -96,7 +99,7 @@ test.describe('Admin gate — no JWT', () => {
       },
     ]);
     await page.goto('/admin/guide', { waitUntil: 'commit' });
-    await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/);
+    await expect(page).toHaveURL(/^https:\/\/hub\.test\.invalid\/login$/);
   });
 });
 

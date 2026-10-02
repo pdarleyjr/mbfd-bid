@@ -17,7 +17,7 @@ vi.mock('@/lib/jwt', () => ({ verifyJwt: mocks.verifyJwt }));
 const csrfToken = 'csrf_123e4567-e89b-12d3-a456-426614174000';
 
 function request({
-  origin = 'https://staging.bid.mbfdhub.com',
+  origin = 'https://bid.test.invalid',
   fetchSite = 'same-origin',
 }: {
   origin?: string | null;
@@ -26,7 +26,7 @@ function request({
   const headers = new Headers();
   if (origin !== null) headers.set('Origin', origin);
   if (fetchSite !== null) headers.set('Sec-Fetch-Site', fetchSite);
-  return new Request('https://staging.bid.mbfdhub.com/api/auth/csrf', {
+  return new Request('https://bid.test.invalid/api/auth/csrf', {
     method: 'POST',
     headers,
   });
@@ -35,7 +35,7 @@ function request({
 describe('POST /api/auth/csrf', () => {
   beforeEach(() => {
     mocks.cfEnv.mockImplementation((key: string) => {
-      if (key === 'ENV') return 'staging';
+      if (key === 'ENV') return 'test';
       if (key === 'JWT_SIGNING_KEY') return 'test-signing-key';
       return undefined;
     });
@@ -71,7 +71,7 @@ describe('POST /api/auth/csrf', () => {
   it.each([
     ['foreign Origin', 'https://evil.example', 'cross-site'],
     ['missing Origin', null, 'same-origin'],
-    ['cross-site Fetch Metadata', 'https://staging.bid.mbfdhub.com', 'cross-site'],
+    ['cross-site Fetch Metadata', 'https://bid.test.invalid', 'cross-site'],
   ])('rejects %s before reading or verifying a session', async (_label, origin, fetchSite) => {
     const { POST } = await import('../../app/api/auth/csrf/route');
 

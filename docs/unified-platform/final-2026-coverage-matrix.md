@@ -1,3 +1,5 @@
+> Deployment retirement notice — 2026-10-01: references to the obsolete deployment are historical evidence only. Its operating instructions and acceptance gates are withdrawn. Recorded source IDs, counts and policy evidence are preserved; this notice does not change production policy. Current deployment and local test guidance is in the [retirement record](../staging-retirement-20261001.md).
+
 # Final 2026 policy coverage matrix
 
 Status updated: 2026-09-20. The software is deployed at merged `85823a5da3c79f6a72684342a9f030f4ad78c84b`

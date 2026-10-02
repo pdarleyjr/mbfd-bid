@@ -10,8 +10,7 @@
     }
   },
   "scripts": {
-    "dev": "wrangler dev --persist-to .wrangler/state --port 8787",
-    "deploy:staging": "wrangler deploy --env staging",
+    "dev": "wrangler dev --config wrangler.test.toml --local --ip 127.0.0.1 --persist-to .wrangler/test-state --port 8787",
     "deploy:production": "wrangler deploy --env production",
     "test": "vitest run --config vitest.config.ts && pnpm run test:wrangler-launchers",
     "test:wrangler-launchers": "vitest run --config vitest.wrangler.config.ts",
@@ -19,11 +18,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "wrangler d1 migrations apply mbfd-bid-staging --env staging --local",
-    "db:migrate:remote": "wrangler d1 migrations apply mbfd-bid-staging --remote --env staging",
-    "db:seed:local": "tsx seed/2026.ts --local",
-    "db:seed:remote": "tsx seed/2026.ts --remote",
-    "production:baseline": "tsx scripts/production-baseline-bootstrap.ts"
+    "db:migrate:local": "wrangler d1 migrations apply DB --config wrangler.test.toml --local",
+    "db:seed:local": "tsx seed/2026.ts --local"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.1.0",
