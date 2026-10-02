@@ -518,6 +518,40 @@ describe('managed Live creation from sealed versions and separate runtime author
     });
   });
 
+  it('rejects caller-supplied source evaluations or retention IDs before any Live write', async () => {
+    const preview = await preflight();
+    const body = {
+      ...selection(),
+      expectedContextSha256: preview.contextSha256,
+      expectedSourceToken: preview.runtimeSourceToken,
+    };
+    const before = h.sqlite.serialize();
+    for (const extra of [
+      { original: { members: [] } },
+      { recomputed: { members: [] } },
+      { evaluation: { members: [] } },
+      { retainedMemberIds: [ACTOR] },
+    ]) {
+      const response = await request(
+        `bid/${YEAR}/live-sessions`,
+        { ...body, ...extra },
+        {
+          key: 'synthetic-live-untrusted-derivation',
+        },
+      );
+      expect(response.status, await response.clone().text()).toBe(400);
+      deepStrictEqual(h.sqlite.serialize(), before);
+      const rejectedPreview = await request(`bid/${YEAR}/preview`, {
+        kind: 'live',
+        ...selection(),
+        ...extra,
+      });
+      expect(rejectedPreview.status, await rejectedPreview.clone().text()).toBe(400);
+      deepStrictEqual(h.sqlite.serialize(), before);
+    }
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM bid_sessions').get()).toEqual({ n: 0 });
+  });
+
   it('preflights sealed draft backing and creates only a pinned config session, never a started run', async () => {
     await completeEvidence();
     const body = await creationBody();

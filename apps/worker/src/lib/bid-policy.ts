@@ -29,6 +29,7 @@ import {
   bidSourceDecisionReviewIssues,
 } from './bid-source-decision-review.js';
 import { unresolvedQualificationHolds } from './qualification-review-hold.js';
+import { verifyRetainedParticipationReceipt } from './retained-participation-receipt.js';
 import { serviceCreditsAsOf } from './service-evidence.js';
 import { tenureEvidenceAsOf, tenureParticipationIssues } from './tenure-evidence.js';
 
@@ -1986,6 +1987,100 @@ export async function prepareCapturedBidEvaluation(
   return { ok: true, evaluation, coverage: evaluatedCoverage };
 }
 
+/** Derivation reads only the integrity-checked original freeze and immutable
+ * version rows. Neither a caller-supplied member list nor current Department
+ * evidence can enter this path. The full raw reevaluation is never returned. */
+async function prepareRetainedParticipationSuccessor(
+  db: DB,
+  saved: NonNullable<Awaited<ReturnType<typeof loadBidEvidenceFreeze>>>,
+  content: BidDefinitionContent,
+): Promise<BidEvaluation | null> {
+  const receipt =
+    content.settings?.v === 3 ? content.settings.evidenceFreeze?.derivation : undefined;
+  const original = saved.evaluation;
+  const originalSettings = original.settings;
+  if (!receipt || originalSettings.v === 1) return null;
+  const [baseline, captureSource] = await Promise.all([
+    loadBidDefinitionVersionFromDb(db, content.bidYear, receipt.baselineVersionId),
+    loadBidDefinitionVersionFromDb(db, content.bidYear, saved.row.source_version_id),
+  ]);
+  if (
+    !baseline.ok ||
+    !captureSource.ok ||
+    baseline.row.bid_year !== saved.row.bid_year ||
+    captureSource.row.bid_year !== saved.row.bid_year ||
+    baseline.sha256 !== receipt.baselineVersionSha256 ||
+    baseline.row.content_sha256 !== receipt.baselineVersionSha256 ||
+    captureSource.sha256 !== saved.row.source_version_sha256 ||
+    captureSource.row.content_sha256 !== saved.row.source_version_sha256 ||
+    !baseline.content.settings ||
+    !captureSource.content.settings ||
+    !bidEvidenceFreezeSettingsMatch({
+      pinnedEvaluation: saved.evaluation,
+      settings: baseline.content.settings,
+      content: baseline.content,
+    }) ||
+    !bidEvidenceFreezeSettingsMatch({
+      pinnedEvaluation: saved.evaluation,
+      settings: captureSource.content.settings,
+      content: captureSource.content,
+    })
+  )
+    return null;
+  const raw = {
+    ...JSON.parse(saved.row.personnel_source_json),
+    ...JSON.parse(saved.row.credential_source_json),
+  } as BidEvaluationEvidence;
+  const evidence: BidEvaluationEvidence = {
+    ...raw,
+    personnelEventRows: raw.personnelEventRows.map((row) => ({
+      ...row,
+      createdAt: new Date(row.createdAt),
+    })),
+    qualificationEventRows: raw.qualificationEventRows.map((row) => ({
+      ...row,
+      createdAt: new Date(row.createdAt),
+    })),
+  };
+  const coverage = evaluateRuleBookCoverage({
+    ruleBookVersion: original.ruleBookVersion,
+    declaredTemplateVersion: original.positionTemplateVersion,
+    rules: original.ruleBookMaterial.rules,
+    positions: original.ruleBookMaterial.positions,
+  });
+  const recomputed = await prepareCapturedBidEvaluation(
+    db,
+    {
+      bidYear: saved.row.bid_year,
+      settings: originalSettings,
+      coverage,
+      bindings: baseline.content.staffingBindings,
+      ruleBookMaterial: original.ruleBookMaterial,
+      sourceDecisions: baseline.content.sourceDecisions,
+      policyReferenceJson: [
+        ...original.ruleBookMaterial.rules.flatMap((row) => [
+          row.requiredCriteriaJson,
+          row.pointsPreferenceJson,
+        ]),
+        JSON.stringify(baseline.content.policy?.executionPolicy),
+      ],
+    },
+    evidence,
+    original.capturedAtMs,
+    'mock',
+  );
+  if (!recomputed.ok) return null;
+  const derived = verifyRetainedParticipationReceipt({
+    baseline: { id: baseline.row.id, sha256: baseline.sha256, content: baseline.content },
+    source: saved.row,
+    original,
+    recomputed: recomputed.evaluation,
+    evidence,
+    content,
+  });
+  return derived.ok ? derived.evaluation : null;
+}
+
 export async function prepareConfiguredBidPolicySnapshot(
   db: DB,
   policy: ConfiguredBidYearPolicy,
@@ -2025,18 +2120,27 @@ export async function prepareConfiguredBidPolicySnapshot(
         freeze.credentialSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
         Date.parse(freeze.approvedAt) < saved.row.captured_at ||
         serial(freeze.sourceImports) !== serial(saved.sourceImports) ||
-        !bidEvidenceFreezeSettingsMatch({
-          pinnedEvaluation: saved.evaluation,
-          settings: policy.settings,
-          ...(definitionContent === undefined ? {} : { content: definitionContent }),
-        }) ||
+        (freeze.derivation === undefined &&
+          !bidEvidenceFreezeSettingsMatch({
+            pinnedEvaluation: saved.evaluation,
+            settings: policy.settings,
+            ...(definitionContent === undefined ? {} : { content: definitionContent }),
+          })) ||
         serial(materialWithoutVersion(saved.evaluation.ruleBookMaterial)) !==
           serial(materialWithoutVersion(material.ruleBookMaterial)) ||
         material.coverage.valid !== true
       )
         return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
+      let frozenEvaluation = saved.evaluation;
+      if (freeze.derivation !== undefined) {
+        if (!definitionContent || serial(definitionContent.settings) !== serial(policy.settings))
+          return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
+        const derived = await prepareRetainedParticipationSuccessor(db, saved, definitionContent);
+        if (!derived) return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
+        frozenEvaluation = derived;
+      }
       const evaluation = BidEvaluationSchema.parse({
-        ...saved.evaluation,
+        ...frozenEvaluation,
         ruleBookVersion: material.coverage.ruleBookVersion,
         positionTemplateVersion: material.coverage.templateVersion,
         ruleBookMaterial: material.ruleBookMaterial,

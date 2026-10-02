@@ -776,6 +776,10 @@ describe('managed Mock preview and atomic creation through the admin router', ()
       { ...valid, actorId: 10002 },
       { ...valid, bid_year: 2028 },
       { ...valid, turn_timer_seconds: 60 },
+      { ...valid, original: { members: [] } },
+      { ...valid, recomputed: { members: [] } },
+      { ...valid, retainedMemberIds: [10001] },
+      { ...valid, evaluation: { members: [] } },
     ];
     for (const field of Object.keys(valid)) {
       const missing = { ...valid } as Record<string, unknown>;
@@ -788,6 +792,8 @@ describe('managed Mock preview and atomic creation through the admin router', ()
       { kind: 'mock', ...selection(), mode: 'live' },
       { kind: 'live', ...selection(), expectedSourceToken: valid.expectedSourceToken },
       { kind: 'mock', ...selection(), expectedSourceToken: valid.expectedSourceToken },
+      { kind: 'mock', ...selection(), recomputed: { members: [] } },
+      { kind: 'mock', ...selection(), retainedMemberIds: [10001] },
     ])
       await rejection('bid/2027/preview', body, 400);
     await rejection('bid/2027/mock-sessions', '{invalid-json', 400, undefined, {
