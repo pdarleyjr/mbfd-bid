@@ -14,7 +14,7 @@ Five removed employees agree with previous departure instructions. Hans Estrada'
 
 Retain reviewed Float Captains A718/B718/C718 and the reviewed B703 third Rescue Float Lieutenant until stronger evidence supersedes them. Existing reviewed opportunities are **23 CPT / 39 LT / 161 FF**, A/B/C 73 each, Days 4, total 223. These are reviewed existing capacities, not a claim that latest-source rank capacity is resolved.
 
-The source introduces one more Lieutenant than available Lieutenant opportunities. MASTER V3 and the September 4 C roster show two C Float Lieutenants; the accepted older assignment/directory places Mederos in a third C Float Lieutenant slot. An administrator must provide the approved seat/rank change or an explicit business participation decision. Do not exclude someone or convert a seat solely to balance counts. A new pre-cutoff Mock can carry this as an explicit Real-activation blocker and expose the simulated shortfall.
+October 1 reassessment: this comparison establishes a listed-bidder / open-opportunity difference, not an actual departmental Lieutenant shortage. Closed Training positions and current participation or incumbent retention must be reconciled before drawing that conclusion. See [the source and formula reassessment](2026-lt-count-reassessment-20261001.md). The dated pre-cutoff evidence and frozen source decisions remain preserved; do not exclude someone or convert a seat solely to balance counts.
 
 ## Credential reconciliation and implementation
 

@@ -3,6 +3,7 @@ import { type ReactNode, act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CorrectBid } from '../../app/admin/bid/_components/CorrectBid';
+import { OPERATOR_AUTH_REFRESHED, OPERATOR_REAUTH_STARTED } from '../../lib/operator-step-up';
 
 vi.mock('@/components/admin/TaskPanel', () => ({
   TaskPanel: ({ open, children }: { open: boolean; children: ReactNode }) =>
@@ -14,6 +15,12 @@ let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
 let failConfirm: boolean;
 let failReload: boolean;
+let staleReload: boolean;
+let loadedReadback: typeof readback;
+let delayPreview: boolean;
+let finishPreview: ((response: Response) => void) | null;
+let canonicalSequence: number | undefined;
+let commandsBlocked: boolean;
 const commands: Record<string, unknown>[] = [];
 const source = {
   bidId: 'award-1',
@@ -25,7 +32,7 @@ const source = {
   aDay: 'G1',
   membershipIds: [],
   eligiblePositionIds: ['one', 'two'],
-  termParticipation: null,
+  termParticipation: null as { assignmentId: string } | null,
 };
 const readback = {
   sequence: 4,
@@ -84,37 +91,20 @@ async function change(id: string, value: string) {
   });
 }
 
-beforeEach(async () => {
-  container = document.createElement('div');
-  document.body.appendChild(container);
-  root = createRoot(container);
-  failConfirm = false;
-  failReload = false;
-  commands.length = 0;
-  fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (url === '/api/auth/csrf')
-      return Response.json({ token: 'csrf_00000000-0000-0000-0000-000000000001' });
-    if (url.endsWith('/corrections/preview')) return Response.json(preview);
-    if (url.endsWith('/commands/live')) {
-      commands.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      if (failConfirm) {
-        failConfirm = false;
-        throw new Error('Synthetic network loss');
-      }
-      return Response.json({ kind: 'accepted', seq: 5 });
-    }
-    if (failReload && commands.length > 0) {
-      failReload = false;
-      throw new Error('Synthetic refresh loss');
-    }
-    return Response.json(readback);
-  });
-  vi.stubGlobal('fetch', fetchMock);
-  await act(async () => {
+function value(id: string): string {
+  const control = container.querySelector(`#${id}`);
+  if (!(control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement))
+    throw new Error(`Draft control missing: ${id}`);
+  return control.value;
+}
+
+async function render() {
+  await act(async () =>
     root.render(
       <CorrectBid
         bidSessionId="synthetic-correction"
+        canonicalSequence={canonicalSequence}
+        commandsBlocked={commandsBlocked}
         members={{
           '17': {
             id: 17,
@@ -125,8 +115,57 @@ beforeEach(async () => {
           },
         }}
       />,
-    );
+    ),
+  );
+}
+
+beforeEach(async () => {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  failConfirm = false;
+  failReload = false;
+  staleReload = false;
+  loadedReadback = structuredClone(readback);
+  delayPreview = false;
+  finishPreview = null;
+  canonicalSequence = 4;
+  commandsBlocked = false;
+  commands.length = 0;
+  fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/api/auth/csrf')
+      return Response.json({ token: 'csrf_00000000-0000-0000-0000-000000000001' });
+    if (url.endsWith('/corrections/preview')) {
+      if (delayPreview)
+        return new Promise<Response>((resolve) => {
+          finishPreview = resolve;
+        });
+      const command = JSON.parse(String(init?.body)) as { expectedSeq: number; reason: string };
+      return Response.json({
+        ...preview,
+        expectedSeq: command.expectedSeq,
+        reason: command.reason,
+      });
+    }
+    if (url.endsWith('/commands/live')) {
+      commands.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (failConfirm) {
+        failConfirm = false;
+        throw new Error('Synthetic network loss');
+      }
+      const acceptedSeq = Number(commands.at(-1)?.expectedSeq) + 1;
+      if (!staleReload) loadedReadback.sequence = acceptedSeq;
+      return Response.json({ kind: 'accepted', seq: acceptedSeq });
+    }
+    if (failReload && commands.length > 0) {
+      failReload = false;
+      throw new Error('Synthetic refresh loss');
+    }
+    return Response.json(loadedReadback);
   });
+  vi.stubGlobal('fetch', fetchMock);
+  await render();
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -135,6 +174,146 @@ afterEach(async () => {
 });
 
 describe('guided audited correction', () => {
+  it('keeps accepted sequence as a readback floor through stale automatic and manual refreshes', async () => {
+    await click('Correct a bid');
+    await change('correction-a-day', 'G2');
+    await change('correction-reason', 'Recorded wrong A-Day');
+    await click('Review correction');
+    staleReload = true;
+    await click('Confirm correction');
+    expect(container.textContent).toContain('Correction recorded');
+    expect(container.textContent).not.toContain('award and capacity have been updated');
+    expect(container.textContent).not.toContain('Delivery is uncertain');
+    await click('Refresh awards');
+    const reviewButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Review correction'),
+    );
+    expect(reviewButton?.disabled).toBe(true);
+    loadedReadback.sequence = 5;
+    await click('Refresh awards');
+    expect(reviewButton?.disabled).toBe(false);
+    expect(commands).toHaveLength(1);
+  });
+
+  it('clears voluntary election evidence when the authoritative assignment identity changes', async () => {
+    loadedReadback.sources[0] = {
+      ...source,
+      termParticipation: { assignmentId: 'synthetic-term-1' },
+    };
+    await click('Correct a bid');
+    await act(async () => {
+      const checkbox = container.querySelector('input[type="checkbox"]');
+      if (!(checkbox instanceof HTMLInputElement)) throw new Error('Election checkbox missing');
+      checkbox.click();
+    });
+    await change('correction-term-evidence', 'Synthetic member-confirmed evidence');
+    loadedReadback.sources[0] = {
+      ...source,
+      termParticipation: { assignmentId: 'synthetic-term-2' },
+    };
+    await click('Refresh awards');
+    const checkbox = container.querySelector('input[type="checkbox"]');
+    expect(checkbox instanceof HTMLInputElement && checkbox.checked).toBe(false);
+    const evidence = container.querySelector('#correction-term-evidence');
+    expect(evidence instanceof HTMLInputElement && evidence.value).toBe('');
+    expect(commands).toHaveLength(0);
+  });
+
+  it('retains a non-first award and edited draft through sign-in while invalidating the review', async () => {
+    loadedReadback.sources.push({
+      ...source,
+      bidId: 'award-2',
+      originalCommandId: 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb',
+    });
+    await click('Correct a bid');
+    await change('correction-source', 'award-2');
+    await change('correction-position', 'two');
+    await change('correction-a-day', 'G3');
+    await change('correction-reason', 'Correct earlier award after review');
+    await click('Review correction');
+    await act(async () => window.dispatchEvent(new Event(OPERATOR_REAUTH_STARTED)));
+    expect(container.textContent).not.toContain('Confirm correction');
+    await act(async () => window.dispatchEvent(new Event(OPERATOR_AUTH_REFRESHED)));
+    expect(commands).toHaveLength(0);
+    await click('Refresh awards');
+    expect(value('correction-source')).toBe('award-2');
+    expect(value('correction-position')).toBe('two');
+    expect(value('correction-a-day')).toBe('G3');
+    expect(value('correction-reason')).toBe('Correct earlier award after review');
+    expect(container.textContent).not.toContain('Confirm correction');
+    await click('Review correction');
+    await click('Confirm correction');
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatchObject({
+      originalBidId: 'award-2',
+      replacement: { positionId: 'two', aDay: 'G3' },
+    });
+  });
+
+  it('discards a delayed preview when sign-in begins before its response', async () => {
+    await click('Correct a bid');
+    await change('correction-a-day', 'G2');
+    await change('correction-reason', 'Recorded wrong A-Day');
+    delayPreview = true;
+    await click('Review correction');
+    expect(finishPreview).not.toBeNull();
+    await act(async () => window.dispatchEvent(new Event(OPERATOR_REAUTH_STARTED)));
+    await act(async () => finishPreview?.(Response.json(preview)));
+    expect(container.textContent).not.toContain('Confirm correction');
+    expect(commands).toHaveLength(0);
+    expect(value('correction-a-day')).toBe('G2');
+  });
+
+  it('blocks a reviewed command when canonical sequence changes and rejects an older award readback', async () => {
+    await click('Correct a bid');
+    await change('correction-reason', 'Recorded wrong A-Day');
+    await click('Review correction');
+    canonicalSequence = 5;
+    await render();
+    expect(container.textContent).not.toContain('Confirm correction');
+    await click('Refresh awards');
+    const reviewButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Review correction'),
+    );
+    expect(reviewButton?.disabled).toBe(true);
+    expect(container.textContent).toContain('Awards changed while loading');
+    loadedReadback.sequence = 5;
+    await click('Refresh awards');
+    expect(reviewButton?.disabled).toBe(false);
+    await click('Review correction');
+    await click('Confirm correction');
+    expect(commands).toHaveLength(1);
+    expect(commands[0]?.expectedSeq).toBe(5);
+  });
+
+  it('discards a delayed preview when the parent blocks commands', async () => {
+    await click('Correct a bid');
+    await change('correction-reason', 'Recorded wrong A-Day');
+    delayPreview = true;
+    await click('Review correction');
+    commandsBlocked = true;
+    await render();
+    await act(async () => finishPreview?.(Response.json(preview)));
+    expect(container.textContent).not.toContain('Confirm correction');
+    expect(commands).toHaveLength(0);
+  });
+
+  it('refreshes changed award lineage without retaining an invalid correction review', async () => {
+    await click('Correct a bid');
+    await change('correction-a-day', 'G3');
+    await change('correction-reason', 'Recorded wrong A-Day');
+    await click('Review correction');
+    loadedReadback.sources[0] = {
+      ...source,
+      originalCommandId: 'cccccccc-cccc-4ccc-cccc-cccccccccccc',
+      aDay: 'G2',
+    };
+    await click('Refresh awards');
+    expect(container.textContent).not.toContain('Confirm correction');
+    expect(value('correction-a-day')).toBe('G2');
+    expect(commands).toHaveLength(0);
+  });
+
   it('loads original receipt automatically and requires reason and server preview before confirmation', async () => {
     await click('Correct a bid');
     expect(container.textContent).toContain('Synthetic Member');

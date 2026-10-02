@@ -639,22 +639,11 @@ describe('simultaneous A-Day live awards', () => {
     });
   });
 
-  it('keeps all known choices when specialty position metadata is unavailable', async () => {
+  it('does not mix group and weekday choices when specialty position scope is unavailable', async () => {
     live = state(true, true);
     await mount('Specialty and contact', []);
     expect([...select('Specialty award A-Day').options].map((option) => option.value)).toEqual([
       '',
-      'G1',
-      'G2',
-      'G3',
-      'G4',
-      'MON',
-      'TUE',
-      'WED',
-      'THU',
-      'FRI',
-      'SAT',
-      'SUN',
     ]);
     expect(button('ACCEPT').disabled).toBe(true);
   });
