@@ -2,7 +2,24 @@
 
 # 2026 Bid live readiness and decisions
 
-Last reconciliation review: 2026-09-29 pre-cutoff. **PRE-CUTOFF PRODUCTION TESTING IS AVAILABLE; REAL BID IS NOT READY TO START.** Remote `main` was verified at `12e66d2394446b0f7700367fa5c453c008c560b1` before PR #210. PR #210 merged as `1a6afac822fdf47e9da4c0166da2fdb833ecfdbb`, the current application source at this review. The deployed Worker source remains `e60c03a30f0063c52997a373576f7998d132f8b5`; the Web-only help release uses the PR #210 tree. Verify the production version IDs below instead of treating a later documentation commit as an application release. The September 28 production Mocks, repaired audit exporter, repaired canonical-roster PDFs, and image-led pre-cutoff guides are available. The September 30 17:00 Eastern evidence cutoff and final evidence-certified version/Mock remain open. This is the current decision register; `2026-final-bid-reconciliation-gate-20260926.md` and `2026-precutoff-rehearsal-evidence-20260927.md` are historical candidate/local rehearsal reports. The current [September 28 release acceptance receipt](2026-precutoff-production-acceptance-20260928.md) is part of this repository and also preserved at `E:\Organized Files\BID Software\03 - Pre-Cutoff Mock Evidence\2026-09-28 PRE-CUTOFF RELEASE ACCEPTANCE.md`.
+## Current state verified October 2, 2026
+
+**SOFTWARE AND PETER'S CURRENT MOCK ARE READY. REAL REMAINS BLOCKED BY AUTHORITATIVE EVIDENCE.**
+
+- Saved Version **14**, ID `01M3Y18H7HXCYN8CPCVRK0916E`, SHA-256 `fb2e62eb0d7af7196f77debf2e0baa47e1761d107fb30155ef0e23baaf8fab98`.
+- **218** ordinary participants: **20 CPT / 38 LT / 160 FF**. **223** open opportunities: **23 CPT / 39 LT / 161 FF**, with 73 per A/B/C shift and four open Days seats.
+- Reviewed retained holders: D201 Sergio Martinez (CPT), D301 Richard Quintela (CPT), D401 Daniel Gato (LT), D402 Claudio Navas (LT). These closed assignments remain outside the ordinary participating cohort. **38 LT participants / 39 LT opportunities: no Lieutenant shortage.**
+- Credential Version **5**, October 1 source: **3,884** rows / 230 employees; **3,881 accepted**, **three rejected / held**, **zero pending**. Nine new qualifications and four missing-date fills produced 13 qualification-gained events. The Sola/Galletta PSD disputes and Betancourt Open Water date contradiction retain qualification-specific evidence holds.
+- The successor changes only its reviewed evidence freeze and latest substantive-rank source reference. September 30 evaluation dates, all other policy/settings and original historical freezes remain preserved. The original Version 11 cutoff receipt and its personal Mock are historical and unchanged.
+- Peter's current personal Mock is [`01M3Y1KT5E2VX5W3QQRHGK7WDB`](https://bid.mbfdhub.com/admin/bid?session_id=01M3Y1KT5E2VX5W3QQRHGK7WDB), pinned to Version 14. At verification it was started in `POSITION_BID`, **sequence 0**, with Douglas Thompson as current bidder, zero awards and all 223 opportunities unfilled. No first selection was submitted.
+- The focused production UI smoke passed member details, verified 2025 assignments, choice preparation without a commit, correction review without mutation, reconnect, numbered G1–G4 combat A-Day groups, and desktop/tablet/mobile overflow checks. Portal/staffing writeback remains **OFF**.
+- Fresh Version 14 Managed Live preflight: **`credential import dispute requires review`**. The saved Bid also retains 27 Real-only source reviews. No Real session was created or started in this finalization; neither Mock readiness nor software acceptance grants Real activation authority.
+- Accepted core application release: `eb92b465b9735133472fb7094e8cef3e09448ebc`, normal production deploy [36983359522](https://github.com/pdarleyjr/mbfd-bid/actions/runs/36983359522), **SUCCESS**. At that release's October 2 acceptance, Worker was `1fbe3bc5-879a-4a2e-962e-e562d5274a38`, Web was `b8ce5cc8-5329-4697-99de-3327b2ccad8e`, API health was HTTP 200 / production, and the guard passed **71** canonical migrations. Subsequent documentation publication does not change Bid logic or data.
+- The server's five-minute operator sign-in rule remains in force. Prepared work is retained; normal Hub renewal and deliberate receipt recovery are required after expiry. Disruptive step-up UX is deferred to post-Bid improvement.
+
+## Historical September 29 pre-cutoff record
+
+Everything below records the earlier September review. Its version counts, deployment IDs, cutoff tasks, credential-repair tasks and acceptance gates are historical, superseded by the current state above, and must not be reopened as current release work. The [September 28 acceptance receipt](2026-precutoff-production-acceptance-20260928.md) remains preserved, including the original copy at `E:\Organized Files\BID Software\03 - Pre-Cutoff Mock Evidence\2026-09-28 PRE-CUTOFF RELEASE ACCEPTANCE.md`.
 
 ## Source hierarchy and exact artifacts
 
