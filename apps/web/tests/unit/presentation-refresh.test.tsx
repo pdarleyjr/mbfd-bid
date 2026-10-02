@@ -34,7 +34,7 @@ beforeEach(async () => {
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
   container = document.createElement('div');
-  document.body.append(container);
+  document.body.appendChild(container);
   root = createRoot(container);
   await act(async () =>
     root.render(<PresentationView initial={projection(10, 'Initial bidder')} />),
@@ -80,7 +80,7 @@ describe('Department presentation refresh', () => {
       Response.json({
         ...projection(10, 'Initial bidder'),
         mode: 'HOLD',
-        held_at_sequence: 10,
+        held_at_sequence: 7,
       }),
     );
     await poll();
@@ -88,7 +88,7 @@ describe('Department presentation refresh', () => {
     expect(container.textContent).toContain('Updates disconnected');
     expect(container.textContent).not.toContain('LIVE DISPLAY');
     await poll();
-    expect(container.textContent).toContain('DISPLAY HELD');
+    expect(container.textContent).toContain('DISPLAY HELD · SEQ 7');
     expect(container.textContent).not.toContain('Updates disconnected');
   });
 
