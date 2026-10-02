@@ -4,7 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
-import type { BidDefinitionContent, BidImpactResponse } from '@mbfd/shared';
+import type {
+  BidDefinitionContent,
+  BidImpactResponse,
+  RetainedParticipationPreviewResponse,
+} from '@mbfd/shared';
 import { ArrowRight, BookOpen, GitBranch, History, Save } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -22,6 +26,7 @@ import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
 import { BidProfileReview } from './BidProfileReview';
 import { BidReadinessSummary } from './BidReadinessSummary';
 import { BidResults } from './BidResults';
+import { BidRetainedParticipation } from './BidRetainedParticipation';
 import { BidReviewedSourceUpdate } from './BidReviewedSourceUpdate';
 import { BidRuleProfiles } from './BidRuleProfiles';
 import { BidVersionHistory } from './BidVersionHistory';
@@ -326,6 +331,48 @@ export function CurrentBidWorkspace({
       'The reviewed source update is in your draft. Review the changes and Save Bid to create a new version. Existing sessions retain their source.',
     );
     selectView('edit');
+  }
+  function applyRetainedParticipation(proposal: RetainedParticipationPreviewResponse) {
+    const current = draftRef.current;
+    const pin = current?.content.settings?.v === 3 ? current.content.settings.evidenceFreeze : null;
+    if (
+      !current ||
+      current.actorScope !== actorScope ||
+      year !== 2026 ||
+      current.pending ||
+      unreadableDraft ||
+      busyRef.current ||
+      stale ||
+      !same(current.content, current.base.content) ||
+      !same(current.base.expected, proposal.expected) ||
+      !pin ||
+      pin.derivation ||
+      pin.reviewedUpdate ||
+      pin.freezeId !== proposal.source.freezeId ||
+      pin.evaluationSha256 !== proposal.source.evaluationSha256 ||
+      pin.personnelSnapshot.sha256 !== proposal.source.personnelSha256 ||
+      pin.credentialSnapshot.sha256 !== proposal.source.credentialSha256 ||
+      pin.sourceVersionId !== proposal.source.sourceVersionId ||
+      pin.sourceVersionSha256 !== proposal.source.sourceVersionSha256
+    )
+      throw new Error(
+        'The saved Bid or draft changed. Refresh and review retained participation again.',
+      );
+    const next: BidDraft = {
+      ...current,
+      content: proposal.content,
+      reason: `Reconcile ${proposal.retainedCount} retained members: ${proposal.beforeCounts.ordinaryParticipants} to ${proposal.counts.ordinaryParticipants} ordinary participants.`,
+    };
+    preserveBidDraft(window.sessionStorage, next);
+    install(next);
+    setPreview(null);
+    setPreviewContent(null);
+    setBlueprintImpact(null);
+    setBlueprintImpactContent(null);
+    setNotice(
+      'Reviewed retained participation is in your draft. Review the changes and Save Bid to create a new version.',
+    );
+    selectView('edit', 'flow');
   }
   async function execute(write: PendingBidWrite) {
     const current = draftRef.current;
@@ -800,6 +847,23 @@ export function CurrentBidWorkspace({
           </Button>
         </div>
       </div>
+      {year === 2026 &&
+        draft?.base.version &&
+        !loading &&
+        draft.base.content.settings?.v === 3 &&
+        draft.base.content.settings.evidenceFreeze &&
+        !draft.base.content.settings.evidenceFreeze.derivation &&
+        !draft.base.content.settings.evidenceFreeze.reviewedUpdate && (
+          <BidRetainedParticipation
+            key={actorScope}
+            actorScope={actorScope}
+            base={draft.base}
+            draftStamp={JSON.stringify(draft)}
+            disabled={locked || dirty || stale}
+            onApply={applyRetainedParticipation}
+            onReviewSources={() => selectView('edit', 'language')}
+          />
+        )}
       {year === 2026 &&
         draft?.base.version &&
         draft.content.settings?.v === 3 &&

@@ -5,9 +5,12 @@ import {
   BidEvidenceFreezeSchema,
   FrozenLiveBidPolicySchema,
   LiveBidActionSchema,
+  RetainedParticipationPreviewRequestSchema,
+  RetainedParticipationPreviewResponseSchema,
 } from '@mbfd/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDb } from '../../src/db/index.js';
+import { app } from '../../src/index.js';
 import { definitionRuleBookMaterial } from '../../src/lib/bid-definition-content.js';
 import { prepareBidDefinitionRun } from '../../src/lib/bid-definition-run.js';
 import { captureBidDefinitionSource } from '../../src/lib/bid-definition-source.js';
@@ -22,6 +25,11 @@ import {
   loadBidEvaluationEvidence,
   prepareCapturedBidEvaluation,
 } from '../../src/lib/bid-policy.js';
+import { signJwt } from '../../src/lib/jwt.js';
+import {
+  previewRetainedParticipation,
+  retainedParticipationSourceDecisionIssue,
+} from '../../src/lib/retained-participation-preview.js';
 import { createRetainedParticipationReceipt } from '../../src/lib/retained-participation-receipt.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
@@ -73,6 +81,7 @@ describe('immutable retained participation successor preparation', () => {
     `);
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     await teardownTestD1(h);
   });
 
@@ -179,6 +188,20 @@ describe('immutable retained participation successor preparation', () => {
       policyText: 'Synthetic reviewed reserved retention procedure.',
       executionPolicy: policy,
     };
+    content.sourceDecisions = [
+      {
+        issueId: '2026-latest-lieutenant-capacity',
+        area: 'positions',
+        status: 'RESOLVED',
+        title: 'Synthetic reviewed retained LT capacity',
+        question: 'Does the synthetic retained cohort fit the synthetic open seat?',
+        decision: 'Reviewed synthetic retention leaves one ordinary LT and one open LT seat.',
+        sourceRef: 'Synthetic source-reviewed closed holder and open LT topology',
+        effectiveOn: '2026-09-30',
+        blockingClassification: 'BLOCKS_REAL_BID_ACTIVATION',
+        affectedScopes: ['lieutenants'],
+      },
+    ];
     const originalVersion = await saved(content);
     if (!originalVersion.content.settings || originalVersion.content.settings.v === 1)
       throw new Error('Synthetic saved normalized settings missing');
@@ -305,6 +328,329 @@ describe('immutable retained participation successor preparation', () => {
     deepStrictEqual(h.sqlite.serialize(), before);
     return result;
   }
+
+  function expected(version: Version) {
+    return {
+      kind: 'version' as const,
+      versionId: version.row.id,
+      revision: version.row.version_number,
+      sha256: version.sha256,
+    };
+  }
+
+  async function preview(version: Version, body: unknown = { expected: expected(version) }) {
+    const before = h.sqlite.serialize();
+    const result = await previewRetainedParticipation(h.env.DB, 2026, body);
+    deepStrictEqual(h.sqlite.serialize(), before);
+    return result;
+  }
+
+  async function previewRequest(
+    body: unknown,
+    role: 'admin' | 'member' | null = 'admin',
+    fresh = true,
+  ) {
+    const auth =
+      role === null
+        ? null
+        : await signJwt(
+            {
+              sub: OTHER,
+              emp: 'synthetic-retention-bidder',
+              role,
+              rank: 'LT',
+              first_name: 'Synthetic',
+              last_name: 'Bidder',
+              fresh_auth_at: Math.floor(Date.now() / 1000) - (fresh ? 0 : 86_400),
+            },
+            h.env.JWT_SIGNING_KEY,
+          );
+    const before = h.sqlite.serialize();
+    const response = await app.fetch(
+      new Request('http://x/api/admin/bid/2026/retained-participation/preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(auth ? { Authorization: `Bearer ${auth}` } : {}),
+        },
+        body: JSON.stringify(body),
+      }),
+      h.env,
+    );
+    deepStrictEqual(h.sqlite.serialize(), before);
+    return response;
+  }
+
+  it('returns a source-bound read-only proposal whose ordinary Save preserves sealed withheld qualifications', async () => {
+    const fixture = await sourceFixture();
+    const response = await previewRequest({ expected: expected(fixture.baseline) });
+    expect(response.status).toBe(200);
+    const result = RetainedParticipationPreviewResponseSchema.parse(await response.json());
+    expect(result.content).toEqual(fixture.receipt.content);
+    expect(result.expected).toEqual(expected(fixture.baseline));
+    expect(result.beforeCounts).toEqual({
+      ordinaryParticipants: 2,
+      stageEntries: 2,
+      ranks: { CPT: 0, LT: 2, FF: 0 },
+    });
+    expect(result.counts).toEqual({
+      ordinaryParticipants: 1,
+      stageEntries: 1,
+      ranks: { CPT: 0, LT: 1, FF: 0 },
+    });
+    expect(result.retained).toEqual([
+      { memberId: HOLDER, rank: 'LT', positionId: CLOSED, displayName: 'Synthetic Holder' },
+    ]);
+    expect(result.retainedCount).toBe(1);
+    expect(result.source.freezeId).toBe(fixture.row.id);
+    const successor = await saved(result.content);
+    expect(successor.sha256).toBe(result.proposalSha256);
+    const prepared = await prepare(successor);
+    if (!prepared.ok) throw new Error(JSON.stringify(prepared));
+    expect(prepared.snapshot.members.find((m) => m.memberId === OTHER)).toEqual(
+      fixture.original.members.find((m) => m.memberId === OTHER),
+    );
+    expect(prepared.snapshot.members.find((m) => m.memberId === OTHER)?.credentialNames).toEqual(
+      [],
+    );
+    expect(prepared.snapshot.members.find((m) => m.memberId === HOLDER)?.pool).toBe('EXCLUDED');
+  });
+
+  it('requires admin authentication, while a read-only preview needs no new step-up or idempotency key', async () => {
+    const fixture = await sourceFixture();
+    const body = { expected: expected(fixture.baseline) };
+    expect((await previewRequest(body, null)).status).toBe(401);
+    expect((await previewRequest(body, 'member')).status).toBe(403);
+    expect((await previewRequest(body, 'admin', false)).status).toBe(200);
+  });
+
+  it.each(['memberIds', 'original', 'recomputed', 'content', 'reason', 'freezeId'])(
+    'rejects caller-supplied %s without source writes',
+    async (field) => {
+      const fixture = await sourceFixture();
+      const body = { expected: expected(fixture.baseline), [field]: [] };
+      expect(RetainedParticipationPreviewRequestSchema.safeParse(body).success).toBe(false);
+      expect((await previewRequest(body)).status).toBe(400);
+    },
+  );
+
+  it.each(['versionId', 'revision', 'sha256'])(
+    'rejects a stale current-head %s with no writes',
+    async (field) => {
+      const fixture = await sourceFixture();
+      const selected = {
+        ...expected(fixture.baseline),
+        [field]:
+          field === 'revision'
+            ? fixture.baseline.row.version_number + 1
+            : field === 'sha256'
+              ? 'f'.repeat(64)
+              : fixture.originalVersion.row.id,
+      };
+      expect(await preview(fixture.baseline, { expected: selected })).toEqual({
+        ok: false,
+        error: 'retained_participation_source_changed',
+      });
+    },
+  );
+
+  it.each(['absent', 'wrong-freeze', 'existing-derivation', 'reviewed-update'])(
+    'rejects an %s original pin',
+    async (kind) => {
+      const fixture = await sourceFixture();
+      const content = structuredClone(
+        kind === 'existing-derivation' ? fixture.receipt.content : fixture.baseline.content,
+      );
+      if (content.settings?.v !== 3) throw new Error('Synthetic settings missing');
+      if (kind === 'absent') {
+        const { evidenceFreeze: _pin, ...withoutPin } = content.settings;
+        content.settings = withoutPin;
+      }
+      if (kind === 'wrong-freeze' && content.settings.evidenceFreeze)
+        content.settings.evidenceFreeze.freezeId = 'synthetic-unavailable-freeze';
+      if (kind === 'reviewed-update' && content.settings.evidenceFreeze) {
+        const pin = content.settings.evidenceFreeze;
+        const at = new Date(CAPTURED).toISOString();
+        pin.personnelSnapshot.asOfAt = at;
+        pin.credentialSnapshot.asOfAt = at;
+        pin.reviewedUpdate = {
+          v: 1,
+          kind: 'APPROVED_LEDGER_UPDATE',
+          observedAsOfAt: at,
+          originalFreezeId: fixture.row.id,
+          originalEvaluationSha256: fixture.row.evaluation_sha256,
+          originalPersonnelSha256: fixture.row.personnel_sha256,
+          originalCredentialSha256: fixture.row.credential_sha256,
+          sourceToken: 'b'.repeat(64),
+          reasonSha256: 'c'.repeat(64),
+          sourceDecisionsSha256: 'd'.repeat(64),
+        };
+      }
+      const version = await saved(content);
+      expect(await preview(version)).toEqual({
+        ok: false,
+        error: 'retained_participation_original_pin_required',
+      });
+    },
+  );
+
+  it('preserves both normally resolved and still-open source decisions without approving either', async () => {
+    const fixture = await sourceFixture();
+    const content = structuredClone(fixture.baseline.content);
+    const decision = {
+      issueId: '2026-latest-lieutenant-capacity',
+      area: 'positions' as const,
+      status: 'RESOLVED' as const,
+      title: 'Synthetic reviewed retained LT capacity',
+      question: 'Does the synthetic retained cohort fit the synthetic open seat?',
+      decision:
+        'Reviewed synthetic retention leaves one eligible ordinary LT and one open LT seat.',
+      sourceRef: 'Synthetic source-reviewed closed holder and open LT topology',
+      effectiveOn: '2026-09-30',
+      blockingClassification: 'BLOCKS_REAL_BID_ACTIVATION' as const,
+      affectedScopes: ['lieutenants'],
+    };
+    content.sourceDecisions = [
+      decision,
+      { ...decision, issueId: 'synthetic-still-open-evidence', status: 'OPEN' },
+    ];
+    const version = await saved(content);
+    const result = await preview(version);
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    expect(result.content.sourceDecisions).toEqual(version.content.sourceDecisions);
+    expect(
+      result.content.sourceDecisions.find((d) => d.issueId === 'synthetic-still-open-evidence')
+        ?.status,
+    ).toBe('OPEN');
+    expect(
+      result.content.settings?.v === 3 &&
+        result.content.settings.evidenceFreeze?.derivation?.baselineVersionId,
+    ).toBe(version.row.id);
+    expect(
+      result.content.settings?.v === 3 &&
+        result.content.settings.evidenceFreeze?.derivation?.baselineVersionSha256,
+    ).toBe(version.sha256);
+  });
+
+  it.each(['OPEN', 'missing'])(
+    'requires normal review and Save of the unique LT capacity decision when %s',
+    async (kind) => {
+      const fixture = await sourceFixture();
+      const content = structuredClone(fixture.baseline.content);
+      if (kind === 'missing') content.sourceDecisions = [];
+      else {
+        const decision = content.sourceDecisions[0];
+        if (!decision) throw new Error('Synthetic LT capacity decision missing');
+        decision.status = 'OPEN';
+      }
+      const version = await saved(content);
+      const response = await previewRequest({ expected: expected(version) });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: 'retained_participation_source_decision_required',
+      });
+      expect((await loadBidDefinitionVersion(h.env.DB, 2026, version.row.id)).ok).toBe(true);
+      expect(version.content.sourceDecisions).toEqual(content.sourceDecisions);
+    },
+  );
+
+  it('requires a unique reviewed LT source decision even when both duplicate records claim resolution', async () => {
+    const fixture = await sourceFixture();
+    const content = structuredClone(fixture.baseline.content);
+    const decision = content.sourceDecisions[0];
+    if (!decision) throw new Error('Synthetic LT capacity decision missing');
+    content.sourceDecisions.push({ ...decision });
+    expect(retainedParticipationSourceDecisionIssue(content)).toBe(
+      'retained_participation_source_decision_required',
+    );
+    // The ordinary immutable loader already rejects duplicated issue IDs;
+    // the preview guard independently retains that uniqueness boundary.
+    const before = h.sqlite.serialize();
+    await expect(saved(content)).rejects.toThrow('invalid_bid_definition');
+    deepStrictEqual(h.sqlite.serialize(), before);
+  });
+
+  it.each(['proposal-extra', 'source-pin', 'duplicate-retained', 'rank-count'])(
+    'shared proposal validation rejects %s response transport tampering',
+    async (kind) => {
+      const fixture = await sourceFixture();
+      const result = await preview(fixture.baseline);
+      if (!result.ok) throw new Error(JSON.stringify(result));
+      const changed = structuredClone(result);
+      if (kind === 'proposal-extra') Object.assign(changed, { unapprovedMemberIds: [OTHER] });
+      if (
+        kind === 'source-pin' &&
+        changed.content.settings?.v === 3 &&
+        changed.content.settings.evidenceFreeze
+      )
+        changed.content.settings.evidenceFreeze.freezeId = 'synthetic-wrong-transport-pin';
+      if (kind === 'duplicate-retained') {
+        const retained = changed.retained[0];
+        if (!retained) throw new Error('Synthetic retained member missing');
+        changed.retained.push({ ...retained });
+      }
+      if (kind === 'rank-count') changed.counts.ranks.LT++;
+      expect(RetainedParticipationPreviewResponseSchema.safeParse(changed).success).toBe(false);
+    },
+  );
+
+  it.each(['evaluation', 'personnel', 'credential', 'capture-source', 'material'])(
+    'rejects altered %s bindings before returning a proposal',
+    async (kind) => {
+      const fixture = await sourceFixture();
+      const content = structuredClone(fixture.baseline.content);
+      const pin = content.settings?.v === 3 ? content.settings.evidenceFreeze : undefined;
+      if (!pin) throw new Error('Synthetic original pin missing');
+      if (kind === 'evaluation') pin.evaluationSha256 = 'f'.repeat(64);
+      if (kind === 'personnel') pin.personnelSnapshot.sha256 = 'f'.repeat(64);
+      if (kind === 'credential') pin.credentialSnapshot.sha256 = 'f'.repeat(64);
+      if (kind === 'capture-source') pin.sourceVersionSha256 = 'f'.repeat(64);
+      if (kind === 'material') {
+        const rule = content.rules[0];
+        if (!rule) throw new Error('Synthetic position rule missing');
+        rule.requiredCriteriaJson =
+          '{"rank":["LT"],"credentials":["Synthetic withheld qualification"],"custom":[]}';
+      }
+      const version = await saved(content);
+      expect(await preview(version)).toEqual({
+        ok: false,
+        error: 'retained_participation_preview_failed',
+      });
+    },
+  );
+
+  it('rejects a head change during the complete read-only preparation', async () => {
+    const fixture = await sourceFixture();
+    const originalPrepare = h.env.DB.prepare.bind(h.env.DB);
+    let headReads = 0;
+    vi.spyOn(h.env.DB, 'prepare').mockImplementation((query) => {
+      const stmt = originalPrepare(query);
+      if (query.includes('SELECT version_id AS versionId,revision FROM bid_definition_heads')) {
+        const originalBind = stmt.bind.bind(stmt);
+        stmt.bind = ((...args: unknown[]) => {
+          const bound = originalBind(...args);
+          const first = bound.first.bind(bound);
+          bound.first = (async (...firstArgs: unknown[]) => {
+            const value = await first(...(firstArgs as []));
+            headReads++;
+            return headReads > 1
+              ? {
+                  versionId: fixture.baseline.row.id,
+                  revision: fixture.baseline.row.version_number + 1,
+                }
+              : value;
+          }) as typeof bound.first;
+          return bound;
+        }) as typeof stmt.bind;
+      }
+      return stmt;
+    });
+    expect(await preview(fixture.baseline)).toEqual({
+      ok: false,
+      error: 'retained_participation_source_changed',
+    });
+  });
 
   it('keeps the absent-receipt legacy frozen cohort while a normal successor changes only proved retention', async () => {
     const fixture = await sourceFixture();
