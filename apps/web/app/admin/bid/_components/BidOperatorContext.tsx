@@ -12,6 +12,7 @@ import {
 } from 'react';
 
 type PositionIntent = { memberId: number; positionId: string; nonce: number };
+type OverrideIntent = { memberId: number; nonce: number };
 interface OperatorContext {
   selectedMemberId: number | null;
   activeMemberId: number | null;
@@ -19,6 +20,10 @@ interface OperatorContext {
   setActiveMember: (id: number | null) => void;
   positionIntent: PositionIntent | null;
   choosePosition: (positionId: string) => void;
+  overrideIntent: OverrideIntent | null;
+  requestOverride: () => void;
+  overrideAllowed: boolean;
+  setOverrideAllowed: (allowed: boolean) => void;
 }
 const Context = createContext<OperatorContext | null>(null);
 
@@ -30,6 +35,8 @@ export function BidOperatorProvider({
   const [activeMemberId, setActiveMemberId] = useState(currentBidderId);
   const activeMemberRef = useRef(currentBidderId);
   const [positionIntent, setPositionIntent] = useState<PositionIntent | null>(null);
+  const [overrideIntent, setOverrideIntent] = useState<OverrideIntent | null>(null);
+  const [overrideAllowed, setOverrideAllowed] = useState(false);
   const selectMember = useCallback((id: number) => setSelectedMemberId(id), []);
   const setActiveMember = useCallback((id: number | null) => {
     const previous = activeMemberRef.current;
@@ -49,6 +56,13 @@ export function BidOperatorProvider({
     },
     [selectedMemberId],
   );
+  const requestOverride = useCallback(() => {
+    if (selectedMemberId === null) return;
+    setOverrideIntent((previous) => ({
+      memberId: selectedMemberId,
+      nonce: (previous?.nonce ?? 0) + 1,
+    }));
+  }, [selectedMemberId]);
   const value = useMemo(
     () => ({
       selectedMemberId,
@@ -57,6 +71,10 @@ export function BidOperatorProvider({
       setActiveMember,
       positionIntent,
       choosePosition,
+      overrideIntent,
+      requestOverride,
+      overrideAllowed,
+      setOverrideAllowed,
     }),
     [
       selectedMemberId,
@@ -65,6 +83,9 @@ export function BidOperatorProvider({
       setActiveMember,
       positionIntent,
       choosePosition,
+      overrideIntent,
+      requestOverride,
+      overrideAllowed,
     ],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;

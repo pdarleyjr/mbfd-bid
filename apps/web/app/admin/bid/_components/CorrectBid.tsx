@@ -46,8 +46,9 @@ type Preview = {
   after: Award | null;
   memberId: number;
   reason: string;
-  constraintEffects: Array<{ group: string; before: number; after: number }>;
-  validated: string[];
+  constraintEffects: Array<{ group: string; before: number; after: number }> | null;
+  validated: string[] | null;
+  warnings?: Array<{ code: string; message: string }>;
 };
 type Command = {
   v: 1;
@@ -65,6 +66,7 @@ type Command = {
   replacement: { positionId: string; aDay: string | null; membershipIds: string[] } | null;
   pool?: { poolId: string };
   termDeparture?: { assignmentId: string; memberConfirmed: true; evidenceReference: string };
+  adminOverride?: { acknowledged: true; warningCodes: string[] };
 };
 
 function failure(code: string | undefined) {
@@ -107,6 +109,8 @@ export function CorrectBid(props: {
   onCanonicalChange?: (() => void) | undefined;
   canonicalSequence?: number | undefined;
   commandsBlocked?: boolean | undefined;
+  overrideAllowed?: boolean | undefined;
+  overridePositionIds?: readonly string[] | undefined;
 }) {
   const csrfFetch = useMemo(
     () =>
@@ -126,6 +130,8 @@ export function CorrectBid(props: {
   const [reason, setReason] = useState('');
   const [termConfirmed, setTermConfirmed] = useState(false);
   const [termEvidence, setTermEvidence] = useState('');
+  const [overrideEnabled, setOverrideEnabled] = useState(false);
+  const [overrideAcknowledged, setOverrideAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [review, setReview] = useState<{
@@ -156,6 +162,7 @@ export function CorrectBid(props: {
     function invalidate() {
       contextGeneration.current += 1;
       setReview(null);
+      setOverrideAcknowledged(false);
       setReadbackFresh(false);
       setNotice(
         'Operator sign-in changed. Your draft is retained. Refresh awards and review the correction again before confirming.',
@@ -181,11 +188,20 @@ export function CorrectBid(props: {
     if (!props.commandsBlocked && !sequenceChanged) return;
     contextGeneration.current += 1;
     setReview(null);
+    setOverrideAcknowledged(false);
     setReadbackFresh(false);
     setNotice(
       'The bid or operator sign-in changed. Your draft is retained. Refresh awards and review the correction again.',
     );
   }, [props.commandsBlocked, sequenceChanged]);
+  useEffect(() => {
+    if (props.overrideAllowed === true || !overrideEnabled) return;
+    contextGeneration.current += 1;
+    setReview(null);
+    setOverrideEnabled(false);
+    setOverrideAcknowledged(false);
+    setNotice('Administrator override authority changed. Review this correction again.');
+  }, [props.overrideAllowed, overrideEnabled]);
   function contextCurrent(generation: number, sequence: number) {
     return (
       generation === contextGeneration.current &&
@@ -214,11 +230,14 @@ export function CorrectBid(props: {
     setADay(entry?.aDay ?? '');
     setOperation('REPLACE');
     setReview(null);
+    setOverrideEnabled(false);
+    setOverrideAcknowledged(false);
     setTermConfirmed(false);
     setTermEvidence('');
   }
   function edit() {
     setReview(null);
+    setOverrideAcknowledged(false);
     setNotice(null);
   }
   async function load() {
@@ -247,7 +266,11 @@ export function CorrectBid(props: {
     if (
       retained &&
       (previous.operation === 'REVOKE' ||
-        retained.eligiblePositionIds.includes(previous.positionId))
+        retained.eligiblePositionIds.includes(previous.positionId) ||
+        (overrideEnabled &&
+          props.overrideAllowed === true &&
+          (previous.positionId === retained.originalPositionId ||
+            props.overridePositionIds?.includes(previous.positionId))))
     ) {
       const days =
         data.positions.find((entry) => entry.id === previous.positionId)?.shift === 'D'
@@ -298,6 +321,7 @@ export function CorrectBid(props: {
   }
   async function preview() {
     if (!source || !readback || draftBlocked || inFlight.current) return;
+    if (overrideEnabled && (props.overrideAllowed !== true || reason.trim().length < 4)) return;
     const generation = contextGeneration.current;
     inFlight.current = true;
     setBusy(true);
@@ -330,10 +354,13 @@ export function CorrectBid(props: {
             },
           }
         : {}),
+      ...(overrideEnabled
+        ? { adminOverride: { acknowledged: true as const, warningCodes: [] } }
+        : {}),
     };
     try {
       const response = await csrfFetch(
-        `/api/admin/bid-session/${props.bidSessionId}/corrections/preview`,
+        `/api/admin/bid-session/${props.bidSessionId}/${overrideEnabled ? 'commands/live/preview' : 'corrections/preview'}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -351,7 +378,39 @@ export function CorrectBid(props: {
         setNotice('The bid changed during review. Refresh awards and review again.');
         return;
       }
-      setReview({ preview: body as Preview, command, generation });
+      if (overrideEnabled) {
+        if (
+          body.memberId !== command.memberId ||
+          body.before?.positionId !== command.originalPositionId ||
+          (command.operation === 'REPLACE' &&
+            body.after?.positionId !== command.replacement?.positionId) ||
+          (command.operation === 'REVOKE' && body.after !== null) ||
+          !Array.isArray(body.warnings) ||
+          body.warnings.some(
+            (warning) => typeof warning.code !== 'string' || typeof warning.message !== 'string',
+          )
+        ) {
+          setNotice(
+            'The override preview does not match this correction. Refresh awards and review again.',
+          );
+          return;
+        }
+        command.adminOverride = {
+          acknowledged: true,
+          warningCodes: body.warnings.map((warning) => warning.code),
+        };
+        setOverrideAcknowledged(false);
+      }
+      setReview({
+        preview: {
+          ...(body as Preview),
+          reason: command.reason,
+          constraintEffects: Array.isArray(body.constraintEffects) ? body.constraintEffects : null,
+          validated: Array.isArray(body.validated) ? body.validated : null,
+        },
+        command,
+        generation,
+      });
     } catch {
       if (contextCurrent(generation, readback.sequence))
         setNotice('The review could not be loaded. Review the correction again when connected.');
@@ -365,7 +424,9 @@ export function CorrectBid(props: {
       !review ||
       draftBlocked ||
       inFlight.current ||
-      !contextCurrent(review.generation, review.command.expectedSeq)
+      !contextCurrent(review.generation, review.command.expectedSeq) ||
+      (review.command.adminOverride !== undefined &&
+        (props.overrideAllowed !== true || !overrideAcknowledged))
     )
       return;
     inFlight.current = true;
@@ -495,6 +556,30 @@ export function CorrectBid(props: {
             </div>
             {source && (
               <>
+                {props.overrideAllowed === true ? (
+                  <Label className="flex min-h-11 items-start gap-2 border border-warning/30 bg-warning/5 p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-4"
+                      aria-label="Use administrator override for correction"
+                      checked={overrideEnabled}
+                      disabled={draftBlocked}
+                      onChange={(event) => {
+                        edit();
+                        setOverrideEnabled(event.target.checked);
+                        if (
+                          !event.target.checked &&
+                          !source.eligiblePositionIds.includes(positionId)
+                        ) {
+                          setPositionId(source.originalPositionId);
+                          setADay(source.aDay ?? '');
+                        }
+                      }}
+                    />
+                    Administrator override · correct to any open opportunity, with eligibility and
+                    order advisories.
+                  </Label>
+                ) : null}
                 <div>
                   <Label htmlFor="correction-operation">Correction</Label>
                   <NativeSelect
@@ -526,7 +611,15 @@ export function CorrectBid(props: {
                           setADay('');
                         }}
                       >
-                        {source.eligiblePositionIds.map((id) => (
+                        {(overrideEnabled
+                          ? [
+                              ...new Set([
+                                source.originalPositionId,
+                                ...(props.overridePositionIds ?? []),
+                              ]),
+                            ]
+                          : source.eligiblePositionIds
+                        ).map((id) => (
                           <option key={id} value={id}>
                             {positionName(id)}
                           </option>
@@ -606,6 +699,7 @@ export function CorrectBid(props: {
                     disabled={
                       draftBlocked ||
                       !reason.trim() ||
+                      (overrideEnabled && reason.trim().length < 4) ||
                       (operation === 'REPLACE' &&
                         (!positionId ||
                           (source.termParticipation !== null &&
@@ -633,9 +727,39 @@ export function CorrectBid(props: {
                     <p className="text-sm">
                       <strong>Reason:</strong> {review.preview.reason}
                     </p>
+                    {review.command.adminOverride ? (
+                      <div className="space-y-3 border border-warning/30 bg-warning/5 p-3">
+                        <h3 className="font-semibold">Administrator override advisories</h3>
+                        {review.preview.warnings?.length ? (
+                          <ul className="list-disc space-y-1 pl-5 text-sm">
+                            {review.preview.warnings.map((warning) => (
+                              <li key={warning.code}>{warning.message}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm">No policy deviations were found.</p>
+                        )}
+                        <Label className="flex min-h-11 items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-1 size-4"
+                            aria-label="I acknowledge correction override advisories"
+                            checked={overrideAcknowledged}
+                            disabled={draftBlocked}
+                            onChange={(event) => setOverrideAcknowledged(event.target.checked)}
+                          />
+                          I reviewed the original award, corrected award, reason, and all
+                          advisories. Record this administrator override.
+                        </Label>
+                      </div>
+                    ) : null}
                     <div>
                       <h3 className="font-semibold">Constraint effects</h3>
-                      {review.preview.constraintEffects.length === 0 ? (
+                      {review.preview.constraintEffects === null ? (
+                        <p className="text-sm">
+                          Detailed capacity totals were not included in this preview.
+                        </p>
+                      ) : review.preview.constraintEffects.length === 0 ? (
                         <p className="text-sm">No A-Day capacity totals change.</p>
                       ) : (
                         <ul className="text-sm">
@@ -646,11 +770,19 @@ export function CorrectBid(props: {
                           ))}
                         </ul>
                       )}
-                      <p className="mt-2 text-sm">
-                        Checks passed: {review.preview.validated.join(', ')}.
-                      </p>
+                      {review.preview.validated ? (
+                        <p className="mt-2 text-sm">
+                          Checks passed: {review.preview.validated.join(', ')}.
+                        </p>
+                      ) : null}
                     </div>
-                    <Button disabled={draftBlocked} onClick={() => void confirm()}>
+                    <Button
+                      disabled={
+                        draftBlocked ||
+                        (review.command.adminOverride !== undefined && !overrideAcknowledged)
+                      }
+                      onClick={() => void confirm()}
+                    >
                       {busy ? 'Recording…' : 'Confirm correction'}
                     </Button>
                   </section>

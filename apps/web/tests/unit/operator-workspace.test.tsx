@@ -109,6 +109,7 @@ let updatesUnavailable = false;
 let failReadAfterAward = false;
 let returnedMember = false;
 let liveSequence = 4;
+let overrideAllowed = false;
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -124,6 +125,7 @@ beforeEach(() => {
   failReadAfterAward = false;
   returnedMember = false;
   liveSequence = 4;
+  overrideAllowed = false;
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     requests.push(url);
@@ -133,6 +135,9 @@ beforeEach(() => {
         : response({
             ...live,
             sequence: liveSequence,
+            admin_override_allowed: overrideAllowed,
+            admin_override_member_ids: overrideAllowed ? [17, 18] : [],
+            admin_override_position_ids: overrideAllowed ? ['Anew', 'not-eligible'] : [],
             returning_member: returnedMember
               ? { member_id: 18, first_name: 'New', last_name: 'OperatorFixture', rank: 'CPT' }
               : null,
@@ -225,6 +230,28 @@ async function chooseGroup(value: string) {
   });
 }
 describe('operator workspace interaction and history', () => {
+  it('opens an explicit override for the waiting member chosen in the normal picker without recording anything', async () => {
+    overrideAllowed = true;
+    await mount();
+    await settle(() => button('New OperatorFixture').click());
+    expect(container.textContent).toContain('No previous bid or assignment.');
+    await settle(() => button('Bid for this member · Administrator override').click());
+    const select = container.querySelector(
+      'select[aria-label="Administrator override member"]',
+    ) as unknown as HTMLSelectElement;
+    expect(select.value).toBe('18');
+    const positions = container.querySelector(
+      'select[aria-label="Administrator override open position"]',
+    ) as unknown as HTMLSelectElement;
+    expect([...positions.options].map((option) => option.value)).toEqual([
+      '',
+      'Anew',
+      'not-eligible',
+    ]);
+    expect(button('Review override').disabled).toBe(true);
+    expect(commands).toHaveLength(0);
+    expect(requests.some((url) => url.endsWith('/commands/live/preview'))).toBe(false);
+  });
   it('previews member history before Start without presenting the member as a waiting bidder', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
