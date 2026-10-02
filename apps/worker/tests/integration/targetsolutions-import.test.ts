@@ -78,6 +78,112 @@ describe('TargetSolutions reviewed import', () => {
       await h.env.DB.prepare('SELECT COUNT(*) AS n FROM member_qualification_events').first(),
     ).toEqual({ n: 0 });
   });
+  it('does not clear an unresolved qualification hold through a safe dated-source import', async () => {
+    await h.db.run(`INSERT INTO member_credentials(member_id,credential_id,start_date,expiration_date)
+      VALUES(1,10,NULL,NULL); INSERT INTO credentials(id,name) VALUES(11,'Unrelated Qualification');`);
+    const anomaly = (await (
+      await request('/imports', {
+        csv: 'Employee ID,Credential Name,Credential Status,Start Date,Expiration Date\n0012,Synthetic Certification,Active,2023-05-07,2099-05-07',
+        filename: 'held-date.csv',
+        observed_on: '2026-09-29',
+      })
+    ).json()) as { id: string };
+    await request(`/imports/${anomaly.id}/review`, { accept: true });
+    const prior = (await (await request(`/imports/${anomaly.id}`)).json()) as {
+      rows: { id: string; source_json: string }[];
+    };
+    const priorRow = prior.rows[0];
+    if (!priorRow) throw new Error('Missing synthetic held source');
+    expect(
+      (
+        await request(`/imports/${anomaly.id}/reject`, {
+          row_ids: [priorRow.id],
+          needs_admin_evidence: true,
+          reason: 'Individual verification needed for unproven expiration',
+        })
+      ).status,
+    ).toBe(200);
+    const heldBefore = h.sqlite
+      .prepare('SELECT * FROM targetsolutions_rows WHERE id=?')
+      .get(priorRow.id);
+    const legacyBefore = h.sqlite.prepare('SELECT * FROM member_credentials').all();
+    const next = (await (
+      await request('/imports', {
+        csv: 'Employee ID,Credential Name,Credential Status,Start Date,Expiration Date\n0012,Synthetic Certification,Active,2023-05-07,\n0012,Unrelated Qualification,Active,2024-01-01,2028-01-01',
+        filename: 'updated-date.csv',
+        observed_on: '2026-09-30',
+      })
+    ).json()) as { id: string };
+    expect((await request(`/imports/${next.id}/review`, { accept: true })).status).toBe(200);
+    const detail = (await (await request(`/imports/${next.id}`)).json()) as {
+      counts: Record<string, number>;
+      rows: { id: string; credential_id: number; applied_at: number | null }[];
+    };
+    expect(detail.counts).toMatchObject({ CONFLICT: 1, NEW_QUALIFICATION: 1 });
+    const held = detail.rows.find((row) => row.credential_id === 10);
+    if (!held) throw new Error('Missing updated held qualification');
+    const safe = await request(`/imports/${next.id}/apply`, {
+      safe: true,
+      reason: 'Apply only independently safe source rows',
+    });
+    expect(safe.status).toBe(200);
+    expect(await safe.json()).toMatchObject({ processed: 1, eventsAdded: 1 });
+    const adverse = await request(`/imports/${next.id}/apply`, {
+      row_ids: [held.id],
+      accept_adverse: true,
+      reason: 'Attempt blanket approval over unresolved evidence hold',
+    });
+    expect(adverse.status).toBe(409);
+    expect(await adverse.json()).toMatchObject({
+      error: 'conflicting_evidence_requires_individual_qualification_correction',
+    });
+    expect(
+      h.sqlite
+        .prepare('SELECT COUNT(*) AS n FROM member_qualification_events WHERE credential_id=10')
+        .get(),
+    ).toEqual({ n: 0 });
+    expect(
+      h.sqlite.prepare('SELECT * FROM targetsolutions_rows WHERE id=?').get(priorRow.id),
+    ).toEqual(heldBefore);
+    expect(h.sqlite.prepare('SELECT * FROM member_credentials').all()).toEqual(legacyBefore);
+    expect(
+      h.sqlite.prepare('SELECT applied_at FROM targetsolutions_rows WHERE id=?').get(held.id),
+    ).toEqual({ applied_at: null });
+  });
+  it('allows normal renewal after later approved dated evidence resolves a qualification hold', async () => {
+    await h.db.run(`INSERT INTO member_credentials(member_id,credential_id,start_date,expiration_date)
+      VALUES(1,10,NULL,NULL);
+      INSERT INTO targetsolutions_imports(id,filename,observed_on,source_row_count,unique_row_count,coverage_json,status,created_by,created_at)
+        VALUES('prior-reviewed-hold','synthetic.csv','2026-09-29',1,1,'{}','reviewed','0',1);
+      INSERT INTO targetsolutions_rows(id,import_id,row_number,source_json,member_id,credential_id,classification,before_json,reviewed_at,applied_at)
+        VALUES('prior-held-row','prior-reviewed-hold',1,'{}',1,10,'REJECTED',
+          '{"reviewHold":{"status":"NEEDS ADMIN EVIDENCE","reviewedAt":10}}',10,10);
+      INSERT INTO member_qualification_events(id,member_id,credential_id,kind,effective_on,expires_on,evidence_source,evidence_reference,reason,actor_subject,idempotency_key,before_state,after_state,created_at)
+        VALUES('individually-approved-date',1,10,'CERTIFICATION_GAINED','2023-01-01','2028-01-01',
+          'Individual administrator verification','synthetic-proof','Approved individual qualification interval',
+          '0','individual-approved-date','{}','{}',20);`);
+    const upload = await request('/imports', {
+      csv: 'Employee ID,Credential Name,Credential Status,Start Date,Expiration Date\n0012,Synthetic Certification,Active,2023-01-01,2029-01-01',
+      filename: 'verified-renewal.csv',
+      observed_on: '2026-09-30',
+    });
+    expect(upload.status).toBe(201);
+    const { id } = (await upload.json()) as { id: string };
+    expect((await request(`/imports/${id}/review`, { accept: true })).status).toBe(200);
+    const detail = (await (await request(`/imports/${id}`)).json()) as {
+      counts: Record<string, number>;
+    };
+    expect(detail.counts.RENEWAL).toBe(1);
+    const applied = await request(`/imports/${id}/apply`, {
+      safe: true,
+      reason: 'Apply renewal after individual dated verification',
+    });
+    expect(applied.status).toBe(200);
+    expect(await applied.json()).toMatchObject({ processed: 1, eventsAdded: 1 });
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM member_qualification_events').get()).toEqual(
+      { n: 2 },
+    );
+  });
   it.each([
     ['2028-01-01', 'FILL_MISSING_DATE', 'active'],
     ['2026-08-01', 'EXPIRATION_REVIEW', 'expired'],

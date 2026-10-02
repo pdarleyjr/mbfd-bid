@@ -354,19 +354,47 @@ function normalizeBidDefinition(input: unknown): CanonicalBidDefinition {
           code: 'evidence_freeze_approval_before_cutoff',
           message: 'Final evidence approval cannot precede the cutoff.',
         });
-      if (freeze.sourceImports.some((source) => Date.parse(source.acceptedAt) > cutoffMs))
+      // A typed later observation retains the original cutoff as ancestry.
+      // Its exact immutable receipt and source bundle are verified by run
+      // preparation; this draft check cannot create or authorize a receipt.
+      const update = freeze.reviewedUpdate;
+      const observationMs = update ? Date.parse(update.observedAsOfAt) : cutoffMs;
+      if (
+        update &&
+        (freeze.derivation !== undefined ||
+          observationMs < cutoffMs ||
+          freeze.approvedAt !== update.observedAsOfAt)
+      )
+        issues.push({
+          path: ['settings', 'evidenceFreeze', 'reviewedUpdate'],
+          code: 'reviewed_evidence_observation_invalid',
+          message:
+            'The later observation must retain its separate receipt and exact approval instant.',
+        });
+      if (freeze.sourceImports.some((source) => Date.parse(source.acceptedAt) > observationMs))
         issues.push({
           path: ['settings', 'evidenceFreeze', 'sourceImports'],
-          code: 'evidence_source_after_cutoff',
-          message: 'Post-cutoff source imports cannot enter the frozen Bid.',
+          code: update ? 'evidence_source_after_observation' : 'evidence_source_after_cutoff',
+          message: update
+            ? 'A source cannot be accepted after the reviewed observation.'
+            : 'Post-cutoff source imports cannot enter the frozen Bid.',
         });
       for (const field of ['personnelSnapshot', 'credentialSnapshot'] as const) {
         const snapshot = freeze[field];
-        if (snapshot.asOfAt !== cutoff || Date.parse(snapshot.capturedAt) < cutoffMs)
+        if (
+          update
+            ? snapshot.asOfAt !== update.observedAsOfAt ||
+              snapshot.capturedAt !== update.observedAsOfAt
+            : snapshot.asOfAt !== cutoff || Date.parse(snapshot.capturedAt) < cutoffMs
+        )
           issues.push({
             path: ['settings', 'evidenceFreeze', field],
-            code: 'evidence_snapshot_cutoff_mismatch',
-            message: 'The captured snapshot must explicitly represent the configured cutoff.',
+            code: update
+              ? 'evidence_snapshot_observation_mismatch'
+              : 'evidence_snapshot_cutoff_mismatch',
+            message: update
+              ? 'The snapshot must represent the exact reviewed observation instant.'
+              : 'The captured snapshot must explicitly represent the configured cutoff.',
           });
       }
     }

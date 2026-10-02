@@ -1200,6 +1200,23 @@ export const RetainedParticipationDerivationSchema = z
   .strict();
 export type RetainedParticipationDerivation = z.infer<typeof RetainedParticipationDerivationSchema>;
 
+/** A later approved ledger observation never replaces the original cutoff. */
+export const ReviewedBidEvidenceUpdateSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('APPROVED_LEDGER_UPDATE'),
+    originalFreezeId: z.string().min(1),
+    originalEvaluationSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    originalPersonnelSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    originalCredentialSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceToken: z.string().regex(/^[a-f0-9]{64}$/),
+    observedAsOfAt: z.string().datetime({ offset: true }),
+    reasonSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceDecisionsSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export type ReviewedBidEvidenceUpdate = z.infer<typeof ReviewedBidEvidenceUpdateSchema>;
+
 export const BidEvidenceFreezeSchema = z
   .object({
     freezeId: z.string().min(1),
@@ -1238,6 +1255,7 @@ export const BidEvidenceFreezeSchema = z
       .strict(),
     /** Optional successor proof; absence preserves the original sealed evaluation. */
     derivation: RetainedParticipationDerivationSchema.optional(),
+    reviewedUpdate: ReviewedBidEvidenceUpdateSchema.optional(),
   })
   .strict();
 export type BidEvidenceFreeze = z.infer<typeof BidEvidenceFreezeSchema>;

@@ -10,6 +10,7 @@ import {
   deriveMemberQualificationProjection,
   isQualificationCalendarDate,
 } from '../../lib/qualification-lifecycle.js';
+import { unresolvedQualificationHolds } from '../../lib/qualification-review-hold.js';
 import {
   type TargetCredentialRow,
   classifyTargetCredential,
@@ -81,32 +82,47 @@ const chunks = <T>(items: T[], size = 100): T[][] =>
   );
 
 async function state(db: D1Database) {
-  const [members, catalog, mappings, baseline, eventRows, inferredDates] = await Promise.all([
-    all<{ id: number; employee_id: string; first_name: string; last_name: string }>(
-      db,
-      'SELECT id,employee_id,first_name,last_name FROM members',
-    ),
-    all<{ id: number; name: string; display_name: string | null; retired_on: string | null }>(
-      db,
-      'SELECT c.id,c.name,m.display_name,m.retired_on FROM credentials c LEFT JOIN credential_catalog_metadata m ON m.credential_id=c.id',
-    ),
-    all<{ source_key: string; credential_id: number | null; treatment: string }>(
-      db,
-      'SELECT source_key,credential_id,treatment FROM targetsolutions_mappings',
-    ),
-    all<LegacyCredentialBaseline>(
-      db,
-      'SELECT mc.member_id AS memberId,mc.credential_id AS credentialId,c.name AS credentialName,mc.start_date AS startDate,mc.expiration_date AS expirationDate FROM member_credentials mc JOIN credentials c ON c.id=mc.credential_id',
-    ),
-    all<Parameters<typeof mapEvent>[0]>(
-      db,
-      'SELECT event.*,credential.name AS credential_name FROM member_qualification_events event LEFT JOIN credentials credential ON credential.id=event.credential_id ORDER BY event.effective_on,event.created_at,event.id',
-    ),
-    all<{ eventId: string }>(
-      db,
-      "SELECT applied_event_id AS eventId FROM targetsolutions_rows WHERE applied_event_id IS NOT NULL AND json_extract(source_json,'$.effectiveOn') IS NULL",
-    ),
-  ]);
+  const [members, catalog, mappings, baseline, eventRows, inferredDates, qualificationHolds] =
+    await Promise.all([
+      all<{ id: number; employee_id: string; first_name: string; last_name: string }>(
+        db,
+        'SELECT id,employee_id,first_name,last_name FROM members',
+      ),
+      all<{ id: number; name: string; display_name: string | null; retired_on: string | null }>(
+        db,
+        'SELECT c.id,c.name,m.display_name,m.retired_on FROM credentials c LEFT JOIN credential_catalog_metadata m ON m.credential_id=c.id',
+      ),
+      all<{ source_key: string; credential_id: number | null; treatment: string }>(
+        db,
+        'SELECT source_key,credential_id,treatment FROM targetsolutions_mappings',
+      ),
+      all<LegacyCredentialBaseline>(
+        db,
+        'SELECT mc.member_id AS memberId,mc.credential_id AS credentialId,c.name AS credentialName,mc.start_date AS startDate,mc.expiration_date AS expirationDate FROM member_credentials mc JOIN credentials c ON c.id=mc.credential_id',
+      ),
+      all<Parameters<typeof mapEvent>[0]>(
+        db,
+        'SELECT event.*,credential.name AS credential_name FROM member_qualification_events event LEFT JOIN credentials credential ON credential.id=event.credential_id ORDER BY event.effective_on,event.created_at,event.id',
+      ),
+      all<{ eventId: string }>(
+        db,
+        "SELECT applied_event_id AS eventId FROM targetsolutions_rows WHERE applied_event_id IS NOT NULL AND json_extract(source_json,'$.effectiveOn') IS NULL",
+      ),
+      all<{
+        memberId: number;
+        credentialId: number;
+        credentialName: string;
+        reviewedAt: number;
+        observedOn: string;
+      }>(
+        db,
+        `SELECT r.member_id AS memberId,r.credential_id AS credentialId,c.name AS credentialName,
+        json_extract(r.before_json,'$.reviewHold.reviewedAt') AS reviewedAt,i.observed_on AS observedOn
+       FROM targetsolutions_rows r JOIN targetsolutions_imports i ON i.id=r.import_id
+       JOIN credentials c ON c.id=r.credential_id
+       WHERE json_extract(r.before_json,'$.reviewHold.status')='NEEDS ADMIN EVIDENCE'`,
+      ),
+    ]);
   const events = eventRows.map(mapEvent);
   if (events.some((v) => v === null))
     throw new Error('Qualification history requires review before import.');
@@ -115,6 +131,7 @@ async function state(db: D1Database) {
     catalog,
     mappings,
     baseline,
+    qualificationHolds,
     events: events.filter((v) => v !== null),
     inferredEffectiveEventIds: new Set(inferredDates.map((row) => row.eventId)),
   };
@@ -189,6 +206,21 @@ function assess(raw: TargetCredentialRow, snapshot: State, observedOn: string) {
                 : 'CONFLICT'
               : classifyTargetCredential(raw, comparisonCurrent, observedOn);
   if (members.length > 1) classification = 'AMBIGUOUS_MEMBER';
+  // A safe import must not implicitly approve a previously withheld assertion.
+  // Only later individually approved, applicable dated evidence resolves it.
+  if (
+    member &&
+    credential &&
+    classification !== 'REFERENCE_ONLY' &&
+    unresolvedQualificationHolds(
+      snapshot.qualificationHolds.filter(
+        (hold) => hold.memberId === member.id && hold.credentialId === credential.id,
+      ),
+      events,
+      observedOn,
+    ).length > 0
+  )
+    classification = 'CONFLICT';
   return {
     memberId: member?.id ?? null,
     memberName: member ? `${member.last_name}, ${member.first_name}` : null,
