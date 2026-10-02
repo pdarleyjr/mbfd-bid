@@ -1,4 +1,5 @@
 import { deepStrictEqual } from 'node:assert';
+import { readFileSync } from 'node:fs';
 import {
   type BidDefinitionContent,
   BidDispositionSchema,
@@ -58,10 +59,14 @@ type Version = Extract<Awaited<ReturnType<typeof loadBidDefinitionVersion>>, { o
 describe('append-only reviewed evidence updates and ordinary successor authoring', () => {
   let h: TestD1;
   let counter: number;
-  beforeEach(async () => {
+  beforeEach(async (context) => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(CAPTURED);
-    h = await setupTestD1();
+    h = await setupTestD1(
+      context.task.name.startsWith('applies only 0071')
+        ? { throughMigration: '0070_credential_anomaly_review_revision.sql' }
+        : {},
+    );
     h.env.PORTAL_WRITEBACK_ENABLED = 'false';
     counter = 0;
     h.sqlite.pragma('foreign_keys = ON');
@@ -800,6 +805,63 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
       "SELECT COUNT(*) n FROM audit_log WHERE target_kind='bid_evidence_reviewed_update'",
     ])
       expect(h.sqlite.prepare(query).get()).toEqual({ n: 0 });
+  });
+
+  it('applies only 0071 over a genuine existing V11 freeze and pinned Mock while preserving every existing table row', async () => {
+    const f = await fixture();
+    const previewResponse = await request('bid/2026/preview', {
+      kind: 'mock',
+      versionId: f.retained.row.id,
+      versionSha256: f.retained.sha256,
+    });
+    expect(previewResponse.status, await previewResponse.clone().text()).toBe(200);
+    const preview = (await previewResponse.json()) as {
+      contextSha256: string;
+      runtimeSourceToken: string;
+    };
+    const created = await request(
+      'bid/2026/mock-sessions',
+      {
+        versionId: f.retained.row.id,
+        versionSha256: f.retained.sha256,
+        expectedContextSha256: preview.contextSha256,
+        expectedSourceToken: preview.runtimeSourceToken,
+      },
+      { key: 'synthetic-personal-mock-before-0071' },
+    );
+    expect(created.status, await created.clone().text()).toBe(201);
+    const tables = h.sqlite
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      .all() as { name: string }[];
+    const before = Object.fromEntries(
+      tables.map(({ name }) => [
+        name,
+        h.sqlite.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" ORDER BY rowid`).all(),
+      ]),
+    );
+    h.sqlite.exec(
+      readFileSync(
+        new URL('../../migrations/0071_bid_evidence_reviewed_updates.sql', import.meta.url),
+        'utf8',
+      ),
+    );
+    for (const [name, rows] of Object.entries(before))
+      expect(
+        h.sqlite.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" ORDER BY rowid`).all(),
+        name,
+      ).toEqual(rows);
+    expect(h.sqlite.prepare('SELECT COUNT(*) n FROM bid_evidence_reviewed_updates').get()).toEqual({
+      n: 0,
+    });
+    expect(
+      h.sqlite.prepare('SELECT revision FROM bid_reviewed_update_source_revision WHERE id=1').get(),
+    ).toEqual({ revision: 0 });
+    expect(h.sqlite.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+    expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
+    expect(await prepare(f.retained)).toMatchObject({ ok: true });
+    expect((await capture()).result).toMatchObject({ ok: true });
   });
 
   it('preserves an uncertain committed request when readback fails and replays its exact receipt after recovery', async () => {

@@ -94,11 +94,14 @@ function makeD1Adapter(sqlite: Database.Database): TestD1Adapter {
  * integrity guards, so the test harness intentionally mirrors D1's full-file
  * execution semantics instead.
  */
-function applyMigrations(sqlite: Database.Database): void {
+function applyMigrations(sqlite: Database.Database, throughMigration?: string): void {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort();
+  if (throughMigration && !files.includes(throughMigration))
+    throw new Error('Requested test migration boundary is absent');
   for (const file of files) {
+    if (throughMigration && file > throughMigration) break;
     sqlite.exec(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf-8'));
   }
 }
@@ -166,14 +169,14 @@ export interface TestD1 {
   failNextBatchAt(statementIndex: number): void;
 }
 
-export async function setupTestD1(): Promise<TestD1> {
+export async function setupTestD1(options: { throughMigration?: string } = {}): Promise<TestD1> {
   const sqlite = new Database(':memory:');
   // Match Cloudflare D1 test behavior: FK pragma is OFF unless the worker
   // explicitly turns it on. The synthetic admin actor (sub: 0) is not a
   // real member row, so enforcing FKs on admin_actor_id would falsely fail
   // forced-pick tests.
   sqlite.pragma('foreign_keys = OFF');
-  applyMigrations(sqlite);
+  applyMigrations(sqlite, options.throughMigration);
   // A migration may temporarily enable FK enforcement while rebuilding a
   // table. Preserve this harness's documented D1 simulation afterwards: the
   // synthetic admin actor is deliberately not a members row, so tests that
