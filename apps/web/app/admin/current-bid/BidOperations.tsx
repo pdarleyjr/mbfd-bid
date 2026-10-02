@@ -107,11 +107,10 @@ export function BidOperations({
           </p>
           {ranks.shortages.map((s) => (
             <p key={s.rank} className="rounded border border-warning p-3">
-              <strong>
-                {s.bidders - s.capacity} {s.rank === 'LT' ? 'Lieutenant' : s.rank} capacity
-                shortfall
-              </strong>{' '}
-              — Mock capacity assumption. Real Bid requires an approved resolution.
+              <strong>{s.rank === 'LT' ? 'Lieutenant' : s.rank} count reconciliation</strong> —{' '}
+              {s.bidders} listed bidders and {s.capacity} open opportunities in this saved version.
+              Confirm participation and closed-position scope before treating this difference as a
+              staffing shortage.
             </p>
           ))}
         </div>

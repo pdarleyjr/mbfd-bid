@@ -11,6 +11,7 @@ import { BidStoreProvider } from '../../../bid/_hooks/BidStoreContext';
 import { type BidStoreState, createBidStore } from '../../../bid/_hooks/useBidStore';
 import { useBidWebSocket } from '../../../bid/_hooks/useBidWebSocket';
 import { BidAdvisoryPanel } from './BidAdvisoryPanel';
+import { useBidOperator } from './BidOperatorContext';
 import { useManualPick } from './ManualPickContext';
 
 interface Props {
@@ -30,6 +31,7 @@ interface Props {
   wsBase?: string;
   /** Server-composed explanation of the same authoritative board snapshot. */
   advisory: BidAdvisoryBundle | null;
+  managed?: boolean;
 }
 
 export function AdminBoard({
@@ -42,7 +44,9 @@ export function AdminBoard({
   positions,
   wsBase,
   advisory,
+  managed = false,
 }: Props) {
+  const operator = useBidOperator();
   const router = useRouter();
   const store = useMemo(() => {
     const s = createBidStore({ bidSessionId, initialSeq, meMemberId });
@@ -72,7 +76,11 @@ export function AdminBoard({
     },
     [pickMode, selectedMemberId, submitPick],
   );
-  const positionClickHandler = pickMode && selectedMemberId !== null ? onPositionClick : undefined;
+  const positionClickHandler = managed
+    ? operator?.choosePosition
+    : pickMode && selectedMemberId !== null
+      ? onPositionClick
+      : undefined;
 
   useEffect(() => {
     refreshedSequence.current = Math.max(refreshedSequence.current, initialSeq);

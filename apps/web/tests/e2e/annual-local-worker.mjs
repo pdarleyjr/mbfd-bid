@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { operatorWorkspaceFixture } from './operator-workspace-fixture.mjs';
 import { syntheticAdminRead } from './synthetic-admin-read-fixtures.mjs';
 import { syntheticPolicyDocument } from './synthetic-policy-document.mjs';
 
@@ -27,6 +28,11 @@ function bidder(memberId, firstName, lastName, ordinal) {
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
+  const operatorFixture = request.method === 'GET' ? operatorWorkspaceFixture(url) : null;
+  if (operatorFixture) {
+    json(response, 200, operatorFixture);
+    return;
+  }
   const fixture = request.method === 'GET' ? syntheticAdminRead(url.pathname) : null;
   if (fixture) {
     json(response, fixture.status, fixture.body);

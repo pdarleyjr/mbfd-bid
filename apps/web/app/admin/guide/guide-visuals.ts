@@ -543,7 +543,7 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'console-actions',
       'Mock correction and recovery entry points',
       'After an uncertain response, check the canonical roster and audit before retrying.',
-      ['Open Correct selection when needed.', 'Check the existing receipt.'],
+      ['Open Correct a bid when needed.', 'Check the existing receipt.'],
     ),
     visual(
       'audit-export',
