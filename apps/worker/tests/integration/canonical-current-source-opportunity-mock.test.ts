@@ -632,7 +632,9 @@ it.skipIf(!sourcePath)(
           seat.id;
         // Keep the pool's first-open reservation order intact. Leave only its
         // last configured designated-DE slot for the final fallback phase.
-        if (!forcedFallback && seat.id === deferredFallbackOpportunity) {
+        if (seat.id === deferredFallbackOpportunity) {
+          expect(pendingFallbackPositionId).toBeNull();
+          expect(state.fills[positionId]).toBeUndefined();
           expect(
             await command('live.force_selection', {
               memberId,
