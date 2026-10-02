@@ -353,6 +353,32 @@ describe('canonical annual completion projection', () => {
     ]);
   });
 
+  it('follows correction and revocation links to the original award and rejects cyclic lineage', () => {
+    const chained = source({
+      amendmentLinks: [
+        { originalBidId: 'award-original-root', replacementBidId: 'award-corrected' },
+        { originalBidId: 'award-corrected', replacementBidId: 'award-revoked' },
+        { originalBidId: 'award-revoked', replacementBidId: 'award-final' },
+      ],
+    });
+    const result = projectCanonicalAnnualCompletion(chained);
+    if (!result.ok) throw new Error(result.code);
+    expect(result.value.participants.find((entry) => entry.memberId === 202)?.amendment).toEqual({
+      originalBidId: 'award-original-root',
+      replacementBidId: 'award-final',
+    });
+    expect(
+      projectCanonicalAnnualCompletion(
+        source({
+          amendmentLinks: [
+            { originalBidId: 'award-loop', replacementBidId: 'award-final' },
+            { originalBidId: 'award-final', replacementBidId: 'award-loop' },
+          ],
+        }),
+      ),
+    ).toMatchObject({ ok: false, code: 'AMENDMENT_LINEAGE_INVALID' });
+  });
+
   it('fails closed for unfinished, mock, unresolved, or incomplete A-Day canonical state', () => {
     expect(
       projectCanonicalAnnualCompletion(
