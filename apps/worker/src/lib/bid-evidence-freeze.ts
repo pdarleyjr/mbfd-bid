@@ -10,7 +10,7 @@ import { decodeBidEvidenceDocument } from './bid-evidence-storage.js';
 export const APPROVED_2026_CUTOFF_AT = '2026-09-30T17:00:00-04:00';
 export const APPROVED_2026_CUTOFF_MS = Date.parse(APPROVED_2026_CUTOFF_AT);
 const Hash = z.string().regex(/^[0-9a-f]{64}$/);
-const SourceImport = z
+export const BidEvidenceSourceImportSchema = z
   .object({
     source: z.string().min(1),
     importId: z.string().min(1),
@@ -19,7 +19,7 @@ const SourceImport = z
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
-const FreezeRow = z
+export const BidEvidenceFreezeRowSchema = z
   .object({
     id: z.string().min(1),
     bid_year: z.literal(2026),
@@ -39,7 +39,7 @@ const FreezeRow = z
     source_imports_json: z.string(),
   })
   .strict();
-export type BidEvidenceFreezeRow = z.infer<typeof FreezeRow>;
+export type BidEvidenceFreezeRow = z.infer<typeof BidEvidenceFreezeRowSchema>;
 
 const canonical = (value: unknown) => canonicalize(JSON.parse(JSON.stringify(value)) as JsonValue);
 const hash = (value: string) => bytesToHex(sha256(new TextEncoder().encode(value)));
@@ -106,7 +106,7 @@ export function frozenEvaluationFromRun(snapshot: Record<string, unknown>) {
 export async function loadBidEvidenceFreeze(database: DB, year: number) {
   const raw = await database.get(sql`SELECT * FROM bid_evidence_freezes WHERE bid_year=${year}`);
   if (!raw) return null;
-  const stored = FreezeRow.parse(raw);
+  const stored = BidEvidenceFreezeRowSchema.parse(raw);
   const row = {
     ...stored,
     evaluation_json: decodeBidEvidenceDocument(stored.evaluation_json),
@@ -124,7 +124,10 @@ export async function loadBidEvidenceFreeze(database: DB, year: number) {
     row.credential_sha256 !== credentialSha256
   )
     throw new Error('bid_evidence_freeze_integrity_failed');
-  const sourceImports = z.array(SourceImport).min(1).parse(JSON.parse(row.source_imports_json));
+  const sourceImports = z
+    .array(BidEvidenceSourceImportSchema)
+    .min(1)
+    .parse(JSON.parse(row.source_imports_json));
   if (sourceImports.some((source) => Date.parse(source.acceptedAt) > APPROVED_2026_CUTOFF_MS))
     throw new Error('bid_evidence_freeze_source_after_cutoff');
   return { row, evaluation, sourceImports };

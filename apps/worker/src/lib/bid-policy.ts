@@ -21,7 +21,8 @@ import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import { isFinal2026ManagedConfiguration } from './2026-opportunity-inventory.js';
 import { assignmentTermReviewBlocksPurpose, evaluateAssignmentTerms } from './assignment-terms.js';
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
-import { APPROVED_2026_CUTOFF_AT, loadBidEvidenceFreeze } from './bid-evidence-freeze.js';
+import { APPROVED_2026_CUTOFF_AT, type loadBidEvidenceFreeze } from './bid-evidence-freeze.js';
+import { loadPinnedBidEvidenceFreeze } from './bid-evidence-reviewed-update-storage.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { type BidOrdinalDatasetRow, projectBidOrdinals } from './bid-ordinal-evidence.js';
 import {
@@ -1202,7 +1203,7 @@ export type BidEvaluationPreparation =
   | { ok: true; evaluation: BidEvaluation; coverage: RuleBookCoverage }
   | Extract<BidSessionPolicySnapshotPreparation, { ok: false }>;
 
-async function loadPersistedBidEvaluationMaterial(
+export async function loadPersistedBidEvaluationMaterial(
   db: DB,
   policy: ConfiguredBidYearPolicy,
   sourceDecisions?: BidDefinitionContent['sourceDecisions'],
@@ -2094,7 +2095,7 @@ export async function prepareConfiguredBidPolicySnapshot(
   const freeze = policy.settings.v === 3 ? policy.settings.evidenceFreeze : undefined;
   if (freeze) {
     try {
-      const saved = await loadBidEvidenceFreeze(db, policy.bidYear);
+      const saved = await loadPinnedBidEvidenceFreeze(db, policy.bidYear, freeze.freezeId);
       const serial = (value: unknown) =>
         canonicalize(JSON.parse(JSON.stringify(value)) as JsonValue);
       const materialWithoutVersion = (value: BidEvaluation['ruleBookMaterial']) => ({
@@ -2115,6 +2116,10 @@ export async function prepareConfiguredBidPolicySnapshot(
         freeze.credentialSnapshot.sha256 !== saved.row.credential_sha256 ||
         freeze.sourceVersionId !== saved.row.source_version_id ||
         freeze.sourceVersionSha256 !== saved.row.source_version_sha256 ||
+        serial(freeze.reviewedUpdate ?? null) !== serial(saved.reviewedUpdate ?? null) ||
+        (saved.reviewedUpdate !== undefined &&
+          serial(definitionContent?.sourceDecisions) !== serial(saved.sourceDecisions)) ||
+        (freeze.reviewedUpdate !== undefined && freeze.derivation !== undefined) ||
         freeze.evidenceCutoffAt !== APPROVED_2026_CUTOFF_AT ||
         freeze.personnelSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
         freeze.credentialSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
@@ -2131,6 +2136,22 @@ export async function prepareConfiguredBidPolicySnapshot(
         material.coverage.valid !== true
       )
         return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
+      if (saved.reviewedUpdate !== undefined && mode === 'live') {
+        const credentials = JSON.parse(saved.row.credential_source_json) as Pick<
+          BidEvaluationEvidence,
+          'qualificationHolds' | 'qualificationEventRows'
+        >;
+        const holds = unresolvedQualificationHolds(
+          credentials.qualificationHolds,
+          credentials.qualificationEventRows.map((event) => ({
+            ...event,
+            createdAt: new Date(event.createdAt).getTime(),
+          })),
+          policy.settings.v === 3 ? policy.settings.credentialEvaluationOn : '',
+        );
+        if (holds.length > 0)
+          return { ok: false, code: 'credential_import_dispute_requires_review' };
+      }
       let frozenEvaluation = saved.evaluation;
       if (freeze.derivation !== undefined) {
         if (!definitionContent || serial(definitionContent.settings) !== serial(policy.settings))
