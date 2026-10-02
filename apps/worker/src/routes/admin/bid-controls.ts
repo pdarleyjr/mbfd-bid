@@ -294,6 +294,25 @@ router.get('/:id/results', async (c) => {
           canonical?.aDay?.picks.find((pick) => pick.memberId === fill.memberId)?.aDay ??
           fill.aDay ??
           null,
+        ...((canonical?.live?.corrections ?? []).some(
+          (entry) => entry.before.fill.memberId === fill.memberId,
+        )
+          ? {
+              correctionLineage: (canonical?.live?.corrections ?? [])
+                .filter((entry) => entry.before.fill.memberId === fill.memberId)
+                .map((entry) => ({
+                  commandId: entry.commandId,
+                  originalCommandId: entry.originalCommandId,
+                  originalADayCommandId: entry.originalADayCommandId,
+                  originalBidId: entry.originalBidId,
+                  replacementBidId: entry.after?.fill.bidId ?? null,
+                  sequence: entry.sequence,
+                  reason: entry.reason,
+                  before: entry.before,
+                  after: entry.after,
+                })),
+            }
+          : {}),
       };
     }),
     completion: { verified: official.ok, blockers: official.ok ? [] : [official.error] },
@@ -681,7 +700,7 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
         : 'skip_defer'
       : command.data.type === 'live.record_selection' || command.data.type === 'live.record_a_day'
         ? 'record_selection'
-        : command.data.type === 'live.amend_selection'
+        : command.data.type === 'live.amend_selection' || command.data.type === 'live.correct_bid'
           ? 'amend_selection'
           : command.data.type === 'live.force_selection'
             ? 'force'

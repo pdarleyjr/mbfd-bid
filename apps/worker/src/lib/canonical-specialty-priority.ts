@@ -13,6 +13,7 @@ export function unresolvedSpecialtyPriority(input: {
   memberId: number;
   positionId: string;
   rule: PositionRule;
+  requestContext?: { specialtyId: string; positionId: string; requesterMemberId: number };
 }): { specialtyId: string; candidateMemberIds: number[] }[] {
   if (input.snapshot.settings.v !== 3) throw new Error('LIVE_POLICY_MISMATCH');
   const policies = (input.snapshot.settings.livePolicy.annualOperations?.specialties ?? []).filter(
@@ -44,9 +45,12 @@ export function unresolvedSpecialtyPriority(input: {
   return policies.map((policy) => {
     const active = input.state.live?.specialty;
     const requesterMemberId =
-      active?.specialtyId === policy.id && active.positionId === input.positionId
-        ? active.suspendedBidderId
-        : input.memberId;
+      input.requestContext?.specialtyId === policy.id &&
+      input.requestContext.positionId === input.positionId
+        ? input.requestContext.requesterMemberId
+        : active?.specialtyId === policy.id && active.positionId === input.positionId
+          ? active.suspendedBidderId
+          : input.memberId;
     const ranked = rankFrozenSpecialtyCandidates({
       policy,
       evaluationOn: input.snapshot.credentialEvaluationOn as string,

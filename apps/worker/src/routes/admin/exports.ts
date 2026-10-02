@@ -156,6 +156,7 @@ router.get('/roster-data', async (c) => {
       member_id: string | null;
       member_name: string | null;
       member_rank: string | null;
+      a_day: string | null;
       rsc_seniority: number | null;
     }>
   >();
@@ -183,6 +184,12 @@ router.get('/roster-data', async (c) => {
       member_id: memberId,
       member_name: memberName,
       member_rank: member?.rank ?? null,
+      a_day:
+        bid && canonical
+          ? (canonical.aDay?.picks.find((pick) => pick.memberId === bid.memberId)?.aDay ??
+            canonical.fills[p.id]?.aDay ??
+            null)
+          : null,
       rsc_seniority: rscSeniority,
     };
     const existing = stationMap.get(p.station);
