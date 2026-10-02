@@ -984,6 +984,7 @@ export function AnnualLiveControls(props: Props) {
           allowed={state.admin_override_allowed === true}
           memberIds={state.admin_override_member_ids ?? []}
           positionIds={state.admin_override_position_ids ?? []}
+          opportunityPools={state.opportunity_pools}
           members={props.members}
           positions={props.positions ?? []}
           fills={state.fills}

@@ -126,6 +126,7 @@ beforeEach(() => {
     allowed: true,
     memberIds: [17, 18, 19, 19],
     positionIds: ['D101', 'A101', 'B105', 'C103'],
+    opportunityPools: [],
     members,
     positions,
     fills: {},
@@ -232,6 +233,27 @@ async function reviewAndAcknowledge() {
   );
 }
 describe('audited administrator override', () => {
+  it('binds the resolved pooled opening to the same pool ID in preview and confirmation', async () => {
+    props = {
+      ...props,
+      opportunityPools: [
+        { id: 'synthetic-combat-float', positionIds: ['C103'], resolvedPositionId: 'C103' },
+      ],
+    };
+    await mount();
+    await draftAward('19', 'C103');
+    await reviewAndAcknowledge();
+    expect(previews[0]).toMatchObject({
+      positionId: 'C103',
+      pool: { poolId: 'synthetic-combat-float' },
+    });
+    expect(commands).toHaveLength(0);
+    await settle(() => button('Confirm administrator selection').click());
+    expect(commands[0]).toMatchObject({
+      positionId: 'C103',
+      pool: { poolId: 'synthetic-combat-float' },
+    });
+  });
   it('permits a pending A-Day member to be skipped without requiring a correction', async () => {
     props = { ...props, fills: { A101: { member_id: 17 } } };
     await mount();

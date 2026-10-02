@@ -39,6 +39,9 @@ interface Props {
   allowed: boolean;
   memberIds: readonly number[];
   positionIds: readonly string[];
+  opportunityPools:
+    | readonly { id: string; positionIds: string[]; resolvedPositionId: string | null }[]
+    | undefined;
   members: Record<string, MemberLite>;
   positions: readonly PositionMeta[];
   fills: Record<string, { member_id: number }>;
@@ -127,6 +130,10 @@ export function AdministratorOverride(props: Props) {
   )?.[0];
   const termRight =
     draft.memberId === null ? undefined : props.termParticipation?.[String(draft.memberId)];
+  const selectedPool = props.opportunityPools?.find(
+    (pool) =>
+      pool.resolvedPositionId === draft.positionId && pool.positionIds.includes(draft.positionId),
+  );
   const positionOptions = props.positions.filter(
     (position) =>
       (!position.bidParticipation || position.bidParticipation === 'BIDDABLE') &&
@@ -164,6 +171,7 @@ export function AdministratorOverride(props: Props) {
     props.sequence,
     draft,
     termRight?.assignmentId,
+    selectedPool?.id,
   ]);
   const reviewed = review?.fingerprint === fingerprint ? review.preview : null;
   const draftRef = useRef(fingerprint);
@@ -207,7 +215,11 @@ export function AdministratorOverride(props: Props) {
       evidenceReference: null,
       memberId: draft.memberId,
       ...(draft.action === 'AWARD'
-        ? { positionId: draft.positionId, ...(requiresADay ? { aDay: draft.aDay } : {}) }
+        ? {
+            positionId: draft.positionId,
+            ...(requiresADay ? { aDay: draft.aDay } : {}),
+            ...(selectedPool ? { pool: { poolId: selectedPool.id } } : {}),
+          }
         : {
             disposition: draft.action === 'DEFER_STAGE' ? 'DEFER' : draft.action,
             ...(draft.action === 'DEFER_STAGE' ? { deferStageId: props.currentStageId } : {}),
