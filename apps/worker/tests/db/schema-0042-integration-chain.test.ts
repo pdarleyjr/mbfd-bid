@@ -113,9 +113,45 @@ function expectAnnualBidStructureCloneStateIntegrity(sqlite: Database.Database):
   ).toHaveLength(1);
 }
 
-describe('integration migration chain 0038 through 0070', () => {
+function expectReviewedUpdateIntegrity(sqlite: Database.Database): void {
+  expect(
+    sqlite
+      .prepare(
+        "SELECT name FROM sqlite_schema WHERE type='table' AND name IN ('bid_evidence_reviewed_updates','bid_reviewed_update_source_revision') ORDER BY name",
+      )
+      .all(),
+  ).toEqual([
+    { name: 'bid_evidence_reviewed_updates' },
+    { name: 'bid_reviewed_update_source_revision' },
+  ]);
+  const triggers = sqlite
+    .prepare("SELECT name FROM sqlite_schema WHERE type='trigger' ORDER BY name")
+    .all()
+    .map((row) => (row as { name: string }).name);
+  expect(triggers).toEqual(
+    expect.arrayContaining([
+      'bid_evidence_reviewed_updates_no_update',
+      'bid_evidence_reviewed_updates_no_delete',
+      'bid_evidence_reviewed_updates_no_replace',
+      'reviewed_update_import_insert',
+      'reviewed_update_import_update',
+      'reviewed_update_import_delete',
+      'reviewed_update_row_insert',
+      'reviewed_update_row_update',
+      'reviewed_update_row_delete',
+    ]),
+  );
+  expect(sqlite.prepare('SELECT COUNT(*) AS n FROM bid_evidence_reviewed_updates').get()).toEqual({
+    n: 0,
+  });
+  expect(sqlite.prepare('SELECT * FROM bid_reviewed_update_source_revision').all()).toEqual([
+    { id: 1, revision: 0 },
+  ]);
+}
+
+describe('integration migration chain 0038 through 0071', () => {
   it('is gap-free and applies from a fresh database through the final candidate', () => {
-    expect(migrationFiles().slice(-33)).toEqual([
+    expect(migrationFiles().slice(-34)).toEqual([
       '0038_live_policy_participation_and_amendments.sql',
       '0039_restore_rule_book_participation_guards.sql',
       '0040_annual_bid_operations.sql',
@@ -149,14 +185,16 @@ describe('integration migration chain 0038 through 0070', () => {
       '0068_annual_bid_structure_clone_state.sql',
       '0069_bid_evidence_freeze.sql',
       '0070_credential_anomaly_review_revision.sql',
+      '0071_bid_evidence_reviewed_updates.sql',
     ]);
 
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
-    const applied = applyThrough(sqlite, '0070_credential_anomaly_review_revision.sql');
-    expect(applied.at(-1)).toBe('0070_credential_anomaly_review_revision.sql');
+    const applied = applyThrough(sqlite, '0071_bid_evidence_reviewed_updates.sql');
+    expect(applied.at(-1)).toBe('0071_bid_evidence_reviewed_updates.sql');
     expectFinalIntegrity(sqlite);
     expectAnnualBidStructureCloneStateIntegrity(sqlite);
+    expectReviewedUpdateIntegrity(sqlite);
 
     // A D1 migration ledger would record every applied filename; a second
     // discovery sees no pending migration rather than replaying SQL files.
@@ -289,6 +327,7 @@ describe('integration migration chain 0038 through 0070', () => {
     );
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM annual_plan_reviews').get()).toEqual({ n: 0 });
     expectFinalIntegrity(sqlite);
+    expectReviewedUpdateIntegrity(sqlite);
     sqlite.close();
   });
 
