@@ -6,7 +6,9 @@ import {
   applyPick,
   canPick,
   computeAllMeters,
+  computeCapacityMeter,
   initADayState,
+  isOfficer,
   nextBidder,
   phase2BidOrder,
 } from '@mbfd/a-day';
@@ -222,6 +224,22 @@ export function evaluateFrozenADays(
           `${validation.reasonLabel} The administrator is explicitly overriding this frozen A-Day staffing rule.`,
         );
     }
+    if (
+      input.adminOverrideMemberId === pick.memberId &&
+      pick.shift !== 'D' &&
+      execution.officersPerGroup !== null
+    ) {
+      const currentOfficers = computeCapacityMeter(engine, pick.shift, pick.aDay).officers;
+      const member = engine.membersById.get(pick.memberId);
+      const projectedOfficers =
+        currentOfficers + Number(member !== undefined && isOfficer(member.rank));
+      if (projectedOfficers > execution.officersPerGroup)
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          'A_DAY_POLICY_DEVIATION:OFFICER_INVARIANT_VIOLATED',
+          `${pick.shift}-${pick.aDay} officers exceed the frozen total (${projectedOfficers}/${execution.officersPerGroup}). The administrator is explicitly approving the excess.`,
+        );
+    }
     engine = applyPick(engine, pick);
     return { ok: true };
   };
@@ -259,8 +277,27 @@ export function evaluateFrozenADays(
       if (
         execution.officersPerGroup !== null &&
         entry.meter.officers !== execution.officersPerGroup
-      )
-        return { ok: false, code: 'A_DAY_OFFICER_TOTAL_NOT_MET' };
+      ) {
+        const excess = entry.meter.officers - execution.officersPerGroup;
+        const approvedExcess = [...engine.picksByMember.values()].filter((pick) => {
+          const member = engine.membersById.get(pick.memberId);
+          const fill = Object.values(state.fills).find(
+            (candidate) => candidate.memberId === pick.memberId,
+          );
+          return (
+            pick.shift === entry.shift &&
+            pick.aDay === entry.group &&
+            member !== undefined &&
+            isOfficer(member.rank) &&
+            approvedCapacityDeparture(pick) &&
+            fill?.aDayOverride?.warningCodes.includes(
+              'A_DAY_POLICY_DEVIATION:OFFICER_INVARIANT_VIOLATED',
+            )
+          );
+        }).length;
+        if (excess <= 0 || approvedExcess < excess)
+          return { ok: false, code: 'A_DAY_OFFICER_TOTAL_NOT_MET' };
+      }
     }
   }
   return {

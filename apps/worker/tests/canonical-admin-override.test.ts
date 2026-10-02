@@ -15,6 +15,7 @@ import {
 } from '../src/commands/canonical-command-service.js';
 import { type BidSessionState, emptyBidSessionState } from '../src/durable/bid-session-state.js';
 import { initializeAnnualOperations } from '../src/lib/annual-bid-operations.js';
+import { evaluateFrozenADays } from '../src/lib/frozen-a-day.js';
 
 const migrations = resolve(fileURLToPath(new URL('.', import.meta.url)), '../migrations');
 const sessionId = 'synthetic-admin-override';
@@ -769,5 +770,70 @@ describe('canonical administrator override', () => {
       true,
     );
     expect(invalid.result).toMatchObject({ kind: 'rejected', code: 'INVALID_A_DAY_FOR_SHIFT' });
+  });
+
+  it('finalizes officer excess only when the exact offending picks retain acknowledged officer provenance', async () => {
+    seed(true, 10, 0);
+    const first = await confirmed(
+      initialState(),
+      command('live.record_selection', {
+        memberId: 42,
+        positionId: 'A101',
+        aDay: 'G1',
+        adminOverride: override,
+      }),
+    );
+    const second = await confirmed(
+      first.state,
+      command(
+        'live.record_selection',
+        {
+          memberId: 43,
+          positionId: 'A103',
+          aDay: 'G1',
+          adminOverride: override,
+        },
+        1,
+      ),
+    );
+    const third = await confirmed(
+      second.state,
+      command(
+        'live.record_selection',
+        {
+          memberId: 44,
+          positionId: 'A102',
+          aDay: 'G2',
+          adminOverride: override,
+        },
+        2,
+      ),
+    );
+    expect(third.state.currentPhase).toBe('complete');
+    const finalized = await execute(third.state, command('live.complete_session', {}, 3));
+    expect(finalized.result.kind).toBe('accepted');
+    expect(finalized.canonicalState?.annual?.completion).not.toBeNull();
+    const row = sqlite.prepare('SELECT snapshot_json FROM bid_session_policy_snapshots').get() as {
+      snapshot_json: string;
+    };
+    const snapshot = BidSessionPolicySnapshotSchema.parse(JSON.parse(row.snapshot_json));
+    if (snapshot.v !== 3) throw new Error('synthetic frozen snapshot missing');
+    const unapproved = {
+      ...third.state,
+      fills: Object.fromEntries(
+        Object.entries(third.state.fills).map(([id, fill]) => {
+          const { aDayOverride: _approval, ...ordinary } = fill;
+          return [id, ordinary];
+        }),
+      ),
+    };
+    expect(
+      evaluateFrozenADays(snapshot, unapproved, {
+        nowMs: 1_700_000_000_000,
+        actorId: 99,
+        forced: false,
+        finalize: true,
+      }),
+    ).toMatchObject({ ok: false, code: 'OFFICER_INVARIANT_VIOLATED' });
   });
 });
