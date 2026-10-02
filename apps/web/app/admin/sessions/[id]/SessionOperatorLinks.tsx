@@ -1,3 +1,4 @@
+import { presentationHref } from '@/lib/presentation-link';
 import type { Route } from 'next';
 import Link from 'next/link';
 
@@ -16,6 +17,14 @@ function withSession(
 export function SessionOperatorLinks({ sessionId }: { sessionId: string }) {
   return (
     <nav aria-label="Session evidence actions" className="mt-5 flex flex-wrap gap-3">
+      <a
+        href={presentationHref(sessionId)}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex min-h-11 items-center rounded border border-border px-4 py-2 text-sm font-semibold"
+      >
+        Open session presentation
+      </a>
       <Link
         href={withSession('/admin/bid', sessionId)}
         className="inline-flex min-h-11 items-center rounded border border-border px-4 py-2 text-sm font-semibold"

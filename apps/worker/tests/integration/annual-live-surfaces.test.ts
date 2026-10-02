@@ -430,6 +430,92 @@ describe('annual live operator and presentation surfaces', () => {
     expect(JSON.stringify(body)).not.toContain('contact_history');
   });
 
+  it.each([
+    ['bidSessionId', 'LIVE'],
+    ['bidSessionId', 'HOLD'],
+    ['bidSessionId', 'OFF'],
+    ['session_id', 'HOLD'],
+    ['session', 'LIVE'],
+  ] as const)(
+    'reads only the selected Mock presentation with %s and %s without changing either Bid',
+    async (queryName, mode) => {
+      await h.db.run(
+        "INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,is_mock) VALUES (?,2027,2,'position_bid',2,180,2,0,1)",
+        [MOCK_SESSION],
+      );
+      await h.db.run(
+        'INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) SELECT ?,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+        [MOCK_SESSION, SESSION],
+      );
+      await h.db.run(
+        "INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) SELECT ?,current_seq,json_set(state_json, '$.bidSessionId', ?, '$.live.presentation.mode', ?),last_command_id,created_at,updated_at FROM canonical_bid_session_state WHERE bid_session_id=?",
+        [MOCK_SESSION, MOCK_SESSION, mode, SESSION],
+      );
+      const readState = async () => ({
+        sessions: (await h.db.run('SELECT * FROM bid_sessions ORDER BY id')).results,
+        canonical: (
+          await h.db.run('SELECT * FROM canonical_bid_session_state ORDER BY bid_session_id')
+        ).results,
+        snapshots: (
+          await h.db.run('SELECT * FROM bid_session_policy_snapshots ORDER BY bid_session_id')
+        ).results,
+        commands: (await h.db.run('SELECT * FROM bid_command_receipts ORDER BY command_id'))
+          .results,
+      });
+      const before = await readState();
+      const response = await app.fetch(
+        new Request(`http://x/api/presentation?${queryName}=${MOCK_SESSION}`, {
+          headers: { Authorization: `Bearer ${await token('member', 1)}` },
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        mode,
+        sequence: 8,
+        session: { id: MOCK_SESSION, bid_year: 2027, is_mock: true },
+      });
+      if (mode === 'OFF') {
+        expect(body).toEqual({
+          mode: 'OFF',
+          sequence: 8,
+          session: { id: MOCK_SESSION, bid_year: 2027, is_mock: true },
+        });
+      } else {
+        expect(body).toMatchObject({
+          current_bidder: { member_id: mode === 'HOLD' ? 1 : 2 },
+          progress: { filled: mode === 'HOLD' ? 0 : 1, total: 1 },
+        });
+      }
+      expect(JSON.stringify(body)).not.toContain('credential');
+      expect(JSON.stringify(body)).not.toContain('contact_history');
+      expect(await readState()).toEqual(before);
+
+      const defaultResponse = await app.fetch(
+        new Request('http://x/api/presentation', {
+          headers: { Authorization: `Bearer ${await token('member', 1)}` },
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(await defaultResponse.json()).toMatchObject({
+        mode: 'HOLD',
+        session: { id: SESSION, is_mock: false },
+      });
+    },
+  );
+
+  it('rejects an unknown explicit presentation session instead of substituting the Real Bid', async () => {
+    const response = await app.fetch(
+      new Request('http://x/api/presentation?session_id=missing-mock', {
+        headers: { Authorization: `Bearer ${await token('member', 1)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'presentation_state_unavailable' });
+  });
+
   it('starts the first specialty command from initialized DO state before a canonical row exists', async () => {
     const firstCommandSession = '01HZZ000000000ANNUALLIVE2';
     const stateRow = await h.db.run(

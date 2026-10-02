@@ -17,6 +17,7 @@ import { BidSessionSetup } from './BidSessionSetup';
 import { LiveCommandBar } from './LiveCommandBar';
 import { ManualPickBar } from './ManualPickBar';
 import { ManualPickProvider } from './ManualPickContext';
+import { SessionPresentationLink } from './SessionPresentationLink';
 
 interface BidOrderEntry {
   ordinal: number;
@@ -67,6 +68,9 @@ export function AdminBidShell(props: Props) {
     >
       <BidOperatorProvider currentBidderId={props.currentBidderId}>
         <div className="flex h-full min-h-[calc(100vh-57px)] flex-col">
+          <div className="border-b border-border bg-card px-3 py-2 sm:px-5">
+            <SessionPresentationLink sessionId={props.bidSessionId} isMock={props.isMock} />
+          </div>
           {!configuring && (
             <LiveCommandBar
               bidSessionId={props.bidSessionId}

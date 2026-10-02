@@ -145,7 +145,7 @@ bid.get('/me', async (c) => {
 bid.get('/presentation', async (c) => {
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
-  const bidSessionId = await resolveBidSessionId(c, c.req.query('bidSessionId'));
+  const bidSessionId = await resolveBidSessionId(c, readSessionQuery(c));
   if (bidSessionId === null) return c.json({ mode: 'OFF', session: null });
   const [canonical, session, frozen] = await Promise.all([
     loadCanonicalBidSessionState(c.env.DB, bidSessionId),
@@ -158,11 +158,15 @@ bid.get('/presentation', async (c) => {
   ]);
   if (session === undefined || !frozen.ok)
     return c.json({ error: 'presentation_state_unavailable' }, 409);
-  if (canonical === null)
-    return c.json({ mode: 'OFF', session: { id: bidSessionId, bid_year: session.bidYear } });
+  const presentationSession = {
+    id: bidSessionId,
+    bid_year: session.bidYear,
+    is_mock: session.isMock,
+  };
+  if (canonical === null) return c.json({ mode: 'OFF', session: presentationSession });
   const presentation = canonical.live?.presentation ?? null;
   if (presentation === null || presentation.mode === 'OFF')
-    return c.json({ mode: 'OFF', session: { id: bidSessionId, bid_year: session.bidYear } });
+    return c.json({ mode: 'OFF', sequence: canonical.lastSeq, session: presentationSession });
   const held = presentation.mode === 'HOLD' ? presentation.heldProjection : null;
   const fills = held?.fills ?? canonical.fills;
   const order = held?.bidOrder ?? canonical.bidOrder;
@@ -209,7 +213,7 @@ bid.get('/presentation', async (c) => {
     mode: presentation.mode,
     held_at_sequence: presentation.heldAtSeq,
     sequence: canonical.lastSeq,
-    session: { id: bidSessionId, bid_year: session.bidYear, is_mock: session.isMock },
+    session: presentationSession,
     current_stage: {
       id: currentStageId,
       label:

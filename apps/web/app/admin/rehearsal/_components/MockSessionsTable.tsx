@@ -10,6 +10,7 @@ import { TableCell } from '@/components/ui/table';
 // auto-bid, verify audit chain). Action affordances are delegated to the
 // AutoBidButton client island so the table itself stays a Server Component.
 
+import { presentationHref } from '@/lib/presentation-link';
 import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactElement } from 'react';
@@ -99,6 +100,14 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
                   >
                     Open mock board
                   </Link>
+                  <a
+                    href={presentationHref(s.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-11 items-center rounded border border-border px-3 py-1 text-xs font-medium underline"
+                  >
+                    Open Mock presentation
+                  </a>
                   <ResetMockButton sessionId={s.id} />
                   {s.currentPhase !== 'complete' ? <CloseStaleMockButton sessionId={s.id} /> : null}
                   <AutoBidButton
