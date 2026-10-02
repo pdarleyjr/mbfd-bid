@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LATEST_2026_ANNUAL_HASH,
+  LATEST_2026_MASTER_HASH,
   OCTOBER1_2026_ANNUAL_HASH,
   OCTOBER1_2026_MASTER_HASH,
   latest2026ReviewedSourceUpdateIssue,
+  withOctober1ReviewedSourceDecision,
 } from '../../src/lib/2026-latest-source-cutoff.js';
 
 function reviewedInput() {
@@ -149,4 +152,62 @@ describe('October 1 reviewed 2026 source update acceptance', () => {
   it('allows reviewed acceptance without imposing an invented participant count or seat decision', () => {
     expect(latest2026ReviewedSourceUpdateIssue(reviewedInput())).toBeNull();
   });
+});
+
+describe('server-owned October source decision provenance', () => {
+  const decisions = () => [
+    {
+      issueId: '2026-latest-substantive-ranks',
+      status: 'RESOLVED',
+      sourceRef: `${LATEST_2026_MASTER_HASH}; ${LATEST_2026_ANNUAL_HASH}`,
+      title: 'Synthetic approved ranks',
+      decision: 'Preserve the approved personnel facts',
+      effectiveOn: '2026-09-30',
+    },
+    {
+      issueId: 'synthetic-other-decision',
+      status: 'OPEN',
+      sourceRef: 'Synthetic policy evidence',
+      title: 'An unrelated decision',
+      decision: 'Still requires an administrator decision',
+      effectiveOn: '2026-09-30',
+    },
+  ];
+
+  it('adds exact manifest provenance to only the already resolved source decision', () => {
+    const original = decisions();
+    const before = JSON.stringify(original);
+    const transformed = withOctober1ReviewedSourceDecision(original);
+    expect(transformed).not.toBeNull();
+    if (!transformed) throw new Error('Missing transformed source decisions');
+    expect(transformed[0]?.sourceRef).toContain(OCTOBER1_2026_MASTER_HASH);
+    expect(transformed[0]?.sourceRef).toContain(OCTOBER1_2026_ANNUAL_HASH);
+    expect(transformed[0]?.sourceRef).toContain('2026_BID_Credentials_Version_5_ (revision 5)');
+    expect({ ...transformed[0], sourceRef: original[0]?.sourceRef }).toEqual(original[0]);
+    expect(transformed[1]).toEqual(original[1]);
+    expect(JSON.stringify(original)).toBe(before);
+    const input = reviewedInput();
+    input.sourceDecisions = transformed;
+    expect(latest2026ReviewedSourceUpdateIssue(input)).toBeNull();
+  });
+
+  it('is idempotent without extending or changing any decision facts', () => {
+    const once = withOctober1ReviewedSourceDecision(decisions());
+    if (!once) throw new Error('Missing initial source transformation');
+    expect(withOctober1ReviewedSourceDecision(once)).toEqual(once);
+  });
+
+  it.each(['missing', 'open', 'duplicate', 'unaccepted-provenance'])(
+    'cannot create source authority from %s decisions',
+    (failure) => {
+      const input = decisions();
+      const current = input[0];
+      if (!current) throw new Error('Missing synthetic source decision');
+      if (failure === 'missing') input.shift();
+      if (failure === 'open') current.status = 'OPEN';
+      if (failure === 'duplicate') input.push({ ...current });
+      if (failure === 'unaccepted-provenance') current.sourceRef = 'Unverified source assertion';
+      expect(withOctober1ReviewedSourceDecision(input)).toBeNull();
+    },
+  );
 });

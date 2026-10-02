@@ -47,6 +47,11 @@
   "credentialVersion4To5": {
     "affectedEmployees": 24,
     "addedCredentialKeys": 13,
+    "addedKeysWithUniqueOriginalMemberAndCatalogBinding": 13,
+    "addedKeysOriginalIntervalReviewClassification": {
+      "NEW_QUALIFICATION": 9,
+      "FILL_MISSING_DATE": 4
+    },
     "omittedPublicSafetyDiverKeys": 13,
     "omittedKeysPreviouslyActiveAtSeptember30": 0,
     "omittedKeysAlreadyExpiredAtOctober1": 13,
@@ -74,6 +79,7 @@
     "marineScoring": "Existing policy scorer already awards one DRI-or-PADI preference plus one Car Seat preference, capped at two. Generic source PSD or Dive Rescue 1 does not prove the policy issuer credential.",
     "workbookEligibility": "Unchanged Marine rank/probation formulas reference credential columns; final Include is not an eligibility oracle. Optional credits cannot substitute for required qualifications.",
     "sourceReview": "Exact hashes, revision, worksheet, row and employee counts plus complete audited approved/rejected row review are required. This manifest is not row approval.",
+    "unresolvedQualificationHolds": "Normal import review classifies the unresolved member/qualification pair as CONFLICT; safe bulk apply and blanket adverse apply cannot create an event to clear it. Later individually approved applicable dated evidence permits normal renewal.",
     "historicalEvidence": "Original September 30 freeze, versions and session pins remain immutable. Applying October 1 evidence requires a separately reviewed append-only successor capture.",
     "productionImportsOrWrites": 0,
     "realBidReadiness": "Not established by this comparison or manifest. Existing policy and person-specific evidence decisions remain applicable."

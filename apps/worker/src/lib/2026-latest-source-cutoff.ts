@@ -16,6 +16,34 @@ export const OCTOBER1_2026_MASTER_HASH =
 export const OCTOBER1_2026_ANNUAL_HASH =
   '8af7fb3e4f1e6a557fac3171ad6ccccca259afe4a1bdac0ce229e2c2674391e9';
 
+const OCTOBER1_SOURCE_PROVENANCE = `October 1 reviewed source update: MASTER sha256=${OCTOBER1_2026_MASTER_HASH}; Annual sha256=${OCTOBER1_2026_ANNUAL_HASH}; 2026_BID_Credentials_Version_5_ (revision 5). Personnel and position facts are unchanged; qualifications require separate approved evidence.`;
+
+/** Server-owned provenance transformation for the explicit update capture.
+ * Source admission and approved ledger checks happen separately. This cannot
+ * resolve an open decision, change a rank, or alter another policy decision. */
+export function withOctober1ReviewedSourceDecision<
+  T extends { issueId: string; status: string; sourceRef: string },
+>(sourceDecisions: readonly T[]): T[] | null {
+  const matches = sourceDecisions.filter(
+    (decision) => decision.issueId === '2026-latest-substantive-ranks',
+  );
+  const decision = matches[0];
+  if (matches.length !== 1 || decision?.status !== 'RESOLVED') return null;
+  const originalSource =
+    decision.sourceRef.includes(LATEST_2026_MASTER_HASH) &&
+    decision.sourceRef.includes(LATEST_2026_ANNUAL_HASH);
+  const updateSource =
+    decision.sourceRef.includes(OCTOBER1_2026_MASTER_HASH) &&
+    decision.sourceRef.includes(OCTOBER1_2026_ANNUAL_HASH);
+  if (!originalSource && !updateSource) return null;
+  return sourceDecisions.map((item) => ({
+    ...item,
+    ...(item.issueId === decision.issueId && !item.sourceRef.includes(OCTOBER1_SOURCE_PROVENANCE)
+      ? { sourceRef: `${item.sourceRef}; ${OCTOBER1_SOURCE_PROVENANCE}` }
+      : {}),
+  }));
+}
+
 interface SourceAcceptanceInput {
   versionNumber: number;
   sourceDecisions: readonly { issueId: string; status: string; sourceRef: string }[];
