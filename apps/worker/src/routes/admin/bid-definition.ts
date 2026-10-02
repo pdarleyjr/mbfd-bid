@@ -42,6 +42,11 @@ import {
   capture2026BidEvidenceFreeze,
   read2026BidEvidenceFreeze,
 } from '../../lib/bid-evidence-freeze-capture.js';
+import { loadReviewedBidEvidenceUpdate } from '../../lib/bid-evidence-reviewed-update-storage.js';
+import {
+  captureReviewedBidEvidenceUpdate,
+  previewReviewedBidEvidenceUpdate,
+} from '../../lib/bid-evidence-reviewed-update.js';
 import {
   BidProfileReviewRequestSchema,
   previewBidProfiles,
@@ -86,13 +91,15 @@ const SaveResult = z
   })
   .strict();
 const errorStatus = (error: string) =>
-  error === 'live_action_forbidden'
-    ? (403 as const)
-    : error === 'bid_year_not_found' || error === 'bid_version_not_found'
-      ? (404 as const)
-      : error.startsWith('invalid_') || error === 'bid_definition_year_mismatch'
-        ? (400 as const)
-        : (409 as const);
+  error === 'evidence_update_capture_failed'
+    ? (500 as const)
+    : error === 'live_action_forbidden'
+      ? (403 as const)
+      : error === 'bid_year_not_found' || error === 'bid_version_not_found'
+        ? (404 as const)
+        : error.startsWith('invalid_') || error === 'bid_definition_year_mismatch'
+          ? (400 as const)
+          : (409 as const);
 function mutationKey(key: string | undefined) {
   if (key === undefined) return { ok: false as const, error: 'idempotency_key_required' };
   if (!key || key !== key.trim() || key.length > 200)
@@ -134,6 +141,9 @@ for (const path of [
   '/:year/live-sessions',
   '/:year/reviewed-2026-candidate',
   '/:year/evidence-freeze',
+  '/:year/evidence-updates',
+  '/:year/evidence-updates/preview',
+  '/:year/evidence-updates/:freezeId',
   '/:year/marine-evidence-review',
 ]) {
   router.use(path, requireAdmin, yearContext);
@@ -196,6 +206,48 @@ router.get('/:year/evidence-freeze', async (c) => {
   if (c.get('bidYear') !== 2026) return c.json({ error: 'reviewed_2026_year_required' }, 400);
   const freeze = await read2026BidEvidenceFreeze(c.env.DB);
   return c.json({ bidYear: 2026, freeze });
+});
+router.get('/:year/evidence-updates/preview', async (c) => {
+  if (c.get('bidYear') !== 2026) return c.json({ error: 'invalid_evidence_update_year' }, 400);
+  const result = await previewReviewedBidEvidenceUpdate(c.env.DB, c.env.PORTAL_WRITEBACK_ENABLED);
+  return result.ok ? c.json(result) : c.json(result, errorStatus(result.error));
+});
+router.get('/:year/evidence-updates/:freezeId', async (c) => {
+  if (c.get('bidYear') !== 2026) return c.json({ error: 'invalid_evidence_update_year' }, 400);
+  try {
+    const saved = await loadReviewedBidEvidenceUpdate(
+      getDb(c.env.DB),
+      2026,
+      c.req.param('freezeId'),
+    );
+    return saved
+      ? c.json({ ok: true, ...saved.response })
+      : c.json({ error: 'evidence_update_not_found' }, 404);
+  } catch {
+    return c.json({ error: 'bid_evidence_reviewed_update_integrity_failed' }, 409);
+  }
+});
+router.post('/:year/evidence-updates', requireStepUpAuth(), async (c) => {
+  if (c.get('bidYear') !== 2026) return c.json({ error: 'invalid_evidence_update_year' }, 400);
+  const key = mutationKey(c.req.header('Idempotency-Key'));
+  if (!key.ok) return c.json({ error: key.error }, errorStatus(key.error));
+  try {
+    const result = await captureReviewedBidEvidenceUpdate(
+      c.env.DB,
+      {
+        key: key.key,
+        actorSubject: String(c.get('claims').sub),
+        actorId: c.get('claims').member_id ?? 0,
+        request: await c.req.json(),
+      },
+      c.env.PORTAL_WRITEBACK_ENABLED,
+    );
+    return result.ok
+      ? c.json({ ok: true, replayed: result.replayed, ...result.response })
+      : c.json(result, errorStatus(result.error));
+  } catch {
+    return c.json({ error: 'bid_evidence_reviewed_update_integrity_failed' }, 409);
+  }
 });
 router.post('/:year/evidence-freeze', requireStepUpAuth(), async (c) => {
   if (c.get('bidYear') !== 2026) return c.json({ error: 'reviewed_2026_year_required' }, 400);
