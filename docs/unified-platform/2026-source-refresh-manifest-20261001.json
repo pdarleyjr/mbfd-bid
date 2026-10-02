@@ -1,0 +1,81 @@
+{
+  "archive": {
+    "filename": "OneDrive_1_10-1-2026.zip",
+    "sha256": "9d233d862bb14150812f47afc805fd2b04290e7e408aca4480dab2be29cdc361",
+    "bytes": 3966576
+  },
+  "sourceFiles": [
+    {
+      "filename": "MASTER 2026 Bid Positions Selection V4.xlsx",
+      "sha256": "ab87dff9e920d97cfdc6ef401986a0ceb2ba14d99a61496d13fe75526f175d8b",
+      "bytes": 314109,
+      "sheetCount": 20,
+      "comparedStandaloneSha256": "a1bc6309bd7f565b98616226fd3cbe5fae6c6d7ce764188bdbfdd1eb8702e685",
+      "positionAndPersonnelCellsUnchanged": true,
+      "changedSummaryFormulaCount": 10,
+      "addedAssignedMemberFormulaCount": 1,
+      "totalEffectiveFormulaChanges": 11,
+      "testDataChangedValueCells": 565,
+      "testDataAddedCells": 8,
+      "cachedErrorCells": 53,
+      "cachedErrorCountChanged": false
+    },
+    {
+      "filename": "2026 Annual Bid Calculations v5.xlsx",
+      "sha256": "8af7fb3e4f1e6a557fac3171ad6ccccca259afe4a1bdac0ce229e2c2674391e9",
+      "bytes": 3652103,
+      "sheetCount": 50,
+      "comparedSeptember29Sha256": "37e6b2c65696eca2f8ce66c4d5a7ffc4e879264814ffc87725989c0b81ac451c",
+      "comparedStandaloneSha256": "9518fe83c229fe7bd3a9adb1a8a28da9e7c8d989de9a8a83eebea61e5ca2995c",
+      "selectedCredentialSheet": "2026_BID_Credentials_Version_5_",
+      "credentialRevision": 5,
+      "credentialRowCount": 3884,
+      "credentialEmployeeCount": 230,
+      "credentialEmployeeRankSetsChanged": 0,
+      "priorCredentialVersionsPreserved": [1, 2, 3, 4],
+      "requirementsSeniorityAndTeleStaffCellsUnchanged": true,
+      "changedFormulaRange": "Points!FP5:FP239",
+      "changedFormulaCount": 235,
+      "changedMemberPointRows": 37,
+      "changedDeckhandTotalRows": 32,
+      "deckhandRequiredTotalFiveRowsBeforeAndAfter": 18,
+      "changedDeckhandRequiredTotalFiveScores": 17,
+      "cachedErrorCells": 20,
+      "cachedErrorCountChanged": false
+    }
+  ],
+  "credentialVersion4To5": {
+    "affectedEmployees": 24,
+    "addedCredentialKeys": 13,
+    "omittedPublicSafetyDiverKeys": 13,
+    "omittedKeysPreviouslyActiveAtSeptember30": 0,
+    "omittedKeysAlreadyExpiredAtOctober1": 13,
+    "omissionProofScope": "Original immutable approved TargetSolutions lifecycle projected at 2026-10-01; every omitted source expiry matches an already expired approved interval. No current production ledger was queried.",
+    "addedCredentialNames": {
+      "Car Seat Technician": 4,
+      "Drone Operator Qualified-Part 107 sUAS": 3,
+      "State Certified Hazardous Materials Technician": 1,
+      "Instructor I": 1,
+      "Public Safety Diver": 1,
+      "Firesafety Inspector I": 1,
+      "Driver Engineer Qualified": 1,
+      "Fire Apparatus Operations (FFP-1302)": 1
+    },
+    "changedDateKeys": 2,
+    "openWaterIssueDate": { "before": "2000-06-02", "after": "1996-06-29" },
+    "publicSafetyDiverExpiration": { "before": "2099-05-07", "after": null },
+    "futurePublicSafetyDiver2029IntervalUnchanged": true,
+    "omissionCreatesRevocation": false,
+    "sourceDateCorrectionAutomaticallyClearsQualificationHold": false
+  },
+  "authorityBoundary": {
+    "analysis": "Read-only OpenXML formulas and cached results; no native workbook recalculation.",
+    "masterTestData": "Test examples only, not actual bid awards or roster authority.",
+    "marineScoring": "Existing policy scorer already awards one DRI-or-PADI preference plus one Car Seat preference, capped at two. Generic source PSD or Dive Rescue 1 does not prove the policy issuer credential.",
+    "workbookEligibility": "Unchanged Marine rank/probation formulas reference credential columns; final Include is not an eligibility oracle. Optional credits cannot substitute for required qualifications.",
+    "sourceReview": "Exact hashes, revision, worksheet, row and employee counts plus complete audited approved/rejected row review are required. This manifest is not row approval.",
+    "historicalEvidence": "Original September 30 freeze, versions and session pins remain immutable. Applying October 1 evidence requires a separately reviewed append-only successor capture.",
+    "productionImportsOrWrites": 0,
+    "realBidReadiness": "Not established by this comparison or manifest. Existing policy and person-specific evidence decisions remain applicable."
+  }
+}
