@@ -60,7 +60,7 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
     visual(
       'quick-start',
       'Saved 2026 Current Bid with highlighted version and Mock tab',
-      'Historical Version 9 capture. The final V4 Bid is Version 11; verify the current saved version before practice.',
+      'Historical Version 9 capture. The current saved Bid is Version 14; the original cutoff remains sealed in Version 11. Verify Version 14 before starting new practice.',
       ['Version 9 shown is historical.', 'Open Mock Bid for training.'],
     ),
     visual(
