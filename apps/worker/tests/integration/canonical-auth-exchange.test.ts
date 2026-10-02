@@ -1,3 +1,4 @@
+import { BID_SESSION_MAX_AGE_SEC } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { signJwt, verifyJwt } from '../../src/lib/jwt.js';
@@ -214,7 +215,7 @@ describe('POST /api/auth/revalidate', () => {
     );
   }
 
-  it('revalidates authorization without renewing the five-minute interactive freshness', async () => {
+  it('renews the bounded session while retaining original interactive-login provenance', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(hubSuccess({ role: 'admin' }));
     const response = await app().request(
       '/api/auth/revalidate',
@@ -226,6 +227,7 @@ describe('POST /api/auth/revalidate', () => {
     const claims = await verifyJwt(body.jwt, 'A'.repeat(64));
     expect(claims.fresh_auth_at).toBe(1_700_000_000);
     expect(claims.authz_checked_at).toBeGreaterThan(claims.fresh_auth_at);
+    expect(claims.exp - claims.iat).toBe(BID_SESSION_MAX_AGE_SEC);
     expect(claims).toMatchObject({ sub: 901, member_id: 555, security_version: 3, role: 'admin' });
   });
 

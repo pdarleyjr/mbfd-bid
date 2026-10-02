@@ -11,10 +11,13 @@ export function BidOperatorWorkspace({
   members,
   bidOrder,
   children,
+  preview = false,
 }: {
   members: Record<string, MemberLite>;
   bidOrder: readonly { memberId: number }[];
   children: ReactNode;
+  /** Before Start, member history is readable but nobody is up to select a position. */
+  preview?: boolean;
 }) {
   const operator = useBidOperator();
   const [query, setQuery] = useState('');
@@ -107,9 +110,22 @@ export function BidOperatorWorkspace({
         </details>
       </aside>
       <div className="min-w-0 space-y-3">
-        {selected && selected.id !== operator?.activeMemberId ? (
+        {!preview && selected && selected.id !== operator?.activeMemberId ? (
           <div className="border border-warning/30 bg-warning/10 p-3 text-sm">
-            <p>This member is waiting. Position selections belong to the member who is up now.</p>
+            <p>
+              {operator?.overrideAllowed
+                ? 'This member is waiting. Use an administrator override to bid for them out of order.'
+                : 'This member is waiting. Position selections belong to the member who is up now.'}
+            </p>
+            {operator?.overrideAllowed ? (
+              <button
+                type="button"
+                className="mt-2 mr-3 min-h-11 font-semibold underline"
+                onClick={() => operator.requestOverride()}
+              >
+                Bid for this member · Administrator override
+              </button>
+            ) : null}
             {operator?.activeMemberId != null ? (
               <button
                 type="button"

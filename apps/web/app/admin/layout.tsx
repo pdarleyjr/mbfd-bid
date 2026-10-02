@@ -14,7 +14,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <StepUpProvider
           initialStatus={{
             operatorKey: operatorSessionKey(claims),
-            freshAuthAtSec: claims.fresh_auth_at,
+            expiresAtSec: claims.exp,
             serverNowSec: Math.floor(Date.now() / 1000),
           }}
         >

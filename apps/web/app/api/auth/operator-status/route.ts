@@ -1,12 +1,20 @@
 import { cfEnv } from '@/lib/cf-env';
-import { JWT_COOKIE_NAME, JWT_COOKIE_OPTS } from '@/lib/cookies';
+import {
+  CSRF_COOKIE_NAME,
+  CSRF_COOKIE_OPTS,
+  JWT_COOKIE_NAME,
+  JWT_COOKIE_OPTS,
+  PIN_COOKIE_NAME,
+  PIN_COOKIE_OPTS,
+} from '@/lib/cookies';
 import { verifyJwt } from '@/lib/jwt';
 import { operatorSessionKey } from '@/lib/operator-step-up';
+import { isCsrfToken } from '@/lib/server-csrf';
 import { getWorkerBase } from '@/lib/worker-base';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-/** Hub revalidation is required even after the separate interactive login.
+/** Hub revalidation renews an existing, same-identity operator session.
  * This endpoint returns timing/identity only, never a browser access token. */
 export async function GET() {
   const store = await cookies();
@@ -39,10 +47,16 @@ export async function GET() {
   )
     return failure('invalid_session', 401);
   store.set(JWT_COOKIE_NAME, currentToken, JWT_COOKIE_OPTS);
+  // Keep existing companion cookies aligned with the renewed session.
+  // Do not recreate a missing PIN or rotate the console's cached CSRF nonce.
+  const pin = store.get(PIN_COOKIE_NAME)?.value;
+  if (pin === 'ok') store.set(PIN_COOKIE_NAME, pin, PIN_COOKIE_OPTS);
+  const csrf = store.get(CSRF_COOKIE_NAME)?.value;
+  if (isCsrfToken(csrf)) store.set(CSRF_COOKIE_NAME, csrf, CSRF_COOKIE_OPTS);
   return NextResponse.json(
     {
       operatorKey: operatorSessionKey(current),
-      freshAuthAtSec: current.fresh_auth_at,
+      expiresAtSec: current.exp,
       serverNowSec: Math.floor(Date.now() / 1000),
     },
     { headers: { 'cache-control': 'no-store' } },

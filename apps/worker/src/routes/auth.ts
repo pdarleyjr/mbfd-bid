@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import type { LoginResponse } from '@mbfd/shared';
+import { BID_SESSION_EXPIRES_IN, type LoginResponse } from '@mbfd/shared';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { constantTimeEqual, getBidPin, isValidPin } from '../lib/bid-pin';
@@ -77,7 +77,7 @@ auth.post(
         authz_checked_at: nowSec,
       },
       env.JWT_SIGNING_KEY,
-      '8h',
+      BID_SESSION_EXPIRES_IN,
     );
 
     console.info('[bid.auth]', {

@@ -71,8 +71,8 @@ export default async function PositionEditPage({
       <p className="mt-2 text-sm text-foreground">
         Edits apply only to configured draft rule book{' '}
         <span className="font-mono text-foreground">{binding.configuration.ruleBookVersion}</span>.
-        PATCH to the worker carries a step-up auth requirement; if the session is older than 5
-        minutes you will be prompted to re-authenticate.
+        PATCH to the worker requires current Hub authorization; an expired session requires normal
+        sign-in again.
       </p>
       {rule === null && (
         <p className="mt-4 rounded border border-warning/40 bg-warning-surface p-3 text-sm text-warning">

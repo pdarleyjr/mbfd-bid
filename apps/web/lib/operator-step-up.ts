@@ -1,7 +1,6 @@
 import type { JwtPayload } from '@mbfd/shared';
 
-/** Display/recovery timing only. Worker requireStepUp remains the command authority. */
-export const OPERATOR_STEP_UP_MAX_AGE_SEC = 300;
+/** Display/recovery timing only. Worker Hub revalidation remains the command authority. */
 export const BEFORE_OPERATOR_COMMAND = 'mbfd-before-operator-command';
 export const OPERATOR_STEP_UP_REQUIRED = 'mbfd-operator-step-up-required';
 export const OPERATOR_AUTH_REFRESHED = 'mbfd-operator-auth-refreshed';
@@ -19,7 +18,7 @@ export function notifyOperatorAuthRefreshed(): void {
 
 export type OperatorStepUpStatus = {
   operatorKey: string;
-  freshAuthAtSec: number;
+  expiresAtSec: number;
   serverNowSec: number;
 };
 export function operatorSessionKey(
@@ -33,23 +32,22 @@ export function parseOperatorStepUpStatus(value: unknown): OperatorStepUpStatus 
   if (
     typeof status.operatorKey !== 'string' ||
     !/^\d+:\d+:\d+$/.test(status.operatorKey) ||
-    typeof status.freshAuthAtSec !== 'number' ||
-    !Number.isSafeInteger(status.freshAuthAtSec) ||
+    typeof status.expiresAtSec !== 'number' ||
+    !Number.isSafeInteger(status.expiresAtSec) ||
     typeof status.serverNowSec !== 'number' ||
     !Number.isSafeInteger(status.serverNowSec) ||
-    status.freshAuthAtSec <= 0 ||
+    status.expiresAtSec <= 0 ||
     status.serverNowSec <= 0
   )
     return null;
   return {
     operatorKey: status.operatorKey,
-    freshAuthAtSec: status.freshAuthAtSec,
+    expiresAtSec: status.expiresAtSec,
     serverNowSec: status.serverNowSec,
   };
 }
 export function operatorSignInRemaining(status: OperatorStepUpStatus, elapsedSec = 0): number {
-  const age = status.serverNowSec + Math.max(0, elapsedSec) - status.freshAuthAtSec;
-  return age < 0 ? 0 : Math.max(0, OPERATOR_STEP_UP_MAX_AGE_SEC - age);
+  return Math.max(0, status.expiresAtSec - status.serverNowSec - Math.max(0, elapsedSec));
 }
 export function beforeOperatorCommand(): string | null {
   if (typeof window === 'undefined') return null;

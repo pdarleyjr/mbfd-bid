@@ -1188,7 +1188,7 @@ describe('Current Bid managed Mock workflow', () => {
       const link = [...container.querySelectorAll('a')].find((node) =>
         node.textContent?.includes('Open created Mock Bid'),
       );
-      expect(link?.getAttribute('href')).toBe('/admin/sessions/synthetic-mock-session');
+      expect(link?.getAttribute('href')).toBe('/admin/bid?session_id=synthetic-mock-session');
       expect(link?.textContent).toContain('Version 2');
       expect(() => button(/Create Mock Bid/)).toThrow('Missing public button');
     },

@@ -18,6 +18,12 @@ import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import { getDb } from '../db/index.js';
 import { handleFreeze } from '../durable/bid-session-handlers.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
+import {
+  type AdminBidOverrideWarning,
+  addAdminBidOverrideWarning,
+  adminBidOverrideAcknowledges,
+  hasAdminBidOverride,
+} from '../lib/admin-bid-override.js';
 import { assertBidDefinitionRunIntegrity } from '../lib/bid-definition-integrity.js';
 import { evaluateBidFallback } from '../lib/bid-fallback.js';
 import { resolveBidPoolSelection } from '../lib/bid-opportunity-pool.js';
@@ -29,7 +35,7 @@ import {
 import { unresolvedSpecialtyPriority } from '../lib/canonical-specialty-priority.js';
 import { evaluateFrozenADays } from '../lib/frozen-a-day.js';
 import { validateBidCorrectionLineage } from './bid-correction-lineage.js';
-import { reduceLiveBidCommand } from './live-bid-reducer.js';
+import { advancePastResolvedLiveBidTurn, reduceLiveBidCommand } from './live-bid-reducer.js';
 
 interface CanonicalStateRow {
   current_seq: number;
@@ -678,8 +684,8 @@ export async function commitMockFreezeCommand(
 }
 
 export interface CommitLiveBidCommandInput {
-  /** Read-only correction preview; final confirmation still uses the sequenced
-   * atomic command bundle. This mode is unavailable to other command types. */
+  /** Read-only correction/explicit override preview. Final confirmation still
+   * uses the same sequenced atomic command bundle. */
   previewOnly?: boolean;
   db: D1Database;
   command: LiveBidCommand;
@@ -694,8 +700,11 @@ export interface CommitLiveBidCommandInput {
 export async function commitLiveBidCommand(
   input: CommitLiveBidCommandInput,
 ): Promise<{ result: LiveBidCommandResult; canonicalState: BidSessionState | null }> {
-  if (input.previewOnly && input.command.type !== 'live.correct_bid')
-    throw new Error('Only audited corrections support read-only preview');
+  const administratorOverride = hasAdminBidOverride(input.command);
+  if (input.previewOnly && input.command.type !== 'live.correct_bid' && !administratorOverride)
+    throw new Error(
+      'Only audited corrections and administrator overrides support read-only preview',
+    );
   const recordRejectedReceipt = input.previewOnly
     ? async (..._args: Parameters<typeof insertRejectedReceipt>) => {}
     : insertRejectedReceipt;
@@ -750,6 +759,40 @@ export async function commitLiveBidCommand(
   let correctionSpecialtyRequest:
     | import('../lib/bid-corrections.js').CorrectionSpecialtyRequest
     | undefined;
+  if (administratorOverride) {
+    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    const memberId =
+      'memberId' in input.command
+        ? (input.command.memberId ?? current.currentBidderId)
+        : current.currentBidderId;
+    const member = frozen.ok
+      ? frozen.snapshot.members.find((entry) => entry.memberId === memberId)
+      : undefined;
+    const code = !frozen.ok
+      ? frozen.code.toUpperCase()
+      : frozen.snapshot.settings.v !== 3 ||
+          canonicalJson(frozen.snapshot.settings.livePolicy) !== canonicalJson(input.policy)
+        ? 'LIVE_POLICY_MISMATCH'
+        : member === undefined || member.pool === 'EXCLUDED'
+          ? 'MEMBER_NOT_IN_BID_POOL'
+          : null;
+    if (code !== null) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code,
+        currentSeq: current.lastSeq,
+      };
+      await recordRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
+  }
   if (input.command.type === 'live.correct_bid') {
     const lineage = await validateBidCorrectionLineage(input.db, current, input.command);
     if (!lineage.ok) {
@@ -1001,6 +1044,13 @@ export async function commitLiveBidCommand(
     );
     return { result, canonicalState: null };
   }
+  const overrideWarnings: AdminBidOverrideWarning[] = administratorOverride
+    ? [
+        ...((
+          reduction.payload.adminOverride as { warnings?: AdminBidOverrideWarning[] } | undefined
+        )?.warnings ?? []),
+      ]
+    : [];
   // A correction releases only its affected award while evaluating pooled
   // capacity and specialty priority. Every unrelated canonical fill remains.
   const correctionCommand = input.command.type === 'live.correct_bid' ? input.command : null;
@@ -1102,7 +1152,8 @@ export async function commitLiveBidCommand(
           : target.snapshot.settings.v !== 3 ||
               canonicalJson(target.snapshot.settings.livePolicy) !== canonicalJson(input.policy)
             ? 'LIVE_POLICY_MISMATCH'
-            : !evaluateEligibility(
+            : !administratorOverride &&
+                !evaluateEligibility(
                   eligibilityMemberFromFrozen(target.member),
                   fallbackReview?.rule ?? target.rule,
                 ).eligible
@@ -1123,6 +1174,19 @@ export async function commitLiveBidCommand(
         now,
       );
       return { result: rejected, canonicalState: null };
+    }
+    if (administratorOverride && target.ok) {
+      const eligibility = evaluateEligibility(
+        eligibilityMemberFromFrozen(target.member),
+        target.rule,
+      );
+      const missing = eligibility.reasons.filter((reason) => !reason.satisfied);
+      if (missing.length > 0)
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          'QUALIFICATION_DEVIATION',
+          `Frozen eligibility is not met: ${missing.map((reason) => reason.label).join('; ')}. This override does not certify or change qualifications.`,
+        );
     }
     if (termDeparture?.ok && termDeparture.election) {
       reduction.state.fills[positionId] = { ...fill, termDeparture: termDeparture.election };
@@ -1148,7 +1212,13 @@ export async function commitLiveBidCommand(
       } catch (error) {
         priorityCode = error instanceof Error ? error.message : 'LIVE_SPECIALTY_POLICY_INVALID';
       }
-      if (priorityCode !== null) {
+      if (administratorOverride && priorityCode === 'SPECIALTY_HIGHER_PRIORITY_UNRESOLVED') {
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          'SPECIALTY_PRIORITY_DEVIATION',
+          'Higher-priority specialty candidates have not all responded. Their frozen evidence is preserved.',
+        );
+      } else if (priorityCode !== null) {
         const rejected: LiveBidCommandResult = {
           kind: 'rejected',
           commandId: input.command.commandId,
@@ -1184,8 +1254,21 @@ export async function commitLiveBidCommand(
         : evaluateFrozenADays(frozenADaySnapshot, reduction.state, {
             nowMs: now,
             actorId: input.command.actor.id,
-            forced: input.command.type === 'live.force_selection',
+            forced: input.command.type === 'live.force_selection' || administratorOverride,
             finalize: input.command.type === 'live.complete_session',
+            ...(administratorOverride &&
+            'memberId' in input.command &&
+            input.command.memberId !== undefined
+              ? { adminOverrideMemberId: input.command.memberId }
+              : {}),
+            ...(input.command.type === 'live.record_selection' ||
+            input.command.type === 'live.force_selection' ||
+            input.command.type === 'live.amend_selection' ||
+            input.command.type === 'live.correct_bid' ||
+            input.command.type === 'live.record_a_day' ||
+            input.command.type === 'live.resolve_specialty_candidate'
+              ? { selectionMemberId: input.command.memberId }
+              : {}),
           });
     if (!allocation.ok) {
       const rejected: LiveBidCommandResult = {
@@ -1204,6 +1287,36 @@ export async function commitLiveBidCommand(
       return { result: rejected, canonicalState: null };
     }
     reduction.state.aDay = allocation.aDay;
+    for (const warning of allocation.overrideWarnings ?? [])
+      addAdminBidOverrideWarning(overrideWarnings, warning.code, warning.message);
+    const originalExecutionPhase =
+      current.currentPhase === 'paused' ? current.live?.pausedPhase : current.currentPhase;
+    if (
+      administratorOverride &&
+      originalExecutionPhase === 'a_day_bid' &&
+      current.currentBidderId !== null &&
+      allocation.aDay?.picks.some((pick) => pick.memberId === current.currentBidderId)
+    ) {
+      const advance = advancePastResolvedLiveBidTurn(reduction.state, input.policy, now);
+      reduction.state = {
+        ...reduction.state,
+        ...advance,
+        ...(current.currentPhase === 'paused'
+          ? {
+              currentPhase: 'paused' as const,
+              ...(reduction.state.live
+                ? {
+                    live: { ...reduction.state.live, pausedPhase: advance.currentPhase },
+                  }
+                : {}),
+            }
+          : {}),
+      };
+      reduction.payload.resolvedADayTurn = {
+        memberId: current.currentBidderId,
+        nextMemberId: advance.currentBidderId,
+      };
+    }
     if (
       allocation.hasDeferredSelections &&
       reduction.state.currentPhase === 'complete' &&
@@ -1222,6 +1335,59 @@ export async function commitLiveBidCommand(
       };
     }
     if ('aDay' in input.command) reduction.payload.aDay = input.command.aDay ?? null;
+  }
+  if (administratorOverride) {
+    overrideWarnings.sort((left, right) => left.code.localeCompare(right.code));
+    reduction.payload.adminOverride = {
+      reason: input.command.reason,
+      warningCodes: overrideWarnings.map((warning) => warning.code),
+      warnings: overrideWarnings,
+      acknowledged: true,
+    };
+    if (!input.previewOnly && !adminBidOverrideAcknowledges(input.command, overrideWarnings)) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code: 'ADMIN_OVERRIDE_WARNING_ACKNOWLEDGEMENT_REQUIRED',
+        currentSeq: current.lastSeq,
+      };
+      await recordRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
+    if (
+      'memberId' in input.command &&
+      input.command.memberId !== undefined &&
+      overrideWarnings.some((warning) => warning.code.startsWith('A_DAY_POLICY_DEVIATION'))
+    ) {
+      const memberId = input.command.memberId;
+      const award = Object.entries(reduction.state.fills).find(
+        ([, fill]) => fill.memberId === memberId,
+      );
+      const aDay = award
+        ? (reduction.state.aDay?.picks.find((pick) => pick.memberId === award[1].memberId)?.aDay ??
+          award[1].aDay)
+        : undefined;
+      if (award && aDay !== undefined)
+        reduction.state.fills[award[0]] = {
+          ...award[1],
+          aDayOverride: {
+            commandId: input.command.commandId,
+            actorMemberId: input.command.actor.id,
+            reason: input.command.reason,
+            positionId: award[0],
+            aDay,
+            warningCodes: overrideWarnings
+              .filter((warning) => warning.code.startsWith('A_DAY_POLICY_DEVIATION'))
+              .map((warning) => warning.code),
+          },
+        };
+    }
   }
   if (input.command.type === 'live.correct_bid') {
     const correction = reduction.state.live?.corrections?.at(-1);

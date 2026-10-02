@@ -14,12 +14,16 @@ import {
 import { eq } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
 import { ulid } from 'ulid';
-import { loadCanonicalBidSessionState } from '../../commands/canonical-command-service.js';
+import {
+  commitLiveBidCommand,
+  loadCanonicalBidSessionState,
+} from '../../commands/canonical-command-service.js';
 import { participantCoverageGaps } from '../../commands/live-bid-reducer.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions } from '../../db/schema.js';
 import { hydrateADayState } from '../../durable/bid-session-aday-handlers.js';
 import type { BidSessionState } from '../../durable/bid-session-state.js';
+import { hasAdminBidOverride } from '../../lib/admin-bid-override.js';
 import { rankFrozenSpecialtyCandidates } from '../../lib/annual-specialty-policy.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import { BidDefinitionSnapshotPinSchema } from '../../lib/bid-definition-pin.js';
@@ -514,6 +518,19 @@ router.get('/:id/specialty-live', async (c) => {
   return c.json({
     bid_session_id: sessionId,
     sequence: canonical.lastSeq,
+    admin_override_allowed: isLiveBidActionAuthorized(policy, 'force', c.get('claims').member_id),
+    admin_override_member_ids: frozen.snapshot.members
+      .filter((person) => person.pool !== 'EXCLUDED')
+      .map((person) => person.memberId),
+    admin_override_position_ids: [
+      ...new Set(policy.stages.flatMap((stage) => stage.opportunityPositionIds)),
+    ].filter(
+      (id) =>
+        canonical.fills[id] === undefined &&
+        !opportunityPools.some(
+          (pool) => pool.positionIds.includes(id) && pool.resolvedPositionId !== id,
+        ),
+    ),
     current_phase: canonical.currentPhase,
     finalization_ready: canonical.annual?.completion != null,
     membership_distributions: policy.annualOperations?.membershipDistributions ?? [],
@@ -633,6 +650,77 @@ router.get('/:id/specialty-live', async (c) => {
 // The adapter deliberately assigns actor/session identity.  It is the one
 // public entry point for real mutations; retired force/skip routes are
 // explicit compatibility responses and cannot mutate session state.
+router.post('/:id/commands/live/preview', requireStepUpAuth(), async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const sessionId = c.req.param('id');
+  const raw = await c.req.json().catch(() => null);
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+    return c.json({ error: 'invalid_live_bid_command' }, 400);
+  const command = LiveBidCommandSchema.safeParse({
+    ...raw,
+    bidSessionId: sessionId,
+    actor: { id: c.get('claims').member_id, role: 'admin' },
+  });
+  if (!command.success || !hasAdminBidOverride(command.data))
+    return c.json({ error: 'explicit_admin_override_required' }, 400);
+  const [state, frozen] = await Promise.all([
+    loadLiveAdapterState(c.env, sessionId),
+    loadFrozenSessionBidPolicy(getDb(c.env.DB), sessionId),
+  ]);
+  if (!state || !frozen.ok || frozen.snapshot.settings.v !== 3)
+    return c.json({ error: 'live_action_policy_missing' }, 409);
+  const policy = frozen.snapshot.settings.livePolicy;
+  if (!isLiveBidActionAuthorized(policy, 'force', c.get('claims').member_id))
+    return c.json({ error: 'live_action_forbidden', action: 'force' }, 403);
+  const preview = await commitLiveBidCommand({
+    db: c.env.DB,
+    command: command.data,
+    state,
+    policy,
+    previewOnly: true,
+  });
+  if (preview.result.kind !== 'accepted' || !preview.canonicalState)
+    return c.json(preview.result, 409);
+  const event = preview.result.envelope.payload as Record<string, unknown>;
+  const override = event.adminOverride as { warnings?: unknown } | undefined;
+  const aDayCounts = (candidate: BidSessionState) => {
+    const counts = new Map<string, number>();
+    for (const pick of candidate.aDay?.picks ?? []) {
+      const key = `${pick.shift}:${pick.aDay}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  };
+  const beforeCounts = aDayCounts(state);
+  const afterCounts = aDayCounts(preview.canonicalState);
+  return c.json({
+    valid: true,
+    expectedSeq: state.lastSeq,
+    warnings: override?.warnings ?? [],
+    memberId: event.memberId,
+    positionId: event.positionId ?? null,
+    nextMemberId: preview.canonicalState.currentBidderId,
+    deferredMemberIds: event.deferredMemberIds ?? [],
+    deferredStageId: event.deferredStageId ?? null,
+    before: event.before ?? null,
+    after: event.after ?? null,
+    reason: command.data.reason,
+    constraintEffects: [...new Set([...beforeCounts.keys(), ...afterCounts.keys()])]
+      .sort()
+      .flatMap((group) => {
+        const before = beforeCounts.get(group) ?? 0;
+        const after = afterCounts.get(group) ?? 0;
+        return before === after ? [] : [{ group, before, after }];
+      }),
+    validated: [
+      'Frozen session identity',
+      'Canonical sequence and available seat',
+      'Explicit administrator override review',
+      ...(command.data.type === 'live.correct_bid' ? ['Source award receipt lineage'] : []),
+    ],
+  });
+});
+
 router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
   const sessionId = c.req.param('id');
   const raw = await c.req.json().catch(() => null);
@@ -693,8 +781,9 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
     actor: { id: claims.member_id, role: 'admin' },
   });
   if (!command.success) return c.json({ error: 'invalid_live_bid_command' }, 400);
-  const action =
-    command.data.type === 'live.record_fallback_response'
+  const action = hasAdminBidOverride(command.data)
+    ? 'force'
+    : command.data.type === 'live.record_fallback_response'
       ? command.data.outcome === 'UNREACHABLE'
         ? 'mark_unreachable'
         : 'skip_defer'

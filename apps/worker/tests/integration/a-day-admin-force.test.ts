@@ -25,7 +25,7 @@ async function makeJwt(opts: {
       first_name: 'Admin',
       last_name: 'User',
       fresh_auth_at: freshAuthAt,
-      authz_checked_at: Math.floor(Date.now() / 1000),
+      authz_checked_at: freshAuthAt,
     },
     SIGNING_KEY,
   );
@@ -84,7 +84,7 @@ describe('POST /api/admin/bid-session/:id/force-a-day (Plan 07 Task 14)', () => 
     expect(res.status).toBe(403);
   });
 
-  it('returns 401 when fresh_auth_at is older than 5 minutes (step-up auth)', async () => {
+  it('returns 401 when Hub authorization is stale in the isolated fixture', async () => {
     const staleJwt = await makeJwt({ role: 'admin', freshAuth: false });
     const res = await worker.fetch('/api/admin/bid-session/01HSESS/force-a-day', {
       method: 'POST',

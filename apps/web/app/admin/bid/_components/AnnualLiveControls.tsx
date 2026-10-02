@@ -17,6 +17,7 @@ import { ADayGroupIdSchema, WeekdaySchema } from '@mbfd/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
+import { AdministratorOverride } from './AdministratorOverride';
 import { useBidOperator } from './BidOperatorContext';
 import { CorrectBid } from './CorrectBid';
 
@@ -51,6 +52,9 @@ type FallbackReview = {
     }
 );
 type SpecialtyState = {
+  admin_override_allowed?: boolean;
+  admin_override_member_ids?: number[];
+  admin_override_position_ids?: string[];
   membership_distributions?: Array<{
     id: string;
     label: string;
@@ -435,6 +439,9 @@ export function AnnualLiveControls(props: Props) {
   const handledIntent = useRef(0);
   const selectionOwner = useRef<number | null>(null);
   const loaded = state !== null;
+  useEffect(() => {
+    operator?.setOverrideAllowed(state?.admin_override_allowed === true);
+  }, [state?.admin_override_allowed, operator?.setOverrideAllowed]);
   useEffect(() => {
     if (!props.workspace || !loaded) return;
     const previous = selectionOwner.current;
@@ -971,6 +978,33 @@ export function AnnualLiveControls(props: Props) {
           {state.active.specialty_label} review is active. Open Specialty and contact to continue.
         </output>
       )}
+      {state !== null ? (
+        <AdministratorOverride
+          bidSessionId={props.bidSessionId}
+          allowed={state.admin_override_allowed === true}
+          memberIds={state.admin_override_member_ids ?? []}
+          positionIds={state.admin_override_position_ids ?? []}
+          opportunityPools={state.opportunity_pools}
+          members={props.members}
+          positions={props.positions ?? []}
+          fills={state.fills}
+          sequence={state.sequence}
+          currentMemberId={selectionMemberId}
+          currentStage={state.selection_stage?.label}
+          currentStageId={state.selection_stage?.id}
+          combatGroups={state.a_day_combat_groups}
+          aDayTiming={state.a_day_timing_by_position}
+          defaultADayTiming={state.a_day_selection}
+          termParticipation={state.term_participation}
+          commandsBlocked={loadError !== null || authRefreshing || authReviewRequired || busy}
+          onCanonicalChange={() => {
+            void load().catch((error: unknown) =>
+              setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
+            );
+            props.onCanonicalChange?.();
+          }}
+        />
+      ) : null}
       {props.workspace ? (
         <section aria-label="Available positions" className="mb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1130,6 +1164,8 @@ export function AnnualLiveControls(props: Props) {
             bidSessionId={props.bidSessionId}
             members={props.members}
             canonicalSequence={state?.sequence}
+            overrideAllowed={state?.admin_override_allowed === true}
+            overridePositionIds={state?.admin_override_position_ids}
             commandsBlocked={
               state === null || loadError !== null || authRefreshing || authReviewRequired || busy
             }

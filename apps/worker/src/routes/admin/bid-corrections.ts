@@ -7,6 +7,7 @@ import {
 } from '../../commands/canonical-command-service.js';
 import { getDb } from '../../db/index.js';
 import type { BidSessionState } from '../../durable/bid-session-state.js';
+import { hasAdminBidOverride } from '../../lib/admin-bid-override.js';
 import { unresolvedBidCorrections } from '../../lib/bid-corrections.js';
 import {
   eligibilityMemberFromFrozen,
@@ -150,7 +151,7 @@ router.post('/:id/corrections/preview', requireStepUpAuth(), async (c) => {
   if (
     !isLiveBidActionAuthorized(
       frozen.snapshot.settings.livePolicy,
-      'amend_selection',
+      hasAdminBidOverride(parsed.data) ? 'force' : 'amend_selection',
       c.get('claims').member_id,
     )
   )

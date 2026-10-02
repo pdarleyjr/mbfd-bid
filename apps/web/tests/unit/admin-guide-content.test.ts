@@ -159,13 +159,13 @@ describe('Administrator Guide content contract', () => {
     expect(mock?.route).toBe('/admin/rehearsal');
     expect(mock?.controls).toContain('Start session');
     expect(mock?.controls).toContain('Open session operator console');
-    expect(mock?.steps.join(' ')).toContain(
-      'select Start session, then Open session operator console',
-    );
+    expect(mock?.steps.join(' ')).toContain('select Start Mock Bid');
+    expect(mock?.steps.join(' ')).toContain('previous assignments before Start');
     expect(mock?.steps.join(' ')).toContain('Legacy Auto Bid and manual simulations reject');
     const creation = GUIDE_SECTIONS.find((section) => section.id === 'current-bid-mock');
-    expect(creation?.steps.join(' ')).toContain('select Start session');
-    expect(creation?.steps.join(' ')).toContain('Open session operator console');
+    expect(creation?.steps.join(' ')).toContain('Open created Mock Bid');
+    expect(creation?.steps.join(' ')).toContain('select Start Mock Bid');
+    expect(creation?.steps.join(' ')).toContain('Starting does not award a position');
     expect(creation?.important).toContain('does not start it');
     expect(creation?.important).toContain('Legacy Auto Bid and manual simulations reject');
   });

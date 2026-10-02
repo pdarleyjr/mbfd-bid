@@ -36,6 +36,16 @@ export interface PersistedADayState {
 }
 
 export interface Fill {
+  /** Server-owned receipt provenance for an acknowledged A-Day business-rule
+   * departure. It permits replay of that exact pick, never client authority. */
+  aDayOverride?: {
+    commandId: string;
+    actorMemberId: number;
+    reason: string;
+    positionId: string;
+    aDay: import('@mbfd/a-day').ADayValue;
+    warningCodes: readonly string[];
+  };
   /** Voluntary overlays selected from frozen qualified populations. */
   membershipIds?: readonly string[];
   termDeparture?: import('@mbfd/shared').TermDepartureElection & {

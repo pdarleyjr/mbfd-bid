@@ -1,3 +1,8 @@
+import {
+  BID_SESSION_MAX_AGE_SEC,
+  OPERATOR_SESSION_ACTIVITY_WINDOW_SEC,
+  OPERATOR_SESSION_RENEW_INTERVAL_SEC,
+} from '@mbfd/shared';
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
@@ -13,7 +18,11 @@ const clients: QueryClient[] = [];
 const roots: ReturnType<typeof createRoot>[] = [];
 let response: Response;
 const requests: Array<{ url: string; method: string }> = [];
-const status = () => ({ operatorKey: OPERATOR, freshAuthAtSec: NOW, serverNowSec: NOW });
+const status = () => ({
+  operatorKey: OPERATOR,
+  expiresAtSec: NOW + BID_SESSION_MAX_AGE_SEC,
+  serverNowSec: NOW,
+});
 beforeEach(() => {
   requests.length = 0;
   response = Response.json(status());
@@ -34,6 +43,7 @@ afterEach(async () => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 async function mount(age = 0, verified = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -46,7 +56,11 @@ async function mount(age = 0, verified = true) {
     root.render(
       <QueryClientProvider client={client}>
         <StepUpProvider
-          initialStatus={verified ? { ...status(), freshAuthAtSec: NOW - age } : undefined}
+          initialStatus={
+            verified
+              ? { ...status(), expiresAtSec: NOW + BID_SESSION_MAX_AGE_SEC - age }
+              : undefined
+          }
         >
           <textarea aria-label="Unfinished reason" defaultValue="Keep this reviewed reason" />
         </StepUpProvider>
@@ -74,14 +88,81 @@ async function command() {
 }
 
 describe('operator step-up recovery', () => {
-  it('forwards a command younger than five minutes once', async () => {
-    await mount(299);
+  function activeClock() {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW * 1000);
+    return vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  }
+  it('silently renews an old eight-hour cookie while preserving the choice and sending no command', async () => {
+    activeClock();
+    await mount(BID_SESSION_MAX_AGE_SEC - 8 * 60 * 60);
+    const reauth = vi.fn();
+    const refreshed = vi.fn();
+    window.addEventListener(OPERATOR_REAUTH_STARTED, reauth);
+    window.addEventListener(OPERATOR_AUTH_REFRESHED, refreshed);
+    response = Response.json({
+      ...status(),
+      expiresAtSec: NOW + OPERATOR_SESSION_RENEW_INTERVAL_SEC + BID_SESSION_MAX_AGE_SEC,
+      serverNowSec: NOW + OPERATOR_SESSION_RENEW_INTERVAL_SEC,
+    });
+    try {
+      await act(async () =>
+        vi.advanceTimersByTimeAsync(OPERATOR_SESSION_RENEW_INTERVAL_SEC * 1000),
+      );
+      expect(requests).toEqual([{ url: '/api/auth/operator-status', method: 'GET' }]);
+      expect(document.querySelector('textarea')?.value).toBe('Keep this reviewed reason');
+      expect(document.body.textContent).toContain('30 days remaining');
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(reauth).not.toHaveBeenCalled();
+      expect(refreshed).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(OPERATOR_REAUTH_STARTED, reauth);
+      window.removeEventListener(OPERATOR_AUTH_REFRESHED, refreshed);
+    }
+  });
+  it('does not renew hidden or inactive consoles and renews once on visible return', async () => {
+    const visibility = activeClock().mockReturnValue('hidden');
+    await mount();
+    await act(async () =>
+      vi.advanceTimersByTimeAsync((OPERATOR_SESSION_ACTIVITY_WINDOW_SEC + 60) * 1000),
+    );
+    expect(requests).toEqual([]);
+    visibility.mockReturnValue('visible');
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(requests).toEqual([{ url: '/api/auth/operator-status', method: 'GET' }]);
+    await act(async () =>
+      vi.advanceTimersByTimeAsync((OPERATOR_SESSION_ACTIVITY_WINDOW_SEC + 60) * 1000),
+    );
+    const count = requests.length;
+    await act(async () => vi.advanceTimersByTimeAsync(OPERATOR_SESSION_RENEW_INTERVAL_SEC * 2000));
+    expect(requests).toHaveLength(count);
+  });
+  it.each([
+    ['revoked', () => Response.json({ error: 'invalid_session' }, { status: 401 })],
+    ['changed identity', () => Response.json({ ...status(), operatorKey: '902:901:1' })],
+  ])(
+    'blocks an automatic %s renewal without submitting or clearing the choice',
+    async (_reason, result) => {
+      activeClock();
+      await mount();
+      response = result();
+      await act(async () =>
+        vi.advanceTimersByTimeAsync(OPERATOR_SESSION_RENEW_INTERVAL_SEC * 1000),
+      );
+      expect((await command())?.status).toBe(401);
+      expect(requests).toEqual([{ url: '/api/auth/operator-status', method: 'GET' }]);
+      expect(document.querySelector('textarea')?.value).toBe('Keep this reviewed reason');
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    },
+  );
+  it('forwards a deliberate command after the former five-minute interactive limit', async () => {
+    await mount(600);
     response = Response.json({ ok: true });
     expect((await command())?.status).toBe(200);
     expect(requests).toHaveLength(1);
   });
   it('shows expiration and keeps the reason in place without sending an expired command', async () => {
-    await mount(300);
+    await mount(BID_SESSION_MAX_AGE_SEC);
     expect(document.body.textContent).toContain('Operator sign-in expired');
     expect((await command())?.status).toBe(401);
     expect(requests).toHaveLength(0);
@@ -105,7 +186,7 @@ describe('operator step-up recovery', () => {
     expect(requests.filter((item) => item.method === 'POST')).toHaveLength(2);
   });
   it('keeps the console and draft after cancellation or failed reauthentication', async () => {
-    await mount(300);
+    await mount(BID_SESSION_MAX_AGE_SEC);
     await command();
     await click('Keep working');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -119,7 +200,7 @@ describe('operator step-up recovery', () => {
   it.each(['902:901:1', '901:902:1', '901:901:2'])(
     'blocks changed operator identity %s until the console is reopened',
     async (operatorKey) => {
-      await mount(300);
+      await mount(BID_SESSION_MAX_AGE_SEC);
       await command();
       response = Response.json({ ...status(), operatorKey });
       await click('Recheck sign-in');
@@ -176,7 +257,7 @@ describe('operator step-up recovery', () => {
     expect(document.querySelector('textarea')?.value).toBe('Keep this reviewed reason');
   });
   it('keeps writes blocked if canonical refresh rejects the session after a successful status recheck', async () => {
-    await mount(300);
+    await mount(BID_SESSION_MAX_AGE_SEC);
     await command();
     const client = clients.at(-1);
     if (!client) throw new Error('Missing query client');

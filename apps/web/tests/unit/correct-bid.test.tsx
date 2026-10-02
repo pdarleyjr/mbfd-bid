@@ -21,6 +21,8 @@ let delayPreview: boolean;
 let finishPreview: ((response: Response) => void) | null;
 let canonicalSequence: number | undefined;
 let commandsBlocked: boolean;
+let overrideAllowed: boolean;
+let overridePositionIds: string[];
 const commands: Record<string, unknown>[] = [];
 const source = {
   bidId: 'award-1',
@@ -105,6 +107,8 @@ async function render() {
         bidSessionId="synthetic-correction"
         canonicalSequence={canonicalSequence}
         commandsBlocked={commandsBlocked}
+        overrideAllowed={overrideAllowed}
+        overridePositionIds={overridePositionIds}
         members={{
           '17': {
             id: 17,
@@ -131,11 +135,38 @@ beforeEach(async () => {
   finishPreview = null;
   canonicalSequence = 4;
   commandsBlocked = false;
+  overrideAllowed = false;
+  overridePositionIds = [];
   commands.length = 0;
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === '/api/auth/csrf')
       return Response.json({ token: 'csrf_00000000-0000-0000-0000-000000000001' });
+    if (url.endsWith('/commands/live/preview')) {
+      const command = JSON.parse(String(init?.body)) as {
+        expectedSeq: number;
+        memberId: number;
+        replacement: { positionId: string; aDay: string } | null;
+      };
+      return Response.json({
+        valid: true,
+        expectedSeq: command.expectedSeq,
+        memberId: command.memberId,
+        before: preview.before,
+        after: command.replacement
+          ? {
+              positionId: command.replacement.positionId,
+              fill: { memberId: command.memberId, aDay: command.replacement.aDay },
+            }
+          : null,
+        warnings: [
+          {
+            code: 'ADMIN_OVERRIDE_STAGE',
+            message: 'Replacement is outside this member’s reached stages.',
+          },
+        ],
+      });
+    }
     if (url.endsWith('/corrections/preview')) {
       if (delayPreview)
         return new Promise<Response>((resolve) => {
@@ -174,6 +205,73 @@ afterEach(async () => {
 });
 
 describe('guided audited correction', () => {
+  it('requires acknowledged server advisories before an override correction and handles the generic preview shape', async () => {
+    overrideAllowed = true;
+    overridePositionIds = ['outside-stage'];
+    loadedReadback.positions.push({
+      id: 'outside-stage',
+      label: 'B 1 Engine Lieutenant',
+      shift: 'B',
+    });
+    await render();
+    await click('Correct a bid');
+    await act(async () =>
+      (
+        container.querySelector(
+          'input[aria-label="Use administrator override for correction"]',
+        ) as HTMLInputElement
+      ).click(),
+    );
+    await change('correction-position', 'outside-stage');
+    await change('correction-a-day', 'G2');
+    await change('correction-reason', 'Administrator directed correction');
+    await click('Review correction');
+    expect(container.textContent).toContain('Replacement is outside this member’s reached stages.');
+    expect(container.textContent).toContain('Detailed capacity totals were not included');
+    const confirm = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Confirm correction'),
+    );
+    expect(confirm?.disabled).toBe(true);
+    expect(commands).toHaveLength(0);
+    await act(async () =>
+      (
+        container.querySelector(
+          'input[aria-label="I acknowledge correction override advisories"]',
+        ) as HTMLInputElement
+      ).click(),
+    );
+    expect(commands).toHaveLength(0);
+    await click('Confirm correction');
+    expect(commands[0]).toMatchObject({
+      type: 'live.correct_bid',
+      memberId: 17,
+      originalBidId: 'award-1',
+      originalCommandId: source.originalCommandId,
+      replacement: { positionId: 'outside-stage', aDay: 'G2' },
+      adminOverride: { acknowledged: true, warningCodes: ['ADMIN_OVERRIDE_STAGE'] },
+    });
+  });
+  it('invalidates reviewed correction override when administrator authority is lost', async () => {
+    overrideAllowed = true;
+    overridePositionIds = ['two'];
+    await render();
+    await click('Correct a bid');
+    await act(async () =>
+      (
+        container.querySelector(
+          'input[aria-label="Use administrator override for correction"]',
+        ) as HTMLInputElement
+      ).click(),
+    );
+    await change('correction-a-day', 'G2');
+    await change('correction-reason', 'Administrator directed correction');
+    await click('Review correction');
+    overrideAllowed = false;
+    await render();
+    expect(container.textContent).not.toContain('Confirm correction');
+    expect(container.textContent).toContain('override authority changed');
+    expect(commands).toHaveLength(0);
+  });
   it('keeps accepted sequence as a readback floor through stale automatic and manual refreshes', async () => {
     await click('Correct a bid');
     await change('correction-a-day', 'G2');

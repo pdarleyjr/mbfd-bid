@@ -3,6 +3,11 @@ import type { FrozenLiveBidPolicy, LiveBidAction, LiveBidCommand } from '@mbfd/s
 import { handleSubmitADayPick } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, Fill, LiveBidProgress } from '../durable/bid-session-state.js';
 import {
+  type AdminBidOverrideWarning,
+  addAdminBidOverrideWarning,
+  hasAdminBidOverride,
+} from '../lib/admin-bid-override.js';
+import {
   type AnnualOperationsState,
   checkpointAnnualOperations,
   declareUnreachable,
@@ -59,6 +64,7 @@ export type LiveReduction =
   | { ok: false; code: string };
 
 function actionFor(command: LiveBidCommand): LiveBidAction {
+  if (hasAdminBidOverride(command)) return 'force';
   switch (command.type) {
     case 'live.record_selection':
       return 'record_selection';
@@ -159,6 +165,15 @@ function nextAvailableFrom(
 function next(state: BidSessionState, policy: FrozenLiveBidPolicy, now: number) {
   return nextAvailableFrom(state, policy, state.queueCursor + 1, now);
 }
+/** An override/correction can satisfy the active deferred A-Day directly.
+ * Resume the untouched ordinary queue rather than retaining a picked turn. */
+export function advancePastResolvedLiveBidTurn(
+  state: BidSessionState,
+  policy: FrozenLiveBidPolicy,
+  now: number,
+) {
+  return nextAvailableFrom(state, policy, state.queueCursor + 1, now);
+}
 function isOrdinaryADayTurn(state: BidSessionState, policy: FrozenLiveBidPolicy): boolean {
   return (
     state.currentPhase === 'a_day_bid' &&
@@ -245,6 +260,32 @@ export function reduceLiveBidCommand(
   const live = progress(state, policy);
   const currentStageId = stageFor(state, policy);
   const annual = state.annual ?? initializeAnnualOperations({ preferenceSheets: [] });
+  const administratorOverride = hasAdminBidOverride(command);
+  const overrideWarnings: AdminBidOverrideWarning[] = [];
+  const overridePayload = () => ({
+    reason: command.reason,
+    warnings: overrideWarnings,
+    warningCodes: overrideWarnings.map((warning) => warning.code),
+  });
+  if (administratorOverride) {
+    if (command.reason.trim().length < 4)
+      return { ok: false, code: 'ADMIN_OVERRIDE_REASON_REQUIRED' };
+    const executionPhase = state.currentPhase === 'paused' ? live.pausedPhase : state.currentPhase;
+    if (!['position_bid', 'a_day_bid', 'complete'].includes(executionPhase ?? ''))
+      return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (state.currentPhase !== 'position_bid')
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'PHASE_DEVIATION',
+        `This action occurs during ${state.currentPhase}; it does not change the frozen policy.`,
+      );
+    if (live.specialty != null)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'SPECIALTY_INTERRUPTION',
+        'This action closes the active specialty interruption; its candidate evidence and pending ordinary turns remain recorded.',
+      );
+  }
   if (currentStageId === null || !policy.stages.some((stage) => stage.id === currentStageId))
     return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
   if (command.type === 'live.pause') {
@@ -752,7 +793,8 @@ export function reduceLiveBidCommand(
       executionPhase !== 'complete'
     )
       return { ok: false, code: 'SESSION_NOT_ACTIVE' };
-    if (live.specialty != null) return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
+    if (!administratorOverride && live.specialty != null)
+      return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
     if (!command.reason.trim()) return { ok: false, code: 'CORRECTION_REASON_REQUIRED' };
     if ((command.operation === 'REVOKE') !== (command.replacement === null))
       return { ok: false, code: 'CORRECTION_OPERATION_INVALID' };
@@ -791,12 +833,23 @@ export function reduceLiveBidCommand(
       const reachedStage = policy.stages.find((stage) => stage.id === reachedStageId);
       const legalStage = policy.stages.find(
         (stage) =>
-          stage.memberIds.includes(prior.memberId) &&
+          (administratorOverride || stage.memberIds.includes(prior.memberId)) &&
           stage.opportunityPositionIds.includes(replacement.positionId) &&
-          reachedStage !== undefined &&
-          stage.order <= reachedStage.order,
+          (administratorOverride ||
+            (reachedStage !== undefined && stage.order <= reachedStage.order)),
       );
       if (!legalStage) return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
+      if (
+        administratorOverride &&
+        (!legalStage.memberIds.includes(prior.memberId) ||
+          reachedStage === undefined ||
+          legalStage.order > reachedStage.order)
+      )
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          'STAGE_DEVIATION',
+          'The replacement departs from the member or stage rights of the frozen selection order.',
+        );
       const ordinaryIndex = state.bidOrder.findIndex((entry) => entry.memberId === prior.memberId);
       const owesEarlyADay =
         positionUsesDeferredADay(policy, command.originalPositionId) &&
@@ -804,13 +857,14 @@ export function reduceLiveBidCommand(
         priorADay === null &&
         ordinaryIndex >= state.queueCursor;
       if (
+        !administratorOverride &&
         owesEarlyADay &&
         (replacement.aDay !== null || !positionUsesDeferredADay(policy, replacement.positionId))
       )
         return { ok: false, code: 'CORRECTION_ORDINARY_A_DAY_NOT_REACHED' };
       if ((prior.aDay !== undefined || priorADay !== null) && replacement.aDay === null)
         return { ok: false, code: 'CORRECTION_A_DAY_REQUIRED' };
-      const { aDay: _oldADay, ...preserved } = prior;
+      const { aDay: _oldADay, aDayOverride: _oldADayOverride, ...preserved } = prior;
       const fill: Fill = {
         ...preserved,
         bidId,
@@ -841,6 +895,9 @@ export function reduceLiveBidCommand(
       state: {
         ...state,
         fills,
+        ...(administratorOverride && after !== null
+          ? { annual: settleSelectedMember(annual, prior.memberId) }
+          : {}),
         aDay:
           state.aDay === null
             ? null
@@ -850,6 +907,7 @@ export function reduceLiveBidCommand(
               },
         live: {
           ...live,
+          ...(administratorOverride && live.specialty != null ? { specialty: null } : {}),
           corrections: [...(live.corrections ?? []), correction],
           lastSelectionBidId:
             after !== null
@@ -873,6 +931,10 @@ export function reduceLiveBidCommand(
         before: correction.before,
         after,
         resolvesCorrectionBidId: correction.resolvesCorrectionBidId,
+        ...(administratorOverride ? { adminOverride: overridePayload() } : {}),
+        ...(administratorOverride && live.specialty != null
+          ? { interruptedSpecialty: live.specialty }
+          : {}),
       },
       supersedesBidId: command.originalBidId,
     };
@@ -893,8 +955,9 @@ export function reduceLiveBidCommand(
     );
     if (!selectedStage?.opportunityPositionIds.includes(command.toPositionId))
       return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
+    const { aDayOverride: _oldADayOverride, ...preserved } = prior;
     const fill: Fill = {
-      ...prior,
+      ...preserved,
       bidId,
       ...(command.membershipIds === undefined ? {} : { membershipIds: command.membershipIds }),
       ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
@@ -922,6 +985,106 @@ export function reduceLiveBidCommand(
       supersedesBidId: prior.bidId,
     };
   }
+  if (command.type === 'live.disposition' && administratorOverride) {
+    if (command.disposition !== 'DEFER' && command.disposition !== 'SKIP')
+      return { ok: false, code: 'ADMIN_OVERRIDE_DEFER_REQUIRED' };
+    const memberId = command.memberId ?? annual.returningMemberId ?? state.currentBidderId;
+    if (memberId === null || !policy.stages.some((stage) => stage.memberIds.includes(memberId)))
+      return { ok: false, code: 'MEMBER_NOT_IN_FROZEN_ORDER' };
+    if (
+      command.deferStageId !== undefined &&
+      (command.disposition !== 'DEFER' || command.deferStageId !== currentStageId)
+    )
+      return { ok: false, code: 'ADMIN_OVERRIDE_STAGE_MISMATCH' };
+    const committed = state.bidOrder.slice(0, state.queueCursor);
+    const remaining = state.bidOrder.slice(state.queueCursor);
+    const matches = (entry: BidSessionState['bidOrder'][number]) =>
+      command.deferStageId === undefined
+        ? entry.memberId === memberId
+        : entry.stageId === command.deferStageId;
+    let deferred = remaining.filter(matches);
+    if (deferred.length === 0 && command.deferStageId === undefined) {
+      const source = state.bidOrder.find((entry) => entry.memberId === memberId);
+      if (source) deferred = [source];
+    }
+    if (deferred.length === 0) return { ok: false, code: 'NO_PENDING_STAGE_MEMBERS' };
+    const deferredMemberIds = [...new Set(deferred.map((entry) => entry.memberId))].filter(
+      (id) =>
+        !hasAward(state, id) ||
+        (memberHasDeferredOrdinaryTurn(state, policy, id) &&
+          !state.aDay?.picks.some((pick) => pick.memberId === id)),
+    );
+    if (deferredMemberIds.length === 0) return { ok: false, code: 'MEMBER_ALREADY_SELECTED' };
+    const bidOrder = [...committed, ...remaining.filter((entry) => !matches(entry)), ...deferred];
+    const reordered = { ...state, bidOrder };
+    const advance = nextAvailableFrom(reordered, policy, state.queueCursor, now);
+    const nextAnnual = {
+      ...settleReturnedMember(annual, memberId),
+      unresolvedMemberIds: [...new Set([...annual.unresolvedMemberIds, ...deferredMemberIds])],
+    };
+    addAdminBidOverrideWarning(
+      overrideWarnings,
+      command.deferStageId === undefined ? 'DEFER_MEMBER' : 'DEFER_STAGE',
+      command.deferStageId === undefined
+        ? 'This member is postponed to the remaining queue and retains selection rights.'
+        : 'All remaining entries in this phase move behind the other pending phases; selection rights are retained.',
+    );
+    if (memberId !== state.currentBidderId)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'ORDER_DEVIATION',
+        'The selected member is outside the current ordinary turn.',
+      );
+    return {
+      ok: true,
+      state: {
+        ...state,
+        ...advance,
+        ...(state.currentPhase === 'paused' ? { currentPhase: 'paused' as const } : {}),
+        bidOrder,
+        annual: nextAnnual,
+        live: {
+          ...live,
+          ...(live.specialty != null ? { specialty: null } : {}),
+          currentStageId: bidOrder[advance.queueCursor]?.stageId ?? currentStageId,
+          ...(state.currentPhase === 'paused' ? { pausedPhase: advance.currentPhase } : {}),
+          dispositions: [
+            ...live.dispositions,
+            ...deferredMemberIds.map((id) => ({
+              memberId: id,
+              disposition: 'DEFER',
+              stageId: currentStageId,
+              reason: command.reason,
+              evidenceReference: command.evidenceReference,
+            })),
+          ],
+        },
+        lastSeq: state.lastSeq + 1,
+      },
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'disposition',
+        disposition: 'DEFER',
+        requestedDisposition: command.disposition,
+        memberId,
+        stageId: currentStageId,
+        deferredStageId: command.deferStageId ?? null,
+        deferredMemberIds,
+        beforeMemberIds: remaining.map((entry) => entry.memberId),
+        afterMemberIds: bidOrder.slice(state.queueCursor).map((entry) => entry.memberId),
+        retainsLaterSelectionRights: true,
+        terminal: false,
+        adminOverride: overridePayload(),
+        ...(live.specialty != null ? { interruptedSpecialty: live.specialty } : {}),
+      },
+      supersedesBidId: null,
+    };
+  }
+  if (
+    command.type === 'live.disposition' &&
+    (command.memberId !== undefined || command.deferStageId !== undefined)
+  )
+    return { ok: false, code: 'ADMIN_OVERRIDE_REQUIRED' };
   const returningMemberCommand =
     annual.returningMemberId !== null &&
     (state.currentPhase === 'a_day_bid' || state.currentPhase === 'complete') &&
@@ -937,10 +1100,11 @@ export function reduceLiveBidCommand(
     state.currentPhase !== 'position_bid' &&
     !(command.type === 'live.disposition' && isOrdinaryADayTurn(state, policy)) &&
     !returningMemberCommand &&
-    !exhaustedQueueFallback
+    !exhaustedQueueFallback &&
+    !administratorOverride
   )
     return { ok: false, code: 'SESSION_NOT_ACTIVE' };
-  if (live.specialty !== null && live.specialty !== undefined)
+  if (!administratorOverride && live.specialty !== null && live.specialty !== undefined)
     return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
   if (command.type === 'live.disposition') {
     const rule = policy.dispositions.find(
@@ -1013,18 +1177,21 @@ export function reduceLiveBidCommand(
     command.type === 'live.record_selection' &&
     memberId !== state.currentBidderId &&
     !isReturnedAtCurrentSequence &&
-    !fallbackAuthorized
+    !fallbackAuthorized &&
+    !administratorOverride
   )
     return { ok: false, code: 'NOT_CURRENT_BIDDER' };
   if (state.fills[positionId]) return { ok: false, code: 'POSITION_FILLED' };
   if (Object.values(state.fills).some((fill) => fill.memberId === memberId))
     return { ok: false, code: 'MEMBER_ALREADY_SELECTED' };
   // A returned member keeps the rights of the stages already reached, never later ones.
-  const stage = isReturnedAtCurrentSequence
-    ? liveBidSelectionStages(state, policy).find((candidate) =>
-        candidate.opportunityPositionIds.includes(positionId),
-      )
-    : policy.stages.find((candidate) => candidate.id === currentStageId);
+  const stage = administratorOverride
+    ? policy.stages.find((candidate) => candidate.opportunityPositionIds.includes(positionId))
+    : isReturnedAtCurrentSequence
+      ? liveBidSelectionStages(state, policy).find((candidate) =>
+          candidate.opportunityPositionIds.includes(positionId),
+        )
+      : policy.stages.find((candidate) => candidate.id === currentStageId);
   if (!stage)
     return {
       ok: false,
@@ -1034,12 +1201,45 @@ export function reduceLiveBidCommand(
     };
   if (
     !fallbackAuthorized &&
+    !administratorOverride &&
     (!stage.memberIds.includes(memberId) || !stage.opportunityPositionIds.includes(positionId))
   )
     return { ok: false, code: 'LIVE_STAGE_NOT_ELIGIBLE' };
   if ('fallback' in command && command.fallback && !fallbackAuthorized)
     return { ok: false, code: 'FALLBACK_REVIEW_REQUIRED' };
-  if (positionUsesDeferredADay(policy, positionId)) {
+  if (administratorOverride) {
+    if (!policy.stages.some((candidate) => candidate.memberIds.includes(memberId)))
+      return { ok: false, code: 'MEMBER_NOT_IN_FROZEN_ORDER' };
+    if (memberId !== state.currentBidderId && !isReturnedAtCurrentSequence)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'ORDER_DEVIATION',
+        'This award is outside the current member turn; other pending members retain their turns.',
+      );
+    if (stage.id !== currentStageId || !stage.memberIds.includes(memberId))
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'STAGE_DEVIATION',
+        'This award departs from the current phase or member rights of the frozen selection order.',
+      );
+    if (live.specialty != null)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'SPECIALTY_INTERRUPTION',
+        'This action closes the active specialty interruption; its candidate evidence and pending ordinary turns remain recorded.',
+      );
+    if (
+      positionUsesDeferredADay(policy, positionId) &&
+      command.aDay !== undefined &&
+      memberId !== state.currentBidderId
+    )
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'A_DAY_TIMING_DEVIATION',
+        'The A-Day is recorded with this early award instead of waiting for the ordinary turn.',
+      );
+  }
+  if (!administratorOverride && positionUsesDeferredADay(policy, positionId)) {
     const ownTurn = memberId === state.currentBidderId || isReturnedAtCurrentSequence;
     if (ownTurn && command.aDay === undefined)
       return { ok: false, code: 'A_DAY_REQUIRED_WITH_SELECTION' };
@@ -1064,14 +1264,24 @@ export function reduceLiveBidCommand(
     },
   };
   const advance =
-    memberId === state.currentBidderId ? next({ ...state, fills: nextFills }, policy, now) : {};
+    memberId === state.currentBidderId ? next({ ...state, fills: nextFills }, policy, now) : null;
   return {
     ok: true,
     state: {
       ...state,
       ...advance,
       fills: nextFills,
-      live: { ...live, lastSelectionBidId: bidId },
+      ...(administratorOverride && state.currentPhase === 'paused'
+        ? { currentPhase: 'paused' as const }
+        : {}),
+      live: {
+        ...live,
+        lastSelectionBidId: bidId,
+        ...(administratorOverride && live.specialty != null ? { specialty: null } : {}),
+        ...(administratorOverride && state.currentPhase === 'paused' && advance !== null
+          ? { pausedPhase: advance.currentPhase }
+          : {}),
+      },
       annual: settleSelectedMember(annual, memberId),
       lastSeq: state.lastSeq + 1,
     },
@@ -1082,6 +1292,12 @@ export function reduceLiveBidCommand(
       memberId,
       positionId,
       stageId: stage.id,
+      ...(administratorOverride
+        ? {
+            adminOverride: overridePayload(),
+            ...(live.specialty != null ? { interruptedSpecialty: live.specialty } : {}),
+          }
+        : {}),
       ...(command.type === 'live.record_selection' && command.preferenceSheetId
         ? { preferenceSheetId: command.preferenceSheetId }
         : {}),
