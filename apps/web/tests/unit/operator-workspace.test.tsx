@@ -162,6 +162,7 @@ afterEach(async () => {
   root = undefined;
   vi.unstubAllGlobals();
   window.fetch = originalFetch;
+  vi.useRealTimers();
   document.body.replaceChildren();
 });
 async function settle(action: () => void = () => {}) {
@@ -243,13 +244,14 @@ describe('operator workspace interaction and history', () => {
     expect(commands).toHaveLength(0);
   });
   it('captures the earliest sign-in sequence and requires deliberate review after intervening updates', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     await mount();
     await settle(() => button('Engine 2').click());
     await chooseGroup('G3');
     await settle(() => window.dispatchEvent(new Event('mbfd-operator-reauth-started')));
     liveSequence = 5;
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 2600));
+      await vi.advanceTimersByTimeAsync(2500);
     });
     await settle(() => window.dispatchEvent(new Event('mbfd-operator-reauth-started')));
     await settle(() => window.dispatchEvent(new Event('mbfd-operator-auth-refreshed')));

@@ -75,7 +75,12 @@ test('member details, historical assignment and explicit bid confirmation work i
     [390, 844],
   ] as const) {
     await page.setViewportSize({ width, height });
+    const canonicalReadback = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/specialty-live') && response.request().method() === 'GET',
+    );
     await page.goto(`/admin/bid?session_id=operator-workspace-e2e-${testInfo.project.name}`);
+    expect((await canonicalReadback).status()).toBe(200);
     const panel = page.getByRole('region', { name: 'Selected member details' });
     await expect(panel.getByRole('heading', { name: 'Capt Current Fixture' })).toBeVisible();
     await expect(panel.getByText('Historical Rescue Lieutenant', { exact: true })).toBeVisible();
@@ -131,5 +136,85 @@ test('member details, historical assignment and explicit bid confirmation work i
     expectedSeq: 4,
   });
   await expect(page.getByRole('combobox', { name: 'Selection A-Day' })).toHaveValue('G3');
+  const correctionReviews: Record<string, unknown>[] = [];
+  await page.route('**/api/admin/bid-session/*/corrections', (route) =>
+    route.fulfill({
+      json: {
+        sequence: 4,
+        sealed: false,
+        sources: [
+          {
+            bidId: 'synthetic-earlier-award',
+            originalCommandId: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+            originalADayCommandId: null,
+            originalPositionId: 'B-fixture',
+            memberId: 2,
+            status: 'ACTIVE',
+            aDay: 'G1',
+            membershipIds: [],
+            eligiblePositionIds: ['B-fixture', 'A-fixture'],
+            termParticipation: null,
+          },
+        ],
+        positions: [
+          { id: 'B-fixture', label: 'B shift Engine 4', shift: 'B' },
+          { id: 'A-fixture', label: 'A shift Engine 2', shift: 'A' },
+        ],
+        combatGroups: ['G1', 'G2', 'G3', 'G4'],
+        opportunityPools: [],
+      },
+    }),
+  );
+  await page.route('**/api/admin/bid-session/*/corrections/preview', async (route) => {
+    const command = route.request().postDataJSON();
+    correctionReviews.push(command);
+    await route.fulfill({
+      json: {
+        valid: true,
+        expectedSeq: 4,
+        memberId: 2,
+        reason: command.reason,
+        before: { positionId: 'B-fixture', fill: { memberId: 2, aDay: 'G1' } },
+        after: { positionId: 'A-fixture', fill: { memberId: 2, aDay: 'G2' } },
+        constraintEffects: [],
+        validated: ['Eligibility', 'A-Day limits'],
+      },
+    });
+  });
+  await page.getByText('Other bid actions', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Correct selection', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Correct a bid', exact: true }).click();
+  await expect(page.getByLabel('Award to correct')).toHaveValue('synthetic-earlier-award');
+  await page.getByLabel('Corrected position', { exact: true }).selectOption('A-fixture');
+  await page.getByLabel('Corrected A-Day', { exact: true }).selectOption('G2');
+  await page
+    .getByRole('textbox', { name: 'Operator reason', exact: true })
+    .fill('Synthetic reviewed earlier award correction');
+  expect(commands).toHaveLength(1);
+  await page.getByRole('button', { name: 'Review correction', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'BEFORE', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'AFTER', exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole('region', { name: 'Correction confirmation' })
+      .getByText('Group 2', { exact: true }),
+  ).toBeVisible();
+  expect(correctionReviews).toHaveLength(1);
+  expect(commands).toHaveLength(1);
+  await page.screenshot({
+    path: testInfo.outputPath('operator-correction-review.png'),
+    fullPage: false,
+  });
+  await page.getByRole('button', { name: 'Confirm correction', exact: true }).click();
+  await expect.poll(() => commands.length).toBe(2);
+  expect(commands[1]).toMatchObject({
+    type: 'live.correct_bid',
+    memberId: 2,
+    originalBidId: 'synthetic-earlier-award',
+    originalCommandId: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+    expectedSeq: 4,
+    replacement: { positionId: 'A-fixture', aDay: 'G2' },
+  });
+  expect(commands[1]?.commandId).toBe(correctionReviews[0]?.commandId);
   expect(errors).toEqual([]);
 });

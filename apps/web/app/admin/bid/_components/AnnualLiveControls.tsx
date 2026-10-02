@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { useBidOperator } from './BidOperatorContext';
+import { CorrectBid } from './CorrectBid';
 
 type Candidate = {
   member_id: number;
@@ -1125,6 +1126,20 @@ export function AnnualLiveControls(props: Props) {
           <summary className="cursor-pointer text-sm font-semibold">Other bid actions</summary>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
+          <CorrectBid
+            bidSessionId={props.bidSessionId}
+            members={props.members}
+            canonicalSequence={state?.sequence}
+            commandsBlocked={
+              state === null || loadError !== null || authRefreshing || authReviewRequired || busy
+            }
+            onCanonicalChange={() => {
+              void load().catch((error: unknown) =>
+                setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
+              );
+              props.onCanonicalChange?.();
+            }}
+          />
           {(
             [
               ['selection', 'Record selection'],
@@ -1134,7 +1149,7 @@ export function AnnualLiveControls(props: Props) {
               ['fallback', 'Fallback awards'],
               ['presentation', 'Presentation'],
               ['session', 'Pause or resume bid'],
-              ['amendment', 'Correct selection'],
+              ...(props.workspace === true ? [] : ([['amendment', 'Correct selection']] as const)),
               ['order', 'Remaining order'],
               ...(state?.current_phase === 'complete' && !state.finalization_ready
                 ? ([['finalization', 'Finalize results']] as const)
