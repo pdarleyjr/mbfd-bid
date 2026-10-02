@@ -86,7 +86,7 @@ function applyMigrations(sqlite: Database.Database): void {
 
 function mkEnv(sqlite: Database.Database): WorkerEnv {
   return {
-    ENV: 'staging',
+    ENV: 'test',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: KEY,
     PORTAL_BID_READER: 'tok',

@@ -1,3 +1,5 @@
+> Historical planning record. Deployment environment retired on 2026-10-01; these deployment instructions are superseded and must not be executed.
+
 # MBFD UI modernization validation record
 
 ## Source and scope
@@ -35,7 +37,7 @@ PASS — node scripts/test-deploy-staging-migration-guard.mjs.
 PASS — node scripts/test-deploy-production-migration-guard.mjs.
 PASS — git diff --check.
 
-PASS — Linux Node 22.22.1 / pnpm 9.12 frozen install and NEXT_PUBLIC_WORKER_BASE=https://api.staging.bid.mbfdhub.com pnpm --filter @mbfd/web build:opennext:staging. Exact source tree 5343d0ca5cc919a2cb09d994d37a6b365985b98e; apps/web subtree 7e42548fe3bab8eaea655ed89a562bf989c60ff3. The resulting .open-next/worker.js SHA-256 is d05223bf4d44c84108a102ab62aa3bc9c5568f0c3ac2064c37be5cc65c64bc45 (entry file, not a hash of the complete artifact directory). Final report-only changes do not alter the validated application subtree. This is a build, not a deployment.
+PASS — Linux Node 22.22.1 / pnpm 9.12 frozen install and NEXT_PUBLIC_WORKER_BASE=the retired test API pnpm --filter @mbfd/web build:opennext:staging. Exact source tree 5343d0ca5cc919a2cb09d994d37a6b365985b98e; apps/web subtree 7e42548fe3bab8eaea655ed89a562bf989c60ff3. The resulting .open-next/worker.js SHA-256 is d05223bf4d44c84108a102ab62aa3bc9c5568f0c3ac2064c37be5cc65c64bc45 (entry file, not a hash of the complete artifact directory). Final report-only changes do not alter the validated application subtree. This is a build, not a deployment.
 
 Final UI follow-up: web unit tests (288), lint and typecheck were rerun after the streaming boundary correction. Next reports 103 kB shared first-load JavaScript, Dashboard 106 kB and Board 158 kB; these are build metrics, not a real-device performance certification.
 

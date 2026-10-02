@@ -274,7 +274,7 @@ async function seedFrozenSource(deferredSpecialty = false, sessionId = SESSION) 
 const readbackEnv = () =>
   ({
     ...env,
-    ENV: 'staging',
+    ENV: 'test',
     PORTAL_BASE_URL: 'https://test.invalid',
     PORTAL_WRITEBACK_ENABLED: 'false',
     PORTAL_BID_FEDERATION_TOKEN: 'synthetic-only',

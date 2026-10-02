@@ -464,7 +464,7 @@ describe('SpecialtyAdjudicationWorkspace', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const container = renderWorkspace({ wsBase: 'https://api.staging.bid.mbfdhub.com' });
+    const container = renderWorkspace({ wsBase: 'https://api.bid.test.invalid' });
     const sessionId = container.querySelector<HTMLInputElement>('input[name="session_id"]');
     const inspectForm = container.querySelector<HTMLFormElement>(
       '[data-testid="specialty-inspect-form"]',

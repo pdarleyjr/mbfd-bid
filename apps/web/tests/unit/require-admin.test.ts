@@ -17,7 +17,7 @@ vi.mock('@/lib/jwt', () => ({ verifyJwt: mocks.verifyJwt }));
 describe('requireAdmin', () => {
   beforeEach(() => {
     mocks.cfEnv.mockImplementation((key: string) => {
-      if (key === 'ENV') return 'staging';
+      if (key === 'ENV') return 'test';
       if (key === 'JWT_SIGNING_KEY') return 'test-signing-key';
       return undefined;
     });

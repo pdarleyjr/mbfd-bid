@@ -226,7 +226,7 @@ describe('WebSocket identity handoff', () => {
         `/api/ws/session/${sessionId}`,
         {
           headers: {
-            Origin: 'https://staging.bid.mbfdhub.com',
+            Origin: 'https://bid.test.invalid',
             Upgrade: 'websocket',
             Authorization: `Bearer ${jwt}`,
           },
@@ -276,7 +276,7 @@ describe('WebSocket identity handoff', () => {
         `/api/ws/session/${sessionId}`,
         {
           headers: {
-            Origin: 'https://staging.bid.mbfdhub.com',
+            Origin: 'https://bid.test.invalid',
             Upgrade: 'websocket',
             Authorization: `Bearer ${jwt}`,
           },
@@ -357,7 +357,7 @@ describe('WebSocket identity handoff', () => {
     const sessionPath = `/api/ws/session/${sessionId}`;
     const request = {
       headers: {
-        Origin: 'https://staging.bid.mbfdhub.com',
+        Origin: 'https://bid.test.invalid',
         Upgrade: 'websocket',
         'Sec-WebSocket-Protocol': `mbfd-bid-v1, ${ticket}`,
       },

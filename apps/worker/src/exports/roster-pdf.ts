@@ -22,7 +22,7 @@ export interface RosterPdfArgs {
   /** Cloudflare Browser Rendering binding (`[browser] binding = "BROWSER"`). */
   browser: Fetcher;
   printTokenSecret: string;
-  /** Public base URL of the web app (e.g. https://staging.bid.mbfdhub.com). */
+  /** Public base URL of the web app (e.g. https://bid.mbfdhub.com). */
   webBaseUrl: string;
   r2: R2Bucket;
   now: () => number;

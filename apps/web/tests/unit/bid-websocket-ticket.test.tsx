@@ -57,7 +57,7 @@ function Harness({
   );
   const { status } = useBidWebSocket(store, {
     bidSessionId: 'session-1',
-    wsBase: 'https://api.staging.bid.mbfdhub.com',
+    wsBase: 'https://api.bid.test.invalid',
     onSyntheticSpecialtyState,
   });
   return <output data-testid="status">{status}</output>;
@@ -149,7 +149,7 @@ describe('useBidWebSocket ticket protocol', () => {
     );
     const socket = FakeWebSocket.instances[0];
     expect(socket).toBeDefined();
-    expect(socket?.url).toBe('wss://api.staging.bid.mbfdhub.com/api/ws/session/session-1');
+    expect(socket?.url).toBe('wss://api.bid.test.invalid/api/ws/session/session-1');
     expect(socket?.url).not.toContain('token=');
     expect(socket?.protocols).toEqual(['mbfd-bid-v1', 'opaque-ticket']);
 

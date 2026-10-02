@@ -13,10 +13,7 @@
     "test:e2e": "playwright test && playwright test --config=playwright.bid-impact.config.ts",
     "test:e2e:bid-impact": "playwright test --config=playwright.bid-impact.config.ts",
     "typecheck": "tsc --noEmit",
-    "cf-typegen": "wrangler types --env staging --env-interface CloudflareEnv cloudflare-env.d.ts",
-    "build:opennext:staging": "node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env staging",
-    "preview:opennext:staging": "pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js preview --env staging",
-    "deploy:staging": "pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env staging",
+    "cf-typegen": "wrangler types --env production --env-interface CloudflareEnv cloudflare-env.d.ts",
     "build:opennext:production": "node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env production",
     "preview:opennext:production": "pnpm build:opennext:production && node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js preview --env production",
     "deploy:production": "pnpm build:opennext:production && node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env production"

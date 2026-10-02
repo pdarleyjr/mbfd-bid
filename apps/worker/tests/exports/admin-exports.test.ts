@@ -69,7 +69,7 @@ function inMemR2(): R2Bucket & { _objects: Map<string, Uint8Array> } {
 
 function makeEnv(r2: R2Bucket): WorkerEnv {
   return {
-    ENV: 'staging',
+    ENV: 'test',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'a'.repeat(64),
     PORTAL_BID_READER: 'tok',
@@ -289,6 +289,7 @@ describe('/api/admin/exports audit-before-R2 boundary', () => {
     h.failNextBatchAt(0);
     const testEnv = {
       ...h.env,
+      WEB_BASE_URL: 'https://bid.test.invalid',
       R2_EXPORTS: r2,
       BROWSER: {
         fetch: async () => {
@@ -320,6 +321,39 @@ describe('/api/admin/exports audit-before-R2 boundary', () => {
           [sessionId],
         )
       ).results,
+    ).toEqual([{ n: 0 }]);
+  });
+
+  it('rejects roster rendering without an explicit Web target before audit or browser writes', async () => {
+    let browserCalls = 0;
+    const testEnv = {
+      ...h.env,
+      R2_EXPORTS: r2,
+      BROWSER: {
+        fetch: async () => {
+          browserCalls += 1;
+          return new Response('unexpected renderer call', { status: 500 });
+        },
+      } as never,
+      JWT_SIGNING_KEY: 'a'.repeat(64),
+    };
+    const jwt = await adminJwt(testEnv);
+    const response = await mkApp().request(
+      '/api/admin/exports/roster/A',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      },
+      testEnv,
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'web_base_not_configured' });
+    expect(browserCalls).toBe(0);
+    expect(r2._objects.size).toBe(0);
+    expect(
+      (await h.db.run("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'export_generate'"))
+        .results,
     ).toEqual([{ n: 0 }]);
   });
 });

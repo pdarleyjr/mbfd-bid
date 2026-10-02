@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   signWebSocketTicket: vi.fn(),
   verifyJwt: vi.fn(),
-  getWorkerBase: vi.fn(() => 'https://api.staging.bid.mbfdhub.com'),
+  getWorkerBase: vi.fn(() => 'https://api.bid.test.invalid'),
 }));
 
 vi.mock('next/headers', () => ({ cookies: mocks.cookies }));
@@ -19,7 +19,7 @@ vi.mock('@/lib/worker-base', () => ({ getWorkerBase: mocks.getWorkerBase }));
 const csrfToken = 'csrf_123e4567-e89b-12d3-a456-426614174000';
 
 function request({
-  origin = 'https://staging.bid.mbfdhub.com',
+  origin = 'https://bid.test.invalid',
   fetchSite = 'same-origin',
   csrf = csrfToken,
   body = { session_id: 'session-1' },
@@ -33,7 +33,7 @@ function request({
   if (origin !== null) headers.set('Origin', origin);
   if (fetchSite !== null) headers.set('Sec-Fetch-Site', fetchSite);
   if (csrf !== null) headers.set('X-MBFD-CSRF', csrf);
-  return new Request('https://staging.bid.mbfdhub.com/api/auth/ws-ticket', {
+  return new Request('https://bid.test.invalid/api/auth/ws-ticket', {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -43,7 +43,7 @@ function request({
 describe('POST /api/auth/ws-ticket', () => {
   beforeEach(() => {
     mocks.cfEnv.mockImplementation((key: string) => {
-      if (key === 'ENV') return 'staging';
+      if (key === 'ENV') return 'test';
       if (key === 'JWT_SIGNING_KEY') return 'test-signing-key';
       return undefined;
     });
