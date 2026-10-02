@@ -49,6 +49,70 @@ afterEach(async () => {
 });
 
 describe('Department presentation refresh', () => {
+  it('rejects an older OFF snapshot without lowering the sequence floor', async () => {
+    fetchMock.mockResolvedValueOnce(
+      Response.json({
+        mode: 'OFF',
+        sequence: 7,
+        session: { id: 'mock-a', bid_year: 2026, is_mock: true },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(Response.json(projection(8, 'Older after OFF')));
+    fetchMock.mockResolvedValueOnce(
+      Response.json({
+        mode: 'OFF',
+        sequence: 11,
+        session: { id: 'mock-a', bid_year: 2026, is_mock: true },
+      }),
+    );
+    await poll();
+    expect(container.textContent).toContain('Initial bidder');
+    expect(container.textContent).toContain('Waiting for current updates');
+    await poll();
+    expect(container.textContent).not.toContain('Older after OFF');
+    expect(container.textContent).toContain('Initial bidder');
+    await poll();
+    expect(container.textContent).toContain('Presentation is off');
+  });
+
+  it('keeps every poll attached to the requested Mock and rejects a different session', async () => {
+    await act(() =>
+      root.render(
+        <PresentationView
+          key="bound-mock"
+          initial={projection(10, 'Mock bidder')}
+          sessionId="mock-a"
+        />,
+      ),
+    );
+    fetchMock.mockResolvedValueOnce(Response.json(projection(20, 'Real bidder', 'real-session')));
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ ...projection(11, 'Mock bidder'), mode: 'HOLD', held_at_sequence: 10 }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      Response.json({
+        mode: 'OFF',
+        sequence: 12,
+        session: { id: 'mock-a', bid_year: 2026, is_mock: true },
+      }),
+    );
+    await poll();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/presentation?bidSessionId=mock-a');
+    expect(container.textContent).toContain('Mock bidder');
+    expect(container.textContent).not.toContain('Real bidder');
+    expect(container.textContent).toContain('Waiting for current updates');
+    await poll();
+    expect(container.textContent).toContain('DISPLAY HELD · SEQ 10');
+    expect(container.textContent).toContain('MOCK SESSION');
+    await poll();
+    expect(container.textContent).toContain('Presentation is off');
+    expect(container.textContent).toContain('MOCK SESSION');
+    expect(container.querySelector('a')?.getAttribute('href')).toBe('/admin/bid?session_id=mock-a');
+    expect(
+      fetchMock.mock.calls.every(([url]) => url === '/api/presentation?bidSessionId=mock-a'),
+    ).toBe(true);
+  });
+
   it('serializes delayed polls and preserves the current session sequence through stale readback', async () => {
     let resolveDelayed!: (response: Response) => void;
     fetchMock.mockImplementationOnce(

@@ -20,6 +20,7 @@ import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { AdministratorOverride } from './AdministratorOverride';
 import { useBidOperator } from './BidOperatorContext';
 import { CorrectBid } from './CorrectBid';
+import { SessionPresentationLink } from './SessionPresentationLink';
 
 type Candidate = {
   member_id: number;
@@ -1014,6 +1015,9 @@ export function AnnualLiveControls(props: Props) {
               </p>
               <h2 className="mt-1 font-heading text-lg font-bold">Available positions</h2>
             </div>
+            <Button type="button" onClick={() => setPanel('presentation')}>
+              Presentation controls
+            </Button>
             <p className="text-sm text-muted-foreground">
               {availablePositions.length + availablePools.length} choices
               {loadedAt !== null ? (
@@ -1669,28 +1673,8 @@ export function AnnualLiveControls(props: Props) {
             <p className="text-xs text-muted-foreground">
               Display controls never pause Bid execution.
             </p>
-            <div className="mt-3 flex flex-wrap gap-3 text-sm">
-              <a
-                href="/live"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex min-h-11 items-center font-semibold underline"
-              >
-                Open presentation
-              </a>
-              <Button
-                type="button"
-                onClick={() =>
-                  void navigator.clipboard
-                    .writeText(`${window.location.origin}/live`)
-                    .then(() => setNotice('Presentation link copied.'))
-                    .catch(() =>
-                      setNotice('Copy unavailable. Open the presentation and copy its address.'),
-                    )
-                }
-              >
-                Copy presentation link
-              </Button>
+            <div className="mt-3">
+              <SessionPresentationLink sessionId={props.bidSessionId} isMock={props.isMock} />
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {[

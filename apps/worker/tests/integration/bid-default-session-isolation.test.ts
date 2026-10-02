@@ -227,7 +227,7 @@ describe('implicit Live Bid session isolation', () => {
     expect(presentation.status).toBe(200);
     await expect(presentation.json()).resolves.toEqual({
       mode: 'OFF',
-      session: { id: REAL_SESSION, bid_year: 2026 },
+      session: { id: REAL_SESSION, bid_year: 2026, is_mock: false },
     });
 
     const eligibility = await get(h, '/api/me/eligibility');
@@ -272,6 +272,13 @@ describe('implicit Live Bid session isolation', () => {
     await expect(board.json()).resolves.toMatchObject({
       bidSessionId: MOCK_SESSION,
       isMock: true,
+    });
+
+    const presentation = await get(h, `/api/presentation?session_id=${MOCK_SESSION}`);
+    expect(presentation.status).toBe(200);
+    await expect(presentation.json()).resolves.toEqual({
+      mode: 'OFF',
+      session: { id: MOCK_SESSION, bid_year: 2026, is_mock: true },
     });
   });
 

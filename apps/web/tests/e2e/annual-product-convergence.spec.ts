@@ -98,6 +98,65 @@ test('department presentation stays read-only across OFF, LIVE, and held snapsho
   await expect(page.getByTestId('department-presentation').getByRole('button')).toHaveCount(0);
 });
 
+test('explicit Mock presentation follows its own session through LIVE, HOLD, RESUME and OFF', async ({
+  page,
+}) => {
+  await setPin(page);
+  let mode: 'LIVE' | 'HOLD' | 'OFF' = 'LIVE';
+  let sequence = 20;
+  const polls: string[] = [];
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() !== 'GET' && request.method() !== 'HEAD') writes.push(request.url());
+  });
+  await page.route('**/api/presentation?bidSessionId=mock-presentation-e2e', async (route) => {
+    polls.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        mode,
+        sequence,
+        held_at_sequence: mode === 'HOLD' ? 20 : null,
+        session: { id: 'mock-presentation-e2e', bid_year: 2026, is_mock: true },
+        current_stage: { id: 'combat-cpt', label: 'Combat Captains' },
+        current_bidder: { member_id: 12, name: 'Mock Captain', rank: 'CPT' },
+        on_deck: [],
+        phase: 'position_bid',
+        progress: { filled: 0, total: 223 },
+        positions: [],
+      }),
+    });
+  });
+  await page.goto('/live?bidSessionId=mock-presentation-e2e');
+  await expect(page.getByText('Mock Captain')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId('mock-banner')).toBeVisible();
+  await expect(page.getByText('LIVE DISPLAY')).toBeVisible();
+  mode = 'HOLD';
+  sequence++;
+  await expect(page.getByText('DISPLAY HELD · SEQ 20')).toBeVisible({ timeout: 5000 });
+  mode = 'LIVE';
+  sequence++;
+  await expect(page.getByText('LIVE DISPLAY')).toBeVisible({ timeout: 5000 });
+  mode = 'OFF';
+  sequence++;
+  await expect(page.getByRole('heading', { name: 'Presentation is off' })).toBeVisible({
+    timeout: 5000,
+  });
+  await expect(page.getByTestId('mock-banner')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open this Mock Bid' })).toHaveAttribute(
+    'href',
+    '/admin/bid?session_id=mock-presentation-e2e',
+  );
+  await page.reload();
+  await expect(page.getByTestId('mock-banner')).toBeVisible({ timeout: 5000 });
+  expect(polls.length).toBeGreaterThanOrEqual(5);
+  expect(
+    polls.every((url) => new URL(url).searchParams.get('bidSessionId') === 'mock-presentation-e2e'),
+  ).toBe(true);
+  expect(writes).toEqual([]);
+});
+
 test('annual policy editor starts blocking and loads only real source members and positions', async ({
   page,
 }) => {
