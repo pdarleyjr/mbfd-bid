@@ -10,6 +10,8 @@ import {
   AnnualOperationsStatus,
   type AnnualOperationsStatusPayload,
 } from './AnnualOperationsStatus';
+import { BidOperatorProvider } from './BidOperatorContext';
+import { BidOperatorWorkspace } from './BidOperatorWorkspace';
 import { BidRoster } from './BidRoster';
 import { LiveCommandBar } from './LiveCommandBar';
 import { ManualPickBar } from './ManualPickBar';
@@ -54,68 +56,117 @@ interface Props {
 export function AdminBidShell(props: Props) {
   const router = useRouter();
   const refreshCanonical = useCallback(() => router.refresh(), [router]);
+  const managed = props.annual !== null && props.annual !== undefined;
   return (
     <ManualPickProvider
       bidSessionId={props.bidSessionId}
       isMock={props.isMock}
       mockControlRevision={props.mockControlRevision}
     >
-      <div className="flex h-full min-h-[calc(100vh-57px)] flex-col">
-        <LiveCommandBar
-          bidSessionId={props.bidSessionId}
-          isMock={props.isMock}
-          lastSeq={props.lastSeq}
-          currentPhase={props.currentPhase}
-          sessionStartedAt={props.sessionStartedAt}
-          turnStartedAtMs={props.turnStartedAtMs > 0 ? props.turnStartedAtMs : null}
-          turnTimerSeconds={props.turnTimerSeconds}
-          currentBidder={props.currentBidder}
-          currentBidderId={props.currentBidderId}
-          onDeck={props.onDeck}
-        />
+      <BidOperatorProvider currentBidderId={props.currentBidderId}>
+        <div className="flex h-full min-h-[calc(100vh-57px)] flex-col">
+          <LiveCommandBar
+            bidSessionId={props.bidSessionId}
+            isMock={props.isMock}
+            lastSeq={props.lastSeq}
+            currentPhase={props.currentPhase}
+            sessionStartedAt={props.sessionStartedAt}
+            turnStartedAtMs={props.turnStartedAtMs > 0 ? props.turnStartedAtMs : null}
+            turnTimerSeconds={props.turnTimerSeconds}
+            currentBidder={props.currentBidder}
+            currentBidderId={props.currentBidderId}
+            onDeck={props.onDeck}
+            managed={managed}
+          />
+          {managed ? (
+            <BidOperatorWorkspace members={props.members} bidOrder={props.bidOrder}>
+              <AnnualLiveControls
+                bidSessionId={props.bidSessionId}
+                isMock={props.isMock}
+                currentBidderId={props.currentBidderId}
+                bidOrder={props.bidOrder}
+                fills={props.initialFills}
+                members={props.members}
+                positions={props.positions}
+                onCanonicalChange={refreshCanonical}
+                workspace
+              />
+              <details className="border border-border bg-card">
+                <summary className="cursor-pointer px-3 py-3 text-sm font-semibold">
+                  Full board, roster, and session status
+                </summary>
+                <AnnualOperationsStatus annual={props.annual} />
+                <BidRoster
+                  bidOrder={props.bidOrder}
+                  members={props.members}
+                  currentBidderId={props.currentBidderId}
+                  fills={props.initialFills}
+                  preview={props.bidOrderPreview}
+                  currentPhase={props.currentPhase}
+                  positions={props.positions}
+                  snapshotBound
+                />
+                <AdminBoard
+                  bidSessionId={props.bidSessionId}
+                  initialSeq={props.lastSeq}
+                  meMemberId={props.meMemberId}
+                  initialFills={props.initialFills}
+                  initialCurrentBidderId={props.currentBidderId}
+                  members={props.members}
+                  positions={props.positions}
+                  wsBase={props.wsBase}
+                  advisory={props.advisory}
+                  managed
+                />
+              </details>
+            </BidOperatorWorkspace>
+          ) : (
+            <>
+              <AnnualOperationsStatus annual={props.annual} />
 
-        <AnnualOperationsStatus annual={props.annual} />
+              <AnnualLiveControls
+                bidSessionId={props.bidSessionId}
+                isMock={props.isMock}
+                currentBidderId={props.currentBidderId}
+                bidOrder={props.bidOrder}
+                fills={props.initialFills}
+                members={props.members}
+                positions={props.positions}
+                onCanonicalChange={refreshCanonical}
+              />
 
-        <AnnualLiveControls
-          bidSessionId={props.bidSessionId}
-          isMock={props.isMock}
-          currentBidderId={props.currentBidderId}
-          bidOrder={props.bidOrder}
-          fills={props.initialFills}
-          members={props.members}
-          positions={props.positions}
-          onCanonicalChange={refreshCanonical}
-        />
+              <ManualPickBar isMock={props.isMock} members={props.members} />
 
-        <ManualPickBar isMock={props.isMock} members={props.members} />
+              <BidRoster
+                bidOrder={props.bidOrder}
+                members={props.members}
+                currentBidderId={props.currentBidderId}
+                fills={props.initialFills}
+                preview={props.bidOrderPreview}
+                currentPhase={props.currentPhase}
+                positions={props.positions}
+                snapshotBound
+              />
 
-        <BidRoster
-          bidOrder={props.bidOrder}
-          members={props.members}
-          currentBidderId={props.currentBidderId}
-          fills={props.initialFills}
-          preview={props.bidOrderPreview}
-          currentPhase={props.currentPhase}
-          positions={props.positions}
-          snapshotBound
-        />
-
-        <div className="flex min-h-0 flex-1 flex-row">
-          <div className="min-w-0 flex-1 overflow-auto">
-            <AdminBoard
-              bidSessionId={props.bidSessionId}
-              initialSeq={props.lastSeq}
-              meMemberId={props.meMemberId}
-              initialFills={props.initialFills}
-              initialCurrentBidderId={props.currentBidderId}
-              members={props.members}
-              positions={props.positions}
-              wsBase={props.wsBase}
-              advisory={props.advisory}
-            />
-          </div>
+              <div className="flex min-h-0 flex-1 flex-row">
+                <div className="min-w-0 flex-1 overflow-auto">
+                  <AdminBoard
+                    bidSessionId={props.bidSessionId}
+                    initialSeq={props.lastSeq}
+                    meMemberId={props.meMemberId}
+                    initialFills={props.initialFills}
+                    initialCurrentBidderId={props.currentBidderId}
+                    members={props.members}
+                    positions={props.positions}
+                    wsBase={props.wsBase}
+                    advisory={props.advisory}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
-      </div>
+      </BidOperatorProvider>
     </ManualPickProvider>
   );
 }

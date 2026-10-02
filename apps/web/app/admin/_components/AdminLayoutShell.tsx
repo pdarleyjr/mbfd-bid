@@ -55,6 +55,9 @@ export function AdminLayoutShell({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const pathname = usePathname();
+  const operatorWorkspace = pathname === '/admin/bid';
+  const [operatorNavExpanded, setOperatorNavExpanded] = useState(false);
 
   const routeCommitted = useCallback(
     (route: string) => {
@@ -110,6 +113,10 @@ export function AdminLayoutShell({
   }, []);
 
   function toggle() {
+    if (operatorWorkspace) {
+      setOperatorNavExpanded((previous) => !previous);
+      return;
+    }
     setCollapsed((previous) => {
       const next = !previous;
       try {
@@ -120,7 +127,7 @@ export function AdminLayoutShell({
       return next;
     });
   }
-  const compact = collapsed && hydrated;
+  const compact = hydrated && (operatorWorkspace ? !operatorNavExpanded : collapsed);
   return (
     <div className="admin-frame flex min-h-0 flex-1 overflow-hidden print:h-auto print:overflow-visible">
       <Suspense>
@@ -140,8 +147,8 @@ export function AdminLayoutShell({
               size="icon"
               data-testid="admin-sidebar-toggle"
               onClick={toggle}
-              aria-pressed={collapsed}
-              aria-label={collapsed ? 'Expand admin sidebar' : 'Collapse admin sidebar'}
+              aria-pressed={compact}
+              aria-label={compact ? 'Expand admin sidebar' : 'Collapse admin sidebar'}
               className="text-sidebar-muted hover:bg-sidebar-accent hover:text-white"
             >
               {compact ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}

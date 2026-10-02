@@ -23,11 +23,16 @@ export function MockBanner({ isMock, sessionId }: MockBannerProps): JSX.Element 
       data-testid="mock-banner"
       role="alert"
       aria-live="assertive"
-      className="sticky top-0 z-50 w-full bg-red-700 px-4 py-2 text-center text-sm font-bold uppercase tracking-wide text-white shadow-md"
+      title={`Mock session ${sessionId}. Picks will not be exported to the portal.`}
+      className="sticky top-0 z-40 flex w-full flex-wrap items-center justify-center gap-2 bg-red-700 px-3 py-2 text-center text-xs font-bold uppercase tracking-wide text-white shadow-md"
     >
-      <span className="mr-2 inline-block animate-pulse">⚠</span>
-      MOCK SESSION — NOT LIVE — picks will not be exported to portal
-      <span className="ml-3 rounded bg-red-900 px-2 py-0.5 font-mono text-xs">{sessionId}</span>
+      <span aria-hidden="true">⚠</span>
+      MOCK SESSION — NOT LIVE
+      <span className="hidden sm:inline">· Picks stay in this rehearsal</span>
+      <span className="sr-only">
+        {' '}
+        · Picks will not be exported to the portal. Session {sessionId}
+      </span>
     </div>
   );
 }

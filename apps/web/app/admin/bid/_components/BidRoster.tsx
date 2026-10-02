@@ -13,6 +13,7 @@ import {
   getPositionMeta,
 } from '../../../_components/bid/position-meta';
 import { type MemberLite, type PositionMeta, shortRank } from '../../../_components/bid/types';
+import { useBidOperator } from './BidOperatorContext';
 import { useManualPick } from './ManualPickContext';
 
 interface BidOrderEntry {
@@ -60,6 +61,7 @@ export function BidRoster({
   const [open, setOpen] = useState(true);
   const [filter, setFilter] = useState<'all' | 'remaining' | 'picked'>('all');
   const { pickMode, selectedMemberId, setSelectedMemberId } = useManualPick();
+  const operator = useBidOperator();
 
   // Auto-open the roster when pick mode activates so the chief can see who
   // they can select. We don't auto-close — the user may still want to refer
@@ -245,11 +247,23 @@ export function BidRoster({
                       {entry.pool}
                     </TableCell>
                     <TableCell className="px-3 py-1">
-                      {member ? (
-                        <span>
+                      {member && operator && !pickMode ? (
+                        <button
+                          type="button"
+                          className="min-h-11 text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            operator?.selectMember(member.id);
+                          }}
+                        >
                           <span className="text-muted-foreground">{shortRank(member.rank)} </span>
                           {member.firstName} {member.lastName}
-                        </span>
+                        </button>
+                      ) : member ? (
+                        <>
+                          <span className="text-muted-foreground">{shortRank(member.rank)} </span>
+                          {member.firstName} {member.lastName}
+                        </>
                       ) : (
                         <span className="font-mono tabular-nums text-stone-400">
                           #{entry.memberId}
@@ -259,10 +273,7 @@ export function BidRoster({
                     <TableCell className="px-3 py-1 font-mono text-xs text-muted-foreground">
                       {member?.employeeId ?? '—'}
                     </TableCell>
-                    <PositionLabelCell
-                      positionId={member?.priorPositionId ?? null}
-                      positions={positions}
-                    />
+                    <PreviousBidCell member={member} positions={positions} />
                     <PositionLabelCell
                       positionId={positionByMember.get(entry.memberId) ?? null}
                       positions={positions}
@@ -296,6 +307,39 @@ export function BidRoster({
         </div>
       )}
     </section>
+  );
+}
+
+function PreviousBidCell({
+  member,
+  positions,
+}: { member: MemberLite | undefined; positions: readonly PositionMeta[] }) {
+  const history = member?.historicalContext;
+  if (!history)
+    return <PositionLabelCell positionId={member?.priorPositionId ?? null} positions={positions} />;
+  if (history.evidenceStatus !== 'RECORDED')
+    return (
+      <TableCell className="px-3 py-1 text-xs text-muted-foreground">
+        {history.evidenceStatus === 'NO_PRIOR_BID_OR_ASSIGNMENT'
+          ? 'No previous bid / assignment'
+          : 'History unavailable'}
+      </TableCell>
+    );
+  return (
+    <TableCell className="px-3 py-1 text-xs text-foreground">
+      <span className="font-semibold">
+        {history.year} · {history.historicalPositionId}
+      </span>
+      <span className="ml-2 text-muted-foreground">
+        {[
+          history.positionLabel,
+          history.unit,
+          history.aDayGroup?.replace(/^(?:GR|G)(\d+)$/, 'Group $1'),
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </span>
+    </TableCell>
   );
 }
 
