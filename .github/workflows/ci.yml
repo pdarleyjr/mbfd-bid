@@ -82,7 +82,9 @@ jobs:
       - name: Verify retired environment cannot be deployed or used by tests
         run: node scripts/test-staging-retirement.mjs
       - name: Verify production release workflow guard
-        run: node scripts/test-deploy-production-migration-guard.mjs
+        run: |
+          node scripts/test-deploy-production-migration-guard.mjs
+          node scripts/test-reviewed-update-migration.mjs
       - run: pnpm test
       - name: Verify Workers D1 and Durable Object runtime
         run: pnpm --filter @mbfd/worker test:runtime
