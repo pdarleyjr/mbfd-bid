@@ -119,8 +119,11 @@ async function sourceImports(
       appliedAt: number;
     }>();
   const groups = new Map<string, typeof rows.results>();
-  for (const row of rows.results)
-    groups.set(row.importId, [...(groups.get(row.importId) ?? []), row]);
+  for (const row of rows.results) {
+    const records = groups.get(row.importId);
+    if (records) records.push(row);
+    else groups.set(row.importId, [row]);
+  }
   for (const [importId, records] of groups) {
     const first = records[0];
     if (!first) continue;
@@ -134,7 +137,9 @@ async function sourceImports(
       sha256:
         receipt?.workbook_hash ??
         bidContentHash(canonical(records.map((row) => [row.rowNumber, row.sourceJson]))),
-      acceptedAt: new Date(Math.max(...records.map((row) => row.appliedAt))).toISOString(),
+      acceptedAt: new Date(
+        records.reduce((latest, row) => Math.max(latest, row.appliedAt), first.appliedAt),
+      ).toISOString(),
     });
   }
   return receipts;
