@@ -6,6 +6,18 @@ import { BidPoolSelectionSchema } from './bid-opportunity-pool.js';
 const CommandIdSchema = z.string().uuid();
 const ExpectedSeqSchema = z.number().int().nonnegative();
 const ReasonSchema = z.string().min(1).max(500);
+/** Explicit operator acknowledgement; the server derives and rechecks every
+ * warning against the canonical sequence and immutable session evidence. */
+export const AdminBidOverrideSchema = z
+  .object({
+    acknowledged: z.literal(true),
+    warningCodes: z
+      .array(z.string().trim().min(1).max(100))
+      .max(50)
+      .refine((codes) => new Set(codes).size === codes.length),
+  })
+  .strict();
+export type AdminBidOverride = z.infer<typeof AdminBidOverrideSchema>;
 const FallbackSelectionSchema = z
   .object({ policyId: z.string().min(1), tierId: z.string().min(1) })
   .strict();
@@ -98,6 +110,7 @@ const LiveCommandBase = z.object({
 export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.record_selection'),
+    adminOverride: AdminBidOverrideSchema.optional(),
     membershipIds: z
       .array(z.string().trim().min(1).max(80))
       .max(20)
@@ -130,6 +143,7 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
    * are validated by the canonical boundary. Uses the existing amendment grant. */
   LiveCommandBase.extend({
     type: z.literal('live.correct_bid'),
+    adminOverride: AdminBidOverrideSchema.optional(),
     reason: ReasonSchema.trim().min(1),
     memberId: z.number().int().positive(),
     originalCommandId: CommandIdSchema,
@@ -155,6 +169,9 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.disposition'),
     disposition: z.enum(['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE']),
+    memberId: z.number().int().positive().optional(),
+    deferStageId: z.string().trim().min(1).max(160).optional(),
+    adminOverride: AdminBidOverrideSchema.optional(),
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.force_selection'),

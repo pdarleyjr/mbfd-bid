@@ -15,7 +15,7 @@ import {
   commitLiveBidCommand,
   loadCanonicalBidSessionState,
 } from '../../src/commands/canonical-command-service.js';
-import { emptyBidSessionState } from '../../src/durable/bid-session-state.js';
+import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
 import { mintPrintToken } from '../../src/exports/print-token.js';
 import { app } from '../../src/index.js';
 import { bidDefinitionContextHash } from '../../src/lib/bid-definition-context.js';
@@ -31,8 +31,12 @@ const MEMBERS = [100101, 100102] as const;
 const POSITIONS = ['runtime-one', 'runtime-two', 'runtime-spare'] as const;
 const NOW = Date.parse('2038-01-01T10:00:00.000Z');
 
-async function seedFrozenSource(deferredSpecialty = false, sessionId = SESSION) {
-  const year = deferredSpecialty ? 2039 : 2038;
+async function seedFrozenSource(
+  deferredSpecialty = false,
+  sessionId = SESSION,
+  sourceYear?: number,
+) {
+  const year = sourceYear ?? (deferredSpecialty ? 2039 : 2038);
   const versionTag = `${year}.1`;
   const policy = FrozenLiveBidPolicySchema.parse({
     v: 1,
@@ -300,7 +304,7 @@ async function adminToken() {
   );
 }
 
-async function persistedCorrectionRows() {
+async function persistedCorrectionRows(sessionId = SESSION) {
   const tables = [
     'canonical_bid_session_state',
     'bid_command_events',
@@ -313,7 +317,7 @@ async function persistedCorrectionRows() {
       async (table) =>
         (
           await env.DB.prepare(`SELECT * FROM ${table} WHERE bid_session_id=? ORDER BY rowid`)
-            .bind(SESSION)
+            .bind(sessionId)
             .all()
         ).results,
     ),
@@ -321,6 +325,156 @@ async function persistedCorrectionRows() {
 }
 
 describe('audited corrections on actual Workers D1 and Durable Object runtime', () => {
+  it(
+    'retains an administrator-deferred order and early A-Day obligation through actual DO eviction',
+    { timeout: 30_000 },
+    async () => {
+      const SESSION = 'synthetic-runtime-operator-override';
+      const { policy, snapshotJson } = await seedFrozenSource(true, SESSION, 2040);
+      let counter = 0;
+      const common = (seq: number) => ({
+        v: 1 as const,
+        commandId: `eeeeeeee-eeee-4eee-aeee-${String(++counter).padStart(12, '0')}`,
+        bidSessionId: SESSION,
+        expectedSeq: seq,
+        actor: { id: MEMBERS[0], role: 'admin' as const },
+        reason: 'Synthetic audited operator deferral',
+        evidenceReference: null,
+      });
+      const initial = {
+        ...emptyBidSessionState(SESSION),
+        currentPhase: 'position_bid' as const,
+        currentBidderId: MEMBERS[0],
+        bidOrder: MEMBERS.map((memberId, index) => ({
+          memberId,
+          ordinal: index + 1,
+          pool: 'FF' as const,
+          stageId: 'ff',
+        })),
+      };
+      const defer: LiveBidCommand = {
+        ...common(0),
+        type: 'live.disposition',
+        disposition: 'DEFER',
+        memberId: MEMBERS[0],
+        adminOverride: { acknowledged: true, warningCodes: ['DEFER_MEMBER'] },
+      };
+      const postponed = await commitLiveBidCommand({
+        db: env.DB,
+        state: initial,
+        policy,
+        command: defer,
+      });
+      expect(postponed.result.kind, JSON.stringify(postponed.result)).toBe('accepted');
+      if (!postponed.canonicalState) throw new Error('Deferred runtime state missing');
+      expect(postponed.canonicalState.bidOrder.map((entry) => entry.memberId)).toEqual(
+        [...MEMBERS].reverse(),
+      );
+      const input: LiveBidCommand = {
+        ...common(1),
+        type: 'live.record_selection',
+        memberId: MEMBERS[0],
+        positionId: 'runtime-one',
+        adminOverride: { acknowledged: true, warningCodes: [] },
+      };
+      const token = await adminToken();
+      const beforePreview = await persistedCorrectionRows(SESSION);
+      const preview = await app.fetch(
+        new Request(`http://x/api/admin/bid-session/${SESSION}/commands/live/preview`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        }),
+        readbackEnv(),
+      );
+      expect(preview.status).toBe(200);
+      const review = await preview.json<{
+        valid: boolean;
+        expectedSeq: number;
+        warnings: { code: string }[];
+      }>();
+      expect(review).toMatchObject({ valid: true, expectedSeq: 1 });
+      expect(await persistedCorrectionRows(SESSION)).toEqual(beforePreview);
+      const award = {
+        ...input,
+        adminOverride: {
+          acknowledged: true as const,
+          warningCodes: review.warnings.map((warning) => warning.code),
+        },
+      };
+      const stub = env.BID_SESSION.get(env.BID_SESSION.idFromName(SESSION));
+      const send = async (command: LiveBidCommand) =>
+        (
+          await stub.fetch('https://do/admin/commands/live', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(command),
+          })
+        ).json<LiveBidCommandResult>();
+      const accepted = await send(award);
+      expect(accepted.kind, JSON.stringify(accepted)).toBe('accepted');
+      const beforeEviction = await loadCanonicalBidSessionState(env.DB, SESSION);
+      expect(beforeEviction).toMatchObject({
+        currentBidderId: MEMBERS[1],
+        fills: { 'runtime-one': { memberId: MEMBERS[0] } },
+      });
+      expect(beforeEviction?.aDay?.picks.some((pick) => pick.memberId === MEMBERS[0])).toBe(false);
+      let oldInstance: unknown;
+      await runInDurableObject(stub, (instance) => {
+        oldInstance = instance;
+      });
+      await evictDurableObject(stub);
+      expect(await send(award)).toEqual(accepted);
+      await runInDurableObject(stub, (instance) => {
+        expect(instance).not.toBe(oldInstance);
+        const projection = (instance as unknown as { memoryState: BidSessionState | null })
+          .memoryState;
+        expect(projection?.bidOrder).toEqual(beforeEviction?.bidOrder);
+        expect(projection?.queueCursor).toBe(beforeEviction?.queueCursor);
+        expect(projection?.annual?.unresolvedMemberIds).toEqual(
+          beforeEviction?.annual?.unresolvedMemberIds,
+        );
+      });
+      expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toEqual(beforeEviction);
+      const remaining = await send({
+        ...common(2),
+        type: 'live.record_selection',
+        memberId: MEMBERS[1],
+        positionId: 'runtime-two',
+        aDay: 'G2',
+      });
+      expect(remaining.kind, JSON.stringify(remaining)).toBe('accepted');
+      expect(await loadCanonicalBidSessionState(env.DB, SESSION)).toMatchObject({
+        currentPhase: 'a_day_bid',
+        currentBidderId: MEMBERS[0],
+      });
+      await evictDurableObject(stub);
+      const finished = await send({
+        ...common(3),
+        type: 'live.record_a_day',
+        memberId: MEMBERS[0],
+        aDay: 'G1',
+      });
+      expect(finished.kind, JSON.stringify(finished)).toBe('accepted');
+      const final = await loadCanonicalBidSessionState(env.DB, SESSION);
+      expect(final).toMatchObject({
+        currentPhase: 'complete',
+        currentBidderId: null,
+        annual: { unresolvedMemberIds: [] },
+      });
+      expect(final?.aDay?.picks.filter((pick) => pick.memberId === MEMBERS[0])).toHaveLength(1);
+      expect(
+        (
+          await env.DB.prepare(
+            'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+          )
+            .bind(SESSION)
+            .first<{ snapshot_json: string }>()
+        )?.snapshot_json,
+      ).toBe(snapshotJson);
+    },
+  );
+
   it(
     'reconstructs correction and revocation after eviction, replays exactly, and seals only the corrected final award',
     { timeout: 30_000 },

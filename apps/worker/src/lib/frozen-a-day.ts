@@ -13,6 +13,7 @@ import {
 import type { BidSessionPolicySnapshot, FrozenAnnualOperationsPolicy } from '@mbfd/shared';
 import { dehydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
+import { type AdminBidOverrideWarning, addAdminBidOverrideWarning } from './admin-bid-override.js';
 import { evaluateMembershipDistributions } from './bid-membership-distribution.js';
 import { eligibilityMemberFromFrozen } from './bid-policy.js';
 
@@ -22,6 +23,7 @@ type FrozenADayEvaluation =
       aDay: BidSessionState['aDay'];
       hasDeferredSelections: boolean;
       nextDeferredMemberId: number | null;
+      overrideWarnings?: AdminBidOverrideWarning[];
     }
   | { ok: false; code: string };
 
@@ -30,6 +32,11 @@ type FrozenADayEvaluationInput = {
   actorId: number;
   forced: boolean;
   finalize: boolean;
+  /** Supplied by the authenticated canonical boundary for one reviewed pick. */
+  adminOverrideMemberId?: number;
+  /** Current proposed pick is replayed after the full prior accepted state,
+   * including previously approved excesses, so ordinary commands stay strict. */
+  selectionMemberId?: number;
 };
 
 export function frozenADayConstraints(
@@ -76,7 +83,8 @@ function samePick(left: ADayPick, right: ADayPick) {
  * pure A-Day engine. Awards carrying an A-Day are pre-seeded; an early award
  * under a Timeline exception carries none and enters the same engine when its
  * ordinary turn (or, failing that, the post-position phase) records it.
- * No timing branch creates a second authority or bypasses capacity rules.
+ * Only explicit canonical administrator overrides may depart from business
+ * capacities; normal picks and structural group/identity validation stay strict.
  */
 export function evaluateFrozenADays(
   snapshot: Extract<BidSessionPolicySnapshot, { v: 3 }>,
@@ -117,6 +125,7 @@ export function evaluateFrozenADays(
     officerMode: 'NONE',
   };
   const availableGroups = new Set(annual.aDay.combatGroups);
+  const overrideWarnings: AdminBidOverrideWarning[] = [];
   const groups = {
     G1: availableGroups.has('G1') ? cap : unavailableCap,
     G2: availableGroups.has('G2') ? cap : unavailableCap,
@@ -173,11 +182,52 @@ export function evaluateFrozenADays(
   // Validate and apply simultaneous picks before replaying delayed canonical
   // picks. This keeps both timing paths under the exact same capacity and
   // scoped-constraint engine.
-  for (const pick of simultaneousPicks) {
+  const approvedCapacityDeparture = (pick: ADayPick) => {
+    const award = Object.entries(state.fills).find(
+      ([, candidate]) => candidate.memberId === pick.memberId,
+    );
+    const approval = award?.[1].aDayOverride;
+    return (
+      approval !== undefined &&
+      approval.positionId === award?.[0] &&
+      approval.aDay === pick.aDay &&
+      approval.commandId.length > 0 &&
+      approval.actorMemberId > 0 &&
+      approval.reason.trim().length >= 4 &&
+      approval.warningCodes.some((code) => code.startsWith('A_DAY_POLICY_DEVIATION'))
+    );
+  };
+  const applyReviewedPick = (pick: ADayPick): { ok: true } | { ok: false; code: string } => {
+    if (
+      pick.shift !== 'D' &&
+      pick.aDay.startsWith('G') &&
+      !availableGroups.has(pick.aDay as 'G1' | 'G2' | 'G3' | 'G4')
+    )
+      return { ok: false, code: 'GROUP_FULL' };
     const validation = canPick(engine, pick.memberId, pick.aDay);
-    if (!validation.ok) return { ok: false, code: validation.reasonCode };
+    if (!validation.ok) {
+      const businessRule = [
+        'GROUP_FULL',
+        'WEEKDAY_FULL',
+        'SCOPED_A_DAY_MAXIMUM',
+        'OFFICER_INVARIANT_VIOLATED',
+      ].includes(validation.reasonCode);
+      const currentOverride = input.adminOverrideMemberId === pick.memberId;
+      if (!businessRule || (!currentOverride && !approvedCapacityDeparture(pick)))
+        return { ok: false, code: validation.reasonCode };
+      if (currentOverride)
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          `A_DAY_POLICY_DEVIATION:${validation.reasonCode}`,
+          `${validation.reasonLabel} The administrator is explicitly overriding this frozen A-Day staffing rule.`,
+        );
+    }
     engine = applyPick(engine, pick);
-  }
+    return { ok: true };
+  };
+  // Rebuild ordinary accepted picks before acknowledged departures. Object
+  // property ordering after a correction must not transfer the excess to an
+  // unrelated ordinary member or invalidate their earlier valid pick.
   // Replay delayed canonical picks in the order the sequenced queue accepted
   // them; restart reconstruction never depends on client ordering.
   const phase2Index = (memberId: number) => phase2Order.indexOf(memberId);
@@ -188,10 +238,16 @@ export function evaluateFrozenADays(
         left.pickedAtMs - right.pickedAtMs ||
         phase2Index(left.memberId) - phase2Index(right.memberId),
     );
-  for (const pick of persistedDeferred) {
-    const validation = canPick(engine, pick.memberId, pick.aDay);
-    if (!validation.ok) return { ok: false, code: validation.reasonCode };
-    engine = applyPick(engine, pick);
+  const replayPicks = [...simultaneousPicks, ...persistedDeferred].sort(
+    (left, right) =>
+      (input.selectionMemberId === left.memberId ? 2 : Number(approvedCapacityDeparture(left))) -
+        (input.selectionMemberId === right.memberId
+          ? 2
+          : Number(approvedCapacityDeparture(right))) || left.pickedAtMs - right.pickedAtMs,
+  );
+  for (const pick of replayPicks) {
+    const applied = applyReviewedPick(pick);
+    if (!applied.ok) return applied;
   }
   const nextDeferredMemberId = nextBidder(engine) ?? null;
   if (input.finalize) {
@@ -212,6 +268,7 @@ export function evaluateFrozenADays(
     aDay: dehydrateADayState(engine),
     hasDeferredSelections: deferredMemberIds.size > 0,
     nextDeferredMemberId,
+    overrideWarnings,
   };
 }
 
