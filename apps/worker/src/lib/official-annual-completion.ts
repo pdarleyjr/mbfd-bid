@@ -16,11 +16,17 @@ export async function loadCanonicalAmendmentLinks(
     await db
       .prepare(
         `SELECT json_extract(event_json, '$.supersedesBidId') AS original_bid_id,
-                json_extract(event_json, '$.replacementBidId') AS replacement_bid_id
+                COALESCE(json_extract(event_json, '$.replacementBidId'),
+                  CASE WHEN json_extract(event_json, '$.operation')='correct_bid'
+                    AND json_extract(event_json, '$.correctionOperation')='REVOKE'
+                    THEN json_extract(event_json, '$.bidId') END) AS replacement_bid_id
            FROM bid_command_events
           WHERE bid_session_id = ?
             AND json_type(event_json, '$.supersedesBidId') = 'text'
-            AND json_type(event_json, '$.replacementBidId') = 'text'
+            AND (json_type(event_json, '$.replacementBidId') = 'text' OR
+              (json_extract(event_json, '$.operation')='correct_bid'
+                AND json_extract(event_json, '$.correctionOperation')='REVOKE'
+                AND json_type(event_json, '$.bidId')='text'))
           ORDER BY seq, id`,
       )
       .bind(sessionId)

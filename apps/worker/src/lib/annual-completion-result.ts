@@ -85,7 +85,8 @@ export type CanonicalAnnualCompletionProjection<Mode extends 'REAL' | 'MOCK' = '
         | 'FINAL_A_DAY_DUPLICATE'
         | 'FINAL_A_DAY_MEMBER_MISMATCH'
         | 'FROZEN_POSITION_REFERENCE_MISSING'
-        | 'DUPLICATE_FINAL_MEMBER';
+        | 'DUPLICATE_FINAL_MEMBER'
+        | 'AMENDMENT_LINEAGE_INVALID';
       readonly unresolvedMemberIds: readonly number[];
     };
 
@@ -167,7 +168,25 @@ function projectCompletionForMode<Mode extends 'REAL' | 'MOCK'>(
     const aDay = aDayByMember.get(fill.memberId);
     if (aDay === undefined) return { ok: false, code: 'FINAL_A_DAY_MISSING', unresolvedMemberIds };
     participantMemberIds.add(fill.memberId);
-    const amendment = amendmentByReplacement.get(fill.bidId) ?? null;
+    const latestAmendment = amendmentByReplacement.get(fill.bidId);
+    let originalBidId = latestAmendment?.originalBidId;
+    const visited = new Set([fill.bidId]);
+    while (originalBidId !== undefined && !visited.has(originalBidId)) {
+      visited.add(originalBidId);
+      const earlier = amendmentByReplacement.get(originalBidId);
+      if (!earlier) break;
+      originalBidId = earlier.originalBidId;
+    }
+    if (
+      originalBidId !== undefined &&
+      amendmentByReplacement.has(originalBidId) &&
+      visited.has(originalBidId)
+    )
+      return { ok: false, code: 'AMENDMENT_LINEAGE_INVALID', unresolvedMemberIds };
+    const amendment =
+      latestAmendment && originalBidId !== undefined
+        ? { originalBidId, replacementBidId: fill.bidId }
+        : null;
     participants.push({
       ...(fill.membershipIds === undefined ? {} : { membershipIds: fill.membershipIds }),
       memberId: fill.memberId,
