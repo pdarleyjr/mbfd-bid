@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
     cookieSet,
     cookies: vi.fn(async () => ({ set: cookieSet })),
     cfEnv: vi.fn(),
-    getWorkerBase: vi.fn(() => 'https://api.staging.bid.mbfdhub.com'),
+    getWorkerBase: vi.fn(() => 'https://api.bid.test.invalid'),
     fetch: vi.fn(),
   };
 });
@@ -20,7 +20,7 @@ describe('POST /api/pin', () => {
     mocks.cookieSet.mockReset();
     mocks.cookies.mockClear();
     mocks.fetch.mockReset();
-    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'staging' : undefined));
+    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'test' : undefined));
     vi.stubGlobal('fetch', mocks.fetch);
   });
 
@@ -33,10 +33,10 @@ describe('POST /api/pin', () => {
     const { POST } = await import('../../app/api/pin/route');
 
     const response = await POST(
-      new Request('https://staging.bid.mbfdhub.com/api/pin', {
+      new Request('https://bid.test.invalid/api/pin', {
         method: 'POST',
         headers: {
-          Origin: 'https://staging.bid.mbfdhub.com',
+          Origin: 'https://bid.test.invalid',
           'Sec-Fetch-Site': 'same-origin',
           'content-type': 'application/json',
           'cf-connecting-ip': '198.51.100.83',
@@ -63,10 +63,10 @@ describe('POST /api/pin', () => {
     const { POST } = await import('../../app/api/pin/route');
 
     const response = await POST(
-      new Request('https://staging.bid.mbfdhub.com/api/pin', {
+      new Request('https://bid.test.invalid/api/pin', {
         method: 'POST',
         headers: {
-          Origin: 'https://staging.bid.mbfdhub.com',
+          Origin: 'https://bid.test.invalid',
           'Sec-Fetch-Site': 'same-origin',
           'content-type': 'application/json',
           'cf-connecting-ip': '198.51.100.84',
@@ -91,10 +91,10 @@ describe('POST /api/pin', () => {
     const { POST } = await import('../../app/api/pin/route');
 
     const response = await POST(
-      new Request('https://staging.bid.mbfdhub.com/api/pin', {
+      new Request('https://bid.test.invalid/api/pin', {
         method: 'POST',
         headers: {
-          Origin: 'https://staging.bid.mbfdhub.com',
+          Origin: 'https://bid.test.invalid',
           'Sec-Fetch-Site': 'same-origin',
           'content-type': 'application/json',
           'cf-connecting-ip': '198.51.100.85',
@@ -114,11 +114,11 @@ describe('POST /api/pin', () => {
     ['missing Origin', { 'Sec-Fetch-Site': 'same-origin' }],
     [
       'cross-site Fetch Metadata',
-      { Origin: 'https://staging.bid.mbfdhub.com', 'Sec-Fetch-Site': 'cross-site' },
+      { Origin: 'https://bid.test.invalid', 'Sec-Fetch-Site': 'cross-site' },
     ],
     [
       'same-site Fetch Metadata',
-      { Origin: 'https://staging.bid.mbfdhub.com', 'Sec-Fetch-Site': 'same-site' },
+      { Origin: 'https://bid.test.invalid', 'Sec-Fetch-Site': 'same-site' },
     ],
   ])(
     'rejects %s before rate limiting, upstream verification, or a cookie mutation',
@@ -126,7 +126,7 @@ describe('POST /api/pin', () => {
       const { POST } = await import('../../app/api/pin/route');
 
       const response = await POST(
-        new Request('https://staging.bid.mbfdhub.com/api/pin', {
+        new Request('https://bid.test.invalid/api/pin', {
           method: 'POST',
           headers: { 'content-type': 'application/json', ...headers },
           body: JSON.stringify({ pin: '2300' }),

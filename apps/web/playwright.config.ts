@@ -5,6 +5,12 @@ import { defineConfig, devices } from '@playwright/test';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const localWorkerUrl = 'http://127.0.0.1:31987';
 const workerBase = process.env.E2E_TEST_API_BASE ?? localWorkerUrl;
+const isolatedWorker = new URL(workerBase);
+if (
+  isolatedWorker.protocol !== 'http:' ||
+  !['127.0.0.1', 'localhost'].includes(isolatedWorker.hostname)
+)
+  throw new Error('Browser tests require an explicitly isolated loopback Worker');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -39,12 +45,12 @@ export default defineConfig({
         // Match Next's build/runtime mode; the isolated API and signing key
         // provide test separation without changing React's runtime environment.
         NODE_ENV: process.env.E2E_USE_BUILT_WEB === '1' ? 'production' : 'development',
-        ENV: 'staging',
+        ENV: 'test',
         // The operator's ignored local rehearsal origin must not change the
-        // staging-origin contract exercised by this isolated E2E server.
+        // synthetic-origin contract exercised by this isolated E2E server.
         MBFD_LOCAL_REHEARSAL_ORIGIN: '',
         // An explicit controlled API wins. Otherwise browser tests use only
-        // the loopback annual mock below and never fall back to shared staging.
+        // the loopback annual mock below and never fall back to a remote environment.
         NEXT_PUBLIC_WORKER_BASE: workerBase,
       } as Record<string, string>,
     },

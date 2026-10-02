@@ -1,30 +1,25 @@
 name: D1 backup
 
-# Plan 09 Task 6 — scheduled D1 snapshots to R2.
-#
-# Runs every 6 hours by default; switch the cron to 15 minutes during the
-# live bid week. `workflow_dispatch` allows the operator to trigger an
-# ad-hoc backup before risky operations.
+# Production snapshots are explicitly dispatched before authorized operations.
+# The retired environment's schedule is removed; this does not add scheduled
+# production work.
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'   # every 6 hours
   workflow_dispatch:
     inputs:
       env:
-        description: staging | production
+        description: Explicit production backup scope
         required: true
-        default: staging
+        default: production
         type: choice
         options:
-          - staging
           - production
 
 permissions:
   contents: read
 
 concurrency:
-  group: d1-backup-${{ github.event_name == 'workflow_dispatch' && inputs.env || 'scheduled' }}
+  group: d1-backup-production
   cancel-in-progress: false
 
 env:
@@ -38,13 +33,6 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Scheduled runs only back up staging; production matrix entry is
-        # added by Plan 09b once production D1 + R2 backups bucket exist.
-        # Use workflow_dispatch with env=production to back up prod ad-hoc.
-        env: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', inputs.env)) || fromJson('["staging"]') }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -57,6 +45,5 @@ jobs:
       - name: Run backup
         shell: pwsh
         run: |
-          $db = if ("${{ matrix.env }}" -eq "production") { "mbfd-bid-production" } else { "mbfd-bid-staging" }
-          $bucket = if ("${{ matrix.env }}" -eq "production") { "mbfd-bid-prod-backups" } else { "mbfd-bid-staging-backups" }
-          ./scripts/d1-backup.ps1 -Env ${{ matrix.env }} -DbName $db -BucketName $bucket
+          if ('${{ inputs.env }}' -ne 'production') { throw 'Explicit production backup scope is required.' }
+          ./scripts/d1-backup.ps1 -Env production -DbName mbfd-bid-production -BucketName mbfd-bid-prod-backups

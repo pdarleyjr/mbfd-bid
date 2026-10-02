@@ -14,7 +14,7 @@
     restore.
 
     Tested-restore-path target for Plan 09 Task 6 Step 4: create a throwaway
-    D1, restore staging into it, count rows, drop the throwaway. The script
+    D1, restore a verified backup into it, count rows, drop the throwaway. The script
     accepts that flow without modification.
 
 .PARAMETER Env
@@ -27,8 +27,7 @@
     R2 bucket name containing the snapshot.
 
 .PARAMETER SnapshotKey
-    Object key of the snapshot inside the bucket. Example:
-    `d1/2026-05-17/mbfd-bid-staging-2026-05-17-0600.sql`.
+    Exact object key recorded in the verified backup recovery receipt.
 
 .PARAMETER PollAttempts
     Maximum asynchronous D1-import status checks before failing closed.
@@ -36,12 +35,9 @@
 .PARAMETER PollIntervalSeconds
     Delay between asynchronous D1-import status checks.
 
-.EXAMPLE
-    ./scripts/d1-restore.ps1 `
-      -Env restore_test `
-      -DbName mbfd-bid-restore-test `
-      -BucketName mbfd-bid-staging-backups `
-      -SnapshotKey "d1/2026-05-19/mbfd-bid-staging-2026-05-19-0600.sql"
+.NOTES
+    Supply an explicitly authorized disposable database and the exact verified
+    snapshot key. This utility does not choose a default restore target.
 #>
 param(
   [Parameter(Mandatory)][string]$Env,

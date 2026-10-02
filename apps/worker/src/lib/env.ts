@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const EnvSchema = z.object({
-  ENV: z.enum(['staging', 'production']),
+  ENV: z.enum(['test', 'production']),
   PORTAL_BASE_URL: z.string().url(),
   JWT_SIGNING_KEY: z.string().min(32),
   // Required only by the manual TeleStaff ingestion route. It remains optional
@@ -22,7 +22,7 @@ export function validateEnv(env: unknown): ValidatedEnv {
   // a missing federation credential remains a startup/protected-path failure.
   if (testEnv === 'true' && typeof env === 'object' && env !== null) {
     return EnvSchema.parse({
-      ENV: 'staging',
+      ENV: 'test',
       PORTAL_BASE_URL: 'https://test.invalid',
       PORTAL_BID_FEDERATION_TOKEN: 'test-fixture-only',
       ...env,

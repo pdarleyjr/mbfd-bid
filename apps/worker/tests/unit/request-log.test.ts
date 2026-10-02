@@ -6,7 +6,7 @@ import type { WorkerEnv } from '../../src/types/env.js';
 
 function env(): WorkerEnv {
   return {
-    ENV: 'staging',
+    ENV: 'test',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'x'.repeat(64),
     PORTAL_BID_READER: 'tok',

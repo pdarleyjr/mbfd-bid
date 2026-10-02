@@ -188,7 +188,7 @@ export async function setupTestD1(): Promise<TestD1> {
 
   const d1 = makeD1Adapter(sqlite);
   const env: WorkerEnv = {
-    ENV: 'staging',
+    ENV: 'test',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: 'b'.repeat(64),
     PORTAL_BID_READER: 'tok',

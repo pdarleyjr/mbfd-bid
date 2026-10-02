@@ -11,7 +11,7 @@
  *     "D:/GitHub_Repos/MBFD_Hub/analysis/bid_pick.csv" \
  *     > prior-positions.sql
  *
- *   pnpm wrangler d1 execute mbfd-bid-staging --remote --file=prior-positions.sql
+ *   Review the generated SQL separately; this utility never applies it to a remote database.
  *
  * Idempotent: the UPDATE matches on employee_id, so re-running with the
  * same CSV is a no-op. Members not present in the CSV (new hires) keep

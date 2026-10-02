@@ -5,7 +5,7 @@ Hub contract baseline: `a69489ef2583c6278d5ff5da867404a4e4d2cdcf`.
 The only normal-human Bid sign-in flow is `/login` → `/api/auth/start` → Hub
 `/auth/bid/authorize` → Bid callback → Worker code exchange.  Bid never
 accepts, stores, logs, or forwards a human password.  `/api/auth/login` and
-the staging local-admin/bootstrap path are removed.
+the retired local-admin/bootstrap path are removed.
 
 ## Identity model
 
@@ -54,19 +54,13 @@ credential and remains responsible for live mutation/action-grant checks.
 ## Browser safety and logout
 
 The callback mapping is fixed to `https://bid.mbfdhub.com/api/auth/callback`
-or `https://staging.bid.mbfdhub.com/api/auth/callback`; client and audience are
+; client and audience are
 both `bid`. Deep links are local-path-only and cryptographically bound into the
 short-lived federation-state cookie. Authentication routes and `login` loops,
 schemes, scheme-relative URLs, and backslashes are rejected. Bid logout clears
 only Bid first-party cookies; it does not log the user out of Hub.
 
-## Remaining staging qualification
 
-Provision or verify by name only: `PORTAL_BASE_URL`,
-`PORTAL_BID_FEDERATION_TOKEN`, `JWT_SIGNING_KEY`, `ENV`, and the optional
-read-only `PORTAL_BID_READER` where the Hub portal bridge remains enabled.
-Validate real Hub exchange/revalidation, callback registration, cookie scope,
-admin entitlement revocation, disabled/link-invalid users, security-version
-invalidation, and live WebSocket reconnect behavior. No deployment, Hub
-change, D1 mutation, portal writeback, or secret rotation is part of this
-candidate.
+## Deployment retirement
+
+The obsolete test deployment was retired on 2026-10-01. Production retains the exact Hub endpoint, callback, token audience, member identity binding, HttpOnly cookie and five-minute command rule. Reserved synthetic redirect fixtures certify only isolated routing behavior; real authenticated production acceptance remains separate.

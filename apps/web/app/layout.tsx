@@ -1,8 +1,6 @@
 import { CsrfFetchBoundary } from '@/components/CsrfFetchBoundary';
 import type { Metadata, Viewport } from 'next';
-import { StagingBanner } from './_components/StagingBanner';
 import './globals.css';
-import { cfEnv } from '../lib/cf-env';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,12 +23,9 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const environment = cfEnv('ENV');
-
   return (
     <html lang="en">
       <body className="min-h-screen bg-background text-foreground antialiased">
-        <StagingBanner environment={environment} />
         <CsrfFetchBoundary>{children}</CsrfFetchBoundary>
       </body>
     </html>

@@ -4,7 +4,6 @@
 
 [![CI](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/ci.yml/badge.svg)](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/codeql.yml/badge.svg)](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/codeql.yml)
-[![Deploy staging](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/deploy-staging.yml/badge.svg)](https://github.com/pdarleyjr/mbfd-bid/actions/workflows/deploy-staging.yml)
 
 A live platform that supports the annual MBFD shift-bid process.
 
@@ -30,7 +29,7 @@ tracked in [the implementation contract](docs/unified-platform/implementation-co
 - 📱 Mobile-first, accessible (WCAG AA)
 - 🎯 Live multi-user via Cloudflare Durable Objects
 - 🗂️ Hash-chained immutable audit log
-- 🛰️ Action-card write-back to the existing MBFD Employee Portal
+- Portal publication remains disabled until separately authorized.
 
 ## Documentation
 
@@ -51,7 +50,7 @@ companion `MBFD_Hub` repository:
 | API | Cloudflare Workers · Hono · Drizzle ORM · Zod |
 | Realtime | Cloudflare Durable Objects + WebSockets |
 | Data | Cloudflare D1 (SQLite) · R2 · KV · Queues |
-| Auth | Employee Portal SSO (`/verify-credentials`) + JWT (HS256, 8h) + PIN gate |
+| Auth | Hub authorization-code SSO + JWT + KV-backed PIN gate |
 | Testing | Vitest · Playwright · Miniflare |
 | CI/CD | GitHub Actions · Wrangler · `@opennextjs/cloudflare` |
 | Lint/Format | Biome |
@@ -67,6 +66,8 @@ pnpm lint         # Biome
 pnpm typecheck
 ```
 
+Local development uses the dedicated `apps/worker/wrangler.test.toml` configuration and isolated test keys; it has no deployed resource identifiers or live Hub endpoint. Configure the local API target and test keys in ignored local files.
+
 Open http://localhost:3000. Member access requires an explicitly configured
 KV-backed PIN; there is no default PIN or legacy environment-secret fallback.
 
@@ -75,7 +76,7 @@ KV-backed PIN; there is no default PIN or legacy environment-secret fallback.
 ```
 mbfd-bid/
 ├── apps/
-│   ├── web/        Next.js 15 frontend (Cloudflare Pages)
+│   ├── web/        Next.js 15 frontend (OpenNext Cloudflare Worker)
 │   └── worker/     Hono API + BidSession Durable Object
 ├── packages/
 │   ├── shared/     Zod schemas, types, design tokens
@@ -85,8 +86,9 @@ mbfd-bid/
 
 ## Deploy
 
-- Pushes to `main` → automatic staging deploy via `.github/workflows/deploy-staging.yml`
-- No automatic production deployment is configured.
+- CI validates the production OpenNext artifact and isolated local test Workers.
+- Production release is manually dispatched for one immutable approved SHA through `.github/workflows/deploy-production.yml`, with backup, migration and Worker health gates.
+- The obsolete test deployment was retired on 2026-10-01. See [retirement boundaries](docs/staging-retirement-20261001.md).
 
 ## Security
 

@@ -11,13 +11,13 @@ export function publicWebOrigin(
     | undefined,
 ): string | null {
   if (
-    env?.ENV === 'staging' &&
+    env?.ENV === 'test' &&
     env.PORTAL_BASE_URL === 'https://test.invalid' &&
     env.WEB_BASE_URL === 'http://127.0.0.1:3000'
   )
     return env.WEB_BASE_URL;
   if (env?.ENV === 'production') return 'https://bid.mbfdhub.com';
-  if (env?.ENV === 'staging') return 'https://staging.bid.mbfdhub.com';
+  if (env?.ENV === 'test') return 'https://bid.test.invalid';
   return null;
 }
 

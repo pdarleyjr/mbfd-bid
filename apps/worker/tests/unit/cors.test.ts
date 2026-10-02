@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import type { WorkerEnv } from '../../src/types/env';
 
-function mkEnv(env: 'staging' | 'production'): WorkerEnv {
+function mkEnv(env: 'test' | 'production'): WorkerEnv {
   return {
     ENV: env,
     PORTAL_BASE_URL: 'https://portal.example',
@@ -25,7 +25,7 @@ function mkEnv(env: 'staging' | 'production'): WorkerEnv {
   };
 }
 
-async function preflight(origin: string, env: 'staging' | 'production'): Promise<Response> {
+async function preflight(origin: string, env: 'test' | 'production'): Promise<Response> {
   return app.request(
     '/api/health',
     {
@@ -46,18 +46,18 @@ describe('CORS origin predicate', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('https://bid.mbfdhub.com');
   });
 
-  it('reflects https://staging.bid.mbfdhub.com (subdomain)', async () => {
-    const res = await preflight('https://staging.bid.mbfdhub.com', 'staging');
-    expect(res.headers.get('access-control-allow-origin')).toBe('https://staging.bid.mbfdhub.com');
+  it('reflects https://bid.test.invalid (subdomain)', async () => {
+    const res = await preflight('https://bid.test.invalid', 'test');
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://bid.test.invalid');
   });
 
   it('rejects the production web origin in staging', async () => {
-    const res = await preflight('https://bid.mbfdhub.com', 'staging');
+    const res = await preflight('https://bid.mbfdhub.com', 'test');
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
   it('rejects the staging web origin in production', async () => {
-    const res = await preflight('https://staging.bid.mbfdhub.com', 'production');
+    const res = await preflight('https://bid.test.invalid', 'production');
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
@@ -77,12 +77,12 @@ describe('CORS origin predicate', () => {
   });
 
   it('rejects http://localhost:3000.evil.com (subdomain smuggling)', async () => {
-    const res = await preflight('http://localhost:3000.evil.com', 'staging');
+    const res = await preflight('http://localhost:3000.evil.com', 'test');
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
   it('rejects http://localhost:3000 in staging', async () => {
-    const res = await preflight('http://localhost:3000', 'staging');
+    const res = await preflight('http://localhost:3000', 'test');
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
@@ -97,7 +97,7 @@ describe('CORS origin predicate', () => {
   });
 
   it('rejects a non-standard port on an otherwise valid staging host', async () => {
-    const res = await preflight('https://staging.bid.mbfdhub.com:8443', 'staging');
+    const res = await preflight('https://bid.test.invalid:8443', 'test');
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
@@ -107,11 +107,11 @@ describe('CORS origin predicate', () => {
       {
         method: 'OPTIONS',
         headers: {
-          Origin: 'https://staging.bid.mbfdhub.com',
+          Origin: 'https://bid.test.invalid',
           'Access-Control-Request-Method': 'GET',
         },
       },
-      { ...mkEnv('staging'), ENV: undefined } as unknown as WorkerEnv,
+      { ...mkEnv('test'), ENV: undefined } as unknown as WorkerEnv,
     );
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });

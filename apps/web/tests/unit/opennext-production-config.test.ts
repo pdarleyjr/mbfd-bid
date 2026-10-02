@@ -45,15 +45,9 @@ describe('OpenNext deployment configuration', () => {
     expect(packageJson.scripts.predev).toBe(
       'pnpm -r --filter @mbfd/shared --filter @mbfd/eligibility --filter @mbfd/a-day run build',
     );
-    expect(packageJson.scripts['build:opennext:staging']).toBe(
-      'node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env staging',
-    );
-    expect(packageJson.scripts['preview:opennext:staging']).toBe(
-      'pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js preview --env staging',
-    );
-    expect(packageJson.scripts['deploy:staging']).toBe(
-      'pnpm build:opennext:staging && node --env-file=.env.staging ./node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env staging',
-    );
+    expect(packageJson.scripts['build:opennext:staging']).toBeUndefined();
+    expect(packageJson.scripts['preview:opennext:staging']).toBeUndefined();
+    expect(packageJson.scripts['deploy:staging']).toBeUndefined();
     expect(packageJson.scripts['build:opennext:production']).toBe(
       'node --env-file=.env.production ./node_modules/@opennextjs/cloudflare/dist/cli/index.js build --env production',
     );
@@ -65,7 +59,7 @@ describe('OpenNext deployment configuration', () => {
     );
   });
 
-  it('binds staging and production to distinct API and custom-domain targets', () => {
+  it('keeps only the explicit production API and custom-domain target', () => {
     const wrangler = JSON.parse(readAppFile('wrangler.jsonc')) as {
       main?: string;
       workers_dev?: boolean;
@@ -80,23 +74,14 @@ describe('OpenNext deployment configuration', () => {
         }
       >;
     };
-    const staging = wrangler.env?.staging;
     const production = wrangler.env?.production;
 
     expect(wrangler.main).toBe('.open-next/worker.js');
     expect(wrangler.workers_dev).toBe(false);
     expect(wrangler.assets).toEqual({ directory: '.open-next/assets', binding: 'ASSETS' });
     expect(wrangler.compatibility_flags).toContain('nodejs_compat');
-    expect(staging).toMatchObject({ name: 'mbfd-bid-web-staging-opennext' });
-    expect(staging?.routes).toEqual([{ pattern: 'staging.bid.mbfdhub.com', custom_domain: true }]);
-    expect(staging?.vars).toMatchObject({
-      ENV: 'staging',
-      WORKER_URL: 'https://api.staging.bid.mbfdhub.com',
-      WORKER_BASE_URL: 'https://api.staging.bid.mbfdhub.com',
-    });
-    expect(readAppFile('.env.staging')).toBe(
-      'NEXT_PUBLIC_WORKER_BASE=https://api.staging.bid.mbfdhub.com\n',
-    );
+    expect(wrangler.env?.staging).toBeUndefined();
+    expect(existsSync(join(appRoot, '.env.staging'))).toBe(false);
     expect(production).toMatchObject({ name: 'mbfd-bid-web-production-opennext' });
     expect(production?.routes).toEqual([{ pattern: 'bid.mbfdhub.com', custom_domain: true }]);
     expect(production?.vars).toMatchObject({
@@ -120,13 +105,11 @@ describe('OpenNext deployment configuration', () => {
     expect(nextConfig).toContain('initOpenNextCloudflareForDev');
     expect(cfEnv).toContain('getCloudflareContext');
     expect(workerBase).toContain("throw new Error('worker_base_missing')");
-    expect(workerBase).not.toContain("'https://api.staging.bid.mbfdhub.com'");
-    expect(rootLayout).toContain('StagingBanner');
-    expect(rootLayout).toContain("cfEnv('ENV')");
+    expect(workerBase).not.toContain("'https://api.bid.test.invalid'");
+    expect(rootLayout).not.toContain('StagingBanner');
     expect(headers).toContain('/_next/static/*');
     expect(headers).toContain('Cache-Control: public,max-age=31536000,immutable');
-    expect(headers).toContain('https://api.staging.bid.mbfdhub.com');
-    expect(headers).toContain('wss://api.staging.bid.mbfdhub.com');
+    expect(headers).not.toContain('staging.bid.mbfdhub.com');
     expect(headers).toContain('https://api.bid.mbfdhub.com');
     expect(headers).toContain('wss://api.bid.mbfdhub.com');
 
@@ -155,33 +138,24 @@ describe('OpenNext deployment configuration', () => {
     expect(source).toContain('/api/admin/exports/roster-data');
   });
 
-  it('has CI build the staging artifact and a manual-only production release workflow without a Pages path', () => {
+  it('has CI build the production artifact and a manual-only production release without a Pages path', () => {
     const ci = readRepoFile('.github/workflows/ci.yml');
     const playwright = readAppFile('playwright.config.ts');
-    const deployStaging = readRepoFile('.github/workflows/deploy-staging.yml');
     const deployProduction = readRepoFile('.github/workflows/deploy-production.yml');
     const workerPackageJson = JSON.parse(readRepoFile('apps/worker/package.json')) as {
       scripts: Record<string, string | undefined>;
     };
 
-    expect(ci).toContain('Build OpenNext staging artifact (non-deploy)');
-    expect(ci).toContain('pnpm build:opennext:staging');
+    expect(ci).toContain('Build OpenNext production artifact (non-deploy)');
+    expect(ci).toContain('pnpm build:opennext:production');
     expect(ci).toContain("E2E_USE_BUILT_WEB: '1'");
     expect(ci).toContain('NEXT_PUBLIC_WORKER_BASE: http://127.0.0.1:31987');
     expect(ci).toContain('Build production-mode web artifact for browser tests');
     expect(ci).toContain('pnpm --filter @mbfd/web build');
     expect(ci).toContain('apps/web/test-results');
     expect(playwright).toContain('process.env.CI ? { workers: 2 }');
-    expect(deployStaging).toContain('Deploy web (OpenNext Worker, staging)');
-    expect(deployStaging).toContain('Build and deploy OpenNext Worker (staging only)');
-    expect(deployStaging).toContain('pnpm deploy:staging');
-    expect(deployStaging).not.toContain('Cloudflare Pages');
-    expect(deployStaging).not.toContain('next-on-pages');
-    expect(deployStaging).not.toContain('--commit-dirty');
-    expect(deployStaging).toContain('node scripts/assert-staging-d1-migration-guard.mjs');
-    expect(deployStaging).not.toMatch(/wrangler\s+d1\s+migrations\s+apply/);
-    expect(deployStaging).not.toContain('pnpm db:seed:remote');
-    expect(workerPackageJson.scripts['db:seed:remote']).toBe('tsx seed/2026.ts --remote');
+    expect(existsSync(join(repoRoot, '.github/workflows/deploy-staging.yml'))).toBe(false);
+    expect(workerPackageJson.scripts['db:seed:remote']).toBeUndefined();
     expect(deployProduction).toContain('workflow_dispatch:');
     expect(deployProduction).not.toContain('\n  push:');
     expect(deployProduction).not.toContain('\n  pull_request:');

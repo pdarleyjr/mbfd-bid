@@ -43,7 +43,7 @@ export async function refreshFederatedSession(
   if (!force && isAuthorizationFresh(claims, nowSec)) return { ok: true, claims, jwt: null };
 
   // Existing route tests use RFC 2606-reserved, non-routable portal origins
-  // and synthetic JWTs. Deployed staging and production Hub origins always
+  // and synthetic JWTs. The deployed production Hub origin always
   // proceed to Hub revalidation.
   if (usesSyntheticTestPortal(env)) return { ok: true, claims, jwt: null };
 

@@ -9,7 +9,7 @@ import { cfEnv } from './cf-env';
  *   3. NEXT_PUBLIC_WORKER_BASE (baked at build time by CI)
  *
  * There is deliberately no default endpoint. An isolated deployment must not
- * silently issue requests to the shared staging Worker when its binding is
+ * silently issue requests to a deployed Worker when its binding is
  * missing.
  */
 export function getWorkerBase(): string {

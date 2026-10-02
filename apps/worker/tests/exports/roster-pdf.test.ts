@@ -42,7 +42,7 @@ describe('generateRosterPdf (Browser Rendering refactor)', () => {
       year: 2026,
       browser: browserBinding,
       printTokenSecret: 'PRINT_SECRET',
-      webBaseUrl: 'https://staging.bid.mbfdhub.com',
+      webBaseUrl: 'https://bid.test.invalid',
       r2: { put: r2Put } as unknown as R2Bucket,
       now: () => 1730000000000,
     });
@@ -57,7 +57,7 @@ describe('generateRosterPdf (Browser Rendering refactor)', () => {
     >;
     const firstGoto = gotoCalls[0];
     expect(firstGoto).toBeDefined();
-    expect(String(firstGoto?.[0] ?? '')).toMatch(/staging\.bid\.mbfdhub\.com/);
+    expect(new URL(String(firstGoto?.[0])).origin).toBe('https://bid.test.invalid');
     expect(String(firstGoto?.[0] ?? '')).toMatch(/\/exports\/render\/roster\/A\/01HF3/);
     expect(String(firstGoto?.[0] ?? '')).not.toMatch(/\/admin\/exports\/render/);
     expect(String(firstGoto?.[0] ?? '')).toMatch(/token=/);
