@@ -10,7 +10,8 @@ type Env = {
 
 /**
  * Returns a Hono middleware that 401s if the verified JWT claims (set by
- * requireAdmin) have a fresh_auth_at older than STEP_UP_MAX_AGE_SEC.
+ * requireAdmin) have Hub authorization older than STEP_UP_MAX_AGE_SEC.
+ * The original interactive-login timestamp is retained for provenance.
  *
  * MUST be composed AFTER requireAdmin — if claims are absent, returns 403.
  *
@@ -26,8 +27,8 @@ export function requireStepUpAuth(
       return c.json({ error: 'admin_required' }, 403);
     }
     const nowSec = clock();
-    if (!isStepUpFresh(claims.fresh_auth_at, nowSec)) {
-      return c.json({ error: 'step_up_required', expired_at: claims.fresh_auth_at }, 401);
+    if (!isStepUpFresh(claims.authz_checked_at, nowSec)) {
+      return c.json({ error: 'step_up_required', expired_at: claims.authz_checked_at }, 401);
     }
     await next();
     return;

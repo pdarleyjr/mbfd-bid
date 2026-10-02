@@ -13,6 +13,10 @@ import {
   operatorSignInRemaining,
   parseOperatorStepUpStatus,
 } from '@/lib/operator-step-up';
+import {
+  OPERATOR_SESSION_ACTIVITY_WINDOW_SEC,
+  OPERATOR_SESSION_RENEW_INTERVAL_SEC,
+} from '@mbfd/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
@@ -51,6 +55,15 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
   const blocked = useRef(false);
   const required = useRef(initialStatus === undefined);
   const checking = useRef(false);
+  const renewing = useRef(false);
+  const lastRenewal = useRef(
+    initialStatus &&
+      operatorSignInRemaining(initialStatus) > 0 &&
+      operatorSignInRemaining(initialStatus) < OPERATOR_SESSION_RENEW_INTERVAL_SEC
+      ? 0
+      : Date.now(),
+  );
+  const lastActivity = useRef(Date.now());
   const rejectionGeneration = useRef(0);
   const [remaining, setRemaining] = useState(
     initialStatus ? operatorSignInRemaining(initialStatus) : null,
@@ -100,10 +113,75 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
       return observeOperatorResponse(await originalFetch(input, init));
     };
     window.fetch = wrapped;
+    async function renewActiveSession() {
+      const now = Date.now();
+      if (
+        document.visibilityState !== 'visible' ||
+        now - lastActivity.current > OPERATOR_SESSION_ACTIVITY_WINDOW_SEC * 1000 ||
+        now - lastRenewal.current < OPERATOR_SESSION_RENEW_INTERVAL_SEC * 1000 ||
+        renewing.current ||
+        checking.current ||
+        blocked.current ||
+        required.current
+      )
+        return;
+      renewing.current = true;
+      lastRenewal.current = now;
+      const generation = rejectionGeneration.current;
+      try {
+        const response = await originalFetch('/api/auth/operator-status', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        const status = parseOperatorStepUpStatus(await response.json().catch(() => null));
+        if (!response.ok || status === null) {
+          if (response.status === 401) needStepUp();
+          return;
+        }
+        if (status.operatorKey !== initialOperator.current) {
+          blocked.current = true;
+          required.current = true;
+          setIdentityChanged(true);
+          setOpen(true);
+          setMessage('Operator identity changed. Reopen this console before recording a command.');
+          return;
+        }
+        // This refresh changes timing only. It never clears a prepared choice,
+        // invalidates an approval, or retries a command.
+        if (generation !== rejectionGeneration.current || required.current) return;
+        clock.current = { status, receivedAt: Date.now() };
+        setRemaining(operatorSignInRemaining(status));
+      } catch {
+        // Existing authorization remains bounded by its signed expiry.
+        // Any command still requires successful server-side Hub validation.
+      } finally {
+        renewing.current = false;
+      }
+    }
+    const active = () => {
+      lastActivity.current = Date.now();
+      void renewActiveSession();
+    };
+    const visible = () => {
+      if (document.visibilityState === 'visible') active();
+    };
+    window.addEventListener('pointerdown', active);
+    window.addEventListener('keydown', active);
+    window.addEventListener('scroll', active);
+    window.addEventListener('focus', active);
+    document.addEventListener('visibilitychange', visible);
+    const renewalTimer = setInterval(() => void renewActiveSession(), 60 * 1000);
+    void renewActiveSession();
     return () => {
       clearInterval(timer);
+      clearInterval(renewalTimer);
       window.removeEventListener(BEFORE_OPERATOR_COMMAND, beforeCommand);
       window.removeEventListener(OPERATOR_STEP_UP_REQUIRED, needStepUp);
+      window.removeEventListener('pointerdown', active);
+      window.removeEventListener('keydown', active);
+      window.removeEventListener('scroll', active);
+      window.removeEventListener('focus', active);
+      document.removeEventListener('visibilitychange', visible);
       if (window.fetch === wrapped) window.fetch = originalFetch;
     };
   }, []);
@@ -177,7 +255,9 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
                 ? 'Operator sign-in expired'
                 : remaining === null
                   ? 'Operator sign-in'
-                  : `Operator sign-in: ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')} remaining`}
+                  : remaining >= 24 * 60 * 60
+                    ? `Signed in · ${Math.ceil(remaining / (24 * 60 * 60))} days remaining; renews while you use Bid`
+                    : `Signed in · ${Math.floor(remaining / 3600)}h ${Math.floor((remaining % 3600) / 60)}m remaining; renews while you use Bid`}
           </span>
           <Button
             type="button"

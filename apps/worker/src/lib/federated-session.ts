@@ -1,4 +1,4 @@
-import type { JwtPayload } from '@mbfd/shared';
+import { BID_SESSION_EXPIRES_IN, BID_SESSION_MAX_AGE_SEC, type JwtPayload } from '@mbfd/shared';
 import type { ValidatedEnv } from './env.js';
 import { signJwt } from './jwt.js';
 import { revalidateFederatedIdentity } from './portal-client.js';
@@ -77,7 +77,7 @@ export async function refreshFederatedSession(
       fresh_auth_at: claims.fresh_auth_at,
       authz_checked_at: nowSec,
       iat: nowSec,
-      exp: nowSec + 8 * 60 * 60,
+      exp: nowSec + BID_SESSION_MAX_AGE_SEC,
     } satisfies JwtPayload;
     const jwt = await signJwt(
       {
@@ -94,7 +94,7 @@ export async function refreshFederatedSession(
         authz_checked_at: next.authz_checked_at,
       },
       env.JWT_SIGNING_KEY,
-      '8h',
+      BID_SESSION_EXPIRES_IN,
     );
     return { ok: true, claims: next, jwt };
   } catch {

@@ -46,6 +46,8 @@ export async function verifyJwt(token: string, signingKey: string): Promise<JwtP
     // legacy audit assertions remain isolated from production identities.
     member_id: legacy.sub,
     security_version: 1,
-    authz_checked_at: legacy.iat,
+    // Legacy fixtures have one authorization timestamp. Decode it as the
+    // Hub-authorization timestamp so stale-authorization tests remain honest.
+    authz_checked_at: legacy.fresh_auth_at,
   } as JwtPayload;
 }

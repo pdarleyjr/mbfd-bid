@@ -1,3 +1,5 @@
+import { BID_SESSION_MAX_AGE_SEC } from '@mbfd/shared';
+
 export const PIN_COOKIE_NAME = 'mbfd_pin';
 export const JWT_COOKIE_NAME = 'mbfd_bid_jwt';
 export const CSRF_COOKIE_NAME = 'mbfd_bid_csrf';
@@ -8,7 +10,7 @@ export const PIN_COOKIE_OPTS = {
   secure: true,
   sameSite: 'strict' as const,
   path: '/',
-  maxAge: 60 * 60 * 24 * 7, // 7 days — survives a multi-day bid event
+  maxAge: BID_SESSION_MAX_AGE_SEC,
 };
 
 export const JWT_COOKIE_OPTS = {
@@ -16,7 +18,7 @@ export const JWT_COOKIE_OPTS = {
   secure: true,
   sameSite: 'strict' as const,
   path: '/',
-  maxAge: 60 * 60 * 8, // 8 hours
+  maxAge: BID_SESSION_MAX_AGE_SEC,
 };
 
 export const FEDERATION_STATE_COOKIE_OPTS = {
@@ -37,5 +39,5 @@ export const CSRF_COOKIE_OPTS = {
   secure: true,
   sameSite: 'strict' as const,
   path: '/',
-  maxAge: 60 * 60 * 8,
+  maxAge: BID_SESSION_MAX_AGE_SEC,
 };

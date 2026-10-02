@@ -1,6 +1,7 @@
+import { BID_SESSION_MAX_AGE_SEC } from '@mbfd/shared';
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
-import { signJwt } from '../../src/lib/jwt.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { signJwt, verifyJwt } from '../../src/lib/jwt.js';
 import { STEP_UP_MAX_AGE_SEC, isStepUpFresh } from '../../src/lib/step-up-auth.js';
 import { requireStepUpAuth } from '../../src/middleware/require-step-up.js';
 import { requireAdmin } from '../../src/routes/admin/middleware.js';
@@ -103,4 +104,83 @@ describe('requireStepUpAuth middleware', () => {
     const res = await app.request('/x');
     expect(res.status).toBe(403);
   });
+});
+
+describe('long-lived Hub-verified operator session', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const hubIdentity = {
+    issuer: 'https://www.mbfdhub.com',
+    audience: 'bid',
+    hub_user_id: 901,
+    member_id: 1,
+    employee_id: 'admin',
+    security_version: 3,
+    first_name: 'Synthetic',
+    last_name: 'Admin',
+    rank: 'CHIEF',
+    role: 'admin',
+  };
+  async function command(hubResponse: Response) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => hubResponse.clone()),
+    );
+    const now = Math.floor(Date.now() / 1000);
+    const jwt = await signJwt(
+      {
+        sub: 901,
+        hub_user_id: 901,
+        member_id: 1,
+        emp: 'admin',
+        security_version: 3,
+        role: 'admin',
+        rank: 'CHIEF',
+        first_name: 'Synthetic',
+        last_name: 'Admin',
+        fresh_auth_at: now - 600,
+        authz_checked_at: now - 600,
+      },
+      KEY,
+      '8h',
+    );
+    const app = new Hono<{ Bindings: WorkerEnv }>()
+      .use('*', requireAdmin)
+      .use('*', requireStepUpAuth())
+      .post('/command', (c) => c.text('executed'));
+    return app.request(
+      '/command',
+      { method: 'POST', headers: { Authorization: `Bearer ${jwt}` } },
+      {
+        ...authEnv,
+        PORTAL_BASE_URL: 'https://www.mbfdhub.com',
+        PORTAL_BID_FEDERATION_TOKEN: 'synthetic-federation-token',
+      },
+    );
+  }
+
+  it('allows a deliberate write after five minutes only after Hub revalidates the same admin', async () => {
+    const response = await command(Response.json(hubIdentity));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('executed');
+    expect(fetch).toHaveBeenCalledOnce();
+    const refreshed = response.headers.get('X-MBFD-Session-Refresh');
+    expect(refreshed).not.toBeNull();
+    const claims = await verifyJwt(refreshed ?? '', KEY);
+    expect(claims.authz_checked_at - claims.fresh_auth_at).toBeGreaterThanOrEqual(600);
+    expect(claims.exp - claims.iat).toBe(BID_SESSION_MAX_AGE_SEC);
+  });
+
+  it.each([
+    [Response.json({}, { status: 401 }), 401],
+    [Response.json({}, { status: 503 }), 503],
+    [Response.json({ ...hubIdentity, role: 'member' }), 403],
+    [Response.json({ ...hubIdentity, security_version: 4 }), 401],
+    [Response.json({ ...hubIdentity, member_id: 2 }), 401],
+  ])(
+    'rejects revoked, unavailable, downgraded, or changed Hub authority',
+    async (hubResponse, expected) => {
+      expect((await command(hubResponse)).status).toBe(expected);
+    },
+  );
 });
