@@ -107,8 +107,10 @@ test('member details, historical assignment and explicit bid confirmation work i
       'Group 4',
     ]);
     await group.selectOption('G3');
-    await page.getByText('Choose member · 2', { exact: true }).click();
-    await page.getByRole('button', { name: /Capt Waiting Fixture/ }).click();
+    const workspace = page.getByTestId('bid-operator-workspace').filter({ visible: true });
+    await expect(workspace).toHaveCount(1);
+    await workspace.getByText('Choose member · 2', { exact: true }).click();
+    await workspace.getByRole('button', { name: /Capt Waiting Fixture/ }).click();
     await expect(panel.getByRole('heading', { name: 'Capt Waiting Fixture' })).toBeVisible();
     await expect(
       panel.getByText('Previous bid history has not been linked to this member.'),
