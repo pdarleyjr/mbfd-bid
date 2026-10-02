@@ -236,29 +236,10 @@ function executeLocal(sqlFile: string): void {
       'wrangler',
       'd1',
       'execute',
-      'mbfd-bid-staging',
-      '--env',
-      'staging',
+      'DB',
+      '--config',
+      'wrangler.test.toml',
       '--local',
-      '--file',
-      sqlFile,
-    ],
-    { stdio: 'inherit', cwd: resolve(__dirname, '..') },
-  );
-}
-
-function executeRemote(sqlFile: string): void {
-  execFileSync(
-    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-    [
-      'exec',
-      'wrangler',
-      'd1',
-      'execute',
-      'mbfd-bid-staging',
-      '--env',
-      'staging',
-      '--remote',
       '--file',
       sqlFile,
     ],
@@ -271,11 +252,10 @@ function executeRemote(sqlFile: string): void {
 // ---------------------------------------------------------------------------
 
 function main(): void {
-  const isRemote = process.argv.includes('--remote');
   const isLocal = process.argv.includes('--local');
 
-  if (!isRemote && !isLocal) {
-    console.error('Usage: tsx seed/2026.ts [--local | --remote]');
+  if (!isLocal || process.argv.includes('--remote')) {
+    console.error('Usage: tsx seed/2026.ts --local; remote fixture seeding is unavailable');
     process.exit(1);
   }
 
@@ -300,12 +280,8 @@ function main(): void {
   console.info(`  Wrote SQL to ${sqlFile}`);
 
   try {
-    console.info(`Executing against ${isRemote ? 'remote staging' : 'local'} D1...`);
-    if (isRemote) {
-      executeRemote(sqlFile);
-    } else {
-      executeLocal(sqlFile);
-    }
+    console.info('Executing against isolated local test D1...');
+    executeLocal(sqlFile);
   } finally {
     rmSync(tmpDirRoot, { recursive: true, force: true });
   }

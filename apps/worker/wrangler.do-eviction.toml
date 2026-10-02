@@ -7,8 +7,8 @@ compatibility_date = "2026-08-27"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-ENV = "staging"
-PORTAL_BASE_URL = "https://staging.bid.mbfdhub.com"
+ENV = "test"
+PORTAL_BASE_URL = "https://test.invalid"
 PORTAL_WRITEBACK_ENABLED = "false"
 PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid"
 JWT_SIGNING_KEY = "test-key-with-at-least-32-characters-long"

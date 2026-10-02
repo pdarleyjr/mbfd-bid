@@ -2,11 +2,11 @@ import { publicWebOrigin } from './public-web-origin';
 
 /**
  * The authoritative Hub authorization endpoint for each isolated Bid
- * environment. Keep this mapping explicit: staging must never redirect a
+ * environment. Keep this mapping explicit: tests must never redirect a
  * user into the live Hub, and an unknown environment must fail closed.
  */
 export function hubAuthorizationEndpoint(env: string | undefined): string | null {
-  if (env === 'staging') return 'https://staging.mbfdhub.com/auth/bid/authorize';
+  if (env === 'test') return 'https://hub.test.invalid/auth/bid/authorize';
   if (env === 'production') return 'https://www.mbfdhub.com/auth/bid/authorize';
   return null;
 }

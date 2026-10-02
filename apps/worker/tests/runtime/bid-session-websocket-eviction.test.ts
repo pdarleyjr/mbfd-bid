@@ -8,7 +8,7 @@ import { SPECIALTY_TEST_POLICY_LABEL } from '../../src/lib/specialty-test-policy
 
 const SESSION_NAME = '01HZZ0000000000000EVICTIONWS';
 const SERIALIZATION_SESSION_NAME = '01HZZ0000000000000WSSERIAL';
-const ORIGIN = 'https://staging.bid.mbfdhub.com';
+const ORIGIN = 'https://bid.test.invalid';
 const worker = exports as unknown as { default: Fetcher };
 
 async function seedMockNormalTurn(sessionName = SESSION_NAME): Promise<void> {

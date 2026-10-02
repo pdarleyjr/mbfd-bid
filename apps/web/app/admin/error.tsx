@@ -27,7 +27,7 @@ export default function AdminError({
         unexpected status (401, 500) or a missing binding. Use the digest below to look up the
         request in{' '}
         <code className="rounded bg-destructive-surface px-1">
-          wrangler tail mbfd-bid-worker-staging
+          wrangler tail mbfd-bid-worker-production --env production
         </code>
         .
       </p>

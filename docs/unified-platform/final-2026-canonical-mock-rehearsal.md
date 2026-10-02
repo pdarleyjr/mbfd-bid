@@ -1,3 +1,5 @@
+> Deployment retirement notice — 2026-10-01: references to the obsolete deployment are historical evidence only. Its operating instructions and acceptance gates are withdrawn. Recorded source IDs, counts and policy evidence are preserved; this notice does not change production policy. Current deployment and local test guidance is in the [retirement record](../staging-retirement-20261001.md).
+
 # Final-source canonical Mock rehearsal
 
 This is the reproducible validation contract for the complete source-derived definition. Execution results belong to the private run report and exact-candidate logs. This document does not approve real Bid activation or claim browser/Durable Object runtime acceptance.

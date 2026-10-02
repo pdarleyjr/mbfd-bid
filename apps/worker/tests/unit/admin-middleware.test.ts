@@ -22,7 +22,7 @@ function memberLookupDb(rows: Record<string, number> = {}): D1Database {
 
 function mkEnv(memberRows: Record<string, number> = { '14335': 1 }): WorkerEnv {
   return {
-    ENV: 'staging',
+    ENV: 'test',
     PORTAL_BASE_URL: 'https://portal.example',
     JWT_SIGNING_KEY: KEY,
     PORTAL_BID_READER: 'tok',

@@ -5,7 +5,7 @@ import { type Unstable_DevWorker, unstable_dev } from 'wrangler';
 import { waitForWranglerRuntime } from './helpers/wrangler-readiness.js';
 
 const LOCAL_SIGNING_KEY = 'test-key-with-at-least-32-characters-long';
-const STAGING_PUBLIC_ORIGIN = 'https://staging.bid.mbfdhub.com';
+const STAGING_PUBLIC_ORIGIN = 'https://bid.test.invalid';
 
 interface TcpSocket {
   on(event: 'data', listener: (chunk: Uint8Array) => void): this;
@@ -231,11 +231,12 @@ describe('BidSession DO recovery (Plan 04 Task 15)', () => {
   let worker: Unstable_DevWorker;
   beforeAll(async () => {
     worker = await unstable_dev('src/index.ts', {
+      config: 'wrangler.launcher-test.toml',
       experimental: { disableExperimentalWarning: true },
       local: true,
       vars: {
         JWT_SIGNING_KEY: LOCAL_SIGNING_KEY,
-        ENV: 'staging',
+        ENV: 'test',
         PORTAL_BASE_URL: 'https://x.example',
         PORTAL_BID_FEDERATION_TOKEN: 'x',
       },

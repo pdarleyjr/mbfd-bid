@@ -9,7 +9,6 @@ on:
         default: production
         type: choice
         options:
-          - staging
           - production
       snapshot_key:
         description: Exact sanitized R2 SQL snapshot key produced by D1 backup
@@ -51,7 +50,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $bucket = if ($env:SOURCE_ENV -eq 'production') { 'mbfd-bid-prod-backups' } else { 'mbfd-bid-staging-backups' }
+          if ($env:SOURCE_ENV -ne 'production') { throw 'Explicit production backup scope is required.' }
+          $bucket = 'mbfd-bid-prod-backups'
           $database = "mbfd-bid-$($env:SOURCE_ENV)-rehearsal-$env:GITHUB_RUN_ID"
           $created = $false
           $rehearsalConfigPath = $null

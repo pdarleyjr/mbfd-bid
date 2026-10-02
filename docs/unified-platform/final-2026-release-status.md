@@ -1,3 +1,5 @@
+> Deployment retirement notice — 2026-10-01: references to the obsolete deployment are historical evidence only. Its operating instructions and acceptance gates are withdrawn. Recorded source IDs, counts and policy evidence are preserved; this notice does not change production policy. Current deployment and local test guidance is in the [retirement record](../staging-retirement-20261001.md).
+
 # Final 2026 release status
 
 Assessment date: 2026-09-20. The software release is deployed and the final 2026 authored configuration is saved as immutable version 2. Version 2 is **not executable**: participant preview, Mock preparation and Managed Live readiness remain blocked. The [production release record](production-release-20260920.md) contains sanitized deployment, configuration and authenticated acceptance evidence. Real readiness and operational start remain separate from software delivery.

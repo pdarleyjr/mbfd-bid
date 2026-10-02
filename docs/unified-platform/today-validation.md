@@ -1,3 +1,5 @@
+> Deployment retirement notice — 2026-10-01: references to the obsolete deployment are historical evidence only. Its operating instructions and acceptance gates are withdrawn. Recorded source IDs, counts and policy evidence are preserved; this notice does not change production policy. Current deployment and local test guidance is in the [retirement record](../staging-retirement-20261001.md).
+
 # Department projection and Today validation
 
 Candidate scope: the first Department read-model and Today slices in the [implementation contract](implementation-contract.md). The remaining Department editing, Bid versioning, Blueprint and retirement work is not represented as delivered by this candidate.

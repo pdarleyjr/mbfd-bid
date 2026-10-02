@@ -14,15 +14,14 @@ Forbidden tokens:
 
 ## Methodology
 
-Phase A is local + staging-code-only — no production tail capture is run by
+The original review was local source inspection — no production tail capture was run by
 this hardening pass. Instead, this audit is a **static source inspection** of
 every emitter call (`console.log|info|warn|error`, `logger(...)`) in
 `apps/worker/src` and the third-party loggers wired into the request path.
 
-The same `Select-String` greps in the plan can be re-run against a real
-staging `wrangler tail --format json` capture before any prod traffic. The
-audit confirms no source-level violations exist today — i.e., a future tail
-capture should also come back clean.
+The obsolete deployment was retired on 2026-10-01. The same source checks can
+be re-run against logs from the explicit isolated local test Worker. Historical
+source inspection does not prove the contents of current hosted runtime logs.
 
 ## Static inventory of all log call sites
 
@@ -79,10 +78,9 @@ which is irreversible.
 **No known source-level query-token leak remains in the application logger.**
 The logger redaction and its regression test are the current source evidence.
 
-The four forbidden-token greps from the plan would all return zero hits on
-both:
+The four forbidden-token checks must be verified separately against:
 
-1. A live staging `wrangler tail` capture, AND
+1. A bounded log capture from an explicitly authorized runtime, and
 2. A `git grep` over `apps/worker/src` for any emitter that interpolates an
    employee ID, name, IP, PIN, or `Authorization` value.
 
@@ -101,9 +99,10 @@ console.info(JSON.stringify({ traceId, userId: ulid, route, latencyMs, outcome }
    every new emitter and confirm request logging still uses whole-query
    redaction.
 2. Run `pnpm --filter @mbfd/worker exec vitest run --config vitest.config.ts tests/unit/request-log.test.ts`.
-3. Run a staging `wrangler tail --format json` capture for 10 minutes during
-   a happy-path test, save to `tail-staging-<date>.jsonl`, run the four
-   `Select-String` greps from the plan, confirm all four return zero hits.
+3. Capture the explicit loopback test Worker's logs during a synthetic happy-path
+   test and apply the four forbidden-token checks. A hosted production tail is
+   a separate authorized read-only operation; record its exact runtime and
+   bounded capture interval before making a hosted-observability claim.
 
 ## Conclusion
 

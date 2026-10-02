@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
       get: cookieGet,
       set: cookieSet,
     })),
-    getWorkerBase: vi.fn(() => 'https://api.staging.bid.mbfdhub.com'),
+    getWorkerBase: vi.fn(() => 'https://api.bid.test.invalid'),
     verifyJwt: vi.fn(),
     createFederationState: vi.fn(async () => ({
       state: 'A'.repeat(43),
@@ -50,9 +50,9 @@ describe('canonical Bid authentication routes', () => {
     mocks.createFederationState.mockReset();
     mocks.validateFederationState.mockReset();
     mocks.cookies.mockClear();
-    mocks.getWorkerBase.mockReturnValue('https://api.staging.bid.mbfdhub.com');
+    mocks.getWorkerBase.mockReturnValue('https://api.bid.test.invalid');
     mocks.cfEnv.mockImplementation((key: string) => {
-      if (key === 'ENV') return 'staging';
+      if (key === 'ENV') return 'test';
       if (key === 'JWT_SIGNING_KEY') return 'A'.repeat(64);
       return undefined;
     });
@@ -67,16 +67,14 @@ describe('canonical Bid authentication routes', () => {
   it('starts login with an exact registered callback and an HTTP-only expiring state cookie', async () => {
     const { GET } = await import('../../app/api/auth/start/route');
 
-    const response = await GET(new Request('https://staging.bid.mbfdhub.com/api/auth/start'));
+    const response = await GET(new Request('https://bid.test.invalid/api/auth/start'));
 
     expect(response.status).toBe(307);
     const location = new URL(response.headers.get('Location') ?? '');
-    expect(location.origin + location.pathname).toBe(
-      'https://staging.mbfdhub.com/auth/bid/authorize',
-    );
+    expect(location.origin + location.pathname).toBe('https://hub.test.invalid/auth/bid/authorize');
     expect(location.searchParams.get('client_id')).toBe('bid');
     expect(location.searchParams.get('redirect_uri')).toBe(
-      'https://staging.bid.mbfdhub.com/api/auth/callback',
+      'https://bid.test.invalid/api/auth/callback',
     );
     const state = location.searchParams.get('state');
     expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -99,7 +97,7 @@ describe('canonical Bid authentication routes', () => {
     expect(location.searchParams.get('redirect_uri')).toBe(
       'https://bid.mbfdhub.com/api/auth/callback',
     );
-    expect(location.searchParams.get('redirect_uri')).not.toContain('staging');
+    expect(location.searchParams.get('redirect_uri')).not.toContain('test');
     expect(location.origin + location.pathname).toBe('https://www.mbfdhub.com/auth/bid/authorize');
   });
 
@@ -125,12 +123,12 @@ describe('canonical Bid authentication routes', () => {
     const { GET } = await import('../../app/api/auth/callback/route');
     const response = await GET(
       new Request(
-        `https://staging.bid.mbfdhub.com/api/auth/callback?code=${'B'.repeat(43)}&state=${state}`,
+        `https://bid.test.invalid/api/auth/callback?code=${'B'.repeat(43)}&state=${state}`,
       ),
     );
 
     expect(response.status).toBe(307);
-    expect(response.headers.get('Location')).toBe('https://staging.bid.mbfdhub.com/admin');
+    expect(response.headers.get('Location')).toBe('https://bid.test.invalid/admin');
     expect(mocks.cookieDelete).toHaveBeenCalledWith('mbfd_bid_auth_state');
     expect(mocks.verifyJwt).toHaveBeenCalledWith('bid-jwt', 'A'.repeat(64));
     expect(mocks.cookieSet).toHaveBeenCalledWith(
@@ -146,7 +144,7 @@ describe('canonical Bid authentication routes', () => {
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body).toEqual({
       code: 'B'.repeat(43),
-      redirect_uri: 'https://staging.bid.mbfdhub.com/api/auth/callback',
+      redirect_uri: 'https://bid.test.invalid/api/auth/callback',
     });
     expect(body).not.toHaveProperty('password');
     expect(body).not.toHaveProperty('employee_id');
@@ -164,7 +162,7 @@ describe('canonical Bid authentication routes', () => {
     const { GET } = await import('../../app/api/auth/callback/route');
     const response = await GET(
       new Request(
-        `https://staging.bid.mbfdhub.com/api/auth/callback?code=${'B'.repeat(43)}&state=${state}`,
+        `https://bid.test.invalid/api/auth/callback?code=${'B'.repeat(43)}&state=${state}`,
       ),
     );
 
@@ -184,14 +182,12 @@ describe('canonical Bid authentication routes', () => {
 
     const { GET } = await import('../../app/api/auth/callback/route');
     const response = await GET(
-      new Request(
-        `https://staging.bid.mbfdhub.com/api/auth/callback?error=access_denied&state=${state}`,
-      ),
+      new Request(`https://bid.test.invalid/api/auth/callback?error=access_denied&state=${state}`),
     );
 
     expect(response.status).toBe(307);
     expect(response.headers.get('Location')).toBe(
-      'https://staging.bid.mbfdhub.com/login?error=access_denied',
+      'https://bid.test.invalid/login?error=access_denied',
     );
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mocks.cookieSet).not.toHaveBeenCalled();

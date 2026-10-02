@@ -32,7 +32,7 @@ $stdout = Join-Path $StatePath 'wrangler-dev.stdout.log'
 $stderr = Join-Path $StatePath 'wrangler-dev.stderr.log'
 $fixturePath = Join-Path $StatePath 'synthetic-telestaff.html'
 $responsePath = Join-Path $StatePath 'native-smoke-response.json'
-$args = "pnpm@9.12.0 exec wrangler dev --env staging --local --persist-to `"$StatePath`" --ip 127.0.0.1 --port $Port --var `"JWT_SIGNING_KEY:$jwtKey`" --var `"TELESTAFF_HMAC_KEY:$teleStaffKey`""
+$args = "pnpm@9.12.0 exec wrangler dev --config wrangler.test.toml --local --persist-to `"$StatePath`" --ip 127.0.0.1 --port $Port --var `"JWT_SIGNING_KEY:$jwtKey`" --var `"TELESTAFF_HMAC_KEY:$teleStaffKey`""
 $worker = $null
 $client = $null
 $workspaceRoot = (Resolve-Path (Join-Path (Get-Location) '..\..')).Path
@@ -82,7 +82,7 @@ try {
   for ($attempt = 0; $attempt -lt 50; $attempt++) {
     try {
       $health = Invoke-RestMethod -Uri "$baseUrl/api/health" -TimeoutSec 1
-      if ($health.ok -eq $true -and $health.env -eq 'staging') {
+      if ($health.ok -eq $true -and $health.env -eq 'test') {
         $healthy = $true
         break
       }

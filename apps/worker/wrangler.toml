@@ -6,55 +6,6 @@ compatibility_flags = ["nodejs_compat"]
 # Cloudflare account ID set via env var: CLOUDFLARE_ACCOUNT_ID
 # Token via wrangler login OR CLOUDFLARE_API_TOKEN
 
-[env.staging]
-name = "mbfd-bid-worker-staging"
-# Workers Custom Domain (dedicated cert via Cloudflare's auto-provisioning).
-# Replaces the legacy `route = { pattern = "...", zone_name = "..." }` which
-# relied on Universal SSL that did not reissue to cover this 4th-level host.
-routes = [{ pattern = "api.staging.bid.mbfdhub.com", custom_domain = true }]
-# Read-only portal authentication remains available through PORTAL_BASE_URL.
-# Outbound bid publication is a separate, explicit capability and staging must
-# not obtain it merely by having a queue binding.
-vars = { ENV = "staging", PORTAL_BASE_URL = "https://staging.mbfdhub.com", PORTAL_WRITEBACK_ENABLED = "false", PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid", R2_EXPORTS_BUCKET_NAME = "mbfd-bid-exports-staging-v2", WEB_BASE_URL = "https://staging.bid.mbfdhub.com" }
-
-[[env.staging.d1_databases]]
-binding = "DB"
-database_name = "mbfd-bid-staging"
-database_id = "6dd16e65-5cb6-4c19-aff2-ec2706e72d50"
-migrations_dir = "./migrations"
-
-[[env.staging.kv_namespaces]]
-binding = "KV"
-id = "ce8afe4605464683a51bf6ae9c042c01"
-
-[[env.staging.durable_objects.bindings]]
-name = "BID_SESSION"
-class_name = "BidSessionDO"
-
-[[env.staging.migrations]]
-tag = "v1"
-new_classes = ["BidSessionDO"]
-
-# Dedicated staging-only buckets avoid ambiguous use by other account resources.
-[[env.staging.r2_buckets]]
-binding = "R2_AUDIT"
-bucket_name = "mbfd-bid-audit-staging-v2"
-
-[[env.staging.r2_buckets]]
-binding = "R2_EXPORTS"
-bucket_name = "mbfd-bid-exports-staging-v2"
-
-# Browser Rendering (replaces Browserless): used by exports/roster-pdf.ts to
-# render the print-stylesheet RSC page to PDF via @cloudflare/puppeteer.
-# Included on the Workers Paid plan; no external token required.
-[env.staging.browser]
-binding = "BROWSER"
-
-# Plan 08: Queues
-[[env.staging.queues.producers]]
-binding = "PORTAL_QUEUE"
-queue = "mbfd-portal-writebacks-staging"
-
 [env.production]
 name = "mbfd-bid-worker-production"
 routes = [{ pattern = "api.bid.mbfdhub.com", custom_domain = true }]
@@ -103,7 +54,7 @@ binding = "BROWSER"
 # Plan 08: 04:15 UTC daily portal reconciliation.
 crons = ["15 4 * * *", "0 21 30 9 *"]
 
-# Secrets — set via `wrangler secret put NAME --env staging`:
+# Production secrets — set through the authorized production release procedure:
 #   JWT_SIGNING_KEY        (HMAC HS256, 32-byte random base64url)
 #   TELESTAFF_HMAC_KEY     (dedicated 32-byte source-reference HMAC key;
 #                           required before the manual TeleStaff upload route
@@ -111,7 +62,7 @@ crons = ["15 4 * * *", "0 21 30 9 *"]
 #   PORTAL_BID_FEDERATION_TOKEN (dedicated service token for Hub authorization
 #                              code exchange and identity revalidation)
 #   PORTAL_BID_WRITER      (production-only service token for /bid-assignment;
-#                           it must remain absent from staging)
+#                           it remains absent while writeback is disabled)
 #   AUDIT_SIGNING_PRIVKEY  (Plan 08 — ed25519 32-byte base64url; per year per env)
 #   AUDIT_SIGNING_PUBKEY   (Plan 08 — ed25519 32-byte base64url; non-secret)
 #   BROWSERLESS_TOKEN      (DEPRECATED — replaced by Cloudflare Browser
