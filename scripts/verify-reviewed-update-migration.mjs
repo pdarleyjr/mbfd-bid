@@ -28,8 +28,23 @@ const REQUIRED_TABLES = [
   'member_qualification_events',
   'personnel_lifecycle_events',
   'member_assignments',
+  'credentials',
+  'credential_catalog_metadata',
+  'member_service_evidence',
+  'member_bid_tour_evidence',
+  'staffing_positions',
+  'staffing_tenure_evidence',
+  'assignment_imports',
+  'assignment_import_rows',
+  'assignment_observations',
+  'assignment_import_missing_observations',
+  'bid_year_staffing_baselines',
+  'bid_ordinal_datasets',
   'targetsolutions_imports',
   'targetsolutions_rows',
+  'targetsolutions_mappings',
+  'targetsolutions_commands',
+  'targetsolutions_mapping_history',
   'portal_writeback_queue',
 ];
 const fail = (condition, message) => {
@@ -132,7 +147,7 @@ export function verifyReviewedUpdateMigration(input, trusted, phase) {
     );
     for (const entry of Object.values(witness.tables))
       fail(
-        Number.isSafeInteger(entry.count) && entry.count >= 0 && HASH.test(entry.sha256),
+        entry && Number.isSafeInteger(entry.count) && entry.count >= 0 && HASH.test(entry.sha256),
         'Protected table count/hash is invalid',
       );
   };
