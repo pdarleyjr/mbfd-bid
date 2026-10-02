@@ -306,6 +306,66 @@ describe('corrected 2026 draft rules from semantic roles', () => {
     ).toBe(true);
   });
 
+  it.each([
+    { additional: [], points: 0 },
+    { additional: ['DRI Public Safety Diver'], points: 1 },
+    { additional: ['PADI Public Safety Diver'], points: 1 },
+    { additional: ['Car Seat Technician'], points: 1 },
+    { additional: ['DRI Public Safety Diver', 'PADI Public Safety Diver'], points: 1 },
+    { additional: ['DRI Public Safety Diver', 'Car Seat Technician'], points: 2 },
+    { additional: ['PADI Public Safety Diver', 'Car Seat Technician'], points: 2 },
+    {
+      additional: ['DRI Public Safety Diver', 'PADI Public Safety Diver', 'Car Seat Technician'],
+      points: 2,
+    },
+    { additional: ['Public Safety Diver', 'Dive Rescue 1', 'Car Seat Technician'], points: 1 },
+  ])('scores approved Marine Deckhand preferences once: $additional', ({ additional, points }) => {
+    for (const shift of ['A', 'B', 'C']) {
+      for (const suffix of ['604', '605', '606']) {
+        const marine = rule(`${shift}${suffix}`);
+        const minimums = marine.requiredCriteria.credentials;
+        const result = evaluateEligibility(
+          candidateMember('FF', [...minimums, ...additional], 1),
+          marine,
+        );
+        expect(result).toMatchObject({ eligible: true, points });
+        expect(marine.pointsPreference.scoring?.total[0]?.cap).toBe(2);
+        for (const missing of minimums) {
+          const unqualified = evaluateEligibility(
+            candidateMember(
+              'FF',
+              [...minimums.filter((name) => name !== missing), ...additional],
+              2,
+            ),
+            marine,
+          );
+          expect(unqualified).toMatchObject({ eligible: false, points: 0 });
+        }
+      }
+    }
+  });
+
+  it('orders a qualified Deckhand with both preferences before a senior member with one', () => {
+    const marine = rule('A604');
+    const minimums = marine.requiredCriteria.credentials;
+    const junior = candidateMember(
+      'FF',
+      [...minimums, 'PADI Public Safety Diver', 'Car Seat Technician'],
+      2,
+    );
+    const senior = candidateMember('FF', [...minimums, 'DRI Public Safety Diver'], 1);
+    const result = (member: Member) => {
+      if (member.rankSeniority === undefined) throw new Error('Missing synthetic rank seniority');
+      return {
+        ...evaluateEligibility(member, marine),
+        rscSeniority: member.rscSeniority,
+        rankSeniority: member.rankSeniority,
+        bidOrdinalEvidence: member.bidOrdinalEvidence,
+      };
+    };
+    expect(compare(result(junior), result(senior), marine.tieBreakChain)).toBe(-1);
+  });
+
   it('freezes the DRI transition against an explicit approved Bid start date', () => {
     expect(() => buildCorrected2026DraftRules({ approvedBidStartOn: '2026-02-30' })).toThrow(
       'approved_2026_bid_start_date_invalid',
