@@ -11,7 +11,7 @@ describe('admin bid routes (Plan 04 Task 9)', () => {
   let adminJwt: string;
   beforeAll(async () => {
     worker = await unstable_dev('src/index.ts', {
-      config: 'wrangler.test.toml',
+      config: 'wrangler.launcher-test.toml',
       experimental: { disableExperimentalWarning: true },
       local: true,
       vars: {

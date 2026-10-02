@@ -8,7 +8,7 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
   let memberJwt: string;
   beforeAll(async () => {
     worker = await unstable_dev('src/index.ts', {
-      config: 'wrangler.test.toml',
+      config: 'wrangler.launcher-test.toml',
       experimental: { disableExperimentalWarning: true },
       local: true,
       vars: {

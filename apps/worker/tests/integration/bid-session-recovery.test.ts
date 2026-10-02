@@ -231,7 +231,7 @@ describe('BidSession DO recovery (Plan 04 Task 15)', () => {
   let worker: Unstable_DevWorker;
   beforeAll(async () => {
     worker = await unstable_dev('src/index.ts', {
-      config: 'wrangler.test.toml',
+      config: 'wrangler.launcher-test.toml',
       experimental: { disableExperimentalWarning: true },
       local: true,
       vars: {

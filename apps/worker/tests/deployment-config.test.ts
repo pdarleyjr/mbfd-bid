@@ -35,6 +35,27 @@ describe('production deployment and isolated test configuration', () => {
     expect(scripts.typecheck).toBe('pnpm -r --filter "./packages/*" build && pnpm -r typecheck');
   });
 
+  it('keeps legacy HTTP-shell launchers isolated without pretending to provide D1 identities', () => {
+    const config = read('apps/worker/wrangler.launcher-test.toml');
+    expect(config).toContain('ENV = "test"');
+    expect(config).toContain('workers_dev = false');
+    expect(config).toContain('PORTAL_BASE_URL = "https://test.invalid"');
+    expect(config).not.toMatch(
+      /\[\[d1_databases|kv_namespaces|r2_buckets|queues\.|custom_domain|routes\s*=/,
+    );
+    for (const file of [
+      'a-day-admin-force',
+      'a-day-rest',
+      'admin-bid',
+      'bid-session-recovery',
+      'bid-session-routes',
+    ]) {
+      expect(read(`apps/worker/tests/integration/${file}.test.ts`)).toContain(
+        "config: 'wrangler.launcher-test.toml'",
+      );
+    }
+  });
+
   it('preserves production writeback disabled and manual release with D1 and Worker health gates', () => {
     const source = read('apps/worker/wrangler.toml');
     const config = source.slice(source.indexOf('[env.production]'));

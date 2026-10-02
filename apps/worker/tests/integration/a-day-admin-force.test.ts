@@ -36,7 +36,7 @@ describe('POST /api/admin/bid-session/:id/force-a-day (Plan 07 Task 14)', () => 
 
   beforeAll(async () => {
     worker = await unstable_dev('src/index.ts', {
-      config: 'wrangler.test.toml',
+      config: 'wrangler.launcher-test.toml',
       experimental: { disableExperimentalWarning: true },
       local: true,
       vars: {
