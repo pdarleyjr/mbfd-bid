@@ -15,7 +15,7 @@ vi.mock('@/lib/cf-env', () => ({ cfEnv: mocks.cfEnv }));
 vi.mock('@/lib/jwt', () => ({ verifyJwt: mocks.verifyJwt }));
 
 function request({
-  origin = 'https://staging.bid.mbfdhub.com',
+  origin = 'https://bid.test.invalid',
   fetchSite = 'same-origin',
   jwt = 'valid-jwt',
 }: {
@@ -27,7 +27,7 @@ function request({
   if (origin !== null) headers.set('Origin', origin);
   if (fetchSite !== null) headers.set('Sec-Fetch-Site', fetchSite);
 
-  return new Request('https://staging.bid.mbfdhub.com/api/auth/session-finalize', {
+  return new Request('https://bid.test.invalid/api/auth/session-finalize', {
     method: 'POST',
     headers,
     body: JSON.stringify({ jwt }),
@@ -36,9 +36,7 @@ function request({
 
 describe('POST /api/auth/session-finalize', () => {
   beforeEach(() => {
-    mocks.cfEnv.mockImplementation((key: string) =>
-      key === 'ENV' ? 'staging' : 'test-signing-key',
-    );
+    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'test' : 'test-signing-key'));
     mocks.cookieSet.mockReset();
     mocks.cookies.mockClear();
     mocks.verifyJwt.mockReset();
@@ -68,8 +66,8 @@ describe('POST /api/auth/session-finalize', () => {
   it.each([
     ['foreign Origin', 'https://evil.example', 'cross-site'],
     ['missing Origin', null, 'same-origin'],
-    ['cross-site Fetch Metadata', 'https://staging.bid.mbfdhub.com', 'cross-site'],
-    ['same-site Fetch Metadata', 'https://staging.bid.mbfdhub.com', 'same-site'],
+    ['cross-site Fetch Metadata', 'https://bid.test.invalid', 'cross-site'],
+    ['same-site Fetch Metadata', 'https://bid.test.invalid', 'same-site'],
   ])(
     'rejects %s before JWT verification or a cookie mutation',
     async (_label, origin, fetchSite) => {

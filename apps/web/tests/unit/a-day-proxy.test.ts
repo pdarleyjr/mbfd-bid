@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   cfEnv: vi.fn(),
   cookies: vi.fn(),
   fetch: vi.fn(),
-  getWorkerBase: vi.fn(() => 'https://api.staging.bid.mbfdhub.com'),
+  getWorkerBase: vi.fn(() => 'https://api.bid.test.invalid'),
 }));
 
 vi.mock('next/headers', () => ({ cookies: mocks.cookies }));
@@ -16,11 +16,11 @@ const csrfToken = 'csrf_123e4567-e89b-12d3-a456-426614174000';
 function pickRequest({ csrf = csrfToken }: { csrf?: string | null } = {}): Request {
   const headers = new Headers({
     'content-type': 'application/json',
-    origin: 'https://staging.bid.mbfdhub.com',
+    origin: 'https://bid.test.invalid',
     'sec-fetch-site': 'same-origin',
   });
   if (csrf !== null) headers.set('x-mbfd-csrf', csrf);
-  return new Request('https://staging.bid.mbfdhub.com/api/bid/a-day-pick', {
+  return new Request('https://bid.test.invalid/api/bid/a-day-pick', {
     method: 'POST',
     headers,
     body: JSON.stringify({ v: 1, bidSessionId: 'session-1', aDay: 'G1' }),
@@ -29,7 +29,7 @@ function pickRequest({ csrf = csrfToken }: { csrf?: string | null } = {}): Reque
 
 describe('A-Day same-origin proxy', () => {
   beforeEach(() => {
-    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'staging' : undefined));
+    mocks.cfEnv.mockImplementation((key: string) => (key === 'ENV' ? 'test' : undefined));
     mocks.cookies.mockReset();
     mocks.cookies.mockResolvedValue({
       get: vi.fn((name: string) => {
@@ -51,12 +51,12 @@ describe('A-Day same-origin proxy', () => {
     const { GET } = await import('../../app/api/bid/a-day-state/route');
 
     const response = await GET(
-      new Request('https://staging.bid.mbfdhub.com/api/bid/a-day-state?session=session-1'),
+      new Request('https://bid.test.invalid/api/bid/a-day-state?session=session-1'),
     );
 
     expect(response.status).toBe(200);
     expect(mocks.fetch).toHaveBeenCalledWith(
-      'https://api.staging.bid.mbfdhub.com/api/bid/a-day-state?session=session-1',
+      'https://api.bid.test.invalid/api/bid/a-day-state?session=session-1',
       expect.objectContaining({ method: 'GET' }),
     );
     const headers = mocks.fetch.mock.calls[0]?.[1]?.headers as Headers;
@@ -80,7 +80,7 @@ describe('A-Day same-origin proxy', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.fetch).toHaveBeenCalledWith(
-      'https://api.staging.bid.mbfdhub.com/api/bid/a-day-pick',
+      'https://api.bid.test.invalid/api/bid/a-day-pick',
       expect.objectContaining({ method: 'POST' }),
     );
     const headers = mocks.fetch.mock.calls[0]?.[1]?.headers as Headers;

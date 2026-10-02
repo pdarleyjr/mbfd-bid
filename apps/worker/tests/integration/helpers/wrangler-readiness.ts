@@ -22,7 +22,7 @@ export async function waitForWranglerRuntime(
   try {
     const health = await worker.fetch('/api/health', { signal: controller.signal });
     expect(health.status, 'Wrangler Worker health readiness').toBe(200);
-    expect(await health.json()).toMatchObject({ ok: true, env: 'staging' });
+    expect(await health.json()).toMatchObject({ ok: true, env: 'test' });
 
     const now = Math.floor(Date.now() / 1000);
     const jwt = await signJwt(

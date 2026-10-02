@@ -122,7 +122,7 @@ describe('portal publication gate', () => {
     const { batch, ack, retry } = batchFor(queueMessage());
     const env = {
       ...h.env,
-      ENV: 'staging' as const,
+      ENV: 'test' as const,
       PORTAL_WRITEBACK_ENABLED: 'true' as const,
       PORTAL_WRITEBACK_BASE_URL: 'https://portal-writeback.example',
       PORTAL_BID_WRITER: 'writer-token',

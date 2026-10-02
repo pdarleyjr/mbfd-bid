@@ -1,3 +1,5 @@
+> Historical planning record. Deployment environment retired on 2026-10-01; these deployment instructions are superseded and must not be executed.
+
 # MBFD Bid v2 blocker register
 
 | ID | Blocker | Impact | State |
@@ -12,7 +14,7 @@
 | D1-001 | Staging D1 migration ledger | Migration safety | Resolved for staging: the remote ledger contains migration `0023_bid_position_participation.sql`, `migrations list` reports no pending work, and `PRAGMA foreign_key_check` is empty. |
 | D1-002 | Forward migration `0026_authoritative_staffing_baseline.sql` adds unique source-accounting and annual-baseline indexes | Remote migration safety | Open: before any future staging apply, capture a fresh recoverable D1 checkpoint and perform a read-only preflight against the exact target schema/ledger. Confirm that the prerequisite migrations are present and that no duplicate `(import_id, row_fingerprint)`, non-null `(import_id, member_reference_hmac)`, or cross-year `assignment_import_id` baseline records would make the additive indexes fail. Do not edit historical rows to force a result. This continuation did not contact, migrate, or otherwise change remote D1. |
 | QA-001 | Five Worker integration tests timed out during the first root run; launcher tests are now isolated and serial | Baseline test reliability | Resolved locally. GitHub Actions were unavailable for the 2026-08-27 final staging-auth checkpoint, so no hosted result is claimed for it. |
-| CF-001 | Worker/Pages/domain/DNS ownership evidence conflicts | Cloudflare topology mutation | Resolved for staging: `api.staging.bid.mbfdhub.com` serves `mbfd-bid-worker-staging`; `staging.bid.mbfdhub.com` serves `mbfd-bid-web-staging-opennext` as a Worker custom domain. The existing `mbfd-bid-web-staging` Pages project was retained as rollback material and its domain/DNS attachment was not detached or recreated. |
+| CF-001 | Historical Worker/Pages/domain/DNS ownership evidence conflicts | Cloudflare topology mutation | Superseded by the 2026-10-01 retirement. The obsolete deployment's bindings and old Pages rollback material do not define current production topology. |
 | CF-002 | Intended production Bid API/web hostnames did not resolve during passive audit | Production route/acceptance | Open |
 | PROD-001 | Production D1/KV values in checked-in configuration are placeholders | Production deployment | Blocked |
 | POLICY-001 | 2026 policy delta is external but untracked | Policy completeness | Open |

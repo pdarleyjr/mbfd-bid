@@ -1,3 +1,5 @@
+> Deployment retirement notice — 2026-10-01: references to the obsolete deployment are historical evidence only. Its operating instructions and acceptance gates are withdrawn. Recorded source IDs, counts and policy evidence are preserved; this notice does not change production policy. Current deployment and local test guidance is in the [retirement record](../docs/staging-retirement-20261001.md).
+
 # UI inventory and migration matrix
 
 Baseline: main a04d30fa6e3d97602c85a21eb681a462cc516894. Parsed TypeScript imports and JSX tags, not text guesses. 163 TSX surfaces; 49 page files. Server-capable means no local client directive; components imported by client entries remain in that client graph. Hooks/API clients are separately preserved.

@@ -7,11 +7,11 @@ import type { WorkerEnv } from '../../src/types/env';
 
 const ORIG_FETCH = globalThis.fetch;
 
-function env(environment: 'staging' | 'production' = 'staging'): WorkerEnv {
+function env(environment: 'test' | 'production' = 'test'): WorkerEnv {
   return {
     ENV: environment,
     PORTAL_BASE_URL:
-      environment === 'staging' ? 'https://staging.mbfdhub.com' : 'https://www.mbfdhub.com',
+      environment === 'test' ? 'https://hub.test.invalid' : 'https://www.mbfdhub.com',
     JWT_SIGNING_KEY: 'A'.repeat(64),
     PORTAL_BID_FEDERATION_TOKEN: 'federation-token',
     DB: {} as never,
@@ -37,7 +37,7 @@ function bidApp() {
 function hubSuccess(overrides: Record<string, unknown> = {}) {
   return new Response(
     JSON.stringify({
-      issuer: 'https://staging.mbfdhub.com',
+      issuer: 'https://hub.test.invalid',
       audience: 'bid',
       hub_user_id: 901,
       security_version: 3,
@@ -72,7 +72,7 @@ describe('POST /api/auth/exchange', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           code: 'A'.repeat(43),
-          redirect_uri: 'https://staging.bid.mbfdhub.com/api/auth/callback',
+          redirect_uri: 'https://bid.test.invalid/api/auth/callback',
         }),
       },
       env(),
@@ -89,13 +89,13 @@ describe('POST /api/auth/exchange', () => {
       string,
       RequestInit,
     ];
-    expect(url).toBe('https://staging.mbfdhub.com/api/v2/bid/auth/exchange');
+    expect(url).toBe('https://hub.test.invalid/api/v2/bid/auth/exchange');
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer federation-token');
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body).toEqual({
       code: 'A'.repeat(43),
       client_id: 'bid',
-      redirect_uri: 'https://staging.bid.mbfdhub.com/api/auth/callback',
+      redirect_uri: 'https://bid.test.invalid/api/auth/callback',
     });
     expect(body).not.toHaveProperty('password');
     expect(body).not.toHaveProperty('employee_id');
@@ -112,7 +112,7 @@ describe('POST /api/auth/exchange', () => {
           redirect_uri: 'https://bid.mbfdhub.com/api/auth/callback',
         }),
       },
-      env('staging'),
+      env('test'),
     );
 
     expect(response.status).toBe(400);
@@ -131,7 +131,7 @@ describe('POST /api/auth/exchange', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           code: 'A'.repeat(43),
-          redirect_uri: 'https://staging.bid.mbfdhub.com/api/auth/callback',
+          redirect_uri: 'https://bid.test.invalid/api/auth/callback',
         }),
       },
       env(),
@@ -153,7 +153,7 @@ describe('POST /api/auth/exchange', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           code: 'A'.repeat(43),
-          redirect_uri: 'https://staging.bid.mbfdhub.com/api/auth/callback',
+          redirect_uri: 'https://bid.test.invalid/api/auth/callback',
         }),
       },
       env(),
@@ -175,7 +175,7 @@ describe('POST /api/auth/exchange', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           code: 'A'.repeat(43),
-          redirect_uri: 'https://staging.bid.mbfdhub.com/api/auth/callback',
+          redirect_uri: 'https://bid.test.invalid/api/auth/callback',
         }),
       },
       env(),
@@ -245,7 +245,7 @@ describe('POST /api/auth/revalidate', () => {
       string,
       RequestInit,
     ];
-    expect(url).toBe('https://staging.mbfdhub.com/api/v2/bid/auth/revalidate');
+    expect(url).toBe('https://hub.test.invalid/api/v2/bid/auth/revalidate');
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer federation-token');
     expect(JSON.parse(String(init.body))).toEqual({
       hub_user_id: 901,

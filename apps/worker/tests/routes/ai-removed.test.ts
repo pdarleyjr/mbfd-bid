@@ -4,7 +4,7 @@ import { signJwt } from '../../src/lib/jwt.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 
 const env = {
-  ENV: 'staging',
+  ENV: 'test',
   PORTAL_BASE_URL: 'https://portal.example',
   JWT_SIGNING_KEY: 'retired-ai-route-test-key'.repeat(3),
   DB: {

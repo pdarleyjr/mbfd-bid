@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCsrfAwareFetch } from '../../lib/client-csrf';
 
 const csrfToken = 'csrf_123e4567-e89b-12d3-a456-426614174000';
-const origin = 'https://staging.bid.mbfdhub.com';
+const origin = 'https://bid.test.invalid';
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

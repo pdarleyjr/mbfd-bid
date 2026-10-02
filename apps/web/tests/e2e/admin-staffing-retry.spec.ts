@@ -54,10 +54,10 @@ test('seat creation retains its generated identity through response loss and ref
   ]);
   const attempts: { key: string; csrf: string; body: unknown }[] = [];
   // The app deliberately trusts only its configured public origin. Supply
-  // synthetic staging metadata to the loopback proxy; no request leaves localhost.
+  // synthetic metadata to the loopback proxy; no request leaves localhost.
   const fixtureHeaders = (headers: Record<string, string>) => ({
     ...headers,
-    origin: 'https://staging.bid.mbfdhub.com',
+    origin: 'https://bid.test.invalid',
     'sec-fetch-site': 'same-origin',
   });
   await page.route('**/api/auth/csrf', async (route) => {

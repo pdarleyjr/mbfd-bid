@@ -66,8 +66,9 @@ jobs:
       - run: pnpm typecheck
       - name: Run release-configuration and auth regression assertions
         run: |
-          pnpm --filter @mbfd/web test -- tests/unit/opennext-staging-config.test.ts
-          pnpm --filter @mbfd/worker exec vitest run --config vitest.config.ts tests/deploy-staging-config.test.ts tests/integration/legacy-password-removal.test.ts
+          pnpm --filter @mbfd/web test -- tests/unit/opennext-production-config.test.ts
+          pnpm --filter @mbfd/worker exec vitest run --config vitest.config.ts tests/deployment-config.test.ts tests/integration/legacy-password-removal.test.ts
+          node scripts/test-staging-retirement.mjs
           node scripts/test-deploy-production-migration-guard.mjs
           node --test scripts/test-production-worker-health.mjs
       - name: Build production OpenNext artifact without deployment

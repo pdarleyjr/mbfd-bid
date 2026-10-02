@@ -1,3 +1,5 @@
+> Deployment retirement notice — 2026-10-01: references to the obsolete deployment are historical evidence only. Its operating instructions and acceptance gates are withdrawn. Recorded source IDs, counts and policy evidence are preserved; this notice does not change production policy. Current deployment and local test guidance is in the [retirement record](../staging-retirement-20261001.md).
+
 # 2026 readiness evidence addendum — 2026-09-23
 
 This addendum records the sanitized result of the 2026-09-23 repository, source-file and production-state audit. It does not replace the final policy, mutate personnel, grant authority, start a Mock or Real run, or authorize Portal writeback. Exact personnel rows and private source paths remain outside Git.

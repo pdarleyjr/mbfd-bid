@@ -241,7 +241,7 @@ function printSecretOf(env: WorkerEnv): string {
 
 function exportsBucketName(env: WorkerEnv): string {
   if (env.R2_EXPORTS_BUCKET_NAME) return env.R2_EXPORTS_BUCKET_NAME;
-  return env.ENV === 'production' ? 'mbfd-bid-exports-production' : 'mbfd-bid-exports-staging';
+  return env.ENV === 'production' ? 'mbfd-bid-exports-production' : 'mbfd-bid-test-exports';
 }
 
 function signerOf(env: WorkerEnv): ((key: string) => Promise<string>) | null {
@@ -308,6 +308,8 @@ router.post('/roster/:shift', requireStepUpAuth(), async (c) => {
   if (!c.env.R2_EXPORTS || typeof c.env.R2_EXPORTS.put !== 'function') {
     return c.json({ error: 'exports_bucket_not_configured' }, 503);
   }
+  const webBaseUrl = c.env.WEB_BASE_URL;
+  if (!webBaseUrl) return c.json({ error: 'web_base_not_configured' }, 503);
   let raw: unknown;
   try {
     raw = await c.req.json();
@@ -336,7 +338,7 @@ router.post('/roster/:shift', requireStepUpAuth(), async (c) => {
       year: new Date().getUTCFullYear(),
       browser: c.env.BROWSER,
       printTokenSecret: printSecretOf(c.env),
-      webBaseUrl: c.env.WEB_BASE_URL ?? 'https://staging.bid.mbfdhub.com',
+      webBaseUrl,
       r2: c.env.R2_EXPORTS,
       now: () => Date.now(),
     });

@@ -1,7 +1,10 @@
 import { type Page, expect, test } from '@playwright/test';
+import { installSyntheticHub } from './synthetic-hub';
 
-async function expectCanonicalHubLogin(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/^https:\/\/staging\.mbfdhub\.com\/login$/, { timeout: 15_000 });
+test.beforeEach(async ({ page }) => installSyntheticHub(page));
+
+async function expectSyntheticHubLogin(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/^https:\/\/hub\.test\.invalid\/login$/, { timeout: 15_000 });
   await expect(page.getByRole('heading', { name: 'MBFD Hub', exact: true })).toBeVisible({
     timeout: 15_000,
   });
@@ -37,7 +40,7 @@ test.describe('PIN gate', () => {
     await page.goto('/');
     await page.getByLabel('Access PIN').fill(pin);
     await page.getByRole('button', { name: /continue/i }).click();
-    await expectCanonicalHubLogin(page);
+    await expectSyntheticHubLogin(page);
   });
 
   test('a /lobby request without PIN cookie redirects to /', async ({ page }) => {
@@ -53,17 +56,17 @@ test.describe('Lobby protection', () => {
     await expect(page).toHaveURL(/\/$/);
   });
 
-  test('/lobby with PIN cookie but no JWT reaches the canonical Hub login', async ({
+  test('/lobby with PIN cookie but no JWT requests Hub authorization and renders the isolated login fixture', async ({
     context,
     page,
   }) => {
-    // Read-only redirect integration: observe the real outgoing authorization
-    // request and public Hub login page. No route fixtures, credential entry,
-    // or claim of authenticated Hub acceptance is involved.
+    // Isolated redirect integration: assert the outgoing authorization request
+    // and reserved synthetic Hub page without contacting a deployed site.
+    // Real Hub sign-in remains a separate authenticated production check.
     const authorizations: URL[] = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
-      if (url.origin === 'https://staging.mbfdhub.com' && url.pathname === '/auth/bid/authorize') {
+      if (url.origin === 'https://hub.test.invalid' && url.pathname === '/auth/bid/authorize') {
         authorizations.push(url);
       }
     });
@@ -82,14 +85,20 @@ test.describe('Lobby protection', () => {
     // do not intercept later requests in the same redirect chain.
     await expect.poll(() => authorizations.length, { timeout: 15_000 }).toBe(1);
     const authorization = authorizations[0];
-    expect(authorization?.origin).toBe('https://staging.mbfdhub.com');
+    if (!authorization) throw new Error('The application did not request Hub authorization');
+    expect(authorization?.origin).toBe('https://hub.test.invalid');
     expect(authorization?.pathname).toBe('/auth/bid/authorize');
     expect(authorization?.searchParams.get('client_id')).toBe('bid');
     expect(authorization?.searchParams.get('redirect_uri')).toBe(
-      'https://staging.bid.mbfdhub.com/api/auth/callback',
+      'https://bid.test.invalid/api/auth/callback',
     );
     expect(authorization?.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    await expectCanonicalHubLogin(page);
+    // Playwright routes cannot intercept the later URL in a server HTTP
+    // redirect chain. The actual application request and opaque state above
+    // are verified separately; a fresh navigation renders only the reserved
+    // browser fixture and does not certify real Hub reachability or sign-in.
+    await page.goto(authorization.href);
+    await expectSyntheticHubLogin(page);
   });
 });
 

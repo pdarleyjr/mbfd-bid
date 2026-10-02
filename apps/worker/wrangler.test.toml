@@ -1,0 +1,41 @@
+# Isolated local-only development/test bindings. No deployed resource IDs,
+# custom domain, queue, or live Hub endpoint is present in this config.
+name = "mbfd-bid-isolated-test"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+[vars]
+ENV = "test"
+PORTAL_BASE_URL = "https://test.invalid"
+WEB_BASE_URL = "http://127.0.0.1:3000"
+PORTAL_WRITEBACK_ENABLED = "false"
+PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid"
+R2_EXPORTS_BUCKET_NAME = "mbfd-bid-test-exports"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mbfd-bid-test"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "./migrations"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "00000000000000000000000000000001"
+
+[[durable_objects.bindings]]
+name = "BID_SESSION"
+class_name = "BidSessionDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["BidSessionDO"]
+
+[[r2_buckets]]
+binding = "R2_AUDIT"
+bucket_name = "mbfd-bid-test-audit"
+
+[[r2_buckets]]
+binding = "R2_EXPORTS"
+bucket_name = "mbfd-bid-test-exports"

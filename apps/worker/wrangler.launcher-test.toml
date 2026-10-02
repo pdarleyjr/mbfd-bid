@@ -1,0 +1,23 @@
+# Legacy HTTP-shell launcher fixtures deliberately omit D1. Their signed
+# synthetic subjects have no directory rows. Actual D1 authentication and
+# canonical persistence run in the separate Workers-runtime configuration.
+name = "mbfd-bid-http-launcher-test"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+[vars]
+ENV = "test"
+PORTAL_BASE_URL = "https://test.invalid"
+WEB_BASE_URL = "http://127.0.0.1:3000"
+PORTAL_WRITEBACK_ENABLED = "false"
+PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid"
+
+[[durable_objects.bindings]]
+name = "BID_SESSION"
+class_name = "BidSessionDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["BidSessionDO"]

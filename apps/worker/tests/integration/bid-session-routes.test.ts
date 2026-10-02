@@ -8,11 +8,12 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
   let memberJwt: string;
   beforeAll(async () => {
     worker = await unstable_dev('src/index.ts', {
+      config: 'wrangler.launcher-test.toml',
       experimental: { disableExperimentalWarning: true },
       local: true,
       vars: {
         JWT_SIGNING_KEY: 'test-key-with-at-least-32-characters-long',
-        ENV: 'staging',
+        ENV: 'test',
         PORTAL_BASE_URL: 'https://example.org',
         PORTAL_BID_FEDERATION_TOKEN: 'x',
       },
@@ -53,7 +54,7 @@ describe('bid REST routes (Plan 04 Task 8)', () => {
     const res = await worker.fetch('/api/ws/session/01HSESS', {
       headers: {
         Authorization: `Bearer ${memberJwt}`,
-        Origin: 'https://staging.bid.mbfdhub.com',
+        Origin: 'https://bid.test.invalid',
       },
     });
     expect([426, 400]).toContain(res.status);
