@@ -22,6 +22,7 @@ import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
 import { BidProfileReview } from './BidProfileReview';
 import { BidReadinessSummary } from './BidReadinessSummary';
 import { BidResults } from './BidResults';
+import { BidReviewedSourceUpdate } from './BidReviewedSourceUpdate';
 import { BidRuleProfiles } from './BidRuleProfiles';
 import { BidVersionHistory } from './BidVersionHistory';
 import { NewAnnualBidFromStructure } from './NewAnnualBidFromStructure';
@@ -56,6 +57,7 @@ import {
   readBidDraft,
   reconcileProfileDraftEdit,
 } from './bid-draft';
+import type { ReviewedUpdateReceipt } from './reviewed-source-update-client';
 import { useBidNavigation } from './use-bid-navigation';
 
 const sections = [
@@ -288,6 +290,42 @@ export function CurrentBidWorkspace({
     setBlueprintImpact(null);
     setBlueprintImpactContent(null);
     setNotice(null);
+  }
+  function applyReviewedSourceUpdate(update: ReviewedUpdateReceipt) {
+    const current = draftRef.current;
+    if (
+      !current ||
+      current.content.settings?.v !== 3 ||
+      current.pending ||
+      unreadableDraft ||
+      busyRef.current ||
+      stale ||
+      !same(current.content, current.base.content) ||
+      current.base.version?.id !== update.sourceVersionId ||
+      current.base.version.contentSha256 !== update.sourceVersionSha256
+    )
+      throw new Error(
+        'The saved Bid changed. Refresh and review the source before loading this update.',
+      );
+    const next: BidDraft = {
+      ...current,
+      content: {
+        ...current.content,
+        settings: { ...current.content.settings, evidenceFreeze: update.freezePin },
+        sourceDecisions: update.sourceDecisions,
+      },
+      reason: update.reason,
+    };
+    preserveBidDraft(window.sessionStorage, next);
+    install(next);
+    setPreview(null);
+    setPreviewContent(null);
+    setBlueprintImpact(null);
+    setBlueprintImpactContent(null);
+    setNotice(
+      'The reviewed source update is in your draft. Review the changes and Save Bid to create a new version. Existing sessions retain their source.',
+    );
+    selectView('edit');
   }
   async function execute(write: PendingBidWrite) {
     const current = draftRef.current;
@@ -762,6 +800,22 @@ export function CurrentBidWorkspace({
           </Button>
         </div>
       </div>
+      {year === 2026 &&
+        draft?.base.version &&
+        draft.content.settings?.v === 3 &&
+        draft.content.settings.evidenceFreeze && (
+          <BidReviewedSourceUpdate
+            key={actorScope}
+            actorScope={actorScope}
+            version={{
+              id: draft.base.version.id,
+              revision: draft.base.version.versionNumber,
+              sha256: draft.base.version.contentSha256,
+            }}
+            disabled={locked || dirty || stale}
+            onApply={applyReviewedSourceUpdate}
+          />
+        )}
       <details open>
         <summary className="min-h-11 cursor-pointer content-center font-semibold">
           ADVANCED BID CONFIGURATION
