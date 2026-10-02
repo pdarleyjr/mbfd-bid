@@ -113,6 +113,14 @@ export type { BidStageParticipantPreviewResponse } from './schemas/bid-stage-par
 export { BidProfileReviewResponseSchema } from './schemas/bid-profile-review.js';
 export type { BidProfileReviewResponse } from './schemas/bid-profile-review.js';
 export {
+  RetainedParticipationPreviewRequestSchema,
+  RetainedParticipationPreviewResponseSchema,
+} from './schemas/retained-participation-preview.js';
+export type {
+  RetainedParticipationPreviewRequest,
+  RetainedParticipationPreviewResponse,
+} from './schemas/retained-participation-preview.js';
+export {
   BidOpportunityPoolSchema,
   BidOpportunityPoolsSchema,
   BidPoolSelectionSchema,

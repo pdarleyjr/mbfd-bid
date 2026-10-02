@@ -2028,6 +2028,30 @@ async function prepareRetainedParticipationSuccessor(
     })
   )
     return null;
+  const recomputed = await recomputeOriginalReservedRetention(db, saved, baseline.content);
+  if (!recomputed) return null;
+  const derived = verifyRetainedParticipationReceipt({
+    baseline: { id: baseline.row.id, sha256: baseline.sha256, content: baseline.content },
+    source: saved.row,
+    original,
+    recomputed: recomputed.evaluation,
+    evidence: recomputed.evidence,
+    content,
+  });
+  return derived.ok ? derived.evaluation : null;
+}
+
+/** Shared reconstruction for verification and the read-only preview. Callers
+ * must first verify the immutable baseline, capture source and original pin.
+ * Only the archived original documents can supply member/source facts here. */
+export async function recomputeOriginalReservedRetention(
+  db: DB,
+  saved: NonNullable<Awaited<ReturnType<typeof loadBidEvidenceFreeze>>>,
+  baselineContent: BidDefinitionContent,
+) {
+  const original = saved.evaluation;
+  const originalSettings = original.settings;
+  if (originalSettings.v === 1) return null;
   const raw = {
     ...JSON.parse(saved.row.personnel_source_json),
     ...JSON.parse(saved.row.credential_source_json),
@@ -2055,31 +2079,22 @@ async function prepareRetainedParticipationSuccessor(
       bidYear: saved.row.bid_year,
       settings: originalSettings,
       coverage,
-      bindings: baseline.content.staffingBindings,
+      bindings: baselineContent.staffingBindings,
       ruleBookMaterial: original.ruleBookMaterial,
-      sourceDecisions: baseline.content.sourceDecisions,
+      sourceDecisions: baselineContent.sourceDecisions,
       policyReferenceJson: [
         ...original.ruleBookMaterial.rules.flatMap((row) => [
           row.requiredCriteriaJson,
           row.pointsPreferenceJson,
         ]),
-        JSON.stringify(baseline.content.policy?.executionPolicy),
+        JSON.stringify(baselineContent.policy?.executionPolicy),
       ],
     },
     evidence,
     original.capturedAtMs,
     'mock',
   );
-  if (!recomputed.ok) return null;
-  const derived = verifyRetainedParticipationReceipt({
-    baseline: { id: baseline.row.id, sha256: baseline.sha256, content: baseline.content },
-    source: saved.row,
-    original,
-    recomputed: recomputed.evaluation,
-    evidence,
-    content,
-  });
-  return derived.ok ? derived.evaluation : null;
+  return recomputed.ok ? { evaluation: recomputed.evaluation, evidence } : null;
 }
 
 export async function prepareConfiguredBidPolicySnapshot(

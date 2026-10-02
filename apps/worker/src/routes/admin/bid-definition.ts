@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import type { JwtPayload } from '@mbfd/shared';
+import { type JwtPayload, RetainedParticipationPreviewRequestSchema } from '@mbfd/shared';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
@@ -56,6 +56,7 @@ import {
   buildCorrected2026Successor,
   withReviewed2026AdministrativeConnections,
 } from '../../lib/corrected-2026-successor.js';
+import { previewRetainedParticipation } from '../../lib/retained-participation-preview.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -144,6 +145,7 @@ for (const path of [
   '/:year/evidence-updates',
   '/:year/evidence-updates/preview',
   '/:year/evidence-updates/:freezeId',
+  '/:year/retained-participation/preview',
   '/:year/marine-evidence-review',
 ]) {
   router.use(path, requireAdmin, yearContext);
@@ -153,6 +155,18 @@ router.get('/:year/current', async (c) => {
   const result = await loadCurrentBidDefinition(c.env.DB, c.get('bidYear'));
   return result.ok ? c.json(result.response) : c.json(result, errorStatus(result.error));
 });
+router.post(
+  '/:year/retained-participation/preview',
+  zValidator('json', RetainedParticipationPreviewRequestSchema),
+  async (c) => {
+    const result = await previewRetainedParticipation(
+      c.env.DB,
+      c.get('bidYear'),
+      c.req.valid('json'),
+    );
+    return result.ok ? c.json(result) : c.json(result, errorStatus(result.error));
+  },
+);
 router.get('/:year/my-mock', async (c) => {
   const versionId = BidIdentitySchema.safeParse(c.req.query('versionId'));
   if (!versionId.success) return c.json({ error: 'invalid_version_id' }, 400);
