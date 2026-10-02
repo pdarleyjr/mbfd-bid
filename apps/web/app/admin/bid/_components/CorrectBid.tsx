@@ -5,8 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
+import {
+  OPERATOR_AUTH_REFRESHED,
+  OPERATOR_REAUTH_STARTED,
+  OPERATOR_STEP_UP_REQUIRED,
+} from '@/lib/operator-step-up';
 import { WeekdaySchema } from '@mbfd/shared';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MemberLite } from '../../../_components/bid/types';
 
 type Source = {
@@ -64,6 +69,11 @@ type Command = {
 
 function failure(code: string | undefined) {
   const messages: Record<string, string> = {
+    step_up_required:
+      'Refresh operator sign-in, then refresh awards and review this correction again. Your draft is retained.',
+    session_revalidation_required:
+      'Refresh operator sign-in, then refresh awards and review this correction again. Your draft is retained.',
+    missing_auth: 'Refresh operator sign-in before reviewing a correction. Your draft is retained.',
     STALE_SEQUENCE: 'The bid changed. Refresh the awards and review the correction again.',
     ANNUAL_COMPLETION_SEALED: 'Final results are sealed. This bid cannot be corrected.',
     CORRECTION_SOURCE_NOT_ACTIVE:
@@ -94,7 +104,9 @@ function failure(code: string | undefined) {
 export function CorrectBid(props: {
   bidSessionId: string;
   members: Record<string, MemberLite>;
-  onCanonicalChange?: () => void;
+  onCanonicalChange?: (() => void) | undefined;
+  canonicalSequence?: number | undefined;
+  commandsBlocked?: boolean | undefined;
 }) {
   const csrfFetch = useMemo(
     () =>
@@ -116,10 +128,74 @@ export function CorrectBid(props: {
   const [termEvidence, setTermEvidence] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [review, setReview] = useState<{ preview: Preview; command: Command } | null>(null);
+  const [review, setReview] = useState<{
+    preview: Preview;
+    command: Command;
+    generation: number;
+  } | null>(null);
   const inFlight = useRef(false);
-  const draftBlocked = busy || !readbackFresh;
+  const contextGeneration = useRef(0);
+  const minimumReadbackSequence = useRef(0);
+  const latestContext = useRef({
+    blocked: props.commandsBlocked === true,
+    sequence: props.canonicalSequence,
+  });
+  latestContext.current = {
+    blocked: props.commandsBlocked === true,
+    sequence: props.canonicalSequence,
+  };
+  const sequenceChanged =
+    props.canonicalSequence !== undefined &&
+    readback !== null &&
+    props.canonicalSequence > readback.sequence;
+  const draftBlocked = busy || !readbackFresh || props.commandsBlocked === true || sequenceChanged;
   const source = readback?.sources.find((entry) => entry.bidId === sourceId);
+  const draft = useRef({ source, positionId, aDay, operation });
+  draft.current = { source, positionId, aDay, operation };
+  useEffect(() => {
+    function invalidate() {
+      contextGeneration.current += 1;
+      setReview(null);
+      setReadbackFresh(false);
+      setNotice(
+        'Operator sign-in changed. Your draft is retained. Refresh awards and review the correction again before confirming.',
+      );
+    }
+    for (const event of [
+      OPERATOR_REAUTH_STARTED,
+      OPERATOR_STEP_UP_REQUIRED,
+      OPERATOR_AUTH_REFRESHED,
+    ])
+      window.addEventListener(event, invalidate);
+    return () => {
+      contextGeneration.current += 1;
+      for (const event of [
+        OPERATOR_REAUTH_STARTED,
+        OPERATOR_STEP_UP_REQUIRED,
+        OPERATOR_AUTH_REFRESHED,
+      ])
+        window.removeEventListener(event, invalidate);
+    };
+  }, []);
+  useEffect(() => {
+    if (!props.commandsBlocked && !sequenceChanged) return;
+    contextGeneration.current += 1;
+    setReview(null);
+    setReadbackFresh(false);
+    setNotice(
+      'The bid or operator sign-in changed. Your draft is retained. Refresh awards and review the correction again.',
+    );
+  }, [props.commandsBlocked, sequenceChanged]);
+  function contextCurrent(generation: number, sequence: number) {
+    return (
+      generation === contextGeneration.current &&
+      !latestContext.current.blocked &&
+      sequence >= minimumReadbackSequence.current &&
+      (latestContext.current.sequence === undefined || sequence >= latestContext.current.sequence)
+    );
+  }
+  const groupLabel = (value: string) =>
+    /^G[1-4]$/.test(value) ? `Group ${value.slice(1)}` : value;
   const memberName = (id: number) => {
     const member = props.members[String(id)];
     return member ? `${member.rank} ${member.firstName} ${member.lastName}`.trim() : `Member ${id}`;
@@ -146,15 +222,50 @@ export function CorrectBid(props: {
     setNotice(null);
   }
   async function load() {
+    const generation = contextGeneration.current;
     const response = await csrfFetch(`/api/admin/bid-session/${props.bidSessionId}/corrections`, {
       cache: 'no-store',
     });
     const body = (await response.json()) as Readback & { error?: string };
     if (!response.ok) throw new Error(failure(body?.error));
     const data = body as Readback;
+    if (!contextCurrent(generation, data.sequence))
+      throw new Error(
+        'Awards changed while loading. Refresh awards after operator sign-in and review again. Your draft is retained.',
+      );
     setReadback(data);
     setReadbackFresh(true);
-    choose(data.sources[0]);
+    const previous = draft.current;
+    const retained = data.sources.find(
+      (entry) =>
+        entry.bidId === previous.source?.bidId &&
+        entry.originalCommandId === previous.source.originalCommandId &&
+        entry.originalADayCommandId === previous.source.originalADayCommandId &&
+        entry.status === previous.source.status &&
+        entry.termParticipation?.assignmentId === previous.source.termParticipation?.assignmentId,
+    );
+    if (
+      retained &&
+      (previous.operation === 'REVOKE' ||
+        retained.eligiblePositionIds.includes(previous.positionId))
+    ) {
+      const days =
+        data.positions.find((entry) => entry.id === previous.positionId)?.shift === 'D'
+          ? WeekdaySchema.options
+          : data.combatGroups;
+      if (previous.aDay && !days.includes(previous.aDay)) {
+        setADay('');
+        setNotice('The drafted A-Day is no longer available. Choose an A-Day and review again.');
+      }
+    } else {
+      choose(
+        data.sources.find((entry) => entry.bidId === previous.source?.bidId) ?? data.sources[0],
+      );
+      if (previous.source)
+        setNotice(
+          'The original award or drafted position changed. Review the refreshed award before preparing a correction.',
+        );
+    }
   }
   async function start() {
     setOpen(true);
@@ -186,7 +297,8 @@ export function CorrectBid(props: {
     }
   }
   async function preview() {
-    if (!source || !readback || !readbackFresh || inFlight.current) return;
+    if (!source || !readback || draftBlocked || inFlight.current) return;
+    const generation = contextGeneration.current;
     inFlight.current = true;
     setBusy(true);
     setNotice(null);
@@ -229,20 +341,33 @@ export function CorrectBid(props: {
         },
       );
       const body = (await response.json()) as Partial<Preview> & { code?: string; error?: string };
+      if (!contextCurrent(generation, readback.sequence)) return;
       if (!response.ok || body?.valid !== true) {
         setNotice(failure(body?.code ?? body?.error));
         return;
       }
-      setReview({ preview: body as Preview, command });
+      if (body.expectedSeq !== command.expectedSeq) {
+        setReadbackFresh(false);
+        setNotice('The bid changed during review. Refresh awards and review again.');
+        return;
+      }
+      setReview({ preview: body as Preview, command, generation });
     } catch {
-      setNotice('The review could not be loaded. Review the correction again when connected.');
+      if (contextCurrent(generation, readback.sequence))
+        setNotice('The review could not be loaded. Review the correction again when connected.');
     } finally {
       inFlight.current = false;
       setBusy(false);
     }
   }
   async function confirm() {
-    if (!review || !readbackFresh || inFlight.current) return;
+    if (
+      !review ||
+      draftBlocked ||
+      inFlight.current ||
+      !contextCurrent(review.generation, review.command.expectedSeq)
+    )
+      return;
     inFlight.current = true;
     setBusy(true);
     setNotice(null);
@@ -255,7 +380,12 @@ export function CorrectBid(props: {
           body: JSON.stringify(review.command),
         },
       );
-      const body = (await response.json()) as { kind?: string; code?: string; error?: string };
+      const body = (await response.json()) as {
+        kind?: string;
+        code?: string;
+        error?: string;
+        seq?: number;
+      };
       if (!response.ok || body?.kind !== 'accepted') {
         setNotice(failure(body?.code ?? body?.error));
         setReview(null);
@@ -263,6 +393,11 @@ export function CorrectBid(props: {
       }
       setReview(null);
       setReadbackFresh(false);
+      minimumReadbackSequence.current = Math.max(
+        minimumReadbackSequence.current,
+        review.command.expectedSeq + 1,
+        typeof body.seq === 'number' && Number.isSafeInteger(body.seq) ? body.seq : 0,
+      );
       setNotice('Correction recorded. Refreshing awards…');
       try {
         props.onCanonicalChange?.();
@@ -295,7 +430,7 @@ export function CorrectBid(props: {
         </div>
         <div>
           <dt className="font-medium">A-Day</dt>
-          <dd>{value.fill.aDay ?? value.aDay?.aDay ?? 'Due at ordinary turn'}</dd>
+          <dd>{groupLabel(value.fill.aDay ?? value.aDay?.aDay ?? 'Due at ordinary turn')}</dd>
         </div>
       </dl>
     ) : (
@@ -307,7 +442,11 @@ export function CorrectBid(props: {
   }
   return (
     <>
-      <Button variant="secondary" disabled={busy} onClick={() => void start()}>
+      <Button
+        variant="secondary"
+        disabled={busy || props.commandsBlocked === true}
+        onClick={() => void start()}
+      >
         Correct a bid
       </Button>
       <TaskPanel
@@ -321,7 +460,11 @@ export function CorrectBid(props: {
         {notice && (
           <output className="mb-4 block rounded border border-border p-3 text-sm">{notice}</output>
         )}
-        <Button variant="secondary" disabled={busy} onClick={() => void refresh()}>
+        <Button
+          variant="secondary"
+          disabled={busy || props.commandsBlocked === true}
+          onClick={() => void refresh()}
+        >
           Refresh awards
         </Button>
         {readback?.sealed ? (
@@ -404,7 +547,7 @@ export function CorrectBid(props: {
                         <option value="">A-Day remains due at ordinary turn</option>
                         {options.map((day) => (
                           <option key={day} value={day}>
-                            {day}
+                            {groupLabel(day)}
                           </option>
                         ))}
                       </NativeSelect>

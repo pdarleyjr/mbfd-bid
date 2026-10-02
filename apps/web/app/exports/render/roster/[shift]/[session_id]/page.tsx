@@ -99,7 +99,11 @@ export default async function RosterRenderPage({
       </header>
       {roster.stations.map((station) => (
         <section key={station.station} className="station-block" data-station={station.station}>
-          <h2>Station {station.station}</h2>
+          <h2>
+            {/^[0-9]+$/.test(station.station.trim())
+              ? `Station ${station.station.trim()}`
+              : station.station}
+          </h2>
           <table>
             <thead>
               <tr>

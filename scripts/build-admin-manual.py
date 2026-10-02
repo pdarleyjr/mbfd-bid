@@ -64,14 +64,14 @@ def footer(canvas, doc):
     canvas.line(45, 42, 567, 42)
     canvas.setFont('Manual', 8)
     canvas.setFillColor(colors.HexColor('#425566'))
-    canvas.drawString(45, 27, 'MBFD Bid | Administrator Manual | September 2026')
+    canvas.drawString(45, 27, 'MBFD Bid | Administrator Manual | October 2026')
     canvas.drawRightString(567, 27, str(doc.page))
     canvas.restoreState()
 
 story = [Spacer(1, 1.0 * inch), Paragraph('MBFD BID', styles['Title']), Spacer(1, 20),
          Paragraph('Complete Administrator Manual', styles['Heading1']),
          Paragraph('Today · Department · Bid · History', styles['BodyText']),
-         Spacer(1, 24), Paragraph('September 2026', styles['Heading2']),
+         Spacer(1, 24), Paragraph('October 2026', styles['Heading2']),
          Paragraph('Use this manual alongside the searchable Docs page and the “How to use this page” explanation in each administrator workspace. The manual and live help use the same source content.', styles['BodyText']),
          Paragraph('Approved policy and amendments determine the rules. This manual explains software operation and does not adopt policy, authorize a selection, or establish that every qualification is current.', styles['Note']),
          Paragraph('Start at https://bid.mbfdhub.com/admin — administrator sign-in is required. Downloaded instructions remain readable offline; application links require a connection.', styles['BodyText']), PageBreak(),
