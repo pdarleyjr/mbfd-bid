@@ -925,6 +925,29 @@ describe('actual unsaved Bid impact through the admin facade', () => {
     expect(compared(result).affectedMemberIds).toEqual([TWO]);
   });
 
+  it('reports specialty candidates only when they meet a related opportunity rule', async () => {
+    await save(specialty(structuredClone(content)));
+    const candidate = structuredClone(content);
+    first(candidate.rules).requiredCriteriaJson = JSON.stringify({
+      rank: ['FF'],
+      credentials: [CREDENTIAL_A],
+      custom: [],
+    });
+    const result = await impact(body(candidate));
+    expect(first(evaluated(result.before).specialties).candidates).toEqual([
+      { memberId: TWO, points: 5, priority: 1 },
+    ]);
+    expect(first(evaluated(result.after).specialties)).toMatchObject({
+      status: 'EVALUATED',
+      code: null,
+      candidates: [],
+    });
+    expect(first(compared(result).specialtyChanges)).toMatchObject({
+      status: 'EVALUATED',
+      changes: [{ memberId: TWO, after: null }],
+    });
+  });
+
   it.each([
     ['credential', 'specialty_credential_reference_invalid'],
     ['qualification', 'specialty_qualification_reference_invalid'],

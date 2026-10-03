@@ -701,7 +701,12 @@ export async function commitLiveBidCommand(
   input: CommitLiveBidCommandInput,
 ): Promise<{ result: LiveBidCommandResult; canonicalState: BidSessionState | null }> {
   const administratorOverride = hasAdminBidOverride(input.command);
-  if (input.previewOnly && input.command.type !== 'live.correct_bid' && !administratorOverride)
+  if (
+    input.previewOnly &&
+    input.command.type !== 'live.correct_bid' &&
+    input.command.type !== 'live.set_exceptional_assignment' &&
+    !administratorOverride
+  )
     throw new Error(
       'Only audited corrections and administrator overrides support read-only preview',
     );
@@ -911,6 +916,68 @@ export async function commitLiveBidCommand(
     );
     return { result, canonicalState: null };
   }
+  if (input.command.type === 'live.set_exceptional_assignment') {
+    const assignmentCommand = input.command;
+    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    const person = frozen.ok
+      ? frozen.snapshot.members.find((member) => member.memberId === assignmentCommand.memberId)
+      : undefined;
+    const position =
+      frozen.ok && assignmentCommand.positionId !== undefined
+        ? frozen.snapshot.ruleBookMaterial.positions.find(
+            (entry) => entry.id === assignmentCommand.positionId,
+          )
+        : undefined;
+    const code =
+      !frozen.ok ||
+      frozen.snapshot.settings.v !== 3 ||
+      canonicalJson(frozen.snapshot.settings.livePolicy) !== canonicalJson(input.policy)
+        ? 'LIVE_POLICY_MISMATCH'
+        : !person ||
+            person.pool === 'EXCLUDED' ||
+            !input.policy.stages.some((stage) => stage.memberIds.includes(person.memberId))
+          ? 'EXCEPTIONAL_ASSIGNMENT_PARTICIPANT_MISSING'
+          : input.command.positionId !== undefined &&
+              (!position || position.bidParticipation === 'BIDDABLE')
+            ? 'EXCEPTIONAL_ASSIGNMENT_NON_BIDDABLE_ROLE_REQUIRED'
+            : null;
+    if (code) {
+      const rejected: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code,
+        currentSeq: current.lastSeq,
+      };
+      await recordRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        rejected as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result: rejected, canonicalState: null };
+    }
+  }
+  if (
+    input.command.type === 'live.record_selection' &&
+    input.command.forced &&
+    !administratorOverride
+  ) {
+    const rejected: LiveBidCommandResult = {
+      kind: 'rejected',
+      commandId: input.command.commandId,
+      code: 'EXPLICIT_ADMIN_OVERRIDE_REQUIRED',
+      currentSeq: current.lastSeq,
+    };
+    await recordRejectedReceipt(
+      input.db,
+      input.command as unknown as MockFreezeCommand,
+      requestSha256,
+      rejected as unknown as MockFreezeCommandResult,
+      now,
+    );
+    return { result: rejected, canonicalState: null };
+  }
   if (input.command.type === 'live.start_specialty_adjudication') {
     const specialtyId = input.command.specialtyId;
     const target =
@@ -1089,6 +1156,26 @@ export async function commitLiveBidCommand(
     const previous = current.fills[positionId];
     if (previous?.memberId === fill.memberId && previous.bidId === fill.bidId) continue;
     if (
+      current.live?.exceptionalAssignments?.some(
+        (entry) => entry.memberId === fill.memberId && entry.releasedAtMs === null,
+      )
+    ) {
+      const rejected: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code: 'EXCEPTIONAL_ASSIGNMENT_ACTIVE',
+        currentSeq: current.lastSeq,
+      };
+      await recordRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        rejected as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result: rejected, canonicalState: null };
+    }
+    if (
       (input.policy.annualOperations?.opportunityPools?.length ?? 0) > 0 ||
       ('pool' in input.command && input.command.pool !== undefined)
     ) {
@@ -1203,9 +1290,17 @@ export async function commitLiveBidCommand(
           memberId: fill.memberId,
           positionId,
           rule: target.rule,
-          ...(correctionSpecialtyRequest?.positionId === positionId
-            ? { requestContext: correctionSpecialtyRequest }
-            : {}),
+          ...(input.command.type === 'live.resolve_specialty_candidate' && current.live?.specialty
+            ? {
+                requestContext: {
+                  specialtyId: current.live.specialty.specialtyId,
+                  positionId,
+                  requesterMemberId: current.live.specialty.suspendedBidderId,
+                },
+              }
+            : correctionSpecialtyRequest?.positionId === positionId
+              ? { requestContext: correctionSpecialtyRequest }
+              : {}),
         });
         if (pending.some((entry) => entry.candidateMemberIds.length > 0))
           priorityCode = 'SPECIALTY_HIGHER_PRIORITY_UNRESOLVED';
@@ -1234,6 +1329,26 @@ export async function commitLiveBidCommand(
         );
         return { result: rejected, canonicalState: null };
       }
+    }
+    const priorMemberFill = Object.values(current.fills).find(
+      (prior) => prior.memberId === fill.memberId,
+    );
+    const forced =
+      input.command.type === 'live.force_selection' ||
+      (input.command.type === 'live.record_selection' && input.command.forced)
+        ? {
+            commandId: input.command.commandId,
+            actorMemberId: input.command.actor.id,
+            reason: input.command.reason,
+            atMs: now,
+          }
+        : priorMemberFill?.forced;
+    if (forced) {
+      reduction.state.fills[positionId] = {
+        ...(reduction.state.fills[positionId] ?? fill),
+        forced,
+      };
+      reduction.payload.forced = forced;
     }
   }
   if (fallbackReview !== null)

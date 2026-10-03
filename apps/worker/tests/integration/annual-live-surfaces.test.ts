@@ -1,5 +1,8 @@
+import { BidSessionPolicySnapshotSchema } from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { getDb } from '../../src/db/index.js';
 import { app } from '../../src/index.js';
+import { loadFrozenSessionBidPolicy } from '../../src/lib/bid-policy.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
@@ -231,7 +234,19 @@ describe('annual live operator and presentation surfaces', () => {
       turnTimerSeconds: 180,
       lastSeq: 8,
       fills: {
-        A101: { memberId: 2, ordinal: 2, bidId: 'b2', aDay: 'G1', membershipIds: ['swat'] },
+        A101: {
+          memberId: 2,
+          ordinal: 2,
+          bidId: 'b2',
+          aDay: 'G1',
+          membershipIds: ['swat'],
+          forced: {
+            commandId: 'forced-private-command',
+            actorMemberId: 99,
+            reason: 'PRIVATE-REHEARSAL-REASON',
+            atMs: 1,
+          },
+        },
       },
       bidOrder: held.bidOrder,
       queueCursor: 1,
@@ -273,6 +288,155 @@ describe('annual live operator and presentation surfaces', () => {
     );
   });
   afterEach(async () => teardownTestD1(h));
+
+  it('proactively reviews a specialty selection without writing receipts or changing Bid state', async () => {
+    const row = h.sqlite
+      .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+      .get(SESSION) as { state_json: string };
+    const state = JSON.parse(row.state_json);
+    state.fills = {};
+    state.currentBidderId = 1;
+    state.queueCursor = 0;
+    state.lastSeq = 9;
+    state.live.specialty = null;
+    h.sqlite
+      .prepare(
+        "UPDATE canonical_bid_session_state SET current_seq=9,last_command_id='synthetic-review-c9',state_json=? WHERE bid_session_id=?",
+      )
+      .run(JSON.stringify(state), SESSION);
+    const before = h.sqlite.prepare('SELECT count(*) AS count FROM bid_command_receipts').get();
+    const response = await app.fetch(
+      new Request(
+        `http://x/api/admin/bid-session/${SESSION}/specialty-review?member_id=1&position_id=A101`,
+        { headers: { Authorization: `Bearer ${await token('admin', 99)}` } },
+      ),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      sequence: 9,
+      status: 'HIGHER_PRIORITY',
+      selection_review: {
+        member_id: 1,
+        specialty_id: 'marine',
+        higher_priority_candidates: [
+          { member_id: 2, first_name: 'Higher', last_name: 'Candidate', points: 5, policy_rank: 1 },
+        ],
+        eligible_related_position_ids: ['A101'],
+        a_day_timing: 'ORDINARY_TURN',
+      },
+    });
+    expect(h.sqlite.prepare('SELECT count(*) AS count FROM bid_command_receipts').get()).toEqual(
+      before,
+    );
+    expect(
+      JSON.parse(
+        (
+          h.sqlite
+            .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+            .get(SESSION) as { state_json: string }
+        ).state_json,
+      ),
+    ).toEqual(state);
+    const forbidden = await app.fetch(
+      new Request(
+        `http://x/api/admin/bid-session/${SESSION}/specialty-review?member_id=1&position_id=A101`,
+        { headers: { Authorization: `Bearer ${await token('member', 1)}` } },
+      ),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(forbidden.status).toBe(403);
+  });
+
+  it('explains an unavailable selection and exposes frozen credential counters', async () => {
+    const response = await app.fetch(
+      new Request(
+        `http://x/api/admin/bid-session/${SESSION}/specialty-review?member_id=1&position_id=A101`,
+        { headers: { Authorization: `Bearer ${await token('admin', 99)}` } },
+      ),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(await response.json()).toMatchObject({
+      sequence: 8,
+      status: 'INELIGIBLE',
+      selection_review: null,
+    });
+    const controls = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${SESSION}/specialty-live`, {
+        headers: { Authorization: `Bearer ${await token('admin', 99)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(await controls.json()).toMatchObject({
+      credential_coverage: {
+        availability: 'AVAILABLE',
+        source: 'FROZEN_SESSION_SNAPSHOT',
+        groups: [
+          expect.objectContaining({ label: 'Marine', remaining_seat_count: 0, status: 'FEASIBLE' }),
+        ],
+      },
+      exceptional_assignments: [],
+    });
+  });
+
+  it('keeps a rank-scoped specialty usable when unrelated and excluded people lack its ordinal evidence', async () => {
+    const rankSession = '01HZZ000000000ANNUALRANKSCOPED';
+    const original = h.sqlite
+      .prepare('SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?')
+      .get(SESSION) as { snapshot_json: string };
+    const snapshot = BidSessionPolicySnapshotSchema.parse(JSON.parse(original.snapshot_json));
+    if (snapshot.v !== 3 || snapshot.settings.v !== 3) throw new Error('Synthetic V3 required');
+    const specialty = snapshot.settings.livePolicy.annualOperations?.specialties?.[0];
+    const first = snapshot.members[0];
+    if (!specialty || !first) throw new Error('Synthetic specialty members required');
+    specialty.requiredCredentialNames = [];
+    specialty.requiredSpecialtyCodes = [];
+    specialty.tieBreakChain = ['POINTS', 'TIME_IN_GRADE_BID_ORDINAL'];
+    snapshot.members = snapshot.members.map((member) => ({
+      ...member,
+      bidOrdinalEvidence: {
+        datasetId: 'synthetic-rank-source',
+        sourceSha256: 'a'.repeat(64),
+        timeInGrade: member.rscSeniority,
+        departmentService: member.rscSeniority,
+      },
+    }));
+    snapshot.members.push(
+      { ...first, memberId: 99, pool: 'EXCLUDED', exclusionReason: 'MEMBER_CATEGORY_EXCLUDED' },
+      { ...first, memberId: 98, pool: 'OFC', rank: 'CPT' },
+    );
+    BidSessionPolicySnapshotSchema.parse(snapshot);
+    await h.db.run(
+      "INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,is_mock) VALUES (?,2027,3,'position_bid',2,180,2,0,1)",
+      [rankSession],
+    );
+    await h.db.run(
+      "INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES (?,'2027.1','2027.1',1,?,1)",
+      [rankSession, JSON.stringify(snapshot)],
+    );
+    await h.db.run(
+      "INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) SELECT ?,current_seq,json_set(state_json, '$.bidSessionId', ?),last_command_id,created_at,updated_at FROM canonical_bid_session_state WHERE bid_session_id=?",
+      [rankSession, rankSession, SESSION],
+    );
+    const frozen = await loadFrozenSessionBidPolicy(getDb(h.env.DB), rankSession);
+    expect(frozen.ok, JSON.stringify(frozen.ok ? null : frozen)).toBe(true);
+    const response = await app.fetch(
+      new Request(`http://x/api/admin/bid-session/${rankSession}/specialty-live`, {
+        headers: { Authorization: `Bearer ${await token('admin', 99)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    const body = await response.json();
+    expect(response.status, JSON.stringify(body)).toBe(200);
+    expect(body).toMatchObject({
+      active: {
+        original_bidder: { member_id: 1, policy_rank: 2 },
+        candidates: [{ member_id: 2, policy_rank: 1 }],
+      },
+      credential_coverage: { availability: 'AVAILABLE' },
+      specialty_coverage: { availability: 'AVAILABLE' },
+    });
+  });
 
   it('returns frozen higher-priority candidate facts and contact history only to Admin', async () => {
     const response = await app.fetch(
@@ -422,12 +586,97 @@ describe('annual live operator and presentation surfaces', () => {
     expect(body).toMatchObject({
       mode: 'HOLD',
       held_at_sequence: 7,
-      current_bidder: { member_id: 1, name: 'First Bidder' },
+      current_bidder: { member_id: 2, name: 'Higher Candidate' },
       progress: { filled: 0, total: 1 },
       specialty: { status: 'PRIORITY REVIEW IN PROGRESS' },
+      remaining_queue: [
+        { member_id: 2, name: 'Higher Candidate', pending_a_day: false },
+        { member_id: 1, name: 'First Bidder', pending_a_day: false },
+      ],
     });
     expect(JSON.stringify(body)).not.toContain('credential');
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(JSON.stringify(body)).not.toContain('contact_history');
+    expect((body as { positions: { forced: boolean }[] }).positions[0]?.forced).toBe(false);
+  });
+
+  it('keeps Chief assignments and queue frozen while the canonical bid continues', async () => {
+    const row = h.sqlite
+      .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+      .get(SESSION) as { state_json: string };
+    const state = JSON.parse(row.state_json);
+    state.lastSeq = 9;
+    state.live.presentation.heldProjection.exceptionalAssignments = [
+      {
+        assignmentId: 'held-role',
+        commandId: 'held-command',
+        memberId: 2,
+        roleLabel: 'Acting Division Chief of Prevention',
+        positionId: null,
+        actorMemberId: 99,
+        reason: 'PRIVATE-CHIEF-REASON',
+        assignedAtMs: 1,
+        releasedAtMs: null,
+        releaseCommandId: null,
+      },
+    ];
+    state.live.presentation.heldProjection.specialty = null;
+    state.live.exceptionalAssignments = [];
+    h.sqlite
+      .prepare(
+        "UPDATE canonical_bid_session_state SET current_seq=9,last_command_id='synthetic-hold-c9',state_json=? WHERE bid_session_id=?",
+      )
+      .run(JSON.stringify(state), SESSION);
+    const response = await app.fetch(
+      new Request(`http://x/api/presentation?bidSessionId=${SESSION}`, {
+        headers: { Authorization: `Bearer ${await token('member', 1)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    const body = await response.json();
+    expect(body).toMatchObject({
+      mode: 'HOLD',
+      remaining_queue: [{ member_id: 1 }],
+      exceptional_assignments: [
+        {
+          member_id: 2,
+          name: 'Higher Candidate',
+          rank: 'FF',
+          role_label: 'Acting Division Chief of Prevention',
+          forced: true,
+        },
+      ],
+    });
+    expect((body as { remaining_queue: unknown[] }).remaining_queue).toHaveLength(1);
+    expect(JSON.stringify(body)).not.toContain('PRIVATE-CHIEF-REASON');
+    expect(JSON.stringify(body)).not.toContain('actorMemberId');
+  });
+
+  it('preserves null bidder and specialty fields in HOLD instead of leaking later live selection', async () => {
+    const row = h.sqlite
+      .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+      .get(SESSION) as { state_json: string };
+    const state = JSON.parse(row.state_json);
+    state.lastSeq = 9;
+    state.live.presentation.heldProjection.currentBidderId = null;
+    state.live.presentation.heldProjection.specialty = null;
+    state.live.presentation.heldProjection.returningMemberId = null;
+    h.sqlite
+      .prepare(
+        "UPDATE canonical_bid_session_state SET current_seq=9,last_command_id='synthetic-null-hold-c9',state_json=? WHERE bid_session_id=?",
+      )
+      .run(JSON.stringify(state), SESSION);
+    const response = await app.fetch(
+      new Request(`http://x/api/presentation?bidSessionId=${SESSION}`, {
+        headers: { Authorization: `Bearer ${await token('member', 1)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(await response.json()).toMatchObject({
+      mode: 'HOLD',
+      current_bidder: null,
+      specialty: null,
+    });
   });
 
   it.each([
@@ -484,12 +733,17 @@ describe('annual live operator and presentation surfaces', () => {
         });
       } else {
         expect(body).toMatchObject({
-          current_bidder: { member_id: mode === 'HOLD' ? 1 : 2 },
+          current_bidder: { member_id: 2 },
           progress: { filled: mode === 'HOLD' ? 0 : 1, total: 1 },
         });
+        expect((body as { positions: { forced: boolean }[] }).positions[0]?.forced).toBe(
+          mode === 'LIVE',
+        );
       }
       expect(JSON.stringify(body)).not.toContain('credential');
       expect(JSON.stringify(body)).not.toContain('contact_history');
+      expect(JSON.stringify(body)).not.toContain('PRIVATE-REHEARSAL-REASON');
+      expect(JSON.stringify(body)).not.toContain('forced-private-command');
       expect(await readState()).toEqual(before);
 
       const defaultResponse = await app.fetch(

@@ -149,6 +149,7 @@ describe('read-only canonical session results and completion', () => {
         },
       ],
       completion: { verified: true, blockers: [] },
+      exceptional_assignments: [],
     });
     expect(
       h.sqlite.serialize().length === before.length &&

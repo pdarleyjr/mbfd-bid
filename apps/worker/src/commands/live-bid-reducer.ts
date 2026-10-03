@@ -74,6 +74,7 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
     case 'live.disposition':
       return command.disposition === 'UNREACHABLE' ? 'mark_unreachable' : 'skip_defer';
     case 'live.force_selection':
+    case 'live.set_exceptional_assignment':
       return 'force';
     case 'live.record_a_day':
       return 'record_selection';
@@ -96,6 +97,7 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
       return 'alter_order';
     case 'live.start_specialty_adjudication':
     case 'live.resolve_specialty_candidate':
+    case 'live.close_specialty_adjudication':
       return 'approve_transition';
     case 'live.set_presentation_mode':
       return 'publish';
@@ -136,6 +138,14 @@ function nextAvailableFrom(
   const picked = new Set(state.aDay?.picks.map((pick) => pick.memberId) ?? []);
   while (state.bidOrder[queueCursor]) {
     const memberId = state.bidOrder[queueCursor]?.memberId ?? -1;
+    if (
+      state.live?.exceptionalAssignments?.some(
+        (entry) => entry.memberId === memberId && entry.releasedAtMs === null,
+      )
+    ) {
+      queueCursor += 1;
+      continue;
+    }
     if (!selected.has(memberId))
       return {
         queueCursor,
@@ -204,6 +214,12 @@ export function participantCoverageGaps(
 ): number[] {
   const participants = [...new Set(policy.stages.flatMap((stage) => stage.memberIds))];
   return participants.filter((memberId) => {
+    if (
+      live.exceptionalAssignments?.some(
+        (entry) => entry.memberId === memberId && entry.releasedAtMs === null,
+      )
+    )
+      return false;
     if (hasAward(state, memberId)) return false;
     if (annual.returningMemberId === memberId || annual.unresolvedMemberIds.includes(memberId))
       return true;
@@ -288,6 +304,100 @@ export function reduceLiveBidCommand(
   }
   if (currentStageId === null || !policy.stages.some((stage) => stage.id === currentStageId))
     return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
+  if (command.type === 'live.set_exceptional_assignment') {
+    if (!['position_bid', 'a_day_bid', 'complete'].includes(state.currentPhase))
+      return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (live.specialty) return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
+    if (Object.values(state.fills).some((fill) => fill.memberId === command.memberId))
+      return { ok: false, code: 'EXCEPTIONAL_ASSIGNMENT_EXISTING_AWARD' };
+    const assignments = live.exceptionalAssignments ?? [];
+    const active = assignments.find(
+      (entry) => entry.memberId === command.memberId && entry.releasedAtMs === null,
+    );
+    if (command.operation === 'ASSIGN' && active)
+      return { ok: false, code: 'EXCEPTIONAL_ASSIGNMENT_ALREADY_ACTIVE' };
+    if (command.operation === 'RELEASE' && (!active || active.roleLabel !== command.roleLabel))
+      return { ok: false, code: 'EXCEPTIONAL_ASSIGNMENT_NOT_ACTIVE' };
+    if (
+      command.operation === 'ASSIGN' &&
+      assignments.some(
+        (entry) =>
+          entry.releasedAtMs === null &&
+          (entry.roleLabel === command.roleLabel ||
+            (command.positionId !== undefined && entry.positionId === command.positionId)),
+      )
+    )
+      return { ok: false, code: 'EXCEPTIONAL_ASSIGNMENT_ROLE_OCCUPIED' };
+    const updatedAssignments =
+      command.operation === 'ASSIGN'
+        ? [
+            ...assignments,
+            {
+              assignmentId: bidId,
+              commandId: command.commandId,
+              memberId: command.memberId,
+              roleLabel: command.roleLabel,
+              positionId: command.positionId ?? null,
+              actorMemberId: command.actor.id,
+              reason: command.reason,
+              assignedAtMs: now,
+              releasedAtMs: null,
+              releaseCommandId: null,
+            },
+          ]
+        : assignments.map((entry) =>
+            entry === active
+              ? { ...entry, releasedAtMs: now, releaseCommandId: command.commandId }
+              : entry,
+          );
+    let result: BidSessionState = {
+      ...state,
+      live: { ...live, exceptionalAssignments: updatedAssignments },
+      annual: settleSelectedMember(annual, command.memberId),
+      lastSeq: state.lastSeq + 1,
+    };
+    if (command.operation === 'ASSIGN' && state.currentBidderId === command.memberId)
+      result = { ...result, ...nextAvailableFrom(result, policy, state.queueCursor + 1, now) };
+    if (command.operation === 'RELEASE') {
+      if (!state.bidOrder.some((entry) => entry.memberId === command.memberId))
+        return { ok: false, code: 'EXCEPTIONAL_ASSIGNMENT_PARTICIPANT_MISSING' };
+      const ordinaryTurnPending = state.bidOrder
+        .slice(state.queueCursor)
+        .some(
+          (entry) =>
+            entry.memberId === command.memberId &&
+            policy.stages.find((stage) => stage.id === entry.stageId)?.kind !== 'D_SHIFT',
+        );
+      if (!ordinaryTurnPending || state.currentPhase === 'complete') {
+        // An already-passed rank turn returns at the current sequence. Reusing
+        // the first queue entry would incorrectly rewind a Captain into Days.
+        const returned = returnAtCurrentSequence(result.annual ?? annual, {
+          memberId: command.memberId,
+          sequence: result.lastSeq,
+          retainsSelectionRights: true,
+        });
+        if (!returned.ok) return returned;
+        result = { ...result, annual: returned.state };
+      }
+    }
+    return {
+      ok: true,
+      state: result,
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'set_exceptional_assignment',
+        assignmentOperation: command.operation,
+        memberId: command.memberId,
+        roleLabel: command.roleLabel,
+        positionId: command.positionId ?? null,
+        forced: true,
+        officialRankUnchanged: true,
+        staffingWriteback: false,
+        nextMemberId: result.currentBidderId,
+      },
+      supersedesBidId: null,
+    };
+  }
   if (command.type === 'live.pause') {
     if (state.currentPhase === 'paused') return { ok: false, code: 'SESSION_PAUSED' };
     return {
@@ -395,6 +505,10 @@ export function reduceLiveBidCommand(
             bidOrder: [...state.bidOrder],
             queueCursor: state.queueCursor,
             specialty: live.specialty ?? null,
+            aDay: state.aDay,
+            exceptionalAssignments: live.exceptionalAssignments ?? [],
+            dispositions: live.dispositions,
+            returningMemberId: state.annual?.returningMemberId ?? null,
           }
         : null;
     return {
@@ -537,7 +651,14 @@ export function reduceLiveBidCommand(
       }
     }
     if (command.outcome === 'ACCEPT') {
-      if (command.aDay !== undefined && positionUsesDeferredADay(policy, specialty.positionId))
+      const positionId = command.positionId ?? specialty.positionId;
+      const specialtyPolicy = policy.annualOperations?.specialties?.find(
+        (entry) => entry.id === specialty.specialtyId,
+      );
+      if (!specialtyPolicy?.opportunityPositionIds.includes(positionId))
+        return { ok: false, code: 'SPECIALTY_POSITION_NOT_CONFIGURED' };
+      if (state.fills[positionId] !== undefined) return { ok: false, code: 'POSITION_FILLED' };
+      if (command.aDay !== undefined && positionUsesDeferredADay(policy, positionId))
         return { ok: false, code: 'A_DAY_DEFERRED_SELECTION_REQUIRED' };
       const existingFills = Object.entries(state.fills).filter(
         ([, candidateFill]) => candidateFill.memberId === command.memberId,
@@ -556,24 +677,31 @@ export function reduceLiveBidCommand(
       };
       const fills = { ...state.fills };
       if (prior !== undefined) delete fills[prior[0]];
-      fills[specialty.positionId] = fill;
+      fills[positionId] = fill;
       const candidateOrderIndex = state.bidOrder.findIndex(
         (entry) => entry.memberId === command.memberId,
       );
       const removeFromRemainingOrder =
         prior === undefined &&
         candidateOrderIndex >= state.queueCursor &&
-        !positionUsesDeferredADay(policy, specialty.positionId);
+        !positionUsesDeferredADay(policy, positionId);
       const bidOrder = removeFromRemainingOrder
         ? state.bidOrder.filter((entry) => entry.memberId !== command.memberId)
         : state.bidOrder;
+      const nextCursor = specialty.candidateCursor + 1;
+      const continues =
+        nextCursor < specialty.candidateMemberIds.length &&
+        specialtyPolicy.opportunityPositionIds.some((id) => fills[id] === undefined);
       return {
         ok: true,
         state: {
           ...state,
           fills,
           bidOrder,
-          live: { ...live, specialty: null },
+          live: {
+            ...live,
+            specialty: continues ? { ...specialty, candidateCursor: nextCursor } : null,
+          },
           lastSeq: state.lastSeq + 1,
         },
         eventType: 'live_command_applied',
@@ -581,10 +709,12 @@ export function reduceLiveBidCommand(
           operation: 'resolve_specialty_candidate',
           bidId,
           specialtyId: specialty.specialtyId,
-          positionId: specialty.positionId,
+          positionId,
+          requestedPositionId: specialty.positionId,
           memberId: command.memberId,
           outcome: command.outcome,
           resumedBidderId: specialty.suspendedBidderId,
+          reviewContinues: continues,
           releasedPositionId: prior?.[0] ?? null,
           supersedesBidId: prior?.[1].bidId ?? null,
           replacementBidId: prior === undefined ? null : bidId,
@@ -628,6 +758,25 @@ export function reduceLiveBidCommand(
         outcome: command.outcome,
         resumedBidderId:
           nextCursor < specialty.candidateMemberIds.length ? null : specialty.suspendedBidderId,
+      },
+      supersedesBidId: null,
+    };
+  }
+  if (command.type === 'live.close_specialty_adjudication') {
+    if (!live.specialty) return { ok: false, code: 'NO_ACTIVE_SPECIALTY_ADJUDICATION' };
+    return {
+      ok: true,
+      state: { ...state, live: { ...live, specialty: null }, lastSeq: state.lastSeq + 1 },
+      eventType: 'live_command_applied',
+      payload: {
+        operation: 'close_specialty_adjudication',
+        specialtyId: live.specialty.specialtyId,
+        positionId: live.specialty.positionId,
+        resumedBidderId: live.specialty.suspendedBidderId,
+        unresolvedCandidateIds: live.specialty.candidateMemberIds.slice(
+          live.specialty.candidateCursor,
+        ),
+        specialtyRightsPreserved: true,
       },
       supersedesBidId: null,
     };

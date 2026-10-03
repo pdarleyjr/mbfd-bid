@@ -1269,6 +1269,68 @@ describe('live canonical reducer', () => {
     });
   });
 
+  it('continues directly after two junior Days picks and retains every unselected ordinary Captain turn', () => {
+    const firstStage = policy.stages[0];
+    const baseState = state();
+    if (!firstStage || !baseState.live) throw new Error('Synthetic Days policy required');
+    const stagedPolicy: FrozenLiveBidPolicy = {
+      ...policy,
+      stages: [
+        {
+          ...firstStage,
+          id: 'days',
+          order: 0,
+          memberIds: [1, 2, 3],
+          opportunityPositionIds: ['p1', 'p2'],
+        },
+        {
+          ...firstStage,
+          id: 'captains',
+          kind: 'CAPTAIN',
+          order: 1,
+          memberIds: [1, 2, 3, 4],
+          opportunityPositionIds: ['p3', 'p4'],
+        },
+      ],
+    };
+    const order = [1, 2, 3]
+      .map((memberId) => ({ memberId, ordinal: memberId, pool: 'OFC' as const, stageId: 'days' }))
+      .concat(
+        [1, 2, 3, 4].map((memberId) => ({
+          memberId,
+          ordinal: memberId + 3,
+          pool: 'OFC' as const,
+          stageId: 'captains',
+        })),
+      );
+    const before: BidSessionState = {
+      ...baseState,
+      bidOrder: order,
+      fills: {
+        p1: { memberId: 2, ordinal: 2, bidId: 'junior-day-2' },
+        p2: { memberId: 3, ordinal: 3, bidId: 'junior-day-3' },
+      },
+      live: { ...baseState.live, currentStageId: 'days' },
+    };
+    const result = reduceLiveBidCommand(
+      before,
+      stagedPolicy,
+      command('live.transition_stage', { stageId: 'captains' }),
+      100,
+      'continue-days',
+    );
+    if (!result.ok) throw new Error(result.code);
+    expect(result.state).toMatchObject({
+      currentBidderId: 1,
+      queueCursor: 3,
+      currentPhase: 'position_bid',
+    });
+    expect(result.state.bidOrder).toEqual(order);
+    expect(result.state.fills).toEqual(before.fills);
+    expect(result.state.live?.dispositions).toEqual([]);
+    expect(result.state.live?.completedStageIds).toContain('days');
+  });
+
   it('alters only the uncommitted order and preserves frozen member entries', () => {
     const result = reduceLiveBidCommand(
       state(),

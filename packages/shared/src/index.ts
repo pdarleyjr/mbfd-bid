@@ -28,6 +28,7 @@ export * from './schemas/portal-payload.js';
 export * from './live-readiness.js';
 export * from './assignment-reconciliation.js';
 export * from './2026-rank-capacity.js';
+export * from './2026-specialty-workflow.js';
 export * from './constants/rule-capabilities.js';
 export * from './schemas/configured-scoring.js';
 export * from './schemas/annual-rule-profile.js';

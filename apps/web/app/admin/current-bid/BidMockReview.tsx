@@ -31,7 +31,7 @@ export function BidMockReview({
   return (
     <FieldSection
       title="Mock Bid"
-      description="A rehearsal retains its saved Bid version and Department evidence."
+      description="Create a fresh rehearsal from the saved Bid. Existing sessions remain available."
     >
       <p className="text-sm">
         {dirty
@@ -42,7 +42,7 @@ export function BidMockReview({
       </p>
       <Button
         type="button"
-        variant="primary"
+        variant={mockPreview?.wouldAllowCreateMock ? 'secondary' : 'primary'}
         disabled={locked || stale || dirty || !base.version}
         onClick={() => void reviewMock()}
       >
@@ -80,10 +80,10 @@ export function BidMockReview({
               firefighters · {mockPreview.pool.excludedCount} excluded
             </p>
             {mockPreview.sourceDecisionBlockers.length > 0 ? (
-              <output className="block rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
-                <p className="font-medium">
-                  REAL-ONLY ITEMS — information still needed before the Real Bid
-                </p>
+              <details className="border border-warning/30 p-3 text-sm">
+                <summary className="cursor-pointer font-medium">
+                  {mockPreview.sourceDecisionBlockers.length} reviews remain before the Real Bid
+                </summary>
                 <p className="mt-1 text-muted-foreground">
                   This rehearsal preserves those open questions as visible assumptions. They still
                   block creation of a Real Bid.
@@ -97,7 +97,7 @@ export function BidMockReview({
                     </li>
                   ))}
                 </ul>
-              </output>
+              </details>
             ) : null}
             <p className="text-sm">
               Create a rehearsal with this saved version and the reviewed Department evidence. It

@@ -199,6 +199,113 @@ function earlyAward(state: BidSessionState, candidateId: number, positionId: str
 }
 
 describe('early specialty award A-Day at the ordinary seniority turn', () => {
+  it('continues reviewing several higher-priority members after the original requested seat is filled', () => {
+    let result = apply(
+      initial(),
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'specialty',
+        positionId: 's1',
+        candidateMemberIds: [2, 3, 4],
+      }),
+      'start-multiple',
+    );
+    result = apply(
+      result,
+      command('live.resolve_specialty_candidate', { memberId: 2, outcome: 'ACCEPT' }),
+      'first-specialty',
+    );
+    expect(result.live?.specialty).toMatchObject({ positionId: 's1', candidateCursor: 1 });
+    expect(result.fills.s1).toMatchObject({ memberId: 2 });
+    result = apply(
+      result,
+      command('live.resolve_specialty_candidate', {
+        memberId: 3,
+        outcome: 'ACCEPT',
+        positionId: 's2',
+      }),
+      'second-specialty',
+    );
+    expect(result.live?.specialty).toBeNull();
+    expect(result.fills.s2).toMatchObject({ memberId: 3 });
+    expect(result.fills.s1?.aDay).toBeUndefined();
+    expect(result.fills.s2?.aDay).toBeUndefined();
+    expect(result.bidOrder).toEqual(initial().bidOrder);
+    result = apply(
+      result,
+      command('live.record_selection', { memberId: 1, positionId: 'p3', aDay: 'G1' }),
+      'changed-mind-regular',
+    );
+    expect(result).toMatchObject({ currentPhase: 'a_day_bid', currentBidderId: 2 });
+    result = apply(result, command('live.record_a_day', { memberId: 2, aDay: 'G2' }), 'first-aday');
+    expect(result).toMatchObject({ currentPhase: 'a_day_bid', currentBidderId: 3 });
+    result = apply(
+      result,
+      command('live.record_a_day', { memberId: 3, aDay: 'G3' }),
+      'second-aday',
+    );
+    expect(result).toMatchObject({ currentPhase: 'position_bid', currentBidderId: 4 });
+  });
+
+  it('lets the requester change their mind without waiving unresponded specialty priority', () => {
+    const started = apply(
+      initial(),
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'specialty',
+        positionId: 's1',
+        candidateMemberIds: [2, 3],
+      }),
+      'start-cancel',
+    );
+    const closed = apply(started, command('live.close_specialty_adjudication', {}), 'close-cancel');
+    expect(closed).toMatchObject({ currentBidderId: 1, queueCursor: 0, fills: {} });
+    expect(closed.live?.specialty).toBeNull();
+    expect(closed.live?.specialtyResponses ?? []).toEqual([]);
+    expect(closed.bidOrder).toEqual(started.bidOrder);
+  });
+  it('accepts a related open specialty seat, preserves the original request, and prompts the winner at their turn', () => {
+    const started = apply(
+      initial(),
+      command('live.start_specialty_adjudication', {
+        specialtyId: 'specialty',
+        positionId: 's1',
+        candidateMemberIds: [2],
+      }),
+      'start-related',
+    );
+    const awarded = apply(
+      started,
+      command('live.resolve_specialty_candidate', {
+        memberId: 2,
+        outcome: 'ACCEPT',
+        positionId: 's2',
+      }),
+      'related-award',
+    );
+    expect(awarded.fills.s1).toBeUndefined();
+    expect(awarded.fills.s2).toMatchObject({ memberId: 2 });
+    expect(awarded.fills.s2?.aDay).toBeUndefined();
+    const changedMind = apply(
+      awarded,
+      command('live.record_selection', { memberId: 1, positionId: 'p3', aDay: 'G1' }),
+      'regular-award',
+    );
+    expect(changedMind).toMatchObject({ currentPhase: 'a_day_bid', currentBidderId: 2 });
+    expect(
+      reduceLiveBidCommand(
+        started,
+        policy,
+        command('live.resolve_specialty_candidate', {
+          memberId: 2,
+          outcome: 'ACCEPT',
+          positionId: 'p3',
+        }),
+        2000,
+        'wrong-specialty',
+        false,
+        aDayMembers,
+      ),
+    ).toMatchObject({ ok: false, code: 'SPECIALTY_POSITION_NOT_CONFIGURED' });
+  });
   it('opens an A-Day-only turn at the early winner ordinary turn before junior members continue', () => {
     const awarded = earlyAward(initial(), 2, 's1');
     expect(awarded).toMatchObject({ currentBidderId: 1, queueCursor: 0 });

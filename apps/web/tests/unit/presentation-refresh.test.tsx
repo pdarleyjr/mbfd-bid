@@ -49,6 +49,25 @@ afterEach(async () => {
 });
 
 describe('Department presentation refresh', () => {
+  it('does not flash stale during normal four-second response latency', async () => {
+    let resolveDelayed!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveDelayed = resolve;
+        }),
+    );
+    await poll();
+    await poll(4000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('LIVE DISPLAY');
+    expect(container.textContent).not.toContain('Waiting for current updates');
+    await poll(4000);
+    expect(container.textContent).toContain('Waiting for current updates');
+    await act(async () => resolveDelayed(Response.json(projection(11, 'Recovered bidder'))));
+    expect(container.textContent).toContain('LIVE DISPLAY');
+    expect(container.textContent).toContain('Recovered bidder');
+  });
   it('rejects an older OFF snapshot without lowering the sequence floor', async () => {
     fetchMock.mockResolvedValueOnce(
       Response.json({

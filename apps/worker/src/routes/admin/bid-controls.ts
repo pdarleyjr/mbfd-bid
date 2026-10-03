@@ -36,7 +36,12 @@ import {
   loadFrozenSessionBidPolicy,
   resolveFrozenSessionBidTarget,
 } from '../../lib/bid-policy.js';
-import { unresolvedSpecialtyPriority } from '../../lib/canonical-specialty-priority.js';
+import {
+  eligibleFrozenSpecialtyMembers,
+  endedLiveSelectionRights,
+  unresolvedSpecialtyPriority,
+} from '../../lib/canonical-specialty-priority.js';
+import { projectFrozenCredentialCoverage } from '../../lib/credential-coverage-advisory.js';
 import { frozenADayConstraints } from '../../lib/frozen-a-day.js';
 import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { currentLiveBidStage, liveBidSelectionStages } from '../../lib/live-bid-stages.js';
@@ -118,17 +123,6 @@ function projectFrozenSpecialtyCoverage(input: {
   const specialtyIds = new Set<string>();
   const positionIds = new Set<string>();
   try {
-    const frozenCandidates = input.frozen.snapshot.members
-      .filter((member) => member.pool !== 'EXCLUDED')
-      .map((member) => ({
-        memberId: member.memberId,
-        rscSeniority: member.rscSeniority,
-        rankSeniority: member.rankSeniority,
-        bidOrdinalEvidence: member.bidOrdinalEvidence,
-        credentialNames: member.credentialNames,
-        scoringEvidence: member.scoringEvidence,
-        specialtyQualifications: member.specialtyQualifications,
-      }));
     const specialtySeats: Array<{
       seatId: string;
       positionId: string;
@@ -145,7 +139,14 @@ function projectFrozenSpecialtyCoverage(input: {
         rankFrozenSpecialtyCandidates({
           policy: specialty,
           evaluationOn,
-          members: frozenCandidates,
+          members: eligibleFrozenSpecialtyMembers({
+            snapshot: input.frozen.snapshot,
+            rules: input.frozen.coverage.rules,
+            policy: specialty,
+          }).map((member) => ({
+            ...member,
+            specialtyQualifications: member.specialtyQualifications,
+          })),
         }).map((candidate) => candidate.memberId),
       );
 
@@ -187,7 +188,15 @@ function projectFrozenSpecialtyCoverage(input: {
       })),
       specialtySeats,
       frozenEligibilityEdges,
-      assignedMemberIds: Object.values(input.canonical.fills).map((fill) => fill.memberId),
+      assignedMemberIds: [
+        ...new Set([
+          ...Object.values(input.canonical.fills).map((fill) => fill.memberId),
+          ...(input.canonical.live?.exceptionalAssignments ?? [])
+            .filter((entry) => entry.releasedAtMs === null)
+            .map((entry) => entry.memberId),
+          ...endedLiveSelectionRights(input.canonical, input.frozen.snapshot.settings.livePolicy),
+        ]),
+      ],
     });
     return {
       availability: 'AVAILABLE',
@@ -320,6 +329,18 @@ router.get('/:id/results', async (c) => {
       };
     }),
     completion: { verified: official.ok, blockers: official.ok ? [] : [official.error] },
+    exceptional_assignments: (canonical?.live?.exceptionalAssignments ?? [])
+      .filter((entry) => entry.releasedAtMs === null)
+      .map((entry) => ({
+        assignment_id: entry.assignmentId,
+        member_id: entry.memberId,
+        role_label: entry.roleLabel,
+        position_id: entry.positionId,
+        actor_member_id: entry.actorMemberId,
+        reason: entry.reason,
+        forced: true,
+        official_rank_unchanged: true,
+      })),
   });
 });
 
@@ -329,6 +350,97 @@ router.get('/:id/completion', async (c) => {
   return result.ok
     ? c.json({ ok: true, completion: result.completion })
     : c.json({ ok: false, error: result.error }, result.error === 'session_not_found' ? 404 : 200);
+});
+
+router.get('/:id/specialty-review', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const sessionId = c.req.param('id');
+  const memberId = Number(c.req.query('member_id'));
+  const positionId = c.req.query('position_id') ?? '';
+  if (!Number.isInteger(memberId) || memberId <= 0 || !positionId)
+    return c.json({ error: 'invalid_specialty_review' }, 400);
+  const [state, frozen] = await Promise.all([
+    loadLiveAdapterState(c.env, sessionId),
+    loadFrozenSessionBidPolicy(getDb(c.env.DB), sessionId),
+  ]);
+  if (!state || !frozen.ok || frozen.snapshot.settings.v !== 3)
+    return c.json({ error: 'live_action_policy_missing' }, 409);
+  const base = { sequence: state.lastSeq, selection_review: null };
+  const rule = frozen.coverage.rules.find((entry) => entry.positionId === positionId);
+  const person = frozenEligibilityMemberForSession(frozen.snapshot, memberId);
+  if (
+    !rule ||
+    !person ||
+    person.pool === 'EXCLUDED' ||
+    state.fills[positionId] ||
+    !evaluateEligibility(eligibilityMemberFromFrozen(person), rule).eligible
+  )
+    return c.json({ ...base, status: 'INELIGIBLE' });
+  if (state.currentBidderId !== memberId) return c.json({ ...base, status: 'NOT_CURRENT' });
+  try {
+    const pending = unresolvedSpecialtyPriority({
+      snapshot: frozen.snapshot,
+      state,
+      memberId,
+      positionId,
+      rule,
+    }).find((entry) => entry.candidateMemberIds.length > 0);
+    if (!pending) return c.json({ ...base, status: 'READY' });
+    const specialty = frozen.snapshot.settings.livePolicy.annualOperations?.specialties?.find(
+      (entry) => entry.id === pending.specialtyId,
+    );
+    if (!specialty || !frozen.snapshot.credentialEvaluationOn)
+      return c.json({ error: 'live_specialty_policy_missing' }, 409);
+    const identities = new Map(
+      (frozen.snapshot.operatorIdentityProjection ?? []).map((entry) => [entry.memberId, entry]),
+    );
+    const ranked = rankFrozenSpecialtyCandidates({
+      policy: specialty,
+      evaluationOn: frozen.snapshot.credentialEvaluationOn,
+      members: frozen.snapshot.members
+        .filter(
+          (member) =>
+            member.pool !== 'EXCLUDED' &&
+            evaluateEligibility(eligibilityMemberFromFrozen(member), rule).eligible,
+        )
+        .map((member) => ({ ...member, specialtyQualifications: member.specialtyQualifications })),
+    });
+    const byMember = new Map(
+      ranked.map((entry, index) => [
+        entry.memberId,
+        { points: entry.points, policy_rank: index + 1 },
+      ]),
+    );
+    return c.json({
+      sequence: state.lastSeq,
+      status: 'HIGHER_PRIORITY',
+      selection_review: {
+        member_id: memberId,
+        position_id: positionId,
+        specialty_id: specialty.id,
+        specialty_label: specialty.label,
+        higher_priority_candidates: pending.candidateMemberIds.map((id) => {
+          const identity = identities.get(id);
+          return {
+            member_id: id,
+            first_name: identity?.firstName ?? '',
+            last_name: identity?.lastName ?? '',
+            rank: identity?.rank ?? null,
+            ...byMember.get(id),
+          };
+        }),
+        eligible_related_position_ids: specialty.opportunityPositionIds.filter(
+          (id) => !state.fills[id],
+        ),
+        a_day_timing: 'ORDINARY_TURN',
+      },
+    });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : 'live_specialty_policy_invalid' },
+      409,
+    );
+  }
 });
 
 router.get('/:id/specialty-live', async (c) => {
@@ -342,6 +454,11 @@ router.get('/:id/specialty-live', async (c) => {
     return c.json({ error: 'live_action_policy_missing' }, 409);
   const policy = frozen.snapshot.settings.livePolicy;
   const specialtyCoverage = projectFrozenSpecialtyCoverage({ frozen, canonical });
+  const credentialCoverage = projectFrozenCredentialCoverage({
+    snapshot: frozen.snapshot,
+    rules: frozen.coverage.rules,
+    state: canonical,
+  });
   const identities = new Map(
     (frozen.snapshot.operatorIdentityProjection ?? []).map((identity) => [
       identity.memberId,
@@ -370,7 +487,11 @@ router.get('/:id/specialty-live', async (c) => {
       ranked = rankFrozenSpecialtyCandidates({
         policy: specialty,
         evaluationOn: frozen.snapshot.credentialEvaluationOn,
-        members: frozen.snapshot.members.map((candidate) => ({
+        members: eligibleFrozenSpecialtyMembers({
+          snapshot: frozen.snapshot,
+          rules: frozen.coverage.rules,
+          policy: specialty,
+        }).map((candidate) => ({
           memberId: candidate.memberId,
           rscSeniority: candidate.rscSeniority,
           rankSeniority: candidate.rankSeniority,
@@ -420,6 +541,35 @@ router.get('/:id/specialty-live', async (c) => {
           })),
       })),
       current_candidate_id: currentCandidateId,
+      eligible_position_ids:
+        currentCandidateId === null
+          ? []
+          : specialty.opportunityPositionIds.filter((positionId) => {
+              if (canonical.fills[positionId]) return false;
+              const rule = frozen.coverage.rules.find((entry) => entry.positionId === positionId);
+              const candidate = frozenEligibilityMemberForSession(
+                frozen.snapshot,
+                currentCandidateId,
+              );
+              if (
+                !rule ||
+                !candidate ||
+                !evaluateEligibility(eligibilityMemberFromFrozen(candidate), rule).eligible
+              )
+                return false;
+              return unresolvedSpecialtyPriority({
+                snapshot: frozen.snapshot,
+                state: canonical,
+                memberId: currentCandidateId,
+                positionId,
+                rule,
+                requestContext: {
+                  specialtyId: specialty.id,
+                  positionId,
+                  requesterMemberId: active.suspendedBidderId,
+                },
+              }).every((entry) => entry.candidateMemberIds.length === 0);
+            }),
       remaining_candidate_ids: active.candidateMemberIds.slice(active.candidateCursor),
       suspended_turn: true,
       resume: {
@@ -584,6 +734,7 @@ router.get('/:id/specialty-live', async (c) => {
             fill.aDay ??
             null,
           membership_ids: fill.membershipIds ?? [],
+          forced: fill.forced !== undefined,
         },
       ]),
     ),
@@ -605,6 +756,20 @@ router.get('/:id/specialty-live', async (c) => {
       }),
     })),
     specialty_coverage: specialtyCoverage,
+    credential_coverage: credentialCoverage,
+    exceptional_assignments: (canonical.live?.exceptionalAssignments ?? [])
+      .filter((entry) => entry.releasedAtMs === null)
+      .map((entry) => ({
+        assignment_id: entry.assignmentId,
+        member_id: entry.memberId,
+        role_label: entry.roleLabel,
+        position_id: entry.positionId,
+        assigned_at_ms: entry.assignedAtMs,
+        forced: true,
+      })),
+    available_non_biddable_positions: frozen.snapshot.ruleBookMaterial.positions
+      .filter((position) => position.bidParticipation !== 'BIDDABLE')
+      .map((position) => ({ position_id: position.id, label: position.positionName })),
     opportunity_pools: opportunityPools,
     a_day_selection: aDayExecution?.timing ?? null,
     a_day_timing_by_position: aDayTimingByPosition,
@@ -791,7 +956,8 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
         ? 'record_selection'
         : command.data.type === 'live.amend_selection' || command.data.type === 'live.correct_bid'
           ? 'amend_selection'
-          : command.data.type === 'live.force_selection'
+          : command.data.type === 'live.force_selection' ||
+              command.data.type === 'live.set_exceptional_assignment'
             ? 'force'
             : command.data.type === 'live.disposition'
               ? command.data.disposition === 'UNREACHABLE'
@@ -811,7 +977,8 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
                         : command.data.type === 'live.set_presentation_mode'
                           ? 'publish'
                           : command.data.type === 'live.start_specialty_adjudication' ||
-                              command.data.type === 'live.resolve_specialty_candidate'
+                              command.data.type === 'live.resolve_specialty_candidate' ||
+                              command.data.type === 'live.close_specialty_adjudication'
                             ? 'approve_transition'
                             : 'pause_resume';
   if (!isLiveBidActionAuthorized(frozen.snapshot.settings.livePolicy, action, claims.member_id))

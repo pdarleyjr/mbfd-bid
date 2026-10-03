@@ -246,17 +246,36 @@ export function adviseFrozenSpecialtyCoverage(
   const relevantMemberIds = [...new Set([...candidateIdsBySeat.values()].flat())].sort(
     compareNumber,
   );
-  const criticalMemberIds = relevantMemberIds.filter((memberId) => {
-    const membersWithoutCandidate = new Set(availableMemberIds);
-    membersWithoutCandidate.delete(memberId);
-    return (
-      maximumMatching({
-        remainingSeatIds,
-        candidateIdsBySeat,
-        availableMemberIds: membersWithoutCandidate,
-      }).matching.length < baseline.maximumRemainingCoveredCount
-    );
-  });
+  // A matched member can be replaced exactly when an alternating path reaches
+  // them from an unmatched member. Traverse that graph once instead of solving
+  // a full maximum matching separately for every qualified member.
+  const matchedMemberBySeat = new Map(
+    baselineMatching.matching.map((match) => [match.seatId, match.memberId]),
+  );
+  const matchedMemberIds = new Set(baselineMatching.matching.map((match) => match.memberId));
+  const seatsByMember = new Map<number, string[]>();
+  for (const [seatId, candidateIds] of candidateIdsBySeat)
+    for (const memberId of candidateIds) {
+      const seats = seatsByMember.get(memberId) ?? [];
+      seats.push(seatId);
+      seatsByMember.set(memberId, seats);
+    }
+  const replaceable = new Set([...availableMemberIds].filter((id) => !matchedMemberIds.has(id)));
+  const traversal = [...replaceable];
+  for (let cursor = 0; cursor < traversal.length; cursor++) {
+    const memberId = traversal[cursor];
+    if (memberId === undefined) continue;
+    for (const seatId of seatsByMember.get(memberId) ?? []) {
+      const matched = matchedMemberBySeat.get(seatId);
+      if (matched !== undefined && !replaceable.has(matched)) {
+        replaceable.add(matched);
+        traversal.push(matched);
+      }
+    }
+  }
+  const criticalMemberIds = relevantMemberIds.filter(
+    (id) => matchedMemberIds.has(id) && !replaceable.has(id),
+  );
 
   const groupSeatCounts = new Map<
     string,

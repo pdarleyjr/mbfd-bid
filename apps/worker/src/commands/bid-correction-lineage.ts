@@ -65,7 +65,14 @@ export async function validateBidCorrectionLineage(
         WHERE r.bid_session_id=? AND r.outcome='accepted' AND r.command_type='live.start_specialty_adjudication'
         AND e.seq<? AND json_extract(e.event_json,'$.specialtyId')=? AND json_extract(e.event_json,'$.positionId')=?
         ORDER BY e.seq DESC LIMIT 1`)
-        .bind(command.bidSessionId, row.seq, event.specialtyId, command.originalPositionId)
+        // A candidate may have accepted a related specialty seat. Preserve the
+        // initiating request while reusing response evidence only for the actual award.
+        .bind(
+          command.bidSessionId,
+          row.seq,
+          event.specialtyId,
+          event.requestedPositionId ?? command.originalPositionId,
+        )
         .first<{ command_id: string; seq: number; event_json: string }>();
       const requestEvent = request
         ? (JSON.parse(request.event_json) as Record<string, unknown>)

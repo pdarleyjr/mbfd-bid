@@ -67,104 +67,115 @@ export function BidOperations({
   return (
     <section
       aria-labelledby="bid-operations-heading"
-      className="space-y-4 rounded-lg border border-primary/40 bg-card p-5"
+      className="space-y-3 border-y border-border bg-card p-4 sm:p-5"
     >
       <h2 id="bid-operations-heading" className="font-heading text-xl">
-        TODAY’S BID TASKS
+        Run the Bid
       </h2>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-        <Link
-          className="inline-flex min-h-12 items-center justify-center rounded border border-primary px-3 text-center font-semibold"
-          href="/admin/targetsolutions"
-        >
-          UPDATE CREDENTIALS
-        </Link>
-        <Button disabled={disabled} onClick={() => onOpen('blueprint')}>
-          CHECK CURRENT BID / ELIGIBILITY
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" disabled={disabled || !versionId} onClick={onCheckMock}>
+          New Mock Bid
         </Button>
-        <Button disabled={disabled} onClick={() => onOpen('mock')}>
-          RUN A MOCK BID
-        </Button>
-        <Button onClick={() => onOpen('results')}>VIEW RESULTS</Button>
-        <Button onClick={() => onOpen('live')}>CHECK LIVE READINESS</Button>
-      </div>
-      {latest && (
-        <p>
-          <strong>Latest source:</strong> {masterSource} · Annual v5 · Credential revision shown
-          below
-        </p>
-      )}
-      {ranks && (
-        <div className="space-y-1 text-sm">
-          <p>
-            <strong>Bidders:</strong> CPT {ranks.bidders.CPT} · LT {ranks.bidders.LT} · FF{' '}
-            {ranks.bidders.FF} · Total {Object.values(ranks.bidders).reduce((a, b) => a + b, 0)}
-          </p>
-          <p>
-            <strong>Seats:</strong> CPT {ranks.capacity.CPT} · LT {ranks.capacity.LT} · FF{' '}
-            {ranks.capacity.FF} · Total {Object.values(ranks.capacity).reduce((a, b) => a + b, 0)} ·
-            A {counts.A} · B {counts.B} · C {counts.C} · Days {counts.D}
-          </p>
-          {ranks.shortages.map((s) => (
-            <p key={s.rank} className="rounded border border-warning p-3">
-              <strong>{s.rank === 'LT' ? 'Lieutenant' : s.rank} count reconciliation</strong> —{' '}
-              {s.bidders} listed bidders and {s.capacity} open opportunities in this saved version.
-              Confirm participation and closed-position scope before treating this difference as a
-              staffing shortage.
-            </p>
-          ))}
-        </div>
-      )}
-      <LatestCredentialSource />
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-border p-4">
-        <p className="font-semibold">
-          {mock || ready === true
-            ? 'READY TO PRACTICE'
-            : ready === false
-              ? 'Review the Mock blockers below'
-              : 'Check this saved version before practice'}
-        </p>
         {mock ? (
           <Link
             href={`/admin/bid?session_id=${encodeURIComponent(mock.id)}` as Route}
-            className="inline-flex min-h-12 items-center rounded bg-primary px-4 font-semibold text-primary-foreground"
+            className="inline-flex min-h-11 items-center px-3 font-semibold underline"
           >
-            OPEN MY MOCK
+            Continue my Mock
           </Link>
-        ) : (
-          <Button variant="primary" disabled={disabled || !versionId} onClick={onCheckMock}>
-            CHECK &amp; CREATE MOCK
-          </Button>
-        )}
-        <p className="w-full text-sm">MOCK SESSION — NOT LIVE · Portal/staffing writeback OFF</p>
-        {mock && (
-          <Link
-            href={`/admin/eligibility?session_id=${encodeURIComponent(mock.id)}` as Route}
-            className="inline-flex min-h-11 items-center underline"
-          >
-            Review my Mock’s eligibility / download lists
-          </Link>
-        )}
+        ) : null}
+        <Button onClick={() => onOpen('live')}>Prepare Real Bid</Button>
+        <Button onClick={() => onOpen('results')}>VIEW RESULTS</Button>
+        <Link
+          href="/admin/rehearsal"
+          className="inline-flex min-h-11 items-center px-3 text-sm underline"
+        >
+          All Mocks
+        </Link>
       </div>
-      {realOnly.length > 0 && (
-        <details>
-          <summary className="min-h-11 cursor-pointer content-center font-semibold">
-            Information still needed before the Real Bid ({realOnly.length})
-          </summary>
-          <ul className="list-disc space-y-2 pl-5 text-sm">
-            {realOnly.map((d) => (
-              <li key={d.issueId}>{d.title}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {year === 2026 && (
-        <p className="text-sm">
-          {evidenceSealed
-            ? 'Final personnel & credential snapshot sealed for the September 30, 5:00 PM Eastern cutoff and pinned to this saved Bid. Later evidence requires a separate audited review.'
-            : 'Final personnel & credential snapshot — September 30, 5:00 PM Eastern cutoff. Use the sealed server receipt when available, then save and verify the final Bid version.'}
-        </p>
-      )}
+      <p className="text-sm text-muted-foreground">
+        {disabled
+          ? 'Save or resolve the current draft before creating a session.'
+          : ready === false
+            ? 'Review the Mock blockers below before practice.'
+            : 'A new Mock uses this saved version. Existing Mocks keep their own rules and selections.'}
+      </p>
+      <details>
+        <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">
+          Saved data, credentials and eligibility
+        </summary>
+        <div className="mt-2 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/admin/targetsolutions"
+              className="inline-flex min-h-11 items-center underline"
+            >
+              Update credentials
+            </Link>
+            <Button disabled={disabled} onClick={() => onOpen('blueprint')}>
+              Review eligibility
+            </Button>
+          </div>
+          {latest && (
+            <p>
+              <strong>Latest source:</strong> {masterSource} · Annual v5 · Credential revision shown
+              below
+            </p>
+          )}
+          {ranks && (
+            <div className="space-y-1 text-sm">
+              <p>
+                <strong>Bidders:</strong> CPT {ranks.bidders.CPT} · LT {ranks.bidders.LT} · FF{' '}
+                {ranks.bidders.FF} · Total {Object.values(ranks.bidders).reduce((a, b) => a + b, 0)}
+              </p>
+              <p>
+                <strong>Seats:</strong> CPT {ranks.capacity.CPT} · LT {ranks.capacity.LT} · FF{' '}
+                {ranks.capacity.FF} · Total{' '}
+                {Object.values(ranks.capacity).reduce((a, b) => a + b, 0)} · A {counts.A} · B{' '}
+                {counts.B} · C {counts.C} · Days {counts.D}
+              </p>
+              {ranks.shortages.map((s) => (
+                <p key={s.rank} className="rounded border border-warning p-3">
+                  <strong>{s.rank === 'LT' ? 'Lieutenant' : s.rank} count reconciliation</strong> —{' '}
+                  {s.bidders} listed bidders and {s.capacity} open opportunities in this saved
+                  version. Confirm participation and closed-position scope before treating this
+                  difference as a staffing shortage.
+                </p>
+              ))}
+            </div>
+          )}
+          <LatestCredentialSource />
+          <div className="flex flex-wrap items-center gap-3">
+            {mock && (
+              <Link
+                href={`/admin/eligibility?session_id=${encodeURIComponent(mock.id)}` as Route}
+                className="inline-flex min-h-11 items-center underline"
+              >
+                Review my Mock’s eligibility / download lists
+              </Link>
+            )}
+          </div>
+          {realOnly.length > 0 && (
+            <details>
+              <summary className="min-h-11 cursor-pointer content-center font-semibold">
+                Information still needed before the Real Bid ({realOnly.length})
+              </summary>
+              <ul className="list-disc space-y-2 pl-5 text-sm">
+                {realOnly.map((d) => (
+                  <li key={d.issueId}>{d.title}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {year === 2026 && (
+            <p className="text-sm">
+              {evidenceSealed
+                ? 'Final personnel & credential snapshot sealed for the September 30, 5:00 PM Eastern cutoff and pinned to this saved Bid. Later evidence requires a separate audited review.'
+                : 'Final personnel & credential snapshot — September 30, 5:00 PM Eastern cutoff. Use the sealed server receipt when available, then save and verify the final Bid version.'}
+            </p>
+          )}
+        </div>
+      </details>
     </section>
   );
 }

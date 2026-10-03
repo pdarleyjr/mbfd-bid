@@ -20,6 +20,7 @@ export default defineConfig({
   // concurrency bound. Hosted runners vary in CPU count, so an explicit CI
   // value prevents the same gate from silently fanning out differently.
   ...(process.env.CI ? { workers: 2 } : process.platform === 'win32' ? { workers: 1 } : {}),
+  ...(process.env.CI ? { reporter: 'line' as const } : {}),
   // The 521-member authoritative impact fixture executes the real Worker
   // evaluator. It has a separate one-worker config so normal E2E retains its
   // parallel coverage without resource-starving the deterministic fixture.

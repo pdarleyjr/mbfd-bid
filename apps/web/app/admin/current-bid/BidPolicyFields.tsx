@@ -10,6 +10,7 @@ import {
   LiveBidActionSchema,
   type StageParticipantSourceDefinition,
   bidOrderingComparatorForStage,
+  prepare2026StationTwoSpecialtyWorkflow,
 } from '@mbfd/shared';
 import { BidADayExecutionFields } from './BidADayExecutionFields';
 import { BidAssignmentTermFields } from './BidAssignmentTermFields';
@@ -293,6 +294,10 @@ export function BidPolicyFields({
     updatePolicyDocument(withOrderingAuthorityRequest(content.policy, request));
   };
   const ops = policy?.annualOperations;
+  const stationTwoWorkflow =
+    section === 'specialties' && content.bidYear === 2026
+      ? prepare2026StationTwoSpecialtyWorkflow(content)
+      : null;
   const initializePolicy = () => {
     const prior = content.settings;
     const livePolicy = emptyOperatingPolicy();
@@ -788,6 +793,34 @@ export function BidPolicyFields({
       />
       {ops ? (
         <>
+          {stationTwoWorkflow ? (
+            <section
+              aria-label="Station 2 priority workflow"
+              className="space-y-2 rounded border border-border p-3"
+            >
+              <p className="text-sm">
+                Offer source-qualified Station 2 seats by specialty points, then select A-Day at
+                each member’s ordinary turn.
+              </p>
+              {stationTwoWorkflow.ok ? (
+                <Button
+                  type="button"
+                  disabled={stationTwoWorkflow.status === 'ALREADY_CONFIGURED'}
+                  onClick={() => onChange(stationTwoWorkflow.content)}
+                >
+                  {stationTwoWorkflow.status === 'ALREADY_CONFIGURED'
+                    ? 'Station 2 priority workflow prepared'
+                    : 'Prepare Station 2 priority workflow'}
+                </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground">{stationTwoWorkflow.code}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Captains, Lieutenants and Firefighters. Review and Save creates the next Bid
+                version.
+              </p>
+            </section>
+          ) : null}
           <BidFallbackFields
             value={ops.fallbackPolicies}
             opportunities={opportunities}

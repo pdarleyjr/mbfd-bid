@@ -1,8 +1,21 @@
 'use client';
 
 import { presentationApiPath } from '@/lib/presentation-link';
-import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, List, X } from 'lucide-react';
+import { type CSSProperties, type RefObject, useEffect, useRef, useState } from 'react';
 import { MockBanner } from '../_components/MockBanner';
+import styles from './PresentationView.module.css';
+import {
+  PRESENTATION_SHIFTS,
+  type PresentationChiefAssignment,
+  type PresentationMember,
+  type PresentationPosition,
+  type PresentationShift,
+  presentationBoardPages,
+  presentationQueue,
+  presentationStations,
+  shiftLabel,
+} from './presentation-layout';
 
 export type Presentation = {
   mode: 'OFF' | 'LIVE' | 'HOLD';
@@ -10,23 +23,384 @@ export type Presentation = {
   sequence?: number;
   session: { id: string; bid_year: number; is_mock?: boolean } | null;
   current_stage?: { id: string | null; label: string | null };
-  current_bidder?: { member_id: number; name: string; rank: string | null } | null;
-  on_deck?: Array<{ member_id: number; name: string; rank: string | null } | null>;
+  current_bidder?: PresentationMember | null;
+  on_deck?: Array<PresentationMember | null>;
+  remaining_queue?: Array<PresentationMember | null>;
+  exceptional_assignments?: PresentationChiefAssignment[];
   phase?: string;
   paused?: boolean;
   complete?: boolean;
   progress?: { filled: number; total: number };
-  positions?: Array<{
-    id: string;
-    shift: string;
-    station: string;
-    unit: string;
-    position_name: string;
-    rank_required: string;
-    filled_by: { member_id: number; name: string; rank: string | null } | null;
-  }>;
+  positions?: PresentationPosition[];
   specialty?: { active: true; label: string; position_id: string; status: string } | null;
 };
+
+function useFrameSize(ref: RefObject<HTMLElement | null>, enabled = true) {
+  const [size, setSize] = useState({ width: 1024, height: 640 });
+  useEffect(() => {
+    if (!enabled) return;
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => {
+      const { width, height } = element.getBoundingClientRect();
+      if (width <= 0 || height <= 0) return;
+      setSize((previous) =>
+        previous.width === Math.floor(width) && previous.height === Math.floor(height)
+          ? previous
+          : { width: Math.floor(width), height: Math.floor(height) },
+      );
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, enabled]);
+  return size;
+}
+
+function assignmentLabel(assignment: PresentationMember['current_assignment']) {
+  if (!assignment) return null;
+  return [
+    assignment.shift ? (assignment.shift === 'D' ? 'Days' : `${assignment.shift} Shift`) : null,
+    assignment.position_id,
+    assignment.unit,
+    assignment.position_name,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function PresentationBoard({ view }: { view: Presentation }) {
+  const [shift, setShift] = useState<PresentationShift>('A');
+  const [boardPage, setBoardPage] = useState(0);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [queueAnchor, setQueueAnchor] = useState(0);
+  const [seatHeights, setSeatHeights] = useState<{ width: number; values: Record<string, number> }>(
+    { width: 0, values: {} },
+  );
+  const boardRef = useRef<HTMLDivElement>(null);
+  const queueRef = useRef<HTMLOListElement>(null);
+  const queueButtonRef = useRef<HTMLButtonElement>(null);
+  const boardSize = useFrameSize(boardRef);
+  const queueSize = useFrameSize(queueRef, queueOpen);
+  const queue = presentationQueue(view.remaining_queue, view.current_bidder, view.on_deck);
+  const stations = presentationStations(view.positions ?? [], shift, view.exceptional_assignments);
+  const { pages, columns } = presentationBoardPages(
+    stations,
+    boardSize.width,
+    boardSize.height,
+    seatHeights.width === boardSize.width ? seatHeights.values : {},
+  );
+  const shownPage = Math.min(boardPage, pages.length - 1);
+  const stationParts = pages[shownPage] ?? [];
+  const seatPageKey = stationParts
+    .flatMap((station) => station.seats)
+    .map((seat) => `${seat.id}:${seat.filled_by?.name ?? ''}:${seat.position_name}`)
+    .join('|');
+  const queuePageSize = Math.max(1, Math.floor(queueSize.height / 60));
+  const queuePages = Math.max(1, Math.ceil(queue.length / queuePageSize));
+  const shownQueuePage = Math.min(Math.floor(queueAnchor / queuePageSize), queuePages - 1);
+  const next = view.on_deck?.find((member) => member !== null) ?? null;
+  const currentAssignment = assignmentLabel(view.current_bidder?.current_assignment);
+  const previousAssignment = assignmentLabel(view.current_bidder?.previous_assignment);
+  const currentQueueIndex = queue.findIndex(
+    (member) => member.member_id === view.current_bidder?.member_id,
+  );
+  const filled = (view.positions ?? []).filter(
+    (position) => position.shift.toUpperCase() === shift && position.filled_by,
+  ).length;
+  const total = stations.reduce(
+    (count, station) => count + station.seats.filter((seat) => !seat.chief_directed).length,
+    0,
+  );
+
+  useEffect(() => {
+    setQueueOpen(window.innerWidth >= 1500);
+  }, []);
+  useEffect(() => {
+    // Full member names and custom role labels may wrap. Fit their actual row
+    // height instead of hiding text or assuming every seat has a short name.
+    if (!seatPageKey) return;
+    const seats = [...(boardRef.current?.querySelectorAll<HTMLElement>('[data-row-key]') ?? [])];
+    const measure = () => {
+      const measured = seats
+        .map(
+          (seat) => [seat.dataset.rowKey, Math.ceil(seat.getBoundingClientRect().height)] as const,
+        )
+        .filter(([key, height]) => key && height > 0);
+      setSeatHeights((previous) => {
+        const values = previous.width === boardSize.width ? { ...previous.values } : {};
+        let changed = previous.width !== boardSize.width;
+        for (const [key, height] of measured) {
+          if (key && values[key] !== height) {
+            values[key] = height;
+            changed = true;
+          }
+        }
+        return changed ? { width: boardSize.width, values } : previous;
+      });
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    for (const seat of seats) observer.observe(seat);
+    return () => observer.disconnect();
+  }, [seatPageKey, boardSize.width]);
+  useEffect(() => {
+    // Follow a new bidder, while preserving the member the audience paged to
+    // when the queue is first measured or the viewport changes size.
+    if (view.current_bidder?.member_id !== undefined && currentQueueIndex >= 0)
+      setQueueAnchor(currentQueueIndex);
+  }, [currentQueueIndex, view.current_bidder?.member_id]);
+
+  function closeQueue() {
+    setQueueOpen(false);
+    queueButtonRef.current?.focus();
+  }
+  function changeShift(direction: -1 | 1) {
+    const index = PRESENTATION_SHIFTS.indexOf(shift);
+    setShift(PRESENTATION_SHIFTS[(index + direction + PRESENTATION_SHIFTS.length) % 4] ?? 'A');
+    setBoardPage(0);
+  }
+
+  return (
+    <>
+      <div className={styles.bidderBar}>
+        <div className={styles.currentBidder} data-testid="presentation-current-bidder">
+          <span className={styles.eyebrow}>Now bidding</span>
+          <div className={styles.bidderNameLine}>
+            <strong className={styles.bidderName}>
+              {view.current_bidder?.name ?? (view.complete ? 'Bid complete' : 'Awaiting bidder')}
+            </strong>
+            {view.current_bidder?.rank ? (
+              <span className={styles.rank}>{view.current_bidder.rank}</span>
+            ) : null}
+            {view.current_bidder?.pending_a_day ? (
+              <span className={styles.pendingADay}>A-Day due</span>
+            ) : null}
+          </div>
+          {currentAssignment ? (
+            <p className={styles.assignment}>Current seat: {currentAssignment}</p>
+          ) : previousAssignment ? (
+            <p className={styles.assignment}>Previous bid: {previousAssignment}</p>
+          ) : null}
+        </div>
+        <div className={styles.onDeck} data-testid="presentation-on-deck">
+          <span className={styles.eyebrow}>On deck</span>
+          <strong>
+            {next?.name ?? (view.complete ? 'All turns complete' : 'Awaiting next turn')}
+          </strong>
+          {next?.rank ? <span className={styles.onDeckRank}>{next.rank}</span> : null}
+        </div>
+      </div>
+      <nav className={styles.shiftNavigation} aria-label="Shift board">
+        <button
+          type="button"
+          className={styles.iconButton}
+          aria-label="Previous shift"
+          onClick={() => changeShift(-1)}
+        >
+          <ChevronLeft aria-hidden="true" />
+        </button>
+        <div className={styles.shiftTitle}>
+          <h1>{shiftLabel(shift)}</h1>
+          <span>
+            {total - filled} available · {filled} taken
+          </span>
+        </div>
+        <button
+          type="button"
+          className={styles.iconButton}
+          aria-label="Next shift"
+          onClick={() => changeShift(1)}
+        >
+          <ChevronRight aria-hidden="true" />
+        </button>
+        <div className={styles.shiftTabs}>
+          {PRESENTATION_SHIFTS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={shift === option}
+              aria-label={`Show ${shiftLabel(option)}`}
+              onClick={() => {
+                setShift(option);
+                setBoardPage(0);
+              }}
+            >
+              {option === 'D' ? 'Days' : option}
+            </button>
+          ))}
+        </div>
+        <button
+          ref={queueButtonRef}
+          type="button"
+          className={styles.queueToggle}
+          aria-label={`${queueOpen ? 'Close' : 'Open'} remaining bidders`}
+          aria-expanded={queueOpen}
+          aria-controls="presentation-remaining-bidders"
+          onClick={() => setQueueOpen(!queueOpen)}
+        >
+          <List aria-hidden="true" size={20} />
+          <span>Queue</span>
+          <strong>{queue.length}</strong>
+        </button>
+      </nav>
+      <div className={`${styles.workspace} ${queueOpen ? styles.queueIsOpen : ''}`}>
+        <section className={styles.board} aria-label="Station and apparatus board">
+          <h2 className="sr-only">Station and apparatus board</h2>
+          <div
+            ref={boardRef}
+            className={styles.stationGrid}
+            data-testid="presentation-station-board"
+            style={{ '--station-columns': columns } as CSSProperties}
+          >
+            {stationParts.map((station) => (
+              <section
+                key={`${shift}-${station.id}-${station.start}`}
+                className={styles.station}
+                aria-label={`${station.label}, ${shiftLabel(shift)}`}
+              >
+                <header className={styles.stationHeading}>
+                  <h2>{station.label}</h2>
+                  {station.seats.length < station.total ? (
+                    <span>
+                      {station.start + 1}–{station.start + station.seats.length} / {station.total}
+                    </span>
+                  ) : (
+                    <span>{station.total} seats</span>
+                  )}
+                </header>
+                <ol className={styles.seats}>
+                  {station.seats.map((position) => (
+                    <li
+                      key={position.id}
+                      className={`${styles.seat} ${position.filled_by ? styles.taken : ''}`}
+                      data-testid="presentation-seat"
+                      data-row-key={position.id}
+                      data-position-id={position.chief_directed ? undefined : position.id}
+                    >
+                      <div className={styles.seatRole}>
+                        <span className={styles.seatUnit} title={position.unit}>
+                          {position.chief_directed
+                            ? 'Chief directed'
+                            : `${position.id} · ${position.unit}`}
+                        </span>
+                        <strong title={position.position_name}>{position.position_name}</strong>
+                      </div>
+                      <div className={styles.seatOccupant}>
+                        <span>{position.filled_by?.name ?? 'Available'}</span>
+                        {position.forced ? <small className={styles.forced}>Forced</small> : null}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ))}
+            {stations.length === 0 ? (
+              <p className={styles.emptyBoard}>No seats in this shift.</p>
+            ) : null}
+          </div>
+          <div className={styles.boardPagination}>
+            <button
+              type="button"
+              className={styles.iconButton}
+              aria-label="Previous seats"
+              disabled={shownPage === 0}
+              onClick={() => setBoardPage(shownPage - 1)}
+            >
+              <ChevronLeft aria-hidden="true" />
+            </button>
+            <output aria-live="polite">
+              {pages.length > 1 ? `Seats ${shownPage + 1} / ${pages.length}` : 'All seats shown'}
+            </output>
+            <button
+              type="button"
+              className={styles.iconButton}
+              aria-label="Next seats"
+              disabled={shownPage === pages.length - 1}
+              onClick={() => setBoardPage(shownPage + 1)}
+            >
+              <ChevronRight aria-hidden="true" />
+            </button>
+          </div>
+        </section>
+        {queueOpen ? (
+          <aside
+            id="presentation-remaining-bidders"
+            className={styles.queue}
+            aria-label="Remaining bidders"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') closeQueue();
+            }}
+          >
+            <header className={styles.queueHeading}>
+              <h2>Remaining · {queue.length}</h2>
+              <button
+                type="button"
+                className={styles.iconButton}
+                aria-label="Close remaining bidders"
+                onClick={closeQueue}
+              >
+                <X aria-hidden="true" size={20} />
+              </button>
+            </header>
+            <ol ref={queueRef} className={styles.queueMembers}>
+              {queue
+                .slice(shownQueuePage * queuePageSize, (shownQueuePage + 1) * queuePageSize)
+                .map((member) => {
+                  const current = member.member_id === view.current_bidder?.member_id;
+                  const onDeck = member.member_id === next?.member_id;
+                  return (
+                    <li
+                      key={member.member_id}
+                      className={`${styles.queueMember} ${current ? styles.queueCurrent : onDeck ? styles.queueOnDeck : ''}`}
+                      aria-current={current ? 'true' : undefined}
+                      data-testid="presentation-queue-member"
+                    >
+                      <strong>{member.name}</strong>
+                      <span>
+                        {member.rank}
+                        {current ? ' · Now bidding' : onDeck ? ' · On deck' : ''}
+                        {member.pending_a_day ? ' · A-Day due' : ''}
+                      </span>
+                    </li>
+                  );
+                })}
+              {queue.length === 0 ? (
+                <li className={styles.emptyBoard}>No remaining bidders.</li>
+              ) : null}
+            </ol>
+            <div className={styles.queuePagination}>
+              <button
+                type="button"
+                className={styles.iconButton}
+                aria-label="Previous bidders"
+                disabled={shownQueuePage === 0}
+                onClick={() => setQueueAnchor((shownQueuePage - 1) * queuePageSize)}
+              >
+                <ChevronLeft aria-hidden="true" size={20} />
+              </button>
+              <output>
+                {shownQueuePage + 1} / {queuePages}
+              </output>
+              <button
+                type="button"
+                className={styles.iconButton}
+                aria-label="Next bidders"
+                disabled={shownQueuePage === queuePages - 1}
+                onClick={() => setQueueAnchor((shownQueuePage + 1) * queuePageSize)}
+              >
+                <ChevronRight aria-hidden="true" size={20} />
+              </button>
+            </div>
+          </aside>
+        ) : null}
+      </div>
+    </>
+  );
+}
 
 export function PresentationView({
   initial,
@@ -38,14 +412,18 @@ export function PresentationView({
   useEffect(() => {
     let disposed = false;
     let pending: AbortController | null = null;
+    let pendingAt = 0;
     async function refresh() {
       if (disposed) return;
       if (pending) {
-        setUpdates((status) => (status === 'disconnected' ? status : 'stale'));
+        // A normal 2–4 second request must not flash a false stale warning.
+        if (Date.now() - pendingAt >= 8000)
+          setUpdates((status) => (status === 'disconnected' ? status : 'stale'));
         return;
       }
       const controller = new AbortController();
       pending = controller;
+      pendingAt = Date.now();
       const timeout = setTimeout(() => controller.abort(), 10000);
       try {
         const response = await fetch(presentationApiPath(sessionId), {
@@ -87,162 +465,68 @@ export function PresentationView({
   }, [sessionId]);
   const refreshStatus =
     updates !== 'current' ? (
-      <output className="block rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-amber-950">
+      <output className={styles.refreshWarning}>
         <strong>
           {updates === 'disconnected' ? 'Updates disconnected' : 'Waiting for current updates'}
         </strong>
-        {' · Showing the last received board. Updates will resume automatically.'}
+        <span> · Last received board; reconnecting automatically.</span>
       </output>
     ) : null;
+  const modeLabel =
+    view.mode === 'HOLD'
+      ? `DISPLAY HELD · SEQ ${view.held_at_sequence}`
+      : updates === 'current'
+        ? 'LIVE DISPLAY'
+        : 'UPDATES STALE';
 
-  if (view.mode === 'OFF') {
-    return (
-      <>
-        <MockBanner isMock={view.session?.is_mock === true} sessionId={view.session?.id ?? ''} />
-        <main className="grid min-h-screen place-items-center bg-sidebar p-8 text-center text-white">
+  return (
+    <div className={styles.frame} data-testid="presentation-frame">
+      <MockBanner isMock={view.session?.is_mock === true} sessionId={view.session?.id ?? ''} />
+      {view.mode === 'OFF' ? (
+        <main className={styles.off}>
+          {refreshStatus}
           <div>
-            {refreshStatus}
-            <p className="text-sm font-bold uppercase tracking-[0.3em] text-red-400">
-              MBFD Annual Bid
-            </p>
-            <h1 className="mt-4 font-heading text-5xl">Presentation is off</h1>
-            <p className="mt-3 text-xl text-sidebar-muted">
+            <p className={styles.eyebrow}>MBFD Annual Bid</p>
+            <h1>Presentation is off</h1>
+            <p>
               {view.session?.is_mock
                 ? 'Start this Mock if needed, then choose LIVE in its Presentation controls.'
                 : 'The Bid operator has not published the audience display.'}
             </p>
             {view.session?.is_mock ? (
-              <a
-                href={`/admin/bid?session_id=${encodeURIComponent(view.session.id)}`}
-                className="mt-5 inline-flex min-h-11 items-center font-semibold underline"
-              >
+              <a href={`/admin/bid?session_id=${encodeURIComponent(view.session.id)}`}>
                 Open this Mock Bid
               </a>
             ) : null}
           </div>
         </main>
-      </>
-    );
-  }
-  const percent = view.progress?.total
-    ? Math.round((view.progress.filled / view.progress.total) * 100)
-    : 0;
-  return (
-    <>
-      <MockBanner isMock={view.session?.is_mock === true} sessionId={view.session?.id ?? ''} />
-      <main
-        className="min-h-screen bg-background text-foreground"
-        data-testid="department-presentation"
-      >
-        <header className="bg-sidebar px-6 py-5 text-white">
-          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-bold uppercase tracking-[0.24em] text-red-400">
-                MBFD Annual Bid {view.session?.bid_year}
-              </p>
-              <h1 className="font-heading text-3xl">Department progress</h1>
-            </div>
-            <div className="flex gap-2">
-              <span className="rounded-full border border-slate-600 px-4 py-2 text-sm">
-                {view.phase?.replaceAll('_', ' ')}
-              </span>
-              {view.mode === 'HOLD' ? (
-                <span className="rounded-full bg-amber-400 px-4 py-2 text-sm font-bold text-amber-950">
-                  DISPLAY HELD · SEQ {view.held_at_sequence}
-                </span>
-              ) : updates === 'current' ? (
-                <span className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-bold text-emerald-950">
-                  LIVE DISPLAY
-                </span>
-              ) : (
-                <span className="rounded-full bg-amber-400 px-4 py-2 text-sm font-bold text-amber-950">
-                  UPDATES STALE
-                </span>
-              )}
-            </div>
-          </div>
-        </header>
-        <div className="mx-auto max-w-[1500px] space-y-6 p-6">
+      ) : (
+        <main className={styles.main} data-testid="department-presentation">
+          <header className={styles.header} data-testid="presentation-header">
+            <p className={styles.brand}>
+              MBFD <span>Annual Bid {view.session?.bid_year}</span>
+            </p>
+            <span className={styles.stage}>
+              {view.paused ? 'Bidding paused' : (view.current_stage?.label ?? 'Between stages')}
+            </span>
+            <span
+              className={`${styles.displayMode} ${view.mode === 'HOLD' || updates !== 'current' ? styles.held : ''}`}
+            >
+              {modeLabel}
+            </span>
+            <span className={styles.progress}>
+              {view.progress?.filled ?? 0} / {view.progress?.total ?? 0} taken
+            </span>
+          </header>
           {refreshStatus}
-          <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-            <article className="rounded-2xl border border-border bg-white p-7 shadow-sm">
-              <p className="text-sm font-bold uppercase tracking-wide text-red-700">
-                Current stage
-              </p>
-              <h2 className="mt-1 font-heading text-4xl">
-                {view.current_stage?.label ?? 'Between stages'}
-              </h2>
-              <p className="mt-7 text-sm uppercase tracking-wide text-muted-foreground">
-                Now bidding
-              </p>
-              <p className="mt-1 font-heading text-5xl">
-                {view.current_bidder?.name ?? (view.complete ? 'Bid complete' : 'Awaiting bidder')}
-              </p>
-              <p className="mt-2 text-2xl text-muted-foreground">{view.current_bidder?.rank}</p>
-              {view.specialty ? (
-                <div className="mt-6 rounded-xl border border-amber-400 bg-amber-50 p-4">
-                  <p className="font-bold text-amber-950">
-                    {view.specialty.label} · {view.specialty.position_id}
-                  </p>
-                  <p className="text-amber-900">{view.specialty.status}</p>
-                </div>
-              ) : null}
-            </article>
-            <article className="rounded-2xl bg-sidebar p-7 text-white">
-              <p className="text-sm font-bold uppercase tracking-wide text-sidebar-muted">
-                On deck
-              </p>
-              <ol className="mt-4 space-y-4">
-                {view.on_deck?.filter(Boolean).map((member, index) => (
-                  <li key={member?.member_id} className="border-b border-slate-700 pb-4">
-                    <span className="text-sidebar-muted">{index + 1}</span>
-                    <strong className="ml-4 text-2xl">{member?.name}</strong>
-                    <span className="ml-2 text-sidebar-muted">{member?.rank}</span>
-                  </li>
-                ))}
-              </ol>
-            </article>
-          </section>
-          <section className="rounded-2xl border border-border bg-white p-5 shadow-sm">
-            <div className="flex justify-between text-sm font-bold">
-              <span>Overall progress</span>
-              <span>
-                {view.progress?.filled ?? 0} of {view.progress?.total ?? 0} positions · {percent}%
-              </span>
-            </div>
-            <div className="mt-3 h-4 overflow-hidden rounded-full bg-muted">
-              <div className="h-full bg-red-700" style={{ width: `${percent}%` }} />
-            </div>
-          </section>
-          <section>
-            <h2 className="font-heading text-2xl">Station and apparatus board</h2>
-            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {view.positions?.map((position) => (
-                <article
-                  key={position.id}
-                  className={`rounded-xl border p-4 ${position.filled_by ? 'border-emerald-300 bg-emerald-50' : 'border-border bg-white'}`}
-                >
-                  <div className="flex justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                        {position.shift} Shift · Station {position.station}
-                      </p>
-                      <h3 className="text-xl font-bold">{position.unit}</h3>
-                      <p className="text-muted-foreground">
-                        {position.position_name} · {position.rank_required}
-                      </p>
-                    </div>
-                    <span className="font-mono text-xs text-muted-foreground">{position.id}</span>
-                  </div>
-                  <p className="mt-4 text-lg font-semibold">
-                    {position.filled_by?.name ?? 'Available'}
-                  </p>
-                </article>
-              ))}
-            </div>
-          </section>
-        </div>
-      </main>
-    </>
+          {view.specialty ? (
+            <output className={styles.specialty}>
+              {view.specialty.label} · {view.specialty.position_id} · {view.specialty.status}
+            </output>
+          ) : null}
+          <PresentationBoard view={view} />
+        </main>
+      )}
+    </div>
   );
 }

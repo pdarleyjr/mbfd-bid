@@ -90,12 +90,13 @@ test('department presentation stays read-only across OFF, LIVE, and held snapsho
   await expect(page.getByTestId('department-presentation')).toBeVisible({ timeout: 5000 });
   await expect(page.getByText('LIVE DISPLAY')).toBeVisible();
   await expect(page.getByText('Alex Member')).toBeVisible();
-  await expect(page.getByTestId('department-presentation').getByRole('button')).toHaveCount(0);
+  await expect(page.getByTestId('department-presentation').locator('form')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Next shift' })).toBeVisible();
 
   mode = 'HOLD';
   await expect(page.getByText('DISPLAY HELD · SEQ 41')).toBeVisible({ timeout: 5000 });
   await expect(page.getByText('Alex Member')).toBeVisible();
-  await expect(page.getByTestId('department-presentation').getByRole('button')).toHaveCount(0);
+  await expect(page.getByTestId('department-presentation').locator('form')).toHaveCount(0);
 });
 
 test('explicit Mock presentation follows its own session through LIVE, HOLD, RESUME and OFF', async ({
@@ -271,7 +272,8 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   const candidateRow = controls.getByRole('row').filter({ hasText: 'Jordan Candidate' });
   await expect(candidateRow).toContainText('8 / 1');
   await expect(candidateRow).toContainText('CURRENT');
-  await expect(controls.getByText(/turn suspended at queue 0/)).toBeVisible();
+  await expect(controls.getByText(/Their turn resumes after review\./)).toBeVisible();
+  await expect(controls.getByRole('button', { name: 'Resume original bidder' })).toBeEnabled();
   await expect(controls.getByRole('button', { name: 'ACCEPT' })).toBeVisible();
   await expect(controls.getByRole('button', { name: 'DECLINE' })).toBeVisible();
   await expect(controls.getByRole('button', { name: 'UNREACHABLE' })).toBeVisible();

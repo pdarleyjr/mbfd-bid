@@ -111,6 +111,8 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.record_selection'),
     adminOverride: AdminBidOverrideSchema.optional(),
+    /** Explicit chief-directed placement, reviewed under the existing force grant. */
+    forced: z.literal(true).optional(),
     membershipIds: z
       .array(z.string().trim().min(1).max(80))
       .max(20)
@@ -236,9 +238,23 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.resolve_specialty_candidate'),
     termDeparture: TermDepartureElectionSchema.optional(),
+    /** A candidate may choose another open seat within the same frozen specialty. */
+    positionId: z.string().trim().min(1).max(160).optional(),
     aDay: ADayValueSchema.optional(),
     memberId: z.number().int().positive(),
     outcome: z.enum(['ACCEPT', 'DECLINE', 'PASS', 'UNREACHABLE']),
+  }).strict(),
+  /** Session-only administrative duty; never a Bid award, promotion or staffing write. */
+  LiveCommandBase.extend({
+    type: z.literal('live.close_specialty_adjudication'),
+  }).strict(),
+  LiveCommandBase.extend({
+    type: z.literal('live.set_exceptional_assignment'),
+    memberId: z.number().int().positive(),
+    operation: z.enum(['ASSIGN', 'RELEASE']),
+    roleLabel: z.string().trim().min(4).max(160),
+    positionId: z.string().trim().min(1).max(160).optional(),
+    reason: ReasonSchema.trim().min(4),
   }).strict(),
   /** Presentation mode never changes the execution phase or selection order. */
   LiveCommandBase.extend({

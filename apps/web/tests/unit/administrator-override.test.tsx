@@ -233,6 +233,32 @@ async function reviewAndAcknowledge() {
   );
 }
 describe('audited administrator override', () => {
+  it('marks an explicitly forced award in both preview and confirmed command, while requiring advisory acknowledgement', async () => {
+    await mount();
+    await draftAward('19', 'C103');
+    await settle(() =>
+      (
+        container.querySelector('input[aria-label="Mark as forced assignment"]') as HTMLInputElement
+      ).click(),
+    );
+    await reviewAndAcknowledge();
+    expect(previews[0]).toMatchObject({
+      type: 'live.record_selection',
+      forced: true,
+      memberId: 19,
+      positionId: 'C103',
+    });
+    expect(commands).toHaveLength(0);
+    expect(container.textContent).toContain('Forced award');
+    await settle(() => button('Confirm administrator selection').click());
+    expect(commands[0]).toMatchObject({
+      type: 'live.record_selection',
+      forced: true,
+      memberId: 19,
+      adminOverride: { acknowledged: true },
+    });
+    expect(container.textContent).toContain('Forced assignment recorded and marked');
+  });
   it('binds the resolved pooled opening to the same pool ID in preview and confirmation', async () => {
     props = {
       ...props,
@@ -330,7 +356,11 @@ describe('audited administrator override', () => {
     expect(button('Confirm administrator selection').disabled).toBe(true);
     expect(commands).toHaveLength(0);
     await settle(() =>
-      (container.querySelector('input[type="checkbox"]') as HTMLInputElement).click(),
+      (
+        container.querySelector(
+          'input[aria-label="I acknowledge the override advisories"]',
+        ) as HTMLInputElement
+      ).click(),
     );
     expect(commands).toHaveLength(0);
     await settle(() => button('Confirm administrator selection').click());
