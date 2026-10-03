@@ -303,7 +303,7 @@ describe('frozen credential coverage advisories', () => {
     );
   });
 
-  it('removes ended selection rights from cert coverage and specialty priority while retaining skips, deferrals and explicit returns', () => {
+  it('removes terminal rights from cert coverage and specialty priority while preserving nonterminal passes and explicit returns', () => {
     const input = fixture();
     if (input.snapshot.settings.v !== 3) throw new Error('Synthetic V3 settings required');
     const policy = input.snapshot.settings.livePolicy;
@@ -370,13 +370,13 @@ describe('frozen credential coverage advisories', () => {
     expect(available(input).groups).toContainEqual(
       expect.objectContaining({
         label: 'Driver Engineer specialty',
-        eligible_member_ids: [3, 4, 5, 6, 7, 8, 9, 10],
+        eligible_member_ids: [2, 3, 4, 5, 6, 7, 8, 9, 10],
       }),
     );
     expect(available(input).groups).toContainEqual(
       expect.objectContaining({ label: 'Air Tech 810', eligible_member_count: 0 }),
     );
-    expect(priority()).toEqual([{ specialtyId: 'de-specialty', candidateMemberIds: [3, 4, 5] }]);
+    expect(priority()).toEqual([{ specialtyId: 'de-specialty', candidateMemberIds: [2, 3, 4, 5] }]);
     input.state.annual = {
       ...initializeAnnualOperations({ preferenceSheets: [] }),
       returningMemberId: 1,
@@ -384,6 +384,8 @@ describe('frozen credential coverage advisories', () => {
     expect(available(input).groups).toContainEqual(
       expect.objectContaining({ label: 'Air Tech 810', eligible_member_ids: [1] }),
     );
-    expect(priority()).toEqual([{ specialtyId: 'de-specialty', candidateMemberIds: [1, 3, 4, 5] }]);
+    expect(priority()).toEqual([
+      { specialtyId: 'de-specialty', candidateMemberIds: [1, 2, 3, 4, 5] },
+    ]);
   });
 });

@@ -24,9 +24,10 @@ export function eligibleFrozenSpecialtyMembers(input: {
   );
 }
 
-/** Latest canonical dispositions determine whether a member is still available
- * for a seat. Retained deferrals and skips keep their rights; an explicit
- * return at the active sequence restores a member whose prior rights ended. */
+/** Only a terminal disposition ends all seat-selection rights. A nonterminal
+ * pass can end ordinary return rights while preserving independent specialty
+ * priority and qualified force/fallback availability. An explicit return at
+ * the active sequence restores a member whose prior rights ended. */
 export function endedLiveSelectionRights(
   state: BidSessionState,
   policy: FrozenLiveBidPolicy,
@@ -41,7 +42,7 @@ export function endedLiveSelectionRights(
     [...latest].flatMap(([memberId, disposition]) => {
       if (state.annual?.returningMemberId === memberId) return [];
       const rule = rules.get(disposition);
-      return rule && (rule.terminal || !rule.retainsLaterSelectionRights) ? [memberId] : [];
+      return rule?.terminal ? [memberId] : [];
     }),
   );
 }

@@ -20,6 +20,8 @@ open for additional offers. **Resume original bidder** ends the review without
 inventing other candidates' declines. The original bidder can choose a regular
 seat. An early specialty winner remains in the queue until their ordinary A-Day
 turn; the A-Day task opens when that turn becomes current.
+Passing an ordinary turn without a terminal disposition does not waive
+independent specialty priority or prevent a later forced/fallback assignment.
 
 **Other bid actions → Chief-directed role** records a temporary acting duty for
 an unawarded participant. It holds their ordinary bid turns, keeps their official
