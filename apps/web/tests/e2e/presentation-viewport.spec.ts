@@ -48,9 +48,9 @@ async function mountPresentation(page: Page, pendingADay = false) {
           rank: 'CPT',
           pending_a_day: pendingADay,
           current_assignment: {
-            position_id: 'B401',
+            position_id: 'synthetic-staffing-position-key',
             shift: 'B',
-            station: '4',
+            station: 'Station 4',
             unit: 'Engine 4',
             position_name: 'Captain',
           },
@@ -85,7 +85,10 @@ async function mountPresentation(page: Page, pendingADay = false) {
   await page.goto('/live?bidSessionId=responsive-mock');
   await expect(page.getByTestId('department-presentation')).toBeVisible({ timeout: 7000 });
   await expect(page.getByTestId('presentation-current-bidder')).toContainText(
-    'Current seat: B Shift',
+    'Current seat: B Shift · Station 4 · Engine 4 · Captain',
+  );
+  await expect(page.getByTestId('presentation-current-bidder')).not.toContainText(
+    'synthetic-staffing-position-key',
   );
 }
 
@@ -226,6 +229,7 @@ for (const viewport of [
       await page.getByRole('button', { name: 'Open remaining bidders', exact: true }).click();
     const queue = page.getByRole('complementary', { name: 'Remaining bidders' });
     await expect(queue).toBeVisible();
+    await assertFitsFrame(page);
     await expect(queue.locator('[aria-current="true"]')).toContainText('Current Captain');
     const onDeckLabel = queue.getByText(/· On deck$/);
     if (!(await onDeckLabel.isVisible()))

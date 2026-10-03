@@ -49,6 +49,51 @@ afterEach(async () => {
 });
 
 describe('Department presentation refresh', () => {
+  it.each([true, false])(
+    'shows reviewed current-seat names without its opaque staffing ID (Mock %s)',
+    async (isMock) => {
+      const view = projection(10, 'Synthetic Captain');
+      view.session = { id: 'synthetic-header', bid_year: 2026, is_mock: isMock };
+      view.current_bidder = {
+        member_id: 10,
+        name: 'Synthetic Captain',
+        rank: 'CPT',
+        current_assignment: {
+          position_id: '01M1CKSSQVK44M8DHQMN4XERVS',
+          shift: 'A',
+          station: 'Station 3',
+          unit: 'Engine 3',
+          position_name: 'Combat Lieutenant',
+        },
+      };
+      await act(async () => root.render(<PresentationView initial={view} key="named-seat" />));
+      const header = container.querySelector('[data-testid="presentation-current-bidder"]');
+      expect(header?.textContent).toContain(
+        'Current seat: A Shift · Station 3 · Engine 3 · Combat Lieutenant',
+      );
+      expect(header?.textContent).not.toContain('01M1CKSSQVK44M8DHQMN4XERVS');
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+  it('retains documented historical bid position codes when there is no current seat', async () => {
+    const view = projection(10, 'Synthetic Captain');
+    view.current_bidder = {
+      member_id: 10,
+      name: 'Synthetic Captain',
+      rank: 'CPT',
+      previous_assignment: {
+        position_id: 'A305',
+        shift: 'A',
+        station: 'Station 3',
+        unit: 'Engine 3',
+        position_name: 'Lieutenant',
+      },
+    };
+    await act(async () => root.render(<PresentationView initial={view} key="previous-seat" />));
+    expect(
+      container.querySelector('[data-testid="presentation-current-bidder"]')?.textContent,
+    ).toContain('Previous bid: A Shift · A305 · Station 3 · Engine 3 · Lieutenant');
+  });
   it('does not flash stale during normal four-second response latency', async () => {
     let resolveDelayed!: (response: Response) => void;
     fetchMock.mockImplementationOnce(

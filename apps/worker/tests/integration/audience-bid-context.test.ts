@@ -1,5 +1,6 @@
+import { deepStrictEqual } from 'node:assert/strict';
 import type { FrozenLiveBidPolicy } from '@mbfd/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type AudienceQueueState,
   loadAudienceCurrentAssignment,
@@ -126,6 +127,46 @@ describe('audience current seat from reviewed effective staffing', () => {
       station: '1',
       unit: 'Engine 1',
     });
+  });
+
+  it('resolves current station and apparatus from their effective organization link without changing staffing', async () => {
+    h.sqlite.exec(`UPDATE staffing_positions SET station='opaque-station-reference',unit='opaque-apparatus-reference';
+      INSERT INTO organization_units (id,kind,created_at) VALUES
+      ('station-reference','STATION',1),('apparatus-reference','APPARATUS',1);
+      INSERT INTO organization_unit_versions
+      (unit_id,revision,display_name,parent_id,effective_on,status,evidence_ref,actor_subject,reason,created_at) VALUES
+      ('station-reference',1,'Station 3',NULL,'2026-01-01','active','synthetic station evidence','synthetic operator','Reviewed station name',1),
+      ('station-reference',2,'Station Three',NULL,'2026-10-10','active','synthetic future evidence','synthetic operator','Future station rename',2),
+      ('apparatus-reference',1,'Engine 3','station-reference','2026-01-01','active','synthetic engine evidence','synthetic operator','Reviewed engine name',1);
+      INSERT INTO organization_staffing_links
+      (staffing_position_id,revision,organization_unit_id,effective_on,evidence_ref,actor_subject,reason,created_at) VALUES
+      ('seat',1,'apparatus-reference','2026-01-01','synthetic link evidence','synthetic operator','Reviewed staffing link',1);`);
+    const before = h.sqlite.serialize();
+    expect(await loadAudienceCurrentAssignment(h.env.DB, 1, '2026-10-03')).toEqual({
+      position_id: 'seat',
+      position_name: 'Firefighter',
+      shift: 'A',
+      station: 'Station 3',
+      unit: 'Engine 3',
+    });
+    expect(await loadAudienceCurrentAssignment(h.env.DB, 1, '2026-10-10')).toMatchObject({
+      station: 'Station Three',
+      unit: 'Engine 3',
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+  });
+
+  it('omits current seat context when reviewed organization names cannot be read', async () => {
+    const prepare = h.env.DB.prepare.bind(h.env.DB);
+    const unavailableOrganization = vi.spyOn(h.env.DB, 'prepare').mockImplementation((sql) => {
+      if (sql.includes('FROM organization_units')) throw new Error('Synthetic unavailable catalog');
+      return prepare(sql);
+    });
+    try {
+      expect(await loadAudienceCurrentAssignment(h.env.DB, 1, '2026-10-03')).toBeNull();
+    } finally {
+      unavailableOrganization.mockRestore();
+    }
   });
 
   it('omits future, cancelled and unreviewed seats without falling back to a previous bid', async () => {

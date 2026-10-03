@@ -825,6 +825,8 @@ export function AnnualLiveControls(props: Props) {
   useEffect(() => {
     if (props.workspace && dayPromptIdentity !== null && promptedADay.current !== dayPromptIdentity)
       setPanel('a-day');
+    else if (props.workspace && dayPromptIdentity === null && promptedADay.current !== null)
+      setPanel((current) => (current === 'a-day' ? null : current));
     promptedADay.current = dayPromptIdentity;
   }, [dayPromptIdentity, props.workspace]);
   const specialtyPromptIdentity = state?.active
@@ -867,6 +869,7 @@ export function AnnualLiveControls(props: Props) {
       props.bidOrder.slice(Math.max(cursor, 0)).map((entry) => entry.memberId),
     );
   });
+  const [orderQuery, setOrderQuery] = useState('');
 
   const load = useCallback(async () => {
     const response = await fetch(
@@ -998,20 +1001,24 @@ export function AnnualLiveControls(props: Props) {
     )
       detail = { ...detail, membershipIds: membershipChoice.ids };
     const commandReason =
-      reason.trim() ||
-      (props.workspace && type === 'live.record_selection'
-        ? `Operator recorded member ${String(inputDetail.memberId)} selection of ${String(inputDetail.positionId)}${inputDetail.aDay ? `, A-Day ${String(inputDetail.aDay)}` : ''}.`
-        : props.workspace && type === 'live.start_specialty_adjudication'
-          ? `Review higher-priority candidates for ${String(inputDetail.positionId)} before the current bidder selects.`
-          : props.workspace && type === 'live.resolve_specialty_candidate'
-            ? `Record ${String(inputDetail.outcome)} from member ${String(inputDetail.memberId)} for ${String(inputDetail.positionId ?? effectiveSpecialtyAwardId)}.`
-            : props.workspace && type === 'live.record_a_day'
-              ? `Record member ${String(inputDetail.memberId)} A-Day ${String(inputDetail.aDay)} at their ordinary turn.`
-              : props.workspace && type === 'live.close_specialty_adjudication'
-                ? 'Resume the original bidder after specialty offers; unresponded priority rights remain pending.'
-                : props.workspace && type === 'live.transition_stage'
-                  ? `Continue from the filled ${state?.selection_stage?.label ?? 'current'} stage to ${String(inputDetail.stageId)}; later ordinary selection rights remain pending.`
-                  : '');
+      type === 'live.set_presentation_mode'
+        ? `Operator set audience presentation mode to ${String(inputDetail.mode)}.`
+        : reason.trim() ||
+          (props.workspace && type === 'live.record_selection'
+            ? `Operator recorded member ${String(inputDetail.memberId)} selection of ${String(inputDetail.positionId)}${inputDetail.aDay ? `, A-Day ${String(inputDetail.aDay)}` : ''}.`
+            : props.workspace && type === 'live.start_specialty_adjudication'
+              ? `Review higher-priority candidates for ${String(inputDetail.positionId)} before the current bidder selects.`
+              : props.workspace && type === 'live.resolve_specialty_candidate'
+                ? `Record ${String(inputDetail.outcome)} from member ${String(inputDetail.memberId)} for ${String(inputDetail.positionId ?? effectiveSpecialtyAwardId)}.`
+                : props.workspace && type === 'live.record_a_day'
+                  ? `Record member ${String(inputDetail.memberId)} A-Day ${String(inputDetail.aDay)} at their ordinary turn.`
+                  : props.workspace && type === 'live.close_specialty_adjudication'
+                    ? 'Resume the original bidder after specialty offers; unresponded priority rights remain pending.'
+                    : props.workspace && type === 'live.transition_stage'
+                      ? `Continue from the filled ${state?.selection_stage?.label ?? 'current'} stage to ${String(inputDetail.stageId)}; later ordinary selection rights remain pending.`
+                      : '');
+    const commandEvidenceReference =
+      type === 'live.set_presentation_mode' ? null : evidenceReference.trim() || null;
     if (commandReason.length < 1 || state === null) {
       setNotice('Enter an operator reason and wait for the current bid to load.');
       return;
@@ -1073,7 +1080,7 @@ export function AnnualLiveControls(props: Props) {
       type,
       detail,
       reason: commandReason,
-      evidenceReference: evidenceReference.trim(),
+      evidenceReference: commandEvidenceReference,
     });
     if (pendingCommand.current?.fingerprint !== fingerprint)
       pendingCommand.current = {
@@ -1093,7 +1100,7 @@ export function AnnualLiveControls(props: Props) {
             commandId: pendingCommand.current.commandId,
             expectedSeq: pendingCommand.current.expectedSeq,
             reason: commandReason,
-            evidenceReference: evidenceReference.trim() || null,
+            evidenceReference: commandEvidenceReference,
             ...detail,
           }),
         },
@@ -1149,6 +1156,23 @@ export function AnnualLiveControls(props: Props) {
       ? `${member.rank} ${member.firstName} ${member.lastName}`.trim()
       : `Member ${memberId}`;
   }
+  const normalizedOrderQuery = orderQuery.trim().toLocaleLowerCase();
+  const visibleOrder = order
+    .map((entry, index) => ({ ...entry, index }))
+    .filter(
+      (entry) =>
+        normalizedOrderQuery === '' ||
+        [
+          memberName(entry.memberId),
+          props.members[String(entry.memberId)]?.employeeId,
+          entry.stage_label,
+          entry.stageId,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLocaleLowerCase()
+          .includes(normalizedOrderQuery),
+    );
 
   const availablePositions = (props.positions ?? []).filter(
     (position) =>
@@ -1171,6 +1195,22 @@ export function AnnualLiveControls(props: Props) {
   const visibleShift = shifts.includes(availableShift) ? availableShift : shifts[0];
   const canSelectViewedMember =
     !props.workspace || operator?.selectedMemberId === selectionMemberId;
+  const priorityCandidateRow = (candidate: Candidate) => (
+    <li key={candidate.member_id} className="flex flex-wrap items-center justify-between gap-2">
+      {name(candidate)} · {candidate.points ?? 0} points
+      {priorityAdvisory && state?.admin_override_allowed ? (
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            operator?.requestOverride(priorityReview?.position_id, candidate.member_id, true)
+          }
+        >
+          Assign {candidate.first_name} {candidate.last_name}
+        </Button>
+      ) : null}
+    </li>
+  );
 
   return (
     <section className="border-y border-border bg-card p-3" data-testid="annual-live-controls">
@@ -1601,9 +1641,9 @@ export function AnnualLiveControls(props: Props) {
             : panel === 'disposition'
               ? 'Disposition, contact, and return'
               : panel === 'a-day'
-                ? 'Record controlled A-Day selection'
+                ? 'Choose A-Day'
                 : panel === 'fallback'
-                  ? 'Fallback awards'
+                  ? 'Fill remaining seats'
                   : panel === 'presentation'
                     ? 'Department presentation'
                     : panel === 'session'
@@ -1618,14 +1658,18 @@ export function AnnualLiveControls(props: Props) {
                               ? 'Finalize completed results'
                               : 'Record selection'
         }
-        description="Review the member and action, then confirm. Adjust bid lets you override policy advice."
+        description={
+          panel === 'presentation'
+            ? 'Choose what the audience sees.'
+            : 'Review the member and action, then confirm. Adjust bid lets you override policy advice.'
+        }
       >
         {notice ? (
           <output aria-live="polite" className="mb-3 block border-l-2 border-info pl-3 text-sm">
             {notice}
           </output>
         ) : null}
-        {termRight && termMemberId != null && (
+        {panel !== 'presentation' && termRight && termMemberId != null && (
           <fieldset className="space-y-3 rounded border border-amber-500 p-3">
             <legend className="font-semibold">Voluntary departure from a term assignment</legend>
             <p className="text-sm">
@@ -1665,39 +1709,43 @@ export function AnnualLiveControls(props: Props) {
             </p>
           </fieldset>
         )}
-        <OperatorNotes
-          optional={
-            props.workspace === true &&
-            (panel === 'selection' || panel === 'specialty' || panel === 'a-day')
-          }
-        >
-          <div
-            className={`flex flex-wrap items-end gap-3 ${props.workspace && panel === 'selection' ? 'order-3' : ''}`}
+        {panel !== 'presentation' && (
+          <OperatorNotes
+            optional={
+              props.workspace === true &&
+              (panel === 'selection' || panel === 'specialty' || panel === 'a-day')
+            }
           >
-            <div className="mr-auto">
-              <p className="text-xs font-bold uppercase tracking-wide text-red-700">
-                Bid-day actions
-              </p>
-              <h2 className="font-heading text-lg text-foreground">Review and record an action</h2>
+            <div
+              className={`flex flex-wrap items-end gap-3 ${props.workspace && panel === 'selection' ? 'order-3' : ''}`}
+            >
+              <div className="mr-auto">
+                <p className="text-xs font-bold uppercase tracking-wide text-red-700">
+                  Bid-day actions
+                </p>
+                <h2 className="font-heading text-lg text-foreground">
+                  Review and record an action
+                </h2>
+              </div>
+              <Label className="min-w-0 w-full text-xs text-muted-foreground">
+                Operator reason
+                <Input
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
+                />
+              </Label>
+              <Label className="min-w-0 w-full text-xs text-muted-foreground">
+                Evidence reference (when policy requires)
+                <Input
+                  value={evidenceReference}
+                  onChange={(event) => setEvidenceReference(event.target.value)}
+                  className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
+                />
+              </Label>
             </div>
-            <Label className="min-w-0 w-full text-xs text-muted-foreground">
-              Operator reason
-              <Input
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
-              />
-            </Label>
-            <Label className="min-w-0 w-full text-xs text-muted-foreground">
-              Evidence reference (when policy requires)
-              <Input
-                value={evidenceReference}
-                onChange={(event) => setEvidenceReference(event.target.value)}
-                className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
-              />
-            </Label>
-          </div>
-        </OperatorNotes>
+          </OperatorNotes>
+        )}
 
         <div className="mt-4 space-y-4">
           <article hidden={panel !== 'exceptional'} className="space-y-3">
@@ -2224,7 +2272,13 @@ export function AnnualLiveControls(props: Props) {
                 <Button
                   key={label}
                   type="button"
-                  disabled={busy}
+                  disabled={
+                    busy ||
+                    state === null ||
+                    loadError !== null ||
+                    authRefreshing ||
+                    authReviewRequired
+                  }
                   onClick={() => void command('live.set_presentation_mode', { mode })}
                   className="rounded border border-border px-3 py-2 text-sm text-foreground disabled:opacity-40"
                 >
@@ -2524,34 +2578,34 @@ export function AnnualLiveControls(props: Props) {
                         ? 'Review these candidates. You can assign a related seat and leave A-Day due, or continue this bidder.'
                         : 'Offer these seats first. A-Day remains due at each member’s ordinary turn.'}
                     </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {priorityReview.higher_priority_candidates.length} higher-priority members
+                    </p>
                     <ol
                       aria-label="Higher-priority specialty candidates"
-                      className="mt-2 max-h-40 space-y-1 overflow-auto"
+                      className="mt-2 space-y-1"
                     >
-                      {priorityReview.higher_priority_candidates.map((candidate) => (
-                        <li
-                          key={candidate.member_id}
-                          className="flex flex-wrap items-center justify-between gap-2"
-                        >
-                          {name(candidate)} · {candidate.points ?? 0} points
-                          {priorityAdvisory && state?.admin_override_allowed ? (
-                            <Button
-                              type="button"
-                              disabled={busy}
-                              onClick={() =>
-                                operator?.requestOverride(
-                                  priorityReview.position_id,
-                                  candidate.member_id,
-                                  true,
-                                )
-                              }
-                            >
-                              Assign {candidate.first_name} {candidate.last_name}
-                            </Button>
-                          ) : null}
-                        </li>
-                      ))}
+                      {priorityReview.higher_priority_candidates
+                        .slice(0, 5)
+                        .map(priorityCandidateRow)}
                     </ol>
+                    {priorityReview.higher_priority_candidates.length > 5 ? (
+                      <details className="mt-2 text-sm">
+                        <summary className="min-h-11 cursor-pointer content-center font-medium">
+                          Show all higher-priority members (
+                          {priorityReview.higher_priority_candidates.length})
+                        </summary>
+                        <ol
+                          aria-label="More higher-priority specialty candidates"
+                          start={6}
+                          className="max-h-60 space-y-1 overflow-y-auto"
+                        >
+                          {priorityReview.higher_priority_candidates
+                            .slice(5)
+                            .map(priorityCandidateRow)}
+                        </ol>
+                      </details>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
                       {!priorityAdvisory ? (
                         <Button
@@ -2601,8 +2655,8 @@ export function AnnualLiveControls(props: Props) {
                   <p>The bidder changed. Refresh and review the current turn.</p>
                 ) : prompt.result.status === 'INELIGIBLE' ? (
                   <p>
-                    This member is not eligible for this specialty. Choose another seat or review an
-                    Administrator override.
+                    This member is not eligible for this specialty. Choose another seat or use
+                    Adjust bid.
                   </p>
                 ) : (
                   <p>No higher-priority candidate is waiting for this specialty.</p>
@@ -2854,8 +2908,28 @@ export function AnnualLiveControls(props: Props) {
               Changing the order bypasses normal seniority. Every remaining turn is retained, and
               your reason is recorded in the audit.
             </p>
-            <ol className="mt-2 max-h-[40dvh] space-y-1 overflow-y-auto">
-              {order.map(({ memberId, occurrence, stage_label }, index) => (
+            <Label className="mt-3 block text-sm">
+              Find member
+              <Input
+                type="search"
+                aria-label="Find member in bid order"
+                value={orderQuery}
+                onChange={(event) => setOrderQuery(event.target.value)}
+                className="mt-1"
+              />
+            </Label>
+            {normalizedOrderQuery ? (
+              <output className="mt-2 block text-xs text-muted-foreground">
+                {visibleOrder.length === 0
+                  ? 'No matching turns.'
+                  : `${visibleOrder.length} of ${order.length} turns shown.`}
+              </output>
+            ) : null}
+            <ol
+              aria-label="Remaining bid turns"
+              className="mt-2 max-h-[40dvh] space-y-1 overflow-y-auto"
+            >
+              {visibleOrder.map(({ memberId, occurrence, stage_label, index }) => (
                 <li
                   key={`${memberId}-${occurrence}`}
                   className="flex items-center gap-2 rounded bg-muted px-2 py-1 text-sm"

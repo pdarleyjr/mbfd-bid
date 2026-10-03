@@ -59,11 +59,15 @@ function useFrameSize(ref: RefObject<HTMLElement | null>, enabled = true) {
   return size;
 }
 
-function assignmentLabel(assignment: PresentationMember['current_assignment']) {
+function assignmentLabel(
+  assignment: PresentationMember['current_assignment'],
+  includeHistoricalPosition = false,
+) {
   if (!assignment) return null;
   return [
     assignment.shift ? (assignment.shift === 'D' ? 'Days' : `${assignment.shift} Shift`) : null,
-    assignment.position_id,
+    ...(includeHistoricalPosition ? [assignment.position_id] : []),
+    assignment.station,
     assignment.unit,
     assignment.position_name,
   ]
@@ -103,7 +107,7 @@ function PresentationBoard({ view }: { view: Presentation }) {
   const shownQueuePage = Math.min(Math.floor(queueAnchor / queuePageSize), queuePages - 1);
   const next = view.on_deck?.find((member) => member !== null) ?? null;
   const currentAssignment = assignmentLabel(view.current_bidder?.current_assignment);
-  const previousAssignment = assignmentLabel(view.current_bidder?.previous_assignment);
+  const previousAssignment = assignmentLabel(view.current_bidder?.previous_assignment, true);
   const currentQueueIndex = queue.findIndex(
     (member) => member.member_id === view.current_bidder?.member_id,
   );

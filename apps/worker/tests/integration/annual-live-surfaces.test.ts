@@ -1,3 +1,4 @@
+import { deepStrictEqual } from 'node:assert/strict';
 import { BidSessionPolicySnapshotSchema } from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '../../src/db/index.js';
@@ -288,6 +289,111 @@ describe('annual live operator and presentation surfaces', () => {
     );
   });
   afterEach(async () => teardownTestD1(h));
+
+  it.each([0, 1].flatMap((isMock) => [0, 2].map((queueCursor) => ({ isMock, queueCursor }))))(
+    'keeps an early award with A-Day due on deck in both views (is_mock=$isMock, cursor=$queueCursor)',
+    async ({ isMock, queueCursor }) => {
+      const sessionId = `synthetic-on-deck-${isMock}-${queueCursor}`;
+      const snapshotRow = h.sqlite
+        .prepare('SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?')
+        .get(SESSION) as { snapshot_json: string };
+      const snapshot = JSON.parse(snapshotRow.snapshot_json);
+      snapshot.ruleBookMaterial.rules.push({
+        ...snapshot.ruleBookMaterial.rules[0],
+        positionId: 'A102',
+      });
+      snapshot.ruleBookMaterial.positions.push({
+        ...snapshot.ruleBookMaterial.positions[0],
+        id: 'A102',
+      });
+      snapshot.settings.livePolicy.stages[0].opportunityPositionIds.push('A102');
+      snapshot.settings.livePolicy.annualOperations.requiredTopologyPositionIds.push('A102');
+      h.sqlite
+        .prepare(
+          "INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,is_mock) VALUES (?,2027,1,'a_day_bid',2,180,2,0,?)",
+        )
+        .run(sessionId, isMock);
+      h.sqlite
+        .prepare(
+          "INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES (?,'2027.1','2027.1',1,?,1)",
+        )
+        .run(sessionId, JSON.stringify(snapshot));
+      const stateRow = h.sqlite
+        .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+        .get(SESSION) as { state_json: string };
+      const state = JSON.parse(stateRow.state_json);
+      state.bidSessionId = sessionId;
+      state.currentPhase = 'a_day_bid';
+      state.currentBidderId = 2;
+      state.queueCursor = queueCursor;
+      state.bidOrder = [
+        { ordinal: 1, memberId: 2, pool: 'FF', stageId: 'ff' },
+        { ordinal: 2, memberId: 1, pool: 'FF', stageId: 'ff' },
+      ];
+      state.fills = Object.fromEntries(
+        [2, 1].map((memberId, index) => {
+          const positionId = `A10${index + 1}`;
+          return [
+            positionId,
+            {
+              memberId,
+              ordinal: index + 1,
+              bidId: `synthetic-early-${memberId}`,
+              aDayDeferral: {
+                commandId: `synthetic-defer-${memberId}`,
+                actorMemberId: 99,
+                reason: 'Synthetic reviewed early specialty award',
+                positionId,
+              },
+            },
+          ];
+        }),
+      );
+      state.live.specialty = null;
+      state.live.presentation = { mode: 'LIVE', heldAtSeq: null, heldProjection: null };
+      h.sqlite
+        .prepare(
+          "INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) VALUES (?,8,?,'synthetic-on-deck-c8',1,1)",
+        )
+        .run(sessionId, JSON.stringify(state));
+      const before = h.sqlite.serialize();
+      const env = {
+        ...h.env,
+        JWT_SIGNING_KEY: KEY,
+        BID_SESSION: {
+          idFromName: (name: string) => ({ toString: () => name }),
+          get: () => ({ fetch: async () => Response.json({}) }),
+        } as unknown as WorkerEnv['BID_SESSION'],
+      };
+      const board = await app.fetch(
+        new Request(`http://x/api/board?bidSessionId=${sessionId}`, {
+          headers: { Authorization: `Bearer ${await token('admin', 99)}` },
+        }),
+        env,
+      );
+      expect(board.status).toBe(200);
+      expect(await board.json()).toMatchObject({
+        currentBidder: { memberId: 2 },
+        onDeck: [{ memberId: 1, firstName: 'First', lastName: 'Bidder' }],
+      });
+      const presentation = await app.fetch(
+        new Request(`http://x/api/presentation?bidSessionId=${sessionId}`, {
+          headers: { Authorization: `Bearer ${await token('member', 1)}` },
+        }),
+        env,
+      );
+      expect(presentation.status).toBe(200);
+      expect(await presentation.json()).toMatchObject({
+        current_bidder: { member_id: 2, pending_a_day: true },
+        on_deck: [{ member_id: 1, name: 'First Bidder' }],
+        remaining_queue: [
+          { member_id: 2, pending_a_day: true },
+          { member_id: 1, pending_a_day: true },
+        ],
+      });
+      deepStrictEqual(h.sqlite.serialize(), before);
+    },
+  );
 
   it('proactively reviews a specialty selection without writing receipts or changing Bid state', async () => {
     const row = h.sqlite
