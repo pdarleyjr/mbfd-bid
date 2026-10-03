@@ -1,6 +1,13 @@
 import { strict as assert } from 'node:assert';
-import { readdirSync } from 'node:fs';
-import { verifyReviewedUpdateMigration } from './verify-reviewed-update-migration.mjs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import { gzipSync } from 'node:zlib';
+import {
+  verifyBackupArtifact,
+  verifyReviewedUpdateMigration,
+} from './verify-reviewed-update-migration.mjs';
 
 const migrations = readdirSync('apps/worker/migrations')
   .filter((name) => /^\d{4}_.+\.sql$/.test(name))
@@ -255,4 +262,201 @@ assert.throws(() =>
     'before',
   ),
 );
-process.stdout.write('Reviewed-update migration receipt verifier: 28 checks PASS.\n');
+const gzipTrusted = structuredClone(trusted);
+gzipTrusted.recovery = {
+  ...gzipTrusted.recovery,
+  schema_version: 2,
+  backup_key: 'd1/synthetic.sql.gz',
+  transport_encoding: 'gzip',
+  transport_sha256: 'f'.repeat(64),
+  transport_bytes: 512,
+};
+gzipTrusted.backupTransportSha256 = gzipTrusted.recovery.transport_sha256;
+gzipTrusted.backupTransportBytes = gzipTrusted.recovery.transport_bytes;
+const gzipInput = {
+  ...input,
+  recoveryReceiptKey: `${gzipTrusted.recovery.backup_key}.recovery.json`,
+};
+assert.equal(verifyReviewedUpdateMigration(gzipInput, gzipTrusted, 'before').ok, true);
+assert.equal(
+  verifyReviewedUpdateMigration(gzipInput, gzipTrusted, 'after').backup_transport_sha256,
+  gzipTrusted.backupTransportSha256,
+);
+for (const [name, change] of [
+  [
+    'missing transport hash proof',
+    (v) => {
+      v.backupTransportSha256 = undefined;
+    },
+  ],
+  [
+    'missing transport size proof',
+    (v) => {
+      v.backupTransportBytes = undefined;
+    },
+  ],
+  [
+    'wrong transport hash proof',
+    (v) => {
+      v.backupTransportSha256 = '0'.repeat(64);
+    },
+  ],
+  [
+    'wrong transport size proof',
+    (v) => {
+      v.backupTransportBytes += 1;
+    },
+  ],
+  [
+    'wrong transport encoding',
+    (v) => {
+      v.recovery.transport_encoding = 'identity';
+    },
+  ],
+  [
+    'wrong compressed key',
+    (v) => {
+      v.recovery.backup_key = 'd1/synthetic.sql';
+    },
+  ],
+  [
+    'unsupported receipt',
+    (v) => {
+      v.recovery.schema_version = 3;
+    },
+  ],
+  [
+    'oversized transport',
+    (v) => {
+      v.recovery.transport_bytes = v.backupTransportBytes = 314572801;
+    },
+  ],
+  [
+    'fractional transport',
+    (v) => {
+      v.recovery.transport_bytes = v.backupTransportBytes = 512.5;
+    },
+  ],
+  [
+    'nonfinite raw size',
+    (v) => {
+      v.recovery.backup_bytes = v.backupBytes = Number.POSITIVE_INFINITY;
+    },
+  ],
+]) {
+  const changed = structuredClone(gzipTrusted);
+  change(changed);
+  assert.throws(() => verifyReviewedUpdateMigration(gzipInput, changed, 'before'), name);
+}
+assert.throws(
+  () =>
+    verifyReviewedUpdateMigration(
+      input,
+      {
+        ...trusted,
+        recovery: { ...trusted.recovery, transport_encoding: 'gzip' },
+      },
+      'before',
+    ),
+  /Legacy SQL receipt transport is ambiguous/,
+);
+
+const taskTemporaryDirectory = mkdtempSync(join(tmpdir(), 'mbfd-backup-verify-'));
+try {
+  const raw = Buffer.from(
+    '-- synthetic SQL evidence; no credentials or production state\n'.repeat(100),
+  );
+  const encoded = gzipSync(raw);
+  const hash = (value) => createHash('sha256').update(value).digest('hex');
+  const rawPath = join(taskTemporaryDirectory, 'legacy.sql');
+  const gzipPath = join(taskTemporaryDirectory, 'compressed.sql.gz');
+  writeFileSync(rawPath, raw, { flag: 'wx' });
+  writeFileSync(gzipPath, encoded, { flag: 'wx' });
+  const legacyRecovery = {
+    ...trusted.recovery,
+    backup_bytes: raw.length,
+    backup_sha256: hash(raw),
+  };
+  const compressedRecovery = {
+    ...legacyRecovery,
+    schema_version: 2,
+    backup_key: 'd1/synthetic.sql.gz',
+    transport_encoding: 'gzip',
+    transport_bytes: encoded.length,
+    transport_sha256: hash(encoded),
+  };
+  assert.deepEqual(await verifyBackupArtifact(rawPath, legacyRecovery), {
+    backupBytes: raw.length,
+    backupSha256: hash(raw),
+  });
+  const artifactProof = await verifyBackupArtifact(gzipPath, compressedRecovery);
+  assert.deepEqual(artifactProof, {
+    backupBytes: raw.length,
+    backupSha256: hash(raw),
+    backupTransportBytes: encoded.length,
+    backupTransportSha256: hash(encoded),
+  });
+  assert.equal(
+    verifyReviewedUpdateMigration(
+      gzipInput,
+      {
+        ...trusted,
+        recovery: compressedRecovery,
+        ...artifactProof,
+      },
+      'before',
+    ).ok,
+    true,
+  );
+  await assert.rejects(
+    verifyBackupArtifact(rawPath, { ...legacyRecovery, transport_encoding: 'gzip' }),
+    /ambiguous/,
+  );
+  await assert.rejects(
+    verifyBackupArtifact(gzipPath, { ...compressedRecovery, transport_sha256: undefined }),
+    /transport receipt/,
+  );
+  await assert.rejects(
+    verifyBackupArtifact(gzipPath, { ...compressedRecovery, transport_sha256: '0'.repeat(64) }),
+    /Compressed transport integrity/,
+  );
+  await assert.rejects(
+    verifyBackupArtifact(gzipPath, { ...compressedRecovery, transport_bytes: encoded.length - 1 }),
+    /exceeds its verified receipt size/,
+  );
+  await assert.rejects(
+    verifyBackupArtifact(gzipPath, { ...compressedRecovery, backup_sha256: '0'.repeat(64) }),
+    /Original SQL integrity/,
+  );
+  await assert.rejects(
+    verifyBackupArtifact(gzipPath, { ...compressedRecovery, backup_bytes: 1024 }),
+    /Original SQL decoding\/integrity/,
+  );
+  await assert.rejects(
+    verifyBackupArtifact(rawPath, { ...legacyRecovery, backup_sha256: '0'.repeat(64) }),
+    /Original SQL integrity/,
+  );
+  const damaged = encoded.subarray(0, encoded.length - 8);
+  const damagedPath = join(taskTemporaryDirectory, 'damaged.sql.gz');
+  writeFileSync(damagedPath, damaged, { flag: 'wx' });
+  await assert.rejects(
+    verifyBackupArtifact(damagedPath, {
+      ...compressedRecovery,
+      transport_bytes: damaged.length,
+      transport_sha256: hash(damaged),
+    }),
+    /Original SQL decoding\/integrity/,
+  );
+  await assert.rejects(
+    verifyBackupArtifact(join(taskTemporaryDirectory, 'missing.sql'), legacyRecovery),
+    /Original SQL decoding\/integrity/,
+  );
+} finally {
+  const resolvedTemporaryDirectory = resolve(taskTemporaryDirectory);
+  assert.equal(dirname(resolvedTemporaryDirectory), resolve(tmpdir()));
+  assert.ok(basename(resolvedTemporaryDirectory).startsWith('mbfd-backup-verify-'));
+  rmSync(resolvedTemporaryDirectory, { recursive: true, force: true });
+}
+process.stdout.write(
+  'Reviewed-update migration verifier: legacy/gzip receipts, transport proof, streamed SQL hashes and corruption guards PASS.\n',
+);
