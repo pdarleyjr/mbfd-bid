@@ -82,7 +82,7 @@ const basePolicy: FrozenLiveBidPolicy = {
   publicationPolicyReference: null,
 };
 
-function transactionalD1(sqlite: Database.Database): D1Database {
+function transactionalD1(sqlite: Database.Database, onRead?: (query: string) => void): D1Database {
   const prepare = (query: string) => {
     let args: unknown[] = [];
     const execute = () => {
@@ -98,12 +98,15 @@ function transactionalD1(sqlite: Database.Database): D1Database {
         return execute();
       },
       async all() {
+        onRead?.(query);
         return { success: true, results: sqlite.prepare(query).all(...args), meta: {} };
       },
       async first() {
+        onRead?.(query);
         return sqlite.prepare(query).get(...args) ?? null;
       },
       async raw() {
+        onRead?.(query);
         return sqlite
           .prepare(query)
           .raw()
@@ -162,14 +165,22 @@ describe.each([
   let commandNumber: number;
   let eventNumber: number;
   let policy: FrozenLiveBidPolicy;
+  let readQueries: string[];
 
   function seed(
     withADay = false,
     capacity = 10,
     officersPerGroup: number | null = null,
     combatGroups: ('G1' | 'G2' | 'G3' | 'G4')[] = ['G1', 'G2', 'G3', 'G4'],
+    additionalParticipants: readonly number[] = [],
   ) {
     policy = structuredClone(basePolicy);
+    if (additionalParticipants.length > 0)
+      policy.stages = policy.stages.map((stage) =>
+        stage.kind === 'D_SHIFT' || stage.kind === 'CAPTAIN'
+          ? { ...stage, memberIds: [...additionalParticipants] }
+          : stage,
+      );
     if (withADay)
       policy.annualOperations = {
         v: 1,
@@ -216,7 +227,7 @@ describe.each([
         personnelEvaluationOn: '2030-01-01',
         livePolicy: policy,
       },
-      members: [42, 43, 44].map((memberId) => ({
+      members: [42, 43, 44, ...additionalParticipants].map((memberId) => ({
         memberId,
         pool: memberId === 44 ? 'FF' : 'OFC',
         rank: memberId === 44 ? 'FF' : 'CPT',
@@ -331,7 +342,8 @@ describe.each([
       .run(sessionId, isMock);
     sqlite.exec(`INSERT INTO position_templates (version,effective_year,notes) VALUES ('synthetic-override',2030,'Synthetic');
       INSERT INTO rule_books (version,effective_year,status,revision,notes) VALUES ('synthetic-override',2030,'draft',1,'Synthetic');`);
-    db = transactionalD1(sqlite);
+    readQueries = [];
+    db = transactionalD1(sqlite, (query) => readQueries.push(query));
   });
   afterEach(() => sqlite.close());
 
@@ -564,6 +576,76 @@ describe.each([
     expect((await loadCanonicalBidSessionState(db, sessionId))?.bidOrder).toEqual(exactOrder);
     expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_events').get()).toEqual({
       count: 1,
+    });
+  });
+
+  it('reviews and commits 240 exact turns with one frozen-policy read per command and no per-turn SQL', async () => {
+    const participantIds = Array.from({ length: 120 }, (_, index) => index + 100);
+    seed(true, 10, null, ['G1', 'G2', 'G3', 'G4'], participantIds);
+    const before = initialState();
+    const firstMemberId = participantIds[0];
+    if (firstMemberId === undefined) throw new Error('Order participants required');
+    before.currentBidderId = firstMemberId;
+    before.bidOrder = ['days', 'captains'].flatMap((stageId, stageIndex) =>
+      participantIds.map((memberId, index) => ({
+        ordinal: stageIndex * participantIds.length + index + 1,
+        memberId,
+        pool: 'OFC' as const,
+        stageId,
+      })),
+    );
+    const selectedTurn = before.bidOrder[239];
+    if (selectedTurn === undefined) throw new Error('240 exact turns required');
+    const exactOrder = [selectedTurn, ...before.bidOrder.slice(0, 239)];
+    const turns = exactOrder.map((entry) => ({
+      memberId: entry.memberId,
+      stageId: entry.stageId ?? null,
+    }));
+    const fields = {
+      orderedRemainingMemberIds: turns.map((entry) => entry.memberId),
+      orderedRemainingTurns: turns,
+      adminOverride: override,
+    };
+    const input = command('live.alter_order', fields);
+    if (input.type !== 'live.alter_order') throw new Error('Exact order command required');
+    readQueries = [];
+    const preview = await execute(before, input, true);
+    expect(preview.result.kind).toBe('accepted');
+    expect(preview.canonicalState?.bidOrder).toEqual(exactOrder);
+    const policyReads = () =>
+      readQueries.filter((query) => /from "bid_session_policy_snapshots"/i.test(query)).length;
+    expect(policyReads()).toBe(1);
+    expect(readQueries).toHaveLength(5);
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_receipts').get()).toEqual({
+      count: 0,
+    });
+    if (preview.result.kind !== 'accepted') throw new Error('Exact order preview required');
+    const warningCodes = (
+      preview.result.envelope.payload as { adminOverride: { warningCodes: string[] } }
+    ).adminOverride.warningCodes;
+    readQueries = [];
+    const committed = await execute(before, {
+      ...input,
+      adminOverride: { acknowledged: true, warningCodes },
+    });
+    expect(committed.result.kind).toBe('accepted');
+    expect(policyReads()).toBe(1);
+    expect(readQueries).toHaveLength(5);
+    expect(committed.canonicalState?.bidOrder).toEqual(exactOrder);
+    expect(committed.canonicalState?.currentBidderId).toBe(selectedTurn.memberId);
+    expect(committed.canonicalState?.live?.currentStageId).toBe('captains');
+    expect((await loadCanonicalBidSessionState(db, sessionId))?.bidOrder).toEqual(exactOrder);
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_events').get()).toEqual({
+      count: 1,
+    });
+    if (committed.result.kind !== 'accepted') throw new Error('Exact order commit required');
+    expect(committed.result.envelope.payload).toMatchObject({
+      beforeTurns: before.bidOrder.map((entry) => ({
+        memberId: entry.memberId,
+        stageId: entry.stageId,
+      })),
+      afterTurns: turns,
+      adminOverride: { warningCodes: ['ORDER_DEVIATION', 'STAGE_DEVIATION'] },
     });
   });
 
