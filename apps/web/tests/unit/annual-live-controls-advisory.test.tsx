@@ -88,16 +88,14 @@ describe('AnnualLiveControls specialty coverage advisory', () => {
 
     await vi.waitFor(async () => {
       await settle();
-      expect(container.textContent).toContain('Specialty coverage advisory');
+      expect(container.textContent).toContain('Specialty coverage');
     });
 
     expect(container.textContent).toContain('AT RISK');
     expect(container.textContent).toContain('1 of 2 specialty seats filled');
+    expect(container.textContent).toContain('1 members are needed to cover the remaining seats');
     expect(container.textContent).toContain(
-      '1 frozen candidate is critical to the remaining coverage',
-    );
-    expect(container.textContent).toContain(
-      'Read-only advisory from the frozen session snapshot and canonical fills. It does not approve, block, or change an operator action.',
+      'Advisory only, based on saved qualifications and current awards. Your adjustments remain available.',
     );
     expect(
       [...container.querySelectorAll('button')].map((button) => button.textContent?.trim()),
@@ -126,12 +124,12 @@ describe('AnnualLiveControls specialty coverage advisory', () => {
 
     await vi.waitFor(async () => {
       await settle();
-      expect(container.textContent).toContain('Frozen specialty coverage is unavailable');
+      expect(container.textContent).toContain('Coverage unavailable');
     });
 
     expect(container.textContent).toContain('SPECIALTY_COVERAGE_AMBIGUOUS_POSITION');
     expect(container.textContent).toContain(
-      'Read-only advisory from the frozen session snapshot and canonical fills. It does not approve, block, or change an operator action.',
+      'Advisory only, based on saved qualifications and current awards. Your adjustments remain available.',
     );
     expect(
       [...container.querySelectorAll('button')].map((button) => button.textContent?.trim()),

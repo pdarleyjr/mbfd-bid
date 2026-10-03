@@ -108,6 +108,44 @@ export function bidEvidenceFreezeSettingsMatch(input: {
   );
 }
 
+/** A saved successor owns its execution policy while reusing the same sealed
+ * people and qualifications. Policy authoring is compiled only from those
+ * immutable members. Dates, cutoff, duration, and every non-policy setting
+ * still match exactly. The caller must independently verify the evidence pin,
+ * source decisions, and rule/inventory material before using this comparison.
+ * Original capture/retention verification keeps the strict helper above. */
+export function bidEvidenceFreezeExecutionSettingsMatch(input: {
+  pinnedEvaluation: Pick<BidEvaluation, 'capturedAtMs' | 'members' | 'settings'>;
+  settings: BidConfigurationSettings;
+  content: Pick<BidDefinitionContent, 'settings' | 'policy' | 'sourceDecisions'>;
+}) {
+  if (
+    input.pinnedEvaluation.settings.v !== 3 ||
+    input.settings.v !== 3 ||
+    !input.content.policy ||
+    canonical(input.content.settings) !== canonical(input.settings) ||
+    canonical(input.content.policy.executionPolicy) !== canonical(input.settings.livePolicy)
+  )
+    return false;
+  const compiled = compileBidDefinitionStagePolicy({
+    pinnedEvaluation: input.pinnedEvaluation,
+    content: input.content,
+  });
+  if (!compiled.ok) return false;
+  const evidenceSettings = (settings: BidConfigurationSettings) => {
+    const {
+      evidenceFreeze: _evidenceFreeze,
+      livePolicy: _livePolicy,
+      ...rest
+    } = JSON.parse(JSON.stringify(settings));
+    return rest;
+  };
+  return (
+    canonical(evidenceSettings(input.pinnedEvaluation.settings)) ===
+    canonical(evidenceSettings(input.settings))
+  );
+}
+
 /** Identity of the frozen execution context, separate from policy content.
  * Clock time and minted aliases are excluded; an actual fallback evaluation
  * DATE is retained. Optional historical evidence remains absent, never empty.

@@ -106,7 +106,7 @@ export function MockSessionsTable({ sessions }: Props): ReactElement {
                     rel="noreferrer"
                     className="inline-flex min-h-11 items-center rounded border border-border px-3 py-1 text-xs font-medium underline"
                   >
-                    Open Mock presentation
+                    Open presentation
                   </a>
                   <ResetMockButton sessionId={s.id} />
                   {s.currentPhase !== 'complete' ? <CloseStaleMockButton sessionId={s.id} /> : null}

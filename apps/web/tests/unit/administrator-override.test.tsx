@@ -153,6 +153,13 @@ beforeEach(() => {
         expectedSeq: body.expectedSeq,
         memberId: previewIdentityWrong ? 19 : body.memberId,
         ...(body.positionId ? { positionId: body.positionId } : {}),
+        ...(body.type === 'live.record_a_day'
+          ? {
+              positionId: Object.entries(props.fills).find(
+                ([, fill]) => fill.member_id === body.memberId,
+              )?.[0],
+            }
+          : {}),
         warnings,
         nextMemberId: 17,
         ...(body.deferStageId
@@ -216,14 +223,14 @@ async function input(label: string, value: string) {
   });
 }
 async function draftAward(memberId = '18', positionId = 'A101') {
-  await settle(() => button('Administrator override').click());
+  await settle(() => button('Adjust bid').click());
   await select('Administrator override member', memberId);
   await select('Administrator override open position', positionId);
   await select('Administrator override A-Day', positionId.startsWith('D') ? 'MON' : 'G2');
   await input('Reason for administrator override', 'Synthetic administrator direction');
 }
 async function reviewAndAcknowledge() {
-  await settle(() => button('Review override').click());
+  await settle(() => button('Review adjustment').click());
   await settle(() =>
     (
       container.querySelector(
@@ -283,10 +290,10 @@ describe('audited administrator override', () => {
   it('permits a pending A-Day member to be skipped without requiring a correction', async () => {
     props = { ...props, fills: { A101: { member_id: 17 } } };
     await mount();
-    await settle(() => button('Administrator override').click());
+    await settle(() => button('Adjust bid').click());
     await select('Administrator override action', 'SKIP');
     await input('Reason for administrator override', 'Member will choose A-Day later');
-    expect(button('Review override').disabled).toBe(false);
+    expect(button('Review adjustment').disabled).toBe(false);
     expect(container.textContent).not.toContain('already holds A101');
     await reviewAndAcknowledge();
     await settle(() => button('Confirm skip for now').click());
@@ -305,7 +312,7 @@ describe('audited administrator override', () => {
     };
     await mount();
     await draftAward();
-    expect(button('Review override').disabled).toBe(true);
+    expect(button('Review adjustment').disabled).toBe(true);
     expect(previews).toHaveLength(0);
     await settle(() =>
       (
@@ -314,7 +321,7 @@ describe('audited administrator override', () => {
         ) as HTMLInputElement
       ).click(),
     );
-    expect(button('Review override').disabled).toBe(true);
+    expect(button('Review adjustment').disabled).toBe(true);
     await input('Voluntary departure evidence', 'Member explicitly elected another assignment');
     await reviewAndAcknowledge();
     expect(previews[0]).toMatchObject({
@@ -342,7 +349,7 @@ describe('audited administrator override', () => {
     expect(container.textContent).toContain('No previous bid or assignment.');
     expect(previews).toHaveLength(0);
     expect(commands).toHaveLength(0);
-    await settle(() => button('Review override').click());
+    await settle(() => button('Review adjustment').click());
     expect(previews[0]).toMatchObject({
       type: 'live.record_selection',
       memberId: 18,
@@ -375,21 +382,21 @@ describe('audited administrator override', () => {
   });
   it('requires an explicit reason and correct A-Day before even previewing', async () => {
     await mount();
-    await settle(() => button('Administrator override').click());
+    await settle(() => button('Adjust bid').click());
     await select('Administrator override member', '17');
     await select('Administrator override open position', 'D101');
     await input('Reason for administrator override', 'abc');
-    expect(button('Review override').disabled).toBe(true);
+    expect(button('Review adjustment').disabled).toBe(true);
     await input('Reason for administrator override', 'Synthetic direction');
-    expect(button('Review override').disabled).toBe(true);
+    expect(button('Review adjustment').disabled).toBe(true);
     await select('Administrator override A-Day', 'MON');
-    expect(button('Review override').disabled).toBe(false);
+    expect(button('Review adjustment').disabled).toBe(false);
     expect(previews).toHaveLength(0);
     expect(commands).toHaveLength(0);
   });
   it('skips an arbitrary waiting member only after review and preserves the deferred-rights explanation', async () => {
     await mount();
-    await settle(() => button('Administrator override').click());
+    await settle(() => button('Adjust bid').click());
     await select('Administrator override action', 'SKIP');
     await select('Administrator override member', '19');
     await input('Reason for administrator override', 'Member asked to return later');
@@ -407,7 +414,7 @@ describe('audited administrator override', () => {
   });
   it('bypasses the current Days Captain step without fabricating any award', async () => {
     await mount();
-    await settle(() => button('Administrator override').click());
+    await settle(() => button('Adjust bid').click());
     await select('Administrator override action', 'DEFER_STAGE');
     await input('Reason for administrator override', 'Days Captains will select later');
     await reviewAndAcknowledge();
@@ -450,7 +457,7 @@ describe('audited administrator override', () => {
     previewIdentityWrong = true;
     await mount();
     await draftAward();
-    await settle(() => button('Review override').click());
+    await settle(() => button('Review adjustment').click());
     expect(container.textContent).toContain('preview does not match your action');
     expect(container.textContent).not.toContain('Confirm administrator selection');
     expect(commands).toHaveLength(0);
@@ -481,7 +488,7 @@ describe('audited administrator override', () => {
   it('uses authoritative frozen lists and hides filled or reserved positions', async () => {
     props = { ...props, fills: { A101: { member_id: 17 } } };
     await mount();
-    await settle(() => button('Administrator override').click());
+    await settle(() => button('Adjust bid').click());
     const memberSelect = container.querySelector(
       'select[aria-label="Administrator override member"]',
     ) as unknown as HTMLSelectElement;
@@ -496,7 +503,69 @@ describe('audited administrator override', () => {
       'C103',
     ]);
     await select('Administrator override member', '17');
-    expect(container.textContent).toContain('already holds A101');
-    expect(button('Review override').disabled).toBe(true);
+    expect(container.textContent).toContain('holds A101');
+    expect(button('Review adjustment').disabled).toBe(true);
+  });
+  it('allows an explicit early seat award without A-Day and submits no fabricated group', async () => {
+    await mount();
+    await settle(() => button('Adjust bid').click());
+    await select('Administrator override member', '19');
+    await select('Administrator override open position', 'C103');
+    await input('Reason for administrator override', 'Out of order specialty award; A-Day later');
+    expect(button('Review adjustment').disabled).toBe(true);
+    await settle(() =>
+      (container.querySelector('input[aria-label="Pick A-Day later"]') as HTMLInputElement).click(),
+    );
+    await reviewAndAcknowledge();
+    expect(previews[0]).not.toHaveProperty('aDay');
+    expect(commands).toHaveLength(0);
+    await settle(() => button('Confirm administrator selection').click());
+    expect(commands[0]).toMatchObject({
+      type: 'live.record_selection',
+      memberId: 19,
+      positionId: 'C103',
+      adminOverride: { acknowledged: true },
+    });
+    expect(commands[0]).not.toHaveProperty('aDay');
+  });
+  it('sets or changes an awarded member A-Day without moving or duplicating the seat', async () => {
+    props = { ...props, fills: { A101: { member_id: 18, a_day: 'G1' } }, combatGroups: ['G1'] };
+    await mount();
+    await settle(() => button('Adjust bid').click());
+    await select('Administrator override action', 'A_DAY');
+    await select('Administrator override member', '18');
+    const options = container.querySelector(
+      'select[aria-label="Administrator override A-Day"]',
+    ) as unknown as HTMLSelectElement | null;
+    if (!options) throw new Error('A-Day choices missing');
+    expect([...options.options].map((entry) => entry.value)).toEqual(['', 'G1', 'G2', 'G3', 'G4']);
+    await select('Administrator override A-Day', 'G4');
+    await input('Reason for administrator override', 'Chief approved group change');
+    // The server resolves the exact recorded position; the client never sends a replacement award.
+    await reviewAndAcknowledge();
+    expect(commands).toHaveLength(0);
+    await settle(() => button('Confirm A-Day adjustment').click());
+    expect(commands[0]).toMatchObject({ type: 'live.record_a_day', memberId: 18, aDay: 'G4' });
+    expect(commands[0]).not.toHaveProperty('positionId');
+  });
+  it('permits an awarded member custom temporary duty after a retained-seat advisory, without removing the seat', async () => {
+    props = { ...props, fills: { A101: { member_id: 17 } }, nonBiddablePositions: [] };
+    await mount();
+    await settle(() => button('Adjust bid').click());
+    await select('Administrator override action', 'DUTY');
+    await input('Adjustment duty label', 'Acting Division Chief of Prevention');
+    await input('Reason for administrator override', 'Chief directed temporary duty');
+    expect(container.textContent).toContain('Existing seat A101 stays assigned');
+    await reviewAndAcknowledge();
+    expect(commands).toHaveLength(0);
+    await settle(() => button('Confirm temporary duty').click());
+    expect(commands[0]).toMatchObject({
+      type: 'live.set_exceptional_assignment',
+      operation: 'ASSIGN',
+      memberId: 17,
+      roleLabel: 'Acting Division Chief of Prevention',
+    });
+    expect(commands[0]).not.toHaveProperty('positionId');
+    expect(commands[0]).not.toHaveProperty('aDay');
   });
 });

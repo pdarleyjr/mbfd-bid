@@ -235,7 +235,7 @@ describe('operator workspace interaction and history', () => {
     await mount();
     await settle(() => button('New OperatorFixture').click());
     expect(container.textContent).toContain('No previous bid or assignment.');
-    await settle(() => button('Bid for this member · Administrator override').click());
+    await settle(() => button('Bid for this member').click());
     const select = container.querySelector(
       'select[aria-label="Administrator override member"]',
     ) as unknown as HTMLSelectElement;
@@ -248,7 +248,7 @@ describe('operator workspace interaction and history', () => {
       'Anew',
       'not-eligible',
     ]);
-    expect(button('Review override').disabled).toBe(true);
+    expect(button('Review adjustment').disabled).toBe(true);
     expect(commands).toHaveLength(0);
     expect(requests.some((url) => url.endsWith('/commands/live/preview'))).toBe(false);
   });

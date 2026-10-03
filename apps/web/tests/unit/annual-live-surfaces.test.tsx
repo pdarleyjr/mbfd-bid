@@ -59,11 +59,11 @@ describe('annual live product surfaces', () => {
       />,
     );
     expect(html).toContain('Presentation');
-    expect(html).toContain('Specialty and contact');
+    expect(html).toContain('Specialty review');
     expect(html).toContain('Correct selection');
-    expect(html).toContain('Remaining order');
+    expect(html).toContain('Bid order');
     expect(html).toContain('Record selection');
-    expect(html).toContain('Disposition and return');
+    expect(html).toContain('Skip or return a member');
   });
 
   it('exposes the canonical controls in an isolated mock rehearsal', () => {
@@ -82,8 +82,8 @@ describe('annual live product surfaces', () => {
     expect(html).toContain('MOCK REHEARSAL');
     expect(html).toContain('canonical commands remain isolated');
     expect(html).toContain('Presentation');
-    expect(html).toContain('Specialty and contact');
+    expect(html).toContain('Specialty review');
     expect(html).toContain('Record selection');
-    expect(html).toContain('Disposition and return');
+    expect(html).toContain('Skip or return a member');
   });
 });

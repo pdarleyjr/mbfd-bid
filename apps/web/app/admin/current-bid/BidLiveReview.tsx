@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import type { Route } from 'next';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { FieldSection } from './BidFields';
@@ -52,11 +53,10 @@ function PolicyBlock({
     <div role="alert" className="space-y-2 rounded border border-warning p-4 text-sm">
       {assignmentTermBlock ? (
         <>
-          <p className="font-semibold">NEEDS ADMIN EVIDENCE — assignment terms.</p>
+          <p className="font-semibold">Assignment terms need review.</p>
           <p>
-            The listed Days opportunities have no approved assignment term. Review the governing
-            source and record each term in Edit Bid, then save a new version and check Managed Live
-            readiness again. This is a Real Bid readiness item; Mock training remains available.
+            Record the listed Days terms, save the Bid, then check again. Mock training remains
+            available.
           </p>
           <Link
             href="/admin/source-review"
@@ -65,11 +65,11 @@ function PolicyBlock({
             Review source decisions and evidence
           </Link>
           <Button type="button" variant="secondary" onClick={onOpenAssignmentTerms}>
-            Open Edit Bid - Specialty rules - Assignment terms
+            Edit assignment terms
           </Button>
         </>
       ) : (
-        <p>Live policy preparation is blocked: {words(result.policyError)}.</p>
+        <p>Real Bid needs review: {words(result.policyError)}.</p>
       )}
       {result.positionIds && result.positionIds.length > 0 && (
         <p className="break-words">
@@ -98,22 +98,34 @@ function ReadinessReview({ result }: { result: Exclude<BidLivePreview, { policyE
       {...(isBlocked ? { role: 'alert' as const } : { role: 'status' as const })}
       className="space-y-3 rounded border border-border p-4 text-sm"
     >
-      <p>Server Live readiness: {words(result.readiness.overallStatus)}.</p>
-      {isBlocked ? (
-        <p>Live readiness is blocked by the server.</p>
-      ) : (
-        <p>The server reports that this saved version currently meets its Live readiness checks.</p>
+      <p className="font-semibold">
+        {isBlocked ? 'Resolve these items before the Real Bid.' : 'Ready to prepare the Real Bid.'}
+      </p>
+      {isBlocked && (
+        <ul aria-label="Real Bid blockers" className="list-disc space-y-1 pl-5">
+          {checks
+            .filter((check) => result.readiness.blockingCheckIds.includes(check.id))
+            .map((check) => (
+              <li key={check.id}>
+                {words(check.id)}
+                {check.detail ? `: ${check.detail}` : ''}
+              </li>
+            ))}
+        </ul>
       )}
-      {checks.length > 0 && (
-        <ul aria-label="Live readiness checks" className="list-disc space-y-1 pl-5">
+      <details>
+        <summary className="min-h-11 cursor-pointer content-center font-medium">
+          All readiness checks ({checks.length})
+        </summary>
+        <ul aria-label="Live readiness checks" className="mt-2 list-disc space-y-1 pl-5">
           {checks.map((check) => (
             <li key={check.id}>
-              {words(check.status)} — {words(check.id)} (<code>{check.id}</code>)
+              {words(check.status)} · {words(check.id)}
               {check.detail ? `: ${check.detail}` : ''}
             </li>
           ))}
         </ul>
-      )}
+      </details>
     </div>
   );
 }
@@ -198,7 +210,6 @@ export function BidLiveReview({
   const [result, setResult] = useState<BidLivePreview | null>(null);
   const [resultStamp, setResultStamp] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirmCreate, setConfirmCreate] = useState(false);
   const requestSequence = useRef(0);
   const reviewed = resultStamp === sourceStamp ? result : null;
 
@@ -207,7 +218,6 @@ export function BidLiveReview({
     const sequence = ++requestSequence.current;
     const stamp = sourceStamp;
     setError(null);
-    setConfirmCreate(false);
     setResult(null);
     setResultStamp(null);
     try {
@@ -235,23 +245,19 @@ export function BidLiveReview({
   const unavailable = !version;
   return (
     <FieldSection
-      title="Managed Live preflight"
-      description="Review the immutable current saved version against server policy and readiness. This check has no activation authority."
+      title="Prepare Real Bid"
+      description="Check the saved Bid, then confirm session creation."
     >
-      <section
-        className="space-y-2 rounded border border-border bg-card p-4"
-        aria-label="Saved operator authority"
-      >
+      <details className="text-sm" aria-label="Saved operator authority">
+        <summary className="min-h-11 cursor-pointer content-center font-semibold">
+          Operator permissions
+        </summary>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-semibold">Saved operator authority</h3>
           <Button type="button" variant="secondary" onClick={onOpenAuthority}>
-            Edit authority in Bid configuration
+            Edit permissions
           </Button>
         </div>
-        <p className="text-sm text-muted-foreground">
-          These grants belong to the immutable annual configuration. Operator authority is separate
-          from bidder participation.
-        </p>
+        <p className="text-sm text-muted-foreground">Saved with this Bid version.</p>
         <ul className="space-y-1 text-sm">
           {grants.map((grant) => (
             <li key={grant.action}>
@@ -264,28 +270,26 @@ export function BidLiveReview({
             </li>
           ))}
         </ul>
-      </section>
+      </details>
       <p className="text-sm">
         {base.version === null
-          ? 'No saved Bid version exists. Save the first Bid version before checking Managed Live readiness.'
+          ? 'Save the first Bid version before preparing the Real Bid.'
           : unavailable
-            ? 'The current Bid identity is not an immutable saved version. Reload it before checking Managed Live readiness.'
+            ? 'Reload the saved Bid before preparing the Real Bid.'
             : dirty
-              ? 'The current draft has unsaved changes. Save or discard them before checking Managed Live readiness.'
+              ? 'Save or discard your changes before preparing the Real Bid.'
               : stale
-                ? 'A newer saved Bid or source revision exists. Load it before checking Managed Live readiness.'
-                : `Current immutable saved version: ${version.versionNumber}.`}
+                ? 'Load the newer saved Bid before preparing the Real Bid.'
+                : `Saved version ${version.versionNumber}.`}
       </p>
-      <p className="text-sm text-muted-foreground">
-        This is a read-only Managed Live preflight. No Live run is created by this check.
-      </p>
+      <p className="text-sm text-muted-foreground">Checking does not start or create a session.</p>
       <Button
         type="button"
         variant="primary"
         disabled={busy || locked || stale || dirty || unavailable}
         onClick={() => void review()}
       >
-        {busy ? 'Checking…' : 'Check Managed Live readiness'}
+        {busy ? 'Checking…' : 'Check Real Bid'}
       </Button>
       {error && <p role="alert">{error}</p>}
       {reviewed &&
@@ -301,53 +305,37 @@ export function BidLiveReview({
         !createdLive && (
           <div className="space-y-3 rounded border border-warning p-4">
             <p>
-              Create the Live session using this reviewed Bid and Department snapshot. Starting the
-              Bid is a separate action.
+              Create the Real session from saved version {reviewed.versionNumber}. You will start it
+              from the bid console.
             </p>
-            {!confirmCreate ? (
-              <Button
-                type="button"
-                disabled={busy || locked || dirty || stale}
-                onClick={() => setConfirmCreate(true)}
-              >
-                Create Live session…
-              </Button>
-            ) : (
-              <>
-                <p>
-                  This creates a real Live session. Proceed only when the coordinator is ready to
-                  prepare the real Bid.
-                </p>
-                <Button
-                  type="button"
-                  disabled={busy || locked || dirty || stale}
-                  onClick={() =>
-                    void execute({
-                      path: 'live-sessions',
-                      key: crypto.randomUUID(),
-                      body: {
-                        versionId: reviewed.versionId,
-                        versionSha256: reviewed.versionSha256,
-                        expectedContextSha256: reviewed.contextSha256,
-                        expectedSourceToken: reviewed.runtimeSourceToken,
-                      },
-                    })
-                  }
-                >
-                  Confirm Live session creation
-                </Button>
-                <Button type="button" disabled={busy} onClick={() => setConfirmCreate(false)}>
-                  Cancel
-                </Button>
-              </>
-            )}
+            <Button
+              type="button"
+              disabled={busy || locked || dirty || stale}
+              onClick={() =>
+                void execute({
+                  path: 'live-sessions',
+                  key: crypto.randomUUID(),
+                  body: {
+                    versionId: reviewed.versionId,
+                    versionSha256: reviewed.versionSha256,
+                    expectedContextSha256: reviewed.contextSha256,
+                    expectedSourceToken: reviewed.runtimeSourceToken,
+                  },
+                })
+              }
+            >
+              Confirm Real Bid creation
+            </Button>
           </div>
         )}
       {createdLive && (
         <p>
-          Live session created; it has not started.{' '}
-          <Link href="/admin/bid" className="underline">
-            Open Live console
+          Real session created; ready to start.{' '}
+          <Link
+            href={`/admin/bid?session_id=${encodeURIComponent(createdLive.id)}` as Route}
+            className="underline"
+          >
+            Open Real Bid
           </Link>
         </p>
       )}

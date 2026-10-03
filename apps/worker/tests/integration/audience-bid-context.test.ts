@@ -34,6 +34,24 @@ function queueState(): AudienceQueueState {
 }
 
 describe('audience remaining turns', () => {
+  it('retains a separately approved deferred A-Day for a simultaneous seat', () => {
+    const state = queueState();
+    state.fills.A101 = {
+      memberId: 2,
+      ordinal: 2,
+      bidId: 'directed-award',
+      aDayDeferral: {
+        commandId: 'direction',
+        actorMemberId: 99,
+        reason: 'Pick group later',
+        positionId: 'A101',
+      },
+    };
+    expect(remainingAudienceQueue(state, policy)).toContainEqual({
+      memberId: 2,
+      pendingADay: true,
+    });
+  });
   it.each(['A601', 'B213', 'C203'])(
     'retains an early specialty award until its A-Day is picked: %s',
     (positionId) => {

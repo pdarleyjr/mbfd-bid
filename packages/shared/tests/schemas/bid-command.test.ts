@@ -1,7 +1,77 @@
 import { describe, expect, it } from 'vitest';
-import { MockFreezeCommandSchema, MockFreezeRequestSchema } from '../../src/index.js';
+import {
+  LiveBidCommandSchema,
+  MockFreezeCommandSchema,
+  MockFreezeRequestSchema,
+} from '../../src/index.js';
 
 const COMMAND_ID = '11111111-1111-4111-8111-111111111111';
+
+describe('systemic reviewed adjustment envelopes', () => {
+  it('accepts optional exact turn identities and rejects ambiguous or unexpected turn fields', () => {
+    const command = {
+      v: 1,
+      type: 'live.alter_order',
+      commandId: COMMAND_ID,
+      bidSessionId: 'synthetic-session',
+      expectedSeq: 3,
+      actor: { id: 99, role: 'admin' },
+      reason: 'Reviewed direction',
+      evidenceReference: null,
+      orderedRemainingMemberIds: [42, 42],
+      orderedRemainingTurns: [
+        { memberId: 42, stageId: 'captains' },
+        { memberId: 42, stageId: null },
+      ],
+    };
+    expect(LiveBidCommandSchema.safeParse(command).success).toBe(true);
+    for (const turn of [
+      { memberId: 42 },
+      { memberId: 0, stageId: 'captains' },
+      { memberId: 42, stageId: ' ' },
+      { memberId: 42, stageId: 'captains', stage_label: 'Untrusted label' },
+    ])
+      expect(
+        LiveBidCommandSchema.safeParse({ ...command, orderedRemainingTurns: [turn] }).success,
+      ).toBe(false);
+  });
+
+  it.each([
+    { type: 'live.record_a_day', memberId: 42, aDay: 'G2' },
+    { type: 'live.alter_order', orderedRemainingMemberIds: [42, 43] },
+    {
+      type: 'live.set_exceptional_assignment',
+      memberId: 42,
+      operation: 'ASSIGN',
+      roleLabel: 'Temporary duty',
+    },
+  ])('keeps $type on the same strict authenticated command contract', (fields) => {
+    const command = {
+      v: 1,
+      commandId: COMMAND_ID,
+      bidSessionId: 'synthetic-session',
+      expectedSeq: 3,
+      actor: { id: 99, role: 'admin' },
+      reason: 'Reviewed direction',
+      evidenceReference: null,
+      ...fields,
+      adminOverride: { acknowledged: true, warningCodes: ['ORDER_DEVIATION'] },
+    };
+    expect(LiveBidCommandSchema.safeParse(command).success).toBe(true);
+    expect(
+      LiveBidCommandSchema.safeParse({ ...command, actor: { id: 99, role: 'member' } }).success,
+    ).toBe(false);
+    expect(
+      LiveBidCommandSchema.safeParse({
+        ...command,
+        adminOverride: { acknowledged: false, warningCodes: [] },
+      }).success,
+    ).toBe(false);
+    expect(
+      LiveBidCommandSchema.safeParse({ ...command, unexpected: 'unreviewed data' }).success,
+    ).toBe(false);
+  });
+});
 
 describe('mock freeze command schemas', () => {
   it('accepts a complete versioned command envelope', () => {

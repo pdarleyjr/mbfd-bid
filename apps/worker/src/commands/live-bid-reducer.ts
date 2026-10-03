@@ -123,7 +123,26 @@ function memberHasDeferredOrdinaryTurn(
     ([positionId, fill]) =>
       fill.memberId === memberId &&
       fill.aDay === undefined &&
-      positionUsesDeferredADay(policy, positionId),
+      (positionUsesDeferredADay(policy, positionId) ||
+        fill.aDayDeferral?.positionId === positionId),
+  );
+}
+
+/** A repeated Days eligibility entry does not bring forward a combat member's
+ * rank turn. A directed Days award can still retain its weekday choice. */
+function deferredADayBelongsToTurn(
+  state: BidSessionState,
+  policy: FrozenLiveBidPolicy,
+  memberId: number,
+  stageId: string | null | undefined,
+): boolean {
+  if (policy.stages.find((stage) => stage.id === stageId)?.kind !== 'D_SHIFT') return true;
+  const award = Object.entries(state.fills).find(([, fill]) => fill.memberId === memberId);
+  return (
+    award !== undefined &&
+    policy.stages.some(
+      (stage) => stage.kind === 'D_SHIFT' && stage.opportunityPositionIds.includes(award[0]),
+    )
   );
 }
 
@@ -154,7 +173,11 @@ function nextAvailableFrom(
         turnStartedAtMs: now,
       };
     // An early award keeps its ordinary turn for the A-Day it could not select then.
-    if (!picked.has(memberId) && memberHasDeferredOrdinaryTurn(state, policy, memberId))
+    if (
+      !picked.has(memberId) &&
+      memberHasDeferredOrdinaryTurn(state, policy, memberId) &&
+      deferredADayBelongsToTurn(state, policy, memberId, state.bidOrder[queueCursor]?.stageId)
+    )
       return {
         queueCursor,
         currentBidderId: memberId,
@@ -166,7 +189,8 @@ function nextAvailableFrom(
   const pending = state.bidOrder.find(
     (candidate) =>
       !picked.has(candidate.memberId) &&
-      memberHasDeferredOrdinaryTurn(state, policy, candidate.memberId),
+      memberHasDeferredOrdinaryTurn(state, policy, candidate.memberId) &&
+      deferredADayBelongsToTurn(state, policy, candidate.memberId, candidate.stageId),
   )?.memberId;
   return pending === undefined
     ? { queueCursor, currentBidderId: null, currentPhase: 'complete', turnStartedAtMs: 0 }
@@ -305,11 +329,24 @@ export function reduceLiveBidCommand(
   if (currentStageId === null || !policy.stages.some((stage) => stage.id === currentStageId))
     return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
   if (command.type === 'live.set_exceptional_assignment') {
-    if (!['position_bid', 'a_day_bid', 'complete'].includes(state.currentPhase))
+    if (
+      !administratorOverride &&
+      !['position_bid', 'a_day_bid', 'complete'].includes(state.currentPhase)
+    )
       return { ok: false, code: 'SESSION_NOT_ACTIVE' };
-    if (live.specialty) return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
-    if (Object.values(state.fills).some((fill) => fill.memberId === command.memberId))
+    if (!administratorOverride && live.specialty)
+      return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
+    const existingAward = Object.entries(state.fills).find(
+      ([, fill]) => fill.memberId === command.memberId,
+    );
+    if (!administratorOverride && existingAward)
       return { ok: false, code: 'EXCEPTIONAL_ASSIGNMENT_EXISTING_AWARD' };
+    if (existingAward)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'EXISTING_AWARD_RETAINED',
+        `The member keeps ${existingAward[0]} and its A-Day. This duty is a separate session assignment; changing the seat requires an explicit correction.`,
+      );
     const assignments = live.exceptionalAssignments ?? [];
     const active = assignments.find(
       (entry) => entry.memberId === command.memberId && entry.releasedAtMs === null,
@@ -352,12 +389,27 @@ export function reduceLiveBidCommand(
           );
     let result: BidSessionState = {
       ...state,
-      live: { ...live, exceptionalAssignments: updatedAssignments },
+      live: {
+        ...live,
+        exceptionalAssignments: updatedAssignments,
+        ...(administratorOverride && live.specialty != null ? { specialty: null } : {}),
+      },
       annual: settleSelectedMember(annual, command.memberId),
       lastSeq: state.lastSeq + 1,
     };
-    if (command.operation === 'ASSIGN' && state.currentBidderId === command.memberId)
-      result = { ...result, ...nextAvailableFrom(result, policy, state.queueCursor + 1, now) };
+    if (command.operation === 'ASSIGN' && state.currentBidderId === command.memberId) {
+      const advance = nextAvailableFrom(result, policy, state.queueCursor + 1, now);
+      result = {
+        ...result,
+        ...advance,
+        ...(state.currentPhase === 'paused'
+          ? {
+              currentPhase: 'paused' as const,
+              live: { ...(result.live ?? live), pausedPhase: advance.currentPhase },
+            }
+          : {}),
+      };
+    }
     if (command.operation === 'RELEASE') {
       if (!state.bidOrder.some((entry) => entry.memberId === command.memberId))
         return { ok: false, code: 'EXCEPTIONAL_ASSIGNMENT_PARTICIPANT_MISSING' };
@@ -368,7 +420,7 @@ export function reduceLiveBidCommand(
             entry.memberId === command.memberId &&
             policy.stages.find((stage) => stage.id === entry.stageId)?.kind !== 'D_SHIFT',
         );
-      if (!ordinaryTurnPending || state.currentPhase === 'complete') {
+      if (!existingAward && (!ordinaryTurnPending || state.currentPhase === 'complete')) {
         // An already-passed rank turn returns at the current sequence. Reusing
         // the first queue entry would incorrectly rewind a Captain into Days.
         const returned = returnAtCurrentSequence(result.annual ?? annual, {
@@ -393,6 +445,10 @@ export function reduceLiveBidCommand(
         forced: true,
         officialRankUnchanged: true,
         staffingWriteback: false,
+        ...(administratorOverride ? { adminOverride: overridePayload() } : {}),
+        ...(administratorOverride && live.specialty != null
+          ? { interruptedSpecialty: live.specialty }
+          : {}),
         nextMemberId: result.currentBidderId,
       },
       supersedesBidId: null,
@@ -431,6 +487,53 @@ export function reduceLiveBidCommand(
   }
   if (command.type === 'live.record_a_day') {
     if (aDayMembers === undefined) return { ok: false, code: 'FROZEN_A_DAY_POLICY_UNAVAILABLE' };
+    if (administratorOverride) {
+      const award = Object.entries(state.fills).find(
+        ([, fill]) => fill.memberId === command.memberId,
+      );
+      if (!award) return { ok: false, code: 'A_DAY_ASSIGNMENT_INVALID' };
+      const previousADay =
+        state.aDay?.picks.find((pick) => pick.memberId === command.memberId)?.aDay ??
+        award[1].aDay ??
+        null;
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        previousADay === null ? 'A_DAY_TIMING_DEVIATION' : 'A_DAY_CHANGE',
+        previousADay === null
+          ? 'The A-Day is selected by administrator direction instead of the ordinary turn.'
+          : `The recorded A-Day changes from ${previousADay} to ${command.aDay}. The prior choice remains in the audit.`,
+      );
+      const { aDayOverride: _oldOverride, aDayDeferral: _oldDeferral, ...preserved } = award[1];
+      return {
+        ok: true,
+        state: {
+          ...state,
+          fills: { ...state.fills, [award[0]]: { ...preserved, aDay: command.aDay } },
+          aDay:
+            state.aDay === null
+              ? null
+              : {
+                  ...state.aDay,
+                  picks: state.aDay.picks.filter((pick) => pick.memberId !== command.memberId),
+                },
+          annual: settleSelectedMember(annual, command.memberId),
+          live: { ...live, ...(live.specialty != null ? { specialty: null } : {}) },
+          lastSeq: state.lastSeq + 1,
+        },
+        eventType: 'live_command_applied',
+        payload: {
+          operation: 'record_a_day',
+          memberId: command.memberId,
+          positionId: award[0],
+          aDay: command.aDay,
+          before: { aDay: previousADay },
+          after: { aDay: command.aDay },
+          adminOverride: overridePayload(),
+          ...(live.specialty != null ? { interruptedSpecialty: live.specialty } : {}),
+        },
+        supersedesBidId: null,
+      };
+    }
     const picked = handleSubmitADayPick(
       state,
       {
@@ -531,8 +634,9 @@ export function reduceLiveBidCommand(
     };
   }
   if (command.type === 'live.alter_order') {
-    if (state.currentPhase !== 'position_bid') return { ok: false, code: 'SESSION_NOT_ACTIVE' };
-    if (live.specialty !== null && live.specialty !== undefined)
+    if (!administratorOverride && state.currentPhase !== 'position_bid')
+      return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (!administratorOverride && live.specialty !== null && live.specialty !== undefined)
       return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
     const committed = state.bidOrder.slice(0, state.queueCursor);
     const remaining = state.bidOrder.slice(state.queueCursor);
@@ -550,25 +654,60 @@ export function reduceLiveBidCommand(
     ) {
       return { ok: false, code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' };
     }
-    const byMember = new Map<number, typeof remaining>();
+    const suppliedTurns = command.orderedRemainingTurns;
+    if (
+      suppliedTurns !== undefined &&
+      (suppliedTurns.length !== supplied.length ||
+        suppliedTurns.some((turn, index) => turn.memberId !== supplied[index]))
+    )
+      return { ok: false, code: 'ALTER_ORDER_TURN_IDS_MISMATCH' };
+    const turnKey = (entry: { memberId: number; stageId?: string | null }) =>
+      JSON.stringify([entry.memberId, entry.stageId ?? null]);
+    const key = (entry: { memberId: number; stageId?: string | null }) =>
+      suppliedTurns === undefined ? String(entry.memberId) : turnKey(entry);
+    const byTurn = new Map<string, typeof remaining>();
     for (const entry of remaining) {
-      const entries = byMember.get(entry.memberId) ?? [];
+      const identity = key(entry);
+      const entries = byTurn.get(identity) ?? [];
       entries.push(entry);
-      byMember.set(entry.memberId, entries);
+      byTurn.set(identity, entries);
     }
-    const reordered = supplied.map((memberId) => byMember.get(memberId)?.shift());
+    const reordered = (suppliedTurns ?? supplied.map((memberId) => ({ memberId }))).map((turn) =>
+      byTurn.get(key(turn))?.shift(),
+    );
     if (reordered.some((entry) => entry === undefined))
-      return { ok: false, code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' };
+      return {
+        ok: false,
+        code:
+          suppliedTurns === undefined
+            ? 'ALTER_ORDER_MEMBER_SET_MISMATCH'
+            : 'ALTER_ORDER_TURN_SET_MISMATCH',
+      };
     const stageOrder = new Map(policy.stages.map((stage) => [stage.id, stage.order]));
     let priorStageOrder = Number.NEGATIVE_INFINITY;
     for (const entry of reordered) {
       const order = entry?.stageId === undefined ? undefined : stageOrder.get(entry.stageId ?? '');
-      if (order === undefined || order < priorStageOrder)
+      if (order === undefined || (!administratorOverride && order < priorStageOrder))
         return { ok: false, code: 'ALTER_ORDER_STAGE_SEQUENCE_INVALID' };
+      if (order < priorStageOrder)
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          'STAGE_DEVIATION',
+          'The remaining order crosses the frozen rank or stage sequence. Every pending turn is retained.',
+        );
       priorStageOrder = order;
     }
     const beforeMemberIds = remaining.map((entry) => entry.memberId);
     const bidOrder = [...committed, ...(reordered as typeof remaining)];
+    if (administratorOverride)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'ORDER_DEVIATION',
+        'The administrator changes the remaining selection order. Recorded awards and pending selection rights are retained.',
+      );
+    const advance = administratorOverride
+      ? nextAvailableFrom({ ...state, bidOrder }, policy, state.queueCursor, now)
+      : null;
     return {
       ok: true,
       state: {
@@ -576,6 +715,21 @@ export function reduceLiveBidCommand(
         bidOrder,
         currentBidderId: bidOrder[state.queueCursor]?.memberId ?? null,
         turnStartedAtMs: now,
+        ...advance,
+        ...(administratorOverride
+          ? {
+              live: {
+                ...live,
+                currentStageId:
+                  bidOrder[advance?.queueCursor ?? state.queueCursor]?.stageId ?? currentStageId,
+                ...(live.specialty != null ? { specialty: null } : {}),
+                ...(state.currentPhase === 'paused' && advance
+                  ? { pausedPhase: advance.currentPhase }
+                  : {}),
+              },
+              ...(state.currentPhase === 'paused' ? { currentPhase: 'paused' as const } : {}),
+            }
+          : {}),
         lastSeq: state.lastSeq + 1,
       },
       eventType: 'live_command_applied',
@@ -583,6 +737,18 @@ export function reduceLiveBidCommand(
         operation: 'alter_order',
         beforeMemberIds,
         afterMemberIds: supplied,
+        beforeTurns: remaining.map((entry) => ({
+          memberId: entry.memberId,
+          stageId: entry.stageId ?? null,
+        })),
+        afterTurns: reordered.map((entry) => ({
+          memberId: entry?.memberId,
+          stageId: entry?.stageId ?? null,
+        })),
+        ...(administratorOverride ? { adminOverride: overridePayload() } : {}),
+        ...(administratorOverride && live.specialty != null
+          ? { interruptedSpecialty: live.specialty }
+          : {}),
       },
       supersedesBidId: null,
     };
@@ -1011,9 +1177,24 @@ export function reduceLiveBidCommand(
         (replacement.aDay !== null || !positionUsesDeferredADay(policy, replacement.positionId))
       )
         return { ok: false, code: 'CORRECTION_ORDINARY_A_DAY_NOT_REACHED' };
-      if ((prior.aDay !== undefined || priorADay !== null) && replacement.aDay === null)
+      if (
+        !administratorOverride &&
+        (prior.aDay !== undefined || priorADay !== null) &&
+        replacement.aDay === null
+      )
         return { ok: false, code: 'CORRECTION_A_DAY_REQUIRED' };
-      const { aDay: _oldADay, aDayOverride: _oldADayOverride, ...preserved } = prior;
+      if (administratorOverride && replacement.aDay === null)
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          'A_DAY_DEFERRED',
+          'This award retains a pending A-Day choice. The software will prompt at the remaining ordinary turn or after seat selections.',
+        );
+      const {
+        aDay: _oldADay,
+        aDayOverride: _oldADayOverride,
+        aDayDeferral: _oldDeferral,
+        ...preserved
+      } = prior;
       const fill: Fill = {
         ...preserved,
         bidId,
@@ -1021,6 +1202,16 @@ export function reduceLiveBidCommand(
           ? {}
           : { membershipIds: replacement.membershipIds }),
         ...(replacement.aDay === null ? {} : { aDay: replacement.aDay }),
+        ...(administratorOverride && replacement.aDay === null
+          ? {
+              aDayDeferral: {
+                commandId: command.commandId,
+                actorMemberId: command.actor.id,
+                reason: command.reason,
+                positionId: replacement.positionId,
+              },
+            }
+          : {}),
       };
       fills[replacement.positionId] = fill;
       after = { positionId: replacement.positionId, fill };
@@ -1410,8 +1601,30 @@ export function reduceLiveBidCommand(
         ? { membershipIds: command.membershipIds }
         : {}),
       ...(command.aDay === undefined ? {} : { aDay: command.aDay }),
+      ...(administratorOverride &&
+      command.aDay === undefined &&
+      policy.annualOperations?.aDay.execution
+        ? {
+            aDayDeferral: {
+              commandId: command.commandId,
+              actorMemberId: command.actor.id,
+              reason: command.reason,
+              positionId,
+            },
+          }
+        : {}),
     },
   };
+  if (
+    administratorOverride &&
+    command.aDay === undefined &&
+    policy.annualOperations?.aDay.execution
+  )
+    addAdminBidOverrideWarning(
+      overrideWarnings,
+      'A_DAY_DEFERRED',
+      'This award retains a pending A-Day choice. The software will prompt at the remaining ordinary turn or after seat selections.',
+    );
   const advance =
     memberId === state.currentBidderId ? next({ ...state, fills: nextFills }, policy, now) : null;
   return {

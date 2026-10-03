@@ -30,7 +30,10 @@ export function remainingAudienceQueue(state: AudienceQueueState, policy?: Froze
       ) ?? [];
     if (exceptions.length > 1) return false;
     const timing = exceptions[0]?.timing ?? execution?.timing;
-    return timing === 'AFTER_POSITION_SELECTION';
+    return (
+      timing === 'AFTER_POSITION_SELECTION' ||
+      award.fill.aDayDeferral?.positionId === award.positionId
+    );
   }
   const seen = new Set<number>();
   const candidates = [

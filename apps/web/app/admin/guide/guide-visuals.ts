@@ -60,7 +60,7 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
     visual(
       'quick-start',
       'Saved 2026 Current Bid with highlighted version and Mock tab',
-      'Historical Version 9 capture. The current saved Bid is Version 14; the original cutoff remains sealed in Version 11. Verify Version 14 before starting new practice.',
+      'Historical Version 9 capture. The original cutoff remains sealed in Version 11. Verify the latest reviewed saved Bid and the intended run version before starting new practice.',
       ['Version 9 shown is historical.', 'Open Mock Bid for training.'],
     ),
     visual(
@@ -93,7 +93,7 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'live',
       'Read-only Managed Live preflight control',
       'Live readiness is a separate check and does not start Real.',
-      ['Check Managed Live readiness only when reviewing blockers.'],
+      ['Check Real Bid only when reviewing blockers.'],
     ),
     visual(
       'participation',
@@ -334,7 +334,7 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'live-readiness',
       'Managed Live readiness blocker panel',
       'Read the server Live preflight and resolve each listed blocker before any Real start.',
-      ['Run Check Managed Live readiness.', 'Follow the blocker evidence path.'],
+      ['Run Check Real Bid.', 'Follow the blocker evidence path.'],
     ),
     visual(
       'operator-authority',
@@ -487,7 +487,7 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
       'live-readiness',
       'Read-only Managed Live preflight blocker panel',
       'Inspect server blockers and linked source evidence before a Real session.',
-      ['Check Managed Live readiness.', 'Review each named blocker.'],
+      ['Check Real Bid.', 'Review each named blocker.'],
     ),
     visual(
       'operator-authority',

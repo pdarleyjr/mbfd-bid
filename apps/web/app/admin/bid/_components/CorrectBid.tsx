@@ -111,6 +111,8 @@ export function CorrectBid(props: {
   commandsBlocked?: boolean | undefined;
   overrideAllowed?: boolean | undefined;
   overridePositionIds?: readonly string[] | undefined;
+  openRequest?: number | undefined;
+  requestedMemberId?: number | null | undefined;
 }) {
   const csrfFetch = useMemo(
     () =>
@@ -139,6 +141,17 @@ export function CorrectBid(props: {
     command: Command;
     generation: number;
   } | null>(null);
+  const handledOpenRequest = useRef(0);
+  useEffect(() => {
+    if (
+      !props.openRequest ||
+      props.openRequest <= handledOpenRequest.current ||
+      props.commandsBlocked
+    )
+      return;
+    handledOpenRequest.current = props.openRequest;
+    void start();
+  }, [props.openRequest, props.commandsBlocked]);
   const inFlight = useRef(false);
   const contextGeneration = useRef(0);
   const minimumReadbackSequence = useRef(0);
@@ -254,6 +267,18 @@ export function CorrectBid(props: {
       );
     setReadback(data);
     setReadbackFresh(true);
+    if (
+      props.requestedMemberId != null &&
+      draft.current.source?.memberId !== props.requestedMemberId
+    ) {
+      const requested = data.sources.find(
+        (entry) => entry.memberId === props.requestedMemberId && entry.status === 'ACTIVE',
+      );
+      if (requested) {
+        choose(requested);
+        return;
+      }
+    }
     const previous = draft.current;
     const retained = data.sources.find(
       (entry) =>
@@ -576,8 +601,7 @@ export function CorrectBid(props: {
                         }
                       }}
                     />
-                    Administrator override · correct to any open opportunity, with eligibility and
-                    order advisories.
+                    Allow policy exceptions
                   </Label>
                 ) : null}
                 <div>
@@ -637,7 +661,7 @@ export function CorrectBid(props: {
                           setADay(event.target.value);
                         }}
                       >
-                        <option value="">A-Day remains due at ordinary turn</option>
+                        <option value="">Pick A-Day later</option>
                         {options.map((day) => (
                           <option key={day} value={day}>
                             {groupLabel(day)}

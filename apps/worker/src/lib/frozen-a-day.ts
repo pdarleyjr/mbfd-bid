@@ -146,7 +146,14 @@ export function evaluateFrozenADays(
     const timing = timingForPosition(execution, positionId);
     if (!timing.ok) return { ok: false, code: 'A_DAY_TIMING_EXCEPTION_CONFLICT' };
     const selectedADay = fill.aDay;
-    if (timing.timing === 'SIMULTANEOUS' && selectedADay === undefined)
+    const deferredApproval = fill.aDayDeferral;
+    const approvedDeferral =
+      deferredApproval !== undefined &&
+      deferredApproval.positionId === positionId &&
+      deferredApproval.commandId.length > 0 &&
+      deferredApproval.actorMemberId > 0 &&
+      deferredApproval.reason.trim().length >= 4;
+    if (timing.timing === 'SIMULTANEOUS' && selectedADay === undefined && !approvedDeferral)
       return { ok: false, code: 'A_DAY_REQUIRED_WITH_SELECTION' };
     seen.add(fill.memberId);
     phase1Picks.push({ positionId, memberId: fill.memberId, shift: position.shift });
@@ -200,12 +207,21 @@ export function evaluateFrozenADays(
     );
   };
   const applyReviewedPick = (pick: ADayPick): { ok: true } | { ok: false; code: string } => {
+    const currentOverride = input.adminOverrideMemberId === pick.memberId;
     if (
       pick.shift !== 'D' &&
       pick.aDay.startsWith('G') &&
       !availableGroups.has(pick.aDay as 'G1' | 'G2' | 'G3' | 'G4')
-    )
-      return { ok: false, code: 'GROUP_FULL' };
+    ) {
+      if (!currentOverride && !approvedCapacityDeparture(pick))
+        return { ok: false, code: 'GROUP_FULL' };
+      if (currentOverride)
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          'A_DAY_POLICY_DEVIATION:GROUP_NOT_ENABLED',
+          `The administrator selects ${pick.aDay}, outside the frozen enabled groups. The source configuration remains unchanged.`,
+        );
+    }
     const validation = canPick(engine, pick.memberId, pick.aDay);
     if (!validation.ok) {
       const businessRule = [
@@ -214,7 +230,6 @@ export function evaluateFrozenADays(
         'SCOPED_A_DAY_MAXIMUM',
         'OFFICER_INVARIANT_VIOLATED',
       ].includes(validation.reasonCode);
-      const currentOverride = input.adminOverrideMemberId === pick.memberId;
       if (!businessRule || (!currentOverride && !approvedCapacityDeparture(pick)))
         return { ok: false, code: validation.reasonCode };
       if (currentOverride)

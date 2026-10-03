@@ -114,7 +114,7 @@ export function BidOperatorWorkspace({
           <div className="border border-warning/30 bg-warning/10 p-3 text-sm">
             <p>
               {operator?.overrideAllowed
-                ? 'This member is waiting. Use an administrator override to bid for them out of order.'
+                ? 'This member is waiting. You can still bid for them.'
                 : 'This member is waiting. Position selections belong to the member who is up now.'}
             </p>
             {operator?.overrideAllowed ? (
@@ -123,7 +123,7 @@ export function BidOperatorWorkspace({
                 className="mt-2 mr-3 min-h-11 font-semibold underline"
                 onClick={() => operator.requestOverride()}
               >
-                Bid for this member · Administrator override
+                Bid for this member
               </button>
             ) : null}
             {operator?.activeMemberId != null ? (

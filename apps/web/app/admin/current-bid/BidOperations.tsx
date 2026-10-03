@@ -84,8 +84,10 @@ export function BidOperations({
             Continue my Mock
           </Link>
         ) : null}
-        <Button onClick={() => onOpen('live')}>Prepare Real Bid</Button>
-        <Button onClick={() => onOpen('results')}>VIEW RESULTS</Button>
+        <Button disabled={disabled || !versionId} onClick={() => onOpen('live')}>
+          Prepare Real Bid
+        </Button>
+        <Button onClick={() => onOpen('results')}>Results</Button>
         <Link
           href="/admin/rehearsal"
           className="inline-flex min-h-11 items-center px-3 text-sm underline"
@@ -98,7 +100,7 @@ export function BidOperations({
           ? 'Save or resolve the current draft before creating a session.'
           : ready === false
             ? 'Review the Mock blockers below before practice.'
-            : 'A new Mock uses this saved version. Existing Mocks keep their own rules and selections.'}
+            : 'Both modes use the saved Bid. Each session keeps its own selections.'}
       </p>
       <details>
         <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">

@@ -44,6 +44,11 @@ describe('Administrator Guide content contract', () => {
     });
     expect(quickStart?.steps.join(' ')).toContain('time-in-grade order');
     expect(quickStart?.steps.join(' ')).toContain('department-service order');
+    expect(quickStart?.summary).toContain('latest reviewed saved 2026 Bid');
+    expect(quickStart?.steps[0]).toContain('on-screen version');
+    expect(quickStart?.steps[0]).not.toContain('Version 14');
+    expect(quickStart?.steps.join(' ')).toContain('historical Version 14 Mock');
+    expect(quickStart?.important).toContain('do not establish current readiness');
     expect(quickStart?.steps.join(' ')).toMatch(/A Mock (?:is a rehearsal|never starts Real)/);
     expect(quickStart?.important).toMatch(
       /Creating and starting (?:a Live Bid|Live) remain separate/,
@@ -107,7 +112,7 @@ describe('Administrator Guide content contract', () => {
     expect(edit?.steps.join(' ')).toContain('Save Bid checks and applies those profile changes');
     expect(edit?.steps.join(' ')).toContain('not a separate required approval step');
     const live = GUIDE_SECTIONS.find((section) => section.id === 'current-bid-live-preflight');
-    expect(live?.controls).toContain('Confirm Live session creation');
+    expect(live?.controls).toContain('Confirm Real Bid creation');
     expect(live?.steps.join(' ')).toContain('readiness check is read-only');
     expect(live?.steps.join(' ')).toContain('fresh readiness check and confirmation');
     expect(live?.important).toContain('Creation and Start are separate actions');
@@ -135,8 +140,9 @@ describe('Administrator Guide content contract', () => {
     expect(rules?.steps.join(' ')).toContain('Specialized Timeline');
     expect(rules?.steps.join(' ')).toContain('overlapping scopes are rejected');
     const live = GUIDE_SECTIONS.find((section) => section.id === 'live-bid');
-    expect(live?.steps.join(' ')).toContain('reason and required evidence');
-    expect(live?.steps.join(' ')).toContain('Selection A-Day with the award');
+    expect(live?.steps.join(' ')).toContain('Review the advisories, add a reason and confirm');
+    expect(live?.steps.join(' ')).toContain('Review contacts and evidence');
+    expect(live?.steps.join(' ')).toContain('Choose A-Day with a normal award');
     expect(filterGuideSections('station pool').map((section) => section.id)).toContain(
       'current-bid-execution-rules',
     );

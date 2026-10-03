@@ -109,7 +109,7 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
     await teardownTestD1(h);
   });
 
-  async function saved(content: BidDefinitionContent): Promise<Version> {
+  async function saved(content: BidDefinitionContent, restoreVersionId?: string): Promise<Version> {
     const head = await loadBidDefinitionHead(h.env.DB, 2026);
     const previous = head ? await loadBidDefinitionVersion(h.env.DB, 2026, head.versionId) : null;
     const source = await captureBidDefinitionSource(h.env.DB, 2026);
@@ -129,7 +129,9 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
             }
           : { kind: 'legacy', sourceToken: source.sourceToken },
       reason: 'Synthetic source-bound retained participation successor',
-      intent: { operation: 'save', content },
+      intent: restoreVersionId
+        ? { operation: 'restore', versionId: restoreVersionId }
+        : { operation: 'save', content },
     });
     if (!result.ok) throw new Error(JSON.stringify(result));
     const next = await loadBidDefinitionHead(h.env.DB, 2026);
@@ -655,6 +657,107 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
         )
         .get(),
     ).toEqual({ n: 0 });
+  });
+
+  it('ordinary Save and Mock check accept generic execution successors while sealed evidence and Real holds remain intact', async () => {
+    const f = await fixture();
+    const { result } = await capture();
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    const next = structuredClone(f.retained.content);
+    if (next.settings?.v !== 3 || !next.policy) throw new Error('V3 source required');
+    next.settings.evidenceFreeze = result.response.update.freezePin;
+    next.sourceDecisions = result.response.update.sourceDecisions;
+    const policy = next.settings.livePolicy;
+    const annual = policy.annualOperations;
+    if (!annual) throw new Error('Annual policy required');
+    policy.stages = [...policy.stages].reverse().map((stage, order) => ({ ...stage, order }));
+    annual.stageOrder = policy.stages.map((stage) => stage.id);
+    annual.specialties = [
+      {
+        id: 'synthetic-generic-specialty',
+        label: 'Synthetic reviewed specialty',
+        mode: 'INTERRUPTING',
+        opportunityPositionIds: [OPEN],
+        requiredCredentialNames: [],
+        requiredSpecialtyCodes: [],
+        points: [],
+        tieBreakChain: ['RANK_SENIORITY'],
+      },
+    ];
+    annual.aDay.max = 5;
+    annual.aDay.execution = {
+      timing: 'SIMULTANEOUS',
+      officersPerGroup: null,
+      constraints: [],
+      sourceRef: 'Synthetic reviewed A-Day execution successor',
+      timingExceptions: [
+        {
+          id: 'synthetic-deferred-group',
+          label: 'Synthetic ordinary turn group selection',
+          timing: 'AFTER_POSITION_SELECTION',
+          sourceRef: 'Synthetic reviewed out-of-order specialty workflow',
+          positionIds: [OPEN],
+          profileIds: [],
+        },
+      ],
+    };
+    next.policy.executionPolicy = structuredClone(policy);
+    const frozen = await loadPinnedBidEvidenceFreeze(
+      getDb(h.env.DB),
+      2026,
+      result.response.update.freezeId,
+    );
+    if (!frozen) throw new Error('Saved evidence required');
+    const sealedBefore = structuredClone(frozen.evaluation);
+    const successor = await saved(next);
+    const restoredBaseline = await saved(f.baseline.content, f.baseline.row.id);
+    const restoredSuccessor = await saved(next, successor.row.id);
+    expect(restoredSuccessor.row.restored_from_id).toBe(successor.row.id);
+    expect(restoredSuccessor.row.predecessor_id).toBe(restoredBaseline.row.id);
+    expect(restoredSuccessor.sha256).toBe(successor.sha256);
+    expect(restoredSuccessor.row.id).not.toBe(successor.row.id);
+    const prepared = await prepare(restoredSuccessor);
+    if (!prepared.ok) throw new Error(JSON.stringify(prepared));
+    expect(prepared.snapshot.members).toEqual(sealedBefore.members);
+    expect(prepared.snapshot.settings).toEqual(next.settings);
+    expect(
+      (await loadPinnedBidEvidenceFreeze(getDb(h.env.DB), 2026, frozen.row.id))?.evaluation,
+    ).toEqual(sealedBefore);
+    expect(await prepare(f.baseline)).toMatchObject({ ok: true });
+    const previewResponse = await request('bid/2026/preview', {
+      kind: 'mock',
+      versionId: restoredSuccessor.row.id,
+      versionSha256: restoredSuccessor.sha256,
+    });
+    expect(previewResponse.status, await previewResponse.clone().text()).toBe(200);
+    const preview = (await previewResponse.json()) as {
+      contextSha256: string;
+      runtimeSourceToken: string;
+    };
+    const created = await request(
+      'bid/2026/mock-sessions',
+      {
+        versionId: restoredSuccessor.row.id,
+        versionSha256: restoredSuccessor.sha256,
+        expectedContextSha256: preview.contextSha256,
+        expectedSourceToken: preview.runtimeSourceToken,
+      },
+      { key: 'synthetic-generic-execution-mock' },
+    );
+    expect(created.status, await created.clone().text()).toBe(201);
+    expect(
+      await prepareBidDefinitionRun(h.env.DB, {
+        year: 2026,
+        versionId: restoredSuccessor.row.id,
+        versionSha256: restoredSuccessor.sha256,
+        bidSessionId: 'synthetic-generic-execution-live-hold',
+        capturedAtMs: Date.now(),
+        mode: 'live',
+      }),
+    ).toMatchObject({ ok: false, code: 'credential_import_dispute_requires_review' });
+    expect(h.sqlite.prepare('SELECT COUNT(*) n FROM bid_sessions WHERE is_mock=0').get()).toEqual({
+      n: 0,
+    });
   });
 
   it('binds replay to actor/request, enforces immutable storage and rejects changed source decisions or forged new pins', async () => {

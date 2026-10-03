@@ -348,6 +348,91 @@ describe('annual live operator and presentation surfaces', () => {
     expect(forbidden.status).toBe(403);
   });
 
+  it.each([0, 1])(
+    'guides a scored profile without an interrupting policy in mode is_mock=%s, read-only',
+    async (isMock) => {
+      const row = h.sqlite
+        .prepare('SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?')
+        .get(SESSION) as { snapshot_json: string };
+      const snapshot = JSON.parse(row.snapshot_json);
+      snapshot.settings.livePolicy.annualOperations.specialties = [];
+      snapshot.ruleBookMaterial.rules[0].requiredCriteriaJson = JSON.stringify({
+        rank: ['FF'],
+        credentials: ['Marine'],
+        custom: [],
+      });
+      snapshot.ruleBookMaterial.rules[0].pointsPreferenceJson = JSON.stringify({
+        max: 5,
+        items: [{ credential: 'Marine', points: 5, requiresOpsPair: false }],
+      });
+      const advisorySession = `synthetic-all-profile-${isMock}`;
+      h.sqlite
+        .prepare(
+          "INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,is_mock) VALUES (?,2027,1,'position_bid',1,180,2,0,?)",
+        )
+        .run(advisorySession, isMock);
+      h.sqlite
+        .prepare(
+          "INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES (?,'2027.1','2027.1',1,?,1)",
+        )
+        .run(advisorySession, JSON.stringify(snapshot));
+      const stateRow = h.sqlite
+        .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+        .get(SESSION) as { state_json: string };
+      const state = JSON.parse(stateRow.state_json);
+      state.bidSessionId = advisorySession;
+      state.fills = {};
+      state.currentBidderId = 1;
+      state.queueCursor = 0;
+      state.live.specialty = null;
+      h.sqlite
+        .prepare(
+          "INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) VALUES (?,8,?,'advisory-c8',1,1)",
+        )
+        .run(advisorySession, JSON.stringify(state));
+      const before = h.sqlite.prepare('SELECT count(*) AS count FROM bid_command_receipts').get();
+      const response = await app.fetch(
+        new Request(
+          `http://x/api/admin/bid-session/${advisorySession}/specialty-review?member_id=1&position_id=A101`,
+          { headers: { Authorization: `Bearer ${await token('admin', 99)}` } },
+        ),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        status: 'ADVISORY_HIGHER_PRIORITY',
+        sequence: 8,
+        selection_review: {
+          mode: 'ADVISORY',
+          specialty_id: null,
+          specialty_label: 'Firefighter',
+          higher_priority_candidates: [{ member_id: 2, points: 5, policy_rank: 1 }],
+          eligible_related_position_ids: ['A101'],
+          a_day_timing: 'ADMIN_REVIEW',
+        },
+      });
+      expect(h.sqlite.prepare('SELECT count(*) AS count FROM bid_command_receipts').get()).toEqual(
+        before,
+      );
+      expect(
+        (
+          h.sqlite
+            .prepare(
+              'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+            )
+            .get(advisorySession) as { snapshot_json: string }
+        ).snapshot_json,
+      ).toBe(JSON.stringify(snapshot));
+      expect(
+        (
+          h.sqlite
+            .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+            .get(advisorySession) as { state_json: string }
+        ).state_json,
+      ).toBe(JSON.stringify(state));
+    },
+  );
+
   it('explains an unavailable selection and exposes frozen credential counters', async () => {
     const response = await app.fetch(
       new Request(
@@ -368,6 +453,7 @@ describe('annual live operator and presentation surfaces', () => {
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
     expect(await controls.json()).toMatchObject({
+      remaining_turns: [{ memberId: 2, stageId: 'ff', stage_label: 'ABC Firefighter' }],
       credential_coverage: {
         availability: 'AVAILABLE',
         source: 'FROZEN_SESSION_SNAPSHOT',

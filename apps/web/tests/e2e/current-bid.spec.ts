@@ -115,7 +115,7 @@ test('operator navigation reveals and focuses every destination without manual s
   for (const [action, title, view] of [
     ['Review eligibility', 'Bid Blueprint', 'blueprint'],
     ['New Mock Bid', 'Mock Bid', 'mock'],
-    ['VIEW RESULTS', 'Results', 'results'],
+    ['Results', 'Results', 'results'],
     ['Prepare Real Bid', 'Live Bid', 'live'],
   ] as const) {
     await page.getByRole('button', { name: action, exact: true }).click();
@@ -492,7 +492,7 @@ for (const viewport of [
       await openView(page, label);
       await expect(
         workspace(page).getByRole('heading', {
-          name: label === 'Live Bid' ? 'Managed Live preflight' : label,
+          name: label === 'Live Bid' ? 'Prepare Real Bid' : label,
           exact: true,
         }),
       ).toBeVisible();
@@ -537,13 +537,13 @@ for (const viewport of [
       if (label === 'Live Bid') {
         await expect(
           workspace(page).getByRole('button', {
-            name: 'Check Managed Live readiness',
+            name: 'Check Real Bid',
             exact: true,
           }),
         ).toBeEnabled();
-        await expect(workspace(page)).toContainText('No Live run is created by this check.');
+        await expect(workspace(page)).toContainText('Checking does not start or create a session.');
         await expect(
-          workspace(page).getByRole('link', { name: 'Open Live Bid console', exact: true }),
+          workspace(page).getByRole('link', { name: 'Open Real Bid', exact: true }),
         ).toHaveCount(0);
       }
       await assertWidth(page);

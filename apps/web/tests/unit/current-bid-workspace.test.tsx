@@ -862,6 +862,33 @@ describe('Current Bid version history and restore', () => {
     expect(requests.filter((request) => request.path === 'preview')).toHaveLength(1);
     expect(BidDraftSchema.safeParse(stored()).success).toBe(true);
   });
+  it('returns directly from preview to editing and saves the exact reviewed draft without a navigation detour', async () => {
+    handle = (request) => {
+      if (request.path === 'preview') return response(preview(stored()?.content ?? head.content));
+      if (request.path === 'versions') {
+        head = current(3, EDITED_NOTES);
+        return response(receipt(), 201);
+      }
+      return undefined;
+    };
+    await mount();
+    await editAndDescribe();
+    await click('Preview changes (optional)');
+    expect(writes()).toHaveLength(0);
+    expect(button('Back to editing').disabled).toBe(false);
+    expect(button('Save reviewed changes').disabled).toBe(false);
+    await click('Back to editing');
+    expect(field('Bid notes').value).toBe(EDITED_NOTES);
+    await click('Preview changes (optional)');
+    await click('Save reviewed changes');
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0]?.body).toMatchObject({
+      content: { notes: { bid: EDITED_NOTES } },
+      reason: `Updated Bid: notes. Note: ${REASON}`,
+    });
+    expect(container.textContent).toContain('Version 3 saved.');
+    expect(stored()?.pending).toBeNull();
+  });
 });
 
 describe('Current Bid managed Live workflow', () => {
@@ -920,7 +947,7 @@ describe('Current Bid managed Live workflow', () => {
       };
       await mount();
       await click('Live Bid');
-      await click('Check Managed Live readiness');
+      await click('Check Real Bid');
       expect(requests.filter((request) => request.path === 'preview')).toMatchObject([
         {
           key: null,
@@ -933,18 +960,18 @@ describe('Current Bid managed Live workflow', () => {
       ]);
       expect(writes()).toHaveLength(0);
       expect(stored()?.pending).toBeNull();
-      await click('Create Live session…');
       expect(writes()).toHaveLength(0);
-      await click('Confirm Live session creation');
+      await click('Confirm Real Bid creation');
       expect(persistedBeforeDispatch).toBe(true);
       expect(writes()).toHaveLength(1);
       expect(writes()[0]?.key).toMatch(/^[0-9a-f-]{36}$/i);
       expect(stored()?.pending).toBeNull();
-      expect(container.textContent).toContain('Live session created; it has not started.');
-      expect(container.querySelector('a[href="/admin/bid"]')?.textContent).toContain(
-        'Open Live console',
-      );
-      expect(() => button('Create Live session…')).toThrow('Missing public button');
+      expect(container.textContent).toContain('Real session created; ready to start.');
+      expect(
+        container.querySelector('a[href="/admin/bid?session_id=synthetic-live-session"]')
+          ?.textContent,
+      ).toContain('Open Real Bid');
+      expect(() => button('Confirm Real Bid creation')).toThrow('Missing public button');
     },
   );
 
@@ -979,28 +1006,26 @@ describe('Current Bid managed Live workflow', () => {
       };
       await mount();
       await click('Live Bid');
-      await click('Check Managed Live readiness');
-      await click('Create Live session…');
-      await click('Confirm Live session creation');
+      await click('Check Real Bid');
+      await click('Confirm Real Bid creation');
       expect(stored()?.pending).toBeNull();
-      expect(container.textContent).not.toContain('Server Live readiness: ready.');
-      expect(() => button('Create Live session…')).toThrow('Missing public button');
-      expect(() => button('Confirm Live session creation')).toThrow('Missing public button');
+      expect(container.textContent).not.toContain('Ready to prepare the Real Bid.');
+      expect(() => button('Confirm Real Bid creation')).toThrow('Missing public button');
+      expect(() => button('Confirm Real Bid creation')).toThrow('Missing public button');
       expect(writes()).toHaveLength(1);
       if (code === 'bid_definition_or_source_changed') {
-        expect(button('Check Managed Live readiness').disabled).toBe(true);
+        expect(button('Check Real Bid').disabled).toBe(true);
         await click('Load current saved Bid');
       }
-      expect(button('Check Managed Live readiness').disabled).toBe(false);
-      await click('Check Managed Live readiness');
-      expect(() => button('Confirm Live session creation')).toThrow('Missing public button');
-      await click('Create Live session…');
+      expect(button('Check Real Bid').disabled).toBe(false);
+      await click('Check Real Bid');
+      expect(button('Confirm Real Bid creation').disabled).toBe(false);
       expect(writes()).toHaveLength(1);
-      await click('Confirm Live session creation');
+      await click('Confirm Real Bid creation');
       expect(writes().map((request) => request.body)).toStrictEqual([mockBody(), mockBody(fresh)]);
       expect(writes()[1]?.key).not.toBe(writes()[0]?.key);
       expect(stored()?.pending).toBeNull();
-      expect(container.textContent).toContain('Live session created; it has not started.');
+      expect(container.textContent).toContain('Real session created; ready to start.');
     },
   );
 
@@ -1016,18 +1041,17 @@ describe('Current Bid managed Live workflow', () => {
     };
     await mount();
     await click('Live Bid');
-    await click('Check Managed Live readiness');
-    await click('Create Live session…');
-    await click('Confirm Live session creation');
+    await click('Check Real Bid');
+    await click('Confirm Real Bid creation');
     const pending = stored()?.pending;
     expect(pending).toMatchObject({ path: 'live-sessions', body: mockBody() });
-    expect(button('Check Managed Live readiness').disabled).toBe(true);
+    expect(button('Check Real Bid').disabled).toBe(true);
     expect(await stepUpPreservation()).toMatchObject([{ status: 'fulfilled' }]);
     head = current(3, 'Synthetic newer Bid');
     await remount();
     await click('Live Bid');
     expect(stored()?.pending).toStrictEqual(pending);
-    expect(button('Check Managed Live readiness').disabled).toBe(true);
+    expect(button('Check Real Bid').disabled).toBe(true);
     await click('Retry original request');
     expect(writes()).toHaveLength(2);
     expect(writes()[1]?.serializedBody).toBe(writes()[0]?.serializedBody);
@@ -1036,7 +1060,7 @@ describe('Current Bid managed Live workflow', () => {
     expect(requests.filter((request) => request.path === 'preview')).toHaveLength(1);
     expect(stored()?.pending).toBeNull();
     expect(stored()?.base.version?.versionNumber).toBe(3);
-    expect(container.textContent).toContain('Live session created; it has not started.');
+    expect(container.textContent).toContain('Real session created; ready to start.');
   });
 
   it.each(['mock', 'foreign-context'] as const)(
@@ -1060,13 +1084,12 @@ describe('Current Bid managed Live workflow', () => {
       };
       await mount();
       await click('Live Bid');
-      await click('Check Managed Live readiness');
-      await click('Create Live session…');
-      await click('Confirm Live session creation');
+      await click('Check Real Bid');
+      await click('Confirm Real Bid creation');
       expect(stored()?.pending).toMatchObject({ path: 'live-sessions', body: mockBody() });
       expect(container.textContent).toContain('invalid server response');
-      expect(container.textContent).not.toContain('Live session created; it has not started.');
-      expect(button('Check Managed Live readiness').disabled).toBe(true);
+      expect(container.textContent).not.toContain('Real session created; ready to start.');
+      expect(button('Check Real Bid').disabled).toBe(true);
       expect(button('Retry original request').disabled).toBe(false);
       expect(writes()).toHaveLength(1);
     },
@@ -1379,10 +1402,10 @@ describe('Current Bid Managed Live preflight', () => {
         : undefined;
     await mount();
     await click('Live Bid');
-    expect(container.textContent).toContain('Managed Live preflight');
-    expect(container.textContent).toContain('No Live run is created by this check.');
+    expect(container.textContent).toContain('Prepare Real Bid');
+    expect(container.textContent).toContain('Checking does not start or create a session.');
     expect(container.textContent).not.toContain('Open Live Bid console');
-    await click('Check Managed Live readiness');
+    await click('Check Real Bid');
     expect(requests.filter((request) => request.path === 'preview')).toMatchObject([
       {
         method: 'POST',
@@ -1391,7 +1414,7 @@ describe('Current Bid Managed Live preflight', () => {
       },
     ]);
     expect(container.textContent).toContain(
-      'Live policy preparation is blocked: bid configuration annual policy document invalid.',
+      'Real Bid needs review: bid configuration annual policy document invalid.',
     );
     expect(writes()).toHaveLength(0);
     expect(container.textContent).not.toContain('Create Live');

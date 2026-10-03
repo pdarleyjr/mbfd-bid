@@ -707,7 +707,7 @@ export function CurrentBidWorkspace({
           </p>
           <h1 className="mt-1 font-heading text-3xl">{year} Current Bid</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Review the saved Bid, update credentials, and practice selections.
+            Prepare, run or practice your annual Bid.
           </p>
         </div>
         <form
@@ -1130,6 +1130,43 @@ export function CurrentBidWorkspace({
                 title="Bid Blueprint"
                 description="Review the proposed configuration against the current saved Bid. Preview does not save a version or start a run."
               >
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={locked}
+                    onClick={() => selectView('edit', section)}
+                  >
+                    Back to editing
+                  </Button>
+                  {preview && previewContent === JSON.stringify(draft.content) && dirty ? (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      disabled={locked || stale}
+                      onClick={() => {
+                        const current = draftRef.current;
+                        if (
+                          !current ||
+                          locked ||
+                          stale ||
+                          previewContent !== JSON.stringify(current.content)
+                        )
+                          return;
+                        void execute({
+                          path: 'versions',
+                          key: crypto.randomUUID(),
+                          body: {
+                            expected: current.base.expected,
+                            content: current.content,
+                            reason: bidSaveSummary(current),
+                          },
+                        });
+                      }}
+                    >
+                      Save reviewed changes
+                    </Button>
+                  ) : null}
+                </div>
                 <Button
                   type="button"
                   variant="primary"

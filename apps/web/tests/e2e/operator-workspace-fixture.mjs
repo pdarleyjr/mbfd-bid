@@ -85,7 +85,7 @@ export function operatorWorkspaceFixture(url) {
         { ordinal: 2, memberId: 2, pool: 'OFC' },
       ],
       bidOrderPreview: false,
-      isMock: true,
+      isMock: !id.includes('-systemic-real-'),
       mockControlRevision: 1,
       sessionStartedAt: Date.now() - 60_000,
       turnStartedAtMs: Date.now(),
@@ -113,5 +113,12 @@ export function operatorWorkspaceFixture(url) {
     fills: {},
     specialties: [],
     active: null,
+    ...(id.includes('-systemic-')
+      ? {
+          admin_override_allowed: true,
+          admin_override_member_ids: [1, 2],
+          admin_override_position_ids: ['A-fixture', 'B-fixture'],
+        }
+      : {}),
   };
 }
