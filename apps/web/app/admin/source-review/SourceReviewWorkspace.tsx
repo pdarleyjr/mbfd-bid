@@ -155,9 +155,8 @@ export function SourceReviewWorkspace() {
     <main className="mx-auto max-w-6xl space-y-6">
       <h1 className="font-heading text-3xl">Source decisions and changes — {year}</h1>
       <p>
-        Keep policy questions beside the affected configuration. An open recorded issue prevents a
-        new setup from being approved. Recording a resolution does not edit a rule or rewrite an
-        existing bid.
+        Open questions stay visible as launch advisories. Recording a resolution does not edit a
+        rule or rewrite an existing bid.
       </p>
       <Link className="underline" href={`/admin/annual-plan?year=${year}&stage=6` as Route}>
         Return to annual impact review
@@ -274,7 +273,7 @@ export function SourceReviewWorkspace() {
               value={draft.status}
               onChange={(e) => setDraft({ ...draft, status: e.target.value as Issue['status'] })}
             >
-              <option value="OPEN">Needs a decision — blocks new approval</option>
+              <option value="OPEN">Needs a decision — launch advisory</option>
               <option value="RESOLVED">Resolved by supporting authority</option>
             </NativeSelect>
           </Label>

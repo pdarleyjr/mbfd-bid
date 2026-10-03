@@ -333,8 +333,8 @@ export const GUIDE_VISUALS: Readonly<Record<string, readonly GuideVisual[]>> = {
     visual(
       'live-readiness',
       'Managed Live readiness blocker panel',
-      'Read the server Live preflight and resolve each listed blocker before any Real start.',
-      ['Run Check Real Bid.', 'Follow the blocker evidence path.'],
+      'Review launch advisories, acknowledge them once, and correct any hard data or access errors.',
+      ['Run Check Real Bid.', 'Create Real with advisories when required.'],
     ),
     visual(
       'operator-authority',

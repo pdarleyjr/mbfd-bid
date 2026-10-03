@@ -1133,6 +1133,67 @@ describe('Current Bid managed Mock workflow', () => {
     expect(button('Create Mock Bid from Version 2').disabled).toBe(false);
   });
 
+  it('records the exact launch acknowledgement with the recoverable Mock request while source questions stay open', async () => {
+    head.content.sourceDecisions = Array.from({ length: 27 }, (_, index) => ({
+      issueId: `synthetic-open-${index}`,
+      title: `Synthetic question ${index}`,
+      question: 'Recorded source question',
+      area: 'annual-policy',
+      status: 'OPEN' as const,
+      sourceRef: 'Synthetic reviewed source',
+      effectiveOn: '2027-01-01',
+      decision: '',
+    }));
+    const launchReview = {
+      advisorySha256: 'f'.repeat(64),
+      requiresAcknowledgement: true,
+      advisories: [
+        {
+          id: 'source_decisions',
+          code: 'unresolved_source_decisions',
+          affectedCount: 27,
+          detail: '27 source questions remain open. Starting does not resolve them.',
+        },
+        {
+          id: 'qualification_holds',
+          code: 'credential_import_dispute_requires_review',
+          affectedCount: 2,
+          detail: '2 held credential assertions remain excluded from eligibility and points.',
+        },
+      ],
+    };
+    const checked = { ...mockPreview(), launchReview };
+    const body = {
+      ...mockBody(),
+      launchAcknowledgement: { advisorySha256: launchReview.advisorySha256 },
+    };
+    handle = (request) => {
+      if (request.path === 'preview') return response(checked);
+      if (request.path === 'mock-sessions') {
+        expect(request.body).toStrictEqual(body);
+        expect(stored()?.pending).toStrictEqual({ path: 'mock-sessions', key: request.key, body });
+        return response({ ...mockReceipt(), launchReview, launchAcknowledged: true }, 201);
+      }
+      return undefined;
+    };
+    await mount();
+    await click('Mock Bid');
+    await click('Check Mock readiness');
+    const disclosure = [...container.querySelectorAll('details')].find(
+      (node) => node.querySelector('summary')?.textContent === 'Launch advisories (2)',
+    );
+    expect(disclosure?.open).toBe(false);
+    expect(disclosure?.querySelectorAll('li')).toHaveLength(2);
+    expect(writes()).toHaveLength(0);
+    await click('Create Mock with advisories');
+    expect(writes()).toHaveLength(1);
+    expect(stored()?.pending).toBeNull();
+    expect(container.textContent).toContain('Mock Bid created from Version 2.');
+    expect(requests.some((request) => request.path.includes('/start'))).toBe(false);
+    expect(head.content.sourceDecisions).toHaveLength(27);
+    expect(head.content.sourceDecisions.every((decision) => decision.status === 'OPEN')).toBe(true);
+  });
+
   it('shows server readiness blocks without inventing a creation action or pool', async () => {
     handle = (request) =>
       request.path === 'preview'

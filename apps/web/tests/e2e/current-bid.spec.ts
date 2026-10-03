@@ -46,6 +46,195 @@ const opportunityRows = (page: Page) => opportunityList(page).locator('button[ar
 const historyRows = (page: Page) => workspace(page).getByRole('button', { name: /^Version \d+\b/ });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+for (const mode of ['mock', 'live'] as const) {
+  test(`saved ${mode} launch acknowledges source and credential advisories once`, async ({
+    page,
+  }) => {
+    const state = await installCurrentBidFixtures(page);
+    state.current.content.sourceDecisions.push(
+      ...Array.from({ length: 27 }, (_, index) => ({
+        issueId: `synthetic-launch-question-${index}`,
+        title: `Synthetic source question ${index}`,
+        question: 'Synthetic unresolved source question',
+        area: 'annual-policy' as const,
+        status: 'OPEN' as const,
+        decision: '',
+        effectiveOn: '2027-01-01',
+        sourceRef: 'Synthetic source review',
+        blockingClassification: 'BLOCKS_REAL_BID_ACTIVATION' as const,
+      })),
+    );
+    const version = state.current.version;
+    if (!version) throw new Error('Synthetic saved version required');
+    const launchReview = {
+      advisorySha256: 'f'.repeat(64),
+      requiresAcknowledgement: true,
+      advisories: [
+        {
+          id: 'source_decisions',
+          code: 'unresolved_source_decisions',
+          affectedCount: 27,
+          detail:
+            '27 saved source questions remain unresolved. Starting does not resolve these questions.',
+        },
+        {
+          id: 'qualification_holds',
+          code: 'credential_import_dispute_requires_review',
+          affectedCount: 2,
+          detail:
+            '2 credential assertions require review. Held credentials remain excluded from eligibility and points.',
+        },
+      ],
+    };
+    const pool = {
+      officerPoolCount: 2,
+      firefighterPoolCount: 11,
+      excludedCount: 3,
+      administrativeAssignmentExcludedCount: 1,
+    };
+    const pins = {
+      versionId: version.id,
+      versionNumber: version.versionNumber,
+      versionSha256: version.contentSha256,
+      contextSha256: 'c'.repeat(64),
+      runtimeSourceToken: 'd'.repeat(64),
+      pool,
+      launchReview,
+    };
+    const creationRequests: Array<{ body: unknown; key: string | undefined }> = [];
+    await page.route(`**/api/admin/bid/${BID_YEAR}/preview`, async (route) => {
+      expect(route.request().postDataJSON()).toEqual({
+        kind: mode,
+        versionId: version.id,
+        versionSha256: version.contentSha256,
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          mode === 'mock'
+            ? { ...pins, wouldAllowCreateMock: true, sourceDecisionBlockers: [] }
+            : {
+                ...pins,
+                wouldAllowCreateLive: true,
+                readiness: {
+                  checks: [
+                    {
+                      id: 'frozen_source_integrity',
+                      status: 'READY',
+                      detail: 'Synthetic immutable source is valid.',
+                    },
+                  ],
+                  overallStatus: 'READY',
+                  canStartLiveBid: true,
+                  blockingCheckIds: [],
+                },
+              },
+        ),
+      });
+    });
+    await page.route(
+      `**/api/admin/bid/${BID_YEAR}/${mode === 'mock' ? 'mock' : 'live'}-sessions`,
+      async (route) => {
+        creationRequests.push({
+          body: route.request().postDataJSON(),
+          key: route.request().headers()['idempotency-key'],
+        });
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: `synthetic-${mode}-acknowledged`,
+            current_phase: 'config',
+            is_mock: mode === 'mock',
+            rule_book_version: 'synthetic-rule-book',
+            rule_book_revision: 1,
+            position_template_version: 'synthetic-template',
+            configuration_revision: version.versionNumber,
+            settings: { expected_duration_days: 2, turn_timer_seconds: 180 },
+            pool,
+            bidDefinition: {
+              versionId: version.id,
+              versionNumber: version.versionNumber,
+              versionSha256: version.contentSha256,
+              snapshotSha256: 'e'.repeat(64),
+              contextSha256: pins.contextSha256,
+            },
+            replayed: false,
+            launchReview,
+            launchAcknowledged: true,
+          }),
+        });
+      },
+    );
+    await openBid(page);
+    await page
+      .getByRole('button', {
+        name: mode === 'mock' ? 'New Mock Bid' : 'Prepare Real Bid',
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole('button', {
+        name: mode === 'mock' ? 'Check Mock readiness' : 'Check Real Bid',
+        exact: true,
+      })
+      .click();
+    const panel = section(page, mode === 'mock' ? 'Mock Bid' : 'Prepare Real Bid');
+    await expect(
+      panel.getByText('27 open source questions · 2 held credentials', { exact: true }),
+    ).toBeVisible();
+    const disclosure = panel
+      .locator('details')
+      .filter({ has: page.getByText('Launch advisories (2)', { exact: true }) });
+    await expect(disclosure).not.toHaveAttribute('open');
+    await expect(panel.getByRole('list', { name: 'Launch advisories', exact: true })).toBeHidden();
+    const launchArtifacts = path.resolve(
+      process.env.CURRENT_BID_LAUNCH_ARTIFACTS ?? '../../tmp/bid-launch-browser',
+    );
+    await mkdir(launchArtifacts, { recursive: true });
+    await panel.screenshot({
+      path: path.join(launchArtifacts, `${test.info().project.name}-${mode}-launch-advisories.png`),
+    });
+    await disclosure.locator('summary').click();
+    await expect(
+      panel.getByRole('list', { name: 'Launch advisories', exact: true }).getByRole('listitem'),
+    ).toHaveCount(2);
+    expect(creationRequests).toEqual([]);
+    await panel
+      .getByRole('button', {
+        name: mode === 'mock' ? 'Create Mock with advisories' : 'Create Real with advisories',
+        exact: true,
+      })
+      .click();
+    const created = page.getByRole('link', {
+      name: mode === 'mock' ? /^Open created Mock Bid/ : 'Open Real Bid',
+      exact: mode === 'live',
+    });
+    await expect(created).toHaveAttribute(
+      'href',
+      `/admin/bid?session_id=synthetic-${mode}-acknowledged`,
+    );
+    expect(creationRequests).toEqual([
+      {
+        body: {
+          versionId: version.id,
+          versionSha256: version.contentSha256,
+          expectedContextSha256: pins.contextSha256,
+          expectedSourceToken: pins.runtimeSourceToken,
+          launchAcknowledgement: { advisorySha256: launchReview.advisorySha256 },
+        },
+        key: expect.stringMatching(UUID),
+      },
+    ]);
+    expect(
+      state.current.content.sourceDecisions.filter((decision) => decision.status === 'OPEN'),
+    ).toHaveLength(27);
+    assertNoWrites(state);
+    await assertWidth(page);
+  });
+}
+
 test('personal Mock eligibility link retains its exact session', async ({ page }) => {
   const state = await installCurrentBidFixtures(page);
   await page.route('**/api/admin/bid/2027/my-mock?*', (route) =>

@@ -27,7 +27,7 @@ describe('administrator manual and contextual explanations', () => {
   });
 });
 
-it('keeps the downloadable PDF synchronized with the live guide', () => {
+it('preserves the explicitly historical PDF and its exact source provenance', () => {
   const manifest = JSON.parse(
     readFileSync(new URL('../../public/manual/manifest.json', import.meta.url), 'utf8'),
   );
@@ -35,6 +35,12 @@ it('keeps the downloadable PDF synchronized with the live guide', () => {
     createHash('sha256')
       .update(readFileSync(new URL(path, import.meta.url)))
       .digest('hex');
-  expect(hash('../../app/admin/guide/guide-content.ts')).toBe(manifest.sourceSha256);
+  expect(manifest.edition).toBe('historical');
+  expect(manifest.sourceDate).toBe('2026-10-03');
+  expect(manifest.sourceCommit).toBe('00cb7515b6e3dd5acbfb6a1a2c484f8d5d491b70');
+  expect(manifest.sourceSha256).toBe(
+    '5b50cd48266260d8ae9c0bbd8c7f9f033b854c7cc07cac060d0ffd86008ec4e6',
+  );
+  expect(hash('../../app/admin/guide/guide-content.ts')).not.toBe(manifest.sourceSha256);
   expect(hash('../../public/manual/MBFD-Bid-Administrator-Manual.pdf')).toBe(manifest.pdfSha256);
 });

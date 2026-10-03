@@ -38,12 +38,40 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 let host: HTMLDivElement;
 let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
+let startMock: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Promise<Response>>>;
+let readinessBody: Record<string, unknown>;
+
+const launchReview = {
+  advisorySha256: 'b'.repeat(64),
+  requiresAcknowledgement: true,
+  advisories: [
+    {
+      id: 'source_decisions',
+      code: 'unresolved_source_decisions',
+      affectedCount: 27,
+      detail:
+        '27 saved source questions remain unresolved. Starting does not resolve those questions.',
+    },
+    {
+      id: 'qualification_holds',
+      code: 'credential_import_dispute_requires_review',
+      affectedCount: 2,
+      detail:
+        '2 credential assertions require review. Held credentials remain unavailable for eligibility and points.',
+    },
+  ],
+};
 
 beforeEach(() => {
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
-  fetchMock = vi.fn();
+  startMock = vi.fn();
+  readinessBody = { is_mock: true, readiness: null };
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') return startMock(url, init);
+    return Response.json({ id: decodeURIComponent(url.split('/').at(-2) ?? ''), ...readinessBody });
+  });
   vi.stubGlobal('fetch', fetchMock);
   refresh.mockClear();
 });
@@ -54,6 +82,7 @@ afterEach(async () => {
 });
 
 async function showSetup(isMock = true, onStarted = refresh) {
+  readinessBody.is_mock = isMock;
   await act(() =>
     root.render(
       <BidSessionSetup
@@ -82,15 +111,19 @@ describe('Bid session setup', () => {
     expect([...host.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
       'Start Mock Bid',
     ]);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      '/api/admin/bid-session/saved%20mock%20%2F%207/readiness',
+      { credentials: 'include', cache: 'no-store' },
+    );
+    expect(startMock).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });
 
   it('starts only the exact Mock through the existing lifecycle endpoint, then refreshes', async () => {
-    fetchMock.mockResolvedValue(Response.json({ ok: true }));
+    startMock.mockResolvedValue(Response.json({ ok: true }));
     await showSetup();
     await clickStart();
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+    expect(startMock).toHaveBeenCalledExactlyOnceWith(
       '/api/admin/bid-session/saved%20mock%20%2F%207/start',
       {
         method: 'POST',
@@ -106,7 +139,7 @@ describe('Bid session setup', () => {
 
   it('suppresses duplicate Start clicks while the outcome is pending', async () => {
     let finish: (response: Response) => void = () => {};
-    fetchMock.mockReturnValue(
+    startMock.mockReturnValue(
       new Promise<Response>((resolve) => {
         finish = resolve;
       }),
@@ -118,43 +151,143 @@ describe('Bid session setup', () => {
       button.click();
       button.click();
     });
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(startMock).toHaveBeenCalledOnce();
     await act(() => finish(Response.json({ ok: true })));
     expect(refresh).toHaveBeenCalledOnce();
   });
 
   it('keeps the saved session and asks for normal sign-in when Start is rejected', async () => {
-    fetchMock.mockResolvedValue(Response.json({ error: 'step_up_required' }, { status: 401 }));
+    startMock.mockResolvedValue(Response.json({ error: 'step_up_required' }, { status: 401 }));
     await showSetup();
     await clickStart();
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('Refresh operator sign-in');
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(startMock).toHaveBeenCalledOnce();
     expect(refresh).not.toHaveBeenCalled();
     expect(host.querySelector('button')?.disabled).toBe(false);
   });
 
   it('starts Real through the same guarded lifecycle endpoint, with explicit Real wording and no separate settings detour', async () => {
-    fetchMock.mockResolvedValue(Response.json({ ok: true }));
+    startMock.mockResolvedValue(Response.json({ ok: true }));
     await showSetup(false);
     expect(host.textContent).toContain('Real Bid');
     expect(host.querySelector('button')?.textContent).toBe('Start Real Bid');
     expect(host.querySelector('a')).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(startMock).not.toHaveBeenCalled();
     await act(() => host.querySelector('button')?.click());
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+    expect(startMock).toHaveBeenCalledExactlyOnceWith(
       '/api/admin/bid-session/saved%20mock%20%2F%207/start',
       expect.objectContaining({ method: 'POST', body: '{}' }),
     );
     expect(refresh).toHaveBeenCalledOnce();
   });
   it('keeps Real source readiness errors visible and never treats rejection as a successful start', async () => {
-    fetchMock.mockResolvedValue(
+    startMock.mockResolvedValue(
       Response.json({ error: 'live_readiness_blocked' }, { status: 409 }),
     );
     await showSetup(false);
     await act(() => host.querySelector('button')?.click());
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('live_readiness_blocked');
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'acknowledges 27 open questions and 2 credential holds with one action in Mock=%s',
+    async (isMock) => {
+      readinessBody.launchReview = launchReview;
+      readinessBody.launchAcknowledged = false;
+      startMock.mockResolvedValue(Response.json({ ok: true }));
+      await showSetup(isMock);
+      const details = host.querySelector('details');
+      expect(details?.open).toBe(false);
+      expect(details?.querySelector('summary')?.textContent).toBe('Launch advisories (2)');
+      expect(host.querySelectorAll('li')).toHaveLength(2);
+      expect(host.textContent).toContain('27 saved source questions');
+      expect(host.textContent).toContain('2 credential assertions');
+      expect(host.querySelector('input')).toBeNull();
+      expect(host.querySelector('button')?.textContent).toBe('Start with advisories');
+      expect(startMock).not.toHaveBeenCalled();
+      await act(() => host.querySelector('button')?.click());
+      expect(startMock).toHaveBeenCalledExactlyOnceWith(
+        '/api/admin/bid-session/saved%20mock%20%2F%207/start',
+        expect.objectContaining({
+          body: JSON.stringify({
+            launchAcknowledgement: { advisorySha256: launchReview.advisorySha256 },
+          }),
+        }),
+      );
+      expect(refresh).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([true, false])(
+    'recognizes creation acknowledgement after reload without a second prompt in Mock=%s',
+    async (isMock) => {
+      readinessBody.launchReview = launchReview;
+      readinessBody.launchAcknowledged = true;
+      startMock.mockResolvedValue(Response.json({ ok: true }));
+      await showSetup(isMock);
+      expect(host.querySelector('summary')?.textContent).toBe(
+        'Launch advisories (2) · acknowledged',
+      );
+      expect(host.querySelector('button')?.textContent).toBe(
+        isMock ? 'Start Mock Bid' : 'Start Real Bid',
+      );
+      await act(() => host.querySelector('button')?.click());
+      expect(startMock).toHaveBeenCalledOnce();
+      expect(JSON.parse(String(startMock.mock.calls[0]?.[1]?.body))).toEqual({
+        launchAcknowledgement: { advisorySha256: launchReview.advisorySha256 },
+      });
+      expect(refresh).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('requires a fresh acknowledgement if the server returns a changed digest', async () => {
+    readinessBody.launchReview = launchReview;
+    readinessBody.launchAcknowledged = true;
+    const next = { ...launchReview, advisorySha256: 'c'.repeat(64) };
+    startMock
+      .mockResolvedValueOnce(
+        Response.json({ error: 'launch_review_changed', launchReview: next }, { status: 409 }),
+      )
+      .mockResolvedValueOnce(Response.json({ ok: true }));
+    await showSetup(false);
+    await act(() => host.querySelector('button')?.click());
+    expect(refresh).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      'launch advisories changed',
+    );
+    expect(host.querySelector('button')?.textContent).toBe('Start with advisories');
+    await act(() => host.querySelector('button')?.click());
+    expect(JSON.parse(String(startMock.mock.calls[1]?.[1]?.body))).toEqual({
+      launchAcknowledgement: { advisorySha256: next.advisorySha256 },
+    });
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { launchReview: { ...launchReview, advisorySha256: 'not-a-digest' } },
+    { launchReview: { ...launchReview, requiresAcknowledgement: false } },
+    { id: 'another-session' },
+    { is_mock: false },
+  ])('never enables Start for an unverified review: %j', async (invalid) => {
+    await showSetup();
+    await act(() => root.unmount());
+    root = createRoot(host);
+    Object.assign(readinessBody, invalid);
+    // Render directly so an intentionally incorrect mode is not normalized by the helper.
+    await act(() =>
+      root.render(
+        <BidSessionSetup
+          bidSessionId="saved mock / 7"
+          isMock
+          memberCount={218}
+          onStarted={refresh}
+        />,
+      ),
+    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('could not be verified');
+    expect(host.querySelector('button')?.disabled).toBe(true);
+    expect(startMock).not.toHaveBeenCalled();
   });
 });
 
@@ -191,7 +324,8 @@ describe('Admin Bid setup routing', () => {
     expect(host.querySelector('[data-testid="manual-pick"]')).toBeNull();
     expect(host.querySelector('[data-testid="active-selection"]')).toBeNull();
     expect(host.querySelector('details')?.open).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(startMock).not.toHaveBeenCalled();
   });
 
   it('uses the existing current-bidder workspace after canonical Start', async () => {

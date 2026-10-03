@@ -2,6 +2,7 @@
 import { Button } from '@/components/ui/button';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { BidLaunchAction } from '../_components/BidLaunchAction';
 import { FieldSection } from './BidFields';
 import { BidTermIssues } from './BidTermIssues';
 import type { BidMockPreview, BidMockResult, CurrentBid } from './bid-client';
@@ -43,7 +44,7 @@ export function BidMockReview({
       <Button
         type="button"
         variant={mockPreview?.wouldAllowCreateMock ? 'secondary' : 'primary'}
-        disabled={locked || stale || dirty || !base.version}
+        disabled={busy || locked || stale || dirty || !base.version}
         onClick={() => void reviewMock()}
       >
         {busy ? 'Checking…' : 'Check Mock readiness'}
@@ -79,21 +80,21 @@ export function BidMockReview({
               {mockPreview.pool.officerPoolCount} officers · {mockPreview.pool.firefighterPoolCount}{' '}
               firefighters · {mockPreview.pool.excludedCount} excluded
             </p>
-            {mockPreview.sourceDecisionBlockers.length > 0 ? (
+            {!mockPreview.launchReview && mockPreview.sourceDecisionBlockers.length > 0 ? (
               <details className="border border-warning/30 p-3 text-sm">
                 <summary className="cursor-pointer font-medium">
-                  {mockPreview.sourceDecisionBlockers.length} reviews remain before the Real Bid
+                  Open source questions ({mockPreview.sourceDecisionBlockers.length})
                 </summary>
                 <p className="mt-1 text-muted-foreground">
-                  This rehearsal preserves those open questions as visible assumptions. They still
-                  block creation of a Real Bid.
+                  The saved rules govern this run. Creating a session does not resolve these
+                  questions.
                 </p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   {mockPreview.sourceDecisionBlockers.map((item) => (
                     <li key={item.issueId}>
                       {base.content.sourceDecisions.find(
                         (decision) => decision.issueId === item.issueId,
-                      )?.title ?? 'Reviewed information is still required before the Real Bid.'}
+                      )?.title ?? 'Source question requires review.'}
                     </li>
                   ))}
                 </ul>
@@ -103,11 +104,12 @@ export function BidMockReview({
               Create a rehearsal with this saved version and the reviewed Department evidence. It
               will keep that version if the Current Bid is edited later.
             </p>
-            <Button
-              type="button"
-              variant="primary"
-              disabled={locked || stale || dirty}
-              onClick={() =>
+            <BidLaunchAction
+              review={mockPreview.launchReview}
+              label={`Create Mock Bid from Version ${mockPreview.versionNumber}`}
+              advisoryLabel="Create Mock with advisories"
+              disabled={busy || locked || stale || dirty}
+              onLaunch={(launchAcknowledgement) =>
                 void execute({
                   path: 'mock-sessions',
                   key: crypto.randomUUID(),
@@ -116,12 +118,11 @@ export function BidMockReview({
                     versionSha256: mockPreview.versionSha256,
                     expectedContextSha256: mockPreview.contextSha256,
                     expectedSourceToken: mockPreview.runtimeSourceToken,
+                    ...(launchAcknowledgement ? { launchAcknowledgement } : {}),
                   },
                 })
               }
-            >
-              Create Mock Bid from Version {mockPreview.versionNumber}
-            </Button>
+            />
           </div>
         )}
       {createdMock && (

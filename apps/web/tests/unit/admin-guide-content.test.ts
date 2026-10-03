@@ -186,7 +186,9 @@ describe('Administrator Guide content contract', () => {
       'Straight Seniority supplies department-service order',
     );
     expect(rules?.steps.join(' ')).toContain('Reviewed existing members or Wider qualified pool');
-    expect(rules?.steps.join(' ')).toContain('must be resolved before Real activation');
+    expect(rules?.steps.join(' ')).toContain(
+      'An unresolved SWAT population choice remains a launch advisory',
+    );
     const evidence = GUIDE_SECTIONS.find((section) => section.id === 'bid-evidence');
     expect(evidence?.route).toBe('/admin/personnel/bid-evidence');
     expect(evidence?.controls).toContain('Save reviewed Bid ordinals');

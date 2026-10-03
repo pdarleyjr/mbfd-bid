@@ -8,6 +8,7 @@ import { buildAdministratorManual } from '@/lib/admin-manual';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import manualManifest from '../../../public/manual/manifest.json';
 import {
   GUIDE_CATEGORIES,
   GUIDE_SECTIONS,
@@ -142,14 +143,15 @@ export function AdministratorGuideWorkspace() {
           download
           className="inline-flex min-h-11 items-center rounded border border-border px-4 py-2 font-semibold underline"
         >
-          Download complete manual (PDF)
+          Download historical manual (PDF · {manualManifest.sourceDate})
         </a>
         <Button type="button" onClick={downloadManual}>
           Download complete manual (HTML)
         </Button>
         <p className="text-sm text-muted-foreground">
-          Both downloads work offline. The PDF contains the written topics; this Docs page adds
-          annotated production screenshots for key workflows.
+          The PDF preserves the {manualManifest.sourceDate} edition before launch advisories. Use
+          this guide or the current HTML download for today&apos;s launch controls. Both downloads
+          work offline.
         </p>
       </div>
       <header className="border-b border-border pb-6">

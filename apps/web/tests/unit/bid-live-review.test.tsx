@@ -244,6 +244,52 @@ async function click(name: string | RegExp) {
 }
 
 describe('BidLiveReview', () => {
+  it('offers one explicit Real creation acknowledgement for 27 source questions and 2 held credentials', async () => {
+    const launchReview = {
+      advisorySha256: 'f'.repeat(64),
+      requiresAcknowledgement: true,
+      advisories: [
+        {
+          id: 'source_decisions',
+          code: 'unresolved_source_decisions',
+          affectedCount: 27,
+          detail: '27 source questions remain unresolved. Starting does not resolve them.',
+        },
+        {
+          id: 'qualification_holds',
+          code: 'credential_import_dispute_requires_review',
+          affectedCount: 2,
+          detail: '2 held credentials remain excluded from eligibility and points.',
+        },
+      ],
+    };
+    result = { ...allowedReadiness(), launchReview };
+    const execute = vi.fn(async () => {});
+    await mount(base(), { execute });
+    await click('Check Real Bid');
+    const details = [...container.querySelectorAll('details')].find(
+      (node) => node.querySelector('summary')?.textContent === 'Launch advisories (2)',
+    );
+    expect(details?.open).toBe(false);
+    expect(details?.querySelectorAll('li')).toHaveLength(2);
+    expect(execute).not.toHaveBeenCalled();
+    expect(container.querySelector('input')).toBeNull();
+    await click('Create Real with advisories');
+    expect(execute).toHaveBeenCalledExactlyOnceWith({
+      path: 'live-sessions',
+      key: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      body: {
+        versionId: base().version?.id,
+        versionSha256: DIGEST,
+        expectedContextSha256: 'b'.repeat(64),
+        expectedSourceToken: 'c'.repeat(64),
+        launchAcknowledgement: { advisorySha256: launchReview.advisorySha256 },
+      },
+    });
+    expect(requests.every(({ url }) => url.endsWith('/csrf') || url.endsWith('/preview'))).toBe(
+      true,
+    );
+  });
   it('requires separate creation confirmation and sends exactly the reviewed pins without starting', async () => {
     result = allowedReadiness();
     const execute = vi.fn(async () => {});
@@ -331,7 +377,7 @@ describe('BidLiveReview', () => {
     expect(new Headers(preview?.init?.headers).get('X-MBFD-CSRF')).toBe(CSRF);
     expect(new Headers(preview?.init?.headers).get('Idempotency-Key')).toBeNull();
     expect(finish).toHaveBeenCalledOnce();
-    expect(container.textContent).toContain('Resolve these items before the Real Bid.');
+    expect(container.textContent).toContain('These checks must pass before launch.');
     expect(container.textContent).toContain(
       'annual operations policy: Annual operations cannot start: stages_required.',
     );

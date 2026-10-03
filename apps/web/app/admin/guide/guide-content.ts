@@ -71,7 +71,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Your Bid sign-in lasts up to 30 days and renews while the visible console is actively used. Every administrative write still verifies your Hub authorization. If renewal fails, select Refresh operator sign-in and Recheck sign-in first. Sign in through Hub only when the session cannot be verified, then return and recheck. Your prepared selection and reason remain here. If the bid changed while you signed in, review the latest state and acknowledge it before confirming. No command is submitted automatically during renewal or recovery. If an accepted action cannot refresh, refresh the bid before another action; the accepted action is already recorded.',
       'To make a selection outside the ordinary order, use Adjust bid above Available positions, or select a waiting member and choose Bid for this member. Choose any included member and open position, Skip member for now, Defer member for later, or Bypass current step · keep its picks pending. Review the server advisories, enter your reason, acknowledge the warnings and explicitly confirm. Skipping or bypassing keeps the deferred picks available. Use Correct a bid for someone who already holds a position; its override preserves the earlier award in history.',
       "Historical reference: the September 30 cutoff remains sealed in Version 11 (SHA-256 90060771da87f17014cee0b60daa325e3e50a8d1e16c71ea83fa960c8d69d320). Version 14 was a later reviewed source update, ID 01M3Y18H7HXCYN8CPCVRK0916E, SHA-256 fb2e62eb0d7af7196f77debf2e0baa47e1761d107fb30155ef0e23baaf8fab98. Its ordinary cohort had 38 Lieutenants and 39 open Lieutenant seats, with no shortage. Peter's historical Version 14 Mock is 01M3Y1KT5E2VX5W3QQRHGK7WDB. These records are provenance examples, not the current-version requirement. Never replace sealed evidence or silently change a frozen run.",
-      'Open Live Bid and select Check Real Bid with the authorized operator signed in. This read-only check identifies remaining blockers and their sources. Resolve them and check again. When authorized and ready, Confirm Real Bid creation creates the reviewed run; Start Real Bid is a separate action.',
+      'Open Live Bid and select Check Real Bid with the authorized operator signed in. Review the saved version and any launch advisories. Select Create Real with advisories to acknowledge open source questions or held credentials, or Confirm Real Bid creation when there are no advisories. Creation prepares the run; Start Real Bid opens bidding. The acknowledgement is retained with that run and does not approve held credentials or resolve source questions. Invalid data, access failures and runtime failures still require correction.',
       'In Results, choose the exact saved run and inspect its pinned version, awards, A-Day, audit and exports. A Mock result cannot become a Department assignment. External publication and staffing transition require their own authorized workflows.',
     ],
     important:
@@ -288,12 +288,18 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     routeLabel: 'Bid — Live Bid',
     summary:
       'Check a saved Bid version, then explicitly confirm creation of a Live session using that reviewed version and Department evidence.',
-    controls: ['Live Bid', 'Check Real Bid', 'Confirm Real Bid creation', 'Retry original request'],
+    controls: [
+      'Live Bid',
+      'Check Real Bid',
+      'Create Real with advisories',
+      'Confirm Real Bid creation',
+      'Retry original request',
+    ],
     steps: [
       'Save or discard draft edits, then open Live Bid. The preflight is available only for the exact current immutable saved version.',
       'Select Check Real Bid. The server either reports the sealed policy preparation block or the complete readiness result for that saved version.',
-      'Read each blocker and resolve it in the indicated workspace. The readiness check is read-only and does not create or start a session.',
-      'When readiness permits creation, review the saved version and captured Department evidence, then select Confirm Real Bid creation only for the intended Bid. Creation does not start bidding.',
+      'Review launch advisories in the collapsed disclosure. Unresolved source questions and held credentials can be acknowledged without changing those records. Hard data, access, snapshot or runtime errors must still be corrected. The readiness check is read-only and does not create or start a session.',
+      'For the intended Bid, select Create Real with advisories, or Confirm Real Bid creation when there are none. Creation retains that acknowledgement. Open the created session and select Start Real Bid; a legacy session without a recorded acknowledgement instead offers Start with advisories. Creation does not start bidding.',
       'Edits, a newer saved version or changed Department evidence require a fresh readiness check and confirmation. A locked Bid cannot create another run through this flow.',
       'If the response is interrupted, use Retry original request to recover the same creation request. Refreshing retains that request; do not assume a missing response means nothing was created.',
     ],
@@ -334,7 +340,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Configure fallback policies with the affected opportunities and source decision. Add tiers in the approved order, their qualification requirements and seniority direction. The system derives the next eligible candidate and advances only after the earlier tier is exhausted; a force action does not waive qualification rules.',
       'In A-Day, enable the source-backed execution model. Ordinary selections may choose an A-Day with the position; an approved Specialized Timeline can instead defer an exact opportunity or shared-profile scope until after position selection. Every exception needs its source and concrete frozen opportunity scope; overlapping scopes are rejected. Enter any exact officer count. Name each limit and select its actual positions, members, ranks and shifts. A label does not choose members automatically.',
       'When an approved timing exception applies, verify the position award first, then use the displayed later A-Day action for the same member and frozen opportunity. Read back its receipt and group-limit result. A later A-Day does not create a second award.',
-      'In Specialty membership distribution, choose Reviewed existing members or Wider qualified pool only after the population decision is resolved. The existing-team option distributes its reviewed members. The wider-pool option permits reviewed qualified candidates to elect membership with their selection. Select the members, required specialty qualification where applicable, shifts and limits explicitly; membership does not add another staffing position. The SWAT choice between the current six and a wider qualified pool must be resolved before Real activation.',
+      'In Specialty membership distribution, choose Reviewed existing members or Wider qualified pool after reviewing the population decision. The existing-team option distributes its reviewed members. The wider-pool option permits reviewed qualified candidates to elect membership with their selection. Select the members, required specialty qualification where applicable, shifts and limits explicitly; membership does not add another staffing position. An unresolved SWAT population choice remains a launch advisory; starting does not invent that population decision.',
     ],
     important:
       'Save Bid preserves the policy configuration. It does not resolve an open source question, supply missing personnel facts or change an existing run.',
@@ -614,7 +620,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     ],
     steps: [
       'Choose the correct year. Open a source check or record a new change. Read the stored policy and inspect the linked configuration before deciding whether the discrepancy is already resolved.',
-      'Record the question, affected area, source reference and applicable date. Choose Needs a decision for an unresolved material issue; it blocks a new setup approval while preserving existing approved history.',
+      'Record the question, affected area, source reference and applicable date. Choose Needs a decision for an unresolved material issue. It stays visible as a launch advisory; acknowledgement preserves the open question and existing approved history.',
       'Choose Resolved only when the authorized policy decision is supported. Record what was decided and its source. Saving preserves all earlier revisions; another administrator cannot silently overwrite your decision.',
       'Apply resulting configuration changes in the linked area, regenerate impact review and practice, then approve through Annual Bid. Recording a source resolution alone does not edit positions, qualifications or policy rules.',
     ],

@@ -126,11 +126,10 @@ export function BidReadinessSummary({
             What to do next
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Prepare and practice a Mock with saved working assumptions. The saved configuration has{' '}
-            {realActivationReviewCount} open source or evidence{' '}
-            {realActivationReviewCount === 1 ? 'review' : 'reviews'}. Open Live Bid and run its
-            read-only server preflight for the specific blockers, sources and fix path. Real remains
-            closed until that check passes.
+            Mock and Real use the saved Bid. There are {realActivationReviewCount} open source or
+            evidence {realActivationReviewCount === 1 ? 'review' : 'reviews'}. Review launch
+            advisories when creating a session. Starting does not resolve open questions or approve
+            held credentials.
           </p>
         </div>
         <Link
@@ -159,7 +158,7 @@ export function BidReadinessSummary({
           >
             {policyReady
               ? 'The saved version identifies its governing policy, source workbook, evidence dates, and dated administrative decisions.'
-              : 'A governing source or configuration-level decision is missing.'}
+              : 'The governing policy is missing.'}
           </ReadinessItem>
           <ReadinessItem
             label="Positions"
