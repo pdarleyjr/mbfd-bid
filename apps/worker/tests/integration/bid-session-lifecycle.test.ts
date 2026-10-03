@@ -771,16 +771,20 @@ describe('POST /api/admin/bid-session/:id/start', () => {
         canStartLiveBid: false,
         overallStatus: 'BLOCKING',
         blockingCheckIds: expect.arrayContaining([
-          'accepted_staffing_baseline',
           'annual_configuration',
+          'participant_population',
           'audit_infrastructure',
+          'runtime_bindings',
           'writeback_safety',
+        ]),
+        checks: expect.arrayContaining([
+          expect.objectContaining({ id: 'accepted_staffing_baseline', status: 'WARNING' }),
         ]),
       },
     });
   });
 
-  it('fails closed when a fully evidenced live session has unresolved ordering authority', async () => {
+  it('requires operator acknowledgement when a usable frozen live order has unresolved authority metadata', async () => {
     await seedAcceptedOfficialBaselineForLiveReadiness(h);
     await h.db.run('UPDATE bid_years SET config_json = ? WHERE year = 2026', [
       JSON.stringify(liveSettings(['approve_transition'])),
@@ -840,15 +844,13 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     const responseBody = await res.json();
     expect(res.status).toBe(409);
     expect(responseBody).toMatchObject({
-      error: 'readiness_blocked',
-      readiness: {
-        canStartLiveBid: false,
-        overallStatus: 'BLOCKING',
-        blockingCheckIds: expect.arrayContaining(['ordering_authority']),
-        checks: expect.arrayContaining([
+      error: 'launch_acknowledgement_required',
+      launchReview: {
+        requiresAcknowledgement: true,
+        advisories: expect.arrayContaining([
           expect.objectContaining({
-            id: 'ordering_authority',
-            status: 'BLOCKING',
+            id: 'readiness:ordering_authority',
+            code: 'ordering_authority',
             detail: expect.stringContaining('unresolved'),
           }),
         ]),
@@ -868,7 +870,7 @@ describe('POST /api/admin/bid-session/:id/start', () => {
     ).toEqual([{ n: 0 }]);
   });
 
-  it('reports unresolved ordering authority in a real-mode dry run without mutating a session', async () => {
+  it('reports unresolved ordering authority as an advisory while a missing stage participant remains a hard blocker', async () => {
     await h.db.run('UPDATE bid_sessions SET is_mock = 1 WHERE id = ?', [sessionId]);
     await seedAcceptedOfficialBaselineForLiveReadiness(h);
     await h.db.run('UPDATE bid_years SET config_json = ? WHERE year = 2026', [
@@ -913,14 +915,23 @@ describe('POST /api/admin/bid-session/:id/start', () => {
       readiness: {
         canStartLiveBid: false,
         overallStatus: 'BLOCKING',
-        blockingCheckIds: expect.arrayContaining(['ordering_authority']),
+        blockingCheckIds: expect.arrayContaining(['participant_population']),
         checks: expect.arrayContaining([
           expect.objectContaining({
             id: 'ordering_authority',
-            status: 'BLOCKING',
+            status: 'WARNING',
             detail: expect.stringContaining('unresolved'),
           }),
           expect.objectContaining({ id: 'operator_authorization', status: 'READY' }),
+        ]),
+      },
+      launchReview: {
+        requiresAcknowledgement: true,
+        advisories: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'readiness:ordering_authority',
+            code: 'ordering_authority',
+          }),
         ]),
       },
     });

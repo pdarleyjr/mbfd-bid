@@ -373,6 +373,7 @@ describe('managed Mock preview and atomic creation through the admin router', ()
         'runtimeSourceToken',
         'pool',
         'sourceDecisionBlockers',
+        'launchReview',
       ].sort(),
     );
     expect(checked).toMatchObject({
@@ -414,6 +415,8 @@ describe('managed Mock preview and atomic creation through the admin router', ()
         'settings',
         'pool',
         'bidDefinition',
+        'launchReview',
+        'launchAcknowledged',
         'replayed',
       ].sort(),
     );

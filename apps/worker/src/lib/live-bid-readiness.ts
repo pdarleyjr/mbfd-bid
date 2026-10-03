@@ -1,4 +1,5 @@
 import {
+  type BidLaunchAdvisory,
   type LiveReadinessCheck,
   type LiveReadinessReport,
   evaluateLiveReadiness,
@@ -33,6 +34,9 @@ export interface LiveBidReadinessInput {
   frozenPolicy: Extract<FrozenSessionBidPolicy, { ok: true }>;
   /** The caller has already enforced both admin role and fresh step-up auth. */
   operatorAuthorized: boolean;
+  /** An authenticated managed launch may acknowledge business expectations;
+   * immutable source/runtime/access checks remain mandatory. */
+  operatorControlledLaunch?: boolean;
 }
 
 function check(id: string, ready: boolean, detail: string): LiveReadinessCheck {
@@ -83,7 +87,7 @@ function isWritebackSafe(env: WorkerEnv): boolean {
  */
 export async function evaluateLiveBidReadiness(
   input: LiveBidReadinessInput,
-): Promise<LiveReadinessReport> {
+): Promise<LiveReadinessReport & { launchAdvisories?: readonly BidLaunchAdvisory[] }> {
   const { db, env, bidSessionId, bidYear, frozenPolicy, operatorAuthorized } = input;
   const snapshot = frozenPolicy.snapshot;
   const managedPin =
@@ -92,7 +96,11 @@ export async function evaluateLiveBidReadiness(
       : null;
   const [baseline, currentPolicy, conflicts] = await Promise.all([
     evaluateAuthoritativeStaffingBaseline(db, bidYear),
-    managedPin !== null ? Promise.resolve(null) : loadConfiguredBidYearPolicy(db, bidYear, 'live'),
+    managedPin !== null
+      ? Promise.resolve(null)
+      : loadConfiguredBidYearPolicy(db, bidYear, 'live', {
+          operatorControlledLaunch: input.operatorControlledLaunch ?? false,
+        }),
     db
       .select({ id: bidSessions.id, phase: bidSessions.currentPhase })
       .from(bidSessions)
@@ -179,7 +187,7 @@ export async function evaluateLiveBidReadiness(
       : [],
   });
 
-  return evaluateLiveReadiness({
+  const report = evaluateLiveReadiness({
     requiredCheckIds: [
       'accepted_staffing_baseline',
       'annual_configuration',
@@ -304,4 +312,29 @@ export async function evaluateLiveBidReadiness(
       ),
     ],
   });
+  if (!input.operatorControlledLaunch) return report;
+  const advisoryIds = new Set([
+    '2026_shift_opportunity_inventory',
+    'ordering_authority',
+    'execution_policy_references',
+    'annual_operations_policy',
+    ...(frozenBaseline === undefined ? ['accepted_staffing_baseline'] : []),
+  ]);
+  const advisoryChecks = report.checks.filter(
+    (entry) => advisoryIds.has(entry.id) && entry.status === 'BLOCKING',
+  );
+  const reviewed = evaluateLiveReadiness({
+    requiredCheckIds: report.checks.map((entry) => entry.id),
+    checks: report.checks.map((entry) =>
+      advisoryChecks.includes(entry) ? { ...entry, status: 'WARNING' } : entry,
+    ),
+  });
+  return {
+    ...reviewed,
+    launchAdvisories: advisoryChecks.map((entry) => ({
+      id: `readiness:${entry.id}`,
+      code: entry.id,
+      detail: entry.detail ?? 'The saved operational expectation needs review.',
+    })),
+  };
 }

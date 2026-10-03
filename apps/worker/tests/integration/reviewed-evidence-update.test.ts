@@ -4,6 +4,7 @@ import {
   type BidDefinitionContent,
   BidDispositionSchema,
   BidEvidenceFreezeSchema,
+  type BidLaunchReview,
   FrozenLiveBidPolicySchema,
   LiveBidActionSchema,
 } from '@mbfd/shared';
@@ -141,7 +142,7 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
     return version;
   }
 
-  async function sourceFixture() {
+  async function sourceFixture(openQuestions = 0) {
     const capture = await captureBidDefinitionSource(h.env.DB, 2026);
     if (!capture.ok) throw new Error('Synthetic source capture missing');
     const content = structuredClone(capture.content);
@@ -232,6 +233,19 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
       sourceRef: `${LATEST_2026_MASTER_HASH}; ${LATEST_2026_ANNUAL_HASH}`,
       effectiveOn: '2026-09-30',
     });
+    for (let index = 1; index <= openQuestions; index++)
+      content.sourceDecisions.push({
+        issueId: `synthetic-open-question-${index}`,
+        title: `Synthetic unresolved question ${index}`,
+        question: 'Which operating assumption should govern this source question?',
+        area: 'annual-policy',
+        status: 'OPEN',
+        decision: '',
+        sourceRef: 'synthetic:unresolved-source',
+        effectiveOn: '2026-09-30',
+        blockingClassification: 'BLOCKS_REAL_BID_ACTIVATION',
+        affectedScopes: ['annual-policy'],
+      });
     for (let prior = 1; prior < 10; prior++) {
       content.notes.bid = `Synthetic historical version ${prior}`;
       await saved(content);
@@ -399,9 +413,14 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
       '{"reviewHold":{"status":"NEEDS ADMIN EVIDENCE","reviewedAt":1}}',1,1);`);
   }
 
-  async function fixture(reviewed = 3884) {
+  async function fixture(reviewed = 3884, openQuestions = 0, secondHold = false) {
     seedHold();
-    const historical = await sourceFixture();
+    if (secondHold)
+      h.sqlite.exec(`INSERT INTO credentials(id,name) VALUES (94002,'Synthetic second withheld qualification');
+      INSERT INTO member_credentials(member_id,credential_id,start_date) VALUES (${HOLDER},94002,'2020-01-01');
+      INSERT INTO targetsolutions_rows (id,import_id,row_number,source_json,member_id,credential_id,classification,before_json,reviewed_at,applied_at)
+      VALUES ('synthetic-second-held-row','synthetic-held',2,'{}',${HOLDER},94002,'CONFLICT','{"reviewHold":{"status":"NEEDS ADMIN EVIDENCE","reviewedAt":1}}',1,1);`);
+    const historical = await sourceFixture(openQuestions);
     expect(historical.baseline.row.version_number).toBe(11);
     const retained = await saved(historical.receipt.content);
     expect(retained.row.version_number).toBe(12);
@@ -532,6 +551,7 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
     const mockPreview = (await mockPreviewResponse.json()) as {
       contextSha256: string;
       runtimeSourceToken: string;
+      launchReview: BidLaunchReview;
     };
     const createdResponse = await request(
       'bid/2026/mock-sessions',
@@ -540,6 +560,7 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
         versionSha256: successor.sha256,
         expectedContextSha256: mockPreview.contextSha256,
         expectedSourceToken: mockPreview.runtimeSourceToken,
+        launchAcknowledgement: { advisorySha256: mockPreview.launchReview.advisorySha256 },
       },
       { key: 'synthetic-reviewed-update-mock' },
     );
@@ -733,6 +754,7 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
     const preview = (await previewResponse.json()) as {
       contextSha256: string;
       runtimeSourceToken: string;
+      launchReview: BidLaunchReview;
     };
     const created = await request(
       'bid/2026/mock-sessions',
@@ -741,6 +763,7 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
         versionSha256: restoredSuccessor.sha256,
         expectedContextSha256: preview.contextSha256,
         expectedSourceToken: preview.runtimeSourceToken,
+        launchAcknowledgement: { advisorySha256: preview.launchReview.advisorySha256 },
       },
       { key: 'synthetic-generic-execution-mock' },
     );
@@ -1004,6 +1027,219 @@ describe('append-only reviewed evidence updates and ordinary successor authoring
       replayed: true,
     });
   });
+
+  it.each([
+    ['mock', false],
+    ['live', false],
+    ['mock', true],
+    ['live', true],
+  ] as const)(
+    'starts %s from retained evidence with 2 holds and source questions, changed decision metadata=%s, only after exact audited acknowledgement',
+    async (mode, changedSourceDecisions) => {
+      const f = await fixture(3884, 27, true);
+      const { result } = await capture(`synthetic-launch-capture-${mode}`);
+      if (!result.ok) throw new Error(JSON.stringify(result));
+      const next = structuredClone(f.retained.content);
+      if (next.settings?.v !== 3) throw new Error('Expected sealed source settings');
+      next.settings.evidenceFreeze = result.response.update.freezePin;
+      next.sourceDecisions = result.response.update.sourceDecisions;
+      if (changedSourceDecisions)
+        next.sourceDecisions = next.sourceDecisions.map((decision) =>
+          decision.issueId === 'synthetic-open-question-1'
+            ? {
+                ...decision,
+                title: 'Synthetic source-backed operating choice',
+                question: 'Which source-backed assumption is used by this successor?',
+                status: 'RESOLVED',
+                decision:
+                  'Use this synthetic source-backed operating assumption; member qualifications are unchanged.',
+                sourceRef: 'synthetic:reviewed-business-choice',
+              }
+            : decision,
+        );
+      const version = await saved(next);
+      h.env.KV = {
+        get: vi.fn(async () => null),
+        put: vi.fn(async () => {}),
+      } as unknown as typeof h.env.KV;
+      h.env.R2_AUDIT = { put: vi.fn(async () => null) } as unknown as typeof h.env.R2_AUDIT;
+      h.env.R2_EXPORTS = { put: vi.fn(async () => null) } as unknown as typeof h.env.R2_EXPORTS;
+      h.env.AUDIT_SIGNING_PRIVKEY = '11'.repeat(32);
+      h.env.AUDIT_SIGNING_PUBKEY = '22'.repeat(32);
+      h.env.PORTAL_WRITEBACK_BASE_URL = 'https://portal-writeback-disabled.invalid';
+      const evidenceBefore = {
+        freezes: h.sqlite.prepare('SELECT * FROM bid_evidence_freezes').all(),
+        updates: h.sqlite.prepare('SELECT * FROM bid_evidence_reviewed_updates').all(),
+        events: h.sqlite.prepare('SELECT * FROM member_qualification_events').all(),
+        holds: h.sqlite.prepare('SELECT * FROM targetsolutions_rows').all(),
+        decisions: h.sqlite.prepare('SELECT * FROM bid_source_decisions').all(),
+      };
+      const beforePreview = h.sqlite.serialize();
+      const checked = await request('bid/2026/preview', {
+        kind: mode,
+        ...{ versionId: version.row.id, versionSha256: version.sha256 },
+      });
+      expect(checked.status, await checked.clone().text()).toBe(200);
+      const preview = (await checked.json()) as {
+        wouldAllowCreateLive?: boolean;
+        wouldAllowCreateMock?: boolean;
+        contextSha256: string;
+        runtimeSourceToken: string;
+        launchReview: BidLaunchReview;
+      };
+      deepStrictEqual(h.sqlite.serialize(), beforePreview);
+      expect(
+        mode === 'live' ? preview.wouldAllowCreateLive : preview.wouldAllowCreateMock,
+        JSON.stringify(preview),
+      ).toBe(true);
+      expect(preview.launchReview).toMatchObject({
+        requiresAcknowledgement: true,
+        advisories: expect.arrayContaining([
+          {
+            id: 'source_decisions',
+            code: 'unresolved_source_decisions',
+            affectedCount: changedSourceDecisions ? 26 : 27,
+            detail: expect.any(String),
+          },
+          {
+            id: 'qualification_holds',
+            code: 'credential_import_dispute_requires_review',
+            affectedCount: 2,
+            detail: expect.any(String),
+          },
+        ]),
+      });
+      if (changedSourceDecisions)
+        expect(preview.launchReview.advisories).toEqual(
+          expect.arrayContaining([
+            {
+              id: 'retained_source_decisions_changed',
+              code: 'saved_source_decisions_differ_from_retained_review',
+              detail: expect.any(String),
+            },
+          ]),
+        );
+      const path = `bid/2026/${mode === 'live' ? 'live-sessions' : 'mock-sessions'}`;
+      const body = {
+        versionId: version.row.id,
+        versionSha256: version.sha256,
+        expectedContextSha256: preview.contextSha256,
+        expectedSourceToken: preview.runtimeSourceToken,
+      };
+      const rejectedBefore = h.sqlite.serialize();
+      for (const [input, error] of [
+        [body, 'launch_acknowledgement_required'],
+        [
+          { ...body, launchAcknowledgement: { advisorySha256: 'd'.repeat(64) } },
+          'launch_review_changed',
+        ],
+      ] as const) {
+        const rejected = await request(path, input, { key: `synthetic-launch-${mode}-${error}` });
+        expect(rejected.status, await rejected.clone().text()).toBe(409);
+        expect(await rejected.json()).toMatchObject({ error, launchReview: preview.launchReview });
+        deepStrictEqual(h.sqlite.serialize(), rejectedBefore);
+      }
+      const acknowledged = {
+        ...body,
+        launchAcknowledgement: { advisorySha256: preview.launchReview.advisorySha256 },
+      };
+      const forbidden = await request(path, acknowledged, {
+        role: 'member',
+        key: `synthetic-launch-${mode}-forged-authority`,
+      });
+      expect(forbidden.status).toBe(403);
+      deepStrictEqual(h.sqlite.serialize(), rejectedBefore);
+      const createdResponse = await request(path, acknowledged, {
+        key: `synthetic-launch-${mode}-accepted`,
+      });
+      expect(createdResponse.status, await createdResponse.clone().text()).toBe(201);
+      const created = (await createdResponse.json()) as {
+        id: string;
+        launchReview: BidLaunchReview;
+        launchAcknowledged: boolean;
+      };
+      expect(created).toMatchObject({
+        launchReview: preview.launchReview,
+        launchAcknowledged: true,
+      });
+      const frozen = await h.env.DB.prepare(
+        'SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+      )
+        .bind(created.id)
+        .first<{ snapshot_json: string }>();
+      if (!frozen) throw new Error('Expected frozen session');
+      const snapshot = JSON.parse(frozen.snapshot_json);
+      expect(
+        snapshot.members.find((member: { memberId: number }) => member.memberId === OTHER)
+          .credentialNames,
+      ).not.toContain('Synthetic withheld qualification');
+      expect(
+        snapshot.members.find((member: { memberId: number }) => member.memberId === HOLDER)
+          .credentialNames,
+      ).not.toContain('Synthetic second withheld qualification');
+      const creationAudit = JSON.parse(
+        (
+          h.sqlite
+            .prepare('SELECT after_state FROM audit_log WHERE bid_session_id=?')
+            .get(created.id) as { after_state: string }
+        ).after_state,
+      );
+      expect(creationAudit.operatorLaunchReview).toMatchObject({
+        mode,
+        versionId: version.row.id,
+        versionSha256: version.sha256,
+        contextSha256: preview.contextSha256,
+        acknowledged: true,
+        review: preview.launchReview,
+      });
+      const replayBefore = h.sqlite.serialize();
+      const replay = await request(path, acknowledged, {
+        key: `synthetic-launch-${mode}-accepted`,
+      });
+      expect(replay.status, await replay.clone().text()).toBe(201);
+      expect(await replay.json()).toMatchObject({ id: created.id, replayed: true });
+      deepStrictEqual(h.sqlite.serialize(), replayBefore);
+      const readiness = await request(`bid-session/${created.id}/readiness`);
+      expect(readiness.status, await readiness.clone().text()).toBe(200);
+      expect(await readiness.json()).toMatchObject({
+        id: created.id,
+        is_mock: mode === 'mock',
+        launchReview: preview.launchReview,
+        launchAcknowledged: true,
+      });
+      const changed = await request(`bid-session/${created.id}/start`, {
+        launchAcknowledgement: { advisorySha256: 'e'.repeat(64) },
+      });
+      expect(changed.status, await changed.clone().text()).toBe(409);
+      expect(await changed.json()).toMatchObject({ error: 'launch_review_changed' });
+      deepStrictEqual(h.sqlite.serialize(), replayBefore);
+      const start = await request(`bid-session/${created.id}/start`, {});
+      expect(start.status, await start.clone().text()).toBe(200);
+      expect(await start.json()).toMatchObject({
+        current_phase: 'position_bid',
+        launchAcknowledged: true,
+      });
+      expect(
+        h.sqlite
+          .prepare('SELECT is_mock,current_phase FROM bid_sessions WHERE id=?')
+          .get(created.id),
+      ).toEqual({ is_mock: mode === 'mock' ? 1 : 0, current_phase: 'position_bid' });
+      expect(
+        h.sqlite
+          .prepare('SELECT current_seq FROM canonical_bid_session_state WHERE bid_session_id=?')
+          .get(created.id),
+      ).toEqual({ current_seq: 0 });
+      expect(h.sqlite.prepare('SELECT count(*) AS n FROM bids').get()).toEqual({ n: 0 });
+      expect({
+        freezes: h.sqlite.prepare('SELECT * FROM bid_evidence_freezes').all(),
+        updates: h.sqlite.prepare('SELECT * FROM bid_evidence_reviewed_updates').all(),
+        events: h.sqlite.prepare('SELECT * FROM member_qualification_events').all(),
+        holds: h.sqlite.prepare('SELECT * FROM targetsolutions_rows').all(),
+        decisions: h.sqlite.prepare('SELECT * FROM bid_source_decisions').all(),
+      }).toEqual(evidenceBefore);
+      expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
+    },
+  );
 
   it('detects offline receipt corruption rather than trusting reconstructed public counts', async () => {
     await fixture();
