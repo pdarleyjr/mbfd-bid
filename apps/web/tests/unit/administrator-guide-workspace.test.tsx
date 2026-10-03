@@ -44,12 +44,14 @@ async function click(control: HTMLElement) {
 }
 
 describe('Administrator Guide workspace', () => {
-  it('renders one complete PDF manual download control', () => {
+  it('labels the older PDF edition as historical and points to the current launch guide', () => {
     const container = renderGuide();
     const downloads = container.querySelectorAll<HTMLAnchorElement>('a[download][href$=".pdf"]');
     expect(downloads).toHaveLength(1);
-    expect(downloads[0]?.textContent?.trim()).toBe('Download complete manual (PDF)');
+    expect(downloads[0]?.textContent?.trim()).toBe('Download historical manual (PDF · 2026-10-03)');
     expect(downloads[0]?.getAttribute('href')).toBe('/manual/MBFD-Bid-Administrator-Manual.pdf');
+    expect(container.textContent).toContain('edition before launch advisories');
+    expect(container.textContent).toContain('Use this guide or the current HTML download');
   });
 
   it('renders the protected guide route content with category navigation', () => {

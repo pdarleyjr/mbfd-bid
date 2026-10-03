@@ -1,5 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import {
+  BidLaunchAcknowledgementSchema,
+  BidStartSchema,
   DayEndSchema,
   DayStartSchema,
   type JwtPayload,
@@ -27,6 +29,11 @@ import { initializeAnnualOperations } from '../../lib/annual-bid-operations.js';
 import { auditInsertStatement, writeAuditLog } from '../../lib/audit.js';
 import { LIVE_CREATION_ACTION } from '../../lib/bid-definition-live.js';
 import { loadBidDefinitionHead } from '../../lib/bid-definition-version.js';
+import {
+  bidLaunchContextForSnapshot,
+  buildBidLaunchReview,
+  checkBidLaunchAcknowledgement,
+} from '../../lib/bid-launch-review.js';
 import { computeBidOrder } from '../../lib/bid-order.js';
 import {
   bidOrderInputFromSnapshot,
@@ -36,6 +43,7 @@ import {
   summarizeBidSessionPolicySnapshot,
 } from '../../lib/bid-policy.js';
 import { persistBidSessionCreation } from '../../lib/bid-session-creation.js';
+import { readBidSessionLaunchReview } from '../../lib/bid-session-launch-review.js';
 import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { computeFrozenStageOrder } from '../../lib/live-bid-policy.js';
 import { evaluateLiveBidReadiness } from '../../lib/live-bid-readiness.js';
@@ -61,6 +69,7 @@ const CreateSessionSchema = z
     // request during rollout. Omitting both is always rejected.
     mode: z.enum(['mock', 'live']).optional(),
     is_mock: z.boolean().optional(),
+    launchAcknowledgement: BidLaunchAcknowledgementSchema.optional(),
   })
   .superRefine((value, context) => {
     if (value.mode === undefined && value.is_mock === undefined) {
@@ -78,6 +87,7 @@ const CreateSessionSchema = z
 
 const LiveReadinessPreviewSchema = z.object({
   bid_year: z.number().int().min(2024).max(2100),
+  mode: z.enum(['mock', 'live']).default('live'),
 });
 
 function actorIdFromClaims(claims: JwtPayload): number | null {
@@ -179,7 +189,13 @@ router.post(
         error: 'managed_bid_version_required',
         bid_year: body.bid_year,
       });
-    const prepared = await prepareBidSessionPolicySnapshot(db, body.bid_year, Date.now(), 'live');
+    const prepared = await prepareBidSessionPolicySnapshot(
+      db,
+      body.bid_year,
+      Date.now(),
+      body.mode,
+      { operatorControlledLaunch: true },
+    );
     if (!prepared.ok) {
       return c.json({
         dry_run: true,
@@ -195,20 +211,39 @@ router.post(
         LIVE_CREATION_ACTION,
         actorIdFromClaims(c.get('claims')),
       );
-    const readiness = await evaluateLiveBidReadiness({
-      db,
-      env: c.env,
-      // This identifier is never persisted. Existing nonterminal real
-      // sessions still remain visible as conflicts to the preview query.
-      bidSessionId: `readiness-preview-${body.bid_year}`,
-      bidYear: body.bid_year,
-      frozenPolicy: { ok: true, snapshot: prepared.snapshot, coverage: prepared.coverage },
-      operatorAuthorized,
-    });
+    const readiness =
+      body.mode === 'mock'
+        ? null
+        : await evaluateLiveBidReadiness({
+            db,
+            env: c.env,
+            // This identifier is never persisted. Existing nonterminal real
+            // sessions still remain visible as conflicts to the preview query.
+            bidSessionId: `readiness-preview-${body.bid_year}`,
+            bidYear: body.bid_year,
+            frozenPolicy: { ok: true, snapshot: prepared.snapshot, coverage: prepared.coverage },
+            operatorAuthorized,
+            operatorControlledLaunch: true,
+          });
+    const launchContext = bidLaunchContextForSnapshot(prepared.snapshot, body.mode);
+    if (launchContext === null)
+      return c.json({
+        dry_run: true,
+        would_allow_start: false,
+        error: 'session_policy_snapshot_unavailable',
+      });
+    const launchReview = buildBidLaunchReview(launchContext, [
+      ...(prepared.launchAdvisories ?? []),
+      ...(readiness?.launchAdvisories ?? []),
+    ]);
     return c.json({
       dry_run: true,
-      would_allow_start: readiness.canStartLiveBid,
+      bid_year: body.bid_year,
+      is_mock: body.mode === 'mock',
+      mode: body.mode,
+      would_allow_start: readiness?.canStartLiveBid ?? true,
       readiness,
+      launchReview,
     });
   },
 );
@@ -254,6 +289,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
     body.bid_year,
     now.getTime(),
     requestedMode,
+    { operatorControlledLaunch: true },
   );
   if (!policy.ok) {
     return c.json(
@@ -305,6 +341,29 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       body.expected_configuration_revision !== configurationRevision)
   )
     return c.json({ error: 'bid_configuration_changed' }, 409);
+  const readiness =
+    requestedMode === 'mock'
+      ? null
+      : await evaluateLiveBidReadiness({
+          db,
+          env: c.env,
+          bidSessionId: id,
+          bidYear: body.bid_year,
+          frozenPolicy: policy,
+          operatorAuthorized: true,
+          operatorControlledLaunch: true,
+        });
+  if (readiness !== null && !readiness.canStartLiveBid)
+    return c.json({ error: 'readiness_blocked', readiness }, 409);
+  const launchContext = bidLaunchContextForSnapshot(policy.snapshot, requestedMode);
+  if (launchContext === null)
+    return c.json({ error: 'session_launch_review_integrity_invalid' }, 409);
+  const launchReview = buildBidLaunchReview(launchContext, [
+    ...(policy.launchAdvisories ?? []),
+    ...(readiness?.launchAdvisories ?? []),
+  ]);
+  const acknowledgement = checkBidLaunchAcknowledgement(launchReview, body.launchAcknowledgement);
+  if (!acknowledgement.ok) return c.json(acknowledgement, 409);
   const responseBody = {
     id,
     current_phase: 'config',
@@ -318,6 +377,8 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       turn_timer_seconds: settings.turnTimerSeconds,
     },
     pool: summarizeBidSessionPolicySnapshot(policy.snapshot),
+    launchReview,
+    launchAcknowledged: acknowledgement.acknowledged,
   };
 
   // D1 batch is the session-creation boundary: a newly visible session must
@@ -340,7 +401,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
             AND revision = ?
             AND (
               (? = 'mock' AND status IN ('draft', 'active'))
-              OR (? = 'live' AND status = 'active')
+              OR (? = 'live' AND status IN ('draft','active'))
             )
         )
         AND EXISTS (
@@ -350,7 +411,8 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
             AND rule_book_version = ?
             AND position_template_version = ?
             AND configuration_revision = ?
-        ) AND (? IS NULL OR (SELECT revision FROM annual_source_revision WHERE id=1)=?) AND NOT EXISTS(SELECT 1 FROM bid_definition_heads WHERE bid_year=?)`,
+        ) AND (? IS NULL OR (SELECT revision FROM annual_source_revision WHERE id=1)=?) AND NOT EXISTS(SELECT 1 FROM bid_definition_heads WHERE bid_year=?)
+        AND (?='mock' OR NOT EXISTS(SELECT 1 FROM bid_sessions WHERE bid_year=? AND is_mock=0 AND current_phase<>'complete'))`,
         parameters: [
           policy.snapshot.ruleBookVersion,
           policy.snapshot.ruleBookRevision,
@@ -363,11 +425,18 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
           body.expected_source_revision ?? null,
           body.expected_source_revision ?? null,
           body.bid_year,
+          requestedMode,
+          body.bid_year,
         ],
       },
       actorId,
       ...(key ? { receipt: receiptInput } : {}),
       response: responseBody,
+      operatorLaunchReview: {
+        ...launchContext,
+        review: launchReview,
+        acknowledged: acknowledgement.acknowledged,
+      },
     });
   } catch {
     const prior = key ? await loadConfigurationReceipt(c.env.DB, receiptInput) : null;
@@ -383,7 +452,7 @@ router.post('/', requireStepUpAuth(), zValidator('json', CreateSessionSchema), a
       JOIN rule_books b ON b.version=y.rule_book_version
       WHERE y.year=? AND y.rule_book_version=? AND y.position_template_version=?
       AND y.configuration_revision=? AND b.revision=?
-      AND ((?='mock' AND b.status IN ('draft','active')) OR (?='live' AND b.status='active'))
+      AND ((?='mock' AND b.status IN ('draft','active')) OR (?='live' AND b.status IN ('draft','active')))
       AND (? IS NULL OR (SELECT revision FROM annual_source_revision WHERE id=1)=?)`)
       .bind(
         body.bid_year,
@@ -462,6 +531,15 @@ router.post(
   requireLiveBidAction('approve_transition'),
   async (c) => {
     const id = c.req.param('id');
+    let startInput: unknown;
+    try {
+      const raw = await c.req.text();
+      startInput = raw.trim() === '' ? {} : JSON.parse(raw);
+    } catch {
+      return c.json({ error: 'invalid_launch_request' }, 400);
+    }
+    const startRequest = BidStartSchema.safeParse(startInput);
+    if (!startRequest.success) return c.json({ error: 'invalid_launch_request' }, 400);
     const db = getDb(c.env.DB);
     const s = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
     if (s === undefined) return c.json({ error: 'not_found' }, 404);
@@ -523,19 +601,37 @@ router.post(
     if (existingOrder.length > 0 && !orderMatchesFrozenSnapshot(existingOrder, expectedOrder)) {
       return c.json({ error: 'bid_order_not_frozen_policy' }, 409);
     }
-    if (!s.isMock) {
-      const readiness = await evaluateLiveBidReadiness({
-        db,
-        env: c.env,
-        bidSessionId: id,
-        bidYear: s.bidYear,
-        frozenPolicy,
-        // requireAdmin + requireStepUpAuth have already verified this request.
-        operatorAuthorized: true,
-      });
-      if (!readiness.canStartLiveBid) {
-        return c.json({ error: 'readiness_blocked', readiness }, 409);
-      }
+    const readiness = !s.isMock
+      ? await evaluateLiveBidReadiness({
+          db,
+          env: c.env,
+          bidSessionId: id,
+          bidYear: s.bidYear,
+          frozenPolicy,
+          // requireAdmin + requireStepUpAuth have already verified this request.
+          operatorAuthorized: true,
+          operatorControlledLaunch: true,
+        })
+      : null;
+    if (readiness !== null && !readiness.canStartLiveBid) {
+      return c.json({ error: 'readiness_blocked', readiness }, 409);
+    }
+    const launch = await readBidSessionLaunchReview(
+      c.env.DB,
+      id,
+      frozenPolicy.snapshot,
+      s.isMock,
+      readiness?.launchAdvisories ?? [],
+    );
+    if (launch !== null && !launch.ok) return c.json({ error: launch.error }, 409);
+    if (launch?.ok) {
+      const acknowledgement = checkBidLaunchAcknowledgement(
+        launch.review,
+        startRequest.data.launchAcknowledgement,
+        launch.acknowledged,
+      );
+      if (!acknowledgement.ok) return c.json(acknowledgement, 409);
+      launch.acknowledged = acknowledgement.acknowledged;
     }
     const now = new Date();
     const statements: D1PreparedStatement[] = [];
@@ -626,6 +722,15 @@ router.post(
             bid_order_count: expectedOrder.length,
             rule_book_version: frozenPolicy.snapshot.ruleBookVersion,
             position_template_version: frozenPolicy.snapshot.positionTemplateVersion,
+            ...(launch?.ok
+              ? {
+                  operatorLaunchReview: {
+                    ...launch.context,
+                    review: launch.review,
+                    acknowledged: launch.acknowledged,
+                  },
+                }
+              : {}),
           },
         },
         now,
@@ -650,7 +755,14 @@ router.post(
       ) {
         return c.json({ error: 'session_state_changed' }, 409);
       }
-      return c.json({ id, current_phase: 'position_bid', bid_order_count: expectedOrder.length });
+      return c.json({
+        id,
+        current_phase: 'position_bid',
+        bid_order_count: expectedOrder.length,
+        ...(launch?.ok
+          ? { launchReview: launch.review, launchAcknowledged: launch.acknowledged }
+          : {}),
+      });
     });
     if (!mutation.ok) return c.json({ error: mutation.error }, 409);
     return mutation.value;
@@ -665,7 +777,6 @@ router.get('/:id/readiness', async (c) => {
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, id)).get();
   if (session === undefined) return c.json({ error: 'not_found' }, 404);
 
-  if (session.isMock) return c.json({ id, is_mock: true, readiness: null });
   const frozenPolicy = await loadFrozenSessionBidPolicy(db, id);
   if (!frozenPolicy.ok) {
     return c.json(
@@ -673,17 +784,30 @@ router.get('/:id/readiness', async (c) => {
       409,
     );
   }
+  const readiness = session.isMock
+    ? null
+    : await evaluateLiveBidReadiness({
+        db,
+        env: c.env,
+        bidSessionId: id,
+        bidYear: session.bidYear,
+        frozenPolicy,
+        operatorAuthorized: true,
+        operatorControlledLaunch: true,
+      });
+  const launch = await readBidSessionLaunchReview(
+    c.env.DB,
+    id,
+    frozenPolicy.snapshot,
+    session.isMock,
+    readiness?.launchAdvisories ?? [],
+  );
+  if (launch !== null && !launch.ok) return c.json({ error: launch.error }, 409);
   return c.json({
     id,
-    is_mock: false,
-    readiness: await evaluateLiveBidReadiness({
-      db,
-      env: c.env,
-      bidSessionId: id,
-      bidYear: session.bidYear,
-      frozenPolicy,
-      operatorAuthorized: true,
-    }),
+    is_mock: session.isMock,
+    readiness,
+    ...(launch?.ok ? { launchReview: launch.review, launchAcknowledged: launch.acknowledged } : {}),
   });
 });
 

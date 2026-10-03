@@ -1,3 +1,4 @@
+import type { BidLaunchAdvisory } from '@mbfd/shared';
 import { getDb } from '../db/index.js';
 import {
   biddable2026DivisionChiefIds,
@@ -12,6 +13,7 @@ import {
 import { bidSnapshotSha256, validateBidDefinitionSnapshotPin } from './bid-definition-pin.js';
 import { captureBidDefinitionControl } from './bid-definition-source.js';
 import { loadBidDefinitionVersion } from './bid-definition-version.js';
+import { type BidLaunchContext, buildBidLaunchReview } from './bid-launch-review.js';
 import { loadExplicitBidPolicySource, prepareConfiguredBidPolicySnapshot } from './bid-policy.js';
 
 /** Build a run from an explicit immutable version without touching a year
@@ -19,8 +21,9 @@ import { loadExplicitBidPolicySource, prepareConfiguredBidPolicySnapshot } from 
  * returned source guard, session and exact serialized snapshot in one batch.
  * The integrity-checked immutable version owns managed execution material.
  * Legacy publication status cannot be changed on its sealed backing rows.
- * Live still requires normal participation, resolved sources, explicit action
- * authority and readiness at the separate session-creation boundary. */
+ * Managed operator launches carry unresolved business reviews as audited
+ * advisories; immutable evidence, participation, authority, and runtime
+ * validity remain enforced at the separate session-creation boundary. */
 export async function prepareBidDefinitionRun(
   database: D1Database,
   input: {
@@ -30,6 +33,7 @@ export async function prepareBidDefinitionRun(
     bidSessionId: string;
     capturedAtMs: number;
     mode: 'mock' | 'live';
+    operatorControlledLaunch?: boolean;
   },
 ) {
   const before = await captureBidDefinitionControl(database, input.year);
@@ -45,14 +49,23 @@ export async function prepareBidDefinitionRun(
     ...position,
     bidParticipation: participation.get(position.id) ?? 'BIDDABLE',
   }));
+  const inventoryAdvisories: BidLaunchAdvisory[] = [];
   if (input.year === 2026) {
     const chiefs = biddable2026DivisionChiefIds(inventoryPositions);
-    if (chiefs.length > 0)
-      return {
-        ok: false as const,
-        code: '2026_shift_opportunity_inventory_invalid' as const,
-        inventoryIssues: [`division_chief_biddable:${chiefs.join(',')}`],
-      };
+    if (chiefs.length > 0) {
+      if (!input.operatorControlledLaunch)
+        return {
+          ok: false as const,
+          code: '2026_shift_opportunity_inventory_invalid' as const,
+          inventoryIssues: [`division_chief_biddable:${chiefs.join(',')}`],
+        };
+      inventoryAdvisories.push({
+        id: 'configured_chief_opportunities',
+        code: '2026_shift_opportunity_inventory_invalid',
+        affectedCount: chiefs.length,
+        detail: `The saved catalog marks Division Chief positions biddable: ${chiefs.join(', ')}. Starting preserves this configured catalog.`,
+      });
+    }
   }
   if (
     isFinal2026ManagedConfiguration(input.year, {
@@ -60,12 +73,20 @@ export async function prepareBidDefinitionRun(
     })
   ) {
     const inventory = evaluate2026OpportunityInventory(inventoryPositions);
-    if (inventory.blockingCodes.length > 0)
-      return {
-        ok: false as const,
-        code: '2026_shift_opportunity_inventory_invalid' as const,
-        inventoryIssues: inventory.blockingCodes,
-      };
+    if (inventory.blockingCodes.length > 0) {
+      if (!input.operatorControlledLaunch)
+        return {
+          ok: false as const,
+          code: '2026_shift_opportunity_inventory_invalid' as const,
+          inventoryIssues: inventory.blockingCodes,
+        };
+      inventoryAdvisories.push({
+        id: 'configured_opportunity_inventory',
+        code: '2026_shift_opportunity_inventory_invalid',
+        affectedCount: inventory.blockingCodes.length,
+        detail: `The saved opportunity counts differ from the source expectation: ${inventory.blockingCodes.join('; ')}. Starting preserves the configured seats.`,
+      });
+    }
   }
   const db = getDb(database);
   if (input.mode === 'live' && version.content.settings?.v !== 3)
@@ -94,6 +115,7 @@ export async function prepareBidDefinitionRun(
     input.mode,
     version.content.sourceDecisions,
     version.content,
+    { operatorControlledLaunch: input.operatorControlledLaunch ?? false },
   );
   if (!prepared.ok) return prepared;
   const compiledStagePolicy = compileBidDefinitionStagePolicy({
@@ -173,5 +195,18 @@ export async function prepareBidDefinitionRun(
     pins,
     coverage: prepared.coverage,
     sourceGuard: before,
+    ...(input.operatorControlledLaunch
+      ? {
+          launchReview: buildBidLaunchReview(
+            {
+              mode: input.mode,
+              versionId: version.row.id,
+              versionSha256: version.sha256,
+              contextSha256,
+            } satisfies BidLaunchContext,
+            [...inventoryAdvisories, ...(prepared.launchAdvisories ?? [])],
+          ),
+        }
+      : {}),
   };
 }

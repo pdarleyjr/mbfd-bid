@@ -1,5 +1,8 @@
 {
   "sourceSha256": "5b50cd48266260d8ae9c0bbd8c7f9f033b854c7cc07cac060d0ffd86008ec4e6",
   "pdfSha256": "fd080c29ebabff2c09122c7ee6692877807dc45f3c26e6bc043eef341d0aaabe",
-  "sections": 58
+  "sections": 58,
+  "edition": "historical",
+  "sourceDate": "2026-10-03",
+  "sourceCommit": "00cb7515b6e3dd5acbfb6a1a2c484f8d5d491b70"
 }

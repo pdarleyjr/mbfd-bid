@@ -1,4 +1,4 @@
-import type { BidSessionPolicySnapshot } from '@mbfd/shared';
+import type { BidLaunchReview, BidSessionPolicySnapshot } from '@mbfd/shared';
 import {
   type ConfigurationRequest,
   configurationReceiptStatement,
@@ -6,6 +6,7 @@ import {
 import { auditInsertStatement } from './audit.js';
 import type { BidWriteCondition } from './bid-definition-legacy-write.js';
 import type { BidDefinitionSnapshotColumns } from './bid-definition-pin.js';
+import type { BidLaunchContext } from './bid-launch-review.js';
 import { summarizeBidSessionPolicySnapshot } from './bid-policy.js';
 
 type Snapshot = Extract<BidSessionPolicySnapshot, { v: 3 }>;
@@ -45,6 +46,7 @@ export async function persistBidSessionCreation(
     actorId: number | null;
     receipt?: ConfigurationRequest;
     response: Record<string, unknown>;
+    operatorLaunchReview?: BidLaunchContext & { review: BidLaunchReview; acknowledged: boolean };
   },
 ) {
   const { snapshot, pins } = input;
@@ -98,6 +100,9 @@ export async function persistBidSessionCreation(
           configuration_revision: snapshot.configurationRevision,
           settings: snapshot.settings,
           pool: summarizeBidSessionPolicySnapshot(snapshot),
+          ...(input.operatorLaunchReview === undefined
+            ? {}
+            : { operatorLaunchReview: input.operatorLaunchReview }),
         },
       },
       new Date(input.capturedAtMs),

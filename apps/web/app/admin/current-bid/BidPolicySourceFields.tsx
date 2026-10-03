@@ -99,7 +99,7 @@ export function BidPolicySourceFields({
               </summary>
               <div className="mt-3 space-y-3">
                 <ChoiceField
-                  label="Blocking scope"
+                  label="Review scope"
                   value={decision.blockingClassification ?? 'BLOCKS_FINAL_2026_CONFIGURATION'}
                   options={[
                     { value: 'BLOCKS_APPLICATION_RELEASE', label: 'Application release' },
@@ -108,7 +108,7 @@ export function BidPolicySourceFields({
                       value: 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
                       label: 'Final evidence certification',
                     },
-                    { value: 'BLOCKS_REAL_BID_ACTIVATION', label: 'Real Bid activation' },
+                    { value: 'BLOCKS_REAL_BID_ACTIVATION', label: 'Real Bid start advisory' },
                   ]}
                   onChange={(blockingClassification) =>
                     onChange({
@@ -196,7 +196,7 @@ export function BidPolicySourceFields({
                     label="Reviewed SWAT population"
                     value={decision.membershipPopulation.choice}
                     options={[
-                      { value: 'UNRESOLVED', label: 'Unresolved — blocks Real activation' },
+                      { value: 'UNRESOLVED', label: 'Unresolved — launch advisory' },
                       { value: 'CURRENT_SIX', label: 'Current six members' },
                       { value: 'WIDER_QUALIFIED_POOL', label: 'Wider qualified pool' },
                     ]}

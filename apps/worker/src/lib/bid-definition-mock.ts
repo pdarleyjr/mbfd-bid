@@ -1,3 +1,4 @@
+import { BidLaunchAcknowledgementSchema } from '@mbfd/shared';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
@@ -6,6 +7,7 @@ import { loadConfigurationReceipt } from './admin-configuration-receipt.js';
 import { assertBidDefinitionRunIntegrity } from './bid-definition-integrity.js';
 import { prepareBidDefinitionRun } from './bid-definition-run.js';
 import { loadBidDefinitionVersion } from './bid-definition-version.js';
+import { checkBidLaunchAcknowledgement, loadStoredBidLaunchReview } from './bid-launch-review.js';
 import { loadFrozenSessionBidPolicy, summarizeBidSessionPolicySnapshot } from './bid-policy.js';
 import { bidSessionCreationResponse, persistBidSessionCreation } from './bid-session-creation.js';
 import { bidSourceDecisionBlockers } from './bid-source-decision-review.js';
@@ -22,6 +24,7 @@ export const BidMockSelectionSchema = z
 export const CreateBidMockSchema = BidMockSelectionSchema.extend({
   expectedContextSha256: BidDigestSchema,
   expectedSourceToken: BidDigestSchema,
+  launchAcknowledgement: BidLaunchAcknowledgementSchema.optional(),
 }).strict();
 const canonical = (value: unknown) => canonicalize(value as JsonValue);
 
@@ -36,6 +39,7 @@ export async function previewBidDefinitionMock(
     bidSessionId: `preview-${ulid()}`,
     capturedAtMs: Date.now(),
     mode: 'mock',
+    operatorControlledLaunch: true,
   });
   if (!prepared.ok)
     return {
@@ -57,6 +61,7 @@ export async function previewBidDefinitionMock(
     contextSha256: prepared.pins.contextSha256,
     runtimeSourceToken: prepared.sourceGuard.token,
     sourceDecisionBlockers: bidSourceDecisionBlockers(version.content.sourceDecisions),
+    launchReview: prepared.launchReview,
     pool: summarizeBidSessionPolicySnapshot(prepared.snapshot),
   };
 }
@@ -74,6 +79,12 @@ function mockResponse(
       snapshotSha256: prepared.pins.snapshotSha256,
       contextSha256: prepared.pins.contextSha256,
     },
+    ...(prepared.launchReview === undefined
+      ? {}
+      : {
+          launchReview: prepared.launchReview,
+          launchAcknowledged: prepared.launchReview.requiresAcknowledgement,
+        }),
   };
 }
 
@@ -119,6 +130,13 @@ export async function createBidDefinitionMock(
         pins.contextSha256 !== input.body.expectedContextSha256
       )
         return { ok: false as const, error: 'session_policy_snapshot_integrity_invalid' };
+      const launch = await loadStoredBidLaunchReview(database, id.data, {
+        mode: 'mock',
+        versionId: pins.bidVersionId,
+        versionSha256: pins.bidVersionSha256,
+        contextSha256: pins.contextSha256,
+      });
+      if (launch !== null && !launch.ok) return launch;
       const expected = {
         ...bidSessionCreationResponse(id.data, policy.snapshot, true),
         bidDefinition: {
@@ -128,6 +146,9 @@ export async function createBidDefinitionMock(
           snapshotSha256: pins.snapshotSha256,
           contextSha256: pins.contextSha256,
         },
+        ...(launch === null
+          ? {}
+          : { launchReview: launch.review, launchAcknowledged: launch.acknowledged }),
       };
       if (canonical(expected) !== canonical(prior.response))
         return { ok: false as const, error: 'session_policy_snapshot_integrity_invalid' };
@@ -146,6 +167,7 @@ export async function createBidDefinitionMock(
     bidSessionId: id,
     capturedAtMs,
     mode: 'mock',
+    operatorControlledLaunch: true,
   });
   if (!prepared.ok)
     return {
@@ -162,7 +184,15 @@ export async function createBidDefinitionMock(
     prepared.sourceGuard.token !== input.body.expectedSourceToken
   )
     return { ok: false as const, error: 'bid_run_context_changed' };
+  if (prepared.launchReview === undefined)
+    return { ok: false as const, error: 'session_launch_review_integrity_invalid' };
+  const acknowledgement = checkBidLaunchAcknowledgement(
+    prepared.launchReview,
+    input.body.launchAcknowledgement,
+  );
+  if (!acknowledgement.ok) return acknowledgement;
   const response = mockResponse(id, prepared);
+  response.launchAcknowledged = acknowledgement.acknowledged;
   try {
     await persistBidSessionCreation(database, {
       id,
@@ -176,6 +206,14 @@ export async function createBidDefinitionMock(
       actorId: input.actorId,
       receipt: receiptInput,
       response,
+      operatorLaunchReview: {
+        mode: 'mock',
+        versionId: prepared.pins.bidVersionId,
+        versionSha256: prepared.pins.bidVersionSha256,
+        contextSha256: prepared.pins.contextSha256,
+        review: prepared.launchReview,
+        acknowledged: acknowledgement.acknowledged,
+      },
     });
     return { ok: true as const, replayed: false, response };
   } catch {

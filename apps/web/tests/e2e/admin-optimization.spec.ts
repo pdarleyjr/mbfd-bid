@@ -49,11 +49,20 @@ test('Docs, contextual help and reviewed credential upload work on desktop and m
   await expect(
     page.getByRole('heading', { name: 'Docs & Administrator Manual', exact: true }),
   ).toBeVisible();
-  const pdf = page.getByRole('link', { name: 'Download complete manual (PDF)', exact: true });
+  const pdf = page.getByRole('link', {
+    name: 'Download historical manual (PDF · 2026-10-03)',
+    exact: true,
+  });
   await expect(pdf).toHaveCount(1);
   await expect(pdf).toBeVisible();
   await expect(pdf).toHaveAttribute('download', '');
   await expect(pdf).toHaveAttribute('href', '/manual/MBFD-Bid-Administrator-Manual.pdf');
+  await expect(
+    page.getByText(/The PDF preserves the 2026-10-03 edition before launch advisories/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Download complete manual (HTML)', exact: true }),
+  ).toBeVisible();
   const response = await page.request.get('/manual/MBFD-Bid-Administrator-Manual.pdf');
   expect(response.status()).toBe(200);
   expect((await response.body()).subarray(0, 5).toString()).toBe('%PDF-');

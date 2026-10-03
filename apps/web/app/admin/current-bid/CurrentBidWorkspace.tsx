@@ -905,15 +905,7 @@ export function CurrentBidWorkspace({
         <BidReadinessSummary
           year={year}
           content={draft.content}
-          policyReady={
-            draft.content.policy !== null &&
-            draft.content.sourceDecisions.every(
-              (decision) =>
-                decision.status === 'RESOLVED' ||
-                decision.blockingClassification === 'BLOCKS_REAL_BID_ACTIVATION' ||
-                decision.blockingClassification === 'BLOCKS_FINAL_EVIDENCE_CERTIFICATION',
-            )
-          }
+          policyReady={draft.content.policy !== null}
           realActivationReviewCount={
             draft.content.sourceDecisions.filter((decision) => decision.status === 'OPEN').length
           }

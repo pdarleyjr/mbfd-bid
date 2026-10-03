@@ -9,6 +9,10 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDb } from '../../src/db/index.js';
 import {
+  FINAL_2026_TOPOLOGY_DECISION_ID,
+  FINAL_2026_TOPOLOGY_SOURCE_REF,
+} from '../../src/lib/2026-opportunity-inventory.js';
+import {
   bidDefinitionContextHash,
   snapshotMatchesBidDefinition,
 } from '../../src/lib/bid-definition-context.js';
@@ -178,13 +182,14 @@ describe('read-only preparation of an explicit saved Bid version', () => {
     expect(h.sqlite.pragma('foreign_key_check')).toEqual([]);
   }
 
-  function decision(status: 'OPEN' | 'RESOLVED', revision: number) {
+  function decision(status: 'OPEN' | 'RESOLVED', revision: number, year = 2027) {
     h.sqlite
       .prepare(`INSERT INTO bid_source_decisions
         (bid_year,issue_id,revision,title,question,area,status,decision,source_ref,effective_on,actor_subject,created_at)
-        VALUES (2027,'synthetic-run-issue',?,'Synthetic policy question','Which evidence applies?','annual-policy',?,?,
+        VALUES (?,'synthetic-run-issue',?,'Synthetic policy question','Which evidence applies?','annual-policy',?,?,
           'synthetic:decision','2027-01-01','synthetic-editor',?)`)
       .run(
+        year,
         revision,
         status,
         status === 'RESOLVED' ? 'Synthetic explicit resolution' : '',
@@ -192,13 +197,16 @@ describe('read-only preparation of an explicit saved Bid version', () => {
       );
   }
 
-  async function savedVersion(change?: (content: BidDefinitionContent) => void): Promise<Version> {
-    const captured = await captureBidDefinitionSource(h.env.DB, 2027);
+  async function savedVersion(
+    change?: (content: BidDefinitionContent) => void,
+    year = 2027,
+  ): Promise<Version> {
+    const captured = await captureBidDefinitionSource(h.env.DB, year);
     if (!captured.ok) throw new Error(JSON.stringify(captured));
     const content = structuredClone(captured.content);
     change?.(content);
     const saved = await saveBidDefinition(h.env.DB, {
-      year: 2027,
+      year,
       key: 'synthetic-run-save',
       actorSubject: 'synthetic-editor',
       actorId: 10001,
@@ -207,14 +215,14 @@ describe('read-only preparation of an explicit saved Bid version', () => {
       intent: { operation: 'save', content },
     });
     if (!saved.ok) throw new Error(JSON.stringify(saved));
-    const loaded = await loadBidDefinitionVersion(h.env.DB, 2027, String(saved.response.versionId));
+    const loaded = await loadBidDefinitionVersion(h.env.DB, year, String(saved.response.versionId));
     if (!loaded.ok) throw new Error(JSON.stringify(loaded));
     return loaded;
   }
 
   function input(version: Version, overrides: Partial<RunInput> = {}): RunInput {
     return {
-      year: 2027,
+      year: version.row.bid_year,
       versionId: version.row.id,
       versionSha256: version.sha256,
       bidSessionId: SESSION,
@@ -311,6 +319,67 @@ describe('read-only preparation of an explicit saved Bid version', () => {
       h.sqlite.prepare('SELECT COUNT(*) AS n FROM bid_session_policy_snapshots').get(),
     ).toEqual({ n: 0 });
   });
+
+  it.each(['mock', 'live'] as const)(
+    'lets an operator preserve a deliberately customized 2026 catalog in %s with exact inventory advisories',
+    async (mode) => {
+      h.sqlite.exec(`
+        UPDATE rule_books SET effective_year=2026;
+        UPDATE position_templates SET effective_year=2026;
+        UPDATE bid_years SET year=2026;
+        INSERT INTO positions (id,template_version,shift,station,division,unit,rank_required,position_name)
+          VALUES ('A211','2027.1','A','7','Combat','Synthetic Engine','FF','Synthetic customized opportunity');
+        INSERT INTO position_rules (rule_book_version,position_id,template_version,required_criteria,points_preference,tie_break_chain)
+          VALUES ('2027.1','A211','2027.1','{"rank":["FF"],"credentials":[],"custom":[]}',
+            '{"max":0,"items":[]}','["rsc_seniority"]');
+      `);
+      decision('RESOLVED', 1, 2026);
+      const version = await savedVersion((content) => {
+        const policy = syntheticLivePolicy();
+        const firstStage = policy.stages[0];
+        if (firstStage === undefined) throw new Error('Synthetic stage required');
+        firstStage.opportunityPositionIds.push('A211');
+        content.settings = {
+          v: 3,
+          expectedDurationDays: 2,
+          turnTimerSeconds: 180,
+          credentialEvaluationOn: '2027-01-01',
+          personnelEvaluationOn: '2027-01-01',
+          livePolicy: policy,
+        };
+        content.sourceDecisions = content.sourceDecisions.map((source) => ({
+          ...source,
+          issueId: FINAL_2026_TOPOLOGY_DECISION_ID,
+          area: 'positions',
+          sourceRef: FINAL_2026_TOPOLOGY_SOURCE_REF,
+        }));
+      }, 2026);
+      expect(
+        await readOnly(() => prepareBidDefinitionRun(h.env.DB, input(version, { mode }))),
+      ).toMatchObject({ ok: false, code: '2026_shift_opportunity_inventory_invalid' });
+      const result = await prepared(version, { mode, operatorControlledLaunch: true });
+      expect(result.launchReview).toMatchObject({
+        requiresAcknowledgement: true,
+        advisories: expect.arrayContaining([
+          expect.objectContaining({ id: 'configured_chief_opportunities', affectedCount: 1 }),
+          expect.objectContaining({
+            id: 'configured_opportunity_inventory',
+            detail: expect.stringContaining('A_shift_count:2:expected_73'),
+          }),
+        ]),
+      });
+      expect(
+        result.snapshot.ruleBookMaterial.positions.map((position) => position.id).sort(),
+      ).toEqual(['A211', 'synthetic-run-seat']);
+      expect(result.snapshot.ruleBookMaterial.rules).toHaveLength(2);
+      expect(result.coverage.valid).toBe(true);
+      expect(result.pins.bidVersionSha256).toBe(version.sha256);
+      expect(snapshotMatchesBidDefinition(result.snapshot, version)).toBe(true);
+      expect(result.snapshot.members.find((member) => member.memberId === 10002)?.pool).toBe(
+        'EXCLUDED',
+      );
+    },
+  );
 
   it('preserves accepted-baseline Mock participation without correcting unknown employment', async () => {
     acceptedBaseline();

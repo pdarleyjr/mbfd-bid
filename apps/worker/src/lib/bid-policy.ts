@@ -6,6 +6,7 @@ import {
   type BidDefinitionContent,
   type BidEvaluation,
   BidEvaluationSchema,
+  type BidLaunchAdvisory,
   type BidParticipation,
   type BidSessionPolicySnapshot,
   BidSessionPolicySnapshotSchema,
@@ -23,6 +24,7 @@ import { assignmentTermReviewBlocksPurpose, evaluateAssignmentTerms } from './as
 import { loadBidEligibilityEvidence } from './bid-eligibility-evidence.js';
 import { APPROVED_2026_CUTOFF_AT, type loadBidEvidenceFreeze } from './bid-evidence-freeze.js';
 import { loadPinnedBidEvidenceFreeze } from './bid-evidence-reviewed-update-storage.js';
+import { credentialHoldLaunchAdvisory, sourceQuestionLaunchAdvisory } from './bid-launch-review.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { type BidOrdinalDatasetRow, projectBidOrdinals } from './bid-ordinal-evidence.js';
 import {
@@ -800,6 +802,7 @@ export interface ConfiguredBidYearPolicy {
   ruleBookRevision: number;
   positionTemplateVersion: string;
   coverage: RuleBookCoverage;
+  launchAdvisories?: readonly BidLaunchAdvisory[];
   annualPolicyDocument: {
     id: string;
     revision: number;
@@ -846,6 +849,7 @@ export async function loadConfiguredBidYearPolicy(
   db: DB,
   bidYear: number,
   mode: BidSessionMode,
+  options: { operatorControlledLaunch?: boolean } = {},
 ): Promise<
   { ok: true; policy: ConfiguredBidYearPolicy } | { ok: false; code: ConfiguredBidYearPolicyError }
 > {
@@ -862,7 +866,7 @@ export async function loadConfiguredBidYearPolicy(
     .where(eq(bidYears.year, bidYear))
     .get();
   if (year === undefined) return { ok: false, code: 'bid_year_not_found' };
-  return loadExplicitBidPolicySource(db, year, mode);
+  return loadExplicitBidPolicySource(db, year, mode, options);
 }
 
 /** Shared validation for the legacy year adapter and an authenticated saved
@@ -878,6 +882,7 @@ export async function loadExplicitBidPolicySource(
     annualPolicyDocumentId: string | null;
   },
   mode: BidSessionMode,
+  options: { operatorControlledLaunch?: boolean } = {},
 ): Promise<
   { ok: true; policy: ConfiguredBidYearPolicy } | { ok: false; code: ConfiguredBidYearPolicyError }
 > {
@@ -887,6 +892,7 @@ export async function loadExplicitBidPolicySource(
   }
   const settings = parseBidConfigurationSettings(year.configJson);
   if (settings === null) return { ok: false, code: 'bid_configuration_settings_invalid' };
+  const launchAdvisories: BidLaunchAdvisory[] = [];
   // V1 settings are intentionally readable for recovery and configuration
   // repair, but cannot create a new mock or live session. An evaluation date
   // must be an explicit annual policy input rather than the wall-clock moment
@@ -926,7 +932,7 @@ export async function loadExplicitBidPolicySource(
         document.effectiveYear !== bidYear ||
         document.ruleBookVersion !== year.ruleBookVersion ||
         document.status === 'SUPERSEDED' ||
-        (mode === 'live' && document.status !== 'PUBLISHED') ||
+        (mode === 'live' && document.status !== 'PUBLISHED' && !options.operatorControlledLaunch) ||
         JSON.stringify(executionPolicy.data) !== JSON.stringify(settings.livePolicy)
       )
         return { ok: false, code: 'bid_configuration_annual_policy_document_invalid' };
@@ -937,6 +943,13 @@ export async function loadExplicitBidPolicySource(
         policyText: document.policyText,
         executablePolicyRevision: executionPolicy.data.policyRevision,
       };
+      if (options.operatorControlledLaunch && mode === 'live' && document.status !== 'PUBLISHED')
+        launchAdvisories.push({
+          id: 'annual_policy_publication',
+          code: 'annual_policy_not_published',
+          detail:
+            'The configured annual policy is not marked published. Starting preserves its current source status.',
+        });
     }
   }
 
@@ -959,12 +972,23 @@ export async function loadExplicitBidPolicySource(
   if (mode === 'mock' && book.status !== 'draft' && book.status !== 'active') {
     return { ok: false, code: 'bid_configuration_draft_required' };
   }
-  if (mode === 'live' && book.status !== 'active') {
+  if (
+    mode === 'live' &&
+    book.status !== 'active' &&
+    !(options.operatorControlledLaunch && book.status === 'draft')
+  ) {
     return { ok: false, code: 'bid_configuration_frozen_required' };
   }
 
   const coverage = await loadRuleBookCoverage(db, book.version);
   if (!coverage.valid) return { ok: false, code: 'rule_book_invalid' };
+  if (options.operatorControlledLaunch && mode === 'live' && book.status === 'draft')
+    launchAdvisories.push({
+      id: 'rule_book_publication',
+      code: 'rule_book_not_active',
+      detail:
+        'The configured rule book is still draft. Starting preserves its current source status.',
+    });
   if (coverage.templateVersion !== year.positionTemplateVersion) {
     return { ok: false, code: 'bid_configuration_template_mismatch' };
   }
@@ -980,6 +1004,7 @@ export async function loadExplicitBidPolicySource(
       positionTemplateVersion: year.positionTemplateVersion,
       coverage,
       annualPolicyDocument,
+      ...(options.operatorControlledLaunch ? { launchAdvisories } : {}),
     },
   };
 }
@@ -989,6 +1014,7 @@ export type BidSessionPolicySnapshotPreparation =
       ok: true;
       snapshot: MaterializedBidSessionPolicySnapshot;
       coverage: RuleBookCoverage;
+      launchAdvisories?: readonly BidLaunchAdvisory[];
     }
   | {
       ok: false;
@@ -1072,10 +1098,19 @@ export async function prepareBidSessionPolicySnapshot(
   bidYear: number,
   capturedAtMs: number,
   mode: BidSessionMode,
+  options: { operatorControlledLaunch?: boolean } = {},
 ): Promise<BidSessionPolicySnapshotPreparation> {
-  const configured = await loadConfiguredBidYearPolicy(db, bidYear, mode);
+  const configured = await loadConfiguredBidYearPolicy(db, bidYear, mode, options);
   if (!configured.ok) return { ok: false, code: configured.code };
-  return prepareConfiguredBidPolicySnapshot(db, configured.policy, capturedAtMs, mode);
+  return prepareConfiguredBidPolicySnapshot(
+    db,
+    configured.policy,
+    capturedAtMs,
+    mode,
+    undefined,
+    undefined,
+    options,
+  );
 }
 
 /** Reuses every existing evidence, baseline, pool and eligibility freeze rule.
@@ -1201,7 +1236,12 @@ export type BidEvaluationMaterial = {
   policyReferenceJson: readonly string[];
 };
 export type BidEvaluationPreparation =
-  | { ok: true; evaluation: BidEvaluation; coverage: RuleBookCoverage }
+  | {
+      ok: true;
+      evaluation: BidEvaluation;
+      coverage: RuleBookCoverage;
+      launchAdvisories?: readonly BidLaunchAdvisory[];
+    }
   | Extract<BidSessionPolicySnapshotPreparation, { ok: false }>;
 
 export async function loadPersistedBidEvaluationMaterial(
@@ -1360,6 +1400,7 @@ export async function prepareCapturedBidEvaluation(
   evidence: BidEvaluationEvidence,
   capturedAtMs: number,
   mode: CapturedBidEvaluationPurpose,
+  options: { operatorControlledLaunch?: boolean } = {},
 ): Promise<BidEvaluationPreparation> {
   const { coverage, bindings, ruleBookMaterial } = policy;
   const templateVersion = coverage.templateVersion;
@@ -1662,10 +1703,22 @@ export async function prepareCapturedBidEvaluation(
     qualificationEvents,
     credentialEvaluationOn,
   );
-  if (mode === 'live' && held.length > 0)
+  if (mode === 'live' && held.length > 0 && !options.operatorControlledLaunch)
     return { ok: false, code: 'credential_import_dispute_requires_review' };
   const heldNames = (memberId: number) =>
-    new Set(held.filter((row) => row.memberId === memberId).map((row) => row.credentialName));
+    new Set([
+      ...held.filter((row) => row.memberId === memberId).map((row) => row.credentialName),
+      ...(options.operatorControlledLaunch
+        ? evidence.disputedRows
+            .filter(
+              (row) =>
+                row.memberId === memberId &&
+                (row.observedOn <= credentialEvaluationOn ||
+                  (row.expiresOn !== null && row.expiresOn < credentialEvaluationOn)),
+            )
+            .map((row) => row.credentialName)
+        : []),
+    ]);
 
   const bidOrdinals = projectBidOrdinals(evidence.ordinalDatasets?.[0], memberRows);
   const frozenMembers: FrozenBidEligibilityMember[] = memberRows
@@ -1899,13 +1952,15 @@ export async function prepareCapturedBidEvaluation(
     .sort((left, right) => left.memberId - right.memberId);
 
   if (
-    policy.sourceDecisions.some((decision) => bidSourceDecisionBlocksPurpose(decision, mode)) ||
+    (!options.operatorControlledLaunch &&
+      policy.sourceDecisions.some((decision) => bidSourceDecisionBlocksPurpose(decision, mode))) ||
     bidSourceDecisionReviewIssues(policy.sourceDecisions).length > 0
   )
     return { ok: false, code: 'policy_source_decision_required' };
   const disputed = await referencedBidEvaluationDisputes(db, evidence, policy);
 
   if (
+    !options.operatorControlledLaunch &&
     disputed.some((row) =>
       frozenMembers.some(
         (member) => member.memberId === row.memberId && member.pool !== 'EXCLUDED',
@@ -1971,6 +2026,7 @@ export async function prepareCapturedBidEvaluation(
     );
     if (!pools.ok) return { ok: false, code: 'rule_book_invalid' };
     if (
+      !options.operatorControlledLaunch &&
       evaluation.settings.livePolicy.annualOperations?.opportunityPools?.some(
         (pool) =>
           !policy.sourceDecisions.some(
@@ -1986,7 +2042,33 @@ export async function prepareCapturedBidEvaluation(
     evaluatedCoverage.templateVersion !== evaluation.positionTemplateVersion
   )
     return { ok: false, code: 'rule_book_invalid' };
-  return { ok: true, evaluation, coverage: evaluatedCoverage };
+  return {
+    ok: true,
+    evaluation,
+    coverage: evaluatedCoverage,
+    ...(options.operatorControlledLaunch
+      ? {
+          launchAdvisories: [
+            ...sourceQuestionLaunchAdvisory(
+              policy.sourceDecisions.filter((decision) => decision.status === 'OPEN').length,
+            ),
+            ...credentialHoldLaunchAdvisory(
+              new Set([
+                ...held.map((row) => `${row.memberId}:${row.credentialName}`),
+                ...evidence.disputedRows
+                  .filter(
+                    (row) =>
+                      row.memberId !== null &&
+                      (row.observedOn <= credentialEvaluationOn ||
+                        (row.expiresOn !== null && row.expiresOn < credentialEvaluationOn)),
+                  )
+                  .map((row) => `${row.memberId}:${row.credentialName}`),
+              ]).size,
+            ),
+          ],
+        }
+      : {}),
+  };
 }
 
 /** Derivation reads only the integrity-checked original freeze and immutable
@@ -2105,6 +2187,7 @@ export async function prepareConfiguredBidPolicySnapshot(
   mode: BidSessionMode,
   sourceDecisions?: BidDefinitionContent['sourceDecisions'],
   definitionContent?: BidDefinitionContent,
+  options: { operatorControlledLaunch?: boolean } = {},
 ): Promise<BidSessionPolicySnapshotPreparation> {
   const material = await loadPersistedBidEvaluationMaterial(db, policy, sourceDecisions);
   let prepared: BidEvaluationPreparation;
@@ -2124,6 +2207,9 @@ export async function prepareConfiguredBidPolicySnapshot(
             rule,
         ),
       });
+      const reviewedSourceDecisionsDiffer =
+        saved?.reviewedUpdate !== undefined &&
+        serial(definitionContent?.sourceDecisions) !== serial(saved.sourceDecisions);
       if (
         !saved ||
         freeze.freezeId !== saved.row.id ||
@@ -2133,8 +2219,7 @@ export async function prepareConfiguredBidPolicySnapshot(
         freeze.sourceVersionId !== saved.row.source_version_id ||
         freeze.sourceVersionSha256 !== saved.row.source_version_sha256 ||
         serial(freeze.reviewedUpdate ?? null) !== serial(saved.reviewedUpdate ?? null) ||
-        (saved.reviewedUpdate !== undefined &&
-          serial(definitionContent?.sourceDecisions) !== serial(saved.sourceDecisions)) ||
+        (reviewedSourceDecisionsDiffer && !options.operatorControlledLaunch) ||
         (freeze.reviewedUpdate !== undefined && freeze.derivation !== undefined) ||
         freeze.evidenceCutoffAt !== APPROVED_2026_CUTOFF_AT ||
         freeze.personnelSnapshot.capturedAt !== new Date(saved.row.captured_at).toISOString() ||
@@ -2160,20 +2245,25 @@ export async function prepareConfiguredBidPolicySnapshot(
         material.coverage.valid !== true
       )
         return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
-      if (saved.reviewedUpdate !== undefined && mode === 'live') {
+      let heldCount = 0;
+      if (
+        (saved.reviewedUpdate !== undefined && mode === 'live') ||
+        options.operatorControlledLaunch
+      ) {
         const credentials = JSON.parse(saved.row.credential_source_json) as Pick<
           BidEvaluationEvidence,
           'qualificationHolds' | 'qualificationEventRows'
         >;
         const holds = unresolvedQualificationHolds(
-          credentials.qualificationHolds,
+          credentials.qualificationHolds ?? [],
           credentials.qualificationEventRows.map((event) => ({
             ...event,
             createdAt: new Date(event.createdAt).getTime(),
           })),
           policy.settings.v === 3 ? policy.settings.credentialEvaluationOn : '',
         );
-        if (holds.length > 0)
+        heldCount = holds.length;
+        if (holds.length > 0 && !options.operatorControlledLaunch)
           return { ok: false, code: 'credential_import_dispute_requires_review' };
       }
       let frozenEvaluation = saved.evaluation;
@@ -2193,19 +2283,51 @@ export async function prepareConfiguredBidPolicySnapshot(
         capturedAtMs,
       });
       if (
-        material.sourceDecisions.some((decision) =>
-          bidSourceDecisionBlocksPurpose(decision, mode),
-        ) ||
+        (!options.operatorControlledLaunch &&
+          material.sourceDecisions.some((decision) =>
+            bidSourceDecisionBlocksPurpose(decision, mode),
+          )) ||
         bidSourceDecisionReviewIssues(material.sourceDecisions).length > 0
       )
         return { ok: false, code: 'policy_source_decision_required' };
-      prepared = { ok: true, evaluation, coverage: material.coverage };
+      prepared = {
+        ok: true,
+        evaluation,
+        coverage: material.coverage,
+        ...(options.operatorControlledLaunch
+          ? {
+              launchAdvisories: [
+                ...sourceQuestionLaunchAdvisory(
+                  material.sourceDecisions.filter((decision) => decision.status === 'OPEN').length,
+                ),
+                ...credentialHoldLaunchAdvisory(heldCount),
+                ...(reviewedSourceDecisionsDiffer
+                  ? [
+                      {
+                        id: 'retained_source_decisions_changed',
+                        code: 'saved_source_decisions_differ_from_retained_review',
+                        detail:
+                          'The saved source-question handling differs from the retained evidence review. This run uses the saved configuration while preserving the original evidence and qualifications.',
+                      },
+                    ]
+                  : []),
+              ],
+            }
+          : {}),
+      };
     } catch {
       return { ok: false, code: 'bid_evidence_freeze_integrity_failed' };
     }
   } else {
     const evidence = await loadBidEvaluationEvidence(db, policy.bidYear);
-    prepared = await prepareCapturedBidEvaluation(db, material, evidence, capturedAtMs, mode);
+    prepared = await prepareCapturedBidEvaluation(
+      db,
+      material,
+      evidence,
+      capturedAtMs,
+      mode,
+      options,
+    );
   }
   if (!prepared.ok) return prepared;
   const settings =
@@ -2243,7 +2365,19 @@ export async function prepareConfiguredBidPolicySnapshot(
   const coverage = loadV3SnapshotRuleBookCoverage(snapshot);
   if (!coverage.valid || coverage.templateVersion !== snapshot.positionTemplateVersion)
     return { ok: false, code: 'rule_book_invalid' };
-  return { ok: true, snapshot, coverage };
+  return {
+    ok: true,
+    snapshot,
+    coverage,
+    ...(prepared.launchAdvisories === undefined && policy.launchAdvisories === undefined
+      ? {}
+      : {
+          launchAdvisories: [
+            ...(policy.launchAdvisories ?? []),
+            ...(prepared.launchAdvisories ?? []),
+          ],
+        }),
+  };
 }
 
 export interface SessionPolicySnapshotLoad {

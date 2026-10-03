@@ -1,4 +1,8 @@
-import { type BidSessionPolicySnapshot, isLiveBidActionAuthorized } from '@mbfd/shared';
+import {
+  BidLaunchAcknowledgementSchema,
+  type BidSessionPolicySnapshot,
+  isLiveBidActionAuthorized,
+} from '@mbfd/shared';
 import { ulid } from 'ulid';
 import { z } from 'zod';
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
@@ -7,6 +11,11 @@ import type { WorkerEnv } from '../types/env.js';
 import { loadConfigurationReceipt } from './admin-configuration-receipt.js';
 import { assertBidDefinitionRunIntegrity } from './bid-definition-integrity.js';
 import { prepareBidDefinitionRun } from './bid-definition-run.js';
+import {
+  buildBidLaunchReview,
+  checkBidLaunchAcknowledgement,
+  loadStoredBidLaunchReview,
+} from './bid-launch-review.js';
 import { loadFrozenSessionBidPolicy, summarizeBidSessionPolicySnapshot } from './bid-policy.js';
 import { bidSessionCreationResponse, persistBidSessionCreation } from './bid-session-creation.js';
 import { evaluateLiveBidReadiness } from './live-bid-readiness.js';
@@ -23,6 +32,7 @@ export const BidLiveSelectionSchema = z
 export const CreateBidLiveSchema = BidLiveSelectionSchema.extend({
   expectedContextSha256: BidLiveDigestSchema,
   expectedSourceToken: BidLiveDigestSchema,
+  launchAcknowledgement: BidLaunchAcknowledgementSchema.optional(),
 }).strict();
 
 /** A Managed Live session is a separately consequential operation. In-session
@@ -53,6 +63,12 @@ function liveResponse(
       snapshotSha256: prepared.pins.snapshotSha256,
       contextSha256: prepared.pins.contextSha256,
     },
+    ...(prepared.launchReview === undefined
+      ? {}
+      : {
+          launchReview: prepared.launchReview,
+          launchAcknowledged: prepared.launchReview.requiresAcknowledgement,
+        }),
   };
 }
 
@@ -74,6 +90,7 @@ export async function previewBidDefinitionLive(
     bidSessionId: `preview-live-${ulid()}`,
     capturedAtMs: Date.now(),
     mode: 'live',
+    operatorControlledLaunch: true,
   });
   if (!prepared.ok)
     return {
@@ -91,6 +108,7 @@ export async function previewBidDefinitionLive(
     bidYear: year,
     frozenPolicy: { ok: true, snapshot: prepared.snapshot, coverage: prepared.coverage },
     operatorAuthorized,
+    operatorControlledLaunch: true,
   });
   return {
     wouldAllowCreateLive: readiness.canStartLiveBid,
@@ -101,6 +119,15 @@ export async function previewBidDefinitionLive(
     runtimeSourceToken: prepared.sourceGuard.token,
     pool: summarizeBidSessionPolicySnapshot(prepared.snapshot),
     readiness,
+    launchReview: buildBidLaunchReview(
+      {
+        mode: 'live',
+        versionId: input.versionId,
+        versionSha256: input.versionSha256,
+        contextSha256: prepared.pins.contextSha256,
+      },
+      [...(prepared.launchReview?.advisories ?? []), ...(readiness.launchAdvisories ?? [])],
+    ),
   };
 }
 
@@ -161,6 +188,13 @@ export async function createBidDefinitionLive(
           action: LIVE_CREATION_ACTION,
         };
       }
+      const launch = await loadStoredBidLaunchReview(database, id.data, {
+        mode: 'live',
+        versionId: pins.bidVersionId,
+        versionSha256: pins.bidVersionSha256,
+        contextSha256: pins.contextSha256,
+      });
+      if (launch !== null && !launch.ok) return launch;
       const expected = {
         ...bidSessionCreationResponse(id.data, policy.snapshot, false),
         bidDefinition: {
@@ -170,6 +204,9 @@ export async function createBidDefinitionLive(
           snapshotSha256: pins.snapshotSha256,
           contextSha256: pins.contextSha256,
         },
+        ...(launch === null
+          ? {}
+          : { launchReview: launch.review, launchAcknowledged: launch.acknowledged }),
       };
       if (canonical(expected) !== canonical(prior.response))
         return { ok: false as const, error: 'session_policy_snapshot_integrity_invalid' };
@@ -190,6 +227,7 @@ export async function createBidDefinitionLive(
     bidSessionId: id,
     capturedAtMs,
     mode: 'live',
+    operatorControlledLaunch: true,
   });
   if (!prepared.ok)
     return {
@@ -219,11 +257,29 @@ export async function createBidDefinitionLive(
     bidYear: input.year,
     frozenPolicy: { ok: true, snapshot: prepared.snapshot, coverage: prepared.coverage },
     operatorAuthorized: true,
+    operatorControlledLaunch: true,
   });
   if (!readiness.canStartLiveBid)
     return { ok: false as const, error: 'readiness_blocked', readiness };
 
+  const launchReview = buildBidLaunchReview(
+    {
+      mode: 'live',
+      versionId: input.body.versionId,
+      versionSha256: input.body.versionSha256,
+      contextSha256: prepared.pins.contextSha256,
+    },
+    [...(prepared.launchReview?.advisories ?? []), ...(readiness.launchAdvisories ?? [])],
+  );
+  const acknowledgement = checkBidLaunchAcknowledgement(
+    launchReview,
+    input.body.launchAcknowledgement,
+  );
+  if (!acknowledgement.ok) return acknowledgement;
+
   const response = liveResponse(id, prepared);
+  response.launchReview = launchReview;
+  response.launchAcknowledged = acknowledgement.acknowledged;
   try {
     const creation = await persistBidSessionCreation(database, {
       id,
@@ -244,6 +300,14 @@ export async function createBidDefinitionLive(
       actorId: input.actorId,
       receipt: receiptInput,
       response,
+      operatorLaunchReview: {
+        mode: 'live',
+        versionId: prepared.pins.bidVersionId,
+        versionSha256: prepared.pins.bidVersionSha256,
+        contextSha256: prepared.pins.contextSha256,
+        review: launchReview,
+        acknowledged: acknowledgement.acknowledged,
+      },
     });
     if (creation[0]?.meta.changes !== 1 || creation[1]?.meta.changes !== 1)
       return { ok: false as const, error: 'bid_run_context_changed' };

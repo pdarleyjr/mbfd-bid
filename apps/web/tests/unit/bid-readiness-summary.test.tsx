@@ -34,7 +34,8 @@ it('gives a 2026 Bid administrator plain-English next steps without readiness co
   expect(html).toContain('2026 BID READINESS');
   expect(html).toContain('Source package: Ready');
   expect(html).toContain('4 open source or evidence reviews');
-  expect(html).toContain('specific blockers, sources and fix path');
+  expect(html).toContain('Review launch advisories');
+  expect(html).toContain('Starting does not resolve open questions or approve held credentials');
   expect(html).toContain('Positions: Ready');
   expect(html).toContain('Biddable seat inventory: Blocking');
   expect(html).toContain('Expected: 73 per shift, four open Days seats, 223 total');

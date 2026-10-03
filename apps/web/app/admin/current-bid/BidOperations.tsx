@@ -160,7 +160,7 @@ export function BidOperations({
           {realOnly.length > 0 && (
             <details>
               <summary className="min-h-11 cursor-pointer content-center font-semibold">
-                Information still needed before the Real Bid ({realOnly.length})
+                Open source reviews ({realOnly.length})
               </summary>
               <ul className="list-disc space-y-2 pl-5 text-sm">
                 {realOnly.map((d) => (

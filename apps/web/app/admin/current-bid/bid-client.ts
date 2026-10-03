@@ -4,6 +4,9 @@ import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import {
   BidDefinitionContentSchema,
   BidImpactResponseSchema,
+  BidLaunchAcknowledgementSchema,
+  BidLaunchAdvisorySchema,
+  BidLaunchReviewSchema,
   BidProfileReviewResponseSchema,
   BidStageParticipantPreviewResponseSchema,
 } from '@mbfd/shared';
@@ -272,6 +275,7 @@ export const BidMockRequestSchema = z
     versionSha256: digest,
     expectedContextSha256: digest,
     expectedSourceToken: digest,
+    launchAcknowledgement: BidLaunchAcknowledgementSchema.optional(),
   })
   .strict();
 export const BidMockPreviewSchema = z.discriminatedUnion('wouldAllowCreateMock', [
@@ -317,6 +321,7 @@ export const BidMockPreviewSchema = z.discriminatedUnion('wouldAllowCreateMock',
           .strict(),
       ),
       pool: poolSummary,
+      launchReview: BidLaunchReviewSchema.optional(),
     })
     .strict(),
 ]);
@@ -324,12 +329,13 @@ const liveReadinessStatus = z.enum(['READY', 'WARNING', 'BLOCKING', 'NOT_CONFIGU
 const liveReadinessCheck = z
   .object({ id: identity, status: liveReadinessStatus, detail: z.string().optional() })
   .strict();
-const liveReadiness = z
+export const BidLiveReadinessSchema = z
   .object({
     checks: z.array(liveReadinessCheck),
     overallStatus: liveReadinessStatus,
     canStartLiveBid: z.boolean(),
     blockingCheckIds: z.array(identity),
+    launchAdvisories: z.array(BidLaunchAdvisorySchema).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -396,7 +402,8 @@ const liveReadinessPreview = z
     contextSha256: digest,
     runtimeSourceToken: digest,
     pool: poolSummary,
-    readiness: liveReadiness,
+    readiness: BidLiveReadinessSchema,
+    launchReview: BidLaunchReviewSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -415,6 +422,7 @@ export const BidLiveRequestSchema = z
     versionSha256: digest,
     expectedContextSha256: digest,
     expectedSourceToken: digest,
+    launchAcknowledgement: BidLaunchAcknowledgementSchema.optional(),
   })
   .strict();
 export const BidMockResultSchema = z
@@ -440,6 +448,8 @@ export const BidMockResultSchema = z
       })
       .strict(),
     replayed: z.boolean(),
+    launchReview: BidLaunchReviewSchema.optional(),
+    launchAcknowledged: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -466,7 +476,11 @@ export class BidRequestError extends Error {
     readonly issues: z.infer<typeof issue>[] = [],
     readonly recorded: boolean | undefined = undefined,
   ) {
-    super(code.replaceAll('_', ' '));
+    super(
+      code === 'launch_review_changed' || code === 'launch_acknowledgement_required'
+        ? 'Review the launch advisories again, then confirm creation.'
+        : code.replaceAll('_', ' '),
+    );
     this.name = 'BidRequestError';
   }
 }

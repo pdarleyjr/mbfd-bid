@@ -460,12 +460,24 @@ describe('managed Live creation from sealed versions and separate runtime author
       wouldAllowCreateLive: false,
       readiness: {
         blockingCheckIds: expect.arrayContaining([
-          'accepted_staffing_baseline',
-          'annual_operations_policy',
-          'ordering_authority',
           'audit_infrastructure',
           'runtime_bindings',
           'writeback_safety',
+        ]),
+      },
+      launchReview: {
+        requiresAcknowledgement: true,
+        advisories: expect.arrayContaining([
+          {
+            id: 'readiness:accepted_staffing_baseline',
+            code: 'accepted_staffing_baseline',
+            detail: expect.any(String),
+          },
+          {
+            id: 'readiness:ordering_authority',
+            code: 'ordering_authority',
+            detail: expect.any(String),
+          },
         ]),
       },
     });
@@ -496,8 +508,9 @@ describe('managed Live creation from sealed versions and separate runtime author
       error: 'readiness_blocked',
       readiness: {
         blockingCheckIds: expect.arrayContaining([
-          'accepted_staffing_baseline',
-          'ordering_authority',
+          'audit_infrastructure',
+          'runtime_bindings',
+          'writeback_safety',
         ]),
       },
     });
@@ -689,7 +702,7 @@ describe('managed Live creation from sealed versions and separate runtime author
     },
   );
 
-  it('rejects an unresolved saved policy decision', async () => {
+  it('reports an unresolved saved policy decision without claiming its resolution', async () => {
     await completeEvidence((content) => {
       content.sourceDecisions = content.sourceDecisions.map((entry) => ({
         ...entry,
@@ -697,8 +710,18 @@ describe('managed Live creation from sealed versions and separate runtime author
       }));
     });
     expect(await preflight()).toMatchObject({
-      wouldAllowCreateLive: false,
-      policyError: 'policy_source_decision_required',
+      wouldAllowCreateLive: true,
+      launchReview: {
+        requiresAcknowledgement: true,
+        advisories: expect.arrayContaining([
+          {
+            id: 'source_decisions',
+            code: 'unresolved_source_decisions',
+            affectedCount: 1,
+            detail: expect.any(String),
+          },
+        ]),
+      },
     });
   });
 
@@ -719,7 +742,7 @@ describe('managed Live creation from sealed versions and separate runtime author
     });
   });
 
-  it('blocks a sealed policy that has no independently resolved ordering authority', async () => {
+  it('requires an explicit advisory acknowledgement when the valid frozen comparator has no independently resolved source authority', async () => {
     await completeEvidence((content) => {
       if (!content.policy) throw new Error('Expected policy');
       const { orderingAuthority: _orderingAuthority, ...withoutOrdering } = content.policy;
@@ -727,8 +750,20 @@ describe('managed Live creation from sealed versions and separate runtime author
       content.sourceDecisions = [];
     });
     const preview = await preflight();
-    expect(preview.wouldAllowCreateLive).toBe(false);
-    expect(preview.readiness?.blockingCheckIds).toContain('ordering_authority');
+    expect(preview.wouldAllowCreateLive).toBe(true);
+    expect(preview.readiness?.blockingCheckIds).not.toContain('ordering_authority');
+    expect(preview).toMatchObject({
+      launchReview: {
+        requiresAcknowledgement: true,
+        advisories: expect.arrayContaining([
+          {
+            id: 'readiness:ordering_authority',
+            code: 'ordering_authority',
+            detail: expect.any(String),
+          },
+        ]),
+      },
+    });
   });
 
   it('does not inherit Mock participation concessions from an accepted staffing observation', async () => {

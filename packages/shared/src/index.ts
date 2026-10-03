@@ -138,6 +138,17 @@ export {
 } from './schemas/bid-ordinal.js';
 export type { FrozenBidOrdinalEvidence } from './schemas/bid-ordinal.js';
 export {
+  BidLaunchAdvisorySchema,
+  BidLaunchReviewSchema,
+  BidLaunchAcknowledgementSchema,
+  BidStartSchema,
+} from './schemas/bid-launch.js';
+export type {
+  BidLaunchAdvisory,
+  BidLaunchReview,
+  BidLaunchAcknowledgement,
+} from './schemas/bid-launch.js';
+export {
   FINAL_2026_ACTIVE_BIDDERS,
   FINAL_2026_AS_OF,
   FINAL_2026_BLOOMFIELD,

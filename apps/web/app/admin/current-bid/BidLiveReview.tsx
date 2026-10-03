@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { BidLaunchAction } from '../_components/BidLaunchAction';
 import { FieldSection } from './BidFields';
 import { BidTermIssues } from './BidTermIssues';
 import {
@@ -99,7 +100,7 @@ function ReadinessReview({ result }: { result: Exclude<BidLivePreview, { policyE
       className="space-y-3 rounded border border-border p-4 text-sm"
     >
       <p className="font-semibold">
-        {isBlocked ? 'Resolve these items before the Real Bid.' : 'Ready to prepare the Real Bid.'}
+        {isBlocked ? 'These checks must pass before launch.' : 'Ready to prepare the Real Bid.'}
       </p>
       {isBlocked && (
         <ul aria-label="Real Bid blockers" className="list-disc space-y-1 pl-5">
@@ -308,10 +309,12 @@ export function BidLiveReview({
               Create the Real session from saved version {reviewed.versionNumber}. You will start it
               from the bid console.
             </p>
-            <Button
-              type="button"
+            <BidLaunchAction
+              review={reviewed.launchReview}
+              label="Confirm Real Bid creation"
+              advisoryLabel="Create Real with advisories"
               disabled={busy || locked || dirty || stale}
-              onClick={() =>
+              onLaunch={(launchAcknowledgement) =>
                 void execute({
                   path: 'live-sessions',
                   key: crypto.randomUUID(),
@@ -320,12 +323,11 @@ export function BidLiveReview({
                     versionSha256: reviewed.versionSha256,
                     expectedContextSha256: reviewed.contextSha256,
                     expectedSourceToken: reviewed.runtimeSourceToken,
+                    ...(launchAcknowledgement ? { launchAcknowledgement } : {}),
                   },
                 })
               }
-            >
-              Confirm Real Bid creation
-            </Button>
+            />
           </div>
         )}
       {createdLive && (
