@@ -32,7 +32,7 @@ describe('session-bound Mock audience links', () => {
       host.innerHTML = markup;
       expect(host.querySelector('a')?.getAttribute('href')).toBe(presentationHref(id));
       expect(host.querySelector('a')?.getAttribute('target')).toBe('_blank');
-      expect(host.textContent).toContain('Open Mock presentation');
+      expect(host.textContent).toContain('Open presentation');
       expect(workerFetch).not.toHaveBeenCalled();
     },
   );
@@ -101,7 +101,7 @@ describe('session-bound Mock audience links', () => {
     host.innerHTML = html;
     expect(
       [...host.querySelectorAll('a')]
-        .filter((a) => a.textContent === 'Open Mock presentation')
+        .filter((a) => a.textContent === 'Open presentation')
         .map((a) => a.getAttribute('href')),
     ).toEqual(['config-mock', 'started-mock', 'complete-mock'].map(presentationHref));
     expect(renderToStaticMarkup(<SessionOperatorLinks sessionId="config-mock" />)).toContain(

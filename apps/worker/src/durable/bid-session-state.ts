@@ -36,6 +36,13 @@ export interface PersistedADayState {
 }
 
 export interface Fill {
+  /** Audited decision to defer this award's A-Day without changing source timing. */
+  aDayDeferral?: {
+    commandId: string;
+    actorMemberId: number;
+    reason: string;
+    positionId: string;
+  };
   /** Immutable operator provenance; amendments retain this marker. */
   forced?: { commandId: string; actorMemberId: number; reason: string; atMs: number };
   /** Server-owned receipt provenance for an acknowledged A-Day business-rule
@@ -62,7 +69,7 @@ export interface Fill {
   bidId: string;
 }
 
-/** Durable, reconstructible live-only projection.  Policy itself remains in
+/** Durable active-Bid projection shared by Mock and Real. Policy itself remains in
  * the immutable snapshot; this stores only progress and supersession facts. */
 export interface LiveBidProgress {
   /** Audited, session-only duty overlays. Official rank and staffing remain frozen. */

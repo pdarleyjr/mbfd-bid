@@ -695,7 +695,7 @@ export interface CommitLiveBidCommandInput {
   newId?: () => string;
 }
 
-/** Real-session command bundle.  D1 is the sole authority; the DO only
+/** Shared Mock/Real command bundle. D1 is the sole authority; the DO only
  * serializes and then projects this returned state for sockets/restarts. */
 export async function commitLiveBidCommand(
   input: CommitLiveBidCommandInput,
@@ -1160,20 +1160,28 @@ export async function commitLiveBidCommand(
         (entry) => entry.memberId === fill.memberId && entry.releasedAtMs === null,
       )
     ) {
-      const rejected: LiveBidCommandResult = {
-        kind: 'rejected',
-        commandId: input.command.commandId,
-        code: 'EXCEPTIONAL_ASSIGNMENT_ACTIVE',
-        currentSeq: current.lastSeq,
-      };
-      await recordRejectedReceipt(
-        input.db,
-        input.command as unknown as MockFreezeCommand,
-        requestSha256,
-        rejected as unknown as MockFreezeCommandResult,
-        now,
-      );
-      return { result: rejected, canonicalState: null };
+      if (administratorOverride) {
+        addAdminBidOverrideWarning(
+          overrideWarnings,
+          'ACTING_DUTY_RETAINED',
+          'The member keeps the separate Chief-directed duty as this seat is adjusted. Releasing that duty is a separate recorded action.',
+        );
+      } else {
+        const rejected: LiveBidCommandResult = {
+          kind: 'rejected',
+          commandId: input.command.commandId,
+          code: 'EXCEPTIONAL_ASSIGNMENT_ACTIVE',
+          currentSeq: current.lastSeq,
+        };
+        await recordRejectedReceipt(
+          input.db,
+          input.command as unknown as MockFreezeCommand,
+          requestSha256,
+          rejected as unknown as MockFreezeCommandResult,
+          now,
+        );
+        return { result: rejected, canonicalState: null };
+      }
     }
     if (
       (input.policy.annualOperations?.opportunityPools?.length ?? 0) > 0 ||

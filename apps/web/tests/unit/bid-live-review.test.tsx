@@ -248,14 +248,9 @@ describe('BidLiveReview', () => {
     result = allowedReadiness();
     const execute = vi.fn(async () => {});
     await mount(base(), { execute });
-    await click('Check Managed Live readiness');
+    await click('Check Real Bid');
     expect(execute).not.toHaveBeenCalled();
-    await click('Create Live session…');
-    expect(execute).not.toHaveBeenCalled();
-    await click('Cancel');
-    expect(execute).not.toHaveBeenCalled();
-    await click('Create Live session…');
-    await click('Confirm Live session creation');
+    await click('Confirm Real Bid creation');
     expect(execute).toHaveBeenCalledExactlyOnceWith({
       path: 'live-sessions',
       key: expect.stringMatching(/^[0-9a-f-]{36}$/i),
@@ -272,24 +267,16 @@ describe('BidLiveReview', () => {
   });
 
   it.each(['dirty', 'stale', 'locked', 'busy'] as const)(
-    'denies readiness and both creation steps when %s becomes true',
+    'denies readiness and explicit creation when %s becomes true',
     async (flag) => {
       result = allowedReadiness();
       const execute = vi.fn(async () => {});
       await mount(base(), { execute });
-      await click('Check Managed Live readiness');
+      await click('Check Real Bid');
       await render(base(), { execute, [flag]: true });
-      expect(button(flag === 'busy' ? 'Checking…' : 'Check Managed Live readiness').disabled).toBe(
-        true,
-      );
-      expect(button('Create Live session…').disabled).toBe(true);
-      await click('Create Live session…');
-      expect(execute).not.toHaveBeenCalled();
-      await render(base(), { execute });
-      await click('Create Live session…');
-      await render(base(), { execute, [flag]: true });
-      expect(button('Confirm Live session creation').disabled).toBe(true);
-      await click('Confirm Live session creation');
+      expect(button(flag === 'busy' ? 'Checking…' : 'Check Real Bid').disabled).toBe(true);
+      expect(button('Confirm Real Bid creation').disabled).toBe(true);
+      await click('Confirm Real Bid creation');
       expect(execute).not.toHaveBeenCalled();
     },
   );
@@ -298,8 +285,7 @@ describe('BidLiveReview', () => {
     result = allowedReadiness();
     const execute = vi.fn(async () => {});
     await mount(base(), { execute });
-    await click('Check Managed Live readiness');
-    await click('Create Live session…');
+    await click('Check Real Bid');
     const previous = base();
     const next = CurrentBidSchema.parse({
       ...previous,
@@ -317,14 +303,13 @@ describe('BidLiveReview', () => {
       },
     });
     await render(next, { execute });
-    expect(() => button('Confirm Live session creation')).toThrow('Missing public button');
-    expect(() => button('Create Live session…')).toThrow('Missing public button');
+    expect(() => button('Confirm Real Bid creation')).toThrow('Missing public button');
     expect(execute).not.toHaveBeenCalled();
   });
 
   it('uses the step-up-aware read-only Live preview for the exact immutable current version', async () => {
     await mount();
-    await click('Check Managed Live readiness');
+    await click('Check Real Bid');
 
     // The CSRF token may already be cached by another review in this tab.
     expect(
@@ -346,14 +331,14 @@ describe('BidLiveReview', () => {
     expect(new Headers(preview?.init?.headers).get('X-MBFD-CSRF')).toBe(CSRF);
     expect(new Headers(preview?.init?.headers).get('Idempotency-Key')).toBeNull();
     expect(finish).toHaveBeenCalledOnce();
-    expect(container.textContent).toContain('Live readiness is blocked by the server.');
+    expect(container.textContent).toContain('Resolve these items before the Real Bid.');
     expect(container.textContent).toContain(
-      'annual operations policy (annual_operations_policy): Annual operations cannot start: stages_required.',
+      'annual operations policy: Annual operations cannot start: stages_required.',
     );
     expect(container.textContent).toContain(
-      'operator authorization (operator_authorization): A fresh, server-verified administrator authorization is required.',
+      'operator authorization: A fresh, server-verified administrator authorization is required.',
     );
-    expect(container.textContent).toContain('No Live run is created by this check.');
+    expect(container.textContent).toContain('Checking does not start or create a session.');
     expect([...container.querySelectorAll('button')].map((node) => node.textContent)).not.toContain(
       'Create Live Bid',
     );
@@ -373,10 +358,10 @@ describe('BidLiveReview', () => {
       ],
     };
     await mount();
-    await click('Check Managed Live readiness');
+    await click('Check Real Bid');
 
     expect(container.textContent).toContain(
-      'Live policy preparation is blocked: bid configuration annual policy document invalid.',
+      'Real Bid needs review: bid configuration annual policy document invalid.',
     );
     expect(container.textContent).toContain('Opportunities requiring review: synthetic-live-seat');
     expect(container.textContent).toContain('synthetic-live-seat: missing start');
@@ -399,14 +384,14 @@ describe('BidLiveReview', () => {
       ],
     };
     await mount(base(), { onOpenAssignmentTerms });
-    await click('Check Managed Live readiness');
-    expect(container.textContent).toContain('NEEDS ADMIN EVIDENCE — assignment terms.');
+    await click('Check Real Bid');
+    expect(container.textContent).toContain('Assignment terms need review.');
     expect(container.textContent).toContain('Mock training remains available.');
     expect(container.querySelector('a[href="/admin/source-review"]')?.textContent).toContain(
       'Review source decisions and evidence',
     );
     expect(container.textContent).toContain('D102: Record the reviewed assignment term.');
-    await click('Open Edit Bid - Specialty rules - Assignment terms');
+    await click('Edit assignment terms');
     expect(onOpenAssignmentTerms).toHaveBeenCalledOnce();
   });
 
@@ -414,10 +399,10 @@ describe('BidLiveReview', () => {
     await mount(withoutSavedVersion());
 
     expect(container.textContent).toContain(
-      'No saved Bid version exists. Save the first Bid version before checking Managed Live readiness.',
+      'Save the first Bid version before preparing the Real Bid.',
     );
-    expect(button('Check Managed Live readiness').disabled).toBe(true);
-    await click('Check Managed Live readiness');
+    expect(button('Check Real Bid').disabled).toBe(true);
+    await click('Check Real Bid');
     expect(requests).toEqual([]);
   });
 
@@ -425,37 +410,34 @@ describe('BidLiveReview', () => {
     await mount(base(), { dirty: true });
 
     expect(container.textContent).toContain(
-      'The current draft has unsaved changes. Save or discard them before checking Managed Live readiness.',
+      'Save or discard your changes before preparing the Real Bid.',
     );
-    expect(button('Check Managed Live readiness').disabled).toBe(true);
-    await click('Check Managed Live readiness');
+    expect(button('Check Real Bid').disabled).toBe(true);
+    await click('Check Real Bid');
     expect(requests).toEqual([]);
   });
 
   it('reports a server-ready preflight while still offering no Live-session action', async () => {
     result = allowedReadiness();
     await mount();
-    await click('Check Managed Live readiness');
+    await click('Check Real Bid');
 
-    expect(container.textContent).toContain('Server Live readiness: ready.');
+    expect(container.textContent).toContain('Ready to prepare the Real Bid.');
     expect(container.textContent).toContain(
-      'The server reports that this saved version currently meets its Live readiness checks.',
+      'annual operations policy: Annual operations are frozen and complete.',
     );
-    expect(container.textContent).toContain(
-      'annual operations policy (annual_operations_policy): Annual operations are frozen and complete.',
-    );
-    expect(container.textContent).toContain('No Live run is created by this check.');
+    expect(container.textContent).toContain('Checking does not start or create a session.');
     expect(
       [...container.querySelectorAll('button')].map((node) => node.textContent?.trim()),
-    ).toEqual(['Edit authority in Bid configuration', 'Check Managed Live readiness']);
+    ).toEqual(['Edit permissions', 'Check Real Bid']);
   });
 
   it('rejects an unrecognized Live preflight field instead of trusting an ambiguous server response', async () => {
     result = { ...blockedReadiness(), unreviewedLiveSessionId: 'forbidden' };
     await mount();
-    await click('Check Managed Live readiness');
+    await click('Check Real Bid');
 
     expect(container.textContent).toContain('invalid server response');
-    expect(container.textContent).not.toContain('Live readiness is blocked by the server.');
+    expect(container.textContent).not.toContain('Resolve these items before the Real Bid.');
   });
 });

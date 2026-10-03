@@ -2,8 +2,6 @@
 
 import { Button } from '@/components/ui/button';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
-import type { Route } from 'next';
-import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
 
 /** CONFIG is a saved session awaiting Start, not an unfrozen legacy operator console. */
@@ -24,8 +22,8 @@ export function BidSessionSetup({
   const [started, setStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function startMock() {
-    if (!isMock || inFlight.current || started) return;
+  async function startBid() {
+    if (inFlight.current || started) return;
     inFlight.current = true;
     setBusy(true);
     setError(null);
@@ -42,11 +40,11 @@ export function BidSessionSetup({
       if (!response.ok) {
         const result = (await response.json().catch(() => ({}))) as { error?: string };
         if (response.status === 401) {
-          setError('Sign in again, then select Start Mock Bid. Your saved session is retained.');
+          setError('Refresh operator sign-in, then start again. Your saved session is retained.');
         } else if (result.error === 'invalid_state') {
           setError('The session state changed. Refresh this page before starting it.');
         } else {
-          setError(`The Mock could not start: ${result.error ?? `HTTP ${response.status}`}.`);
+          setError(`The bid could not start: ${result.error ?? `HTTP ${response.status}`}.`);
         }
         return;
       }
@@ -75,26 +73,26 @@ export function BidSessionSetup({
       <p className="mt-2 text-sm text-muted-foreground">
         {memberCount} members · saved rules retained. Start to open position selection.
       </p>
-      {isMock ? (
-        <>
-          <Button
-            type="button"
-            variant="primary"
-            className="mt-4 min-h-11"
-            disabled={busy || started}
-            onClick={() => void startMock()}
-          >
-            {started ? 'Mock started — opening bid…' : busy ? 'Starting Mock…' : 'Start Mock Bid'}
-          </Button>
-        </>
-      ) : (
-        <Link
-          href={`/admin/sessions/${encodeURIComponent(bidSessionId)}` as Route}
-          className="mt-4 inline-flex min-h-11 items-center font-semibold underline"
-        >
-          Review and start Real Bid
-        </Link>
-      )}
+      <Button
+        type="button"
+        variant="primary"
+        className="mt-4 min-h-11"
+        disabled={busy || started}
+        onClick={() => void startBid()}
+      >
+        {started
+          ? 'Bid started — opening…'
+          : busy
+            ? 'Starting…'
+            : isMock
+              ? 'Start Mock Bid'
+              : 'Start Real Bid'}
+      </Button>
+      {!isMock ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Starts the Real Bid after the server verifies readiness.
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="mt-3 text-sm text-destructive">
           {error}

@@ -332,7 +332,7 @@ describe('simultaneous A-Day live awards', () => {
       all_opportunities_filled: true,
       next_stage: { id: 'regular-stage', label: 'Regular stage' },
     };
-    await mount('Disposition and return');
+    await mount('Skip or return a member');
     await settle(() => button('Advance to Regular stage').click());
     expect(commands.at(-1)).toMatchObject({
       type: 'live.transition_stage',
@@ -621,7 +621,7 @@ describe('simultaneous A-Day live awards', () => {
 
   it('requires A-Day only for specialty acceptance and leaves other resolutions available', async () => {
     live = state(true, true);
-    await mount('Specialty and contact');
+    await mount('Specialty review');
     expect(button('ACCEPT').disabled).toBe(true);
     expect(button('DECLINE').disabled).toBe(false);
     await settle(() => button('DECLINE').click());
@@ -641,7 +641,7 @@ describe('simultaneous A-Day live awards', () => {
 
   it('does not mix group and weekday choices when specialty position scope is unavailable', async () => {
     live = state(true, true);
-    await mount('Specialty and contact', []);
+    await mount('Specialty review', []);
     expect([...select('Specialty award A-Day').options].map((option) => option.value)).toEqual([
       '',
     ]);
@@ -685,7 +685,7 @@ describe('simultaneous A-Day live awards', () => {
         eligible_a_days: ['G1', 'G3'],
       },
     };
-    await mount('Record A-Day');
+    await mount('A-Day due');
     expect(button('Commit controlled A-Day').disabled).toBe(true);
     await choose('Controlled A-Day', 'G2');
     expect(button('Commit controlled A-Day').disabled).toBe(true);
@@ -715,7 +715,7 @@ describe('simultaneous A-Day live awards', () => {
 
 describe('canonical disposition and return controls', () => {
   it('records contact, defer, and evidence-gated unreachable commands', async () => {
-    await mount('Disposition and return');
+    await mount('Skip or return a member');
     await settle(() => button('Record PHONE').click());
     await settle(() => button('Record DEFER').click());
     expect(button('Record UNREACHABLE').disabled).toBe(true);
@@ -743,7 +743,7 @@ describe('canonical disposition and return controls', () => {
       rank: 'FF',
     };
     live.unresolved_members = [returned];
-    await mount('Disposition and return');
+    await mount('Skip or return a member');
     await settle(() => button('Return FF Synthetic Return').click());
     expect(commands[0]).toMatchObject({
       type: 'live.return_at_current_sequence',
@@ -801,7 +801,7 @@ describe('server-ordered fallback awards', () => {
           code,
         },
       ];
-      await mount('Fallback awards');
+      await mount('Fill remaining seats');
       await choose('Fallback opportunity', JSON.stringify(['synthetic-policy', 'abc']));
       expect(container.textContent).toContain(explanation);
       expect(container.querySelector('ol[aria-label="Ordered fallback candidates"]')).toBeNull();
@@ -819,7 +819,7 @@ describe('server-ordered fallback awards', () => {
     };
     live.fallbacks = [fallback('FORCED')];
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await mount('Fallback awards');
+    await mount('Fill remaining seats');
     await choose('Fallback opportunity', key);
     await choose('Fallback award A-Day', 'G2');
     await settle(() => button('Confirm forced award').click());
@@ -828,7 +828,7 @@ describe('server-ordered fallback awards', () => {
   });
   it('shows source, exhaustion and server order, then accepts only the first voluntary candidate', async () => {
     live.fallbacks = [fallback()];
-    await mount('Fallback awards');
+    await mount('Fill remaining seats');
     await choose('Fallback opportunity', key);
     expect(container.textContent).toContain('Source clause: Synthetic source clause 4');
     expect(container.textContent).toContain('Active tier: Synthetic active tier');
@@ -853,7 +853,7 @@ describe('server-ordered fallback awards', () => {
 
   it('records voluntary contact and responses without requiring or sending an A-Day', async () => {
     live.fallbacks = [fallback()];
-    await mount('Fallback awards');
+    await mount('Fill remaining seats');
     await choose('Fallback opportunity', key);
     await settle(() => button('Record fallback PHONE').click());
     await settle(() => button('Record fallback decline').click());
@@ -881,7 +881,7 @@ describe('server-ordered fallback awards', () => {
   it('requires confirmation for the first forced candidate and offers no response that skips that candidate', async () => {
     live.fallbacks = [{ ...fallback('FORCED'), pool: { poolId: 'synthetic-pool' } }];
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    await mount('Fallback awards');
+    await mount('Fill remaining seats');
     await choose('Fallback opportunity', key);
     await choose('Fallback award A-Day', 'G4');
     expect([...container.querySelectorAll('button')].map((node) => node.textContent)).not.toContain(
@@ -918,7 +918,7 @@ describe('server-ordered fallback awards', () => {
         code: 'FALLBACK_CURRENT_ASSIGNMENT_EVIDENCE_MISSING',
       },
     ];
-    await mount('Fallback awards');
+    await mount('Fill remaining seats');
     await choose('Fallback opportunity', key);
     expect(container.textContent).toContain(
       'Fallback unavailable: FALLBACK_CURRENT_ASSIGNMENT_EVIDENCE_MISSING',
@@ -929,7 +929,7 @@ describe('server-ordered fallback awards', () => {
 
   it('uses refreshed server progression and clears the prior candidate’s A-Day choice', async () => {
     live.fallbacks = [fallback()];
-    await mount('Fallback awards');
+    await mount('Fill remaining seats');
     await choose('Fallback opportunity', key);
     await choose('Fallback award A-Day', 'G1');
     live.fallbacks = [{ ...fallback(), candidateMemberIds: [9] }];

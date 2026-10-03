@@ -19,14 +19,18 @@ export function SessionPresentationLink({
     }
   }
   return (
-    <nav aria-label="Session presentation" className="flex flex-wrap items-center gap-3 text-sm">
+    <nav
+      aria-label="Session presentation"
+      data-bid-mode={isMock ? 'mock' : 'real'}
+      className="flex flex-wrap items-center gap-3 text-sm"
+    >
       <a
         href={href}
         target="_blank"
         rel="noreferrer"
         className="inline-flex min-h-11 items-center font-semibold underline"
       >
-        {isMock ? 'Open Mock presentation' : 'Open presentation'}
+        Open presentation
       </a>
       <Button type="button" onClick={() => void copy()}>
         Copy presentation link

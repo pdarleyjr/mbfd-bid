@@ -23,7 +23,7 @@ type OverridePreview = {
   deferredMemberIds?: number[];
   deferredStageId?: string;
 };
-type Action = 'AWARD' | 'SKIP' | 'DEFER' | 'DEFER_STAGE';
+type Action = 'AWARD' | 'A_DAY' | 'DUTY' | 'SKIP' | 'DEFER' | 'DEFER_STAGE';
 type Draft = {
   action: Action;
   memberId: number | null;
@@ -31,6 +31,8 @@ type Draft = {
   aDay: string;
   reason: string;
   forced: boolean;
+  deferADay: boolean;
+  roleLabel: string;
   termConfirmed: boolean;
   termEvidence: string;
 };
@@ -45,7 +47,9 @@ interface Props {
     | undefined;
   members: Record<string, MemberLite>;
   positions: readonly PositionMeta[];
-  fills: Record<string, { member_id: number }>;
+  fills: Record<string, { member_id: number; a_day?: string | null }>;
+  nonBiddablePositions?: readonly { position_id: string; label: string }[] | undefined;
+  onChooseTask?: ((task: 'correction' | 'order' | 'exceptional') => void) | undefined;
   sequence: number;
   currentMemberId: number | null;
   currentStage: string | undefined;
@@ -88,6 +92,8 @@ export function AdministratorOverride(props: Props) {
     aDay: '',
     reason: '',
     forced: false,
+    deferADay: false,
+    roleLabel: '',
     termConfirmed: false,
     termEvidence: '',
   });
@@ -114,10 +120,11 @@ export function AdministratorOverride(props: Props) {
       ...current,
       action: 'AWARD',
       memberId: intent.memberId,
-      positionId: '',
+      positionId: intent.positionId ?? '',
       aDay: '',
       termConfirmed: false,
       termEvidence: '',
+      deferADay: intent.deferADay === true,
     }));
     setReview(null);
     setAcknowledged(false);
@@ -126,10 +133,12 @@ export function AdministratorOverride(props: Props) {
   }, [operator?.overrideIntent, props.allowed]);
   const memberIds = [...new Set(props.memberIds)].filter((id) => props.members[String(id)]);
   const selectedMember = draft.memberId === null ? null : props.members[String(draft.memberId)];
-  const selectedPosition = props.positions.find((position) => position.id === draft.positionId);
   const assignedPosition = Object.entries(props.fills).find(
     ([, fill]) => fill.member_id === draft.memberId,
   )?.[0];
+  const selectedPosition = props.positions.find(
+    (position) => position.id === (draft.action === 'A_DAY' ? assignedPosition : draft.positionId),
+  );
   const termRight =
     draft.memberId === null ? undefined : props.termParticipation?.[String(draft.memberId)];
   const selectedPool = props.opportunityPools?.find(
@@ -165,9 +174,7 @@ export function AdministratorOverride(props: Props) {
     draft.action === 'AWARD' &&
     (props.aDayTiming?.[draft.positionId] ?? props.defaultADayTiming) != null;
   const groups: readonly string[] =
-    selectedPosition?.shift === 'D'
-      ? WeekdaySchema.options
-      : (props.combatGroups ?? ADayGroupIdSchema.options);
+    selectedPosition?.shift === 'D' ? WeekdaySchema.options : ADayGroupIdSchema.options;
   const fingerprint = JSON.stringify([
     props.bidSessionId,
     props.sequence,
@@ -186,13 +193,20 @@ export function AdministratorOverride(props: Props) {
     memberIds.includes(draft.memberId) &&
     draft.reason.trim().length >= 4 &&
     (draft.action !== 'AWARD' || !assignedPosition) &&
+    (draft.action !== 'A_DAY' || (assignedPosition !== undefined && groups.includes(draft.aDay))) &&
+    (draft.action !== 'DUTY' ||
+      (draft.roleLabel.trim().length >= 4 &&
+        (!draft.positionId ||
+          props.nonBiddablePositions?.some(
+            (position) => position.position_id === draft.positionId,
+          )))) &&
     (draft.action !== 'DEFER_STAGE' || props.currentStageId !== undefined) &&
     (draft.action !== 'AWARD' ||
       (selectedPosition !== undefined &&
         props.positionIds.includes(draft.positionId) &&
         props.fills[draft.positionId] === undefined &&
         (!termRight || (draft.termConfirmed && draft.termEvidence.trim().length >= 4)) &&
-        (!requiresADay || groups.includes(draft.aDay))));
+        (!requiresADay || draft.deferADay || groups.includes(draft.aDay))));
 
   function change(next: Partial<Draft>) {
     requestGeneration.current += 1;
@@ -210,7 +224,14 @@ export function AdministratorOverride(props: Props) {
   function commandBody(commandId: string, warningCodes: string[]) {
     return {
       v: 1,
-      type: draft.action === 'AWARD' ? 'live.record_selection' : 'live.disposition',
+      type:
+        draft.action === 'AWARD'
+          ? 'live.record_selection'
+          : draft.action === 'A_DAY'
+            ? 'live.record_a_day'
+            : draft.action === 'DUTY'
+              ? 'live.set_exceptional_assignment'
+              : 'live.disposition',
       commandId,
       expectedSeq: props.sequence,
       reason: draft.reason.trim(),
@@ -220,13 +241,21 @@ export function AdministratorOverride(props: Props) {
         ? {
             positionId: draft.positionId,
             ...(draft.forced ? { forced: true } : {}),
-            ...(requiresADay ? { aDay: draft.aDay } : {}),
+            ...(requiresADay && !draft.deferADay ? { aDay: draft.aDay } : {}),
             ...(selectedPool ? { pool: { poolId: selectedPool.id } } : {}),
           }
-        : {
-            disposition: draft.action === 'DEFER_STAGE' ? 'DEFER' : draft.action,
-            ...(draft.action === 'DEFER_STAGE' ? { deferStageId: props.currentStageId } : {}),
-          }),
+        : draft.action === 'A_DAY'
+          ? { aDay: draft.aDay }
+          : draft.action === 'DUTY'
+            ? {
+                operation: 'ASSIGN',
+                roleLabel: draft.roleLabel.trim(),
+                ...(draft.positionId ? { positionId: draft.positionId } : {}),
+              }
+            : {
+                disposition: draft.action === 'DEFER_STAGE' ? 'DEFER' : draft.action,
+                ...(draft.action === 'DEFER_STAGE' ? { deferStageId: props.currentStageId } : {}),
+              }),
       adminOverride: { acknowledged: true, warningCodes },
       ...(draft.action === 'AWARD' && termRight
         ? {
@@ -268,6 +297,8 @@ export function AdministratorOverride(props: Props) {
         body.expectedSeq !== props.sequence ||
         body.memberId !== draft.memberId ||
         (draft.action === 'AWARD' && body.positionId !== draft.positionId) ||
+        (draft.action === 'A_DAY' && body.positionId !== assignedPosition) ||
+        (draft.action === 'DUTY' && draft.positionId && body.positionId !== draft.positionId) ||
         (draft.action === 'DEFER_STAGE' &&
           (body.deferredStageId !== props.currentStageId ||
             !Array.isArray(body.deferredMemberIds))) ||
@@ -325,6 +356,8 @@ export function AdministratorOverride(props: Props) {
         aDay: '',
         reason: '',
         forced: false,
+        deferADay: false,
+        roleLabel: '',
         termConfirmed: false,
         termEvidence: '',
       }));
@@ -332,10 +365,14 @@ export function AdministratorOverride(props: Props) {
         draft.action === 'AWARD'
           ? draft.forced
             ? 'Forced assignment recorded and marked in the bid. Review the refreshed state before another action.'
-            : 'Administrator selection recorded. Review the refreshed bid before another action.'
-          : draft.action === 'DEFER_STAGE'
-            ? 'Current step deferred. Its unawarded turns remain pending for later selection.'
-            : 'Member skipped for now. Their unawarded selection rights remain pending.',
+            : 'Selection saved.'
+          : draft.action === 'A_DAY'
+            ? 'A-Day saved.'
+            : draft.action === 'DUTY'
+              ? 'Temporary duty saved.'
+              : draft.action === 'DEFER_STAGE'
+                ? 'Current step deferred. Its unawarded turns remain pending for later selection.'
+                : 'Member skipped for now. Their unawarded selection rights remain pending.',
       );
       props.onCanonicalChange();
     } catch (error) {
@@ -347,9 +384,8 @@ export function AdministratorOverride(props: Props) {
 
   if (!props.allowed) return null;
   return (
-    <div className="mb-3 border border-warning/30 bg-warning/5 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm">Change the order, skip a turn or make a directed assignment.</p>
+    <div className="mb-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
           disabled={props.commandsBlocked || busy}
@@ -365,7 +401,7 @@ export function AdministratorOverride(props: Props) {
             setOpen(true);
           }}
         >
-          Administrator override
+          Adjust bid
         </Button>
       </div>
       <TaskPanel
@@ -374,19 +410,48 @@ export function AdministratorOverride(props: Props) {
           requestGeneration.current += 1;
           setOpen(false);
         }}
-        title="Administrator override"
-        description="Choose any bid participant and any open opportunity, or skip a member for now. Review the advisories before confirming; each override is recorded in the audit."
+        title="Adjust bid"
+        description="Choose the action. The software checks the consequences; you can override policy advice with a recorded reason."
       >
         <div className="space-y-4">
-          <p className="border border-warning/40 bg-warning/10 p-3 text-sm">
+          <p className="text-sm text-muted-foreground">
             Normal order:{' '}
             {props.currentMemberId === null
               ? 'No current bidder'
               : memberName(props.currentMemberId)}
-            {props.currentStage ? ` · ${props.currentStage}` : ''}. An override can bypass the
-            selection stage, rank, order, or eligibility advice. Filled awards must be changed
-            through Correct Bid.
+            {props.currentStage ? ` · ${props.currentStage}` : ''}.
           </p>
+          {props.onChooseTask ? (
+            <nav aria-label="Other bid adjustments" className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  props.onChooseTask?.('correction');
+                }}
+              >
+                Change or remove an award
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  props.onChooseTask?.('order');
+                }}
+              >
+                Change bid order
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  props.onChooseTask?.('exceptional');
+                }}
+              >
+                Manage temporary duties
+              </Button>
+            </nav>
+          ) : null}
           <Label className="block">
             Action
             <NativeSelect
@@ -404,7 +469,9 @@ export function AdministratorOverride(props: Props) {
                 })
               }
             >
-              <option value="AWARD">Record any open position</option>
+              <option value="AWARD">Assign an open seat</option>
+              <option value="A_DAY">Set or change A-Day</option>
+              <option value="DUTY">Assign temporary duty</option>
               <option value="SKIP">Skip member for now</option>
               <option value="DEFER">Defer member for later</option>
               {props.currentStageId ? (
@@ -447,9 +514,7 @@ export function AdministratorOverride(props: Props) {
                 <option key={id} value={id}>
                   {memberName(id)}
                   {Object.values(props.fills).some((fill) => fill.member_id === id)
-                    ? draft.action === 'AWARD'
-                      ? ' · Awarded (use Correct Bid)'
-                      : ' · Awarded'
+                    ? ' · Awarded'
                     : ''}
                 </option>
               ))}
@@ -457,13 +522,13 @@ export function AdministratorOverride(props: Props) {
           </Label>
           {assignedPosition && draft.action === 'AWARD' ? (
             <p role="alert" className="text-sm text-warning">
-              This member already holds {assignedPosition}. Use Correct Bid to change their award.
+              This member holds {assignedPosition}. Choose “Change or remove an award” above to move
+              them.
             </p>
           ) : null}
           {selectedMember ? (
             <p className="text-sm">
-              Selected: <strong>{memberName(selectedMember.id)}</strong> ·{' '}
-              {selectedMember.employeeId}. Their previous bid is shown in the member details panel.
+              <strong>{memberName(selectedMember.id)}</strong> · {selectedMember.employeeId}
             </p>
           ) : null}
           {selectedMember ? <PreviousBidInfo member={selectedMember} /> : null}
@@ -569,6 +634,53 @@ export function AdministratorOverride(props: Props) {
                 </NativeSelect>
               </Label>
               {requiresADay && selectedPosition ? (
+                <>
+                  <Label className="flex min-h-11 items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      aria-label="Pick A-Day later"
+                      checked={draft.deferADay}
+                      disabled={busy}
+                      onChange={(event) => change({ deferADay: event.target.checked, aDay: '' })}
+                    />
+                    Pick A-Day later
+                  </Label>
+                  {!draft.deferADay ? (
+                    <Label className="block">
+                      {selectedPosition.shift === 'D' ? 'R-Day' : 'A-Day group'}
+                      <NativeSelect
+                        aria-label="Administrator override A-Day"
+                        value={draft.aDay}
+                        disabled={busy}
+                        onChange={(event) => change({ aDay: event.target.value })}
+                      >
+                        <option value="">
+                          Choose {selectedPosition.shift === 'D' ? 'R-Day' : 'A-Day group'}
+                        </option>
+                        {groups.map((group) => (
+                          <option key={group} value={group}>
+                            {group.startsWith('G') ? `Group ${group.slice(1)}` : group}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </Label>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      The seat is saved now. A-Day remains due and the software prompts when this
+                      member is up.
+                    </p>
+                  )}
+                </>
+              ) : null}
+            </>
+          ) : draft.action === 'A_DAY' ? (
+            <div className="space-y-2">
+              <p className="text-sm">
+                {assignedPosition
+                  ? `Recorded seat: ${assignedPosition}`
+                  : 'Choose a member with a recorded seat.'}
+              </p>
+              {selectedPosition ? (
                 <Label className="block">
                   {selectedPosition.shift === 'D' ? 'R-Day' : 'A-Day group'}
                   <NativeSelect
@@ -588,7 +700,44 @@ export function AdministratorOverride(props: Props) {
                   </NativeSelect>
                 </Label>
               ) : null}
-            </>
+            </div>
+          ) : draft.action === 'DUTY' ? (
+            <div className="space-y-3">
+              {assignedPosition ? (
+                <p className="text-sm text-warning">
+                  Existing seat {assignedPosition} stays assigned. Remove it first if the temporary
+                  duty replaces that seat.
+                </p>
+              ) : null}
+              <Label className="block">
+                Duty / acting role
+                <Input
+                  aria-label="Adjustment duty label"
+                  value={draft.roleLabel}
+                  disabled={busy}
+                  placeholder="Enter the directed duty"
+                  onChange={(event) => change({ roleLabel: event.target.value })}
+                />
+              </Label>
+              <details>
+                <summary className="min-h-11 cursor-pointer content-center text-sm font-medium">
+                  Link a closed position (optional)
+                </summary>
+                <NativeSelect
+                  aria-label="Adjustment closed role"
+                  value={draft.positionId}
+                  disabled={busy}
+                  onChange={(event) => change({ positionId: event.target.value })}
+                >
+                  <option value="">Custom duty</option>
+                  {props.nonBiddablePositions?.map((position) => (
+                    <option key={position.position_id} value={position.position_id}>
+                      {position.position_id} · {position.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </details>
+            </div>
           ) : (
             <p className="text-sm">
               {draft.action === 'DEFER_STAGE'
@@ -616,12 +765,11 @@ export function AdministratorOverride(props: Props) {
                 disabled={busy}
                 onChange={(event) => change({ forced: event.target.checked })}
               />
-              Mark as forced assignment. The bid records that this seat was directed rather than
-              selected voluntarily.
+              Mark as forced assignment
             </Label>
           ) : null}
           <Button type="button" disabled={!canPreview} onClick={() => void preview()}>
-            {busy ? 'Checking…' : 'Review override'}
+            {busy ? 'Checking…' : 'Review adjustment'}
           </Button>
           {review && reviewed === null ? (
             <p role="alert" className="text-sm text-warning">
@@ -639,15 +787,21 @@ export function AdministratorOverride(props: Props) {
                   `Bypass ${props.currentStage ?? 'current step'} · ${reviewed.deferredMemberIds?.length ?? 0} turns remain pending`
                 ) : (
                   <>
-                    {draft.action === 'AWARD'
-                      ? draft.forced
-                        ? 'Forced award'
-                        : 'Award'
-                      : 'Skip for now'}{' '}
+                    {draft.action === 'A_DAY'
+                      ? 'A-Day'
+                      : draft.action === 'DUTY'
+                        ? 'Temporary duty'
+                        : draft.action === 'AWARD'
+                          ? draft.forced
+                            ? 'Forced award'
+                            : 'Award'
+                          : 'Skip for now'}{' '}
                     <strong>{memberName(reviewed.memberId)}</strong>
-                    {draft.action === 'AWARD'
-                      ? ` → ${reviewed.positionId}${draft.aDay ? ` · ${draft.aDay.startsWith('G') ? `Group ${draft.aDay.slice(1)}` : draft.aDay}` : ''}`
-                      : ''}
+                    {draft.action === 'AWARD' || draft.action === 'A_DAY'
+                      ? ` → ${reviewed.positionId}${draft.deferADay ? ' · A-Day later' : draft.aDay ? ` · ${draft.aDay.startsWith('G') ? `Group ${draft.aDay.slice(1)}` : draft.aDay}` : ''}`
+                      : draft.action === 'DUTY'
+                        ? ` → ${draft.roleLabel}`
+                        : ''}
                   </>
                 )}
                 .
@@ -677,19 +831,22 @@ export function AdministratorOverride(props: Props) {
                   disabled={busy || props.commandsBlocked}
                   onChange={(event) => setAcknowledged(event.target.checked)}
                 />
-                I reviewed this member, action, reason, and all advisories. Record this
-                administrator override.
+                I reviewed the adjustment and advisories.
               </Label>
               <Button
                 type="button"
                 disabled={!canPreview || !acknowledged}
                 onClick={() => void confirm()}
               >
-                {draft.action === 'AWARD'
-                  ? 'Confirm administrator selection'
-                  : draft.action === 'DEFER_STAGE'
-                    ? 'Confirm bypass current step'
-                    : 'Confirm skip for now'}
+                {draft.action === 'A_DAY'
+                  ? 'Confirm A-Day adjustment'
+                  : draft.action === 'DUTY'
+                    ? 'Confirm temporary duty'
+                    : draft.action === 'AWARD'
+                      ? 'Confirm administrator selection'
+                      : draft.action === 'DEFER_STAGE'
+                        ? 'Confirm bypass current step'
+                        : 'Confirm skip for now'}
               </Button>
             </section>
           ) : null}

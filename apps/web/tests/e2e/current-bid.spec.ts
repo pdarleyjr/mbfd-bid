@@ -115,7 +115,7 @@ test('operator navigation reveals and focuses every destination without manual s
   for (const [action, title, view] of [
     ['Review eligibility', 'Bid Blueprint', 'blueprint'],
     ['New Mock Bid', 'Mock Bid', 'mock'],
-    ['VIEW RESULTS', 'Results', 'results'],
+    ['Results', 'Results', 'results'],
     ['Prepare Real Bid', 'Live Bid', 'live'],
   ] as const) {
     await page.getByRole('button', { name: action, exact: true }).click();
@@ -537,7 +537,7 @@ for (const viewport of [
       if (label === 'Live Bid') {
         await expect(
           workspace(page).getByRole('button', {
-            name: 'Check Managed Live readiness',
+            name: 'Check Real Bid',
             exact: true,
           }),
         ).toBeEnabled();

@@ -153,7 +153,10 @@ function initialState(): BidSessionState {
   };
 }
 
-describe('canonical administrator override', () => {
+describe.each([
+  { mode: 'Mock', isMock: 1 },
+  { mode: 'Real', isMock: 0 },
+])('canonical administrator override ($mode)', ({ isMock }) => {
   let sqlite: Database.Database;
   let db: D1Database;
   let commandNumber: number;
@@ -324,13 +327,392 @@ describe('canonical administrator override', () => {
     sqlite.prepare('INSERT INTO bid_years (year,status) VALUES (?,?)').run(2030, 'configuring');
     sqlite
       .prepare(`INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,turn_timer_seconds,
-      expected_duration_days,day_count,is_mock) VALUES (?,2030,1,'position_bid',180,2,0,1)`)
-      .run(sessionId);
+      expected_duration_days,day_count,is_mock) VALUES (?,2030,1,'position_bid',180,2,0,?)`)
+      .run(sessionId, isMock);
     sqlite.exec(`INSERT INTO position_templates (version,effective_year,notes) VALUES ('synthetic-override',2030,'Synthetic');
       INSERT INTO rule_books (version,effective_year,status,revision,notes) VALUES ('synthetic-override',2030,'draft',1,'Synthetic');`);
     db = transactionalD1(sqlite);
   });
   afterEach(() => sqlite.close());
+
+  it('defers a simultaneous A-Day under audited direction and retains its prompt across ordinary commands and reload', async () => {
+    seed(true);
+    const early = await confirmed(
+      initialState(),
+      command('live.record_selection', {
+        memberId: 44,
+        positionId: 'A102',
+        adminOverride: override,
+      }),
+    );
+    expect(early.state.fills.A102?.aDay).toBeUndefined();
+    expect(early.state.fills.A102?.aDayDeferral).toMatchObject({
+      positionId: 'A102',
+      commandId: early.command.commandId,
+    });
+    const ordinary = await execute(
+      early.state,
+      command('live.record_selection', { memberId: 42, positionId: 'D101', aDay: 'MON' }, 1),
+    );
+    expect(ordinary.result.kind).toBe('accepted');
+    const reloaded = await loadCanonicalBidSessionState(db, sessionId);
+    if (!reloaded) throw new Error('deferred canonical state required');
+    expect(reloaded.fills.A102?.aDayDeferral).toEqual(early.state.fills.A102?.aDayDeferral);
+    const finalCaptain = await execute(
+      reloaded,
+      command('live.record_selection', { memberId: 43, positionId: 'D102', aDay: 'TUE' }, 2),
+    );
+    expect(finalCaptain.canonicalState).toMatchObject({
+      currentPhase: 'a_day_bid',
+      currentBidderId: 44,
+    });
+    if (!finalCaptain.canonicalState) throw new Error('deferred prompt required');
+    const picked = await execute(
+      finalCaptain.canonicalState,
+      command('live.record_a_day', { memberId: 44, aDay: 'G2' }, 3),
+    );
+    expect(picked.result.kind).toBe('accepted');
+    expect(picked.canonicalState?.aDay?.picks.find((pick) => pick.memberId === 44)?.aDay).toBe(
+      'G2',
+    );
+  });
+
+  it('changes an early or existing A-Day under review without changing the award or taking another member turn', async () => {
+    seed(true, 1);
+    const early = await confirmed(
+      initialState(),
+      command('live.record_selection', {
+        memberId: 43,
+        positionId: 'A101',
+        adminOverride: override,
+      }),
+    );
+    const allocated = await confirmed(
+      early.state,
+      command('live.record_a_day', { memberId: 43, aDay: 'G1', adminOverride: override }, 1),
+    );
+    expect(allocated.state.currentBidderId).toBe(42);
+    expect(allocated.state.fills.A101?.bidId).toBe(early.state.fills.A101?.bidId);
+    const changed = await confirmed(
+      allocated.state,
+      command('live.record_a_day', { memberId: 43, aDay: 'G2', adminOverride: override }, 2),
+    );
+    expect(changed.state.currentBidderId).toBe(42);
+    expect(changed.state.aDay?.picks.filter((pick) => pick.memberId === 43)).toHaveLength(1);
+    expect(changed.state.aDay?.picks.find((pick) => pick.memberId === 43)?.aDay).toBe('G2');
+    expect((await loadCanonicalBidSessionState(db, sessionId))?.fills.A101?.aDay).toBe('G2');
+    expect((await execute(allocated.state, changed.command)).result).toEqual(changed.result);
+    const events = sqlite
+      .prepare('SELECT event_json FROM bid_command_events ORDER BY seq')
+      .all() as { event_json: string }[];
+    expect(JSON.parse(events[2]?.event_json ?? '{}')).toMatchObject({
+      before: { aDay: 'G1' },
+      after: { aDay: 'G2' },
+      adminOverride: { warningCodes: ['A_DAY_CHANGE'] },
+    });
+  });
+
+  it('permits a disabled combat group only with explicit warning and retains its exact replay provenance', async () => {
+    seed(true, 10, null, ['G1']);
+    const chosen = await confirmed(
+      initialState(),
+      command('live.record_selection', {
+        memberId: 44,
+        positionId: 'A102',
+        aDay: 'G2',
+        adminOverride: override,
+      }),
+    );
+    expect(chosen.state.fills.A102?.aDayOverride?.warningCodes).toContain(
+      'A_DAY_POLICY_DEVIATION:GROUP_NOT_ENABLED',
+    );
+    const reloaded = await loadCanonicalBidSessionState(db, sessionId);
+    if (!reloaded) throw new Error('group override state required');
+    const ordinary = await execute(
+      reloaded,
+      command('live.record_selection', { memberId: 42, positionId: 'D101', aDay: 'MON' }, 1),
+    );
+    expect(ordinary.result.kind).toBe('accepted');
+    const frozen = JSON.parse(
+      (
+        sqlite.prepare('SELECT snapshot_json FROM bid_session_policy_snapshots').get() as {
+          snapshot_json: string;
+        }
+      ).snapshot_json,
+    );
+    expect(frozen.settings.livePolicy.annualOperations.aDay.combatGroups).toEqual(['G1']);
+  });
+
+  it('removes an existing A-Day by lineage correction and preserves its deferred task', async () => {
+    seed(true);
+    const awarded = await confirmed(
+      initialState(),
+      command('live.record_selection', {
+        memberId: 44,
+        positionId: 'A102',
+        aDay: 'G1',
+        adminOverride: override,
+      }),
+    );
+    const fill = awarded.state.fills.A102;
+    if (!fill) throw new Error('correction fill required');
+    const correction = await confirmed(
+      awarded.state,
+      command(
+        'live.correct_bid',
+        {
+          memberId: 44,
+          originalCommandId: awarded.command.commandId,
+          originalBidId: fill.bidId,
+          originalPositionId: 'A102',
+          originalADayCommandId: null,
+          operation: 'REPLACE',
+          replacement: { positionId: 'A102', aDay: null },
+          adminOverride: override,
+        },
+        1,
+      ),
+    );
+    expect(correction.state.fills.A102?.aDay).toBeUndefined();
+    expect(correction.state.fills.A102?.aDayDeferral?.positionId).toBe('A102');
+    expect(correction.state.aDay?.picks.some((pick) => pick.memberId === 44)).toBe(false);
+    expect(correction.state.live?.corrections?.at(-1)?.before.fill.aDay).toBe('G1');
+    const continued = await execute(
+      correction.state,
+      command('live.record_selection', { memberId: 42, positionId: 'D101', aDay: 'MON' }, 2),
+    );
+    expect(continued.result.kind).toBe('accepted');
+  });
+
+  it('changes rank-stage order under explicit review while preserving every pending entry and normal guard', async () => {
+    seed();
+    const order = [44, 42, 43, 42, 43];
+    expect(
+      (
+        await execute(
+          initialState(),
+          command('live.alter_order', { orderedRemainingMemberIds: order }),
+        )
+      ).result,
+    ).toMatchObject({ code: 'ALTER_ORDER_STAGE_SEQUENCE_INVALID' });
+    const reordered = await confirmed(
+      initialState(),
+      command('live.alter_order', { orderedRemainingMemberIds: order, adminOverride: override }),
+    );
+    expect(reordered.state.currentBidderId).toBe(44);
+    expect(reordered.state.live?.currentStageId).toBe('firefighters');
+    expect([...reordered.state.bidOrder].sort((a, b) => a.ordinal - b.ordinal)).toEqual(
+      initialState().bidOrder,
+    );
+    expect(
+      (
+        await execute(
+          reordered.state,
+          command(
+            'live.alter_order',
+            { orderedRemainingMemberIds: [44, 42], adminOverride: override },
+            1,
+          ),
+          true,
+        )
+      ).result,
+    ).toMatchObject({ code: 'ALTER_ORDER_MEMBER_SET_MISMATCH' });
+  });
+
+  it('moves an exact ordinary turn before the same Captain Days turn with complete audit identity and replay', async () => {
+    seed();
+    const before = { ...initialState(), queueCursor: 1, currentBidderId: 43 };
+    const remaining = before.bidOrder.slice(before.queueCursor);
+    const selectedTurn = remaining[2];
+    const committedTurn = before.bidOrder[0];
+    if (!selectedTurn || !committedTurn) throw new Error('Exact synthetic turns are required');
+    const exactRemaining = [selectedTurn, ...remaining.filter((_, index) => index !== 2)];
+    const exactOrder = [committedTurn, ...exactRemaining];
+    const turns = exactRemaining.map((entry) => ({
+      memberId: entry.memberId,
+      stageId: entry.stageId ?? null,
+    }));
+    const fields = {
+      orderedRemainingMemberIds: turns.map((turn) => turn.memberId),
+      orderedRemainingTurns: turns,
+    };
+    expect((await execute(before, command('live.alter_order', fields))).result).toMatchObject({
+      code: 'ALTER_ORDER_STAGE_SEQUENCE_INVALID',
+    });
+    const result = await confirmed(
+      before,
+      command('live.alter_order', { ...fields, adminOverride: override }),
+    );
+    expect(result.state).toMatchObject({
+      currentBidderId: 43,
+      queueCursor: 1,
+      live: { currentStageId: 'captains' },
+    });
+    expect(result.state.bidOrder).toEqual(exactOrder);
+    if (result.result.kind !== 'accepted') throw new Error('Expected reviewed adjustment');
+    expect(result.result.envelope.payload).toMatchObject({
+      beforeMemberIds: remaining.map((entry) => entry.memberId),
+      afterMemberIds: fields.orderedRemainingMemberIds,
+      beforeTurns: remaining.map((entry) => ({
+        memberId: entry.memberId,
+        stageId: entry.stageId ?? null,
+      })),
+      afterTurns: turns,
+    });
+    const replay = await execute(result.state, result.command);
+    expect(replay.result).toEqual(result.result);
+    expect((await loadCanonicalBidSessionState(db, sessionId))?.bidOrder).toEqual(exactOrder);
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_events').get()).toEqual({
+      count: 1,
+    });
+  });
+
+  it('rejects fabricated or repeated exact turns and mismatched member IDs while retaining the legacy FIFO contract', async () => {
+    seed();
+    const before = initialState();
+    const exactTurns = before.bidOrder.map((entry) => ({
+      memberId: entry.memberId,
+      stageId: entry.stageId ?? null,
+    }));
+    const members = exactTurns.map((entry) => entry.memberId);
+    for (const stageId of ['days', 'fabricated-stage']) {
+      const invalidTurns = exactTurns.map((entry, index) =>
+        index === 3 ? { ...entry, stageId } : entry,
+      );
+      const result = await execute(
+        before,
+        command('live.alter_order', {
+          orderedRemainingMemberIds: members,
+          orderedRemainingTurns: invalidTurns,
+          adminOverride: override,
+        }),
+        true,
+      );
+      expect(result.result).toMatchObject({ code: 'ALTER_ORDER_TURN_SET_MISMATCH' });
+    }
+    const mismatch = await execute(
+      before,
+      command('live.alter_order', {
+        orderedRemainingMemberIds: [43, 42, 42, 43, 44],
+        orderedRemainingTurns: exactTurns,
+        adminOverride: override,
+      }),
+      true,
+    );
+    expect(mismatch.result).toMatchObject({ code: 'ALTER_ORDER_TURN_IDS_MISMATCH' });
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_receipts').get()).toEqual({
+      count: 0,
+    });
+    const legacy = await confirmed(
+      before,
+      command('live.alter_order', {
+        orderedRemainingMemberIds: [43, 42, 42, 43, 44],
+        adminOverride: override,
+      }),
+    );
+    expect(legacy.state.bidOrder.map((entry) => entry.ordinal)).toEqual([2, 1, 3, 4, 5]);
+    expect(legacy.state.bidOrder[0]).toMatchObject({ memberId: 43, stageId: 'days' });
+  });
+
+  it('assigns and releases any directed role after a seat award with a retained-seat warning and unchanged selection rights', async () => {
+    seed(true);
+    const awarded = await confirmed(
+      initialState(),
+      command('live.record_selection', {
+        memberId: 43,
+        positionId: 'A101',
+        aDay: 'G1',
+        adminOverride: override,
+      }),
+    );
+    const assigned = await confirmed(
+      awarded.state,
+      command(
+        'live.set_exceptional_assignment',
+        {
+          memberId: 43,
+          operation: 'ASSIGN',
+          roleLabel: 'Acting Training Coordinator',
+          adminOverride: override,
+        },
+        1,
+      ),
+    );
+    expect(assigned.state.fills).toEqual(awarded.state.fills);
+    expect(assigned.state.live?.exceptionalAssignments?.at(-1)?.roleLabel).toBe(
+      'Acting Training Coordinator',
+    );
+    const released = await confirmed(
+      assigned.state,
+      command(
+        'live.set_exceptional_assignment',
+        {
+          memberId: 43,
+          operation: 'RELEASE',
+          roleLabel: 'Acting Training Coordinator',
+          adminOverride: override,
+        },
+        2,
+      ),
+    );
+    expect(released.state.fills).toEqual(awarded.state.fills);
+    expect(released.state.annual?.returningMemberId).toBeNull();
+    expect(released.state.currentBidderId).toBe(42);
+    expect(released.state.live?.exceptionalAssignments?.at(-1)?.releasedAtMs).toEqual(
+      expect.any(Number),
+    );
+  });
+
+  it('keeps a paused session paused when directing its current member to an acting duty', async () => {
+    seed();
+    const state = initialState();
+    state.currentPhase = 'paused';
+    if (!state.live) throw new Error('paused progress required');
+    state.live.pausedPhase = 'position_bid';
+    const assigned = await confirmed(
+      state,
+      command('live.set_exceptional_assignment', {
+        memberId: 42,
+        operation: 'ASSIGN',
+        roleLabel: 'Acting Chief duty',
+        adminOverride: override,
+      }),
+    );
+    expect(assigned.state).toMatchObject({
+      currentPhase: 'paused',
+      currentBidderId: 43,
+      live: { pausedPhase: 'position_bid' },
+    });
+    const resumed = await execute(assigned.state, command('live.resume', {}, 1));
+    expect(resumed.canonicalState).toMatchObject({
+      currentPhase: 'position_bid',
+      currentBidderId: 43,
+    });
+  });
+
+  it('prompts an early combat Captain A-Day at the Captain entry rather than repeated Days eligibility', async () => {
+    seed(true);
+    const early = await confirmed(
+      initialState(),
+      command('live.record_selection', {
+        memberId: 43,
+        positionId: 'A101',
+        adminOverride: override,
+      }),
+    );
+    const days = await execute(
+      early.state,
+      command('live.record_selection', { memberId: 42, positionId: 'D101', aDay: 'MON' }, 1),
+    );
+    expect(days.canonicalState).toMatchObject({
+      currentPhase: 'a_day_bid',
+      currentBidderId: 43,
+      queueCursor: 3,
+    });
+    const original = initialState().bidOrder;
+    expect(days.canonicalState?.bidOrder).toEqual(original);
+    expect(days.canonicalState?.bidOrder[3]?.stageId).toBe('captains');
+  });
 
   it('records a chief-directed placement distinctly and preserves its marker on reload', async () => {
     seed();

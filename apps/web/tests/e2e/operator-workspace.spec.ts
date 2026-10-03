@@ -183,7 +183,7 @@ test('member details, historical assignment and explicit bid confirmation work i
       },
     });
   });
-  await page.getByText('Other bid actions', { exact: true }).click();
+  await page.getByText('More controls', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'Correct selection', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Correct a bid', exact: true }).click();
   await expect(page.getByLabel('Award to correct')).toHaveValue('synthetic-earlier-award');

@@ -64,6 +64,7 @@ import {
 } from './authoritative-staffing-baseline.js';
 import {
   bidDefinitionContextHash,
+  bidEvidenceFreezeExecutionSettingsMatch,
   bidEvidenceFreezeSettingsMatch,
   snapshotMatchesBidDefinition,
 } from './bid-definition-context.js';
@@ -2145,7 +2146,15 @@ export async function prepareConfiguredBidPolicySnapshot(
             pinnedEvaluation: saved.evaluation,
             settings: policy.settings,
             ...(definitionContent === undefined ? {} : { content: definitionContent }),
-          })) ||
+          }) &&
+          !(
+            definitionContent &&
+            bidEvidenceFreezeExecutionSettingsMatch({
+              pinnedEvaluation: saved.evaluation,
+              settings: policy.settings,
+              content: definitionContent,
+            })
+          )) ||
         serial(materialWithoutVersion(saved.evaluation.ruleBookMaterial)) !==
           serial(materialWithoutVersion(material.ruleBookMaterial)) ||
         material.coverage.valid !== true

@@ -46,6 +46,10 @@ import { frozenADayConstraints } from '../../lib/frozen-a-day.js';
 import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import { currentLiveBidStage, liveBidSelectionStages } from '../../lib/live-bid-stages.js';
 import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
+import {
+  frozenPositionPriorityAdvisory,
+  hasFrozenPriorityPreference,
+} from '../../lib/position-priority-advisory.js';
 import { isReasonValidForAction } from '../../lib/reason-codes.js';
 import { adviseFrozenSpecialtyCoverage } from '../../lib/specialty-coverage-advisory.js';
 import { runWithNormalBidMutationLease } from '../../lib/specialty-interruption-guard.js';
@@ -385,7 +389,22 @@ router.get('/:id/specialty-review', async (c) => {
       positionId,
       rule,
     }).find((entry) => entry.candidateMemberIds.length > 0);
-    if (!pending) return c.json({ ...base, status: 'READY' });
+    if (!pending) {
+      const advisory = frozenPositionPriorityAdvisory({
+        snapshot: frozen.snapshot,
+        state,
+        memberId,
+        rule,
+        rules: frozen.coverage.rules,
+      });
+      return advisory
+        ? c.json({
+            sequence: state.lastSeq,
+            status: 'ADVISORY_HIGHER_PRIORITY',
+            selection_review: advisory,
+          })
+        : c.json({ ...base, status: 'READY' });
+    }
     const specialty = frozen.snapshot.settings.livePolicy.annualOperations?.specialties?.find(
       (entry) => entry.id === pending.specialtyId,
     );
@@ -637,6 +656,9 @@ router.get('/:id/specialty-live', async (c) => {
       exception.positionIds.map((positionId) => [positionId, exception.timing] as const),
     ),
   );
+  for (const [positionId, fill] of Object.entries(canonical.fills))
+    if (fill.aDayDeferral?.positionId === positionId && fill.aDay === undefined)
+      aDayTimingByPosition[positionId] = 'AFTER_POSITION_SELECTION';
   let aDayCurrent: {
     member_id: number;
     position_id: string;
@@ -669,6 +691,14 @@ router.get('/:id/specialty-live', async (c) => {
     bid_session_id: sessionId,
     sequence: canonical.lastSeq,
     admin_override_allowed: isLiveBidActionAuthorized(policy, 'force', c.get('claims').member_id),
+    specialty_review_position_ids: [
+      ...new Set([
+        ...(policy.annualOperations?.specialties ?? []).flatMap(
+          (specialty) => specialty.opportunityPositionIds,
+        ),
+        ...frozen.coverage.rules.filter(hasFrozenPriorityPreference).map((rule) => rule.positionId),
+      ]),
+    ],
     admin_override_member_ids: frozen.snapshot.members
       .filter((person) => person.pool !== 'EXCLUDED')
       .map((person) => person.memberId),
@@ -724,6 +754,11 @@ router.get('/:id/specialty-live', async (c) => {
         ? null
         : member(canonical.annual.returningMemberId),
     remaining_order: canonical.bidOrder.slice(canonical.queueCursor).map((entry) => entry.memberId),
+    remaining_turns: canonical.bidOrder.slice(canonical.queueCursor).map((entry) => ({
+      memberId: entry.memberId,
+      stageId: entry.stageId ?? null,
+      stage_label: policy.stages.find((stage) => stage.id === entry.stageId)?.label ?? null,
+    })),
     fills: Object.fromEntries(
       Object.entries(canonical.fills).map(([positionId, fill]) => [
         positionId,

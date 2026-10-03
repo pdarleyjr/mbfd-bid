@@ -12,7 +12,7 @@ import {
 } from 'react';
 
 type PositionIntent = { memberId: number; positionId: string; nonce: number };
-type OverrideIntent = { memberId: number; nonce: number };
+type OverrideIntent = { memberId: number; positionId?: string; deferADay?: boolean; nonce: number };
 interface OperatorContext {
   selectedMemberId: number | null;
   activeMemberId: number | null;
@@ -21,7 +21,7 @@ interface OperatorContext {
   positionIntent: PositionIntent | null;
   choosePosition: (positionId: string) => void;
   overrideIntent: OverrideIntent | null;
-  requestOverride: () => void;
+  requestOverride: (positionId?: string, memberId?: number, deferADay?: boolean) => void;
   overrideAllowed: boolean;
   setOverrideAllowed: (allowed: boolean) => void;
 }
@@ -56,13 +56,19 @@ export function BidOperatorProvider({
     },
     [selectedMemberId],
   );
-  const requestOverride = useCallback(() => {
-    if (selectedMemberId === null) return;
-    setOverrideIntent((previous) => ({
-      memberId: selectedMemberId,
-      nonce: (previous?.nonce ?? 0) + 1,
-    }));
-  }, [selectedMemberId]);
+  const requestOverride = useCallback(
+    (positionId?: string, memberId?: number, deferADay?: boolean) => {
+      const targetMemberId = memberId ?? selectedMemberId;
+      if (targetMemberId === null) return;
+      setOverrideIntent((previous) => ({
+        memberId: targetMemberId,
+        ...(positionId ? { positionId } : {}),
+        ...(deferADay ? { deferADay } : {}),
+        nonce: (previous?.nonce ?? 0) + 1,
+      }));
+    },
+    [selectedMemberId],
+  );
   const value = useMemo(
     () => ({
       selectedMemberId,

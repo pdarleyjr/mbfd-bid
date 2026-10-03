@@ -9,7 +9,12 @@ vi.mock('@/components/admin/TaskPanel', () => ({
   TaskPanel: ({ open, title, children }: { open: boolean; title: string; children: ReactNode }) =>
     open ? <div data-panel-title={title}>{children}</div> : null,
 }));
-const operator = { selectedMemberId: 17, setActiveMember: vi.fn(), setOverrideAllowed: vi.fn() };
+const operator = {
+  selectedMemberId: 17,
+  setActiveMember: vi.fn(),
+  setOverrideAllowed: vi.fn(),
+  requestOverride: vi.fn(),
+};
 vi.mock('../../app/admin/bid/_components/BidOperatorContext', () => ({
   useBidOperator: () => operator,
 }));
@@ -20,11 +25,13 @@ let container: HTMLDivElement;
 let originalWindowFetch: typeof fetch;
 let live: Record<string, unknown>;
 let commands: Record<string, unknown>[];
+let previews: Record<string, unknown>[];
 let rank: 'CPT' | 'LT' | 'FF';
 let reviewFailure: boolean;
 let malformedReview: 'null' | 'missing-candidates' | null;
 let combinedReadback: boolean;
 let continueReview: boolean;
+let advisoryReview: boolean;
 
 const requester = () => ({
   member_id: 17,
@@ -61,10 +68,13 @@ beforeEach(() => {
   originalWindowFetch = window.fetch;
   rank = 'CPT';
   commands = [];
+  previews = [];
   reviewFailure = false;
   malformedReview = null;
   combinedReadback = false;
   continueReview = false;
+  advisoryReview = false;
+  operator.requestOverride.mockReset();
   live = {
     sequence: 4,
     current_phase: 'position_bid',
@@ -103,15 +113,16 @@ beforeEach(() => {
       if (reviewFailure) return new Response('{}', { status: 503 });
       const review: Record<string, unknown> = {
         sequence: live.sequence,
-        status: 'HIGHER_PRIORITY',
+        status: advisoryReview ? 'ADVISORY_HIGHER_PRIORITY' : 'HIGHER_PRIORITY',
         selection_review: {
           member_id: 17,
           position_id: 'S-A',
-          specialty_id: 'synthetic-investigator',
+          specialty_id: advisoryReview ? null : 'synthetic-investigator',
+          ...(advisoryReview ? { mode: 'ADVISORY' } : {}),
           specialty_label: 'Investigator',
           higher_priority_candidates: [higher()],
           eligible_related_position_ids: ['S-A', 'S-B'],
-          a_day_timing: 'ORDINARY_TURN',
+          a_day_timing: advisoryReview ? 'ADMIN_REVIEW' : 'ORDINARY_TURN',
         },
       };
       if (malformedReview === 'null') review.selection_review = null;
@@ -121,6 +132,16 @@ beforeEach(() => {
     }
     if (url === '/api/auth/csrf')
       return response({ token: 'csrf_00000000-0000-0000-0000-000000000001' });
+    if (url.endsWith('/commands/live/preview')) {
+      const body = JSON.parse(String(init?.body));
+      previews.push(body);
+      return response({
+        valid: true,
+        expectedSeq: body.expectedSeq,
+        memberId: body.memberId,
+        warnings: [{ code: 'POLICY_DEVIATION', message: 'The action changes normal policy.' }],
+      });
+    }
     if (url.endsWith('/commands/live')) {
       const command = JSON.parse(String(init?.body)) as Record<string, unknown>;
       commands.push(command);
@@ -203,7 +224,7 @@ async function fill(label: string, value: string) {
     node.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
-async function mount() {
+async function mount(isMock = true) {
   live.current_bidder = requester();
   const positions: PositionMeta[] = ['S-A', 'S-B', 'R-A'].map((id) => ({
     id,
@@ -220,7 +241,7 @@ async function mount() {
     root?.render(
       <AnnualLiveControls
         bidSessionId="synthetic-workflow"
-        isMock
+        isMock={isMock}
         workspace
         currentBidderId={17}
         bidOrder={[{ memberId: 17 }, { memberId: 9 }]}
@@ -248,10 +269,61 @@ async function mount() {
 }
 
 describe('contextual specialty and deferred A-Day operator workflow', () => {
+  it.each([true, false])(
+    'moves the ordinary turn ahead of the same member Days turn with exact reviewed identities (Mock %s)',
+    async (isMock) => {
+      live.remaining_order = [17, 9, 17];
+      live.remaining_turns = [
+        { memberId: 17, stageId: 'days', stage_label: 'Days positions' },
+        { memberId: 9, stageId: 'captains', stage_label: 'Captains' },
+        { memberId: 17, stageId: null, stage_label: 'Ordinary rank turn' },
+      ];
+      live.admin_override_allowed = true;
+      await mount(isMock);
+      await settle(() => button('Bid order').click());
+      expect(container.textContent).toContain('CPT Synthetic Senior Requester · Days positions');
+      expect(container.textContent).toContain(
+        'CPT Synthetic Senior Requester · Ordinary rank turn · turn 2',
+      );
+      await settle(() =>
+        (
+          container.querySelector(
+            'button[aria-label="Make CPT Synthetic Senior Requester next (turn 2)"]',
+          ) as HTMLButtonElement
+        ).click(),
+      );
+      await fill('Operator reason', 'Synthetic ordinary turn priority approved');
+      await settle(() => button('Review bid order').click());
+      const exactTurns = [
+        { memberId: 17, stageId: null },
+        { memberId: 17, stageId: 'days' },
+        { memberId: 9, stageId: 'captains' },
+      ];
+      expect(previews[0]).toMatchObject({
+        type: 'live.alter_order',
+        orderedRemainingMemberIds: [17, 17, 9],
+        orderedRemainingTurns: exactTurns,
+      });
+      expect(commands).toHaveLength(0);
+      await settle(() =>
+        (
+          container.querySelector('input[aria-label="I reviewed bid order"]') as HTMLInputElement
+        ).click(),
+      );
+      await settle(() => button('Confirm bid order').click());
+      expect(commands[0]).toMatchObject({
+        type: 'live.alter_order',
+        orderedRemainingMemberIds: [17, 17, 9],
+        orderedRemainingTurns: exactTurns,
+        adminOverride: { acknowledged: true, warningCodes: ['POLICY_DEVIATION'] },
+      });
+    },
+  );
   it('makes a selected member next while retaining every remaining turn and recording the reason', async () => {
     live.remaining_order = [17, 9, 17];
+    live.admin_override_allowed = true;
     await mount();
-    await settle(() => button('Remaining order').click());
+    await settle(() => button('Bid order').click());
     expect(container.textContent).toContain('Every remaining turn is retained');
     expect(container.textContent).toContain('CPT Synthetic Senior Requester · turn 2');
     await settle(() =>
@@ -263,7 +335,14 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
     );
     expect(commands).toHaveLength(0);
     await fill('Operator reason', 'Synthetic operator approved priority change');
-    await settle(() => button('Commit remaining order').click());
+    await settle(() => button('Review bid order').click());
+    expect(commands).toHaveLength(0);
+    await settle(() =>
+      (
+        container.querySelector('input[aria-label="I reviewed bid order"]') as HTMLInputElement
+      ).click(),
+    );
+    await settle(() => button('Confirm bid order').click());
     expect(commands[0]).toMatchObject({
       type: 'live.alter_order',
       orderedRemainingMemberIds: [9, 17, 17],
@@ -357,12 +436,12 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
     live.available_non_biddable_positions = [];
     live.exceptional_assignments = [];
     await mount();
-    await settle(() => button('Chief-directed role').click());
-    expect(button('Record directed role').disabled).toBe(true);
+    await settle(() => button('Temporary duties').click());
+    expect(button('Review temporary duty').disabled).toBe(true);
     await choose('Directed-role member', '9');
     await fill('Directed role label', 'Acting Division Chief of Prevention');
     await fill('Operator reason', 'Synthetic Chief direction reviewed');
-    expect(button('Record directed role').disabled).toBe(true);
+    expect(button('Review temporary duty').disabled).toBe(true);
     await settle(() =>
       (
         container.querySelector(
@@ -370,7 +449,14 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
         ) as HTMLInputElement
       ).click(),
     );
-    await settle(() => button('Record directed role').click());
+    await settle(() => button('Review temporary duty').click());
+    expect(commands).toHaveLength(0);
+    await settle(() =>
+      (
+        container.querySelector('input[aria-label="I reviewed temporary duty"]') as HTMLInputElement
+      ).click(),
+    );
+    await settle(() => button('Confirm temporary duty').click());
     expect(commands[0]).toMatchObject({
       type: 'live.set_exceptional_assignment',
       operation: 'ASSIGN',
@@ -427,6 +513,30 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
       await choose('Controlled A-Day', 'G2');
       await settle(() => button('Commit controlled A-Day').click());
       expect(commands[3]).toMatchObject({ type: 'live.record_a_day', memberId: 9, aDay: 'G2' });
+    },
+  );
+  it.each([true, false])(
+    'offers all-profile advisory candidates in Mock=%s without inventing an interruption or blocking the original bidder',
+    async (isMock) => {
+      advisoryReview = true;
+      live.specialties = [];
+      live.specialty_review_position_ids = ['S-A', 'S-B'];
+      live.admin_override_allowed = true;
+      live.admin_override_member_ids = [17, 9];
+      live.admin_override_position_ids = ['S-A', 'S-B', 'R-A'];
+      await mount(isMock);
+      const seat = [...container.querySelectorAll('button')].find((node) =>
+        node.textContent?.includes('S-A'),
+      );
+      await settle(() => seat?.click());
+      expect(container.textContent).toContain('Higher-scoring eligible members');
+      expect(container.textContent).toContain('10 points');
+      expect(container.textContent).toContain('Related eligible seats (2)');
+      expect(container.textContent).not.toContain('Offer specialty seats first');
+      await settle(() => button('Assign Synthetic Qualified Candidate').click());
+      expect(operator.requestOverride).toHaveBeenCalledWith('S-A', 9, true);
+      expect(operator.setActiveMember).toHaveBeenLastCalledWith(17);
+      expect(commands).toHaveLength(0);
     },
   );
   it('keeps specialty confirmation blocked when priority cannot be checked and provides a safe retry', async () => {

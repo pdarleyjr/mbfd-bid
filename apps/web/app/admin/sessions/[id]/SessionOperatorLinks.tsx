@@ -23,7 +23,7 @@ export function SessionOperatorLinks({ sessionId }: { sessionId: string }) {
         rel="noreferrer"
         className="inline-flex min-h-11 items-center rounded border border-border px-4 py-2 text-sm font-semibold"
       >
-        Open session presentation
+        Open presentation
       </a>
       <Link
         href={withSession('/admin/bid', sessionId)}

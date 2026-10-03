@@ -119,12 +119,10 @@ describe('Bid Blueprint', () => {
     await click(control('Policy'));
     const policyControl = required(
       [...container.querySelectorAll<HTMLButtonElement>('button[data-bid-visual-node]')].find(
-        (button) => button.getAttribute('aria-label')?.startsWith('Policy & language.'),
+        (button) => button.getAttribute('aria-label')?.startsWith('Bid policy.'),
       ),
     );
-    expect(policyControl.getAttribute('aria-label')).toContain(
-      'Read policy details in the inspector.',
-    );
+    expect(policyControl.getAttribute('aria-label')).toContain('Open details.');
     expect(policyControl.getAttribute('aria-label')?.length).toBeLessThan(160);
     expect(policyControl.getAttribute('aria-label')).not.toContain('Synthetic policy clause');
     await click(policyControl);

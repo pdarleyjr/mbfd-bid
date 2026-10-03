@@ -20,6 +20,7 @@ import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { AdministratorOverride } from './AdministratorOverride';
 import { useBidOperator } from './BidOperatorContext';
 import { CorrectBid } from './CorrectBid';
+import { ReviewedBidAdjustment } from './ReviewedBidAdjustment';
 import { SessionPresentationLink } from './SessionPresentationLink';
 
 type Candidate = {
@@ -34,15 +35,16 @@ type Candidate = {
 };
 type SelectionReview = {
   sequence: number;
-  status: 'READY' | 'INELIGIBLE' | 'HIGHER_PRIORITY' | 'NOT_CURRENT';
+  status: 'READY' | 'INELIGIBLE' | 'HIGHER_PRIORITY' | 'ADVISORY_HIGHER_PRIORITY' | 'NOT_CURRENT';
   selection_review: {
     member_id: number;
     position_id: string;
-    specialty_id: string;
+    specialty_id: string | null;
+    mode?: 'ADVISORY' | undefined;
     specialty_label: string;
     higher_priority_candidates: Candidate[];
     eligible_related_position_ids: string[];
-    a_day_timing: 'ORDINARY_TURN';
+    a_day_timing: 'ORDINARY_TURN' | 'ADMIN_REVIEW';
   } | null;
 };
 type FallbackReview = {
@@ -69,6 +71,7 @@ type SpecialtyState = {
   admin_override_allowed?: boolean;
   admin_override_member_ids?: number[];
   admin_override_position_ids?: string[];
+  specialty_review_position_ids?: string[];
   exceptional_assignments?: Array<{
     assignment_id: string;
     member_id: number;
@@ -163,6 +166,11 @@ type SpecialtyState = {
   completion_blockers?: Candidate[];
   returning_member?: Candidate | null;
   remaining_order: number[];
+  remaining_turns?: Array<{
+    memberId: number;
+    stageId: string | null;
+    stage_label?: string | null;
+  }>;
   fills: Record<string, { member_id: number; a_day?: string | null; membership_ids?: string[] }>;
   specialties: Array<{
     id: string;
@@ -224,14 +232,22 @@ type SpecialtyState = {
       };
 };
 
-type RemainingOrderEntry = { memberId: number; occurrence: number };
+type RemainingOrderEntry = {
+  memberId: number;
+  occurrence: number;
+  stageId?: string | null;
+  stage_label?: string | null;
+};
 
-function remainingOrderEntries(memberIds: number[]): RemainingOrderEntry[] {
+function remainingOrderEntries(
+  turns: Array<number | { memberId: number; stageId?: string | null; stage_label?: string | null }>,
+): RemainingOrderEntry[] {
   const counts = new Map<number, number>();
-  return memberIds.map((memberId) => {
+  return turns.map((turn) => {
+    const memberId = typeof turn === 'number' ? turn : turn.memberId;
     const occurrence = counts.get(memberId) ?? 0;
     counts.set(memberId, occurrence + 1);
-    return { memberId, occurrence };
+    return { ...(typeof turn === 'number' ? { memberId } : turn), occurrence };
   });
 }
 
@@ -490,6 +506,7 @@ export function AnnualLiveControls(props: Props) {
   const activeMemberId =
     state?.a_day_current?.member_id ?? state?.active?.current_candidate_id ?? selectionMemberId;
   const [availableShift, setAvailableShift] = useState('');
+  const [correctionRequest, setCorrectionRequest] = useState(0);
   const handledIntent = useRef(0);
   const selectionOwner = useRef<number | null>(null);
   const loaded = state !== null;
@@ -516,6 +533,15 @@ export function AnnualLiveControls(props: Props) {
     if (!props.workspace || !intent || state === null || handledIntent.current >= intent.nonce)
       return;
     handledIntent.current = intent.nonce;
+    if (
+      state.admin_override_allowed &&
+      state.fills[intent.positionId] === undefined &&
+      (intent.memberId !== selectionMemberId ||
+        !state.selection_stage?.eligible_position_ids.includes(intent.positionId))
+    ) {
+      operator?.requestOverride(intent.positionId);
+      return;
+    }
     if (intent.memberId !== selectionMemberId) {
       setNotice('This member is not up now. Return to the current bidder to record a selection.');
       return;
@@ -540,7 +566,13 @@ export function AnnualLiveControls(props: Props) {
     setSelectionPoolId(pool?.id ?? '');
     setPanel('selection');
     setNotice(null);
-  }, [operator?.positionIntent, props.workspace, selectionMemberId, state]);
+  }, [
+    operator?.positionIntent,
+    operator?.requestOverride,
+    props.workspace,
+    selectionMemberId,
+    state,
+  ]);
   const dispositionMember = selectionMember;
   const termMemberId =
     panel === 'selection'
@@ -696,12 +728,15 @@ export function AnnualLiveControls(props: Props) {
     state?.active == null &&
     pendingADay === null &&
     selectionMemberId !== null &&
-    state?.specialties.some((specialty) =>
-      specialty.positions.some((position) => position.id === selectionPositionId),
-    ) === true;
+    (state?.specialty_review_position_ids?.includes(selectionPositionId) ||
+      state?.specialties.some((specialty) =>
+        specialty.positions.some((position) => position.id === selectionPositionId),
+      )) === true;
   const prompt = selectionReview?.identity === promptIdentity ? selectionReview : null;
   const priorityReview = prompt?.result?.selection_review ?? null;
-  const priorityReviewRequired = (priorityReview?.higher_priority_candidates.length ?? 0) > 0;
+  const priorityAdvisory = prompt?.result?.status === 'ADVISORY_HIGHER_PRIORITY';
+  const priorityReviewRequired =
+    !priorityAdvisory && (priorityReview?.higher_priority_candidates.length ?? 0) > 0;
   useEffect(() => {
     if (!needsSpecialtyReview || selectionMemberId === null) {
       setSelectionReview(null);
@@ -717,17 +752,27 @@ export function AnnualLiveControls(props: Props) {
         if (!response.ok)
           throw new Error('Specialty priority could not be checked. Retry the review.');
         const result = (await response.json()) as SelectionReview;
-        if (!['READY', 'HIGHER_PRIORITY', 'INELIGIBLE', 'NOT_CURRENT'].includes(result.status))
+        if (
+          ![
+            'READY',
+            'HIGHER_PRIORITY',
+            'ADVISORY_HIGHER_PRIORITY',
+            'INELIGIBLE',
+            'NOT_CURRENT',
+          ].includes(result.status)
+        )
           throw new Error('The specialty review response is unavailable. Retry the review.');
         const review = result.selection_review;
         if (
-          (result.status === 'HIGHER_PRIORITY' &&
+          ((result.status === 'HIGHER_PRIORITY' || result.status === 'ADVISORY_HIGHER_PRIORITY') &&
             (review == null ||
               !Array.isArray(review.higher_priority_candidates) ||
               review.higher_priority_candidates.length === 0)) ||
           (review !== null &&
             (review == null ||
-              typeof review.specialty_id !== 'string' ||
+              (result.status === 'ADVISORY_HIGHER_PRIORITY'
+                ? review.specialty_id !== null || review.mode !== 'ADVISORY'
+                : typeof review.specialty_id !== 'string') ||
               typeof review.specialty_label !== 'string' ||
               !Array.isArray(review.higher_priority_candidates) ||
               !review.higher_priority_candidates.every(
@@ -740,7 +785,9 @@ export function AnnualLiveControls(props: Props) {
               ) ||
               !Array.isArray(review.eligible_related_position_ids) ||
               !review.eligible_related_position_ids.every((id) => typeof id === 'string') ||
-              review.a_day_timing !== 'ORDINARY_TURN'))
+              (result.status === 'ADVISORY_HIGHER_PRIORITY'
+                ? review.a_day_timing !== 'ADMIN_REVIEW'
+                : review.a_day_timing !== 'ORDINARY_TURN')))
         )
           throw new Error('The specialty review response is unavailable. Retry the review.');
         if (
@@ -842,7 +889,7 @@ export function AnnualLiveControls(props: Props) {
     lastLoadedSequence.current = next.sequence;
     if (orderSequence.current !== next.sequence) {
       orderSequence.current = next.sequence;
-      setOrder(remainingOrderEntries(next.remaining_order));
+      setOrder(remainingOrderEntries(next.remaining_turns ?? next.remaining_order));
     }
     setState(next);
     setLoadedAt(Date.now());
@@ -1178,6 +1225,11 @@ export function AnnualLiveControls(props: Props) {
           members={props.members}
           positions={props.positions ?? []}
           fills={state.fills}
+          nonBiddablePositions={state.available_non_biddable_positions}
+          onChooseTask={(task) => {
+            if (task === 'correction') setCorrectionRequest((value) => value + 1);
+            else setPanel(task);
+          }}
           sequence={state.sequence}
           currentMemberId={selectionMemberId}
           currentStage={state.selection_stage?.label}
@@ -1331,22 +1383,16 @@ export function AnnualLiveControls(props: Props) {
           data-testid="specialty-coverage-advisory"
           aria-live="polite"
         >
-          <h2 className="font-semibold text-foreground">Specialty coverage advisory</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Read-only advisory from the frozen session snapshot and canonical fills. It does not
-            approve, block, or change an operator action.
-          </p>
+          <h2 className="font-semibold text-foreground">Specialty coverage</h2>
           {state.specialty_coverage.availability === 'UNAVAILABLE' ? (
             <p className="mt-2 text-sm text-warning">
-              Frozen specialty coverage is unavailable: {state.specialty_coverage.code}.
+              Coverage unavailable. <span className="text-xs">{state.specialty_coverage.code}</span>
             </p>
           ) : (
             <div className="mt-2 space-y-1 text-sm">
               <p>
-                Status: <strong>{state.specialty_coverage.status.replace('_', ' ')}</strong> ·{' '}
-                {state.specialty_coverage.filled_specialty_seat_count} of{' '}
-                {state.specialty_coverage.total_specialty_seat_count} specialty seats filled ·{' '}
-                {state.specialty_coverage.remaining_specialty_seat_count} remaining.
+                <strong>{state.specialty_coverage.status.replace('_', ' ')}</strong> ·{' '}
+                {state.specialty_coverage.remaining_specialty_seat_count} seats left
               </p>
               {state.specialty_coverage.guaranteed_uncovered_seat_count > 0 ? (
                 <p className="text-warning">
@@ -1354,18 +1400,32 @@ export function AnnualLiveControls(props: Props) {
                   {state.specialty_coverage.guaranteed_uncovered_seat_count === 1
                     ? 'seat is'
                     : 'seats are'}{' '}
-                  uncovered by the frozen eligibility graph.
+                  lack enough eligible members.
                 </p>
               ) : null}
               {state.specialty_coverage.critical_member_ids.length > 0 ? (
                 <p>
-                  {state.specialty_coverage.critical_member_ids.length} frozen candidate
-                  {state.specialty_coverage.critical_member_ids.length === 1 ? ' is' : 's are'}{' '}
-                  critical to the remaining coverage.
+                  {state.specialty_coverage.critical_member_ids.length} members are needed to cover
+                  the remaining seats.
                 </p>
               ) : null}
             </div>
           )}
+          <details className="mt-1 text-xs text-muted-foreground">
+            <summary className="min-h-11 cursor-pointer content-center font-medium">
+              Coverage details
+            </summary>
+            <p>
+              Advisory only, based on saved qualifications and current awards. Your adjustments
+              remain available.
+            </p>
+            {state.specialty_coverage.availability === 'AVAILABLE' ? (
+              <p>
+                {state.specialty_coverage.filled_specialty_seat_count} of{' '}
+                {state.specialty_coverage.total_specialty_seat_count} specialty seats filled.
+              </p>
+            ) : null}
+          </details>
         </section>
       ) : null}
       {state?.credential_coverage?.availability === 'AVAILABLE' &&
@@ -1376,22 +1436,57 @@ export function AnnualLiveControls(props: Props) {
           className="mb-3 border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
           aria-live="polite"
         >
-          <h2 className="font-semibold">Qualified members are running low</h2>
-          <ul className="mt-1 space-y-1">
+          <h2 className="font-semibold">Qualification coverage is low</h2>
+          <ul className="mt-1 divide-y divide-warning/20">
             {state.credential_coverage.groups
               .filter((group) => group.status !== 'FEASIBLE')
               .map((group) => (
-                <li key={group.id}>
-                  <strong>{group.label}:</strong> {group.eligible_member_count} qualified members
-                  left for {group.remaining_seat_count} open seats
-                  {group.status === 'SHORTAGE' ? ' — not enough to cover all seats.' : '.'}
+                <li
+                  key={group.id}
+                  className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-1"
+                >
+                  <span className="min-w-0 font-medium" title={group.label}>
+                    {group.label.includes(' + ')
+                      ? `${group.label.split(' + ')[0]} + ${group.label.split(' + ').length - 1} requirements`
+                      : group.label}
+                  </span>
+                  <span className="whitespace-nowrap tabular-nums">
+                    {group.eligible_member_count} qualified / {group.remaining_seat_count} seats
+                    {group.status === 'SHORTAGE' ? ' · Shortage' : ' · Low buffer'}
+                  </span>
                 </li>
               ))}
           </ul>
-          <p className="mt-2 text-xs">
-            Review the available seats before assigning these members elsewhere. Use Administrator
-            override to record a reviewed forced assignment.
-          </p>
+          <details className="mt-1 text-xs">
+            <summary className="min-h-11 cursor-pointer content-center font-medium">
+              Qualifications and members
+            </summary>
+            <p className="mb-2">
+              Keep enough qualified members for these seats. Use Adjust bid for a forced assignment.
+            </p>
+            {state.credential_coverage.groups
+              .filter((group) => group.status !== 'FEASIBLE')
+              .map((group) => (
+                <div key={group.id} className="mb-2">
+                  <strong>{group.label}</strong>
+                  <p>
+                    {group.eligible_member_count} qualified members left for{' '}
+                    {group.remaining_seat_count} open seats.
+                  </p>
+                  {group.critical_member_ids.length ? (
+                    <p>
+                      Needed for coverage: {group.critical_member_ids.map(memberName).join(', ')}
+                    </p>
+                  ) : null}
+                  <details>
+                    <summary className="min-h-11 cursor-pointer content-center">
+                      View qualified members
+                    </summary>
+                    <p>{group.eligible_member_ids.map(memberName).join(', ')}</p>
+                  </details>
+                </div>
+              ))}
+          </details>
         </section>
       ) : state?.credential_coverage?.availability === 'UNAVAILABLE' ? (
         <output className="mb-3 block text-sm text-warning">
@@ -1432,13 +1527,17 @@ export function AnnualLiveControls(props: Props) {
         className={props.workspace ? 'mb-3 border-t border-border pt-3' : ''}
       >
         {props.workspace ? (
-          <summary className="cursor-pointer text-sm font-semibold">Other bid actions</summary>
+          <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">
+            More controls
+          </summary>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <CorrectBid
             bidSessionId={props.bidSessionId}
             members={props.members}
             canonicalSequence={state?.sequence}
+            openRequest={correctionRequest}
+            requestedMemberId={operator?.selectedMemberId}
             overrideAllowed={state?.admin_override_allowed === true}
             overridePositionIds={state?.admin_override_position_ids}
             commandsBlocked={
@@ -1454,17 +1553,17 @@ export function AnnualLiveControls(props: Props) {
           {(
             [
               ['selection', 'Record selection'],
-              ['disposition', 'Disposition and return'],
-              ['a-day', 'Record A-Day'],
-              ['specialty', 'Specialty and contact'],
-              ['fallback', 'Fallback awards'],
+              ['disposition', 'Skip or return a member'],
+              ['a-day', 'A-Day due'],
+              ['specialty', 'Specialty review'],
+              ['fallback', 'Fill remaining seats'],
               ...(state?.admin_override_allowed
-                ? ([['exceptional', 'Chief-directed role']] as const)
+                ? ([['exceptional', 'Temporary duties']] as const)
                 : []),
               ['presentation', 'Presentation'],
               ['session', 'Pause or resume bid'],
               ...(props.workspace === true ? [] : ([['amendment', 'Correct selection']] as const)),
-              ['order', 'Remaining order'],
+              ['order', 'Bid order'],
               ...(state?.current_phase === 'complete' && !state.finalization_ready
                 ? ([['finalization', 'Finalize results']] as const)
                 : []),
@@ -1519,7 +1618,7 @@ export function AnnualLiveControls(props: Props) {
                               ? 'Finalize completed results'
                               : 'Record selection'
         }
-        description="Actions follow this session’s approved policy and your operator authority. Enter a reason and review the selected member or position before recording an action."
+        description="Review the member and action, then confirm. Adjust bid lets you override policy advice."
       >
         {notice ? (
           <output aria-live="polite" className="mb-3 block border-l-2 border-info pl-3 text-sm">
@@ -1629,10 +1728,6 @@ export function AnnualLiveControls(props: Props) {
                   .filter((id) => props.members[String(id)])
                   .filter(
                     (id) =>
-                      !Object.values(state?.fills ?? {}).some((fill) => fill.member_id === id),
-                  )
-                  .filter(
-                    (id) =>
                       String(id) === actingMemberId ||
                       memberName(id).toLowerCase().includes(actingMemberQuery.trim().toLowerCase()),
                   )
@@ -1687,30 +1782,36 @@ export function AnnualLiveControls(props: Props) {
                 onChange={(event) => setActingConfirmed(event.target.checked)}
               />
               Record {actingMemberId ? memberName(Number(actingMemberId)) : 'this member'} as forced
-              into {actingRoleLabel || 'the directed duty'} and hold their ordinary bid turns.
+              into {actingRoleLabel || 'the directed duty'}. An existing seat stays assigned.
             </Label>
-            <Button
-              type="button"
-              variant="primary"
+            <ReviewedBidAdjustment
+              sessionId={props.bidSessionId}
+              sequence={state?.sequence ?? 0}
+              detail={{
+                type: 'live.set_exceptional_assignment',
+                operation: 'ASSIGN',
+                memberId: Number(actingMemberId),
+                roleLabel: actingRoleLabel.trim(),
+                ...(actingPositionId ? { positionId: actingPositionId } : {}),
+              }}
+              reason={reason}
               disabled={
                 busy ||
                 !actingConfirmed ||
                 !actingMemberId ||
                 actingRoleLabel.trim().length < 4 ||
-                reason.trim().length < 4
+                state?.admin_override_allowed !== true ||
+                loadError !== null ||
+                authRefreshing ||
+                authReviewRequired
               }
-              onClick={() => {
+              label="Temporary duty"
+              onSaved={() => {
                 setActingConfirmed(false);
-                void command('live.set_exceptional_assignment', {
-                  operation: 'ASSIGN',
-                  memberId: Number(actingMemberId),
-                  roleLabel: actingRoleLabel.trim(),
-                  ...(actingPositionId ? { positionId: actingPositionId } : {}),
-                });
+                void load().catch(() => setLoadError('Bid updates unavailable.'));
+                props.onCanonicalChange?.();
               }}
-            >
-              Record directed role
-            </Button>
+            />
             {state?.exceptional_assignments?.length ? (
               <section className="border-t border-border pt-3">
                 <h3 className="font-semibold">Return a member to the bid</h3>
@@ -1720,21 +1821,25 @@ export function AnnualLiveControls(props: Props) {
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {state.exceptional_assignments.map((assignment) => (
-                    <Button
+                    <ReviewedBidAdjustment
                       key={assignment.assignment_id}
-                      type="button"
-                      disabled={busy || reason.trim().length < 4}
-                      onClick={() =>
-                        void command('live.set_exceptional_assignment', {
-                          operation: 'RELEASE',
-                          memberId: assignment.member_id,
-                          roleLabel: assignment.role_label,
-                          ...(assignment.position_id ? { positionId: assignment.position_id } : {}),
-                        })
-                      }
-                    >
-                      Release {memberName(assignment.member_id)}
-                    </Button>
+                      sessionId={props.bidSessionId}
+                      sequence={state.sequence}
+                      detail={{
+                        type: 'live.set_exceptional_assignment',
+                        operation: 'RELEASE',
+                        memberId: assignment.member_id,
+                        roleLabel: assignment.role_label,
+                        ...(assignment.position_id ? { positionId: assignment.position_id } : {}),
+                      }}
+                      reason={reason}
+                      disabled={busy || loadError !== null || authRefreshing || authReviewRequired}
+                      label={`Release ${memberName(assignment.member_id)}`}
+                      onSaved={() => {
+                        void load().catch(() => setLoadError('Bid updates unavailable.'));
+                        props.onCanonicalChange?.();
+                      }}
+                    />
                   ))}
                 </div>
               </section>
@@ -2407,40 +2512,79 @@ export function AnnualLiveControls(props: Props) {
                   </>
                 ) : prompt?.result == null ? (
                   <output>Checking specialty priority…</output>
-                ) : priorityReviewRequired && priorityReview ? (
+                ) : (priorityReviewRequired || priorityAdvisory) && priorityReview ? (
                   <>
                     <h4 className="font-semibold">
-                      Other members have priority for {priorityReview.specialty_label}
+                      {priorityAdvisory
+                        ? 'Higher-scoring eligible members'
+                        : `Other members have priority for ${priorityReview.specialty_label}`}
                     </h4>
                     <p className="mt-1">
-                      Offer eligible seats to these members first. Their A-Days stay pending until
-                      their ordinary turns.
+                      {priorityAdvisory
+                        ? 'Review these candidates. You can assign a related seat and leave A-Day due, or continue this bidder.'
+                        : 'Offer these seats first. A-Day remains due at each member’s ordinary turn.'}
                     </p>
                     <ol
                       aria-label="Higher-priority specialty candidates"
                       className="mt-2 max-h-40 space-y-1 overflow-auto"
                     >
                       {priorityReview.higher_priority_candidates.map((candidate) => (
-                        <li key={candidate.member_id}>
+                        <li
+                          key={candidate.member_id}
+                          className="flex flex-wrap items-center justify-between gap-2"
+                        >
                           {name(candidate)} · {candidate.points ?? 0} points
+                          {priorityAdvisory && state?.admin_override_allowed ? (
+                            <Button
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                operator?.requestOverride(
+                                  priorityReview.position_id,
+                                  candidate.member_id,
+                                  true,
+                                )
+                              }
+                            >
+                              Assign {candidate.first_name} {candidate.last_name}
+                            </Button>
+                          ) : null}
                         </li>
                       ))}
                     </ol>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          setSpecialtyId(priorityReview.specialty_id);
-                          setPositionId(priorityReview.position_id);
-                          void command('live.start_specialty_adjudication', {
-                            specialtyId: priorityReview.specialty_id,
-                            positionId: priorityReview.position_id,
-                          });
-                        }}
-                      >
-                        Offer specialty seats first
-                      </Button>
+                      {!priorityAdvisory ? (
+                        <Button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            if (!priorityReview.specialty_id) return;
+                            setSpecialtyId(priorityReview.specialty_id);
+                            setPositionId(priorityReview.position_id);
+                            void command('live.start_specialty_adjudication', {
+                              specialtyId: priorityReview.specialty_id,
+                              positionId: priorityReview.position_id,
+                            });
+                          }}
+                        >
+                          Offer specialty seats first
+                        </Button>
+                      ) : (
+                        <details className="text-xs">
+                          <summary className="min-h-11 cursor-pointer content-center">
+                            Related eligible seats (
+                            {priorityReview.eligible_related_position_ids.length})
+                          </summary>
+                          <p>
+                            {priorityReview.eligible_related_position_ids
+                              .map(
+                                (id) =>
+                                  `${id} · ${props.positions?.find((position) => position.id === id)?.positionName ?? 'Seat'}`,
+                              )
+                              .join(', ')}
+                          </p>
+                        </details>
+                      )}
                       <Button
                         type="button"
                         onClick={() => {
@@ -2711,13 +2855,14 @@ export function AnnualLiveControls(props: Props) {
               your reason is recorded in the audit.
             </p>
             <ol className="mt-2 max-h-[40dvh] space-y-1 overflow-y-auto">
-              {order.map(({ memberId, occurrence }, index) => (
+              {order.map(({ memberId, occurrence, stage_label }, index) => (
                 <li
                   key={`${memberId}-${occurrence}`}
                   className="flex items-center gap-2 rounded bg-muted px-2 py-1 text-sm"
                 >
                   <span className="mr-auto">
                     {index + 1}. {memberName(memberId)}
+                    {stage_label ? ` · ${stage_label}` : ''}
                     {occurrence > 0 ? ` · turn ${occurrence + 1}` : ''}
                   </span>
                   <Button
@@ -2747,18 +2892,57 @@ export function AnnualLiveControls(props: Props) {
                 </li>
               ))}
             </ol>
-            <Button
-              type="button"
-              disabled={busy || order.length === 0}
-              onClick={() =>
-                void command('live.alter_order', {
+            {state?.admin_override_allowed ? (
+              <ReviewedBidAdjustment
+                sessionId={props.bidSessionId}
+                sequence={state.sequence}
+                detail={{
+                  type: 'live.alter_order',
                   orderedRemainingMemberIds: order.map((entry) => entry.memberId),
-                })
-              }
-              className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
-            >
-              Commit remaining order
-            </Button>
+                  ...(state.remaining_turns
+                    ? {
+                        orderedRemainingTurns: order.map((entry) => ({
+                          memberId: entry.memberId,
+                          stageId: entry.stageId ?? null,
+                        })),
+                      }
+                    : {}),
+                }}
+                reason={reason}
+                disabled={
+                  busy ||
+                  order.length === 0 ||
+                  loadError !== null ||
+                  authRefreshing ||
+                  authReviewRequired
+                }
+                label="Bid order"
+                onSaved={() => {
+                  void load().catch(() => setLoadError('Bid updates unavailable.'));
+                  props.onCanonicalChange?.();
+                }}
+              />
+            ) : (
+              <Button
+                type="button"
+                disabled={busy || order.length === 0}
+                onClick={() =>
+                  void command('live.alter_order', {
+                    orderedRemainingMemberIds: order.map((entry) => entry.memberId),
+                    ...(state?.remaining_turns
+                      ? {
+                          orderedRemainingTurns: order.map((entry) => ({
+                            memberId: entry.memberId,
+                            stageId: entry.stageId ?? null,
+                          })),
+                        }
+                      : {}),
+                  })
+                }
+              >
+                Save bid order
+              </Button>
+            )}
           </article>
 
           <article hidden={panel !== 'finalization'} className="rounded border border-border p-3">

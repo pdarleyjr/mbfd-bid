@@ -100,7 +100,7 @@ describe('Bid session setup', () => {
       },
     );
     expect(refresh).toHaveBeenCalledOnce();
-    expect(host.textContent).toContain('Mock started');
+    expect(host.textContent).toContain('Bid started');
     expect(host.querySelector('button')?.disabled).toBe(true);
   });
 
@@ -127,20 +127,34 @@ describe('Bid session setup', () => {
     fetchMock.mockResolvedValue(Response.json({ error: 'step_up_required' }, { status: 401 }));
     await showSetup();
     await clickStart();
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Sign in again');
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Refresh operator sign-in');
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(refresh).not.toHaveBeenCalled();
     expect(host.querySelector('button')?.disabled).toBe(false);
   });
 
-  it('never offers the Mock start action for a Real session', async () => {
+  it('starts Real through the same guarded lifecycle endpoint, with explicit Real wording and no separate settings detour', async () => {
+    fetchMock.mockResolvedValue(Response.json({ ok: true }));
     await showSetup(false);
     expect(host.textContent).toContain('Real Bid');
-    expect(host.querySelector('button')).toBeNull();
-    expect(host.querySelector('a')?.getAttribute('href')).toBe(
-      '/admin/sessions/saved%20mock%20%2F%207',
-    );
+    expect(host.querySelector('button')?.textContent).toBe('Start Real Bid');
+    expect(host.querySelector('a')).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+    await act(() => host.querySelector('button')?.click());
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      '/api/admin/bid-session/saved%20mock%20%2F%207/start',
+      expect.objectContaining({ method: 'POST', body: '{}' }),
+    );
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+  it('keeps Real source readiness errors visible and never treats rejection as a successful start', async () => {
+    fetchMock.mockResolvedValue(
+      Response.json({ error: 'live_readiness_blocked' }, { status: 409 }),
+    );
+    await showSetup(false);
+    await act(() => host.querySelector('button')?.click());
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('live_readiness_blocked');
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 

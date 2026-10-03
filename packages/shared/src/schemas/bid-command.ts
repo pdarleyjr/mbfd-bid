@@ -92,7 +92,7 @@ export type MockFreezeCommandResult =
     };
 
 /**
- * The only mutating envelope for a real session.  The browser supplies a
+ * The shared mutating envelope for Mock and Real sessions. The browser supplies a
  * command id and sequence expectation; the authenticated Worker adapter owns
  * the actor and never accepts it from the browser.  `evidenceReference` is an
  * opaque provenance pointer, not copied evidence or a source-system payload.
@@ -190,6 +190,7 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
    */
   LiveCommandBase.extend({
     type: z.literal('live.record_a_day'),
+    adminOverride: AdminBidOverrideSchema.optional(),
     memberId: z.number().int().positive(),
     aDay: ADayValueSchema,
   }).strict(),
@@ -226,7 +227,21 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.alter_order'),
+    adminOverride: AdminBidOverrideSchema.optional(),
     orderedRemainingMemberIds: z.array(z.number().int().positive()).min(1).max(2_000),
+    /** Distinguishes a member's Days eligibility turn from their ordinary rank turn. */
+    orderedRemainingTurns: z
+      .array(
+        z
+          .object({
+            memberId: z.number().int().positive(),
+            stageId: z.string().trim().min(1).max(160).nullable(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(2_000)
+      .optional(),
   }).strict(),
   /** Candidate ids are injected by the Worker from frozen evidence, never accepted from a browser body. */
   LiveCommandBase.extend({
@@ -250,6 +265,7 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.set_exceptional_assignment'),
+    adminOverride: AdminBidOverrideSchema.optional(),
     memberId: z.number().int().positive(),
     operation: z.enum(['ASSIGN', 'RELEASE']),
     roleLabel: z.string().trim().min(4).max(160),
