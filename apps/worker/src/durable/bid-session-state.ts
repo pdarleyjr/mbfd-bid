@@ -36,6 +36,8 @@ export interface PersistedADayState {
 }
 
 export interface Fill {
+  /** Immutable operator provenance; amendments retain this marker. */
+  forced?: { commandId: string; actorMemberId: number; reason: string; atMs: number };
   /** Server-owned receipt provenance for an acknowledged A-Day business-rule
    * departure. It permits replay of that exact pick, never client authority. */
   aDayOverride?: {
@@ -63,6 +65,19 @@ export interface Fill {
 /** Durable, reconstructible live-only projection.  Policy itself remains in
  * the immutable snapshot; this stores only progress and supersession facts. */
 export interface LiveBidProgress {
+  /** Audited, session-only duty overlays. Official rank and staffing remain frozen. */
+  exceptionalAssignments?: readonly {
+    assignmentId: string;
+    commandId: string;
+    memberId: number;
+    roleLabel: string;
+    positionId: string | null;
+    actorMemberId: number;
+    reason: string;
+    assignedAtMs: number;
+    releasedAtMs: number | null;
+    releaseCommandId: string | null;
+  }[];
   /** Append-only compensating projection; immutable receipts/events retain
    * every original award. A revocation stays pending until explicitly replaced. */
   corrections?: readonly {
@@ -129,6 +144,10 @@ export interface LiveBidProgress {
       bidOrder?: BidSessionState['bidOrder'];
       queueCursor?: number;
       specialty?: LiveBidProgress['specialty'];
+      aDay?: BidSessionState['aDay'];
+      exceptionalAssignments?: LiveBidProgress['exceptionalAssignments'];
+      dispositions?: LiveBidProgress['dispositions'];
+      returningMemberId?: number | null;
     } | null;
   } | null;
 }

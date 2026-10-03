@@ -78,7 +78,10 @@ describe('Bid session setup', () => {
     await showSetup();
     expect(host.textContent).toContain('Not started');
     expect(host.textContent).toContain('218 members');
-    expect(host.textContent).toContain('preview their details and previous bid');
+    expect(host.textContent).toContain('saved rules retained');
+    expect([...host.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'Start Mock Bid',
+    ]);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });

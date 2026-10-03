@@ -14,6 +14,10 @@ import { getDb } from '../db/index.js';
 import { bidSessions as bidSessionsTable, bids as bidsTable } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
+import {
+  loadAudienceCurrentAssignment,
+  remainingAudienceQueue,
+} from '../lib/audience-bid-context.js';
 import { safelyProjectAuthoritativeBidAdvisory } from '../lib/bid-advisory-projection.js';
 import {
   loadPriorBidHistoricalContext,
@@ -34,6 +38,7 @@ import { verifyJwt } from '../lib/jwt.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
 import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
 import { computeOnDeck, currentBidOrderEntry } from '../lib/on-deck.js';
+import { operationalDate } from '../lib/operational-date.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
 import type { WorkerEnv } from '../types/env.js';
 
@@ -143,6 +148,7 @@ bid.get('/me', async (c) => {
 
 /** Member-safe, read-only audience projection controlled independently from execution. */
 bid.get('/presentation', async (c) => {
+  c.header('Cache-Control', 'private, no-store');
   const claims = await requireJwt(c);
   if (!claims) return c.json({ error: 'missing_auth' }, 401);
   const bidSessionId = await resolveBidSessionId(c, readSessionQuery(c));
@@ -168,13 +174,22 @@ bid.get('/presentation', async (c) => {
   if (presentation === null || presentation.mode === 'OFF')
     return c.json({ mode: 'OFF', sequence: canonical.lastSeq, session: presentationSession });
   const held = presentation.mode === 'HOLD' ? presentation.heldProjection : null;
-  const fills = held?.fills ?? canonical.fills;
-  const order = held?.bidOrder ?? canonical.bidOrder;
-  const queueCursor = held?.queueCursor ?? canonical.queueCursor;
-  const currentBidderId = held?.currentBidderId ?? canonical.currentBidderId;
-  const currentPhase = held?.currentPhase ?? canonical.currentPhase;
-  const currentStageId = held?.currentStageId ?? canonical.live?.currentStageId ?? null;
-  const specialtyState = held?.specialty ?? canonical.live?.specialty ?? null;
+  if (presentation.mode === 'HOLD' && held === null)
+    return c.json({ error: 'presentation_state_unavailable' }, 409);
+  const fills = held ? held.fills : canonical.fills;
+  const order = held ? (held.bidOrder ?? []) : canonical.bidOrder;
+  const queueCursor = held ? (held.queueCursor ?? 0) : canonical.queueCursor;
+  const ordinaryBidderId = held ? held.currentBidderId : canonical.currentBidderId;
+  const returningMemberId = held
+    ? (held.returningMemberId ?? null)
+    : (canonical.annual?.returningMemberId ?? null);
+  const currentPhase = held ? held.currentPhase : canonical.currentPhase;
+  const currentStageId = held ? held.currentStageId : (canonical.live?.currentStageId ?? null);
+  const specialtyState = held ? (held.specialty ?? null) : (canonical.live?.specialty ?? null);
+  const currentBidderId =
+    specialtyState === null
+      ? (returningMemberId ?? ordinaryBidderId)
+      : (specialtyState.candidateMemberIds[specialtyState.candidateCursor] ?? null);
   const identities = new Map(
     (frozen.snapshot.operatorIdentityProjection ?? []).map((identity) => [
       identity.memberId,
@@ -209,6 +224,49 @@ bid.get('/presentation', async (c) => {
           (specialty) => specialty.id === specialtyState.specialtyId,
         )
       : undefined;
+  const livePolicy =
+    frozen.snapshot.settings.v === 3 ? frozen.snapshot.settings.livePolicy : undefined;
+  const ordinaryQueue = remainingAudienceQueue(
+    {
+      fills,
+      bidOrder: order,
+      queueCursor,
+      currentBidderId: ordinaryBidderId,
+      currentPhase,
+      aDay: held ? (held.aDay ?? null) : canonical.aDay,
+      live: {
+        dispositions: held ? (held.dispositions ?? []) : (canonical.live?.dispositions ?? []),
+        exceptionalAssignments: held
+          ? (held.exceptionalAssignments ?? [])
+          : (canonical.live?.exceptionalAssignments ?? []),
+      },
+    },
+    livePolicy,
+  );
+  const priorityIds =
+    specialtyState?.candidateMemberIds.slice(specialtyState.candidateCursor) ?? [];
+  const queueEntry = (memberId: number) =>
+    ordinaryQueue.find((entry) => entry.memberId === memberId) ?? { memberId, pendingADay: false };
+  const seenQueueMembers = new Set<number>();
+  const queue = [
+    ...(currentBidderId === null ? [] : [queueEntry(currentBidderId)]),
+    ...priorityIds.map(queueEntry),
+    ...(returningMemberId === null ? [] : [queueEntry(returningMemberId)]),
+    ...ordinaryQueue,
+  ].filter((entry) => {
+    if (seenQueueMembers.has(entry.memberId)) return false;
+    seenQueueMembers.add(entry.memberId);
+    return true;
+  });
+  const [currentAssignment, historical] = await Promise.all([
+    loadAudienceCurrentAssignment(c.env.DB, currentBidderId, operationalDate()),
+    loadPriorBidHistoricalContext(c.env.R2_EXPORTS, session.bidYear),
+  ]);
+  const previous = projectMemberHistoricalContext(
+    historical,
+    currentBidderId === null ? undefined : identities.get(currentBidderId)?.employeeId,
+  );
+  const currentMember = safeMember(currentBidderId);
   return c.json({
     mode: presentation.mode,
     held_at_sequence: presentation.heldAtSeq,
@@ -222,9 +280,33 @@ bid.get('/presentation', async (c) => {
               ?.label ?? currentStageId)
           : currentStageId,
     },
-    current_bidder: safeMember(currentBidderId),
-    on_deck: order
-      .slice(queueCursor + 1, queueCursor + 3)
+    current_bidder:
+      currentMember === null
+        ? null
+        : {
+            ...currentMember,
+            pending_a_day:
+              queue.find((entry) => entry.memberId === currentBidderId)?.pendingADay ?? false,
+            current_assignment: currentAssignment,
+            previous_assignment:
+              previous.evidenceStatus === 'RECORDED'
+                ? {
+                    position_id: previous.historicalPositionId,
+                    position_name: previous.positionLabel,
+                    shift: previous.shift,
+                    station: previous.station,
+                    unit: previous.unit,
+                    a_day_group: previous.aDayGroup,
+                  }
+                : null,
+          },
+    remaining_queue: queue.map((entry) => ({
+      ...safeMember(entry.memberId),
+      pending_a_day: entry.pendingADay,
+    })),
+    on_deck: queue
+      .filter((entry) => entry.memberId !== currentBidderId)
+      .slice(0, 2)
       .map((entry) => safeMember(entry.memberId)),
     phase: currentPhase,
     paused: currentPhase === 'paused',
@@ -237,8 +319,19 @@ bid.get('/presentation', async (c) => {
       unit: position.unit,
       position_name: position.positionName,
       rank_required: position.rankRequired,
+      forced: fills[position.id]?.forced !== undefined,
       filled_by: safeMember(fills[position.id]?.memberId ?? null),
     })),
+    exceptional_assignments: (held
+      ? (held.exceptionalAssignments ?? [])
+      : (canonical.live?.exceptionalAssignments ?? [])
+    )
+      .filter((assignment) => assignment.releasedAtMs === null)
+      .map((assignment) => ({
+        ...safeMember(assignment.memberId),
+        role_label: assignment.roleLabel,
+        forced: true,
+      })),
     specialty:
       specialtyState === null
         ? null

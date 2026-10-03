@@ -30,6 +30,7 @@ type Draft = {
   positionId: string;
   aDay: string;
   reason: string;
+  forced: boolean;
   termConfirmed: boolean;
   termEvidence: string;
 };
@@ -86,6 +87,7 @@ export function AdministratorOverride(props: Props) {
     positionId: '',
     aDay: '',
     reason: '',
+    forced: false,
     termConfirmed: false,
     termEvidence: '',
   });
@@ -217,6 +219,7 @@ export function AdministratorOverride(props: Props) {
       ...(draft.action === 'AWARD'
         ? {
             positionId: draft.positionId,
+            ...(draft.forced ? { forced: true } : {}),
             ...(requiresADay ? { aDay: draft.aDay } : {}),
             ...(selectedPool ? { pool: { poolId: selectedPool.id } } : {}),
           }
@@ -321,12 +324,15 @@ export function AdministratorOverride(props: Props) {
         positionId: '',
         aDay: '',
         reason: '',
+        forced: false,
         termConfirmed: false,
         termEvidence: '',
       }));
       setNotice(
         draft.action === 'AWARD'
-          ? 'Administrator selection recorded. Review the refreshed bid before another action.'
+          ? draft.forced
+            ? 'Forced assignment recorded and marked in the bid. Review the refreshed state before another action.'
+            : 'Administrator selection recorded. Review the refreshed bid before another action.'
           : draft.action === 'DEFER_STAGE'
             ? 'Current step deferred. Its unawarded turns remain pending for later selection.'
             : 'Member skipped for now. Their unawarded selection rights remain pending.',
@@ -343,7 +349,7 @@ export function AdministratorOverride(props: Props) {
   return (
     <div className="mb-3 border border-warning/30 bg-warning/5 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm">Need another member, another rank, or to bypass this step?</p>
+        <p className="text-sm">Change the order, skip a turn or make a directed assignment.</p>
         <Button
           type="button"
           disabled={props.commandsBlocked || busy}
@@ -600,6 +606,20 @@ export function AdministratorOverride(props: Props) {
               placeholder="Explain the exception for the audit"
             />
           </Label>
+          {draft.action === 'AWARD' ? (
+            <Label className="flex min-h-11 items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                aria-label="Mark as forced assignment"
+                className="mt-1 size-4"
+                checked={draft.forced}
+                disabled={busy}
+                onChange={(event) => change({ forced: event.target.checked })}
+              />
+              Mark as forced assignment. The bid records that this seat was directed rather than
+              selected voluntarily.
+            </Label>
+          ) : null}
           <Button type="button" disabled={!canPreview} onClick={() => void preview()}>
             {busy ? 'Checking…' : 'Review override'}
           </Button>
@@ -619,7 +639,11 @@ export function AdministratorOverride(props: Props) {
                   `Bypass ${props.currentStage ?? 'current step'} · ${reviewed.deferredMemberIds?.length ?? 0} turns remain pending`
                 ) : (
                   <>
-                    {draft.action === 'AWARD' ? 'Award' : 'Skip for now'}{' '}
+                    {draft.action === 'AWARD'
+                      ? draft.forced
+                        ? 'Forced award'
+                        : 'Award'
+                      : 'Skip for now'}{' '}
                     <strong>{memberName(reviewed.memberId)}</strong>
                     {draft.action === 'AWARD'
                       ? ` → ${reviewed.positionId}${draft.aDay ? ` · ${draft.aDay.startsWith('G') ? `Group ${draft.aDay.slice(1)}` : draft.aDay}` : ''}`

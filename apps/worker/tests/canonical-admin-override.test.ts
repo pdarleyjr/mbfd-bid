@@ -332,6 +332,184 @@ describe('canonical administrator override', () => {
   });
   afterEach(() => sqlite.close());
 
+  it('records a chief-directed placement distinctly and preserves its marker on reload', async () => {
+    seed();
+    const input = command('live.record_selection', {
+      memberId: 44,
+      positionId: 'A102',
+      forced: true,
+      adminOverride: override,
+    });
+    const accepted = await confirmed(initialState(), input);
+    expect(accepted.state.fills.A102?.forced).toMatchObject({
+      commandId: accepted.command.commandId,
+      actorMemberId: 99,
+      reason: 'Reviewed operator deviation',
+    });
+    expect((await loadCanonicalBidSessionState(db, sessionId))?.fills.A102?.forced).toEqual(
+      accepted.state.fills.A102?.forced,
+    );
+    const replay = await execute(initialState(), accepted.command);
+    expect(replay.result).toEqual(accepted.result);
+  });
+
+  it('rejects claiming a forced placement without the explicit operator override', async () => {
+    seed();
+    expect(
+      (
+        await execute(
+          initialState(),
+          command('live.record_selection', { memberId: 42, positionId: 'D101', forced: true }),
+        )
+      ).result,
+    ).toMatchObject({ kind: 'rejected', code: 'EXPLICIT_ADMIN_OVERRIDE_REQUIRED' });
+  });
+
+  it('handles a Captain acting in a session-only administrative Chief role without promotion or invented seats', async () => {
+    seed();
+    const state = initialState();
+    const assign = command('live.set_exceptional_assignment', {
+      memberId: 42,
+      operation: 'ASSIGN',
+      roleLabel: 'Division Chief of Prevention',
+    });
+    const preview = await execute(state, assign, true);
+    expect(preview.result.kind).toBe('accepted');
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bid_command_receipts').get()).toEqual({
+      count: 0,
+    });
+    const accepted = await execute(state, assign);
+    expect(accepted.result.kind).toBe('accepted');
+    expect(accepted.canonicalState).toMatchObject({
+      currentBidderId: 43,
+      fills: {},
+      live: {
+        exceptionalAssignments: [
+          expect.objectContaining({
+            memberId: 42,
+            roleLabel: 'Division Chief of Prevention',
+            positionId: null,
+            releasedAtMs: null,
+          }),
+        ],
+      },
+    });
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bids').get()).toEqual({ count: 0 });
+    const frozen = JSON.parse(
+      (
+        sqlite.prepare('SELECT snapshot_json FROM bid_session_policy_snapshots').get() as {
+          snapshot_json: string;
+        }
+      ).snapshot_json,
+    );
+    expect(frozen.members.find((entry: { memberId: number }) => entry.memberId === 42).rank).toBe(
+      'CPT',
+    );
+    expect(frozen.ruleBookMaterial.positions).toHaveLength(5);
+    const reloaded = await loadCanonicalBidSessionState(db, sessionId);
+    if (!reloaded) throw new Error('Canonical acting assignment required');
+    expect(reloaded?.live?.exceptionalAssignments).toEqual(
+      accepted.canonicalState?.live?.exceptionalAssignments,
+    );
+    expect((await execute(state, assign)).result).toEqual(accepted.result);
+    const released = await execute(
+      reloaded,
+      command(
+        'live.set_exceptional_assignment',
+        { memberId: 42, operation: 'RELEASE', roleLabel: 'Division Chief of Prevention' },
+        1,
+      ),
+    );
+    expect(released.result.kind).toBe('accepted');
+    expect(released.canonicalState?.live?.exceptionalAssignments?.[0]).toMatchObject({
+      releasedAtMs: expect.any(Number),
+      releaseCommandId: expect.any(String),
+    });
+    expect(released.canonicalState?.currentBidderId).toBe(43);
+    expect(released.canonicalState?.bidOrder).toEqual(state.bidOrder);
+    expect(released.canonicalState?.annual?.returningMemberId).toBeNull();
+  });
+
+  it('returns an acting Captain after their ordinary turn without restoring an exhausted Days entry or rewinding the queue', async () => {
+    seed();
+    const input = initialState();
+    input.currentBidderId = 43;
+    input.queueCursor = 3;
+    if (!input.live) throw new Error('Live progress required');
+    input.live.currentStageId = 'captains';
+    input.live.exceptionalAssignments = [
+      {
+        assignmentId: 'acting-42',
+        commandId: 'assignment-42',
+        memberId: 42,
+        roleLabel: 'Division Chief of Prevention',
+        positionId: null,
+        actorMemberId: 99,
+        reason: 'Chief direction',
+        assignedAtMs: 1,
+        releasedAtMs: null,
+        releaseCommandId: null,
+      },
+    ];
+    const released = await execute(
+      input,
+      command('live.set_exceptional_assignment', {
+        memberId: 42,
+        operation: 'RELEASE',
+        roleLabel: 'Division Chief of Prevention',
+      }),
+    );
+    expect(released.result.kind).toBe('accepted');
+    expect(released.canonicalState).toMatchObject({
+      currentBidderId: 43,
+      queueCursor: 3,
+      annual: { returningMemberId: 42 },
+    });
+    expect(released.canonicalState?.bidOrder).toEqual(input.bidOrder);
+    if (!released.canonicalState) throw new Error('Released state required');
+    const selected = await execute(
+      released.canonicalState,
+      command('live.record_selection', { memberId: 42, positionId: 'A101' }, 1),
+    );
+    expect(selected.result.kind).toBe('accepted');
+    expect(selected.canonicalState).toMatchObject({
+      currentBidderId: 43,
+      queueCursor: 3,
+      annual: { returningMemberId: null },
+    });
+    expect(selected.canonicalState?.fills.A101?.memberId).toBe(42);
+  });
+
+  it('keeps non-biddable administrative roles separate and requires the frozen force grant', async () => {
+    seed();
+    expect(
+      (
+        await execute(
+          initialState(),
+          command('live.set_exceptional_assignment', {
+            memberId: 42,
+            operation: 'ASSIGN',
+            roleLabel: 'Chief duty',
+            positionId: 'A101',
+          }),
+        )
+      ).result,
+    ).toMatchObject({
+      kind: 'rejected',
+      code: 'EXCEPTIONAL_ASSIGNMENT_NON_BIDDABLE_ROLE_REQUIRED',
+    });
+    const input = command('live.set_exceptional_assignment', {
+      memberId: 42,
+      operation: 'ASSIGN',
+      roleLabel: 'Chief duty',
+    });
+    input.actor.id = 43;
+    expect((await execute(initialState(), input)).result).toMatchObject({
+      kind: 'rejected',
+      code: 'LIVE_ACTION_FORBIDDEN',
+    });
+  });
+
   it('allows a future firefighter pick during Days only after audited review, preserves other turns, and replays once', async () => {
     seed();
     const state = initialState();

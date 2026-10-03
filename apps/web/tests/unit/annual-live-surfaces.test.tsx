@@ -38,7 +38,12 @@ describe('annual live product surfaces', () => {
     expect(html).toContain('Station and apparatus board');
     expect(html).toContain('PRIORITY REVIEW IN PROGRESS');
     expect(html).not.toContain('credential');
-    expect(html).not.toContain('<button');
+    expect(html).not.toContain('<form');
+    expect(html).not.toContain('Record selection');
+    expect(html).toContain('Next shift');
+    const paused = renderToString(<PresentationView initial={{ ...initial, paused: true }} />);
+    expect(paused).toContain('Bidding paused');
+    expect(paused).toContain('DISPLAY HELD');
   });
 
   it('keeps real operator mutations on the canonical live command surface', () => {

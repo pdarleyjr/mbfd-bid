@@ -24,6 +24,55 @@ function coverageInput(
 }
 
 describe('adviseFrozenSpecialtyCoverage', () => {
+  it('matches brute-force member-removal results for every three-member three-seat eligibility graph', () => {
+    const frozenMembers = [member(1), member(2), member(3)];
+    const specialtySeats = ['one', 'two', 'three'].map((seatId) => ({
+      seatId,
+      positionId: seatId,
+      ruleGroupId: 'synthetic',
+      filled: false,
+    }));
+    for (let mask = 0; mask < 512; mask++) {
+      const frozenEligibilityEdges = specialtySeats.flatMap((seat, seatIndex) =>
+        frozenMembers
+          .filter((candidate) => (mask & (1 << (seatIndex * 3 + candidate.memberId - 1))) !== 0)
+          .map((candidate) => ({ seatId: seat.seatId, memberId: candidate.memberId })),
+      );
+      const input = coverageInput({ frozenMembers, specialtySeats, frozenEligibilityEdges });
+      const actual = adviseFrozenSpecialtyCoverage(input);
+      const bruteForce = frozenMembers
+        .filter(
+          (candidate) =>
+            adviseFrozenSpecialtyCoverage({ ...input, assignedMemberIds: [candidate.memberId] })
+              .maximumRemainingCoveredCount < actual.maximumRemainingCoveredCount,
+        )
+        .map((candidate) => candidate.memberId);
+      expect(actual.criticalMemberIds, `graph ${mask}`).toEqual(bruteForce);
+    }
+  });
+
+  it('evaluates a dense annual-size graph without recalculating matching per member', () => {
+    const frozenMembers = Array.from({ length: 218 }, (_, index) => member(index + 1));
+    const specialtySeats = Array.from({ length: 223 }, (_, index) => ({
+      seatId: `seat-${String(index).padStart(3, '0')}`,
+      positionId: `position-${index}`,
+      ruleGroupId: 'synthetic',
+      filled: false,
+    }));
+    const result = adviseFrozenSpecialtyCoverage(
+      coverageInput({
+        frozenMembers,
+        specialtySeats,
+        frozenEligibilityEdges: specialtySeats.flatMap((seat) =>
+          frozenMembers.map((candidate) => ({ seatId: seat.seatId, memberId: candidate.memberId })),
+        ),
+      }),
+    );
+    expect(result.maximumRemainingCoveredCount).toBe(218);
+    expect(result.guaranteedUncoveredSeatCount).toBe(5);
+    expect(result.criticalMemberIds).toEqual(frozenMembers.map((candidate) => candidate.memberId));
+  }, 5000);
+
   it('uses an augmenting-path global match instead of a per-seat greedy count', () => {
     const input = coverageInput({
       frozenMembers: [member(1), member(2)],

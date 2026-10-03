@@ -38,6 +38,7 @@ import {
   prepareCapturedBidEvaluation,
   validateAnnualPolicySourceReferences,
 } from './bid-policy.js';
+import { eligibleFrozenSpecialtyMembers } from './canonical-specialty-priority.js';
 import { computeBidEvaluationStageOrder } from './live-bid-policy.js';
 
 const canonical = (value: unknown) => canonicalize(value as JsonValue);
@@ -131,7 +132,7 @@ function stages(evaluation: BidEvaluation) {
   };
 }
 
-function specialties(evaluation: BidEvaluation) {
+function specialties(evaluation: BidEvaluation, coverage: RuleBookCoverage) {
   if (evaluation.settings.v !== 3) return [];
   const livePolicy = evaluation.settings.livePolicy;
   const annual = livePolicy.annualOperations;
@@ -156,12 +157,14 @@ function specialties(evaluation: BidEvaluation) {
       const candidates = rankFrozenSpecialtyCandidates({
         policy,
         evaluationOn: evaluation.credentialEvaluationOn as string,
-        members: evaluation.members
-          .filter((member) => member.pool !== 'EXCLUDED')
-          .map((member) => ({
-            ...member,
-            specialtyQualifications: member.specialtyQualifications,
-          })),
+        members: eligibleFrozenSpecialtyMembers({
+          snapshot: evaluation,
+          rules: coverage.rules,
+          policy,
+        }).map((member) => ({
+          ...member,
+          specialtyQualifications: member.specialtyQualifications,
+        })),
       });
       return {
         ...material,
@@ -243,7 +246,7 @@ function projectSide(prepared: BidEvaluationPreparation, counts?: OpportunityCou
         ? validateAnnualPolicySourceReferences(evaluation, evaluation.settings.livePolicy)
         : [],
     stageOrder: stages(evaluation),
-    specialties: specialties(evaluation),
+    specialties: specialties(evaluation, prepared.coverage),
     selectionConsequences: {
       status: 'REQUIRES_SELECTION_CONTEXT' as const,
       areas: ['A_DAY_CAPACITY', 'NEXT_BIDDER', 'SPECIALTY_INTERRUPTION', 'POSITION_AWARDS'],
@@ -456,8 +459,8 @@ function compareDefinitions(before: Ready, after: Ready, offset: number) {
           return [{ memberId, addedPositionIds, removedPositionIds }];
         })
       : null;
-  const beforeSpecialties = specialties(before.evaluation);
-  const afterSpecialties = specialties(after.evaluation);
+  const beforeSpecialties = specialties(before.evaluation, before.coverage);
+  const afterSpecialties = specialties(after.evaluation, after.coverage);
   const specialtyChanges = [
     ...new Set([...beforeSpecialties, ...afterSpecialties].map((row) => row.id)),
   ]

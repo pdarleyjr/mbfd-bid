@@ -32,6 +32,19 @@ type Candidate = {
   policy_rank?: number;
   contact_history?: Array<{ method: string; at_ms: number; actor_member_id: number }>;
 };
+type SelectionReview = {
+  sequence: number;
+  status: 'READY' | 'INELIGIBLE' | 'HIGHER_PRIORITY' | 'NOT_CURRENT';
+  selection_review: {
+    member_id: number;
+    position_id: string;
+    specialty_id: string;
+    specialty_label: string;
+    higher_priority_candidates: Candidate[];
+    eligible_related_position_ids: string[];
+    a_day_timing: 'ORDINARY_TURN';
+  } | null;
+};
 type FallbackReview = {
   pool?: { poolId: string } | null;
   positionId: string;
@@ -56,6 +69,15 @@ type SpecialtyState = {
   admin_override_allowed?: boolean;
   admin_override_member_ids?: number[];
   admin_override_position_ids?: string[];
+  exceptional_assignments?: Array<{
+    assignment_id: string;
+    member_id: number;
+    role_label: string;
+    position_id: string | null;
+    assigned_at_ms: number;
+    forced: true;
+  }>;
+  available_non_biddable_positions?: Array<{ position_id: string; label: string }>;
   membership_distributions?: Array<{
     id: string;
     label: string;
@@ -156,8 +178,24 @@ type SpecialtyState = {
     candidates: Candidate[];
     current_candidate_id: number | null;
     remaining_candidate_ids: number[];
+    eligible_position_ids?: string[];
     suspended_turn: boolean;
     resume: { member_id: number; queue_cursor: number; current_phase: string };
+  };
+  credential_coverage?: {
+    availability: 'AVAILABLE' | 'UNAVAILABLE';
+    source: 'FROZEN_SESSION_SNAPSHOT';
+    groups?: Array<{
+      id: string;
+      label: string;
+      remaining_seat_count: number;
+      eligible_member_ids: number[];
+      eligible_member_count: number;
+      buffer: number;
+      status: 'FEASIBLE' | 'LOW_BUFFER' | 'SHORTAGE';
+      critical_member_ids: number[];
+    }>;
+    code?: string;
   };
   specialty_coverage?:
     | {
@@ -286,11 +324,11 @@ function commandErrorMessage(
     LIVE_STAGE_NOT_ELIGIBLE:
       'This opportunity is outside the bidder’s current stage. Choose an open opportunity shown for this stage.',
     SPECIALTY_HIGHER_PRIORITY_UNRESOLVED:
-      'Qualified Fire Investigator candidates have priority for this seat. Open Specialty and contact to review them before recording a selection.',
+      'Other qualified members have priority for this specialty. Review them before confirming this selection.',
     live_specialty_no_higher_priority_candidate:
       'No higher-priority qualified candidate needs review for that seat. Use Record selection for the current bidder if the opportunity is eligible.',
     live_specialty_requester_position_ineligible:
-      'The current bidder does not qualify for that Fire Investigator position under the frozen Bid rules. Review their eligibility before starting a specialty interruption.',
+      'The current bidder does not qualify for that specialty position under the saved Bid rules. Review their eligibility before continuing.',
     live_specialty_requester_missing:
       'No current bidder is available for a specialty request. Refresh the session and confirm the active turn.',
     live_specialty_evidence_date_missing:
@@ -375,6 +413,7 @@ export function AnnualLiveControls(props: Props) {
     | 'amendment'
     | 'order'
     | 'finalization'
+    | 'exceptional'
     | null
   >(props.workspace ? 'selection' : null);
   const pendingCommand = useRef<{
@@ -393,6 +432,18 @@ export function AnnualLiveControls(props: Props) {
   const [amendTo, setAmendTo] = useState('');
   const [selectionPositionId, setSelectionPositionId] = useState('');
   const [selectionPoolId, setSelectionPoolId] = useState('');
+  const [selectionReview, setSelectionReview] = useState<{
+    identity: string;
+    result: SelectionReview | null;
+    error: string | null;
+  } | null>(null);
+  const [reviewRetry, setReviewRetry] = useState(0);
+  const [specialtyAwardPositionId, setSpecialtyAwardPositionId] = useState('');
+  const [actingMemberId, setActingMemberId] = useState('');
+  const [actingMemberQuery, setActingMemberQuery] = useState('');
+  const [actingRoleLabel, setActingRoleLabel] = useState('');
+  const [actingPositionId, setActingPositionId] = useState('');
+  const [actingConfirmed, setActingConfirmed] = useState(false);
   const [membershipChoice, setMembershipChoice] = useState<{
     memberId: number | null;
     ids: string[];
@@ -436,6 +487,8 @@ export function AnnualLiveControls(props: Props) {
   );
   const selectionMember = state?.returning_member ?? state?.current_bidder ?? null;
   const selectionMemberId = selectionMember?.member_id ?? null;
+  const activeMemberId =
+    state?.a_day_current?.member_id ?? state?.active?.current_candidate_id ?? selectionMemberId;
   const [availableShift, setAvailableShift] = useState('');
   const handledIntent = useRef(0);
   const selectionOwner = useRef<number | null>(null);
@@ -456,8 +509,8 @@ export function AnnualLiveControls(props: Props) {
     }
   }, [props.workspace, loaded, selectionMemberId]);
   useEffect(() => {
-    if (props.workspace && loaded) operator?.setActiveMember(selectionMemberId);
-  }, [props.workspace, loaded, selectionMemberId, operator?.setActiveMember]);
+    if (props.workspace && loaded) operator?.setActiveMember(activeMemberId);
+  }, [props.workspace, loaded, activeMemberId, operator?.setActiveMember]);
   useEffect(() => {
     const intent = operator?.positionIntent;
     if (!props.workspace || !intent || state === null || handledIntent.current >= intent.nonce)
@@ -513,6 +566,7 @@ export function AnnualLiveControls(props: Props) {
     amendTo,
     fallbackKey,
     state?.active?.requested_position_id,
+    specialtyAwardPositionId,
   ]);
   const [termChoice, setTermChoice] = useState({ identity: '', confirmed: false, evidence: '' });
   const termConfirmed = termChoice.identity === termIdentity && termChoice.confirmed;
@@ -594,12 +648,14 @@ export function AnnualLiveControls(props: Props) {
   );
   const amendmentPosition = props.positions?.find((position) => position.id === amendTo);
   const amendmentRequiresSimultaneousADay = requiresSimultaneousADay(amendTo);
+  const effectiveSpecialtyAwardId =
+    state?.active?.eligible_position_ids !== undefined
+      ? specialtyAwardPositionId
+      : state?.active?.requested_position_id;
   const specialtyPosition = props.positions?.find(
-    (position) => position.id === state?.active?.requested_position_id,
+    (position) => position.id === effectiveSpecialtyAwardId,
   );
-  const specialtyRequiresSimultaneousADay = requiresSimultaneousADay(
-    state?.active?.requested_position_id,
-  );
+  const specialtyRequiresSimultaneousADay = requiresSimultaneousADay(effectiveSpecialtyAwardId);
   const [selectionADay, setSelectionADay] = useAwardADay(
     JSON.stringify([
       props.bidSessionId,
@@ -614,7 +670,7 @@ export function AnnualLiveControls(props: Props) {
   const [specialtyADay, setSpecialtyADay] = useAwardADay(
     JSON.stringify([
       props.bidSessionId,
-      state?.active?.requested_position_id,
+      effectiveSpecialtyAwardId,
       state?.active?.current_candidate_id,
       specialtyPosition?.shift,
     ]),
@@ -629,6 +685,134 @@ export function AnnualLiveControls(props: Props) {
     ]),
   );
   const pendingADay = state?.a_day_current ?? null;
+  const promptIdentity = JSON.stringify([
+    props.bidSessionId,
+    state?.sequence,
+    selectionMemberId,
+    selectionPositionId,
+    reviewRetry,
+  ]);
+  const needsSpecialtyReview =
+    state?.active == null &&
+    pendingADay === null &&
+    selectionMemberId !== null &&
+    state?.specialties.some((specialty) =>
+      specialty.positions.some((position) => position.id === selectionPositionId),
+    ) === true;
+  const prompt = selectionReview?.identity === promptIdentity ? selectionReview : null;
+  const priorityReview = prompt?.result?.selection_review ?? null;
+  const priorityReviewRequired = (priorityReview?.higher_priority_candidates.length ?? 0) > 0;
+  useEffect(() => {
+    if (!needsSpecialtyReview || selectionMemberId === null) {
+      setSelectionReview(null);
+      return;
+    }
+    let disposed = false;
+    setSelectionReview({ identity: promptIdentity, result: null, error: null });
+    void fetch(
+      `/api/admin/bid-session/${encodeURIComponent(props.bidSessionId)}/specialty-review?member_id=${selectionMemberId}&position_id=${encodeURIComponent(selectionPositionId)}`,
+      { cache: 'no-store' },
+    )
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error('Specialty priority could not be checked. Retry the review.');
+        const result = (await response.json()) as SelectionReview;
+        if (!['READY', 'HIGHER_PRIORITY', 'INELIGIBLE', 'NOT_CURRENT'].includes(result.status))
+          throw new Error('The specialty review response is unavailable. Retry the review.');
+        const review = result.selection_review;
+        if (
+          (result.status === 'HIGHER_PRIORITY' &&
+            (review == null ||
+              !Array.isArray(review.higher_priority_candidates) ||
+              review.higher_priority_candidates.length === 0)) ||
+          (review !== null &&
+            (review == null ||
+              typeof review.specialty_id !== 'string' ||
+              typeof review.specialty_label !== 'string' ||
+              !Array.isArray(review.higher_priority_candidates) ||
+              !review.higher_priority_candidates.every(
+                (candidate) =>
+                  candidate !== null &&
+                  typeof candidate === 'object' &&
+                  Number.isInteger(candidate.member_id) &&
+                  typeof candidate.first_name === 'string' &&
+                  typeof candidate.last_name === 'string',
+              ) ||
+              !Array.isArray(review.eligible_related_position_ids) ||
+              !review.eligible_related_position_ids.every((id) => typeof id === 'string') ||
+              review.a_day_timing !== 'ORDINARY_TURN'))
+        )
+          throw new Error('The specialty review response is unavailable. Retry the review.');
+        if (
+          result.sequence !== lastLoadedSequence.current ||
+          (result.selection_review !== null &&
+            (result.selection_review.member_id !== selectionMemberId ||
+              result.selection_review.position_id !== selectionPositionId))
+        )
+          throw new Error('The bid changed. Review the latest specialty availability.');
+        if (!disposed) setSelectionReview({ identity: promptIdentity, result, error: null });
+      })
+      .catch((error: unknown) => {
+        if (!disposed)
+          setSelectionReview({
+            identity: promptIdentity,
+            result: null,
+            error: error instanceof Error ? error.message : 'Specialty review is unavailable.',
+          });
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [
+    needsSpecialtyReview,
+    promptIdentity,
+    props.bidSessionId,
+    selectionMemberId,
+    selectionPositionId,
+  ]);
+  const promptedADay = useRef<string | null>(null);
+  const promptedSpecialty = useRef<string | null>(null);
+  const dayPromptIdentity = pendingADay
+    ? `${pendingADay.member_id}:${pendingADay.position_id}`
+    : null;
+  useEffect(() => {
+    if (props.workspace && dayPromptIdentity !== null && promptedADay.current !== dayPromptIdentity)
+      setPanel('a-day');
+    promptedADay.current = dayPromptIdentity;
+  }, [dayPromptIdentity, props.workspace]);
+  const specialtyPromptIdentity = state?.active
+    ? `${state.active.specialty_id}:${state.active.original_bidder.member_id}`
+    : null;
+  useEffect(() => {
+    if (
+      props.workspace &&
+      specialtyPromptIdentity !== null &&
+      promptedSpecialty.current !== specialtyPromptIdentity
+    )
+      setPanel('specialty');
+    if (props.workspace && specialtyPromptIdentity === null && promptedSpecialty.current !== null)
+      setPanel(dayPromptIdentity !== null ? 'a-day' : 'selection');
+    promptedSpecialty.current = specialtyPromptIdentity;
+  }, [specialtyPromptIdentity, dayPromptIdentity, props.workspace]);
+  const specialtyAwardOwner = useRef<number | null>(null);
+  useEffect(() => {
+    const ids = state?.active?.eligible_position_ids;
+    const requested = state?.active?.requested_position_id;
+    const candidateId = state?.active?.current_candidate_id ?? null;
+    const changed = specialtyAwardOwner.current !== candidateId;
+    specialtyAwardOwner.current = candidateId;
+    setSpecialtyAwardPositionId((previous) =>
+      !changed && previous && (!ids || ids.includes(previous))
+        ? previous
+        : requested && (!ids || ids.includes(requested))
+          ? requested
+          : (ids?.[0] ?? ''),
+    );
+  }, [
+    state?.active?.current_candidate_id,
+    state?.active?.requested_position_id,
+    state?.active?.eligible_position_ids,
+  ]);
   const orderSequence = useRef<number | null>(null);
   const [order, setOrder] = useState<RemainingOrderEntry[]>(() => {
     const cursor = props.bidOrder.findIndex((entry) => entry.memberId === props.currentBidderId);
@@ -770,7 +954,17 @@ export function AnnualLiveControls(props: Props) {
       reason.trim() ||
       (props.workspace && type === 'live.record_selection'
         ? `Operator recorded member ${String(inputDetail.memberId)} selection of ${String(inputDetail.positionId)}${inputDetail.aDay ? `, A-Day ${String(inputDetail.aDay)}` : ''}.`
-        : '');
+        : props.workspace && type === 'live.start_specialty_adjudication'
+          ? `Review higher-priority candidates for ${String(inputDetail.positionId)} before the current bidder selects.`
+          : props.workspace && type === 'live.resolve_specialty_candidate'
+            ? `Record ${String(inputDetail.outcome)} from member ${String(inputDetail.memberId)} for ${String(inputDetail.positionId ?? effectiveSpecialtyAwardId)}.`
+            : props.workspace && type === 'live.record_a_day'
+              ? `Record member ${String(inputDetail.memberId)} A-Day ${String(inputDetail.aDay)} at their ordinary turn.`
+              : props.workspace && type === 'live.close_specialty_adjudication'
+                ? 'Resume the original bidder after specialty offers; unresponded priority rights remain pending.'
+                : props.workspace && type === 'live.transition_stage'
+                  ? `Continue from the filled ${state?.selection_stage?.label ?? 'current'} stage to ${String(inputDetail.stageId)}; later ordinary selection rights remain pending.`
+                  : '');
     if (commandReason.length < 1 || state === null) {
       setNotice('Enter an operator reason and wait for the current bid to load.');
       return;
@@ -974,11 +1168,6 @@ export function AnnualLiveControls(props: Props) {
           </Button>
         </div>
       ) : null}
-      {state?.active && (
-        <output className="mb-3 block text-sm font-semibold text-amber-800">
-          {state.active.specialty_label} review is active. Open Specialty and contact to continue.
-        </output>
-      )}
       {state !== null ? (
         <AdministratorOverride
           bidSessionId={props.bidSessionId}
@@ -1100,7 +1289,27 @@ export function AnnualLiveControls(props: Props) {
                 </button>
               ))}
           </div>
-          {state !== null && availablePositions.length + availablePools.length === 0 ? (
+          {state?.current_phase === 'position_bid' &&
+          state.selection_stage?.all_opportunities_filled &&
+          state.selection_stage.next_stage &&
+          !state.returning_member &&
+          (state.unresolved_members?.length ?? 0) === 0 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+              <p className="text-sm">All {state.selection_stage.label} seats are filled.</p>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={busy || authRefreshing || authReviewRequired || loadError !== null}
+                onClick={() =>
+                  void command('live.transition_stage', {
+                    stageId: state.selection_stage?.next_stage?.id,
+                  })
+                }
+              >
+                Continue to {state.selection_stage.next_stage.label}
+              </Button>
+            </div>
+          ) : state !== null && availablePositions.length + availablePools.length === 0 ? (
             <p className="mt-3 text-sm text-warning">
               No eligible openings in this stage. Use Disposition and return to record the member’s
               next action.
@@ -1113,7 +1322,10 @@ export function AnnualLiveControls(props: Props) {
           MOCK REHEARSAL — canonical commands remain isolated from staffing and portal write-back.
         </p>
       ) : null}
-      {state?.specialty_coverage && !props.workspace ? (
+      {state?.specialty_coverage &&
+      (!props.workspace ||
+        state.specialty_coverage.availability === 'UNAVAILABLE' ||
+        state.specialty_coverage.status !== 'FEASIBLE') ? (
         <section
           className="mb-4 rounded border border-border bg-muted/30 px-3 py-2 text-sm"
           data-testid="specialty-coverage-advisory"
@@ -1156,6 +1368,65 @@ export function AnnualLiveControls(props: Props) {
           )}
         </section>
       ) : null}
+      {state?.credential_coverage?.availability === 'AVAILABLE' &&
+      state.credential_coverage.groups?.some((group) => group.status !== 'FEASIBLE') ? (
+        <section
+          aria-label="Qualification coverage warnings"
+          data-testid="credential-coverage-advisory"
+          className="mb-3 border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
+          aria-live="polite"
+        >
+          <h2 className="font-semibold">Qualified members are running low</h2>
+          <ul className="mt-1 space-y-1">
+            {state.credential_coverage.groups
+              .filter((group) => group.status !== 'FEASIBLE')
+              .map((group) => (
+                <li key={group.id}>
+                  <strong>{group.label}:</strong> {group.eligible_member_count} qualified members
+                  left for {group.remaining_seat_count} open seats
+                  {group.status === 'SHORTAGE' ? ' — not enough to cover all seats.' : '.'}
+                </li>
+              ))}
+          </ul>
+          <p className="mt-2 text-xs">
+            Review the available seats before assigning these members elsewhere. Use Administrator
+            override to record a reviewed forced assignment.
+          </p>
+        </section>
+      ) : state?.credential_coverage?.availability === 'UNAVAILABLE' ? (
+        <output className="mb-3 block text-sm text-warning">
+          Qualification coverage could not be checked. Refresh the bid before relying on this
+          advisory.
+        </output>
+      ) : null}
+      {pendingADay !== null && props.workspace ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border border-info/30 bg-info/10 p-3 text-sm">
+          <p>
+            <strong>{memberName(pendingADay.member_id)} is now due to select an A-Day</strong> for{' '}
+            {pendingADay.position_id}.
+          </p>
+          <Button type="button" onClick={() => setPanel('a-day')}>
+            Choose A-Day
+          </Button>
+        </div>
+      ) : null}
+      {state?.exceptional_assignments?.length ? (
+        <details className="mb-3 border-t border-border pt-2 text-sm">
+          <summary className="cursor-pointer font-semibold">
+            Chief-directed roles ({state.exceptional_assignments.length})
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {state.exceptional_assignments.map((assignment) => (
+              <li key={assignment.assignment_id}>
+                {memberName(assignment.member_id)} · {assignment.role_label} · Forced
+              </li>
+            ))}
+          </ul>
+          <Button type="button" className="mt-2" onClick={() => setPanel('exceptional')}>
+            Manage directed roles
+          </Button>
+        </details>
+      ) : null}
       <details
         open={props.workspace ? undefined : true}
         className={props.workspace ? 'mb-3 border-t border-border pt-3' : ''}
@@ -1187,6 +1458,9 @@ export function AnnualLiveControls(props: Props) {
               ['a-day', 'Record A-Day'],
               ['specialty', 'Specialty and contact'],
               ['fallback', 'Fallback awards'],
+              ...(state?.admin_override_allowed
+                ? ([['exceptional', 'Chief-directed role']] as const)
+                : []),
               ['presentation', 'Presentation'],
               ['session', 'Pause or resume bid'],
               ...(props.workspace === true ? [] : ([['amendment', 'Correct selection']] as const)),
@@ -1215,7 +1489,7 @@ export function AnnualLiveControls(props: Props) {
           </Button>
         </p>
       )}
-      {notice && <output className="mt-2 block text-sm">{notice}</output>}
+      {notice && panel === null ? <output className="mt-2 block text-sm">{notice}</output> : null}
       <SelectionFrame
         inline={props.workspace === true && panel === 'selection'}
         open={panel !== null}
@@ -1239,12 +1513,19 @@ export function AnnualLiveControls(props: Props) {
                         ? 'Correct a recorded selection'
                         : panel === 'order'
                           ? 'Remaining bid order'
-                          : panel === 'finalization'
-                            ? 'Finalize completed results'
-                            : 'Record selection'
+                          : panel === 'exceptional'
+                            ? 'Chief-directed role'
+                            : panel === 'finalization'
+                              ? 'Finalize completed results'
+                              : 'Record selection'
         }
         description="Actions follow this session’s approved policy and your operator authority. Enter a reason and review the selected member or position before recording an action."
       >
+        {notice ? (
+          <output aria-live="polite" className="mb-3 block border-l-2 border-info pl-3 text-sm">
+            {notice}
+          </output>
+        ) : null}
         {termRight && termMemberId != null && (
           <fieldset className="space-y-3 rounded border border-amber-500 p-3">
             <legend className="font-semibold">Voluntary departure from a term assignment</legend>
@@ -1285,7 +1566,12 @@ export function AnnualLiveControls(props: Props) {
             </p>
           </fieldset>
         )}
-        <OperatorNotes optional={props.workspace === true && panel === 'selection'}>
+        <OperatorNotes
+          optional={
+            props.workspace === true &&
+            (panel === 'selection' || panel === 'specialty' || panel === 'a-day')
+          }
+        >
           <div
             className={`flex flex-wrap items-end gap-3 ${props.workspace && panel === 'selection' ? 'order-3' : ''}`}
           >
@@ -1315,6 +1601,145 @@ export function AnnualLiveControls(props: Props) {
         </OperatorNotes>
 
         <div className="mt-4 space-y-4">
+          <article hidden={panel !== 'exceptional'} className="space-y-3">
+            <p className="text-sm">
+              Record a temporary duty such as acting Division Chief of Prevention. The member’s
+              official rank stays unchanged; their ordinary bid turns are held while assigned.
+            </p>
+            <Label className="block text-sm">
+              Find member
+              <Input
+                aria-label="Find directed-role member"
+                value={actingMemberQuery}
+                onChange={(event) => setActingMemberQuery(event.target.value)}
+              />
+            </Label>
+            <Label className="block text-sm">
+              Member to assign
+              <NativeSelect
+                aria-label="Directed-role member"
+                value={actingMemberId}
+                onChange={(event) => {
+                  setActingMemberId(event.target.value);
+                  setActingConfirmed(false);
+                }}
+              >
+                <option value="">Choose a bid participant</option>
+                {(state?.admin_override_member_ids ?? [])
+                  .filter((id) => props.members[String(id)])
+                  .filter(
+                    (id) =>
+                      !Object.values(state?.fills ?? {}).some((fill) => fill.member_id === id),
+                  )
+                  .filter(
+                    (id) =>
+                      String(id) === actingMemberId ||
+                      memberName(id).toLowerCase().includes(actingMemberQuery.trim().toLowerCase()),
+                  )
+                  .map((id) => (
+                    <option key={id} value={id}>
+                      {memberName(id)}
+                    </option>
+                  ))}
+              </NativeSelect>
+            </Label>
+            <Label className="block text-sm">
+              Link to a closed role (optional)
+              <NativeSelect
+                aria-label="Directed non-biddable role"
+                value={actingPositionId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setActingPositionId(id);
+                  const role = state?.available_non_biddable_positions?.find(
+                    (position) => position.position_id === id,
+                  );
+                  if (role) setActingRoleLabel(role.label);
+                  setActingConfirmed(false);
+                }}
+              >
+                <option value="">Custom temporary duty</option>
+                {state?.available_non_biddable_positions?.map((position) => (
+                  <option key={position.position_id} value={position.position_id}>
+                    {position.position_id} · {position.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Label>
+            <Label className="block text-sm">
+              Duty / acting role
+              <Input
+                aria-label="Directed role label"
+                value={actingRoleLabel}
+                onChange={(event) => {
+                  setActingRoleLabel(event.target.value);
+                  setActingConfirmed(false);
+                }}
+                placeholder="Enter the Chief’s directed role"
+              />
+            </Label>
+            <Label className="flex min-h-11 items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 size-4"
+                aria-label="I reviewed the directed role"
+                checked={actingConfirmed}
+                onChange={(event) => setActingConfirmed(event.target.checked)}
+              />
+              Record {actingMemberId ? memberName(Number(actingMemberId)) : 'this member'} as forced
+              into {actingRoleLabel || 'the directed duty'} and hold their ordinary bid turns.
+            </Label>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={
+                busy ||
+                !actingConfirmed ||
+                !actingMemberId ||
+                actingRoleLabel.trim().length < 4 ||
+                reason.trim().length < 4
+              }
+              onClick={() => {
+                setActingConfirmed(false);
+                void command('live.set_exceptional_assignment', {
+                  operation: 'ASSIGN',
+                  memberId: Number(actingMemberId),
+                  roleLabel: actingRoleLabel.trim(),
+                  ...(actingPositionId ? { positionId: actingPositionId } : {}),
+                });
+              }}
+            >
+              Record directed role
+            </Button>
+            {state?.exceptional_assignments?.length ? (
+              <section className="border-t border-border pt-3">
+                <h3 className="font-semibold">Return a member to the bid</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Enter the reason above, then release the directed duty. Their unawarded turn
+                  returns to the current sequence.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {state.exceptional_assignments.map((assignment) => (
+                    <Button
+                      key={assignment.assignment_id}
+                      type="button"
+                      disabled={busy || reason.trim().length < 4}
+                      onClick={() =>
+                        void command('live.set_exceptional_assignment', {
+                          operation: 'RELEASE',
+                          memberId: assignment.member_id,
+                          roleLabel: assignment.role_label,
+                          ...(assignment.position_id ? { positionId: assignment.position_id } : {}),
+                        })
+                      }
+                    >
+                      Release {memberName(assignment.member_id)}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </article>
           <article hidden={panel !== 'disposition'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Record bidder disposition</h3>
             <p className="text-xs text-muted-foreground">
@@ -1420,11 +1845,10 @@ export function AnnualLiveControls(props: Props) {
             ) : null}
           </article>
           <article hidden={panel !== 'a-day'} className="rounded border border-border p-3">
-            <h3 className="font-semibold text-foreground">Controlled A-Day selection</h3>
+            <h3 className="font-semibold text-foreground">Choose A-Day for the recorded seat</h3>
             <p className="text-xs text-muted-foreground">
-              An early specialty award records its A-Day here at the member’s ordinary seniority
-              turn (or after position turns when no ordinary turn remains). Capacity and constraints
-              are rechecked by the canonical server command.
+              The specialty seat is already saved. Select the A-Day now at this member’s ordinary
+              turn.
             </p>
             {pendingADay === null ? (
               <p className="mt-2 text-sm text-muted-foreground">
@@ -1443,6 +1867,15 @@ export function AnnualLiveControls(props: Props) {
                   )}
                   shift={pendingADay.shift}
                   combatGroups={state?.a_day_combat_groups}
+                  unavailable={Object.fromEntries(
+                    aDayOptions(
+                      props.positions?.find((position) => position.id === pendingADay.position_id),
+                      pendingADay.shift,
+                      state?.a_day_combat_groups,
+                    )
+                      .filter((group) => !pendingADay.eligible_a_days.includes(group))
+                      .map((group) => [group, 'Unavailable for this recorded seat']),
+                  )}
                   value={deferredADay}
                   onChange={setDeferredADay}
                 />
@@ -1742,7 +2175,7 @@ export function AnnualLiveControls(props: Props) {
               }
               className="mt-2 rounded bg-red-700 px-3 py-2 text-sm text-white disabled:opacity-40"
             >
-              Suspend bidder and start
+              Review higher-priority members
             </Button>
           </article>
 
@@ -1752,13 +2185,12 @@ export function AnnualLiveControls(props: Props) {
               className="rounded border border-amber-500 bg-amber-50 p-3 xl:col-span-2"
             >
               <h3 className="font-semibold text-amber-950">
-                {state.active.specialty_label} interruption · {state.active.requested_position_id}
+                {state.active.specialty_label} priority review
               </h3>
               <p className="mt-1 text-sm text-amber-900">
                 Original bidder: {name(state.active.original_bidder)} ·{' '}
                 {state.active.original_bidder.points ?? 0} points · policy rank{' '}
-                {state.active.original_bidder.policy_rank ?? '—'} · turn suspended at queue{' '}
-                {state.active.resume.queue_cursor}.
+                {state.active.original_bidder.policy_rank ?? '—'}. Their turn resumes after review.
               </p>
               <div className="mt-3 max-h-[35dvh] overflow-auto">
                 <Table className="w-full text-left text-sm">
@@ -1794,9 +2226,34 @@ export function AnnualLiveControls(props: Props) {
               {currentCandidate ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <strong className="w-full text-sm text-amber-950">
-                    Current contact: {name(currentCandidate)} · remaining{' '}
-                    {state.active.remaining_candidate_ids.length}
+                    Offer to {name(currentCandidate)} · {currentCandidate.points ?? 0} points
                   </strong>
+                  {state.active.eligible_position_ids ? (
+                    <Label className="w-full text-sm">
+                      Specialty seat to offer
+                      <NativeSelect
+                        aria-label="Specialty seat to offer"
+                        value={specialtyAwardPositionId}
+                        disabled={busy}
+                        onChange={(event) => setSpecialtyAwardPositionId(event.target.value)}
+                      >
+                        <option value="">Choose an eligible specialty seat</option>
+                        {state.active.eligible_position_ids.map((id) => {
+                          const position = props.positions?.find((entry) => entry.id === id);
+                          return (
+                            <option key={id} value={id}>
+                              {id} · {position?.positionName ?? id}
+                            </option>
+                          );
+                        })}
+                      </NativeSelect>
+                    </Label>
+                  ) : null}
+                  {!specialtyRequiresSimultaneousADay ? (
+                    <p className="w-full text-sm">
+                      A-Day deferred automatically until this member’s ordinary turn.
+                    </p>
+                  ) : null}
                   {specialtyRequiresSimultaneousADay ? (
                     <ADayChoice
                       label="Specialty award A-Day"
@@ -1829,13 +2286,20 @@ export function AnnualLiveControls(props: Props) {
                       disabled={
                         busy ||
                         (outcome === 'ACCEPT' &&
-                          specialtyRequiresSimultaneousADay &&
-                          !specialtyADay)
+                          (!effectiveSpecialtyAwardId ||
+                            (state.active?.eligible_position_ids !== undefined &&
+                              !state.active?.eligible_position_ids.includes(
+                                effectiveSpecialtyAwardId,
+                              )) ||
+                            (specialtyRequiresSimultaneousADay && !specialtyADay)))
                       }
                       onClick={() =>
                         void command('live.resolve_specialty_candidate', {
                           memberId: currentCandidate.member_id,
                           outcome,
+                          ...(outcome === 'ACCEPT'
+                            ? { positionId: effectiveSpecialtyAwardId }
+                            : {}),
                           ...(outcome === 'ACCEPT' && specialtyRequiresSimultaneousADay
                             ? { aDay: specialtyADay }
                             : {}),
@@ -1848,6 +2312,14 @@ export function AnnualLiveControls(props: Props) {
                   ))}
                 </div>
               ) : null}
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => void command('live.close_specialty_adjudication')}
+                className="mt-3"
+              >
+                Resume original bidder
+              </Button>
             </article>
           ) : null}
 
@@ -1921,6 +2393,78 @@ export function AnnualLiveControls(props: Props) {
                   ))}
               </NativeSelect>
             )}
+            {needsSpecialtyReview ? (
+              <section
+                aria-label="Specialty selection review"
+                className="mt-3 border border-warning/40 bg-warning/5 p-3 text-sm"
+              >
+                {prompt?.error ? (
+                  <>
+                    <p role="alert">{prompt.error}</p>
+                    <Button type="button" onClick={() => setReviewRetry((current) => current + 1)}>
+                      Retry specialty review
+                    </Button>
+                  </>
+                ) : prompt?.result == null ? (
+                  <output>Checking specialty priority…</output>
+                ) : priorityReviewRequired && priorityReview ? (
+                  <>
+                    <h4 className="font-semibold">
+                      Other members have priority for {priorityReview.specialty_label}
+                    </h4>
+                    <p className="mt-1">
+                      Offer eligible seats to these members first. Their A-Days stay pending until
+                      their ordinary turns.
+                    </p>
+                    <ol
+                      aria-label="Higher-priority specialty candidates"
+                      className="mt-2 max-h-40 space-y-1 overflow-auto"
+                    >
+                      {priorityReview.higher_priority_candidates.map((candidate) => (
+                        <li key={candidate.member_id}>
+                          {name(candidate)} · {candidate.points ?? 0} points
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setSpecialtyId(priorityReview.specialty_id);
+                          setPositionId(priorityReview.position_id);
+                          void command('live.start_specialty_adjudication', {
+                            specialtyId: priorityReview.specialty_id,
+                            positionId: priorityReview.position_id,
+                          });
+                        }}
+                      >
+                        Offer specialty seats first
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setSelectionPositionId('');
+                          setSelectionPoolId('');
+                          setSelectionReview(null);
+                        }}
+                      >
+                        Choose a different seat
+                      </Button>
+                    </div>
+                  </>
+                ) : prompt.result.status === 'NOT_CURRENT' ? (
+                  <p>The bidder changed. Refresh and review the current turn.</p>
+                ) : prompt.result.status === 'INELIGIBLE' ? (
+                  <p>
+                    This member is not eligible for this specialty. Choose another seat or review an
+                    Administrator override.
+                  </p>
+                ) : (
+                  <p>No higher-priority candidate is waiting for this specialty.</p>
+                )}
+              </section>
+            ) : null}
             {state?.opportunity_pools?.length && !props.workspace ? (
               <Label className="mt-2 block text-sm">
                 Station or float pool
@@ -2016,9 +2560,15 @@ export function AnnualLiveControls(props: Props) {
                 loadError !== null ||
                 state === null ||
                 state.current_phase === 'paused' ||
+                state.active !== null ||
                 selectionMember === null ||
                 !canSelectViewedMember ||
                 pendingADay !== null ||
+                (needsSpecialtyReview &&
+                  (prompt?.result == null ||
+                    priorityReviewRequired ||
+                    prompt.result.status === 'INELIGIBLE' ||
+                    prompt.result.status === 'NOT_CURRENT')) ||
                 !selectionPositionId ||
                 (selectionRequiresSimultaneousADay &&
                   (!selectionADay || selectionUnavailableADays[selectionADay] !== undefined))
@@ -2156,6 +2706,10 @@ export function AnnualLiveControls(props: Props) {
 
           <article hidden={panel !== 'order'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Alter remaining order</h3>
+            <p className="mt-2 text-sm text-warning">
+              Changing the order bypasses normal seniority. Every remaining turn is retained, and
+              your reason is recorded in the audit.
+            </p>
             <ol className="mt-2 max-h-[40dvh] space-y-1 overflow-y-auto">
               {order.map(({ memberId, occurrence }, index) => (
                 <li
@@ -2163,14 +2717,29 @@ export function AnnualLiveControls(props: Props) {
                   className="flex items-center gap-2 rounded bg-muted px-2 py-1 text-sm"
                 >
                   <span className="mr-auto">
-                    {index + 1}. {props.members[String(memberId)]?.lastName ?? `Member ${memberId}`}
+                    {index + 1}. {memberName(memberId)}
+                    {occurrence > 0 ? ` · turn ${occurrence + 1}` : ''}
                   </span>
-                  <Button type="button" disabled={index === 0} onClick={() => move(index, -1)}>
+                  <Button
+                    type="button"
+                    disabled={busy || index === 0}
+                    aria-label={`Make ${memberName(memberId)} next${occurrence > 0 ? ` (turn ${occurrence + 1})` : ''}`}
+                    onClick={() => move(index, -index)}
+                  >
+                    Make next
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={busy || index === 0}
+                    aria-label={`Move ${memberName(memberId)} up`}
+                    onClick={() => move(index, -1)}
+                  >
                     ↑
                   </Button>
                   <Button
                     type="button"
-                    disabled={index === order.length - 1}
+                    disabled={busy || index === order.length - 1}
+                    aria-label={`Move ${memberName(memberId)} down`}
                     onClick={() => move(index, 1)}
                   >
                     ↓

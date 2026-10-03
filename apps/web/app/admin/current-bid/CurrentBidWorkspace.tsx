@@ -880,9 +880,9 @@ export function CurrentBidWorkspace({
             onApply={applyReviewedSourceUpdate}
           />
         )}
-      <details open>
+      <details>
         <summary className="min-h-11 cursor-pointer content-center font-semibold">
-          ADVANCED BID CONFIGURATION
+          Advanced Bid configuration
         </summary>
         <nav
           aria-label="Bid workspace"

@@ -51,6 +51,7 @@ export interface CanonicalAnnualCompletionResult<Mode extends 'REAL' | 'MOCK' = 
     readonly staffingReference: string | null;
   };
   readonly participants: readonly {
+    readonly forced?: import('../durable/bid-session-state.js').Fill['forced'];
     readonly memberId: number;
     readonly positionId: string;
     readonly rank: string | null;
@@ -66,6 +67,10 @@ export interface CanonicalAnnualCompletionResult<Mode extends 'REAL' | 'MOCK' = 
       readonly replacementBidId: string;
     } | null;
   }[];
+  /** Session-only Chief directions are visible evidence, never invented Bid awards. */
+  readonly exceptionalAssignments?: NonNullable<
+    import('../durable/bid-session-state.js').LiveBidProgress['exceptionalAssignments']
+  >;
   readonly unresolvedMemberIds: readonly number[];
   readonly futureRoster: readonly FutureRosterObservation[];
 }
@@ -189,6 +194,7 @@ function projectCompletionForMode<Mode extends 'REAL' | 'MOCK'>(
         : null;
     participants.push({
       ...(fill.membershipIds === undefined ? {} : { membershipIds: fill.membershipIds }),
+      ...(fill.forced === undefined ? {} : { forced: fill.forced }),
       memberId: fill.memberId,
       positionId,
       rank: rankByMember.get(fill.memberId) ?? null,
@@ -226,6 +232,13 @@ function projectCompletionForMode<Mode extends 'REAL' | 'MOCK'>(
       },
       frozen: source.frozen,
       participants,
+      ...((source.state.live?.exceptionalAssignments?.length ?? 0) > 0
+        ? {
+            exceptionalAssignments: (source.state.live?.exceptionalAssignments ?? []).filter(
+              (entry) => entry.releasedAtMs === null,
+            ),
+          }
+        : {}),
       unresolvedMemberIds,
       futureRoster,
     },

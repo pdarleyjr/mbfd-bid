@@ -69,16 +69,14 @@ export function BidSessionSetup({
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {isMock ? 'Mock Bid' : 'Real Bid'} · Not started
       </p>
-      <h1 className="mt-1 font-heading text-xl">{isMock ? 'Start your Mock Bid' : 'Bid setup'}</h1>
+      <h1 className="mt-1 font-heading text-xl">
+        {isMock ? 'Start your Mock Bid' : 'Start your Real Bid'}
+      </h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        This session retains its saved Bid rules and {memberCount} members. Choose a member to
-        preview their details and previous bid. Position selection opens after the session starts.
+        {memberCount} members · saved rules retained. Start to open position selection.
       </p>
       {isMock ? (
         <>
-          <p className="mt-2 text-sm">
-            Start activates the saved bid order. It does not award a position or start a Real Bid.
-          </p>
           <Button
             type="button"
             variant="primary"
@@ -94,7 +92,7 @@ export function BidSessionSetup({
           href={`/admin/sessions/${encodeURIComponent(bidSessionId)}` as Route}
           className="mt-4 inline-flex min-h-11 items-center font-semibold underline"
         >
-          Review authorized session controls
+          Review and start Real Bid
         </Link>
       )}
       {error ? (
