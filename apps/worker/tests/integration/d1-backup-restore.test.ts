@@ -7,7 +7,7 @@
 //
 //   1. The backup script file exists and uses safe parameter bindings
 //      (`-Env`, `-DbName`, `-BucketName`).
-//   2. The R2 key it produces follows the `d1/<YYYY-MM-DD>/<dbname>-<HHMM>.sql`
+//   2. The R2 key it produces follows `d1/<YYYY-MM-DD>/<dbname>-<HHMM>.sql.gz`
 //      schema documented in Plan 09 § D4.
 //   3. The restore script accepts `-SnapshotKey`, resolves the target database
 //      without a hard-coded production name, and uses the asynchronous import
@@ -33,10 +33,14 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toMatch(/string\]\$BucketName/);
   });
 
-  it('backup script uploads to the `d1/<day>/<dbname>-<HHMM>.sql` key shape', () => {
+  it('backup script uploads streaming gzip with both raw and transport evidence', () => {
     const src = readFileSync(BACKUP_SCRIPT, 'utf-8');
-    // The key construction must look like: `d1/$day/$DbName-$now.sql`.
-    expect(src).toMatch(/"d1\/\$day\/\$DbName-\$now\.sql"/);
+    expect(src).toMatch(/"d1\/\$day\/\$DbName-\$now\.sql\.gz"/);
+    expect(src).toContain('New-D1BackupTransport');
+    expect(src).toContain('schema_version = 2');
+    expect(src).toContain('backup_sha256 = $transport.RawSha256');
+    expect(src).toContain('transport_sha256 = $transport.TransportSha256');
+    expect(src).toContain('transport_bytes = $transport.TransportBytes');
   });
 
   it('backup script calls wrangler d1 export with --remote', () => {
@@ -105,6 +109,8 @@ describe('D1 backup / restore scripts (Plan 09 T6)', () => {
     expect(src).toContain('BEGIN(?:\\s+TRANSACTION)?|COMMIT');
     expect(src).toContain('CLOUDFLARE_API_TOKEN');
     expect(src).toContain('[System.IO.Path]::GetTempPath()');
+    expect(src).toContain('$SnapshotKey.recovery.json');
+    expect(src).toContain('Expand-D1BackupTransport');
   });
 
   it('restore script does not hard-code prod database names', () => {

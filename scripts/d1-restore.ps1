@@ -4,7 +4,9 @@
     Plan 09 Task 6 — Restore a D1 database from an R2 snapshot.
 
 .DESCRIPTION
-    Downloads a previously uploaded snapshot from R2 and restores it through
+    Downloads a previously uploaded snapshot and recovery receipt from R2,
+    verifies gzip transport and original SQL (or an existing schema-1 SQL
+    receipt), and restores it through
     D1's asynchronous import API. The restore normalizes the export before
     upload: it removes the export's outer transaction and reserved D1 table,
     emits ordinary table declarations before data, splits oversized
@@ -19,6 +21,10 @@
 
 .PARAMETER Env
     Release-scope label recorded in the sanitized progress output.
+
+.PARAMETER SourceEnv
+    Backup source environment recorded in the recovery receipt. Defaults to
+    production, independently of a disposable target's release-scope label.
 
 .PARAMETER DbName
     Database name as declared in wrangler.toml.
@@ -44,10 +50,12 @@ param(
   [Parameter(Mandatory)][string]$DbName,
   [Parameter(Mandatory)][string]$BucketName,
   [Parameter(Mandatory)][string]$SnapshotKey,
+  [ValidateSet('production')][string]$SourceEnv = 'production',
   [ValidateRange(1, 720)][int]$PollAttempts = 120,
   [ValidateRange(0, 60)][int]$PollIntervalSeconds = 5
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'd1-backup-transport.ps1')
 
 function Invoke-WranglerCli {
   param(
@@ -976,20 +984,28 @@ if ([string]::IsNullOrWhiteSpace($tempRoot)) {
 if ([string]::IsNullOrWhiteSpace($tempRoot)) {
   throw 'No temporary directory is available for the D1 restore snapshot.'
 }
-$tmp = New-Item -ItemType Directory -Force -Path (Join-Path $tempRoot "d1-restore-$(Get-Random)")
+$restoreTempPath=[System.IO.Path]::GetFullPath((Join-Path $tempRoot "d1-restore-$([guid]::NewGuid().ToString('N'))"))
+$restoreTempRoot=[System.IO.Path]::GetFullPath($tempRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+if ([System.IO.Path]::GetDirectoryName($restoreTempPath) -ne $restoreTempRoot) { throw 'Restore temporary directory must be a direct child of the temporary root.' }
+$tmp = New-Item -ItemType Directory -Path $restoreTempPath
 try {
   $file = Join-Path $tmp 'snapshot.sql'
+  $transportFile = Join-Path $tmp 'snapshot.transport'
+  $receiptFile = Join-Path $tmp 'recovery.json'
   $restoreFile = Join-Path $tmp 'restore.sql'
   $importFile = Join-Path $tmp 'import.sql'
   $tablePreambleFile = Join-Path $tmp 'tables.sql'
   $remainingSqlFile = Join-Path $tmp 'remaining.sql'
   $postSchemaFile = Join-Path $tmp 'post-schema.sql'
   Write-Host "[d1-restore] downloading r2://$BucketName/$SnapshotKey"
-  $downloadOutput = @(Invoke-WranglerCli -Args @('r2', 'object', 'get', "$BucketName/$SnapshotKey", "--file=$file", '--remote'))
+  $downloadOutput = @(Invoke-WranglerCli -Args @('r2', 'object', 'get', "$BucketName/$SnapshotKey", "--file=$transportFile", '--remote'))
   if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object get failed (exit $LASTEXITCODE)" }
-
-  $size = (Get-Item $file).Length
-  Write-Host "[d1-restore] downloaded $size bytes"
+  $receiptOutput = @(Invoke-WranglerCli -Args @('r2', 'object', 'get', "$BucketName/$SnapshotKey.recovery.json", "--file=$receiptFile", '--remote'))
+  if ($LASTEXITCODE -ne 0) { throw 'Backup recovery receipt download failed; import not started.' }
+  try { $receipt=Get-Content -LiteralPath $receiptFile -Raw | ConvertFrom-Json -ErrorAction Stop }
+  catch { throw 'Backup recovery receipt returned invalid JSON; import not started.' }
+  $verified = Expand-D1BackupTransport -TransportPath $transportFile -SqlPath $file -Receipt $receipt -SnapshotKey $SnapshotKey -ExpectedEnvironment $SourceEnv
+  Write-Host "[d1-restore] verified $($verified.RawBytes) SQL bytes ($($verified.Encoding) transport)"
 
   # A D1 export can interleave data for an early table with the declarations
   # of tables it references. Emit all ordinary table declarations first, then
@@ -1142,6 +1158,7 @@ try {
   Write-Host "[d1-restore] import complete into $DbName ($Env)"
 } finally {
   if (Test-Path -LiteralPath $tmp) {
+    if ([System.IO.Path]::GetFullPath($tmp.FullName) -ne $restoreTempPath) { throw 'Unexpected restore cleanup target.' }
     Remove-Item -LiteralPath $tmp -Recurse -Force
   }
 }

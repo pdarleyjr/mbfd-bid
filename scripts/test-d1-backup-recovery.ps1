@@ -9,6 +9,9 @@ foreach ($scenario in @('production', 'retired-env', 'lookup-fails', 'malformed-
     Calls = [System.Collections.Generic.List[string]]::new()
     Receipt = $null
     SqlHash = $null
+    TransportHash = $null
+    TransportBytes = $null
+    DecodedHash = $null
     Directory = $null
   }
   function pnpm {
@@ -46,7 +49,17 @@ foreach ($scenario in @('production', 'retired-env', 'lookup-fails', 'malformed-
         $state.Receipt = Get-Content -LiteralPath $uploadedPath -Raw | ConvertFrom-Json
         if ($scenario -eq 'receipt-upload-throws') { throw 'private-upload-exception' }
         if ($scenario -eq 'receipt-upload-fails') { $global:LASTEXITCODE = 1 }
-      } elseif ($scenario -eq 'sql-upload-fails') { $global:LASTEXITCODE = 1 }
+      } else {
+        if (-not $uploadedPath.EndsWith('.sql.gz')) { throw 'Backup did not upload gzip transport.' }
+        $state.TransportHash=(Get-FileHash -LiteralPath $uploadedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $state.TransportBytes=(Get-Item -LiteralPath $uploadedPath).Length
+        $source=[IO.File]::OpenRead($uploadedPath)
+        $gzip=[IO.Compression.GZipStream]::new($source,[IO.Compression.CompressionMode]::Decompress)
+        $sha=[Security.Cryptography.SHA256]::Create()
+        try { $state.DecodedHash=[Convert]::ToHexString($sha.ComputeHash($gzip)).ToLowerInvariant() }
+        finally { $sha.Dispose(); $gzip.Dispose(); $source.Dispose() }
+        if ($scenario -eq 'sql-upload-fails') { $global:LASTEXITCODE = 1 }
+      }
       return
     }
     throw "Unexpected CLI command in recovery test: $commandText"
@@ -66,7 +79,7 @@ foreach ($scenario in @('production', 'retired-env', 'lookup-fails', 'malformed-
   if (-not $shouldPass -and $outputText -match '\[d1-backup\] OK') { throw "$scenario falsely reported backup success." }
   if ($scenario -eq 'production') {
     if ($state.Calls.Count -ne 4 -or $state.Calls[0] -notmatch 'time-travel info') { throw 'Recovery bookmark must precede the export and both uploads.' }
-    if ($state.Receipt.time_travel_bookmark -ne '00000001-00000002-00000003-0123456789abcdef' -or $state.Receipt.backup_sha256 -ne $state.SqlHash -or $state.Receipt.backup_bytes -lt 1024 -or $state.Receipt.environment -ne 'production' -or $state.Receipt.backup_key -notmatch '^d1/.+\.sql$' -or -not $state.Receipt.bookmark_captured_at) { throw 'Private recovery receipt did not match the exported snapshot and bookmark.' }
+    if ($state.Receipt.schema_version -ne 2 -or $state.Receipt.time_travel_bookmark -ne '00000001-00000002-00000003-0123456789abcdef' -or $state.Receipt.backup_sha256 -ne $state.SqlHash -or $state.DecodedHash -ne $state.SqlHash -or $state.Receipt.backup_bytes -lt 1024 -or $state.Receipt.environment -ne 'production' -or $state.Receipt.backup_key -notmatch '^d1/.+\.sql\.gz$' -or -not $state.Receipt.bookmark_captured_at -or $state.Receipt.transport_encoding -ne 'gzip' -or $state.Receipt.transport_sha256 -ne $state.TransportHash -or $state.Receipt.transport_bytes -ne $state.TransportBytes) { throw 'Private recovery receipt did not match the original SQL, compressed transport and bookmark.' }
   }
   if ($scenario -eq 'retired-env' -and $state.Calls.Count -ne 0) { throw 'Retired environment must be rejected before any remote command.' }
   if ($scenario -in @('lookup-fails', 'malformed-json', 'missing-bookmark') -and $state.Calls.Count -ne 1) { throw 'Backup continued without valid recovery evidence.' }
