@@ -75,7 +75,7 @@ function PresentationBoard({ view }: { view: Presentation }) {
   const [shift, setShift] = useState<PresentationShift>('A');
   const [boardPage, setBoardPage] = useState(0);
   const [queueOpen, setQueueOpen] = useState(false);
-  const [queuePage, setQueuePage] = useState(0);
+  const [queueAnchor, setQueueAnchor] = useState(0);
   const [seatHeights, setSeatHeights] = useState<{ width: number; values: Record<string, number> }>(
     { width: 0, values: {} },
   );
@@ -100,7 +100,7 @@ function PresentationBoard({ view }: { view: Presentation }) {
     .join('|');
   const queuePageSize = Math.max(1, Math.floor(queueSize.height / 60));
   const queuePages = Math.max(1, Math.ceil(queue.length / queuePageSize));
-  const shownQueuePage = Math.min(queuePage, queuePages - 1);
+  const shownQueuePage = Math.min(Math.floor(queueAnchor / queuePageSize), queuePages - 1);
   const next = view.on_deck?.find((member) => member !== null) ?? null;
   const currentAssignment = assignmentLabel(view.current_bidder?.current_assignment);
   const previousAssignment = assignmentLabel(view.current_bidder?.previous_assignment);
@@ -148,8 +148,11 @@ function PresentationBoard({ view }: { view: Presentation }) {
     return () => observer.disconnect();
   }, [seatPageKey, boardSize.width]);
   useEffect(() => {
-    if (currentQueueIndex >= 0) setQueuePage(Math.floor(currentQueueIndex / queuePageSize));
-  }, [currentQueueIndex, queuePageSize]);
+    // Follow a new bidder, while preserving the member the audience paged to
+    // when the queue is first measured or the viewport changes size.
+    if (view.current_bidder?.member_id !== undefined && currentQueueIndex >= 0)
+      setQueueAnchor(currentQueueIndex);
+  }, [currentQueueIndex, view.current_bidder?.member_id]);
 
   function closeQueue() {
     setQueueOpen(false);
@@ -375,7 +378,7 @@ function PresentationBoard({ view }: { view: Presentation }) {
                 className={styles.iconButton}
                 aria-label="Previous bidders"
                 disabled={shownQueuePage === 0}
-                onClick={() => setQueuePage(shownQueuePage - 1)}
+                onClick={() => setQueueAnchor((shownQueuePage - 1) * queuePageSize)}
               >
                 <ChevronLeft aria-hidden="true" size={20} />
               </button>
@@ -387,7 +390,7 @@ function PresentationBoard({ view }: { view: Presentation }) {
                 className={styles.iconButton}
                 aria-label="Next bidders"
                 disabled={shownQueuePage === queuePages - 1}
-                onClick={() => setQueuePage(shownQueuePage + 1)}
+                onClick={() => setQueueAnchor((shownQueuePage + 1) * queuePageSize)}
               >
                 <ChevronRight aria-hidden="true" size={20} />
               </button>

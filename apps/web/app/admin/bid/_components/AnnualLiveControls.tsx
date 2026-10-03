@@ -2788,7 +2788,6 @@ export function AnnualLiveControls(props: Props) {
             </Button>
           </article>
         </div>
-        {notice ? <output className="mt-3 block text-sm text-foreground">{notice}</output> : null}
       </SelectionFrame>
     </section>
   );

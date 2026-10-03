@@ -316,6 +316,11 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
     await choose('Specialty seat to offer', 'S-B');
     await settle(() => button('ACCEPT').click());
     expect(container.querySelector('[data-panel-title="Specialty and contact"]')).not.toBeNull();
+    expect(
+      [...container.querySelectorAll('output')].filter(
+        (node) => node.textContent === 'Action recorded.',
+      ),
+    ).toHaveLength(1);
     expect(operator.setActiveMember).toHaveBeenLastCalledWith(8);
     expect(
       (

@@ -272,7 +272,8 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   const candidateRow = controls.getByRole('row').filter({ hasText: 'Jordan Candidate' });
   await expect(candidateRow).toContainText('8 / 1');
   await expect(candidateRow).toContainText('CURRENT');
-  await expect(controls.getByText(/turn suspended at queue 0/)).toBeVisible();
+  await expect(controls.getByText(/Their turn resumes after review\./)).toBeVisible();
+  await expect(controls.getByRole('button', { name: 'Resume original bidder' })).toBeEnabled();
   await expect(controls.getByRole('button', { name: 'ACCEPT' })).toBeVisible();
   await expect(controls.getByRole('button', { name: 'DECLINE' })).toBeVisible();
   await expect(controls.getByRole('button', { name: 'UNREACHABLE' })).toBeVisible();
