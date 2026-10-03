@@ -32,6 +32,7 @@ let malformedReview: 'null' | 'missing-candidates' | null;
 let combinedReadback: boolean;
 let continueReview: boolean;
 let advisoryReview: boolean;
+let priorityCandidateCount: number;
 
 const requester = () => ({
   member_id: 17,
@@ -74,6 +75,7 @@ beforeEach(() => {
   combinedReadback = false;
   continueReview = false;
   advisoryReview = false;
+  priorityCandidateCount = 1;
   operator.requestOverride.mockReset();
   live = {
     sequence: 4,
@@ -120,7 +122,17 @@ beforeEach(() => {
           specialty_id: advisoryReview ? null : 'synthetic-investigator',
           ...(advisoryReview ? { mode: 'ADVISORY' } : {}),
           specialty_label: 'Investigator',
-          higher_priority_candidates: [higher()],
+          higher_priority_candidates: Array.from({ length: priorityCandidateCount }, (_, index) =>
+            index === 0
+              ? higher()
+              : {
+                  ...higher(),
+                  member_id: 100 + index,
+                  first_name: `Synthetic priority ${index + 1}`,
+                  points: 100 - index,
+                  policy_rank: index + 1,
+                },
+          ),
           eligible_related_position_ids: ['S-A', 'S-B'],
           a_day_timing: advisoryReview ? 'ADMIN_REVIEW' : 'ORDINARY_TURN',
         },
@@ -270,7 +282,86 @@ async function mount(isMock = true) {
 
 describe('contextual specialty and deferred A-Day operator workflow', () => {
   it.each([true, false])(
-    'moves the ordinary turn ahead of the same member Days turn with exact reviewed identities (Mock %s)',
+    'keeps five of 28 priority candidates concise and exposes every ordered assignment action (Mock %s)',
+    async (isMock) => {
+      advisoryReview = true;
+      priorityCandidateCount = 28;
+      live.specialties = [];
+      live.specialty_review_position_ids = ['S-A', 'S-B'];
+      live.admin_override_allowed = true;
+      await mount(isMock);
+      await settle(() =>
+        [...container.querySelectorAll('button')]
+          .find((node) => node.textContent?.includes('S-A'))
+          ?.click(),
+      );
+      await vi.waitFor(() => expect(container.textContent).toContain('28 higher-priority members'));
+      const first = container.querySelector(
+        'ol[aria-label="Higher-priority specialty candidates"]',
+      );
+      expect(first?.querySelectorAll('li')).toHaveLength(5);
+      const more = [...container.querySelectorAll('details')].find((node) =>
+        node
+          .querySelector('summary')
+          ?.textContent?.includes('Show all higher-priority members (28)'),
+      );
+      expect(more).toBeDefined();
+      expect(more?.open).toBe(false);
+      await settle(() => more?.querySelector('summary')?.click());
+      expect(more?.open).toBe(true);
+      const remaining = more?.querySelector('ol');
+      expect(remaining?.getAttribute('start')).toBe('6');
+      expect(remaining?.querySelectorAll('li')).toHaveLength(23);
+      const names = [...(remaining?.querySelectorAll('button') ?? [])].map((node) =>
+        node.textContent?.trim(),
+      );
+      expect(names).toEqual(
+        Array.from(
+          { length: 23 },
+          (_, index) => `Assign Synthetic priority ${index + 6} Candidate`,
+        ),
+      );
+      await settle(() => remaining?.querySelectorAll('button')[22]?.click());
+      expect(operator.requestOverride).toHaveBeenCalledWith('S-A', 127, true);
+      expect(commands).toHaveLength(0);
+    },
+  );
+  it.each(
+    [true, false].flatMap((isMock) =>
+      [
+        ['OFF', 'OFF'],
+        ['LIVE', 'LIVE'],
+        ['HOLD DISPLAY', 'HOLD'],
+        ['RESUME DISPLAY', 'LIVE'],
+      ].map(([label, mode]) => ({ isMock, label, mode })),
+    ),
+  )(
+    'records $label display mode in one click without a selection reason (Mock $isMock)',
+    async ({ isMock, label, mode }) => {
+      await mount(isMock);
+      await settle(() => button('Presentation controls').click());
+      const panel = container.querySelector('[data-panel-title="Department presentation"]');
+      expect(panel?.textContent).not.toContain('Operator reason');
+      expect(panel?.textContent).not.toContain('Evidence reference');
+      expect(commands).toHaveLength(0);
+      await settle(() => button(label as string).click());
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toMatchObject({
+        type: 'live.set_presentation_mode',
+        mode,
+        expectedSeq: 4,
+        reason: `Operator set audience presentation mode to ${mode}.`,
+        evidenceReference: null,
+      });
+      expect(commands[0]).not.toHaveProperty('memberId');
+      expect(commands[0]).not.toHaveProperty('positionId');
+      expect(panel?.querySelector('output[aria-live="polite"]')?.textContent).toBe(
+        'Action recorded.',
+      );
+    },
+  );
+  it.each([true, false])(
+    'finds a member and moves their ordinary turn without dropping hidden exact turns (Mock %s)',
     async (isMock) => {
       live.remaining_order = [17, 9, 17];
       live.remaining_turns = [
@@ -285,6 +376,19 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
       expect(container.textContent).toContain(
         'CPT Synthetic Senior Requester · Ordinary rank turn · turn 2',
       );
+      const turnRows = () =>
+        container.querySelectorAll('ol[aria-label="Remaining bid turns"] > li');
+      await fill('Find member in bid order', 'cpt');
+      expect(turnRows()).toHaveLength(3);
+      await fill('Find member in bid order', 'synthetic17');
+      expect(turnRows()).toHaveLength(2);
+      expect(turnRows()[0]?.textContent).toContain('Days positions');
+      expect(turnRows()[1]?.textContent).toContain('Ordinary rank turn · turn 2');
+      await fill('Find member in bid order', 'Synthetic Senior');
+      expect(turnRows()).toHaveLength(2);
+      await fill('Find member in bid order', 'Ordinary rank');
+      expect(turnRows()).toHaveLength(1);
+      expect(turnRows()[0]?.textContent).toContain('3. CPT Synthetic Senior Requester');
       await settle(() =>
         (
           container.querySelector(
@@ -379,9 +483,7 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
     await mount();
     await choose('Specialty seat to offer', 'S-B');
     await settle(() => button('ACCEPT').click());
-    expect(
-      container.querySelector('[data-panel-title="Record controlled A-Day selection"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[data-panel-title="Choose A-Day"]')).not.toBeNull();
     const ineligible = container.querySelector(
       'select[aria-label="Controlled A-Day"] option[value="G1"]',
     ) as HTMLOptionElement | null;
@@ -507,12 +609,11 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
         aDay: 'G1',
       });
       expect(container.textContent).toContain('is now due to select an A-Day');
-      expect(
-        container.querySelector('[data-panel-title="Record controlled A-Day selection"]'),
-      ).not.toBeNull();
+      expect(container.querySelector('[data-panel-title="Choose A-Day"]')).not.toBeNull();
       await choose('Controlled A-Day', 'G2');
       await settle(() => button('Commit controlled A-Day').click());
       expect(commands[3]).toMatchObject({ type: 'live.record_a_day', memberId: 9, aDay: 'G2' });
+      expect(container.querySelector('[data-panel-title="Choose A-Day"]')).toBeNull();
     },
   );
   it.each([true, false])(

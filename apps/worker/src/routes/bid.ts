@@ -37,7 +37,7 @@ import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-el
 import { verifyJwt } from '../lib/jwt.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
 import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
-import { computeOnDeck, currentBidOrderEntry } from '../lib/on-deck.js';
+import { DEFAULT_ON_DECK_COUNT, computeOnDeck, currentBidOrderEntry } from '../lib/on-deck.js';
 import { operationalDate } from '../lib/operational-date.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
 import type { WorkerEnv } from '../types/env.js';
@@ -716,16 +716,43 @@ bid.get('/board', async (c) => {
   const currentBidderId = typeof body.currentBidderId === 'number' ? body.currentBidderId : null;
   const fillsRec = body.fills && typeof body.fills === 'object' ? body.fills : {};
   const filledMemberIds = new Set<number>(Object.values(fillsRec).map((f) => f.memberId));
+  // Share the audience queue, including A-Day turns reached after the ordinary
+  // cursor ends. A recorded seat alone does not complete that member's turn.
+  const annualRemainingQueue =
+    canonicalState !== null && frozenBoardPolicy.snapshot.settings.v === 3
+      ? remainingAudienceQueue(
+          {
+            ...canonicalState,
+            live: {
+              dispositions: canonicalState.live?.dispositions ?? [],
+              exceptionalAssignments: canonicalState.live?.exceptionalAssignments ?? [],
+            },
+          },
+          frozenBoardPolicy.snapshot.settings.livePolicy,
+        )
+      : null;
   const onDeckEntries =
     body.currentPhase === 'complete'
       ? []
-      : computeOnDeck(
-          bidOrder,
-          currentBidderId,
-          filledMemberIds,
-          undefined,
-          canonicalState?.bidOrder.length ? canonicalState.queueCursor : undefined,
-        );
+      : annualRemainingQueue !== null
+        ? annualRemainingQueue
+            .filter((entry) => entry.memberId !== currentBidderId)
+            .slice(0, DEFAULT_ON_DECK_COUNT)
+            .flatMap((entry) => {
+              const turn = currentBidOrderEntry(
+                bidOrder,
+                entry.memberId,
+                canonicalState?.queueCursor,
+              );
+              return turn ? [turn] : [];
+            })
+        : computeOnDeck(
+            bidOrder,
+            currentBidderId,
+            filledMemberIds,
+            undefined,
+            canonicalState?.bidOrder.length ? canonicalState.queueCursor : undefined,
+          );
   const snapshotMembersById = new Map(
     frozenBoardPolicy.snapshot.members.map((member) => [member.memberId, member]),
   );

@@ -5,9 +5,10 @@
 
 .DESCRIPTION
     Exports the named D1 database to a .sql snapshot, validates the dump is
-    non-trivial, uploads it to R2 under `d1/<YYYY-MM-DD>/<dbname>-<HHMM>.sql`,
+    non-trivial, streams gzip to R2 under `d1/<YYYY-MM-DD>/<dbname>-<HHMM>.sql.gz`,
     and deletes the temp file. Production also stores a private recovery
-    receipt containing the pre-export Time Travel bookmark and SQL hash.
+    receipt containing the pre-export Time Travel bookmark, original SQL
+    hash/size and compressed transport hash/size.
     Designed to be invoked by the
     manually dispatched `.github/workflows/d1-backup.yml` workflow.
 
@@ -34,6 +35,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'd1-backup-preflight.ps1')
+. (Join-Path $PSScriptRoot 'd1-backup-transport.ps1')
 
 $now = Get-Date -Format 'yyyy-MM-dd-HHmm'
 $day = Get-Date -Format 'yyyy-MM-dd'
@@ -79,10 +81,14 @@ Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString(
   }
   Write-Host "[d1-backup] dump size: $size bytes"
 
-  $result.Key = "d1/$day/$DbName-$now.sql"
+  $transportFile = "$file.gz"
+  $transport = New-D1BackupTransport -SourcePath $file -DestinationPath $transportFile
+  if ($transport.RawBytes -ne $size) { throw 'SQL export changed during compression; no upload started.' }
+  Write-Host "[d1-backup] gzip transport size: $($transport.TransportBytes) bytes"
+  $result.Key = "d1/$day/$DbName-$now.sql.gz"
   Write-Host "[d1-backup] uploading -> r2://$BucketName/$($result.Key)"
   try {
-    $uploadOutput = & pnpm --dir apps/worker exec wrangler r2 object put "$BucketName/$($result.Key)" --file=$file --remote *>&1
+    $uploadOutput = & pnpm --dir apps/worker exec wrangler r2 object put "$BucketName/$($result.Key)" --file=$transportFile --remote *>&1
   }
   catch { throw 'wrangler r2 object put failed; no backup success recorded.' }
   if ($LASTEXITCODE -ne 0) { throw "wrangler r2 object put failed (exit $LASTEXITCODE)" }
@@ -91,12 +97,15 @@ Invoke-D1BackupTempDirectory -Name "d1-backup-$now-$([guid]::NewGuid().ToString(
     $receiptFile = Join-Path $TemporaryDirectory 'recovery.json'
     $result.ReceiptKey = "$($result.Key).recovery.json"
     [ordered]@{
-      schema_version = 1
+      schema_version = 2
       environment = $Env
       database = $DbName
       backup_key = $result.Key
       backup_bytes = $size
-      backup_sha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+      backup_sha256 = $transport.RawSha256
+      transport_encoding = $transport.Encoding
+      transport_bytes = $transport.TransportBytes
+      transport_sha256 = $transport.TransportSha256
       time_travel_bookmark = $bookmark
       bookmark_captured_at = $bookmarkCapturedAt
       source_commit = $env:GITHUB_SHA

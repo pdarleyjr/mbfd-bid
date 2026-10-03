@@ -19,12 +19,16 @@ function Invoke-D1BackupTempDirectory {
       $temporaryRoot = if ($IsWindows) { [System.IO.Path]::Combine($env:SystemRoot, 'Temp') } else { '/tmp' }
     }
     $temporaryPath = Join-Path -Path $temporaryRoot -ChildPath $Name
+    $expectedPath=[System.IO.Path]::GetFullPath($temporaryPath)
+    $expectedRoot=[System.IO.Path]::GetFullPath($temporaryRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+    if ([System.IO.Path]::GetDirectoryName($expectedPath) -ne $expectedRoot) { throw 'Backup temporary directory must be a direct child of the temporary root.' }
     $temporaryDirectory = New-Item -ItemType Directory -Path $temporaryPath -ErrorAction Stop
 
     & $Operation $temporaryDirectory.FullName
   }
   finally {
     if ($null -ne $temporaryDirectory -and (Test-Path -LiteralPath $temporaryDirectory.FullName)) {
+      if ([System.IO.Path]::GetFullPath($temporaryDirectory.FullName) -ne $expectedPath) { throw 'Unexpected backup cleanup target.' }
       Remove-Item -LiteralPath $temporaryDirectory.FullName -Recurse -Force -ErrorAction Stop
     }
   }

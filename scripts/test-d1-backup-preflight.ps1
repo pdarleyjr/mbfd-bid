@@ -68,3 +68,5 @@ finally {
 Write-Host '[PASS] D1 backup temp-directory preflight is TEMP-independent and cleans up after failure and success.'
 
 & (Join-Path $PSScriptRoot 'test-d1-backup-recovery.ps1')
+& (Join-Path $PSScriptRoot 'test-d1-backup-transport.ps1')
+& (Join-Path $PSScriptRoot 'test-d1-restore-import.ps1')

@@ -1,5 +1,9 @@
 import type { FrozenLiveBidPolicy } from '@mbfd/shared';
 import type { BidSessionState, LiveBidProgress } from '../durable/bid-session-state.js';
+import {
+  loadDepartmentOrganization,
+  resolveDepartmentPositionOrganization,
+} from './department-organization.js';
 import { canonicalRosterShift, isCalendarDate } from './department-roster.js';
 
 export type AudienceQueueState = Pick<
@@ -76,7 +80,7 @@ export async function loadAudienceCurrentAssignment(
   try {
     const rows = await db
       .prepare(`SELECT p.id AS position_id, p.position_name,
-      p.shift, p.station, p.unit FROM member_assignments a
+      p.shift, p.station, p.unit, p.division FROM member_assignments a
       JOIN staffing_positions p ON p.id=a.staffing_position_id
       WHERE a.member_id=? AND p.review_status IN ('approved','retired')
         AND a.id=(SELECT candidate.id FROM member_assignments candidate
@@ -90,10 +94,21 @@ export async function loadAudienceCurrentAssignment(
         AND (p.active_from IS NULL OR p.active_from<=?)
         AND (p.active_to IS NULL OR p.active_to>=?) LIMIT 2`)
       .bind(memberId, asOf, asOf, asOf, asOf, asOf, asOf)
-      .all<AudienceAssignment>();
+      .all<AudienceAssignment & { division: string | null }>();
     if (rows.results.length !== 1) return null;
     const assignment = rows.results[0];
-    return assignment ? { ...assignment, shift: canonicalRosterShift(assignment.shift) } : null;
+    if (!assignment) return null;
+    const organization = resolveDepartmentPositionOrganization(
+      { ...assignment, id: assignment.position_id },
+      await loadDepartmentOrganization(db, asOf),
+    );
+    return {
+      position_id: assignment.position_id,
+      position_name: assignment.position_name,
+      shift: canonicalRosterShift(assignment.shift),
+      station: organization.station,
+      unit: organization.unit,
+    };
   } catch {
     // Missing documentary context must not erase an authoritative live board.
     return null;

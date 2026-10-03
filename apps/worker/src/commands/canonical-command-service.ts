@@ -714,6 +714,16 @@ export async function commitLiveBidCommand(
     ? async (..._args: Parameters<typeof insertRejectedReceipt>) => {}
     : insertRejectedReceipt;
   await assertBidDefinitionRunIntegrity(input.db, input.command.bidSessionId, input.policy);
+  // All branches of this invocation address the same immutable session/version
+  // pins. Resolve and authenticate its frozen material once; keep the separate
+  // command integrity guard above and every branch's policy/target checks.
+  // Never share this promise across commands or cache mutable current-head data.
+  let frozenPolicy: ReturnType<typeof loadFrozenSessionBidPolicy> | undefined;
+  const loadCommandFrozenPolicy = () => {
+    if (frozenPolicy === undefined)
+      frozenPolicy = loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    return frozenPolicy;
+  };
   const now = (input.nowMs ?? Date.now)();
   const newId = input.newId ?? ulid;
   const requestSha256 = sha256Hex(canonicalJson(input.command));
@@ -765,7 +775,7 @@ export async function commitLiveBidCommand(
     | import('../lib/bid-corrections.js').CorrectionSpecialtyRequest
     | undefined;
   if (administratorOverride) {
-    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    const frozen = await loadCommandFrozenPolicy();
     const memberId =
       'memberId' in input.command
         ? (input.command.memberId ?? current.currentBidderId)
@@ -858,7 +868,7 @@ export async function commitLiveBidCommand(
   }
   let fallbackReview: Extract<ReturnType<typeof evaluateBidFallback>, { ok: true }> | null = null;
   if ('fallback' in input.command && input.command.fallback !== undefined) {
-    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    const frozen = await loadCommandFrozenPolicy();
     const review =
       frozen.ok &&
       frozen.snapshot.settings.v === 3 &&
@@ -918,7 +928,7 @@ export async function commitLiveBidCommand(
   }
   if (input.command.type === 'live.set_exceptional_assignment') {
     const assignmentCommand = input.command;
-    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    const frozen = await loadCommandFrozenPolicy();
     const person = frozen.ok
       ? frozen.snapshot.members.find((member) => member.memberId === assignmentCommand.memberId)
       : undefined;
@@ -1039,7 +1049,7 @@ export async function commitLiveBidCommand(
     Object.values(current.fills).some((fill) => fill.aDay !== undefined);
   let frozenADaySnapshot: Extract<BidSessionPolicySnapshot, { v: 3 }> | null = null;
   if (requiresFrozenADayEvaluation) {
-    const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+    const frozen = await loadCommandFrozenPolicy();
     if (
       !frozen.ok ||
       frozen.snapshot.settings.v !== 3 ||
@@ -1187,7 +1197,7 @@ export async function commitLiveBidCommand(
       (input.policy.annualOperations?.opportunityPools?.length ?? 0) > 0 ||
       ('pool' in input.command && input.command.pool !== undefined)
     ) {
-      const frozen = await loadFrozenSessionBidPolicy(getDb(input.db), input.command.bidSessionId);
+      const frozen = await loadCommandFrozenPolicy();
       const pooled =
         frozen.ok &&
         frozen.snapshot.settings.v === 3 &&

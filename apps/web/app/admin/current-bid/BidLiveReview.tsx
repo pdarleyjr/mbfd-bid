@@ -38,7 +38,7 @@ function message(error: unknown) {
     ? error.message
     : error instanceof Error
       ? error.message
-      : 'The Managed Live preflight could not be completed.';
+      : 'The Real Bid readiness check could not be completed.';
 }
 
 function PolicyBlock({
