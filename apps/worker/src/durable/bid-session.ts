@@ -1657,6 +1657,7 @@ export class BidSessionDO implements DurableObject {
         currentBidderId: state.currentBidderId,
         turnStartedAtMs: state.turnStartedAtMs,
         turnTimerSeconds: state.turnTimerSeconds,
+        ...(state.turnPausedAtMs === undefined ? {} : { turnPausedAtMs: state.turnPausedAtMs }),
         frozenAt: state.frozenAt,
         fills: Object.entries(state.fills).map(([positionId, f]) => ({
           positionId,

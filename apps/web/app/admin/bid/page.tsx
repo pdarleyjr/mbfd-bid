@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic';
 
 interface BoardSnapshot {
   bidSessionId: string;
+  bidYear?: number | null;
   lastSeq: number;
   currentPhase: string;
   currentBidderId: number | null;
@@ -28,6 +29,7 @@ interface BoardSnapshot {
   mockControlRevision: number | null;
   sessionStartedAt: number | null;
   turnStartedAtMs?: number;
+  turnPausedAtMs?: number | null;
   turnTimerSeconds?: number;
   /** V3 immutable rule-book position material for this exact session. */
   positions?: PositionMeta[];
@@ -133,6 +135,7 @@ export default async function AdminBidPage({
       <AdminBidShell
         key={board.bidSessionId}
         bidSessionId={board.bidSessionId}
+        bidYear={board.bidYear}
         lastSeq={board.lastSeq}
         currentPhase={board.currentPhase}
         currentBidderId={board.currentBidderId}
@@ -142,6 +145,7 @@ export default async function AdminBidPage({
         bidOrderPreview={board.bidOrderPreview === true}
         sessionStartedAt={board.sessionStartedAt}
         turnStartedAtMs={board.turnStartedAtMs ?? 0}
+        turnPausedAtMs={board.turnPausedAtMs ?? null}
         turnTimerSeconds={board.turnTimerSeconds ?? 180}
         meMemberId={localMemberId}
         initialFills={board.fills}

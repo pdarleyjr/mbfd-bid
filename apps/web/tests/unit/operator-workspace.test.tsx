@@ -110,6 +110,7 @@ let failReadAfterAward = false;
 let returnedMember = false;
 let liveSequence = 4;
 let overrideAllowed = false;
+let livePhase = 'position_bid';
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -126,6 +127,7 @@ beforeEach(() => {
   returnedMember = false;
   liveSequence = 4;
   overrideAllowed = false;
+  livePhase = 'position_bid';
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     requests.push(url);
@@ -134,6 +136,7 @@ beforeEach(() => {
         ? response({ error: 'synthetic_connection_lost' }, 503)
         : response({
             ...live,
+            current_phase: livePhase,
             sequence: liveSequence,
             admin_override_allowed: overrideAllowed,
             admin_override_member_ids: overrideAllowed ? [17, 18] : [],
@@ -151,7 +154,10 @@ beforeEach(() => {
         qualifications: { certifications: [] },
       });
     if (url.endsWith('/commands/live')) {
-      commands.push(JSON.parse(String(init?.body)));
+      const command = JSON.parse(String(init?.body));
+      commands.push(command);
+      if (!reject && command.type === 'live.pause') livePhase = 'paused';
+      if (!reject && command.type === 'live.resume') livePhase = 'position_bid';
       if (!reject && failReadAfterAward) updatesUnavailable = true;
       return reject
         ? response({ kind: 'rejected', code: 'LIVE_STAGE_NOT_ELIGIBLE' }, 409)
@@ -176,7 +182,7 @@ async function settle(action: () => void = () => {}) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
-async function mount() {
+async function mount(isMock = true) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -199,7 +205,7 @@ async function mount() {
         <BidOperatorWorkspace members={members} bidOrder={[{ memberId: 17 }, { memberId: 18 }]}>
           <AnnualLiveControls
             bidSessionId="isolated-synthetic"
-            isMock
+            isMock={isMock}
             currentBidderId={17}
             bidOrder={[{ memberId: 17 }, { memberId: 18 }]}
             fills={{}}
@@ -230,6 +236,39 @@ async function chooseGroup(value: string) {
   });
 }
 describe('operator workspace interaction and history', () => {
+  it.each([true, false])(
+    'saves and resumes the same %s Mock-mode session without a note or new bid',
+    async (isMock) => {
+      await mount(isMock);
+      await settle(() => button('Pause or resume bid').click());
+      const sameBid = [...container.querySelectorAll('a')].find(
+        (link) => link.textContent === 'Return to this bid',
+      );
+      expect(sameBid?.getAttribute('href')).toBe('/admin/bid?session_id=isolated-synthetic');
+      expect(commands).toHaveLength(0);
+      await settle(() => button('Pause bid').click());
+      expect(commands[0]).toMatchObject({ type: 'live.pause', expectedSeq: 4 });
+      expect(container.textContent).toContain('Bid paused and saved.');
+      expect(container.textContent).toContain('current turn are saved');
+      expect(button('Resume bid').disabled).toBe(false);
+      expect(container.textContent?.includes('Find saved Mocks')).toBe(isMock);
+      await settle(() => button('Resume bid').click());
+      expect(commands[1]).toMatchObject({ type: 'live.resume', expectedSeq: 4 });
+      expect(container.textContent).toContain('Bid resumed. Continuing the saved turn.');
+      expect(requests.some((url) => url.includes('/sessions/new'))).toBe(false);
+      expect(commands.map((command) => command.type)).toEqual(['live.pause', 'live.resume']);
+    },
+  );
+  it('keeps the saved pause acknowledgement when the following state refresh fails', async () => {
+    await mount();
+    await settle(() => button('Pause or resume bid').click());
+    failReadAfterAward = true;
+    await settle(() => button('Pause bid').click());
+    expect(commands).toHaveLength(1);
+    expect(container.textContent).toContain('Bid paused and saved.');
+    expect(container.textContent).toContain('Refresh bid updates before recording another action.');
+    expect(button('Pause bid').disabled).toBe(true);
+  });
   it('lets Record selection choose a seat inside its panel before explicit confirmation', async () => {
     await mount();
     await settle(() => button('Record selection').click());

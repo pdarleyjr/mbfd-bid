@@ -145,6 +145,7 @@ router.get('/active', async (c) => {
     } catch {
       return c.json({ error: 'canonical_state_unavailable' }, 503);
     }
+    const canonicalPauseInstant = canonical?.turnPausedAtMs ?? canonical?.frozenAt ?? null;
     const session =
       canonical === null
         ? legacySession
@@ -156,8 +157,8 @@ router.get('/active', async (c) => {
               canonical.turnStartedAtMs > 0 ? new Date(canonical.turnStartedAtMs) : null,
             turnTimerSeconds: canonical.turnTimerSeconds,
             pausedAt:
-              canonical.currentPhase === 'paused' && canonical.frozenAt !== null
-                ? new Date(canonical.frozenAt)
+              canonical.currentPhase === 'paused' && canonicalPauseInstant !== null
+                ? new Date(canonicalPauseInstant)
                 : legacySession.pausedAt,
             frozenAt: canonical.frozenAt === null ? null : new Date(canonical.frozenAt),
           };

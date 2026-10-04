@@ -28,6 +28,7 @@ interface BidOrderEntry {
 
 interface Props {
   bidSessionId: string;
+  bidYear?: number | null | undefined;
   lastSeq: number;
   currentPhase: string;
   currentBidderId: number | null;
@@ -37,6 +38,7 @@ interface Props {
   bidOrderPreview: boolean;
   sessionStartedAt: number | null;
   turnStartedAtMs: number;
+  turnPausedAtMs?: number | null;
   turnTimerSeconds: number;
   meMemberId: number;
   initialFills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
@@ -112,6 +114,7 @@ export function AdminBidShell(props: Props) {
               currentPhase={props.currentPhase}
               sessionStartedAt={props.sessionStartedAt}
               turnStartedAtMs={props.turnStartedAtMs > 0 ? props.turnStartedAtMs : null}
+              turnPausedAtMs={props.turnPausedAtMs ?? null}
               turnTimerSeconds={props.turnTimerSeconds}
               currentBidder={props.currentBidder}
               currentBidderId={props.currentBidderId}
@@ -144,6 +147,8 @@ export function AdminBidShell(props: Props) {
           )}
           {managed || configuring ? (
             <BidOperatorWorkspace
+              sessionId={props.bidSessionId}
+              bidYear={props.bidYear}
               members={props.members}
               bidOrder={props.bidOrder}
               fills={props.initialFills}
@@ -183,6 +188,8 @@ export function AdminBidShell(props: Props) {
             </BidOperatorWorkspace>
           ) : (
             <BidOperatorWorkspace
+              sessionId={props.bidSessionId}
+              bidYear={props.bidYear}
               members={props.members}
               bidOrder={props.bidOrder}
               fills={props.initialFills}

@@ -103,6 +103,7 @@ export const StateSnapshotEventSchema = z.object({
   currentBidderId: z.number().int().nonnegative().nullable(),
   turnStartedAtMs: z.number().int().nonnegative(),
   turnTimerSeconds: z.number().int().positive(),
+  turnPausedAtMs: z.number().int().nonnegative().nullable().optional(),
   frozenAt: z.number().int().nonnegative().nullable(),
   fills: z.array(
     z.object({

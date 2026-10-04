@@ -24,6 +24,8 @@ export function BidOperatorWorkspace({
   children,
   sessionDetails,
   preview = false,
+  sessionId,
+  bidYear,
 }: {
   members: Record<string, MemberLite>;
   bidOrder: readonly { memberId: number }[];
@@ -37,6 +39,8 @@ export function BidOperatorWorkspace({
   sessionDetails?: ReactNode;
   /** Before Start, history is readable but nobody is up to select a position. */
   preview?: boolean;
+  sessionId?: string | undefined;
+  bidYear?: number | null | undefined;
 }) {
   const operator = useBidOperator();
   const manualPick = useManualPick();
@@ -230,6 +234,8 @@ export function BidOperatorWorkspace({
               upNow={!preview && selected.id === operator?.activeMemberId}
               compact
               recordedSeats={selectedSeats}
+              sessionId={sessionId}
+              bidYear={bidYear}
             />
           ) : (
             <p className="border-b border-border px-3 py-2 text-sm text-muted-foreground">

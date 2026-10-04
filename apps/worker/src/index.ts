@@ -13,6 +13,7 @@ import adminBidConfiguration from './routes/admin/bid-configuration.js';
 import adminBidControls from './routes/admin/bid-controls.js';
 import adminBidCorrections from './routes/admin/bid-corrections.js';
 import adminBidDefinition from './routes/admin/bid-definition.js';
+import adminBidForms from './routes/admin/bid-forms.js';
 import adminBidOrdinals from './routes/admin/bid-ordinals.js';
 import adminBidSession from './routes/admin/bid-session.js';
 import adminBidTourEvidence from './routes/admin/bid-tour-evidence.js';
@@ -66,6 +67,7 @@ const routes = new Hono<{ Bindings: WorkerEnv }>()
   .route('/api/admin/annual-policy-documents', adminAnnualPolicyDocuments)
   .route('/api/admin/annual-plan', adminAnnualPlan)
   .route('/api/admin/bid-board', adminBidBoard)
+  .route('/api/admin/bid-forms', adminBidForms)
   .route('/api/admin/historical-bids', adminHistoricalBids)
   .route('/api/admin/members', adminMembers)
   .route('/api/admin/personnel', adminPersonnel)
