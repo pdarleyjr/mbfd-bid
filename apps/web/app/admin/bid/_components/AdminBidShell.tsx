@@ -3,7 +3,8 @@ import type { BidAdvisoryBundle } from '@mbfd/shared';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
 import type { BidderContext } from '../../../_components/bid/BidderCard';
-import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
+import type { MemberLite, PositionMeta, Shift } from '../../../_components/bid/types';
+import { ShiftExportMenu } from '../../exports/_components/ShiftExports';
 import { AdminBoard } from './AdminBoard';
 import { AnnualLiveControls } from './AnnualLiveControls';
 import {
@@ -60,6 +61,7 @@ export function AdminBidShell(props: Props) {
   const refreshCanonical = useCallback(() => router.refresh(), [router]);
   const managed = props.annual !== null && props.annual !== undefined;
   const configuring = props.currentPhase === 'config';
+  const [selectedShift, setSelectedShift] = useState<Shift>('A');
   const [workspaceState, setWorkspaceState] = useState({
     aDayPendingMemberIds: [] as number[],
     aDayDueMemberIds: [] as number[],
@@ -82,6 +84,8 @@ export function AdminBidShell(props: Props) {
       advisory={props.advisory}
       managed={managed && !configuring}
       workspace
+      selectedShift={selectedShift}
+      onShiftChange={setSelectedShift}
     />
   );
   return (
@@ -93,8 +97,11 @@ export function AdminBidShell(props: Props) {
       <BidOperatorProvider currentBidderId={props.currentBidderId}>
         <div className="flex h-full min-h-0 flex-col">
           {configuring || !managed ? (
-            <div className="shrink-0 border-b border-border bg-card px-3 py-1">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-1">
               <SessionPresentationLink sessionId={props.bidSessionId} isMock={props.isMock} />
+              {configuring ? (
+                <ShiftExportMenu sessionId={props.bidSessionId} currentShift={selectedShift} />
+              ) : null}
             </div>
           ) : null}
           {!configuring && (
@@ -110,6 +117,9 @@ export function AdminBidShell(props: Props) {
               currentBidderId={props.currentBidderId}
               onDeck={props.onDeck}
               managed={managed}
+              exportControl={
+                <ShiftExportMenu sessionId={props.bidSessionId} currentShift={selectedShift} />
+              }
               presentationLink={
                 managed ? (
                   <SessionPresentationLink

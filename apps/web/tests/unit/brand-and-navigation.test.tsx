@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
@@ -13,6 +13,16 @@ function sha256(file: URL) {
 }
 
 describe('MBFD identity and operator navigation', () => {
+  it('routes every main and expanded navigation link to an implemented page', () => {
+    const links = ADMIN_NAV_LINKS.flatMap((item) => [
+      item.href,
+      ...(item.subnav ?? []).map((sub) => sub.href),
+    ]);
+    for (const href of links) {
+      const path = new URL(href, 'https://bid.example').pathname;
+      expect(existsSync(new URL(`../../app${path}/page.tsx`, import.meta.url)), href).toBe(true);
+    }
+  });
   it('renders the supplied MBFD master mark instead of the FD placeholder', () => {
     const html = renderToStaticMarkup(<BrandHeader subtitle="Admin Console" />);
 

@@ -1,3 +1,4 @@
+import { toEtIso } from '@/lib/et-time';
 import { requireAdmin } from '@/lib/require-admin';
 import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import Link from 'next/link';
@@ -85,7 +86,7 @@ export default async function QualificationLifecyclePage({
         </section>
       ) : (
         <QualificationLifecycleWorkspace
-          asOf={new Date().toISOString().slice(0, 10)}
+          asOf={toEtIso(new Date()).slice(0, 10)}
           members={members}
           credentials={credentials}
           {...(selectedMemberId === undefined ? {} : { memberIdHint: selectedMemberId })}

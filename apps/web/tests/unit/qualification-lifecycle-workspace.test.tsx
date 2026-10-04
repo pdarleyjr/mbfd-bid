@@ -106,7 +106,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderWorkspace() {
+function renderWorkspace(workspaceMembers = members) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -115,7 +115,7 @@ function renderWorkspace() {
     root.render(
       <QualificationLifecycleWorkspace
         asOf="2026-08-28"
-        members={members}
+        members={workspaceMembers}
         credentials={credentials}
       />,
     );
@@ -187,6 +187,60 @@ function lifecycleFetchMock(
 }
 
 describe('QualificationLifecycleWorkspace', () => {
+  it.each(['success', 'failure'] as const)(
+    'keeps the selected member history when an earlier member load finishes with %s',
+    async (outcome) => {
+      let finishEarlier: ((response: Response) => void) | undefined;
+      const laterMember = {
+        ...members[0],
+        id: 8,
+        employeeId: 'synthetic-008',
+      } as QualificationMember;
+      const laterHistory = {
+        ...lifecycleHistory,
+        memberId: 8,
+        certifications: [
+          {
+            ...lifecycleHistory.certifications[0],
+            credentialName: 'Later member credential',
+            evidenceReference: 'later-case-456',
+          },
+        ],
+        specialties: [],
+        events: [],
+      };
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          if (String(input).includes('/members/7?')) {
+            return await new Promise<Response>((resolve) => {
+              finishEarlier = resolve;
+            });
+          }
+          return new Response(JSON.stringify(laterHistory));
+        }),
+      );
+      const container = renderWorkspace([...members, laterMember]);
+      await settle();
+      await setControl(requiredControl<HTMLSelectElement>(container, 'qualification-member'), '8');
+      await settle();
+      expect(container.textContent).toContain('Later member credential');
+      await act(async () => {
+        finishEarlier?.(
+          outcome === 'success'
+            ? new Response(JSON.stringify(lifecycleHistory))
+            : new Response(JSON.stringify({ error: 'earlier_member_failed' }), { status: 500 }),
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(container.textContent).toContain('Later member credential');
+      expect(container.textContent).not.toContain('case-123');
+      expect(container.textContent).not.toContain('earlier_member_failed');
+      expect(requiredControl<HTMLSelectElement>(container, 'qualification-member').value).toBe('8');
+    },
+  );
+
   it('shows separate credential and specialty controls plus effective, expiration, status, and immutable history without a legacy direct toggle', () => {
     const html = renderToStaticMarkup(
       <QualificationLifecycleWorkspace

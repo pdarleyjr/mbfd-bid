@@ -31,6 +31,9 @@ import { auditCsvDbFromD1 } from '../../exports/audit-csv-db.js';
 import { exportAuditCsv } from '../../exports/audit-csv.js';
 import { mintPrintToken, verifyPrintToken } from '../../exports/print-token.js';
 import { generateRosterPdf } from '../../exports/roster-pdf.js';
+import { generateShiftPdf } from '../../exports/shift-roster-pdf.js';
+import { generateShiftWorkbook } from '../../exports/shift-roster-xlsx.js';
+import { ShiftRosterError, captureShiftRoster } from '../../exports/shift-roster.js';
 import { createSignedR2Url } from '../../exports/signed-url.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
@@ -262,11 +265,61 @@ function signerOf(env: WorkerEnv): ((key: string) => Promise<string>) | null {
     });
 }
 
+function exportKeyMatchesSession(sessionId: string, key: string): boolean {
+  const [year, owner, filename, ...nested] = key.split('/');
+  return (
+    /^\d{4}$/.test(year ?? '') &&
+    owner === sessionId &&
+    filename !== undefined &&
+    filename.length > 0 &&
+    filename !== '.' &&
+    filename !== '..' &&
+    nested.length === 0
+  );
+}
+
 async function exportKeyBelongsToSession(env: WorkerEnv, sessionId: string, key: string) {
-  const expectedPrefix = `${new Date().getUTCFullYear()}/${sessionId}/`;
-  if (!key.startsWith(expectedPrefix)) return false;
+  if (!exportKeyMatchesSession(sessionId, key)) return false;
+  if (!env.R2_EXPORTS || typeof env.R2_EXPORTS.head !== 'function') return false;
   const object = await env.R2_EXPORTS.head(key).catch(() => null);
   return object !== null;
+}
+
+/** The storage partition is the generation year, not necessarily the Bid year.
+ * Enumerate only root year prefixes, then list this session inside each year.
+ * Saved immutable exports remain visible after New Year. */
+async function listSessionExportObjects(bucket: WorkerEnv['R2_EXPORTS'], sessionId: string) {
+  const years = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ delimiter: '/', ...(cursor ? { cursor } : {}) });
+    for (const prefix of page.delimitedPrefixes ?? []) {
+      if (/^\d{4}\/$/.test(prefix)) years.add(prefix);
+    }
+    // Includes root-list adapters which return objects instead of delimiters.
+    for (const object of page.objects) {
+      const year = object.key.split('/')[0];
+      if (/^\d{4}$/.test(year ?? '')) years.add(`${year}/`);
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  const objects = new Map<string, Awaited<ReturnType<typeof bucket.list>>['objects'][number]>();
+  for (const year of years) {
+    cursor = undefined;
+    do {
+      const page = await bucket.list({
+        prefix: `${year}${sessionId}/`,
+        ...(cursor ? { cursor } : {}),
+      });
+      for (const object of page.objects) {
+        if (exportKeyMatchesSession(sessionId, object.key)) objects.set(object.key, object);
+      }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+  }
+  return [...objects.values()].sort(
+    (a, b) => b.uploaded.getTime() - a.uploaded.getTime() || a.key.localeCompare(b.key),
+  );
 }
 
 const PrintTokenBody = z.object({
@@ -481,14 +534,60 @@ router.get('/:session_id/progress.csv', async (c) => {
   );
 });
 
+/** Direct read-only shift downloads are available in every phase. Unlike the
+ * historical captured R2 exports, these capture current canonical progress and
+ * never write an audit event, command, award, or session state. */
+router.get('/:session_id/shifts', async (c) => {
+  const selection = z
+    .object({
+      format: z.enum(['pdf', 'xlsx']),
+      shift: z.enum(['A', 'B', 'C', 'D', 'ALL']),
+    })
+    .safeParse({ format: c.req.query('format'), shift: c.req.query('shift') ?? 'ALL' });
+  if (!selection.success) return c.json({ error: 'invalid_export_selection' }, 400);
+  if (
+    selection.data.format === 'pdf' &&
+    (!c.env.BROWSER || typeof (c.env.BROWSER as { fetch?: unknown }).fetch !== 'function')
+  ) {
+    return c.json({ error: 'browser_rendering_not_configured' }, 503);
+  }
+  try {
+    const roster = await captureShiftRoster(
+      c.env.DB,
+      c.req.param('session_id'),
+      selection.data.shift,
+    );
+    const body =
+      selection.data.format === 'xlsx'
+        ? await (await generateShiftWorkbook(roster)).arrayBuffer()
+        : await generateShiftPdf(roster, c.env.BROWSER);
+    const fileName = `mbfd-${roster.isMock ? 'mock' : 'real'}-bid-${roster.year}-${roster.scope}-seq-${roster.sequence}.${selection.data.format}`;
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type':
+          selection.data.format === 'xlsx'
+            ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            : 'application/pdf',
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'X-MBFD-Bid-Sequence': String(roster.sequence),
+      },
+    });
+  } catch (error) {
+    if (error instanceof ShiftRosterError) return c.json({ error: error.code }, error.status);
+    return c.json({ error: 'shift_export_failed' }, 502);
+  }
+});
+
 router.get('/:session_id', async (c) => {
   const sid = c.req.param('session_id');
-  const year = new Date().getUTCFullYear();
   if (!c.env.R2_EXPORTS || typeof c.env.R2_EXPORTS.list !== 'function') {
     return c.json({ exports: [] });
   }
-  const list = await c.env.R2_EXPORTS.list({ prefix: `${year}/${sid}/` });
-  const exports = list.objects.map((o) => ({
+  const objects = await listSessionExportObjects(c.env.R2_EXPORTS, sid);
+  const exports = objects.map((o) => ({
     r2Key: o.key,
     kind: o.key.endsWith('.pdf') ? 'roster-pdf' : o.key.endsWith('.csv.gz') ? 'audit-csv' : 'other',
     bytes: o.size,

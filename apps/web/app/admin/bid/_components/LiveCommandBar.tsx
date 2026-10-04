@@ -23,6 +23,7 @@ interface Props {
   managed?: boolean;
   presentationLink?: ReactNode;
   presentationTools?: ReactNode;
+  exportControl?: ReactNode;
 }
 
 function formatDuration(ms: number): string {
@@ -72,6 +73,7 @@ export function LiveCommandBar({
   managed = false,
   presentationLink,
   presentationTools,
+  exportControl,
 }: Props) {
   const operator = useBidOperator();
   const now = useTick(1000);
@@ -171,6 +173,7 @@ export function LiveCommandBar({
             </span>
           ) : null}
           {presentationLink}
+          {exportControl}
           <div
             className={styles.tools}
             onKeyDown={(event) => {
@@ -279,6 +282,7 @@ export function LiveCommandBar({
               : 'flex items-center gap-1.5'
           }
         >
+          {exportControl}
           {managed ? (
             <Button
               type="button"

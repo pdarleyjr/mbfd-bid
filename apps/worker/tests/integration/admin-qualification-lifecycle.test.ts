@@ -222,6 +222,74 @@ describe('admin qualification lifecycle', () => {
     ).rejects.toThrow('immutable');
   });
 
+  it('renews and corrects dated certification evidence while retaining every receipt and the earlier projection', async () => {
+    const original = {
+      kind: 'CERTIFICATION_GAINED',
+      member_id: 1,
+      credential_id: 10,
+      effective_on: '2026-08-01',
+      expires_on: '2026-08-31',
+      evidence_source: 'synthetic-state-registry',
+      evidence_reference: 'SYNTH-ORIGINAL',
+      reason: 'Synthetic original certification reviewed.',
+    };
+    expect((await postEvent(h, 'renew-original', original)).status).toBe(201);
+    const renewal = {
+      ...original,
+      effective_on: '2026-09-01',
+      expires_on: '2027-08-31',
+      evidence_reference: 'SYNTH-RENEWAL',
+      reason: 'Synthetic renewal certification reviewed.',
+    };
+    expect((await postEvent(h, 'renew-current', renewal)).status).toBe(201);
+    const correction = {
+      ...renewal,
+      effective_on: '2026-09-02',
+      expires_on: '2027-09-30',
+      evidence_reference: 'SYNTH-CORRECTION',
+      reason: 'Synthetic expiration correction reviewed.',
+    };
+    expect((await postEvent(h, 'renew-corrected', correction)).status).toBe(201);
+    const replay = await postEvent(h, 'renew-corrected', correction);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({ replayed: true });
+
+    for (const [asOf, expiresOn, evidenceReference] of [
+      ['2026-08-31', '2026-08-31', 'SYNTH-ORIGINAL'],
+      ['2026-09-01', '2027-08-31', 'SYNTH-RENEWAL'],
+      ['2026-09-02', '2027-09-30', 'SYNTH-CORRECTION'],
+    ]) {
+      const response = await request(
+        h,
+        `/api/admin/qualification-lifecycle/members/1?as_of=${asOf}`,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        certifications: [
+          expect.objectContaining({
+            credentialId: 10,
+            status: 'active',
+            expiresOn,
+            evidenceReference,
+          }),
+        ],
+        events: expect.arrayContaining([
+          expect.objectContaining({ evidenceReference: 'SYNTH-ORIGINAL' }),
+          expect.objectContaining({ evidenceReference: 'SYNTH-RENEWAL' }),
+          expect.objectContaining({ evidenceReference: 'SYNTH-CORRECTION' }),
+        ]),
+      });
+    }
+    expect(
+      h.sqlite.prepare('SELECT COUNT(*) AS count FROM member_qualification_events').get(),
+    ).toEqual({ count: 3 });
+    expect(
+      h.sqlite
+        .prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action='qualification_lifecycle'")
+        .get(),
+    ).toEqual({ count: 3 });
+  });
+
   it('requires an active certification before expiration or revocation and keeps the retired direct toggle fail-closed', async () => {
     const invalidExpiration = await postEvent(h, 'qualification-expire-missing-001', {
       kind: 'CERTIFICATION_EXPIRED',

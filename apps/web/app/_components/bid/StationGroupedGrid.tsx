@@ -10,6 +10,8 @@ import { ALL_SHIFTS, type MemberLite, type PositionMeta, type Shift } from './ty
 interface Props {
   members: Record<string, MemberLite>;
   defaultShift?: Shift | undefined;
+  selectedShift?: Shift | undefined;
+  onShiftChange?: ((shift: Shift) => void) | undefined;
   onPositionClick?: ((positionId: string) => void) | undefined;
   /** Immutable material returned by /api/board for this exact session. */
   positions?: readonly PositionMeta[] | undefined;
@@ -98,6 +100,8 @@ function countsByShift(positions: readonly PositionMeta[]): Partial<Record<Shift
 export function StationGroupedGrid({
   members,
   defaultShift = 'A',
+  selectedShift,
+  onShiftChange,
   onPositionClick,
   positions: immutablePositions,
   snapshotBound = false,
@@ -105,7 +109,12 @@ export function StationGroupedGrid({
   selectedRank = null,
   toolbar,
 }: Props) {
-  const [shift, setShift] = useState<Shift>(defaultShift);
+  const [localShift, setLocalShift] = useState<Shift>(defaultShift);
+  const shift = selectedShift ?? localShift;
+  function selectShift(next: Shift) {
+    setLocalShift(next);
+    onShiftChange?.(next);
+  }
   const [view, setView] = useState<'all' | 'open' | 'rank'>('all');
   const [viewOpen, setViewOpen] = useState(false);
   const viewToggle = useRef<HTMLButtonElement>(null);
@@ -151,7 +160,7 @@ export function StationGroupedGrid({
           <div className={operatorLayout ? styles.toolbar : undefined}>
             <ShiftTabs
               selected={shift}
-              onSelect={setShift}
+              onSelect={selectShift}
               counts={counts}
               compact={operatorLayout}
             />

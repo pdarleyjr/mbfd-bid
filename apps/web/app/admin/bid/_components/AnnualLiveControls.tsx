@@ -2665,13 +2665,18 @@ export function AnnualLiveControls(props: Props) {
                 reviewed disposition or fallback controls.
               </p>
             ) : null}
-            {props.workspace ? (
+            {props.workspace && selectionMember ? (
               <p className="mt-2 text-sm">
-                {selectionPosition
-                  ? `${selectionPosition.id} · ${selectionPosition.station} · ${selectionPosition.unit} · ${selectionPosition.positionName}`
-                  : 'Choose an available position above.'}
+                Selecting for <strong>{name(selectionMember)}</strong>
               </p>
-            ) : (
+            ) : null}
+            {props.workspace && selectionPosition ? (
+              <p className="mt-2 text-sm">
+                {`${selectionPosition.id} · ${selectionPosition.station} · ${selectionPosition.unit} · ${selectionPosition.positionName}`}
+              </p>
+            ) : null}
+            <Label className="mt-2 block text-sm">
+              Seat
               <NativeSelect
                 aria-label="Position selected by current bidder"
                 value={selectionPoolId ? '' : selectionPositionId}
@@ -2698,11 +2703,13 @@ export function AnnualLiveControls(props: Props) {
                   )
                   .map((position) => (
                     <option key={position.id} value={position.id}>
-                      {position.id} · {position.positionName}
+                      {props.workspace
+                        ? `${position.id} · ${position.shift === 'D' ? 'Days' : `${position.shift} Shift`} · ${position.station} · ${position.unit} · ${position.positionName}`
+                        : `${position.id} · ${position.positionName}`}
                     </option>
                   ))}
               </NativeSelect>
-            )}
+            </Label>
             {needsSpecialtyReview ? (
               <section
                 aria-label="Specialty selection review"
@@ -2814,7 +2821,7 @@ export function AnnualLiveControls(props: Props) {
                 )}
               </section>
             ) : null}
-            {state?.opportunity_pools?.length && !props.workspace ? (
+            {state?.opportunity_pools?.length ? (
               <Label className="mt-2 block text-sm">
                 Station or float pool
                 <NativeSelect

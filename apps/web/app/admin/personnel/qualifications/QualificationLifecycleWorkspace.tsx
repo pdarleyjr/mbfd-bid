@@ -491,6 +491,7 @@ export function QualificationLifecycleWorkspace({
   const retryRequest = useRef<{ key: string; payload: Record<string, number | string> } | null>(
     null,
   );
+  const historyRequest = useRef<AbortController | null>(null);
   useMemberInteractionState(focusedMember, { dirty, busy, uncertain }, onInteractionState);
 
   const selectedMemberId = Number(memberId);
@@ -502,6 +503,9 @@ export function QualificationLifecycleWorkspace({
 
   const loadHistory = useCallback(
     async (nextMemberId: number) => {
+      historyRequest.current?.abort();
+      const controller = new AbortController();
+      historyRequest.current = controller;
       setLoadingHistory(true);
       setHistory(null);
       setBackendUnavailable(null);
@@ -509,8 +513,10 @@ export function QualificationLifecycleWorkspace({
       try {
         const response = await fetch(lifecycleMemberUrl(nextMemberId, asOf), {
           credentials: 'include',
+          signal: controller.signal,
         });
         const body: unknown = await response.json().catch(() => null);
+        if (controller.signal.aborted) return;
         if (isUnavailableEndpoint(response, body)) {
           setBackendUnavailable(integrationUnavailableMessage(nextMemberId, asOf));
           return;
@@ -528,11 +534,12 @@ export function QualificationLifecycleWorkspace({
         }
         setHistory(parsed);
       } catch (caught) {
+        if (controller.signal.aborted) return;
         setError(
           caught instanceof Error ? caught.message : 'Qualification history could not be loaded.',
         );
       } finally {
-        setLoadingHistory(false);
+        if (!controller.signal.aborted) setLoadingHistory(false);
       }
     },
     [asOf],
@@ -546,6 +553,7 @@ export function QualificationLifecycleWorkspace({
       return;
     }
     void loadHistory(selectedMemberId);
+    return () => historyRequest.current?.abort();
   }, [focusedMember, loadHistory, selectedMemberId]);
 
   useEffect(() => {
@@ -862,7 +870,7 @@ export function QualificationLifecycleWorkspace({
           }}
           className="mt-5 grid gap-4 border-t border-border pt-5 lg:grid-cols-2"
         >
-          <fieldset disabled={focusedMember && (busy || uncertain)} className="contents">
+          <fieldset disabled={busy || (focusedMember && uncertain)} className="contents">
             {!focusedMember && (
               <p className="text-sm text-foreground lg:col-span-2">
                 Certification events require a certification credential. Specialty qualification

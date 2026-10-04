@@ -230,6 +230,33 @@ async function chooseGroup(value: string) {
   });
 }
 describe('operator workspace interaction and history', () => {
+  it('lets Record selection choose a seat inside its panel before explicit confirmation', async () => {
+    await mount();
+    await settle(() => button('Record selection').click());
+    const seats = container.querySelector(
+      'select[aria-label="Position selected by current bidder"]',
+    ) as unknown as HTMLSelectElement;
+    expect([...seats.options].map((option) => option.value)).toEqual(['', 'Anew']);
+    expect(seats.options[1]?.text).toContain('A Shift · Station 2 · Engine 2 · Captain');
+    expect(container.textContent).not.toContain('Choose an available position above');
+    expect(button('Confirm bid').disabled).toBe(true);
+    await settle(() => {
+      seats.value = 'Anew';
+      seats.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await chooseGroup('G2');
+    expect(button('Confirm bid').disabled).toBe(false);
+    expect(commands).toHaveLength(0);
+    await settle(() => button('Confirm bid').click());
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatchObject({
+      type: 'live.record_selection',
+      memberId: 17,
+      positionId: 'Anew',
+      aDay: 'G2',
+      expectedSeq: 4,
+    });
+  });
   it('opens an explicit override for the waiting member chosen in the normal picker without recording anything', async () => {
     overrideAllowed = true;
     await mount();
