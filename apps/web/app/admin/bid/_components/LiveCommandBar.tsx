@@ -1,9 +1,10 @@
 'use client';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { BidderCard, type BidderContext } from '../../../_components/bid/BidderCard';
 import { useBidOperator } from './BidOperatorContext';
 import { FreezeConfirmDialog } from './FreezeConfirmDialog';
+import styles from './LiveCommandBar.module.css';
 import { useManualPick } from './ManualPickContext';
 import { MockFreezeButton } from './MockFreezeButton';
 import { OverrideDialog } from './OverrideDialog';
@@ -20,6 +21,8 @@ interface Props {
   currentBidderId: number | null;
   onDeck: ReadonlyArray<BidderContext>;
   managed?: boolean;
+  presentationLink?: ReactNode;
+  presentationTools?: ReactNode;
 }
 
 function formatDuration(ms: number): string {
@@ -67,12 +70,18 @@ export function LiveCommandBar({
   currentBidderId,
   onDeck,
   managed = false,
+  presentationLink,
+  presentationTools,
 }: Props) {
   const operator = useBidOperator();
   const now = useTick(1000);
   const [open, setOpen] = useState<'override' | 'freeze' | null>(null);
   const [busy, setBusy] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsToggle = useRef<HTMLButtonElement>(null);
   const { pickMode, setPickMode } = useManualPick();
+  const activeMemberId = operator ? operator.activeMemberId : currentBidderId;
+  const activeBidderContext = currentBidder?.memberId === activeMemberId ? currentBidder : null;
 
   const sessionUptime =
     now !== null && sessionStartedAt && sessionStartedAt > 0
@@ -101,8 +110,8 @@ export function LiveCommandBar({
 
   async function onSkip() {
     if (busy) return;
-    const reason = prompt('Skip reason?');
-    if (!reason) return;
+    const reason = prompt('Skip this member? Note (optional)');
+    if (reason === null) return;
     setBusy(true);
     try {
       await fetch('/api/admin/bid/skip', {
@@ -117,6 +126,99 @@ export function LiveCommandBar({
       setBusy(false);
     }
   }
+
+  if (managed)
+    return (
+      <header
+        data-testid="live-command-bar"
+        className="shrink-0 border-b border-border bg-card px-3 py-1 text-foreground"
+      >
+        <div className={styles.toolbar}>
+          <div className={styles.mode}>
+            <h1 className="text-sm font-bold">{isMock ? 'Mock rehearsal' : 'Annual bid'}</h1>
+            <span className="text-xs text-muted-foreground">
+              {currentPhase.replaceAll('_', ' ')}
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            aria-label="Current bidder"
+            className={styles.currentBidder}
+            onClick={() => {
+              const active = operator ? operator.activeMemberId : currentBidderId;
+              if (active !== null) operator?.selectMember(active);
+            }}
+          >
+            {activeBidderContext ? (
+              <span>
+                <span className="text-muted-foreground">Current </span>
+                <span data-testid="active-bidder-name">
+                  {activeBidderContext.rank} {activeBidderContext.firstName}{' '}
+                  {activeBidderContext.lastName}
+                </span>
+              </span>
+            ) : (
+              'Current bidder'
+            )}
+          </Button>
+          {onDeck[0] ? (
+            <span data-testid="on-deck-strip" className={styles.onDeck}>
+              <span className="block text-xs text-muted-foreground">On deck</span>
+              <strong className="text-xs">
+                {onDeck[0].firstName} {onDeck[0].lastName}
+              </strong>
+            </span>
+          ) : null}
+          {presentationLink}
+          <div
+            className={styles.tools}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape' || !toolsOpen) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setToolsOpen(false);
+              toolsToggle.current?.focus();
+            }}
+          >
+            <button
+              ref={toolsToggle}
+              type="button"
+              aria-expanded={toolsOpen}
+              aria-controls="bid-session-tools"
+              className={styles.toolsToggle}
+              onClick={() => setToolsOpen((open) => !open)}
+            >
+              Session tools
+            </button>
+            <div
+              id="bid-session-tools"
+              className={`${styles.toolContents} ${toolsOpen ? styles.toolsOpen : ''}`}
+            >
+              <div className="flex items-center gap-2 text-xs tabular-nums">
+                <span title="Session uptime">
+                  Session <span data-testid="session-uptime">{sessionUptime}</span>
+                </span>
+                <span title="Turn timer">
+                  Turn{' '}
+                  <span
+                    data-testid="turn-remaining"
+                    data-urgency={turnUrgency}
+                    className={`font-semibold ${turnColor}`}
+                  >
+                    {turnDisplay}
+                  </span>
+                </span>
+              </div>
+              {presentationTools}
+              {isMock ? (
+                <MockFreezeButton bidSessionId={bidSessionId} expectedSeq={lastSeq} />
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </header>
+    );
 
   return (
     <header data-testid="live-command-bar" className="border-b border-border bg-white">

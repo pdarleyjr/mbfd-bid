@@ -32,8 +32,12 @@ export function ForcePickSheet({
 
   async function submit() {
     setError(null);
-    if (memberId === '' || positionId === '' || reason.trim().length < 4) {
-      setError('Member ID, Position ID, and reason (>=4 chars) are all required.');
+    if (memberId === '' || positionId === '') {
+      setError('Choose a member and position.');
+      return;
+    }
+    if (reason.trim().length > 500) {
+      setError('Keep the optional note within 500 characters.');
       return;
     }
     setBusy(true);
@@ -105,9 +109,10 @@ export function ForcePickSheet({
           </NativeSelect>
         </Label>
         <Label className="mt-3 block">
-          <span className="text-sm text-foreground">Reason (&gt;= 4 chars)</span>
+          <span className="text-sm text-foreground">Note (optional)</span>
           <Textarea
             value={reason}
+            maxLength={500}
             onChange={(e) => setReason(e.target.value)}
             className="mt-1 block w-full rounded bg-card p-2"
             rows={3}

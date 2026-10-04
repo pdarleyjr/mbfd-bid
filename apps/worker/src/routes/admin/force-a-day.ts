@@ -5,7 +5,7 @@
 // Step-up auth required; audit row written with forced=true and reason.
 
 import type { ADayValue, Member } from '@mbfd/a-day';
-import { ADayValueSchema, type JwtPayload } from '@mbfd/shared';
+import { ADayValueSchema, BidOperationNoteSchema, type JwtPayload } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { ulid } from 'ulid';
@@ -24,7 +24,7 @@ type Env = { Bindings: WorkerEnv; Variables: { claims: JwtPayload } };
 const ForceADayBodySchema = z.object({
   member_id: z.number().int().positive(),
   a_day: ADayValueSchema,
-  reason: z.string().min(8).max(500),
+  reason: BidOperationNoteSchema,
 });
 
 const router = new Hono<Env>();

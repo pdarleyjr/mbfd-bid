@@ -311,7 +311,7 @@ async function mount(panel: string, positionList = positions) {
   await settle(() => button(panel).click());
   await settle(() => {
     const input = [...container.querySelectorAll('label')]
-      .find((label) => label.textContent?.includes('Operator reason'))
+      .find((label) => label.textContent?.includes('Note (optional)'))
       ?.querySelector('input');
     if (!input) throw new Error('Missing operator reason');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(

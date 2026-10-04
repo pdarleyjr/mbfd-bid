@@ -1,5 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import {
+  BidOperationNoteSchema,
   CreateRuleBookSchema,
   type JwtPayload,
   PublishRuleBookSchema,
@@ -45,7 +46,7 @@ const SetPositionParticipationSchema = z
     bid_participation: z.literal('ADMIN_ASSIGNED_NON_BIDDABLE'),
     authoritative_source_ref: z.string().trim().min(1).max(500),
     reason_code: ReasonCodeSchema,
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
   })
   .strict();
 

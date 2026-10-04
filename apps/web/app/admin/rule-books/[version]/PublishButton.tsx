@@ -65,14 +65,14 @@ export function PublishButton({ version }: { version: string }) {
             Publication gate for rule book {version}
           </h2>
           <p className="mt-2 text-sm text-foreground">
-            This request does not guarantee publication. The server independently checks draft
-            validation and designated annual-configuration state. This UI neither authorizes nor
-            proves a promotion.
+            This request does not guarantee publication. The server checks draft validation and the
+            saved annual configuration.
           </p>
           <Label className="mt-4 block">
-            <span className="text-sm text-foreground">Reason (min 4 chars)</span>
+            <span className="text-sm text-foreground">Note (optional)</span>
             <Textarea
               value={reason}
+              maxLength={500}
               onChange={(e) => setReason(e.target.value)}
               className="mt-1 block w-full rounded bg-card px-3 py-2 text-foreground"
               rows={3}
@@ -94,7 +94,7 @@ export function PublishButton({ version }: { version: string }) {
             <Button
               type="button"
               onClick={publish}
-              disabled={submitting || reason.trim().length < 4}
+              disabled={submitting || reason.trim().length > 500}
               className="rounded bg-destructive px-3 py-1 text-primary-foreground hover:bg-destructive disabled:opacity-50"
             >
               Request server-side publication review

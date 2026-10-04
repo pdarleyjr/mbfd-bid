@@ -8,6 +8,70 @@ import {
 const COMMAND_ID = '11111111-1111-4111-8111-111111111111';
 
 describe('systemic reviewed adjustment envelopes', () => {
+  it.each([
+    {
+      type: 'live.record_selection',
+      memberId: 42,
+      positionId: 'A101',
+      adminOverride: { acknowledged: true, warningCodes: [] },
+    },
+    { type: 'live.force_selection', memberId: 42, positionId: 'A101' },
+    { type: 'live.disposition', memberId: 42, disposition: 'SKIP' },
+    { type: 'live.record_a_day', memberId: 42, aDay: 'G2' },
+    { type: 'live.alter_order', orderedRemainingMemberIds: [42, 43] },
+    {
+      type: 'live.set_exceptional_assignment',
+      memberId: 42,
+      operation: 'ASSIGN',
+      roleLabel: 'Temporary duty',
+    },
+    { type: 'live.pause' },
+    { type: 'live.resume' },
+    {
+      type: 'live.start_specialty_adjudication',
+      specialtyId: 'specialty',
+      positionId: 'A101',
+      candidateMemberIds: [42],
+    },
+    { type: 'live.resolve_specialty_candidate', memberId: 42, outcome: 'ACCEPT' },
+    { type: 'live.close_specialty_adjudication' },
+    {
+      type: 'live.correct_bid',
+      memberId: 42,
+      originalCommandId: COMMAND_ID,
+      originalBidId: 'award-1',
+      originalPositionId: 'A101',
+      originalADayCommandId: null,
+      operation: 'REVOKE',
+      replacement: null,
+    },
+  ])('accepts an optional note for $type and keeps the note length bound', (fields) => {
+    const command = {
+      v: 1,
+      commandId: COMMAND_ID,
+      bidSessionId: 'synthetic-session',
+      expectedSeq: 3,
+      actor: { id: 99, role: 'admin' },
+      evidenceReference: null,
+      ...fields,
+    };
+    expect(LiveBidCommandSchema.parse(command).reason).toBe('');
+    const historicallyTrimmed =
+      fields.type === 'live.correct_bid' || fields.type === 'live.set_exceptional_assignment';
+    expect(LiveBidCommandSchema.parse({ ...command, reason: '  ' }).reason).toBe(
+      historicallyTrimmed ? '' : '  ',
+    );
+    expect(LiveBidCommandSchema.parse({ ...command, reason: '  OK  ' }).reason).toBe(
+      historicallyTrimmed ? 'OK' : '  OK  ',
+    );
+    expect(LiveBidCommandSchema.safeParse({ ...command, reason: 'x'.repeat(501) }).success).toBe(
+      false,
+    );
+    expect(
+      LiveBidCommandSchema.safeParse({ ...command, actor: { id: 99, role: 'member' } }).success,
+    ).toBe(false);
+  });
+
   it('accepts optional exact turn identities and rejects ambiguous or unexpected turn fields', () => {
     const command = {
       v: 1,
@@ -74,6 +138,16 @@ describe('systemic reviewed adjustment envelopes', () => {
 });
 
 describe('mock freeze command schemas', () => {
+  it('allows freezing without a typed note while retaining sequence and strict input', () => {
+    expect(MockFreezeRequestSchema.parse({ expectedSeq: 7 })).toEqual({
+      expectedSeq: 7,
+      reason: '',
+    });
+    expect(MockFreezeRequestSchema.parse({ expectedSeq: 7, reason: '   ' }).reason).toBe('   ');
+    expect(
+      MockFreezeRequestSchema.safeParse({ expectedSeq: 7, reason: 'x'.repeat(501) }).success,
+    ).toBe(false);
+  });
   it('accepts a complete versioned command envelope', () => {
     const result = MockFreezeCommandSchema.safeParse({
       v: 1,

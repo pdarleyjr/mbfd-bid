@@ -495,10 +495,8 @@ export function BidSetupWorkspace({
                 </Label>
 
                 <Label className="block max-w-2xl">
-                  <span className="text-sm text-foreground">Reason (4–500 characters)</span>
+                  <span className="text-sm text-foreground">Note (optional)</span>
                   <Textarea
-                    required
-                    minLength={4}
                     maxLength={500}
                     value={reason}
                     onChange={(event) => setReason(event.target.value)}
@@ -523,7 +521,7 @@ export function BidSetupWorkspace({
                   data-testid="bid-configuration-save"
                   disabled={
                     submitting ||
-                    reason.trim().length < 4 ||
+                    reason.trim().length > 500 ||
                     !selectedVersion ||
                     !isIsoCalendarDate(credentialEvaluationOn)
                   }

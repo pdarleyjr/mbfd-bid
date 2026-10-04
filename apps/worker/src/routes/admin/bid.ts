@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import type { JwtPayload } from '@mbfd/shared';
+import { BidOperationNoteSchema, type JwtPayload } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -48,7 +48,7 @@ async function mockSessionCommandRejection(
 
 const SkipBody = z.object({
   bidSessionId: z.string().min(1),
-  reason: z.string().min(1).max(500),
+  reason: BidOperationNoteSchema,
 });
 
 r.post('/skip', requireStepUpAuth(), zValidator('json', SkipBody), async (c) => {
@@ -70,7 +70,7 @@ const OverrideBody = z.object({
   bidSessionId: z.string().min(1),
   targetMemberId: z.number().int().positive(),
   positionId: z.string().min(1),
-  reason: z.string().min(1).max(500),
+  reason: BidOperationNoteSchema,
 });
 
 r.post('/override', requireStepUpAuth(), zValidator('json', OverrideBody), async (c) => {
@@ -95,7 +95,7 @@ r.post('/override', requireStepUpAuth(), zValidator('json', OverrideBody), async
 
 const FreezeBody = z.object({
   bidSessionId: z.string().min(1),
-  reason: z.string().min(1).max(500),
+  reason: BidOperationNoteSchema,
 });
 
 r.post('/freeze', requireStepUpAuth(), zValidator('json', FreezeBody), async (c) => {

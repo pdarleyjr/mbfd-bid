@@ -7,7 +7,9 @@ import { useState } from 'react';
 export function SessionPresentationLink({
   sessionId,
   isMock,
-}: { sessionId: string; isMock: boolean }) {
+  compact = false,
+  variant = 'full',
+}: { sessionId: string; isMock: boolean; compact?: boolean; variant?: 'full' | 'link' | 'copy' }) {
   const [notice, setNotice] = useState<string | null>(null);
   const href = presentationHref(sessionId);
   async function copy() {
@@ -20,21 +22,35 @@ export function SessionPresentationLink({
   }
   return (
     <nav
-      aria-label="Session presentation"
+      aria-label={variant === 'copy' ? 'Presentation link tools' : 'Session presentation'}
       data-bid-mode={isMock ? 'mock' : 'real'}
-      className="flex flex-wrap items-center gap-3 text-sm"
+      className={
+        compact
+          ? 'flex flex-wrap items-center gap-2 text-xs'
+          : 'flex flex-wrap items-center gap-3 text-sm'
+      }
     >
-      <a
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex min-h-11 items-center font-semibold underline"
-      >
-        Open presentation
-      </a>
-      <Button type="button" onClick={() => void copy()}>
-        Copy presentation link
-      </Button>
+      {variant !== 'copy' ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex min-h-11 items-center font-semibold underline"
+          aria-label="Open presentation"
+        >
+          {compact ? 'Presentation' : 'Open presentation'}
+        </a>
+      ) : null}
+      {variant !== 'link' ? (
+        <Button
+          type="button"
+          aria-label="Copy presentation link"
+          size={compact ? 'sm' : 'default'}
+          onClick={() => void copy()}
+        >
+          {compact ? 'Copy link' : 'Copy presentation link'}
+        </Button>
+      ) : null}
       {notice ? <output>{notice}</output> : null}
     </nav>
   );

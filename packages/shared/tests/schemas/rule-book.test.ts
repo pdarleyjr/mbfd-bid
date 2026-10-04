@@ -18,8 +18,10 @@ describe('RuleBookStatusSchema', () => {
 });
 
 describe('PublishRuleBookSchema', () => {
-  it('requires a reason (min 4 chars)', () => {
-    expect(() => PublishRuleBookSchema.parse({ reason: 'go' })).toThrow();
+  it('allows an optional operator note and bounds its length', () => {
+    expect(PublishRuleBookSchema.parse({}).reason).toBe('');
+    expect(PublishRuleBookSchema.parse({ reason: 'go' }).reason).toBe('go');
+    expect(() => PublishRuleBookSchema.parse({ reason: 'x'.repeat(501) })).toThrow();
     expect(PublishRuleBookSchema.parse({ reason: 'Approved by chiefs.' }).reason).toMatch(
       /Approved/,
     );
@@ -46,9 +48,9 @@ describe('CreateRuleBookSchema', () => {
     expect(ok.clone_from).toBeUndefined();
   });
 
-  it('requires a trimmed operator reason between 4 and 500 characters', () => {
-    expect(() => CreateRuleBookSchema.parse({ effective_year: 2027 })).toThrow();
-    expect(() => CreateRuleBookSchema.parse({ effective_year: 2027, reason: 'no' })).toThrow();
+  it('allows an optional trimmed operator note up to 500 characters', () => {
+    expect(CreateRuleBookSchema.parse({ effective_year: 2027 }).reason).toBe('');
+    expect(CreateRuleBookSchema.parse({ effective_year: 2027, reason: 'no' }).reason).toBe('no');
     expect(() =>
       CreateRuleBookSchema.parse({ effective_year: 2027, reason: 'x'.repeat(501) }),
     ).toThrow();

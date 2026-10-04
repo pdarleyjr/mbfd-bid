@@ -678,7 +678,7 @@ export function RuleEditor({
   const blockingIssues = [...new Set([...initialIssues, ...draftIssues])];
   const formIssues = validateEditorValues(values, true);
   const saveBlocked =
-    blockingIssues.length > 0 || formIssues.length > 0 || reason.trim().length < 4 || submitting;
+    blockingIssues.length > 0 || formIssues.length > 0 || reason.trim().length > 500 || submitting;
 
   const scopedRoute = routeFor(positionId, ruleBookVersion);
 
@@ -713,8 +713,8 @@ export function RuleEditor({
       setError(formIssues[0] ?? 'Complete the rule form before saving.');
       return;
     }
-    if (reason.trim().length < 4) {
-      setError('Enter a reason of at least 4 characters.');
+    if (reason.trim().length > 500) {
+      setError('Keep the optional note within 500 characters.');
       return;
     }
     if (values.ruleId === null) {
@@ -1162,14 +1162,14 @@ export function RuleEditor({
       </fieldset>
 
       <Label className="block">
-        <span className="text-sm text-foreground">Reason (min 4 chars)</span>
+        <span className="text-sm text-foreground">Note (optional)</span>
         <Textarea
           data-testid="rule-reason"
           value={reason}
+          maxLength={500}
           onChange={(event) => setReason(event.target.value)}
           rows={2}
           className="mt-1 block w-full rounded bg-card px-3 py-2 text-sm text-foreground"
-          required
         />
       </Label>
 

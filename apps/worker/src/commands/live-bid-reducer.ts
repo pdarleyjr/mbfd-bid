@@ -308,8 +308,6 @@ export function reduceLiveBidCommand(
     warningCodes: overrideWarnings.map((warning) => warning.code),
   });
   if (administratorOverride) {
-    if (command.reason.trim().length < 4)
-      return { ok: false, code: 'ADMIN_OVERRIDE_REASON_REQUIRED' };
     const executionPhase = state.currentPhase === 'paused' ? live.pausedPhase : state.currentPhase;
     if (!['position_bid', 'a_day_bid', 'complete'].includes(executionPhase ?? ''))
       return { ok: false, code: 'SESSION_NOT_ACTIVE' };
@@ -956,10 +954,8 @@ export function reduceLiveBidCommand(
     const disposition = command.outcome === 'DECLINE' ? 'DECLINED' : command.outcome;
     const rule = policy.dispositions.find((candidate) => candidate.disposition === disposition);
     if (!rule) return { ok: false, code: 'LIVE_DISPOSITION_POLICY_INCOMPLETE' };
-    if (
-      (rule.requiresEvidence && command.evidenceReference === null) ||
-      (rule.requiresReason && !command.reason.trim())
-    )
+    // Evidence requirements are distinct from an optional operator note.
+    if (rule.requiresEvidence && command.evidenceReference === null)
       return { ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' };
     if (command.outcome === 'UNREACHABLE') {
       const contact = validateUnreachableContact(annual, annualPolicy, {
@@ -1110,7 +1106,6 @@ export function reduceLiveBidCommand(
       return { ok: false, code: 'SESSION_NOT_ACTIVE' };
     if (!administratorOverride && live.specialty != null)
       return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
-    if (!command.reason.trim()) return { ok: false, code: 'CORRECTION_REASON_REQUIRED' };
     if ((command.operation === 'REVOKE') !== (command.replacement === null))
       return { ok: false, code: 'CORRECTION_OPERATION_INVALID' };
     const active = state.fills[command.originalPositionId];
@@ -1451,10 +1446,7 @@ export function reduceLiveBidCommand(
       (candidate) => candidate.disposition === command.disposition,
     );
     if (!rule) return { ok: false, code: 'LIVE_DISPOSITION_POLICY_INCOMPLETE' };
-    if (
-      (rule.requiresEvidence && command.evidenceReference === null) ||
-      (rule.requiresReason && !command.reason.trim())
-    )
+    if (rule.requiresEvidence && command.evidenceReference === null)
       return { ok: false, code: 'DISPOSITION_EVIDENCE_REQUIRED' };
     const dispositionMemberId = annual.returningMemberId ?? state.currentBidderId;
     if (dispositionMemberId === null) return { ok: false, code: 'NO_CURRENT_BIDDER' };

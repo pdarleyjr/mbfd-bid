@@ -147,12 +147,14 @@ export function evaluateFrozenADays(
     if (!timing.ok) return { ok: false, code: 'A_DAY_TIMING_EXCEPTION_CONFLICT' };
     const selectedADay = fill.aDay;
     const deferredApproval = fill.aDayDeferral;
+    // Authorization is recorded in the actor/command identity. The optional
+    // human note must not invalidate that approval when the award is replayed.
     const approvedDeferral =
       deferredApproval !== undefined &&
       deferredApproval.positionId === positionId &&
       deferredApproval.commandId.length > 0 &&
       deferredApproval.actorMemberId > 0 &&
-      deferredApproval.reason.trim().length >= 4;
+      deferredApproval.reason.length <= 500;
     if (timing.timing === 'SIMULTANEOUS' && selectedADay === undefined && !approvedDeferral)
       return { ok: false, code: 'A_DAY_REQUIRED_WITH_SELECTION' };
     seen.add(fill.memberId);
@@ -202,7 +204,7 @@ export function evaluateFrozenADays(
       approval.aDay === pick.aDay &&
       approval.commandId.length > 0 &&
       approval.actorMemberId > 0 &&
-      approval.reason.trim().length >= 4 &&
+      approval.reason.length <= 500 &&
       approval.warningCodes.some((code) => code.startsWith('A_DAY_POLICY_DEVIATION'))
     );
   };

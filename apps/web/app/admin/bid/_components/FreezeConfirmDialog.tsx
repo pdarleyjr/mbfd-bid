@@ -49,9 +49,10 @@ export function FreezeConfirmDialog({ bidSessionId, onClose }: Props) {
         </p>
         <div className="mt-4">
           <Label className="block text-sm">
-            <span className="text-foreground">Reason</span>
+            <span className="text-foreground">Note (optional)</span>
             <Textarea
               data-testid="freeze-reason"
+              maxLength={500}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
@@ -71,7 +72,7 @@ export function FreezeConfirmDialog({ bidSessionId, onClose }: Props) {
           <Button
             type="button"
             data-testid="freeze-submit"
-            disabled={submitting || !reason}
+            disabled={submitting || reason.trim().length > 500}
             onClick={submit}
             className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
           >

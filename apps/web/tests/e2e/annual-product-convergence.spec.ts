@@ -259,10 +259,20 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   });
 
   await page.goto('/admin/bid?session_id=annual-specialty-e2e');
+  await expect(page.getByTestId('admin-sidebar')).toHaveAttribute('data-collapsed', 'true');
+  const board = page.getByRole('region', { name: 'Bid positions', exact: true });
+  const boardTools = board.getByRole('button', { name: 'Board tools', exact: true });
+  const compactBoard = await boardTools.isVisible();
+  if (compactBoard) await boardTools.click();
+  const decisionDetails = board.getByText(/^Decision details ·/);
+  await decisionDetails.click();
   const advisory = page.getByRole('main').getByTestId('bid-advisory-panel');
   await expect(advisory).toBeVisible();
   await expect(advisory).toContainText('Authoritative state');
   await expect(advisory.locator('button, input, textarea')).toHaveCount(0);
+  await decisionDetails.click();
+  if (compactBoard) await boardTools.click();
+  await page.getByRole('main').getByText('Bid actions', { exact: true }).click();
   await page.getByRole('button', { name: 'Specialty review', exact: true }).click();
   const controls = page.getByRole('dialog');
   await expect(controls).toBeVisible();
@@ -278,7 +288,15 @@ test('specialty operator sees frozen ranking, contact state, resume state, and c
   await expect(controls.getByRole('button', { name: 'DECLINE' })).toBeVisible();
   await expect(controls.getByRole('button', { name: 'UNREACHABLE' })).toBeVisible();
 
-  await controls.getByLabel('Operator reason').fill('Record the frozen priority contact attempt.');
+  await controls
+    .locator('summary')
+    .filter({ hasText: /^Note \(optional\)$/ })
+    .click();
+  await controls.getByLabel('Note (optional)').fill('Record the frozen priority contact attempt.');
+  await controls
+    .locator('summary')
+    .filter({ hasText: /^Evidence reference$/ })
+    .click();
   await controls.getByLabel('Evidence reference (when policy requires)').fill('contact-log-e2e');
   await controls.getByRole('button', { name: 'Record PHONE' }).click();
   await expect(controls.getByText('Action recorded.')).toBeVisible();

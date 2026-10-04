@@ -1,5 +1,5 @@
 import { evaluateEligibility } from '@mbfd/eligibility';
-import type { JwtPayload } from '@mbfd/shared';
+import { BidOperationNoteSchema, type JwtPayload } from '@mbfd/shared';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -64,7 +64,7 @@ const BeginBodySchema = z
     request_id: OpaqueIdSchema,
     position_id: OpaqueIdSchema,
     policy: ClientPolicySchema,
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
   })
   .strict();
 const ClientOutcomeSchema = z.discriminatedUnion('kind', [
@@ -83,7 +83,7 @@ const CandidateBodySchema = z
     request_id: OpaqueIdSchema,
     member_id: z.number().int().positive(),
     outcome: ClientOutcomeSchema,
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
   })
   .strict();
 const OriginalBodySchema = z
@@ -92,7 +92,7 @@ const OriginalBodySchema = z
     expected_revision: z.number().int().nonnegative(),
     request_id: OpaqueIdSchema,
     outcome: ClientOutcomeSchema,
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
   })
   .strict();
 const ResumeBodySchema = z
@@ -100,7 +100,7 @@ const ResumeBodySchema = z
     command_id: OpaqueIdSchema,
     expected_revision: z.number().int().nonnegative(),
     request_id: OpaqueIdSchema,
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
   })
   .strict();
 

@@ -131,14 +131,14 @@ function syntheticPolicy() {
 
 describe('canonical ordered specialty priority', () => {
   const commandType = 'live.record_selection' as const;
-  const isMock = true;
   let h: TestD1;
   let snapshot: PinnedBidSessionPolicySnapshot;
   let policy: FrozenLiveBidPolicy;
   let state: BidSessionState;
   let nextId: number;
 
-  beforeEach(async () => {
+  beforeEach(async ({ task }) => {
+    const isMock = !task.name.includes('Real');
     h = await setupTestD1();
     h.sqlite.pragma('foreign_keys = ON');
     nextId = 0;
@@ -396,6 +396,66 @@ describe('canonical ordered specialty priority', () => {
       candidateMemberIds: [MEMBER + 1, MEMBER + 2],
     });
   }
+  it.each([
+    { mode: 'Mock', isMock: 1 },
+    { mode: 'Real', isMock: 0 },
+  ])(
+    'runs note-free specialty review, decline and award in $mode with actor and state audit evidence',
+    async () => {
+      expect(
+        (
+          await apply({
+            ...common(),
+            reason: '',
+            type: 'live.start_specialty_adjudication',
+            specialtyId: 'synthetic-specialty',
+            positionId: SEAT,
+            candidateMemberIds: [MEMBER + 1, MEMBER + 2],
+          })
+        ).result.kind,
+      ).toBe('accepted');
+      expect(
+        (
+          await apply({
+            ...common(),
+            reason: '',
+            type: 'live.resolve_specialty_candidate',
+            memberId: MEMBER + 1,
+            outcome: 'DECLINE',
+          })
+        ).result.kind,
+      ).toBe('accepted');
+      const winner: LiveBidCommand = {
+        ...common(),
+        reason: '',
+        type: 'live.resolve_specialty_candidate',
+        memberId: MEMBER + 2,
+        outcome: 'ACCEPT',
+      };
+      const awarded = await apply(winner);
+      expect(awarded.result.kind).toBe('accepted');
+      expect(state.fills[SEAT]?.memberId).toBe(MEMBER + 2);
+      expect(state.currentBidderId).toBe(MEMBER);
+      expect((await apply(winner)).result).toEqual(awarded.result);
+      const audits = h.sqlite
+        .prepare(
+          'SELECT actor_id,reason,before_state,after_state FROM audit_log WHERE bid_session_id=? ORDER BY rowid',
+        )
+        .all(SESSION) as Array<{
+        actor_id: number;
+        reason: string;
+        before_state: string;
+        after_state: string;
+      }>;
+      expect(audits).toHaveLength(3);
+      expect(
+        audits.every(
+          (row) =>
+            row.actor_id === MEMBER && row.reason === '' && row.before_state && row.after_state,
+        ),
+      ).toBe(true);
+    },
+  );
   it.each(['live.record_selection', 'live.force_selection'] as const)(
     '%s cannot bypass higher qualification with three secondary credits',
     async (type) => {

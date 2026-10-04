@@ -412,7 +412,7 @@ describe('guided audited correction', () => {
     expect(commands).toHaveLength(0);
   });
 
-  it('loads original receipt automatically and requires reason and server preview before confirmation', async () => {
+  it('loads the original receipt and retains an optional typed note through preview and confirmation', async () => {
     await click('Correct a bid');
     expect(container.textContent).toContain('Synthetic Member');
     expect(container.textContent).not.toContain('Confirm correction');
@@ -431,7 +431,25 @@ describe('guided audited correction', () => {
       originalCommandId: source.originalCommandId,
       originalBidId: source.bidId,
       expectedSeq: 4,
+      reason: 'Recorded wrong A-Day',
       replacement: { positionId: 'one', aDay: 'G2' },
+    });
+  });
+
+  it('confirms a correction without a typed note after the server preview', async () => {
+    await click('Correct a bid');
+    await change('correction-a-day', 'G3');
+    expect(value('correction-reason')).toBe('');
+    await click('Review correction');
+    expect(container.textContent).toContain('BEFORE');
+    expect(commands).toHaveLength(0);
+    await click('Confirm correction');
+    expect(commands[0]).toMatchObject({
+      type: 'live.correct_bid',
+      originalCommandId: source.originalCommandId,
+      expectedSeq: 4,
+      replacement: { positionId: 'one', aDay: 'G3' },
+      reason: '',
     });
   });
 

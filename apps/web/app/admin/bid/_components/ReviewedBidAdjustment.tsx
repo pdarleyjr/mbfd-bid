@@ -44,7 +44,7 @@ export function ReviewedBidAdjustment({
   const current = useRef(fingerprint);
   current.current = fingerprint;
   const reviewed = review?.fingerprint === fingerprint ? review.result : null;
-  const blocked = disabled || busy || reason.trim().length < 4;
+  const blocked = disabled || busy || reason.trim().length > 500;
 
   async function preview() {
     if (blocked || inFlight.current) return;

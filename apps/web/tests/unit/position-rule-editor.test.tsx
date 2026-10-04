@@ -152,70 +152,70 @@ describe('RuleEditor', () => {
     );
   });
 
-  it('normalizes known legacy gates into the existing structured PATCH contract', async () => {
-    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
-      async (input) =>
-        new Response(
-          JSON.stringify(
-            String(input) === '/api/auth/csrf'
-              ? { token: 'csrf_11111111-1111-1111-1111-111111111111' }
-              : { rule: {} },
+  it.each(['', 'Correct policy data'])(
+    'normalizes legacy gates and saves an optional note (%s)',
+    async (note) => {
+      const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+        async (input) =>
+          new Response(
+            JSON.stringify(
+              String(input) === '/api/auth/csrf'
+                ? { token: 'csrf_11111111-1111-1111-1111-111111111111' }
+                : { rule: {} },
+            ),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            },
           ),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        ),
-    );
-    vi.stubGlobal('fetch', fetchMock);
+      );
+      vi.stubGlobal('fetch', fetchMock);
 
-    const { container, form } = renderEditor();
-    await setControl(
-      requiredControl<HTMLTextAreaElement>(container, 'rule-reason'),
-      'Correct policy data',
-    );
-    await submit(form);
+      const { container, form } = renderEditor();
+      await setControl(requiredControl<HTMLTextAreaElement>(container, 'rule-reason'), note);
+      await submit(form);
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const request = fetchMock.mock.calls.find(
-      ([input]) => String(input) === '/api/admin/rules/41',
-    )?.[1];
-    if (!request) throw new Error('Rule PATCH did not include request options.');
-    expect(request.method).toBe('PATCH');
-    expect(request.credentials).toBe('include');
-    expect(new Headers(request.headers).get('Idempotency-Key')).toBeTruthy();
-    expect(new Headers(request.headers).get('X-MBFD-CSRF')).toBe(
-      'csrf_11111111-1111-1111-1111-111111111111',
-    );
-    expect(JSON.parse(String(request.body))).toEqual({
-      required_criteria: {
-        rank: ['LT', 'CPT'],
-        credentials: [
-          'Driver Engineer Qualified',
-          'State Certified Hazardous Materials Technician',
-        ],
-        custom: ['driver_engineer', 'non_probationary'],
-      },
-      points_preference: {
-        max: 8,
-        items: [
-          {
-            credential: 'Rope Rescue Technician',
-            points: 3,
-            opsGate: 'paired_operation',
-          },
-          {
-            credential: 'State Certified Hazardous Materials Technician',
-            points: 5,
-            opsGate: 'all_operations',
-          },
-        ],
-      },
-      tie_break_chain: ['points', 'rsc_seniority', 'rank_seniority'],
-      reason_code: 'rule_override.fix_misconfig',
-      reason: 'Correct policy data',
-    });
-  });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const request = fetchMock.mock.calls.find(
+        ([input]) => String(input) === '/api/admin/rules/41',
+      )?.[1];
+      if (!request) throw new Error('Rule PATCH did not include request options.');
+      expect(request.method).toBe('PATCH');
+      expect(request.credentials).toBe('include');
+      expect(new Headers(request.headers).get('Idempotency-Key')).toBeTruthy();
+      expect(new Headers(request.headers).get('X-MBFD-CSRF')).toBe(
+        'csrf_11111111-1111-1111-1111-111111111111',
+      );
+      expect(JSON.parse(String(request.body))).toEqual({
+        required_criteria: {
+          rank: ['LT', 'CPT'],
+          credentials: [
+            'Driver Engineer Qualified',
+            'State Certified Hazardous Materials Technician',
+          ],
+          custom: ['driver_engineer', 'non_probationary'],
+        },
+        points_preference: {
+          max: 8,
+          items: [
+            {
+              credential: 'Rope Rescue Technician',
+              points: 3,
+              opsGate: 'paired_operation',
+            },
+            {
+              credential: 'State Certified Hazardous Materials Technician',
+              points: 5,
+              opsGate: 'all_operations',
+            },
+          ],
+        },
+        tie_break_chain: ['points', 'rsc_seniority', 'rank_seniority'],
+        reason_code: 'rule_override.fix_misconfig',
+        reason: note,
+      });
+    },
+  );
 
   it('allows repeatable credential point rows and never offers a duplicate selected tie-break key', async () => {
     const { container } = renderEditor({

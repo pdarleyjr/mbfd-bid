@@ -14,9 +14,14 @@ import type { JSX } from 'react';
 export interface MockBannerProps {
   isMock: boolean;
   sessionId: string;
+  compact?: boolean;
 }
 
-export function MockBanner({ isMock, sessionId }: MockBannerProps): JSX.Element | null {
+export function MockBanner({
+  isMock,
+  sessionId,
+  compact = false,
+}: MockBannerProps): JSX.Element | null {
   if (!isMock) return null;
   return (
     <div
@@ -24,7 +29,7 @@ export function MockBanner({ isMock, sessionId }: MockBannerProps): JSX.Element 
       role="alert"
       aria-live="assertive"
       title={`Mock session ${sessionId}. Picks will not be exported to the portal.`}
-      className="sticky top-0 z-40 flex w-full flex-wrap items-center justify-center gap-2 bg-red-700 px-3 py-2 text-center text-xs font-bold uppercase tracking-wide text-white shadow-md"
+      className={`sticky top-0 z-40 flex w-full flex-wrap items-center justify-center gap-2 bg-red-700 px-3 ${compact ? 'py-1' : 'py-2'} text-center text-xs font-bold uppercase tracking-wide text-white shadow-md`}
     >
       <span aria-hidden="true">⚠</span>
       MOCK SESSION — NOT LIVE

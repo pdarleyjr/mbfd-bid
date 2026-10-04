@@ -89,11 +89,10 @@ export function MockFreezeButton({ bidSessionId, expectedSeq }: Props) {
               does not call live bid controls.
             </p>
             <Label className="mt-4 block text-sm">
-              <span className="text-foreground">Reason (min 4 characters)</span>
+              <span className="text-foreground">Note (optional)</span>
               <Textarea
-                required
-                minLength={4}
                 value={reason}
+                maxLength={500}
                 onChange={(event) => setReason(event.target.value)}
                 rows={3}
                 className="mt-1 block w-full rounded border border-border px-2 py-1.5 text-sm"
@@ -114,7 +113,7 @@ export function MockFreezeButton({ bidSessionId, expectedSeq }: Props) {
               </Button>
               <Button
                 type="submit"
-                disabled={submitting || reason.trim().length < 4}
+                disabled={submitting || reason.trim().length > 500}
                 className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
               >
                 {submitting ? 'Freezing…' : 'Freeze rehearsal'}

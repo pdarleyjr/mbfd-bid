@@ -66,7 +66,7 @@ export function ManualPickBar({
         {!isMock && (
           <span
             className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900"
-            title="Live sessions: use the Override button on the command bar (step-up + reason)."
+            title="Live sessions: use Override on the command bar to review and confirm a pick."
           >
             live — use Override
           </span>

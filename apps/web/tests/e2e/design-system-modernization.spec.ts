@@ -219,7 +219,7 @@ test('live override modal traps focus and cancels without a command', async ({ p
   await expect(trigger).toBeFocused();
   expect(writes).toBe(0);
   await trigger.click();
-  await dialog.getByLabel('Reason').fill('Synthetic cancellation evidence');
+  await dialog.getByLabel('Note (optional)').fill('Synthetic cancellation evidence');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(writes).toBe(0);
   await trigger.click();

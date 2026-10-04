@@ -368,8 +368,8 @@ describe.each(['DECLINE', 'UNREACHABLE'] as const)(
         ...extra,
       });
 
-    it.each([{ evidenceReference: null }, { reason: '   ' }])(
-      'does not exhaust a candidate without configured response support: %j',
+    it.each([{ evidenceReference: null }])(
+      'does not exhaust a candidate without configured evidence: %j',
       (missing) => {
         const current = state();
         const before = structuredClone(current);
@@ -379,6 +379,18 @@ describe.each(['DECLINE', 'UNREACHABLE'] as const)(
         expect(current).toEqual(before);
       },
     );
+
+    it('records the response without a human note when required evidence is present', () => {
+      const result = reduceLiveBidCommand(
+        state(),
+        configured,
+        input({ reason: '' }),
+        10_000,
+        'synthetic-bid',
+        true,
+      );
+      expect(result).toMatchObject({ ok: true, payload: { reason: '', outcome } });
+    });
 
     it('rejects a missing frozen disposition instead of recording an exhaustion response', () => {
       const incomplete = {

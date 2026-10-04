@@ -8,6 +8,7 @@ import {
   type FrozenLiveBidPolicy,
   type LiveBidCommand,
   type MockFreezeCommand,
+  MockFreezeCommandSchema,
 } from '@mbfd/shared';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -186,6 +187,38 @@ describe('commitMockFreezeCommand', () => {
   });
 
   afterEach(() => sqlite.close());
+
+  it('replays a historical Mock freeze note with exact whitespace through the new command schema', async () => {
+    const db = makeTransactionalD1(sqlite);
+    const historical = command({ reason: '  Historical rehearsal note  ' });
+    const accepted = await commitMockFreezeCommand({
+      db,
+      command: historical,
+      state,
+      nowMs: () => 100,
+      newId: ids(),
+    });
+    expect(accepted.result.kind).toBe('accepted');
+    const receipt = sqlite.prepare('SELECT request_sha256 FROM bid_command_receipts').get();
+    const audit = sqlite.prepare('SELECT * FROM audit_log').all();
+    const parsed = MockFreezeCommandSchema.parse(historical);
+    expect(parsed).toEqual(historical);
+    const replayed = await commitMockFreezeCommand({
+      db,
+      command: parsed,
+      state,
+      nowMs: () => 101,
+      newId: ids(),
+    });
+    expect(replayed).toEqual(accepted);
+    expect(sqlite.prepare('SELECT request_sha256 FROM bid_command_receipts').get()).toEqual(
+      receipt,
+    );
+    expect(sqlite.prepare('SELECT * FROM audit_log').all()).toEqual(audit);
+    expect(
+      accepted.result.kind === 'accepted' ? accepted.result.envelope.payload : null,
+    ).toMatchObject({ reason: '  Historical rehearsal note  ' });
+  });
 
   it('commits state, receipt, event, audit, and retryable archive work atomically then replays an exact duplicate', async () => {
     const db = makeTransactionalD1(sqlite);

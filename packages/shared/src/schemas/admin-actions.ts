@@ -1,12 +1,13 @@
 import { z } from 'zod';
+import { BidOperationNoteSchema } from './bid-operation-note.js';
 import { ReasonCodeSchema } from './reason-codes.js';
 
 /**
- * Common reason payload — every state-mutating admin write carries a free
- * text reason (4+ chars) AND a machine-stable reason_code. The action-
- * level schemas further constrain reason_code to a sub-enum.
+ * Bid actions retain their machine-stable reason_code and audited actor/state.
+ * The operator's free-text note is optional. The action-level schemas further
+ * constrain reason_code to a sub-enum.
  */
-const reason = z.string().trim().min(4, 'Reason must be at least 4 characters').max(500);
+const reason = BidOperationNoteSchema;
 
 /** Position ID — natural key like "A101", "D305". */
 const positionId = z

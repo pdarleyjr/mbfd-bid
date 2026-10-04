@@ -1038,7 +1038,7 @@ describe('POST /api/admin/bid-session/:id/pause', () => {
     expect(r?.paused_at).toBeGreaterThan(0);
   });
 
-  it('returns 400 when reason missing', async () => {
+  it('pauses without a typed note and preserves the operator audit', async () => {
     const res = await app.fetch(
       new Request(`http://x/api/admin/bid-session/${sessionId}/pause`, {
         method: 'POST',
@@ -1050,7 +1050,29 @@ describe('POST /api/admin/bid-session/:id/pause', () => {
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: sessionId, current_phase: 'paused' });
+    const rows = await h.db.run('SELECT current_phase, paused_at FROM bid_sessions WHERE id = ?', [
+      sessionId,
+    ]);
+    expect(rows.results[0]?.current_phase).toBe('paused');
+    expect(rows.results[0]?.paused_at).toBeGreaterThan(0);
+    const audit = await h.db.run(
+      "SELECT actor_type, actor_id, target_kind, target_id, reason, before_state, after_state FROM audit_log WHERE bid_session_id = ? AND action = 'pause'",
+      [sessionId],
+    );
+    expect(audit.results).toHaveLength(1);
+    expect(audit.results[0]).toMatchObject({
+      actor_type: 'admin',
+      actor_id: POLICY_MEMBER_ID,
+      target_kind: 'bid_session',
+      target_id: sessionId,
+      reason: '',
+    });
+    expect(JSON.parse(String(audit.results[0]?.before_state))).toEqual({
+      current_phase: 'position_bid',
+    });
+    expect(JSON.parse(String(audit.results[0]?.after_state))).toEqual({ current_phase: 'paused' });
   });
 });
 

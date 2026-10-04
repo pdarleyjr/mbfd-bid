@@ -6,6 +6,7 @@ export * from './schemas/auth.js';
 export * from './schemas/jwt.js';
 export * from './schemas/reason-codes.js';
 export * from './schemas/admin-actions.js';
+export * from './schemas/bid-operation-note.js';
 export * from './schemas/rule-book.js';
 export * from './schemas/audit-query.js';
 export * from './schemas/eligibility-preview.js';

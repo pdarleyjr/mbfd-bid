@@ -661,7 +661,6 @@ export function BidPolicyFields({
                       'advances',
                       'retainsLaterSelectionRights',
                       'terminal',
-                      'requiresReason',
                       'requiresEvidence',
                     ] as const
                   ).map((key) => (
@@ -672,7 +671,6 @@ export function BidPolicyFields({
                           advances: 'Advance to the next participant',
                           retainsLaterSelectionRights: 'Retain later selection rights',
                           terminal: 'End participation',
-                          requiresReason: 'Require a reason',
                           requiresEvidence: 'Require evidence',
                         }[key]
                       }
@@ -680,6 +678,7 @@ export function BidPolicyFields({
                       onChange={(value) => update({ [key]: value })}
                     />
                   ))}
+                  {/* Keep legacy requiresReason snapshot values; operator notes are optional. */}
                   <ChoiceField
                     label="Return stage"
                     value={rule.returnStageId ?? ''}
