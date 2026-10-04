@@ -19,6 +19,8 @@ let staleReload: boolean;
 let loadedReadback: typeof readback;
 let delayPreview: boolean;
 let finishPreview: ((response: Response) => void) | null;
+let delayAcceptedReadback: boolean;
+let finishAcceptedReadback: ((response: Response) => void) | null;
 let canonicalSequence: number | undefined;
 let commandsBlocked: boolean;
 let overrideAllowed: boolean;
@@ -133,6 +135,8 @@ beforeEach(async () => {
   loadedReadback = structuredClone(readback);
   delayPreview = false;
   finishPreview = null;
+  delayAcceptedReadback = false;
+  finishAcceptedReadback = null;
   canonicalSequence = 4;
   commandsBlocked = false;
   overrideAllowed = false;
@@ -193,6 +197,10 @@ beforeEach(async () => {
       failReload = false;
       throw new Error('Synthetic refresh loss');
     }
+    if (delayAcceptedReadback && commands.length > 0)
+      return new Promise<Response>((resolve) => {
+        finishAcceptedReadback = resolve;
+      });
     return Response.json(loadedReadback);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -205,6 +213,79 @@ afterEach(async () => {
 });
 
 describe('guided audited correction', () => {
+  async function beginDelayedCorrection(note = '') {
+    await click('Correct a bid');
+    await change('correction-a-day', 'G2');
+    if (note) await change('correction-reason', note);
+    await click('Review correction');
+    delayAcceptedReadback = true;
+    await click('Confirm correction');
+    expect(commands).toHaveLength(1);
+    expect(finishAcceptedReadback).not.toBeNull();
+    expect(container.textContent).toContain('Correction recorded. Refreshing awards');
+  }
+  async function finishReadback(sequence: number) {
+    loadedReadback.sequence = sequence;
+    delayAcceptedReadback = false;
+    await act(async () => finishAcceptedReadback?.(Response.json(loadedReadback)));
+    finishAcceptedReadback = null;
+  }
+  function reviewButton() {
+    const button = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Review correction'),
+    );
+    if (!button) throw new Error('Missing correction review button');
+    return button;
+  }
+  it.each(['', 'Recorded wrong A-Day'])(
+    'refreshes an accepted correction automatically when its own sequence update arrives during readback (note %s)',
+    async (note) => {
+      await beginDelayedCorrection(note);
+      canonicalSequence = 5;
+      await render();
+      await finishReadback(5);
+      expect(container.textContent).toContain(
+        'Correction recorded. The award and capacity have been updated.',
+      );
+      expect(container.textContent).not.toContain('Awards could not be refreshed');
+      expect(reviewButton().disabled).toBe(false);
+      expect(commands[0]).toMatchObject({ expectedSeq: 4, reason: note });
+    },
+  );
+  it('invalidates the pending refresh when a newer external sequence follows its accepted sequence', async () => {
+    await beginDelayedCorrection();
+    canonicalSequence = 5;
+    await render();
+    canonicalSequence = 6;
+    await render();
+    await finishReadback(6);
+    expect(container.textContent).toContain('Correction recorded. Awards could not be refreshed.');
+    expect(reviewButton().disabled).toBe(true);
+    expect(commands).toHaveLength(1);
+    await click('Refresh awards');
+    expect(reviewButton().disabled).toBe(false);
+    expect(commands).toHaveLength(1);
+  });
+  it.each(['sign-in', 'blocked parent'] as const)(
+    'keeps the pending accepted readback locked when %s changes at its acknowledged sequence',
+    async (change) => {
+      await beginDelayedCorrection();
+      canonicalSequence = 5;
+      await render();
+      if (change === 'sign-in')
+        await act(async () => window.dispatchEvent(new Event(OPERATOR_REAUTH_STARTED)));
+      else {
+        commandsBlocked = true;
+        await render();
+      }
+      await finishReadback(5);
+      expect(container.textContent).toContain(
+        'Correction recorded. Awards could not be refreshed.',
+      );
+      expect(reviewButton().disabled).toBe(true);
+      expect(commands).toHaveLength(1);
+    },
+  );
   it('requires acknowledged server advisories before an override correction and handles the generic preview shape', async () => {
     overrideAllowed = true;
     overridePositionIds = ['outside-stage'];
