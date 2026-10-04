@@ -199,6 +199,15 @@ export function CorrectBid(props: {
   }, []);
   useEffect(() => {
     if (!props.commandsBlocked && !sequenceChanged) return;
+    // Polling may publish our acknowledged sequence before its award readback.
+    // Keep that refresh valid; its accepted floor still rejects older data.
+    // Authentication changes and any newer external sequence still invalidate it.
+    if (
+      !props.commandsBlocked &&
+      sequenceChanged &&
+      props.canonicalSequence === minimumReadbackSequence.current
+    )
+      return;
     contextGeneration.current += 1;
     setReview(null);
     setOverrideAcknowledged(false);
@@ -206,7 +215,7 @@ export function CorrectBid(props: {
     setNotice(
       'The bid or operator sign-in changed. Your draft is retained. Refresh awards and review the correction again.',
     );
-  }, [props.commandsBlocked, sequenceChanged]);
+  }, [props.commandsBlocked, props.canonicalSequence, sequenceChanged]);
   useEffect(() => {
     if (props.overrideAllowed === true || !overrideEnabled) return;
     contextGeneration.current += 1;
