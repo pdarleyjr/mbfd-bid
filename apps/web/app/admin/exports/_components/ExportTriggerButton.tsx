@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { useRouter } from 'next/navigation';
 import { type ReactElement, useState } from 'react';
 
 interface Props {
@@ -10,10 +11,13 @@ interface Props {
 }
 
 export function ExportTriggerButton({ kind, shift, sessionId }: Props): ReactElement {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const label =
-    kind === 'roster' ? `Generate ${shift ?? '?'} Shift Roster` : 'Generate Full Audit CSV';
+    kind === 'roster'
+      ? `Archive ${shift === 'D' ? 'Days' : `${shift ?? '?'} Shift`} PDF`
+      : 'Archive Full Audit CSV';
   return (
     <div>
       <Button
@@ -33,8 +37,9 @@ export function ExportTriggerButton({ kind, shift, sessionId }: Props): ReactEle
               body: JSON.stringify({ session_id: sessionId }),
               credentials: 'include',
             });
-            if (!r.ok) throw new Error(await r.text());
+            if (!r.ok) throw new Error(`The report could not be created (${r.status}). Try again.`);
             setMsg(kind === 'roster' ? `${shift} Shift roster generated.` : 'Audit CSV generated.');
+            router.refresh();
           } catch (e) {
             setMsg(`Failed: ${(e as Error).message}`);
           } finally {
@@ -44,7 +49,11 @@ export function ExportTriggerButton({ kind, shift, sessionId }: Props): ReactEle
       >
         {busy ? 'Generating…' : label}
       </Button>
-      {msg ? <output>{msg}</output> : null}
+      {msg ? (
+        <p role={msg.startsWith('Failed:') ? 'alert' : 'status'} className="mt-2 text-sm">
+          {msg}
+        </p>
+      ) : null}
     </div>
   );
 }

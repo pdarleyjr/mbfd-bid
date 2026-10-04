@@ -10,6 +10,8 @@ interface Props {
 
 export function ExportCard({ entry, sessionId }: Props): ReactElement {
   const [url, setUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const fileName = entry.r2Key.split('/').pop() ?? entry.r2Key;
   return (
     <div className="export-card flex flex-wrap items-center gap-3 border-b border-border py-3 text-sm">
@@ -26,19 +28,40 @@ export function ExportCard({ entry, sessionId }: Props): ReactElement {
       ) : (
         <Button
           type="button"
+          disabled={busy}
           onClick={async () => {
-            const path = `/api/admin/exports/${encodeURIComponent(
-              sessionId,
-            )}/${encodeURIComponent(entry.r2Key)}/url`;
-            const r = await fetch(path, { credentials: 'include' });
-            if (!r.ok) return;
-            const b = (await r.json()) as { url: string };
-            setUrl(b.url);
+            setBusy(true);
+            setError(null);
+            try {
+              const path = `/api/admin/exports/${encodeURIComponent(
+                sessionId,
+              )}/${encodeURIComponent(entry.r2Key)}/url`;
+              const r = await fetch(path, { credentials: 'include', cache: 'no-store' });
+              if (!r.ok)
+                throw new Error(`The download link could not be loaded (${r.status}). Try again.`);
+              const b = (await r.json()) as { url: string };
+              if (typeof b.url !== 'string' || !b.url.startsWith('/api/admin/exports/'))
+                throw new Error('The download link was invalid. Try again.');
+              setUrl(b.url);
+            } catch (caught) {
+              setError(
+                caught instanceof Error
+                  ? caught.message
+                  : 'The download link could not be loaded. Try again.',
+              );
+            } finally {
+              setBusy(false);
+            }
           }}
         >
-          Get link
+          {busy ? 'Loading…' : 'Get link'}
         </Button>
       )}
+      {error ? (
+        <p role="alert" className="w-full text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

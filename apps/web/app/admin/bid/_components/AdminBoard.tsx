@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useStore } from 'zustand';
 import { StationGroupedGrid } from '../../../_components/bid/StationGroupedGrid';
-import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
+import type { MemberLite, PositionMeta, Shift } from '../../../_components/bid/types';
 import { ErrorToast } from '../../../bid/_components/ErrorToast';
 import { ReconnectingOverlay } from '../../../bid/_components/ReconnectingOverlay';
 import { BidStoreProvider } from '../../../bid/_hooks/BidStoreContext';
@@ -33,6 +33,8 @@ interface Props {
   advisory: BidAdvisoryBundle | null;
   managed?: boolean;
   workspace?: boolean;
+  selectedShift?: Shift | undefined;
+  onShiftChange?: ((shift: Shift) => void) | undefined;
 }
 
 export function AdminBoard({
@@ -47,6 +49,8 @@ export function AdminBoard({
   advisory,
   managed = false,
   workspace = false,
+  selectedShift,
+  onShiftChange,
 }: Props) {
   const operator = useBidOperator();
   const router = useRouter();
@@ -114,6 +118,8 @@ export function AdminBoard({
           snapshotBound
           onPositionClick={positionClickHandler}
           operatorLayout={workspace}
+          selectedShift={selectedShift}
+          onShiftChange={onShiftChange}
           toolbar={
             workspace ? (
               <details className="relative text-xs">

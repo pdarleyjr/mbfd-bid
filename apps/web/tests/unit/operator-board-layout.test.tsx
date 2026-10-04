@@ -405,6 +405,92 @@ describe('board-centered operator layout', () => {
       expect(host.querySelectorAll('[data-testid^="position-cell-"]')).toHaveLength(73);
       expect(host.querySelector('[aria-label="Remaining members"]')).not.toBeNull();
       expect(host.querySelector('[aria-label="Members who already bid"]')).not.toBeNull();
+      expect(host.querySelectorAll('button[aria-label="Export shifts"]')).toHaveLength(1);
     },
   );
+  it.each([true, false])(
+    'carries the selected board shift into exports in Mock=%s',
+    async (isMock) => {
+      await mount(
+        <AdminBidShell
+          bidSessionId="shared-export-context"
+          lastSeq={0}
+          currentPhase="position_bid"
+          currentBidderId={1}
+          currentBidder={null}
+          onDeck={[]}
+          bidOrder={order.map((entry, index) => ({ ...entry, ordinal: index + 1, pool: 'OFC' }))}
+          bidOrderPreview={false}
+          sessionStartedAt={null}
+          turnStartedAtMs={0}
+          turnTimerSeconds={180}
+          meMemberId={1}
+          initialFills={fills}
+          members={members}
+          positions={positions}
+          wsBase="https://worker.invalid"
+          isMock={isMock}
+          mockControlRevision={0}
+          annual={{}}
+          advisory={null}
+        />,
+      );
+      await click('[data-testid="shift-tab-B"]');
+      expect(host.querySelector('[data-testid="shift-tab-B"]')?.getAttribute('aria-selected')).toBe(
+        'true',
+      );
+      await click('button[aria-label="Export shifts"]');
+      const exportScope = document.querySelector('select[aria-label="Export shifts"]');
+      expect(exportScope instanceof HTMLSelectElement ? exportScope.value : null).toBe('B');
+      const moreReports = Array.from(document.querySelectorAll('a')).find(
+        (link) => link.textContent === 'More reports',
+      );
+      expect(moreReports?.getAttribute('href')).toBe(
+        '/admin/exports?session_id=shared-export-context&shift=B',
+      );
+      expect(host.querySelector('[data-testid="intent"]')?.textContent ?? '').not.toContain(
+        'positionId',
+      );
+    },
+  );
+  it.each(
+    [true, false].flatMap((isMock) =>
+      ['config', 'paused', 'complete', 'legacy'].map((phase) => ({ isMock, phase })),
+    ),
+  )('keeps one usable Export control in $phase Mock=$isMock', async ({ isMock, phase }) => {
+    await mount(
+      <AdminBidShell
+        bidSessionId="phase-export-context"
+        lastSeq={0}
+        currentPhase={phase === 'legacy' ? 'bid' : phase}
+        currentBidderId={1}
+        currentBidder={null}
+        onDeck={[]}
+        bidOrder={order.map((entry, index) => ({ ...entry, ordinal: index + 1, pool: 'OFC' }))}
+        bidOrderPreview={false}
+        sessionStartedAt={null}
+        turnStartedAtMs={0}
+        turnTimerSeconds={180}
+        meMemberId={1}
+        initialFills={fills}
+        members={members}
+        positions={positions}
+        wsBase="https://worker.invalid"
+        isMock={isMock}
+        mockControlRevision={0}
+        annual={phase === 'legacy' ? null : {}}
+        advisory={null}
+      />,
+    );
+    const action = host.querySelectorAll<HTMLButtonElement>('button[aria-label="Export shifts"]');
+    expect(action).toHaveLength(1);
+    expect(action[0]?.disabled).toBe(false);
+    await click('button[aria-label="Export shifts"]');
+    expect(document.querySelector('select[aria-label="Export format"]')).not.toBeNull();
+    expect(
+      Array.from(document.querySelectorAll('button')).some(
+        (button) => button.textContent === 'Download PDF' && !button.disabled,
+      ),
+    ).toBe(true);
+  });
 });

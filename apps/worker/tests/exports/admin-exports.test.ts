@@ -229,6 +229,96 @@ describe('/api/admin/exports (Plan 08 Task 17)', () => {
       new Uint8Array([0x25, 0x50, 0x44, 0x46]),
     );
   });
+
+  it('keeps saved exports from earlier years visible and downloadable', async () => {
+    const oldYear = new Date().getUTCFullYear() - 1;
+    const key = `${oldYear}/01HF3/A_Shift_1.pdf`;
+    r2._objects.set(key, new Uint8Array([0x25, 0x50, 0x44, 0x46]));
+    r2._objects.set(`${oldYear}/another-session/B_Shift_2.pdf`, new Uint8Array([0x25]));
+    const jwt = await adminJwt(env);
+    const headers = { Authorization: `Bearer ${jwt}` };
+    const listed = await mkApp().request('/api/admin/exports/01HF3', { headers }, env);
+    expect(listed.status).toBe(200);
+    expect((await listed.json()) as unknown).toMatchObject({ exports: [{ r2Key: key }] });
+    const link = await mkApp().request(
+      `/api/admin/exports/01HF3/${encodeURIComponent(key)}/url`,
+      { headers },
+      env,
+    );
+    expect(link.status).toBe(200);
+    const download = await mkApp().request(
+      `/api/admin/exports/01HF3/${encodeURIComponent(key)}/download`,
+      { headers },
+      env,
+    );
+    expect(download.status).toBe(200);
+    expect(new Uint8Array(await download.arrayBuffer())).toEqual(
+      new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+    );
+  });
+
+  it.each(['another-session', '01HF3-extra'])(
+    'rejects an export owned by %s even when the object exists',
+    async (owner) => {
+      const key = `${new Date().getUTCFullYear() - 1}/${owner}/A_Shift_1.pdf`;
+      r2._objects.set(key, new Uint8Array([0x25]));
+      const jwt = await adminJwt(env);
+      const headers = { Authorization: `Bearer ${jwt}` };
+      expect(
+        (
+          await mkApp().request(
+            `/api/admin/exports/01HF3/${encodeURIComponent(key)}/url`,
+            { headers },
+            env,
+          )
+        ).status,
+      ).toBe(404);
+      expect(
+        (
+          await mkApp().request(
+            `/api/admin/exports/01HF3/${encodeURIComponent(key)}/download`,
+            { headers },
+            env,
+          )
+        ).status,
+      ).toBe(404);
+    },
+  );
+
+  it('includes every page of year prefixes and saved session objects', async () => {
+    const year = new Date().getUTCFullYear();
+    const oldKeys = [`${year - 1}/01HF3/A_Shift_1.pdf`, `${year - 1}/01HF3/B_Shift_2.pdf`];
+    const newKey = `${year}/01HF3/C_Shift_3.pdf`;
+    for (const key of [...oldKeys, newKey]) r2._objects.set(key, new Uint8Array([0x25]));
+    const object = (key: string) => ({ key, size: 1, uploaded: new Date(0) });
+    r2.list = (async (options?: Parameters<R2Bucket['list']>[0]) => {
+      if (options?.delimiter === '/') {
+        return options.cursor
+          ? { objects: [], delimitedPrefixes: [`${year}/`], truncated: false }
+          : {
+              objects: [],
+              delimitedPrefixes: [`${year - 1}/`],
+              truncated: true,
+              cursor: 'year-page-2',
+            };
+      }
+      if (options?.prefix === `${year - 1}/01HF3/`) {
+        return options.cursor
+          ? { objects: [object(oldKeys[1] as string)], truncated: false }
+          : { objects: [object(oldKeys[0] as string)], truncated: true, cursor: 'object-page-2' };
+      }
+      return { objects: [object(newKey)], truncated: false };
+    }) as R2Bucket['list'];
+    const jwt = await adminJwt(env);
+    const response = await mkApp().request(
+      '/api/admin/exports/01HF3',
+      { headers: { Authorization: `Bearer ${jwt}` } },
+      env,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { exports: Array<{ r2Key: string }> };
+    expect(body.exports.map((item) => item.r2Key).sort()).toEqual([...oldKeys, newKey].sort());
+  });
 });
 
 describe('/api/admin/exports audit-before-R2 boundary', () => {

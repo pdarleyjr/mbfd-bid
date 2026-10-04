@@ -11,11 +11,12 @@ import {
   type ActiveExportSession,
   SessionSelectionPanel,
 } from './_components/SessionSelectionPanel';
+import { ShiftExports, shiftExportScope } from './_components/ShiftExports';
 
 export const dynamic = 'force-dynamic';
 
 interface PageProps {
-  searchParams: Promise<{ session_id?: string }>;
+  searchParams: Promise<{ session_id?: string; shift?: string }>;
 }
 
 interface ExportRow {
@@ -107,13 +108,13 @@ async function fetchPortalStatus(
 }
 
 export default async function ExportsPage({ searchParams }: PageProps): Promise<ReactElement> {
-  const { session_id: requestedSessionId } = await searchParams;
+  const { session_id: requestedSessionId, shift } = await searchParams;
   const sid = validSessionId(requestedSessionId);
   if (sid === null) {
     const active = await fetchActiveSession();
     return (
       <main className="admin-exports mx-auto max-w-6xl space-y-6">
-        <h1 className="font-heading text-3xl font-bold">Exports &amp; Portal Sync</h1>
+        <h1 className="font-heading text-3xl font-bold">Bid reports</h1>
         <p>Select the Bid session whose progress, awards, roster, and audit evidence you need.</p>
         <SessionSelectionPanel
           activeSession={active.session}
@@ -133,56 +134,71 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
 
   return (
     <main className="admin-exports mx-auto max-w-6xl space-y-6">
-      <h1 className="font-heading text-3xl font-bold">Exports &amp; Portal Sync</h1>
-      <p>Session evidence selected from the Bid session controls.</p>
+      <h1 className="font-heading text-3xl font-bold">Bid reports</h1>
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h2 className="mb-3 font-heading text-lg font-semibold">Shift views</h2>
+        <ShiftExports sessionId={sid} initialScope={shiftExportScope(shift)} />
+      </section>
 
-      <DirectCsvExports sessionId={sid} />
+      <details className="rounded-xl border border-border bg-card p-5">
+        <summary className="min-h-11 cursor-pointer content-center font-semibold">
+          Detailed reports and previous exports
+        </summary>
+        <div className="space-y-6 pt-4">
+          <DirectCsvExports sessionId={sid} />
 
-      <section>
-        <h2 className="mb-3 font-heading text-lg font-semibold">Generate</h2>
-        <div className="flex flex-wrap gap-3">
-          {(['A', 'B', 'C', 'D'] as const).map((sh) => (
-            <ExportTriggerButton key={sh} kind="roster" shift={sh} sessionId={sid} />
-          ))}
-          <ExportTriggerButton kind="audit-csv" sessionId={sid} />
+          <section>
+            <h2 className="mb-3 font-heading text-lg font-semibold">Archive a report</h2>
+            <div className="flex flex-wrap gap-3">
+              {(['A', 'B', 'C', 'D'] as const).map((sh) => (
+                <ExportTriggerButton key={sh} kind="roster" shift={sh} sessionId={sid} />
+              ))}
+              <ExportTriggerButton kind="audit-csv" sessionId={sid} />
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-3 font-heading text-lg font-semibold">Available exports</h2>
+            {exportsResult.fetchError !== null && (
+              <div
+                role="alert"
+                className="rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning"
+              >
+                Previous exports could not be loaded. Refresh the page to try again.
+              </div>
+            )}
+            {exportsResult.fetchError === null && exportsResult.exports.length === 0 ? (
+              <p>No exports yet for this session.</p>
+            ) : (
+              exportsResult.exports.map((e) => (
+                <ExportCard key={e.r2Key} entry={e} sessionId={sid} />
+              ))
+            )}
+          </section>
         </div>
-      </section>
+      </details>
 
-      <section>
-        <h2 className="mb-3 font-heading text-lg font-semibold">Available exports</h2>
-        {exportsResult.fetchError !== null && (
-          <div
-            role="alert"
-            className="rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning"
-          >
-            Could not load exports: {exportsResult.fetchError}. Check the Worker logs and JWT
-            validity.
-          </div>
-        )}
-        {exportsResult.fetchError === null && exportsResult.exports.length === 0 ? (
-          <p>No exports yet for this session.</p>
-        ) : (
-          exportsResult.exports.map((e) => <ExportCard key={e.r2Key} entry={e} sessionId={sid} />)
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-3 font-heading text-lg font-semibold">Portal sync status</h2>
-        {portalResult.fetchError !== null && (
-          <div
-            role="alert"
-            className="rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning"
-          >
-            Could not load portal sync status: {portalResult.fetchError}. Check the Worker logs and
-            JWT validity.
-          </div>
-        )}
-        {portalResult.fetchError === null && portalResult.bids.length === 0 ? (
-          <p>No bids tracked for this session yet.</p>
-        ) : (
-          <PortalSyncStatus bids={portalResult.bids} />
-        )}
-      </section>
+      <details className="rounded-xl border border-border bg-card p-5">
+        <summary className="min-h-11 cursor-pointer content-center font-semibold">
+          Portal sync status
+        </summary>
+        <section className="pt-4">
+          <h2 className="mb-3 font-heading text-lg font-semibold">Portal sync status</h2>
+          {portalResult.fetchError !== null && (
+            <div
+              role="alert"
+              className="rounded-lg border border-warning/40 bg-warning-surface p-4 text-sm text-warning"
+            >
+              Portal sync status could not be loaded. Refresh the page to try again.
+            </div>
+          )}
+          {portalResult.fetchError === null && portalResult.bids.length === 0 ? (
+            <p>No bids tracked for this session yet.</p>
+          ) : (
+            <PortalSyncStatus bids={portalResult.bids} />
+          )}
+        </section>
+      </details>
     </main>
   );
 }
