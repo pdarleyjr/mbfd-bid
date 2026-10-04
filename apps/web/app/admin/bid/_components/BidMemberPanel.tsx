@@ -24,8 +24,8 @@ export function PreviousBidInfo({
         {previous?.evidenceStatus === 'RECORDED' ? (
           <>
             <p className="break-words font-medium">
-              <span className="text-muted-foreground">{previous.year} Â· </span>
-              {previous.historicalPositionId} Â· {previous.positionLabel}
+              <span className="text-muted-foreground">{previous.year} · </span>
+              {previous.historicalPositionId} · {previous.positionLabel}
             </p>
             <p className="mt-1 break-words">
               {[
@@ -35,7 +35,7 @@ export function PreviousBidInfo({
                 `A-Day ${previous.aDayGroup?.replace(/^(?:GR|G)(\d+)$/, 'Group $1') ?? 'not recorded'}`,
               ]
                 .filter(Boolean)
-                .join(' Â· ')}
+                .join(' · ')}
             </p>
           </>
         ) : (
@@ -65,17 +65,17 @@ export function PreviousBidInfo({
           <p className={compact ? 'mt-1 break-words' : 'mt-1 text-sm'}>
             {[previous.shift ? `${previous.shift} shift` : null, previous.station, previous.unit]
               .filter(Boolean)
-              .join(' Â· ')}
+              .join(' · ')}
           </p>
           <p className={compact ? 'mt-1 break-words' : 'mt-1 text-sm'}>
-            {previous.historicalPositionId} Â· A-Day{' '}
+            {previous.historicalPositionId} · A-Day{' '}
             {previous.aDayGroup?.replace(/^(?:GR|G)(\d+)$/, 'Group $1') ?? 'not recorded'}
           </p>
           {!compact ? (
             <details className="mt-2 text-xs text-muted-foreground">
               <summary className="cursor-pointer">Historical source</summary>
               <p className="mt-1 break-words">
-                {previous.sourceName} Â· {previous.sourceLocation}
+                {previous.sourceName} · {previous.sourceLocation}
               </p>
             </details>
           ) : null}
