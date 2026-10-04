@@ -348,6 +348,252 @@ describe.each([
   });
   afterEach(() => sqlite.close());
 
+  it.each(['position_bid', 'a_day_bid'] as const)(
+    'persists an overnight %s pause and resumes in a fresh coordinator with the same awards and clock',
+    async (phase) => {
+      seed(true);
+      const start = 1_700_000_000_000;
+      let current = { ...initialState(), turnStartedAtMs: start };
+      if (phase === 'a_day_bid') {
+        for (const [memberId, positionId, aDay] of [
+          [42, 'A101', undefined],
+          [43, 'A103', undefined],
+          [44, 'A102', 'G1'],
+        ] as const) {
+          const accepted = await confirmed(
+            current,
+            command(
+              'live.record_selection',
+              {
+                memberId,
+                positionId,
+                ...(aDay ? { aDay } : {}),
+                forced: true,
+                reason: '',
+                adminOverride: override,
+              },
+              current.lastSeq,
+            ),
+          );
+          current = accepted.state;
+        }
+      } else {
+        current = (
+          await confirmed(
+            current,
+            command('live.record_selection', {
+              memberId: 43,
+              positionId: 'A103',
+              forced: true,
+              reason: '',
+              adminOverride: override,
+            }),
+          )
+        ).state;
+      }
+      expect(current.currentPhase).toBe(phase);
+      expect(current.fills.A103?.aDay).toBeUndefined();
+      expect(current.fills.A103?.forced).toBeDefined();
+      const before = structuredClone(current);
+      const pauseAt = start + 60_000;
+      const pauseInput = command('live.pause', { reason: '' }, current.lastSeq);
+      const paused = await commitLiveBidCommand({
+        db,
+        policy,
+        state: current,
+        command: pauseInput,
+        nowMs: () => pauseAt,
+        newId: () => `overnight-${++eventNumber}`,
+      });
+      expect(paused.result.kind).toBe('accepted');
+      expect(paused.canonicalState?.turnPausedAtMs).toBe(pauseAt);
+      // Reconstruct from canonical D1 with a fresh adapter and empty in-memory
+      // state. No browser or coordinator object from yesterday is retained.
+      const reopenedDb = transactionalD1(sqlite);
+      const reopened = await loadCanonicalBidSessionState(reopenedDb, sessionId);
+      if (!reopened) throw new Error('Persisted pause required');
+      expect(reopened).toEqual(paused.canonicalState);
+      expect(reopened.fills).toEqual(before.fills);
+      expect(reopened.aDay).toEqual(before.aDay);
+      expect(reopened.bidOrder).toEqual(before.bidOrder);
+      expect(reopened.queueCursor).toBe(before.queueCursor);
+      expect(reopened.annual).toEqual(before.annual);
+      expect(reopened.live).toEqual({ ...before.live, pausedPhase: phase });
+      const resumeAt = start + 16 * 60 * 60 * 1000;
+      const resumeInput = command('live.resume', { reason: '' }, reopened.lastSeq);
+      const resumed = await commitLiveBidCommand({
+        db: reopenedDb,
+        policy,
+        state: emptyBidSessionState(sessionId),
+        command: resumeInput,
+        nowMs: () => resumeAt,
+        newId: () => `overnight-${++eventNumber}`,
+      });
+      if (!resumed.canonicalState) throw new Error(JSON.stringify(resumed.result));
+      const expectedElapsed = pauseAt - before.turnStartedAtMs;
+      expect(resumed.canonicalState).toEqual({
+        ...before,
+        lastSeq: before.lastSeq + 2,
+        turnPausedAtMs: null,
+        turnStartedAtMs: resumeAt - expectedElapsed,
+      });
+      expect(resumed.canonicalState.turnStartedAtMs + 180_000 - resumeAt).toBe(
+        180_000 - expectedElapsed,
+      );
+      const auditBeforeReplay = sqlite.prepare('SELECT * FROM audit_log').all();
+      const replayed = await commitLiveBidCommand({
+        db: transactionalD1(sqlite),
+        policy,
+        state: emptyBidSessionState(sessionId),
+        command: resumeInput,
+        nowMs: () => resumeAt + 24 * 60 * 60 * 1000,
+      });
+      expect(replayed.result).toEqual(resumed.result);
+      expect(replayed.canonicalState).toEqual(resumed.canonicalState);
+      expect(sqlite.prepare('SELECT * FROM audit_log').all()).toEqual(auditBeforeReplay);
+      const nextInput =
+        phase === 'a_day_bid'
+          ? command(
+              'live.record_a_day',
+              { memberId: resumed.canonicalState.currentBidderId, aDay: 'G1', reason: '' },
+              resumed.canonicalState.lastSeq,
+            )
+          : command(
+              'live.disposition',
+              { disposition: 'PASS', reason: '' },
+              resumed.canonicalState.lastSeq,
+            );
+      const next = await commitLiveBidCommand({
+        db: reopenedDb,
+        policy,
+        state: emptyBidSessionState(sessionId),
+        command: nextInput,
+        nowMs: () => resumeAt + 1000,
+        newId: () => `overnight-${++eventNumber}`,
+      });
+      expect(next.result.kind, JSON.stringify(next.result)).toBe('accepted');
+      expect(next.canonicalState?.fills.A103).toEqual(before.fills.A103);
+    },
+  );
+
+  it('serializes concurrent pause and resume attempts and replays accepted commands without moving the clock', async () => {
+    seed();
+    const start = 1_700_000_000_000;
+    const current = { ...initialState(), turnStartedAtMs: start };
+    const pauseInputs = [
+      command('live.pause', { reason: '' }),
+      command('live.pause', { reason: '' }),
+    ];
+    const paused = await Promise.all(
+      pauseInputs.map((input) =>
+        commitLiveBidCommand({
+          db: transactionalD1(sqlite),
+          policy,
+          state: current,
+          command: input,
+          nowMs: () => start + 50_000,
+          newId: () => `race-${++eventNumber}`,
+        }),
+      ),
+    );
+    expect(paused.filter((result) => result.result.kind === 'accepted')).toHaveLength(1);
+    expect(paused.find((result) => result.result.kind === 'rejected')?.result).toMatchObject({
+      code: 'STALE_SEQUENCE',
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 1 });
+    const pauseReceipt = paused.find((result) => result.result.kind === 'accepted');
+    if (!pauseReceipt?.canonicalState) throw new Error('Accepted pause required');
+    const resumeInputs = [
+      command('live.resume', { reason: '' }, 1),
+      command('live.resume', { reason: '' }, 1),
+    ];
+    const resumedAt = start + 15 * 60 * 60 * 1000;
+    const resumed = await Promise.all(
+      resumeInputs.map((input) =>
+        commitLiveBidCommand({
+          db: transactionalD1(sqlite),
+          policy,
+          state: emptyBidSessionState(sessionId),
+          command: input,
+          nowMs: () => resumedAt,
+          newId: () => `race-${++eventNumber}`,
+        }),
+      ),
+    );
+    expect(resumed.filter((result) => result.result.kind === 'accepted')).toHaveLength(1);
+    expect(resumed.find((result) => result.result.kind === 'rejected')?.result).toMatchObject({
+      code: 'STALE_SEQUENCE',
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 2 });
+    const restored = await loadCanonicalBidSessionState(transactionalD1(sqlite), sessionId);
+    expect(restored).toMatchObject({
+      currentPhase: 'position_bid',
+      currentBidderId: 42,
+      lastSeq: 2,
+      turnPausedAtMs: null,
+      turnStartedAtMs: resumedAt - 50_000,
+    });
+    const acceptedPause = pauseInputs.find(
+      (input) => input.commandId === pauseReceipt.result.commandId,
+    );
+    if (!acceptedPause) throw new Error('Accepted command required');
+    const replayedPause = await commitLiveBidCommand({
+      db: transactionalD1(sqlite),
+      policy,
+      state: emptyBidSessionState(sessionId),
+      command: acceptedPause,
+      nowMs: () => resumedAt + 60_000,
+    });
+    expect(replayedPause.result).toEqual(pauseReceipt.result);
+    expect(replayedPause.canonicalState).toEqual(restored);
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 2 });
+  });
+
+  it('replays concurrent identical pause requests as one durable command', async () => {
+    seed();
+    const current = { ...initialState(), turnStartedAtMs: 1_700_000_000_000 };
+    const input = command('live.pause', { reason: '' });
+    const results = await Promise.all(
+      [0, 1].map(() =>
+        commitLiveBidCommand({
+          db: transactionalD1(sqlite),
+          policy,
+          state: current,
+          command: input,
+          nowMs: () => 1_700_000_050_000,
+          newId: () => `identical-race-${++eventNumber}`,
+        }),
+      ),
+    );
+    const [first, second] = results;
+    if (!first || !second) throw new Error('Both retry responses required');
+    expect(first.result).toEqual(second.result);
+    expect(results.every((result) => result.result.kind === 'accepted')).toBe(true);
+    expect(first.canonicalState).toEqual(second.canonicalState);
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM bid_command_receipts').get()).toEqual({
+      n: 1,
+    });
+  });
+
+  it('does not hide an unrelated pause transaction failure as a stale retry', async () => {
+    seed();
+    const failingDb = transactionalD1(sqlite);
+    failingDb.batch = async () => {
+      throw new Error('Synthetic unavailable storage');
+    };
+    await expect(
+      commitLiveBidCommand({
+        db: failingDb,
+        policy,
+        state: initialState(),
+        command: command('live.pause', { reason: '' }),
+      }),
+    ).rejects.toThrow('Synthetic unavailable storage');
+    expect(await loadCanonicalBidSessionState(db, sessionId)).toBeNull();
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 0 });
+  });
+
   it('replays a historical raw-whitespace command through the new schema without changing its digest or audit', async () => {
     seed();
     const before = initialState();

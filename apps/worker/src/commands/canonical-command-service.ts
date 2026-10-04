@@ -149,7 +149,10 @@ function isBidSessionStateProjection(
   if (value.currentBidderId !== null && !isNonnegativeInteger(value.currentBidderId)) return false;
   if (
     !isNonnegativeInteger(value.turnStartedAtMs) ||
-    !isNonnegativeInteger(value.turnTimerSeconds)
+    !isNonnegativeInteger(value.turnTimerSeconds) ||
+    (value.turnPausedAtMs !== undefined &&
+      value.turnPausedAtMs !== null &&
+      !isNonnegativeInteger(value.turnPausedAtMs))
   ) {
     return false;
   }
@@ -1040,13 +1043,17 @@ export async function commitLiveBidCommand(
       return { result, canonicalState: null };
     }
   }
+  // A reversible pause changes only the phase and clock. Re-evaluating A-Day
+  // allocations here can reorder already saved selections during reconstruction.
   const requiresFrozenADayEvaluation =
-    input.command.type === 'live.correct_bid' ||
-    input.command.type === 'live.record_a_day' ||
-    input.policy.annualOperations?.aDay.execution !== undefined ||
-    input.policy.annualOperations?.membershipDistributions !== undefined ||
-    Object.values(current.fills).some((fill) => fill.membershipIds !== undefined) ||
-    Object.values(current.fills).some((fill) => fill.aDay !== undefined);
+    input.command.type !== 'live.pause' &&
+    input.command.type !== 'live.resume' &&
+    (input.command.type === 'live.correct_bid' ||
+      input.command.type === 'live.record_a_day' ||
+      input.policy.annualOperations?.aDay.execution !== undefined ||
+      input.policy.annualOperations?.membershipDistributions !== undefined ||
+      Object.values(current.fills).some((fill) => fill.membershipIds !== undefined) ||
+      Object.values(current.fills).some((fill) => fill.aDay !== undefined));
   let frozenADaySnapshot: Extract<BidSessionPolicySnapshot, { v: 3 }> | null = null;
   if (requiresFrozenADayEvaluation) {
     const frozen = await loadCommandFrozenPolicy();
@@ -1763,6 +1770,50 @@ export async function commitLiveBidCommand(
         now,
       ),
   );
-  await input.db.batch(statements);
+  try {
+    await input.db.batch(statements);
+  } catch (error) {
+    // Match the freeze path: a response retry replays its durable receipt;
+    // a competing command returns a typed stale result. Other integrity
+    // failures must remain visible instead of being mistaken for a retry.
+    const replay = await first<CommandReceiptRow>(
+      input.db,
+      'SELECT request_sha256, outcome, result_json FROM bid_command_receipts WHERE command_id = ?',
+      [input.command.commandId],
+    );
+    if (replay !== null && replay.request_sha256 === requestSha256) {
+      return {
+        result: parseStoredResult(replay.result_json) as LiveBidCommandResult,
+        canonicalState:
+          replay.outcome === 'accepted'
+            ? await loadCanonicalBidSessionState(input.db, input.command.bidSessionId)
+            : null,
+      };
+    }
+    const canonical = await loadCanonicalBidSessionState(input.db, input.command.bidSessionId);
+    if (replay !== null) {
+      return {
+        result: {
+          kind: 'rejected',
+          commandId: input.command.commandId,
+          code: 'COMMAND_ID_REUSED',
+          currentSeq: canonical?.lastSeq ?? input.state.lastSeq,
+        },
+        canonicalState: null,
+      };
+    }
+    if (canonical !== null && canonical.lastSeq > input.command.expectedSeq) {
+      return {
+        result: {
+          kind: 'rejected',
+          commandId: input.command.commandId,
+          code: 'STALE_SEQUENCE',
+          currentSeq: canonical.lastSeq,
+        },
+        canonicalState: null,
+      };
+    }
+    throw error;
+  }
   return { result, canonicalState: reduction.state };
 }

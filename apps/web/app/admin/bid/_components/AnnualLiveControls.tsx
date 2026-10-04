@@ -1182,14 +1182,20 @@ export function AnnualLiveControls(props: Props) {
           setSelectionPoolId('');
         }
       }
-      setNotice('Action recorded.');
+      const recordedNotice =
+        type === 'live.pause'
+          ? 'Bid paused and saved. You can close the browser and return to this same bid.'
+          : type === 'live.resume'
+            ? 'Bid resumed. Continuing the saved turn.'
+            : 'Action recorded.';
+      setNotice(recordedNotice);
       try {
         await load();
         if (props.workspace && (type === 'live.record_selection' || type === 'live.record_a_day'))
           setPanel(null);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.');
-        setNotice('Action recorded. Refresh bid updates before recording another action.');
+        setNotice(`${recordedNotice} Refresh bid updates before recording another action.`);
       }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Command failed.');
@@ -2393,10 +2399,21 @@ export function AnnualLiveControls(props: Props) {
           </article>
           <article hidden={panel !== 'session'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Pause or resume bid</h3>
-            <p className="mt-1 text-sm">Pausing stops new selections until you resume.</p>
+            <p className="mt-1 text-sm">
+              {state?.current_phase === 'paused'
+                ? 'Paused selections and the current turn are saved. Resume whenever you are ready.'
+                : 'Save a break for minutes or days. Your selections and current turn stay in this bid.'}
+            </p>
             <Button
               type="button"
-              disabled={busy || state === null || state.current_phase === 'complete'}
+              disabled={
+                busy ||
+                state === null ||
+                state.current_phase === 'complete' ||
+                loadError !== null ||
+                authRefreshing ||
+                authReviewRequired
+              }
               className="mt-3"
               onClick={() =>
                 void command(state?.current_phase === 'paused' ? 'live.resume' : 'live.pause')
@@ -2404,6 +2421,23 @@ export function AnnualLiveControls(props: Props) {
             >
               {state?.current_phase === 'paused' ? 'Resume bid' : 'Pause bid'}
             </Button>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Pausing is reversible. Freeze is a separate administrative action.
+            </p>
+            <a
+              href={`/admin/bid?${new URLSearchParams({ session_id: props.bidSessionId })}`}
+              className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline"
+            >
+              Return to this bid
+            </a>
+            {props.isMock ? (
+              <a
+                href="/admin/rehearsal"
+                className="ml-4 mt-2 inline-flex min-h-11 items-center text-sm underline"
+              >
+                Find saved Mocks
+              </a>
+            ) : null}
           </article>
           <article hidden={panel !== 'presentation'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Department presentation</h3>

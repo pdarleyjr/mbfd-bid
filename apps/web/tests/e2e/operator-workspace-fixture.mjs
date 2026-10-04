@@ -114,6 +114,7 @@ export function operatorWorkspaceFixture(url) {
   if (url.pathname === '/api/board')
     return {
       bidSessionId: id,
+      bidYear: 2026,
       lastSeq: state.sequence,
       currentPhase: 'position_bid',
       currentBidderId: 1,

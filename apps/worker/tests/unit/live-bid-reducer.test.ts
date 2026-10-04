@@ -168,6 +168,189 @@ function delayedADayState(): BidSessionState {
 }
 
 type UnreachablePath = 'declaration' | 'disposition' | 'specialty';
+
+describe('reversible overnight pause clock', () => {
+  const pausedAt = Date.parse('2026-10-04T21:00:00Z');
+  const resumedAt = Date.parse('2026-10-05T12:00:00Z');
+
+  it.each(['config', 'position_bid', 'a_day_bid', 'complete'] as const)(
+    'restores %s with the same timer and all operational context',
+    (phase) => {
+      const current: BidSessionState = {
+        ...delayedADayState(),
+        currentPhase: phase,
+        turnStartedAtMs: pausedAt - 45_123,
+        fills: { p1: { memberId: 1, ordinal: 1, bidId: 'saved-p1', aDay: 'G1' } },
+        annual: {
+          ...initializeAnnualOperations({ preferenceSheets: [] }),
+          unresolvedMemberIds: [2],
+          returningMemberId: 2,
+          returnedAtCurrentSequence: [{ memberId: 2, sequence: 0 }],
+          contactAttempts: [
+            { memberId: 2, method: 'PHONE', actorMemberId: 99, atMs: pausedAt - 5000 },
+          ],
+        },
+        live: {
+          ...(state().live as NonNullable<BidSessionState['live']>),
+          completedStageIds: ['prior-stage'],
+          dispositions: [
+            {
+              memberId: 2,
+              disposition: 'DEFER',
+              stageId: 'd',
+              reason: '',
+              evidenceReference: null,
+            },
+          ],
+          specialty: {
+            specialtyId: 'pending-specialty',
+            positionId: 'p2',
+            suspendedBidderId: 1,
+            candidateMemberIds: [2],
+            candidateCursor: 0,
+          },
+          presentation: {
+            mode: 'HOLD',
+            heldAtSeq: 0,
+            heldProjection: {
+              currentBidderId: 1,
+              currentStageId: 'd',
+              currentPhase: phase,
+              fills: {},
+            },
+          },
+          exceptionalAssignments: [
+            {
+              assignmentId: 'duty',
+              commandId: 'duty-command',
+              memberId: 2,
+              roleLabel: 'Acting duty',
+              positionId: null,
+              actorMemberId: 99,
+              reason: '',
+              assignedAtMs: pausedAt - 5000,
+              releasedAtMs: null,
+              releaseCommandId: null,
+            },
+          ],
+          corrections: [],
+        },
+      };
+      const before = structuredClone(current);
+      const paused = reduceLiveBidCommand(
+        current,
+        policy,
+        command('live.pause', { reason: '' }),
+        pausedAt,
+        'pause',
+      );
+      expect(paused.ok).toBe(true);
+      if (!paused.ok) throw new Error(paused.code);
+      expect(paused.state).toEqual({
+        ...before,
+        lastSeq: 1,
+        currentPhase: 'paused',
+        turnPausedAtMs: pausedAt,
+        live: { ...before.live, pausedPhase: phase },
+      });
+      // A fresh process receives the serialized state, not an old UI object.
+      const reconstructed: BidSessionState = JSON.parse(JSON.stringify(paused.state));
+      const resumed = reduceLiveBidCommand(
+        reconstructed,
+        policy,
+        command('live.resume', { expectedSeq: 1, reason: '' }),
+        resumedAt,
+        'resume',
+      );
+      expect(resumed.ok).toBe(true);
+      if (!resumed.ok) throw new Error(resumed.code);
+      expect(resumed.state).toEqual({
+        ...before,
+        lastSeq: 2,
+        turnPausedAtMs: null,
+        turnStartedAtMs: resumedAt - 45_123,
+      });
+      expect(
+        resumed.state.turnStartedAtMs + resumed.state.turnTimerSeconds * 1000 - resumedAt,
+      ).toBe(134_877);
+      expect(current).toEqual(before);
+    },
+  );
+
+  it('gives historical paused turns a fresh clock without inventing a pause time', () => {
+    const current = {
+      ...state(),
+      currentPhase: 'paused' as const,
+      turnStartedAtMs: pausedAt - 50_000,
+      live: {
+        ...(state().live as NonNullable<BidSessionState['live']>),
+        pausedPhase: 'position_bid' as const,
+      },
+    };
+    const resumed = reduceLiveBidCommand(
+      current,
+      policy,
+      command('live.resume'),
+      resumedAt,
+      'resume',
+    );
+    expect(resumed).toMatchObject({
+      ok: true,
+      state: { turnStartedAtMs: resumedAt, turnPausedAtMs: null },
+    });
+  });
+
+  it('does not consume time from a different turn begun by an explicit paused adjustment', () => {
+    const current = {
+      ...state(),
+      currentPhase: 'paused' as const,
+      currentBidderId: 2,
+      turnPausedAtMs: pausedAt,
+      turnStartedAtMs: pausedAt + 600_000,
+      live: {
+        ...(state().live as NonNullable<BidSessionState['live']>),
+        pausedPhase: 'position_bid' as const,
+      },
+    };
+    const resumed = reduceLiveBidCommand(
+      current,
+      policy,
+      command('live.resume'),
+      resumedAt,
+      'resume',
+    );
+    expect(resumed).toMatchObject({
+      ok: true,
+      state: { currentBidderId: 2, turnStartedAtMs: resumedAt },
+    });
+  });
+
+  it('preserves an expired advisory clock and keeps a frozen rehearsal sealed', () => {
+    const current = {
+      ...state(),
+      currentPhase: 'paused' as const,
+      turnPausedAtMs: pausedAt,
+      turnStartedAtMs: pausedAt - 999_000,
+      live: {
+        ...(state().live as NonNullable<BidSessionState['live']>),
+        pausedPhase: 'position_bid' as const,
+      },
+    };
+    expect(
+      reduceLiveBidCommand(current, policy, command('live.resume'), resumedAt, 'resume'),
+    ).toMatchObject({ ok: true, state: { turnStartedAtMs: resumedAt - 180_000 } });
+    expect(
+      reduceLiveBidCommand(
+        { ...current, frozenAt: pausedAt },
+        policy,
+        command('live.resume'),
+        resumedAt,
+        'resume',
+      ),
+    ).toEqual({ ok: false, code: 'SESSION_FROZEN' });
+  });
+});
+
 function contactPolicy(
   contact: NonNullable<FrozenLiveBidPolicy['annualOperations']>['contact'],
 ): FrozenLiveBidPolicy {

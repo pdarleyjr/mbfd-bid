@@ -57,6 +57,33 @@ describe('Rehearsal dashboard pieces (Task R9)', () => {
     expect(html).toContain('/admin/sessions/new?mock=1');
   });
 
+  it('makes a saved paused Mock easy to reopen at its exact existing URL without creating another', () => {
+    const html = renderToString(
+      <MockSessionsTable
+        sessions={[
+          {
+            id: 'saved-paused-mock',
+            bidYear: 2026,
+            currentPhase: 'paused',
+            currentBidderId: 101,
+            mockControlRevision: 3,
+            isMock: true,
+            lastPickedAtIso: '2026-10-03T22:30:00Z',
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain('Paused Mock bids');
+    expect(html).toContain('Continue a paused Mock');
+    expect(html).toContain('Open the same bid, then choose Resume bid.');
+    expect(html.match(/href="\/admin\/bid\?session_id=saved-paused-mock"/g)).toHaveLength(2);
+    expect(html).toContain('Continue paused Mock');
+    expect(html).toContain('<summary');
+    expect(html).toContain('More tools');
+    expect(html).not.toContain('/admin/sessions/new');
+    expect(html).not.toContain('Create mock session');
+  });
+
   it('NewFindingForm renders the inputs the operator needs', () => {
     const html = renderToString(<NewFindingForm sessionIds={['01HZZSESS01', '01HZZSESS02']} />);
     expect(html).toContain('Submit Finding');

@@ -581,6 +581,7 @@ bid.get('/board', async (c) => {
     body.currentBidderId = canonicalState.currentBidderId;
     body.turnStartedAtMs = canonicalState.turnStartedAtMs;
     body.turnTimerSeconds = canonicalState.turnTimerSeconds;
+    body.turnPausedAtMs = canonicalState.turnPausedAtMs ?? null;
     body.lastSeq = canonicalState.lastSeq;
     body.fills = { ...canonicalState.fills };
     body.bidOrder = [...canonicalState.bidOrder];
@@ -860,6 +861,7 @@ bid.get('/board', async (c) => {
     isMock,
     mockControlRevision,
     bidSessionId,
+    bidYear,
     sessionStartedAt,
     bidOrder,
     bidOrderPreview,

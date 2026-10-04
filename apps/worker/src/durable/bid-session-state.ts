@@ -165,6 +165,10 @@ export interface BidSessionState {
   currentBidderId: number | null;
   turnStartedAtMs: number;
   turnTimerSeconds: number;
+  /** Canonical reversible pause instant. Epoch milliseconds freeze the turn
+   * countdown across browser closure or coordinator reconstruction. Absent only
+   * in historical states; resume gives those turns a fresh advisory clock. */
+  turnPausedAtMs?: number | null;
   lastSeq: number;
   fills: Record<string, Fill>;
   bidOrder: ReadonlyArray<{

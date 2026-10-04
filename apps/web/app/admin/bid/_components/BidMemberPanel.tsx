@@ -1,10 +1,14 @@
 'use client';
 
+import { TaskPanel } from '@/components/admin/TaskPanel';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
 import type { DepartmentPersonDetailResponse } from '@mbfd/shared';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { MemberLite } from '../../../_components/bid/types';
 import { shortRank } from '../../../_components/bid/types';
+import { BidMemberForm, SpecialtyReference, useMemberBidForm } from './BidMemberForm';
 
 export function PreviousBidInfo({
   member,
@@ -19,9 +23,9 @@ export function PreviousBidInfo({
         </h3>
         {previous?.evidenceStatus === 'RECORDED' ? (
           <>
-            <p className="break-words pr-14 font-medium">
-              <span className="text-muted-foreground">{previous.year} · </span>
-              {previous.historicalPositionId} · {previous.positionLabel}
+            <p className="break-words font-medium">
+              <span className="text-muted-foreground">{previous.year} Â· </span>
+              {previous.historicalPositionId} Â· {previous.positionLabel}
             </p>
             <p className="mt-1 break-words">
               {[
@@ -31,7 +35,7 @@ export function PreviousBidInfo({
                 `A-Day ${previous.aDayGroup?.replace(/^(?:GR|G)(\d+)$/, 'Group $1') ?? 'not recorded'}`,
               ]
                 .filter(Boolean)
-                .join(' · ')}
+                .join(' Â· ')}
             </p>
           </>
         ) : (
@@ -61,17 +65,17 @@ export function PreviousBidInfo({
           <p className={compact ? 'mt-1 break-words' : 'mt-1 text-sm'}>
             {[previous.shift ? `${previous.shift} shift` : null, previous.station, previous.unit]
               .filter(Boolean)
-              .join(' · ')}
+              .join(' Â· ')}
           </p>
           <p className={compact ? 'mt-1 break-words' : 'mt-1 text-sm'}>
-            {previous.historicalPositionId} · A-Day{' '}
+            {previous.historicalPositionId} Â· A-Day{' '}
             {previous.aDayGroup?.replace(/^(?:GR|G)(\d+)$/, 'Group $1') ?? 'not recorded'}
           </p>
           {!compact ? (
             <details className="mt-2 text-xs text-muted-foreground">
               <summary className="cursor-pointer">Historical source</summary>
               <p className="mt-1 break-words">
-                {previous.sourceName} · {previous.sourceLocation}
+                {previous.sourceName} Â· {previous.sourceLocation}
               </p>
             </details>
           ) : null}
@@ -94,15 +98,29 @@ export function BidMemberPanel({
   upNow,
   compact = false,
   recordedSeats = [],
-}: { member: MemberLite; upNow: boolean; compact?: boolean; recordedSeats?: readonly string[] }) {
+  sessionId,
+  bidYear,
+}: {
+  member: MemberLite;
+  upNow: boolean;
+  compact?: boolean;
+  recordedSeats?: readonly string[];
+  sessionId?: string | undefined;
+  bidYear?: number | null | undefined;
+}) {
   const [state, setState] = useState<{
     memberId: number;
     data: DepartmentPersonDetailResponse | null;
     error: string | null;
   } | null>(null);
   const [retry, setRetry] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState('overview');
+  const memberTrigger = useRef<HTMLButtonElement>(null);
+  const form = useMemberBidForm({ sessionId, year: bidYear, memberId: member.id, enabled: open });
   useEffect(() => {
-    if (retry > 0) setState(null);
+    void retry;
+    setState(null);
     let active = true;
     const controller = new AbortController();
     void fetch(`/api/admin/department/people/${member.id}`, {
@@ -130,189 +148,189 @@ export function BidMemberPanel({
     };
   }, [member.id, retry]);
   const current = state?.memberId === member.id ? state : null;
-  if (compact) {
-    return (
-      <section
-        aria-label="Selected member details"
-        className="relative min-w-0 shrink-0 border-b border-border bg-card px-3 py-2"
-      >
-        <div className="grid min-w-0 gap-x-4 gap-y-1 sm:grid-cols-2">
-          <header className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
-              <p className="text-xs font-semibold text-brand-navy">
-                {upNow ? 'Up now' : 'Selected member'}
-              </p>
-              <h2 className="break-words text-base font-bold">
-                {shortRank(member.rank)} {member.firstName} {member.lastName}
-              </h2>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Employee {member.employeeId}
-              {recordedSeats.length ? ` · Selected ${recordedSeats.join(' / ')}` : ''}
-            </p>
-            {current?.data?.person.assignments.length ? (
-              <p className="mt-1 break-words text-xs">
-                <span className="text-muted-foreground">Current: </span>
-                {current.data.person.assignments
-                  .map((assignment) =>
-                    [assignment.positionName, assignment.shift, assignment.unit]
-                      .filter(Boolean)
-                      .join(' · '),
-                  )
-                  .join(' / ')}
-              </p>
-            ) : null}
-          </header>
-          <PreviousBidInfo member={member} compact />
-        </div>
-        <details className="absolute right-3 top-1 z-30 text-sm">
-          <summary
-            aria-label="Member details"
-            className="min-h-8 cursor-pointer content-center text-xs font-semibold"
-          >
-            Details
-          </summary>
-          <div className="absolute right-0 top-10 max-h-72 w-[min(380px,calc(100vw-4rem))] overflow-y-auto rounded border border-border bg-card p-3 shadow-lg">
-            {!current ? (
-              <output className="text-muted-foreground">Loading member details…</output>
-            ) : current.error ? (
-              <div>
-                <p role="alert" className="text-warning">
-                  {current.error}
-                </p>
-                <Button
-                  type="button"
-                  className="mt-2"
-                  onClick={() => setRetry((value) => value + 1)}
-                >
-                  Retry member details
-                </Button>
-              </div>
-            ) : current.data ? (
-              <div className="space-y-2 border-t border-border py-2">
-                <p className="font-semibold">Current staffing assignment</p>
-                {current.data.person.assignments.length ? (
-                  current.data.person.assignments.map((assignment) => (
-                    <p key={assignment.id}>
-                      {[
-                        assignment.positionName,
-                        assignment.shift,
-                        assignment.station,
-                        assignment.unit,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </p>
-                  ))
-                ) : (
-                  <p className="text-muted-foreground">No current reviewed staffing assignment.</p>
-                )}
-                <dl className="grid grid-cols-2 gap-2">
-                  <dt>Hire date</dt>
-                  <dd>{current.data.person.serviceRecord.hiredAt ?? 'Not recorded'}</dd>
-                  <dt>Rank seniority</dt>
-                  <dd>{current.data.person.serviceRecord.rankSeniority ?? 'Not recorded'}</dd>
-                </dl>
-                <p className="text-xs text-muted-foreground">
-                  Personnel evidence as of {current.data.asOf}; bid eligibility follows this
-                  session’s saved evidence.
-                </p>
-                <ul className="divide-y divide-border">
-                  {current.data.qualifications.certifications.map((credential) => (
-                    <li key={credential.credentialId} className="py-1">
-                      {credential.credentialName ?? credential.credentialId}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {credential.status}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {member.historicalContext?.sourceName ? (
-                  <p className="break-words text-xs text-muted-foreground">
-                    Previous bid source: {member.historicalContext.sourceName} ·{' '}
-                    {member.historicalContext.sourceLocation}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </details>
-      </section>
-    );
-  }
-  return (
-    <section aria-label="Selected member details" className="min-w-0 border border-border bg-card">
-      <header className="px-3 py-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-brand-navy">
-          {upNow ? 'Up now' : 'Viewing member'}
+  const name = `${shortRank(member.rank)} ${member.firstName} ${member.lastName}`;
+  const close = () => {
+    setOpen(false);
+    memberTrigger.current?.focus();
+  };
+  const assignment = current?.data?.person.assignments
+    .map((row) => [row.positionName, row.shift, row.station, row.unit].filter(Boolean).join(' · '))
+    .join(' / ');
+  const personnel = (children: (data: DepartmentPersonDetailResponse) => ReactNode) =>
+    !current ? (
+      <output className="text-sm text-muted-foreground">Loading member details…</output>
+    ) : current.error ? (
+      <div className="space-y-3">
+        <p role="alert" className="text-sm text-warning">
+          {current.error}
         </p>
-        <h2 className="mt-1 break-words font-heading text-lg font-bold">
-          {shortRank(member.rank)} {member.firstName} {member.lastName}
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">Employee {member.employeeId}</p>
-      </header>
-      <PreviousBidInfo member={member} />
-      <div className="px-3 py-3">
-        {!current ? (
-          <output className="text-sm text-muted-foreground">Loading member details…</output>
-        ) : current.error ? (
-          <>
-            <p role="alert" className="text-sm text-warning">
-              {current.error}
-            </p>
-            <Button
-              type="button"
-              variant="default"
-              className="mt-2"
-              onClick={() => setRetry((value) => value + 1)}
-            >
-              Retry member details
-            </Button>
-          </>
-        ) : current.data ? (
-          <>
-            <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Current staffing assignment
-            </h3>
-            {current.data.person.assignments.length ? (
-              current.data.person.assignments.map((assignment) => (
-                <p key={assignment.id} className="mt-2 text-sm">
-                  {[assignment.positionName, assignment.shift, assignment.station, assignment.unit]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </p>
-              ))
-            ) : (
-              <p className="mt-2 text-sm text-muted-foreground">
-                No current reviewed staffing assignment.
-              </p>
-            )}
-            <details className="mt-3 border-t border-border pt-3">
-              <summary className="cursor-pointer text-sm font-semibold">
-                Qualifications and service
-              </summary>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Current personnel evidence as of {current.data.asOf}; selection eligibility follows
-                this bid’s saved evidence.
-              </p>
-              <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                <dt>Hire date</dt>
-                <dd>{current.data.person.serviceRecord.hiredAt ?? 'Not recorded'}</dd>
-                <dt>Rank seniority</dt>
-                <dd>{current.data.person.serviceRecord.rankSeniority ?? 'Not recorded'}</dd>
-              </dl>
-              <ul className="mt-3 divide-y divide-border text-sm">
-                {current.data.qualifications.certifications.map((credential) => (
-                  <li key={credential.credentialId} className="py-2">
-                    {credential.credentialName ?? credential.credentialId}
-                    <span className="ml-2 text-xs text-muted-foreground">{credential.status}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </>
-        ) : null}
+        <Button type="button" onClick={() => setRetry((value) => value + 1)}>
+          Retry member details
+        </Button>
       </div>
+    ) : current.data ? (
+      children(current.data)
+    ) : null;
+  return (
+    <section
+      aria-label="Selected member details"
+      className={
+        compact
+          ? 'min-w-0 shrink-0 border-b border-border bg-card px-3 py-2'
+          : 'min-w-0 border border-border bg-card p-3'
+      }
+    >
+      <div className="grid min-w-0 gap-x-4 gap-y-2 sm:grid-cols-2">
+        <header className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+            <p className="text-xs font-semibold text-brand-navy">
+              {upNow ? 'Up now' : 'Selected member'}
+            </p>
+            <h2 className={compact ? 'text-base font-bold' : 'font-heading text-lg font-bold'}>
+              <button
+                ref={memberTrigger}
+                type="button"
+                aria-haspopup="dialog"
+                aria-label={`View ${name} details`}
+                className="min-h-8 max-w-full break-words text-left underline decoration-border underline-offset-4 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={() => {
+                  setTab('overview');
+                  setRetry((value) => value + 1);
+                  setOpen(true);
+                }}
+              >
+                {name}
+              </button>
+            </h2>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Employee {member.employeeId}
+            {recordedSeats.length ? ` · Selected ${recordedSeats.join(' / ')}` : ''}
+          </p>
+          {assignment ? (
+            <p className="mt-1 break-words text-xs">
+              <span className="text-muted-foreground">Current: </span>
+              {assignment}
+            </p>
+          ) : null}
+        </header>
+        <PreviousBidInfo member={member} compact={compact} />
+      </div>
+      <TaskPanel
+        open={open}
+        onClose={close}
+        title={name}
+        description={`Employee ${member.employeeId} · ${upNow ? 'Up now' : 'Selected member'}${recordedSeats.length ? ` · Selected ${recordedSeats.join(' / ')}` : ''}`}
+      >
+        <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
+          <TabsList aria-label="Member information" activateOnFocus={false} className="mb-5 w-full">
+            <TabsTrigger value="overview" className="min-w-0 flex-1 px-2">
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="credentials" className="min-w-0 flex-1 px-2">
+              Credentials
+            </TabsTrigger>
+            <TabsTrigger value="form" className="min-w-0 flex-1 px-2">
+              Bid form
+            </TabsTrigger>
+          </TabsList>
+          <TabsPrimitive.Panel value="overview" className="space-y-5 outline-none">
+            <section className="space-y-2 text-sm">
+              <h3 className="font-semibold">Current staffing assignment</h3>
+              {personnel((data) => (
+                <>
+                  {assignment ? (
+                    <p className="break-words">{assignment}</p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      No current reviewed staffing assignment.
+                    </p>
+                  )}
+                  <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2">
+                    <dt className="text-muted-foreground">Hire date</dt>
+                    <dd>{data.person.serviceRecord.hiredAt ?? 'Not recorded'}</dd>
+                    <dt className="text-muted-foreground">Rank seniority</dt>
+                    <dd>{data.person.serviceRecord.rankSeniority ?? 'Not recorded'}</dd>
+                  </dl>
+                </>
+              ))}
+            </section>
+            <PreviousBidInfo member={member} />
+          </TabsPrimitive.Panel>
+          <TabsPrimitive.Panel value="credentials" className="space-y-5 outline-none">
+            {personnel((data) => (
+              <>
+                <div>
+                  <h3 className="text-sm font-semibold">Current certifications</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Personnel evidence as of {data.asOf}. Bid eligibility uses this session’s saved
+                    evidence.
+                  </p>
+                </div>
+                {data.qualifications.certifications.length ? (
+                  <ul className="divide-y divide-border text-sm">
+                    {data.qualifications.certifications.map((credential) => (
+                      <li
+                        key={credential.credentialId}
+                        className="flex flex-wrap justify-between gap-x-4 gap-y-1 py-3"
+                      >
+                        <span className="min-w-0 break-words font-medium">
+                          {credential.credentialName ?? `Credential ${credential.credentialId}`}
+                        </span>
+                        <span
+                          className={
+                            credential.status === 'active' ? 'text-success' : 'text-warning'
+                          }
+                        >
+                          {credential.status}
+                        </span>
+                        {credential.effectiveOn || credential.expiresOn ? (
+                          <p className="w-full text-xs text-muted-foreground">
+                            {[
+                              credential.effectiveOn ? `Effective ${credential.effectiveOn}` : null,
+                              credential.expiresOn ? `Expires ${credential.expiresOn}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No current certifications recorded.
+                  </p>
+                )}
+                {data.qualifications.specialties?.length ? (
+                  <section>
+                    <h3 className="text-sm font-semibold">Specialty qualifications</h3>
+                    <ul className="mt-2 divide-y divide-border text-sm">
+                      {data.qualifications.specialties.map((specialty) => (
+                        <li
+                          key={`${specialty.specialtyCode}-${specialty.eventId}`}
+                          className="flex justify-between gap-4 py-2"
+                        >
+                          <span className="break-words">{specialty.specialtyCode}</span>
+                          <span className="text-muted-foreground">{specialty.status}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+              </>
+            ))}
+            <SpecialtyReference reference={form.current?.data?.airTechReference} />
+          </TabsPrimitive.Panel>
+          <TabsPrimitive.Panel value="form" className="outline-none">
+            <BidMemberForm
+              current={form.current}
+              retry={form.retry}
+              hasSession={Boolean(sessionId && bidYear)}
+            />
+          </TabsPrimitive.Panel>
+        </Tabs>
+      </TaskPanel>
     </section>
   );
 }

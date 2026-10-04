@@ -73,13 +73,27 @@ beforeEach(() => {
   root = createRoot(host);
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () =>
-      Response.json({
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/bid-forms/'))
+        return Response.json({
+          year: 2026,
+          memberId: 1,
+          sessionId: 'shared-mode-layout',
+          status: 'NOT_SUBMITTED',
+          form: null,
+          source: null,
+          sourceLocation: null,
+          archiveSha256: null,
+          publishedAt: null,
+          airTechReference: null,
+        });
+      return Response.json({
         asOf: '2026-10-03',
         person: { assignments: [], serviceRecord: { hiredAt: null, rankSeniority: null } },
         qualifications: { certifications: [] },
-      }),
-    ),
+      });
+    }),
   );
 });
 afterEach(async () => {
@@ -375,6 +389,7 @@ describe('board-centered operator layout', () => {
       await mount(
         <AdminBidShell
           bidSessionId="shared-mode-layout"
+          bidYear={2026}
           lastSeq={0}
           currentPhase="position_bid"
           currentBidderId={1}
@@ -406,6 +421,21 @@ describe('board-centered operator layout', () => {
       expect(host.querySelector('[aria-label="Remaining members"]')).not.toBeNull();
       expect(host.querySelector('[aria-label="Members who already bid"]')).not.toBeNull();
       expect(host.querySelectorAll('button[aria-label="Export shifts"]')).toHaveLength(1);
+      await click('button[aria-label="View Capt Current Member details"]');
+      await act(async () => {
+        const formTab = [...document.querySelectorAll('button')].find(
+          (button) => button.textContent === 'Bid form',
+        );
+        formTab?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        'listed as not having submitted',
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/admin/bid-forms/2026/members/1?session_id=shared-mode-layout',
+        expect.objectContaining({ cache: 'no-store' }),
+      );
     },
   );
   it.each([true, false])(

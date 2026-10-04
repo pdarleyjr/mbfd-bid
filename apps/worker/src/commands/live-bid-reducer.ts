@@ -459,27 +459,56 @@ export function reduceLiveBidCommand(
       state: {
         ...state,
         currentPhase: 'paused',
+        turnPausedAtMs: now,
         live: { ...live, pausedPhase: state.currentPhase },
         lastSeq: state.lastSeq + 1,
       },
       eventType: 'live_command_applied',
-      payload: { operation: 'pause', stageId: currentStageId },
+      payload: {
+        operation: 'pause',
+        stageId: currentStageId,
+        turnPausedAtMs: now,
+        turnStartedAtMs: state.turnStartedAtMs,
+      },
       supersedesBidId: null,
     };
   }
   if (command.type === 'live.resume') {
     if (state.currentPhase !== 'paused' || live.pausedPhase === null)
       return { ok: false, code: 'SESSION_NOT_PAUSED' };
+    // Move only the advisory clock. A saved pause instant excludes an overnight
+    // interval without changing any bidder, queue, award or pending context.
+    // Historical paused states lack that instant and receive a fresh clock.
+    // A reviewed action may start another turn while paused; in that case its
+    // start is after the pause instant and the next bidder keeps the full time.
+    const elapsedMs =
+      state.turnStartedAtMs <= 0 ||
+      state.turnPausedAtMs === undefined ||
+      state.turnPausedAtMs === null
+        ? 0
+        : Math.min(
+            state.turnTimerSeconds * 1000,
+            Math.max(0, state.turnPausedAtMs - state.turnStartedAtMs),
+          );
+    const hasTurn = state.turnStartedAtMs > 0 || state.currentBidderId !== null;
+    const resumedTurnStartedAtMs = hasTurn ? Math.max(0, now - elapsedMs) : 0;
     return {
       ok: true,
       state: {
         ...state,
         currentPhase: live.pausedPhase,
+        turnPausedAtMs: null,
+        turnStartedAtMs: resumedTurnStartedAtMs,
         live: { ...live, pausedPhase: null },
         lastSeq: state.lastSeq + 1,
       },
       eventType: 'live_command_applied',
-      payload: { operation: 'resume', stageId: currentStageId },
+      payload: {
+        operation: 'resume',
+        stageId: currentStageId,
+        turnPausedAtMs: null,
+        turnStartedAtMs: resumedTurnStartedAtMs,
+      },
       supersedesBidId: null,
     };
   }

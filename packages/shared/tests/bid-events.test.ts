@@ -96,6 +96,33 @@ describe('bid event schemas (Plan 04 Task 2)', () => {
     expect(r.success).toBe(true);
   });
 
+  it('carries a saved pause instant while retaining historical snapshot compatibility', () => {
+    const historical = {
+      bidSessionId: '01HSESS',
+      seq: 100,
+      currentPhase: 'paused',
+      currentBidderId: 7,
+      turnStartedAtMs: 1_700_000_000_000,
+      turnTimerSeconds: 180,
+      frozenAt: null,
+      fills: [],
+      bidOrder: [],
+    };
+    expect(StateSnapshotEventSchema.safeParse(historical).success).toBe(true);
+    expect(
+      StateSnapshotEventSchema.parse({ ...historical, turnPausedAtMs: 1_700_000_060_000 })
+        .turnPausedAtMs,
+    ).toBe(1_700_000_060_000);
+    expect(
+      StateSnapshotEventSchema.safeParse({ ...historical, turnPausedAtMs: null }).success,
+    ).toBe(true);
+    for (const invalid of [-1, 1.5, '1700000060000']) {
+      expect(
+        StateSnapshotEventSchema.safeParse({ ...historical, turnPausedAtMs: invalid }).success,
+      ).toBe(false);
+    }
+  });
+
   it('keeps the synthetic specialty signal out of the normal Bid event sequence', () => {
     const signal = {
       v: 1,

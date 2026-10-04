@@ -16,6 +16,7 @@ interface Props {
   currentPhase: string;
   sessionStartedAt: number | null;
   turnStartedAtMs: number | null;
+  turnPausedAtMs?: number | null;
   turnTimerSeconds: number;
   currentBidder: BidderContext | null;
   currentBidderId: number | null;
@@ -66,6 +67,7 @@ export function LiveCommandBar({
   currentPhase,
   sessionStartedAt,
   turnStartedAtMs,
+  turnPausedAtMs = null,
   turnTimerSeconds,
   currentBidder,
   currentBidderId,
@@ -89,14 +91,20 @@ export function LiveCommandBar({
     now !== null && sessionStartedAt && sessionStartedAt > 0
       ? formatDuration(now - sessionStartedAt)
       : '—';
+  const paused = currentPhase === 'paused';
+  const turnClock = paused ? turnPausedAtMs : now;
   const remainingMs =
-    now !== null && turnStartedAtMs && turnStartedAtMs > 0
-      ? Math.max(0, turnStartedAtMs + turnTimerSeconds * 1000 - now)
+    turnClock !== null && turnStartedAtMs && turnStartedAtMs > 0
+      ? Math.max(0, turnStartedAtMs + turnTimerSeconds * 1000 - turnClock)
       : 0;
   const turnDisplay =
-    now !== null && turnStartedAtMs && turnStartedAtMs > 0 ? formatDuration(remainingMs) : '—';
+    turnClock !== null && turnStartedAtMs && turnStartedAtMs > 0
+      ? `${formatDuration(remainingMs)}${paused ? ' · Paused' : ''}`
+      : paused
+        ? 'Paused'
+        : '—';
   const turnUrgency: 'normal' | 'warn' | 'critical' =
-    remainingMs === 0
+    paused || remainingMs === 0
       ? 'normal'
       : remainingMs < 10_000
         ? 'critical'
@@ -202,7 +210,9 @@ export function LiveCommandBar({
                 <span title="Session uptime">
                   Session <span data-testid="session-uptime">{sessionUptime}</span>
                 </span>
-                <span title="Turn timer">
+                <span
+                  title={paused ? 'Saved remaining turn time; held while paused' : 'Turn timer'}
+                >
                   Turn{' '}
                   <span
                     data-testid="turn-remaining"
