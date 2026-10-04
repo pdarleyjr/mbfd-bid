@@ -4,6 +4,7 @@ import {
   BidConfigurationSettingsV2Schema,
   type BidConfigurationSettingsV3,
   BidConfigurationSettingsV3Schema,
+  BidOperationNoteSchema,
   CredentialEvaluationDateSchema,
   FrozenLiveBidPolicySchema,
   type JwtPayload,
@@ -43,7 +44,7 @@ const SetBidConfigurationSchema = z
         credential_evaluation_on: CredentialEvaluationDateSchema,
       })
       .strict(),
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
   })
   .strict();
 

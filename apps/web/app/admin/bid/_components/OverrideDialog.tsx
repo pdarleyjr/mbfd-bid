@@ -72,9 +72,10 @@ export function OverrideDialog({ bidSessionId, onClose }: Props) {
             />
           </Label>
           <Label className="block text-sm">
-            <span className="text-foreground">Reason</span>
+            <span className="text-foreground">Note (optional)</span>
             <Textarea
               data-testid="override-reason"
+              maxLength={500}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
@@ -94,7 +95,7 @@ export function OverrideDialog({ bidSessionId, onClose }: Props) {
           <Button
             type="button"
             data-testid="override-submit"
-            disabled={submitting || !memberId || !positionId || !reason}
+            disabled={submitting || !memberId || !positionId || reason.trim().length > 500}
             onClick={submit}
             className="rounded bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-50"
           >

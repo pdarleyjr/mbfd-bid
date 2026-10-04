@@ -236,7 +236,12 @@ async function fill(label: string, value: string) {
     node.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
-async function mount(isMock = true) {
+async function mount(
+  isMock = true,
+  workspaceProps: Partial<
+    Pick<Parameters<typeof AnnualLiveControls>[0], 'board' | 'onWorkspaceStateChange'>
+  > = {},
+) {
   live.current_bidder = requester();
   const positions: PositionMeta[] = ['S-A', 'S-B', 'R-A'].map((id) => ({
     id,
@@ -275,12 +280,41 @@ async function mount(isMock = true) {
           },
         }}
         positions={positions}
+        {...workspaceProps}
       />,
     ),
   );
 }
 
 describe('contextual specialty and deferred A-Day operator workflow', () => {
+  it.each([true, false])(
+    'keeps the seat board visible and reports pending A-Days and temporary duties accurately (Mock %s)',
+    async (isMock) => {
+      live.fills = {
+        'S-A': { member_id: 9, a_day: null },
+        'R-A': { member_id: 17, a_day: 'G2' },
+      };
+      live.exceptional_assignments = [
+        { assignment_id: 'duty-17', member_id: 17, role_label: 'Acting chief', forced: true },
+      ];
+      const changed = vi.fn();
+      await mount(isMock, {
+        board: <div data-testid="station-board-fixture">Station board</div>,
+        onWorkspaceStateChange: changed,
+      });
+      expect(container.querySelector('[data-testid="station-board-fixture"]')).not.toBeNull();
+      expect(container.querySelector('[data-panel-title="Record selection"]')).toBeNull();
+      expect(
+        container.querySelector('[aria-label="Recorded A-Day groups"]')?.textContent,
+      ).toContain('Group 2 · 1 recorded');
+      expect(changed).toHaveBeenLastCalledWith({
+        aDayPendingMemberIds: [9],
+        aDayDueMemberIds: [],
+        temporarilyAssignedMemberIds: [17],
+      });
+      expect(commands).toHaveLength(0);
+    },
+  );
   it.each([true, false])(
     'keeps five of 28 priority candidates concise and exposes every ordered assignment action (Mock %s)',
     async (isMock) => {
@@ -341,7 +375,7 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
       await mount(isMock);
       await settle(() => button('Presentation controls').click());
       const panel = container.querySelector('[data-panel-title="Department presentation"]');
-      expect(panel?.textContent).not.toContain('Operator reason');
+      expect(panel?.textContent).not.toContain('Note (optional)');
       expect(panel?.textContent).not.toContain('Evidence reference');
       expect(commands).toHaveLength(0);
       await settle(() => button(label as string).click());
@@ -361,7 +395,7 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
     },
   );
   it.each([true, false])(
-    'finds a member and moves their ordinary turn without dropping hidden exact turns (Mock %s)',
+    'moves an ordinary turn with an empty optional note without dropping hidden exact turns (Mock %s)',
     async (isMock) => {
       live.remaining_order = [17, 9, 17];
       live.remaining_turns = [
@@ -396,7 +430,6 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
           ) as HTMLButtonElement
         ).click(),
       );
-      await fill('Operator reason', 'Synthetic ordinary turn priority approved');
       await settle(() => button('Review bid order').click());
       const exactTurns = [
         { memberId: 17, stageId: null },
@@ -407,6 +440,7 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
         type: 'live.alter_order',
         orderedRemainingMemberIds: [17, 17, 9],
         orderedRemainingTurns: exactTurns,
+        reason: '',
       });
       expect(commands).toHaveLength(0);
       await settle(() =>
@@ -419,6 +453,7 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
         type: 'live.alter_order',
         orderedRemainingMemberIds: [17, 17, 9],
         orderedRemainingTurns: exactTurns,
+        reason: '',
         adminOverride: { acknowledged: true, warningCodes: ['POLICY_DEVIATION'] },
       });
     },
@@ -438,7 +473,7 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
       ).click(),
     );
     expect(commands).toHaveLength(0);
-    await fill('Operator reason', 'Synthetic operator approved priority change');
+    await fill('Note (optional)', 'Synthetic operator approved priority change');
     await settle(() => button('Review bid order').click());
     expect(commands).toHaveLength(0);
     await settle(() =>
@@ -542,7 +577,7 @@ describe('contextual specialty and deferred A-Day operator workflow', () => {
     expect(button('Review temporary duty').disabled).toBe(true);
     await choose('Directed-role member', '9');
     await fill('Directed role label', 'Acting Division Chief of Prevention');
-    await fill('Operator reason', 'Synthetic Chief direction reviewed');
+    await fill('Note (optional)', 'Synthetic Chief direction reviewed');
     expect(button('Review temporary duty').disabled).toBe(true);
     await settle(() =>
       (

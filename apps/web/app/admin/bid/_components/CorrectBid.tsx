@@ -346,7 +346,8 @@ export function CorrectBid(props: {
   }
   async function preview() {
     if (!source || !readback || draftBlocked || inFlight.current) return;
-    if (overrideEnabled && (props.overrideAllowed !== true || reason.trim().length < 4)) return;
+    if (overrideEnabled && props.overrideAllowed !== true) return;
+    if (reason.trim().length > 500) return;
     const generation = contextGeneration.current;
     inFlight.current = true;
     setBusy(true);
@@ -541,7 +542,7 @@ export function CorrectBid(props: {
           if (!busy) setOpen(false);
         }}
         title="Correct a bid"
-        description="Review the original award, check the proposed correction and confirm it with an operator reason."
+        description="Review the original award and proposed correction, then confirm."
       >
         {notice && (
           <output className="mb-4 block rounded border border-border p-3 text-sm">{notice}</output>
@@ -698,7 +699,7 @@ export function CorrectBid(props: {
                   </fieldset>
                 )}
                 <div>
-                  <Label htmlFor="correction-reason">Operator reason</Label>
+                  <Label htmlFor="correction-reason">Note (optional)</Label>
                   <textarea
                     id="correction-reason"
                     value={reason}
@@ -722,8 +723,7 @@ export function CorrectBid(props: {
                   <Button
                     disabled={
                       draftBlocked ||
-                      !reason.trim() ||
-                      (overrideEnabled && reason.trim().length < 4) ||
+                      reason.trim().length > 500 ||
                       (operation === 'REPLACE' &&
                         (!positionId ||
                           (source.termParticipation !== null &&
@@ -748,9 +748,11 @@ export function CorrectBid(props: {
                         {award(review.preview.after)}
                       </div>
                     </div>
-                    <p className="text-sm">
-                      <strong>Reason:</strong> {review.preview.reason}
-                    </p>
+                    {review.preview.reason ? (
+                      <p className="text-sm">
+                        <strong>Note:</strong> {review.preview.reason}
+                      </p>
+                    ) : null}
                     {review.command.adminOverride ? (
                       <div className="space-y-3 border border-warning/30 bg-warning/5 p-3">
                         <h3 className="font-semibold">Administrator override advisories</h3>
@@ -772,8 +774,7 @@ export function CorrectBid(props: {
                             disabled={draftBlocked}
                             onChange={(event) => setOverrideAcknowledged(event.target.checked)}
                           />
-                          I reviewed the original award, corrected award, reason, and all
-                          advisories. Record this administrator override.
+                          I reviewed the original award, correction, and advisories.
                         </Label>
                       </div>
                     ) : null}

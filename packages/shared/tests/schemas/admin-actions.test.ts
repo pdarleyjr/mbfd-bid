@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AmendSelectionSchema,
   BidForMemberSchema,
   DayEndSchema,
   DayStartSchema,
@@ -22,26 +23,26 @@ describe('ForcePickSchema', () => {
     expect(ok.member_id).toBe(42);
   });
 
-  it('rejects empty reason', () => {
-    expect(() =>
+  it('accepts an empty operator note', () => {
+    expect(
       ForcePickSchema.parse({
         member_id: 1,
         position_id: 'A205',
         reason_code: 'force.reverse_seniority',
         reason: '',
-      }),
-    ).toThrow();
+      }).reason,
+    ).toBe('');
   });
 
-  it('rejects reason shorter than 4 chars', () => {
-    expect(() =>
+  it('accepts a short operator note', () => {
+    expect(
       ForcePickSchema.parse({
         member_id: 1,
         position_id: 'A205',
         reason_code: 'force.reverse_seniority',
         reason: 'lol',
-      }),
-    ).toThrow();
+      }).reason,
+    ).toBe('lol');
   });
 
   it('rejects non-force reason_code', () => {
@@ -65,6 +66,40 @@ describe('ForcePickSchema', () => {
       }),
     ).toThrow();
   });
+});
+
+describe('optional notes retain the Bid action contract', () => {
+  const cases = [
+    [ForcePickSchema, { member_id: 1, position_id: 'A101', reason_code: 'force.cert_mandate' }],
+    [SkipSchema, { member_id: 1, reason_code: 'skip.declined' }],
+    [
+      BidForMemberSchema,
+      { member_id: 1, position_id: 'A101', reason_code: 'bid_for_member.unreachable_phone' },
+    ],
+    [
+      AmendSelectionSchema,
+      { bid_id: 'award-1', position_id: 'A101', expected_session_revision: 1 },
+    ],
+    [
+      LockPositionSchema,
+      { member_id: 1, position_id: 'A101', reason_code: 'lock_position.probationary_placement' },
+    ],
+    [PauseSessionSchema, { reason_code: 'session.pause_emergency' }],
+    [DayEndSchema, { scheduled_resume_at: '2026-11-15T13:00:00.000Z' }],
+  ] as const;
+
+  it.each(cases)(
+    'allows omission and whitespace without inventing a rationale',
+    (schema, fields) => {
+      expect(schema.parse(fields).reason).toBe('');
+      expect(schema.parse({ ...fields, reason: ' \n ' }).reason).toBe('');
+      expect(schema.parse({ ...fields, reason: '  Chief direction  ' }).reason).toBe(
+        'Chief direction',
+      );
+      expect(schema.safeParse({ ...fields, reason: 'x'.repeat(501) }).success).toBe(false);
+      expect(schema.safeParse({ ...fields, reason: null }).success).toBe(false);
+    },
+  );
 });
 
 describe('SkipSchema', () => {

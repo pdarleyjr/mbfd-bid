@@ -83,20 +83,23 @@ test('member details, historical assignment and explicit bid confirmation work i
     expect((await canonicalReadback).status()).toBe(200);
     const panel = page.getByRole('region', { name: 'Selected member details' });
     await expect(panel.getByRole('heading', { name: 'Capt Current Fixture' })).toBeVisible();
-    await expect(panel.getByText('Historical Rescue Lieutenant', { exact: true })).toBeVisible();
-    await expect(panel.getByText(/old-A109.*Group 4/)).toBeVisible();
-    const available = page.getByRole('region', { name: 'Available positions' });
-    await expect(available.getByRole('button', { name: /Engine 2/ })).toBeVisible();
+    await expect(panel.getByText(/old-A109 · Historical Rescue Lieutenant/)).toBeVisible();
+    await expect(panel.getByText(/A-Day Group 4/)).toBeVisible();
+    const board = page.getByRole('region', { name: 'Bid positions', exact: true });
+    const firstSeat = board.getByTestId('position-cell-A-fixture');
+    await expect(firstSeat).toBeVisible();
     await page.screenshot({
       path: testInfo.outputPath(`operator-initial-${width}.png`),
       fullPage: false,
     });
     if (width >= 810) {
-      const firstSeat = await available.getByRole('button', { name: /Engine 2/ }).boundingBox();
-      expect(firstSeat).not.toBeNull();
-      expect((firstSeat?.y ?? height) + (firstSeat?.height ?? 0)).toBeLessThanOrEqual(height);
+      const seatBounds = await firstSeat.boundingBox();
+      expect(seatBounds).not.toBeNull();
+      expect((seatBounds?.y ?? height) + (seatBounds?.height ?? 0)).toBeLessThanOrEqual(height);
     }
-    await available.getByRole('button', { name: /Engine 2/ }).click();
+    await firstSeat.click();
+    const selection = page.getByRole('dialog', { name: 'Record selection', exact: true });
+    await expect(selection).toBeVisible();
     expect(commands).toHaveLength(0);
     const group = page.getByRole('combobox', { name: 'Selection A-Day' });
     await expect(group.locator('option')).toHaveText([
@@ -107,19 +110,20 @@ test('member details, historical assignment and explicit bid confirmation work i
       'Group 4',
     ]);
     await group.selectOption('G3');
+    await selection.getByRole('button', { name: 'Close panel', exact: true }).click();
     const workspace = page.getByTestId('bid-operator-workspace').filter({ visible: true });
     await expect(workspace).toHaveCount(1);
-    await workspace.getByText('Choose member · 2', { exact: true }).click();
-    await workspace.getByRole('button', { name: /Capt Waiting Fixture/ }).click();
+    if (width < 1024)
+      await workspace.getByRole('button', { name: 'Remaining · 2', exact: true }).click();
+    await workspace.getByTestId('operator-member-remaining-2').click();
     await expect(panel.getByRole('heading', { name: 'Capt Waiting Fixture' })).toBeVisible();
     await expect(
       panel.getByText('Previous bid history has not been linked to this member.'),
     ).toBeVisible();
-    await expect(available.getByRole('button', { name: /Engine 2/ })).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Confirm bid', exact: true })).toBeDisabled();
+    expect(commands).toHaveLength(0);
     await page.getByRole('button', { name: 'Return to current bidder' }).click();
-    await available.getByRole('button', { name: 'B shift', exact: true }).click();
-    await expect(available.getByRole('button', { name: /Engine 4/ })).toBeVisible();
+    await board.getByTestId('shift-tab-B').click();
+    await expect(board.getByTestId('position-cell-B-fixture')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
@@ -128,6 +132,9 @@ test('member details, historical assignment and explicit bid confirmation work i
       await expect(page.getByTestId('admin-sidebar')).toHaveAttribute('data-collapsed', 'true');
     }
   }
+  const board = page.getByRole('region', { name: 'Bid positions', exact: true });
+  await board.getByTestId('shift-tab-A').click();
+  await board.getByTestId('position-cell-A-fixture').click();
   await page.getByRole('button', { name: 'Confirm bid', exact: true }).click();
   await expect.poll(() => commands.length).toBe(1);
   expect(commands[0]).toMatchObject({
@@ -138,6 +145,10 @@ test('member details, historical assignment and explicit bid confirmation work i
     expectedSeq: 4,
   });
   await expect(page.getByRole('combobox', { name: 'Selection A-Day' })).toHaveValue('G3');
+  await page
+    .getByRole('dialog', { name: 'Record selection', exact: true })
+    .getByRole('button', { name: 'Close panel', exact: true })
+    .click();
   const correctionReviews: Record<string, unknown>[] = [];
   await page.route('**/api/admin/bid-session/*/corrections', (route) =>
     route.fulfill({
@@ -190,7 +201,7 @@ test('member details, historical assignment and explicit bid confirmation work i
   await page.getByLabel('Corrected position', { exact: true }).selectOption('A-fixture');
   await page.getByLabel('Corrected A-Day', { exact: true }).selectOption('G2');
   await page
-    .getByRole('textbox', { name: 'Operator reason', exact: true })
+    .getByRole('textbox', { name: 'Note (optional)', exact: true })
     .fill('Synthetic reviewed earlier award correction');
   expect(commands).toHaveLength(1);
   await page.getByRole('button', { name: 'Review correction', exact: true }).click();

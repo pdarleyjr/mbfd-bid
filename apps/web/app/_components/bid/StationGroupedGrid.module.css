@@ -1,0 +1,128 @@
+.operatorBoard {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  container-type: inline-size;
+}
+.toolbar {
+  display: flex;
+  min-width: 0;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid rgb(var(--border));
+}
+.viewTools {
+  position: relative;
+  min-width: 0;
+  margin-left: auto;
+}
+.viewOptions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.viewToggle {
+  display: none;
+  min-height: 44px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgb(var(--border));
+  border-radius: 4px;
+}
+@container (max-width: 640px) {
+  .viewToggle {
+    display: block;
+  }
+  .viewOptions {
+    display: none;
+  }
+  .viewOpen {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 30;
+    display: flex;
+    flex-wrap: wrap;
+    width: min(360px, calc(100vw - 32px));
+    padding: 8px;
+    border: 1px solid rgb(var(--border));
+    border-radius: 4px;
+    background: rgb(var(--card));
+    box-shadow: 0 8px 20px rgb(0 0 0 / 0.12);
+  }
+}
+.operatorGrid {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  align-content: start;
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.station {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--background));
+}
+.stationHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgb(var(--muted));
+}
+.stationBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.unitHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  background: rgb(var(--muted) / 0.6);
+}
+.operatorBoard [data-testid^="position-cell-"] {
+  min-height: 44px;
+}
+@container (min-width: 820px) {
+  .operatorGrid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+@container (min-width: 1080px) {
+  .operatorGrid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (pointer: fine) and (min-width: 1024px) {
+  .operatorBoard [data-testid^="position-cell-"] {
+    min-height: 36px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+@media (pointer: fine) and (min-width: 768px) {
+  .toolbar button,
+  .toolbar summary {
+    min-height: 32px;
+  }
+}

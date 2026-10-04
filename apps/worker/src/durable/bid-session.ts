@@ -3,6 +3,7 @@ import {
   type AuditEvent,
   BID_EVENT_VERSION,
   type BidEventEnvelope,
+  BidOperationNoteSchema,
   ClientMessageSchema,
   type LiveBidCommand,
   LiveBidCommandSchema,
@@ -173,7 +174,7 @@ const SpecialtyOutcomeSchema = z.discriminatedUnion('kind', [
 const SpecialtyAuditSchema = z
   .object({
     actorId: z.number().int().nonnegative(),
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
     origin: z.literal('synthetic_specialty_test'),
     effectiveDate: z.null(),
   })

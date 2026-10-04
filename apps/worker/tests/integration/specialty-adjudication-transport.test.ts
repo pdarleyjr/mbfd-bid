@@ -331,7 +331,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
     expect(calls).toEqual([]);
   });
 
-  it('forwards a revisioned synthetic begin command with operator evidence, not an official policy', async () => {
+  it('forwards a revisioned synthetic begin command with an optional note and authenticated operator evidence', async () => {
     await seedSession(h, true);
     await seedFrozenV3Snapshot(h);
     const calls: DurableCall[] = [];
@@ -346,7 +346,6 @@ describe('synthetic specialty-adjudication admin transport', () => {
         request_id: 'specialty-request-1',
         position_id: 'A101',
         policy: syntheticPolicy(),
-        reason: 'Synthetic specialty interruption rehearsal.',
       }),
     });
 
@@ -375,7 +374,7 @@ describe('synthetic specialty-adjudication admin transport', () => {
           audit: expect.objectContaining({
             actorId: 900001,
             effectiveDate: null,
-            reason: 'Synthetic specialty interruption rehearsal.',
+            reason: '',
             origin: 'synthetic_specialty_test',
           }),
         }),

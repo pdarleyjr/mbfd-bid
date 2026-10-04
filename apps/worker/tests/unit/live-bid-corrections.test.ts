@@ -126,9 +126,10 @@ const reduce = (before: BidSessionState, raw = correction(), id = 'correction-1'
   reduceLiveBidCommand(before, policy, raw as unknown as LiveBidCommand, 1000, id);
 
 describe('audited compensating correction commands', () => {
-  it('accepts the correction contract with an explicit source receipt and rejects blank reason', () => {
+  it('accepts the correction contract with an explicit source receipt and optional operator note', () => {
     expect(LiveBidCommandSchema.safeParse(correction()).success).toBe(true);
-    expect(LiveBidCommandSchema.safeParse(correction({ reason: '   ' })).success).toBe(false);
+    expect(LiveBidCommandSchema.parse(correction({ reason: '   ' })).reason).toBe('');
+    expect(reduce(state(), correction({ reason: '' })).ok).toBe(true);
   });
 
   it('corrects a prior non-last award on the same position without consuming the waiting turn', () => {

@@ -1,4 +1,5 @@
 import {
+  BidOperationNoteSchema,
   ConfiguredScoringSchema,
   type JwtPayload,
   PostAwardObligationsSchema,
@@ -163,7 +164,7 @@ const RulePatchSchema = z
     notes: z.string().max(2000).nullable().optional(),
     expected_rule_book_revision: z.number().int().nonnegative().optional(),
     reason_code: ReasonCodeSchema,
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
   })
   .strict()
   .refine(
@@ -179,7 +180,7 @@ const RuleDeleteSchema = z
   .object({
     expected_rule_book_revision: z.number().int().nonnegative().optional(),
     reason_code: ReasonCodeSchema,
-    reason: z.string().trim().min(4).max(500),
+    reason: BidOperationNoteSchema,
   })
   .strict();
 

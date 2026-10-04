@@ -32,6 +32,7 @@ interface Props {
   /** Server-composed explanation of the same authoritative board snapshot. */
   advisory: BidAdvisoryBundle | null;
   managed?: boolean;
+  workspace?: boolean;
 }
 
 export function AdminBoard({
@@ -45,6 +46,7 @@ export function AdminBoard({
   wsBase,
   advisory,
   managed = false,
+  workspace = false,
 }: Props) {
   const operator = useBidOperator();
   const router = useRouter();
@@ -77,7 +79,11 @@ export function AdminBoard({
     [pickMode, selectedMemberId, submitPick],
   );
   const positionClickHandler = managed
-    ? operator?.choosePosition
+    ? (positionId: string) => {
+        const fill = store.getState().fills[positionId];
+        if (fill) operator?.selectMember(fill.memberId);
+        else operator?.choosePosition(positionId);
+      }
     : pickMode && selectedMemberId !== null
       ? onPositionClick
       : undefined;
@@ -97,17 +103,43 @@ export function AdminBoard({
 
   return (
     <BidStoreProvider store={store}>
-      <BidAdvisoryPanel advisory={advisory} />
-      <StationGroupedGrid
-        members={members}
-        positions={biddablePositions}
-        snapshotBound
-        onPositionClick={positionClickHandler}
-      />
-      {status !== 'open' ? <ReconnectingOverlay status={status} /> : null}
-      {lastError ? (
-        <ErrorToast error={lastError} onClose={() => store.getState().clearError()} />
-      ) : null}
+      <div
+        className={workspace ? 'flex min-h-0 flex-1 flex-col' : undefined}
+        data-testid="operator-board"
+      >
+        {!workspace ? <BidAdvisoryPanel advisory={advisory} /> : null}
+        <StationGroupedGrid
+          members={members}
+          positions={biddablePositions}
+          snapshotBound
+          onPositionClick={positionClickHandler}
+          operatorLayout={workspace}
+          toolbar={
+            workspace ? (
+              <details className="relative text-xs">
+                <summary className="min-h-11 cursor-pointer content-center whitespace-nowrap px-2 font-semibold">
+                  Decision details
+                  {advisory
+                    ? ` · ${advisory.cards.filter((card) => card.severity === 'attention' || card.severity === 'blocked').length}`
+                    : ''}
+                </summary>
+                <div className="absolute right-0 top-full z-30 max-h-60 w-[min(460px,calc(100vw-2rem))] overflow-auto rounded border border-border bg-card shadow-lg">
+                  <BidAdvisoryPanel advisory={advisory} />
+                </div>
+              </details>
+            ) : undefined
+          }
+          selectedRank={
+            operator?.selectedMemberId == null
+              ? null
+              : (members[String(operator.selectedMemberId)]?.rank ?? null)
+          }
+        />
+        {status !== 'open' ? <ReconnectingOverlay status={status} /> : null}
+        {lastError ? (
+          <ErrorToast error={lastError} onClose={() => store.getState().clearError()} />
+        ) : null}
+      </div>
     </BidStoreProvider>
   );
 }

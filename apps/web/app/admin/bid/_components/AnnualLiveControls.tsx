@@ -261,6 +261,14 @@ interface Props {
   positions?: readonly PositionMeta[] | undefined;
   onCanonicalChange?: (() => void) | undefined;
   workspace?: boolean;
+  board?: ReactNode;
+  onWorkspaceStateChange?:
+    | ((state: {
+        aDayPendingMemberIds: number[];
+        aDayDueMemberIds: number[];
+        temporarilyAssignedMemberIds: number[];
+      }) => void)
+    | undefined;
 }
 
 function name(candidate: Candidate): string {
@@ -399,10 +407,35 @@ function SelectionFrame({
 function OperatorNotes({ optional, children }: { optional: boolean; children: ReactNode }) {
   return optional ? (
     <details className="order-last border-t border-border pt-3">
-      <summary className="cursor-pointer text-sm text-muted-foreground">
-        Optional operator notes
-      </summary>
+      <summary className="cursor-pointer text-sm text-muted-foreground">Note (optional)</summary>
       <div className="mt-3">{children}</div>
+    </details>
+  ) : (
+    <>{children}</>
+  );
+}
+
+function CoverageDetails({
+  compact,
+  summary,
+  children,
+}: {
+  compact: boolean;
+  summary: string;
+  children: ReactNode;
+}) {
+  return compact ? (
+    <details className="order-2 min-w-0 rounded border border-warning/40 bg-warning/5 px-3">
+      <summary
+        className="min-h-11 cursor-pointer content-center text-sm font-medium"
+        aria-live="polite"
+        title={summary}
+      >
+        Alerts · {summary}
+      </summary>
+      <div className="absolute left-0 top-full z-30 mt-1 max-h-[50dvh] w-full max-w-lg overflow-y-auto rounded border border-border bg-card p-3 shadow-lg">
+        {children}
+      </div>
     </details>
   ) : (
     <>{children}</>
@@ -431,7 +464,7 @@ export function AnnualLiveControls(props: Props) {
     | 'finalization'
     | 'exceptional'
     | null
-  >(props.workspace ? 'selection' : null);
+  >(null);
   const pendingCommand = useRef<{
     fingerprint: string;
     commandId: string;
@@ -528,6 +561,26 @@ export function AnnualLiveControls(props: Props) {
   useEffect(() => {
     if (props.workspace && loaded) operator?.setActiveMember(activeMemberId);
   }, [props.workspace, loaded, activeMemberId, operator?.setActiveMember]);
+  useEffect(() => {
+    if (!props.workspace || state === null || !props.onWorkspaceStateChange) return;
+    props.onWorkspaceStateChange({
+      aDayPendingMemberIds: [
+        ...new Set(
+          Object.entries(state.fills)
+            .filter(
+              ([positionId, fill]) =>
+                !fill.a_day &&
+                (state.a_day_timing_by_position?.[positionId] ?? state.a_day_selection) != null,
+            )
+            .map(([, fill]) => fill.member_id),
+        ),
+      ],
+      aDayDueMemberIds: state.a_day_current ? [state.a_day_current.member_id] : [],
+      temporarilyAssignedMemberIds: [
+        ...new Set((state.exceptional_assignments ?? []).map((assignment) => assignment.member_id)),
+      ],
+    });
+  }, [props.workspace, state, props.onWorkspaceStateChange]);
   useEffect(() => {
     const intent = operator?.positionIntent;
     if (!props.workspace || !intent || state === null || handledIntent.current >= intent.nonce)
@@ -1019,8 +1072,12 @@ export function AnnualLiveControls(props: Props) {
                       : '');
     const commandEvidenceReference =
       type === 'live.set_presentation_mode' ? null : evidenceReference.trim() || null;
-    if (commandReason.length < 1 || state === null) {
-      setNotice('Enter an operator reason and wait for the current bid to load.');
+    if (state === null) {
+      setNotice('Wait for the current bid to load.');
+      return;
+    }
+    if (commandReason.length > 500) {
+      setNotice('Keep the optional note within 500 characters.');
       return;
     }
     const awardsPosition =
@@ -1128,6 +1185,8 @@ export function AnnualLiveControls(props: Props) {
       setNotice('Action recorded.');
       try {
         await load();
+        if (props.workspace && (type === 'live.record_selection' || type === 'live.record_a_day'))
+          setPanel(null);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.');
         setNotice('Action recorded. Refresh bid updates before recording another action.');
@@ -1211,378 +1270,110 @@ export function AnnualLiveControls(props: Props) {
       ) : null}
     </li>
   );
+  const coverageWarnings = [
+    ...(state?.specialty_coverage?.availability === 'UNAVAILABLE'
+      ? ['specialty coverage unavailable']
+      : state?.specialty_coverage?.status && state.specialty_coverage.status !== 'FEASIBLE'
+        ? [`specialty coverage ${state.specialty_coverage.status.replace('_', ' ').toLowerCase()}`]
+        : []),
+    ...(state?.credential_coverage?.availability === 'UNAVAILABLE'
+      ? ['qualification coverage unavailable']
+      : (state?.credential_coverage?.groups ?? [])
+          .filter((group) => group.status !== 'FEASIBLE')
+          .map(
+            (group) =>
+              `${group.label}: ${group.eligible_member_count} qualified / ${group.remaining_seat_count} seats`,
+          )),
+  ];
+  const coverageSummary = coverageWarnings.length
+    ? `${coverageWarnings.length} staffing ${coverageWarnings.length === 1 ? 'alert' : 'alerts'}`
+    : '';
 
   return (
-    <section className="border-y border-border bg-card p-3" data-testid="annual-live-controls">
-      {authRefreshing || authReviewRequired ? (
-        <div className="mb-3 border border-info/30 bg-info/10 p-3 text-sm">
-          <p aria-live="polite">
-            {authRefreshing
-              ? 'Waiting for verified operator sign-in and current bid updates. Your unfinished work is retained.'
-              : 'The bid changed during sign-in. Review the current member, available positions and your prepared selection.'}
-          </p>
-          {authReviewRequired ? (
+    <section
+      className={
+        props.workspace
+          ? 'flex min-h-0 flex-1 flex-col bg-card'
+          : 'border-y border-border bg-card p-3'
+      }
+      data-testid="annual-live-controls"
+    >
+      <div
+        className={
+          props.workspace
+            ? 'relative flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1'
+            : ''
+        }
+      >
+        {authRefreshing || authReviewRequired ? (
+          <div className="order-first mb-3 w-full border border-info/30 bg-info/10 p-3 text-sm">
+            <p aria-live="polite">
+              {authRefreshing
+                ? 'Waiting for verified operator sign-in and current bid updates. Your unfinished work is retained.'
+                : 'The bid changed during sign-in. Review the current member, available positions and your prepared selection.'}
+            </p>
+            {authReviewRequired ? (
+              <Button
+                type="button"
+                className="mt-2"
+                disabled={authRefreshing || loadError !== null}
+                onClick={() => {
+                  setAuthReviewRequired(false);
+                  setNotice('Latest bid state reviewed. Confirm your prepared action when ready.');
+                }}
+              >
+                I reviewed the latest bid state
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {loadError !== null ? (
+          <div
+            role="alert"
+            className="order-first mb-3 w-full border border-warning/30 bg-warning/10 p-3 text-sm"
+          >
+            <p>
+              Bid updates are unavailable. Showing the last loaded information; actions are blocked
+              until the connection recovers.
+            </p>
             <Button
               type="button"
               className="mt-2"
-              disabled={authRefreshing || loadError !== null}
-              onClick={() => {
-                setAuthReviewRequired(false);
-                setNotice('Latest bid state reviewed. Confirm your prepared action when ready.');
-              }}
+              onClick={() =>
+                void load().catch((error: unknown) =>
+                  setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
+                )
+              }
             >
-              I reviewed the latest bid state
+              Retry bid updates
             </Button>
-          ) : null}
-        </div>
-      ) : null}
-      {loadError !== null ? (
-        <div role="alert" className="mb-3 border border-warning/30 bg-warning/10 p-3 text-sm">
-          <p>
-            Bid updates are unavailable. Showing the last loaded information; actions are blocked
-            until the connection recovers.
-          </p>
-          <Button
-            type="button"
-            className="mt-2"
-            onClick={() =>
-              void load().catch((error: unknown) =>
-                setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
-              )
-            }
-          >
-            Retry bid updates
-          </Button>
-        </div>
-      ) : null}
-      {state !== null ? (
-        <AdministratorOverride
-          bidSessionId={props.bidSessionId}
-          allowed={state.admin_override_allowed === true}
-          memberIds={state.admin_override_member_ids ?? []}
-          positionIds={state.admin_override_position_ids ?? []}
-          opportunityPools={state.opportunity_pools}
-          members={props.members}
-          positions={props.positions ?? []}
-          fills={state.fills}
-          nonBiddablePositions={state.available_non_biddable_positions}
-          onChooseTask={(task) => {
-            if (task === 'correction') setCorrectionRequest((value) => value + 1);
-            else setPanel(task);
-          }}
-          sequence={state.sequence}
-          currentMemberId={selectionMemberId}
-          currentStage={state.selection_stage?.label}
-          currentStageId={state.selection_stage?.id}
-          combatGroups={state.a_day_combat_groups}
-          aDayTiming={state.a_day_timing_by_position}
-          defaultADayTiming={state.a_day_selection}
-          termParticipation={state.term_participation}
-          commandsBlocked={loadError !== null || authRefreshing || authReviewRequired || busy}
-          onCanonicalChange={() => {
-            void load().catch((error: unknown) =>
-              setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
-            );
-            props.onCanonicalChange?.();
-          }}
-        />
-      ) : null}
-      {props.workspace ? (
-        <section aria-label="Available positions" className="mb-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {state?.selection_stage?.label ?? 'Loading bid stage'}
-              </p>
-              <h2 className="mt-1 font-heading text-lg font-bold">Available positions</h2>
-            </div>
-            <Button type="button" onClick={() => setPanel('presentation')}>
-              Presentation controls
-            </Button>
-            <p className="text-sm text-muted-foreground">
-              {availablePositions.length + availablePools.length} choices
-              {loadedAt !== null ? (
-                <span className="block text-xs">
-                  Updated {new Date(loadedAt).toLocaleTimeString()}
-                </span>
-              ) : null}
-            </p>
           </div>
-          {state === null ? (
-            <output className="mt-3 block text-sm">Loading current bidder and openings…</output>
-          ) : selectionMember ? (
-            <p className="mt-2 text-sm">
-              Selecting for <strong>{name(selectionMember)}</strong>
-            </p>
-          ) : (
-            <p className="mt-2 text-sm">No member is currently selecting a position.</p>
-          )}
-          {shifts.length > 1 ? (
-            <fieldset className="mt-3 flex flex-wrap gap-2" aria-label="Available shift">
-              <span className="sr-only">Choose shift</span>
-              {shifts.map((shift) => (
-                <Button
-                  key={shift}
-                  type="button"
-                  variant={visibleShift === shift ? 'primary' : 'default'}
-                  aria-pressed={visibleShift === shift}
-                  onClick={() => setAvailableShift(shift)}
-                >
-                  {shift === 'D' ? 'Days' : `${shift} shift`}
-                </Button>
-              ))}
-            </fieldset>
-          ) : null}
-          <div className="mt-3 grid max-h-56 gap-2 overflow-y-auto overscroll-contain sm:grid-cols-2">
-            {availablePositions
-              .filter((position) => position.shift === visibleShift)
-              .map((position) => (
-                <button
-                  key={position.id}
-                  type="button"
-                  disabled={!canSelectViewedMember || busy || pendingADay !== null}
-                  onClick={() => {
-                    setSelectionPositionId(position.id);
-                    setSelectionPoolId('');
-                    setPanel('selection');
-                    setNotice(null);
-                  }}
-                  aria-pressed={selectionPositionId === position.id && !selectionPoolId}
-                  className="min-h-16 border border-border bg-card px-3 py-2 text-left hover:border-info hover:bg-info/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-info aria-pressed:bg-info/10"
-                >
-                  <span className="block text-sm font-semibold">
-                    {position.unit} · {position.positionName}
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {position.station} · {position.id}
-                  </span>
-                </button>
-              ))}
-            {availablePools
-              .filter((pool) => pool.shift === visibleShift)
-              .map((pool) => (
-                <button
-                  key={pool.id}
-                  type="button"
-                  disabled={!canSelectViewedMember || busy || pendingADay !== null}
-                  onClick={() => {
-                    setSelectionPoolId(pool.id);
-                    setSelectionPositionId(pool.resolvedPositionId ?? '');
-                    setPanel('selection');
-                    setNotice(null);
-                  }}
-                  aria-pressed={selectionPoolId === pool.id}
-                  className="min-h-16 border border-border bg-card px-3 py-2 text-left hover:border-info hover:bg-info/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 aria-pressed:border-info aria-pressed:bg-info/10"
-                >
-                  <span className="block text-sm font-semibold">{pool.label}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {pool.remaining} of {pool.capacity} available · pool selection
-                  </span>
-                </button>
-              ))}
-          </div>
-          {state?.current_phase === 'position_bid' &&
-          state.selection_stage?.all_opportunities_filled &&
-          state.selection_stage.next_stage &&
-          !state.returning_member &&
-          (state.unresolved_members?.length ?? 0) === 0 ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
-              <p className="text-sm">All {state.selection_stage.label} seats are filled.</p>
-              <Button
-                type="button"
-                variant="primary"
-                disabled={busy || authRefreshing || authReviewRequired || loadError !== null}
-                onClick={() =>
-                  void command('live.transition_stage', {
-                    stageId: state.selection_stage?.next_stage?.id,
-                  })
-                }
-              >
-                Continue to {state.selection_stage.next_stage.label}
-              </Button>
-            </div>
-          ) : state !== null && availablePositions.length + availablePools.length === 0 ? (
-            <p className="mt-3 text-sm text-warning">
-              No eligible openings in this stage. Use Disposition and return to record the member’s
-              next action.
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-      {props.isMock && !props.workspace ? (
-        <p className="mb-4 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-900">
-          MOCK REHEARSAL — canonical commands remain isolated from staffing and portal write-back.
-        </p>
-      ) : null}
-      {state?.specialty_coverage &&
-      (!props.workspace ||
-        state.specialty_coverage.availability === 'UNAVAILABLE' ||
-        state.specialty_coverage.status !== 'FEASIBLE') ? (
-        <section
-          className="mb-4 rounded border border-border bg-muted/30 px-3 py-2 text-sm"
-          data-testid="specialty-coverage-advisory"
-          aria-live="polite"
-        >
-          <h2 className="font-semibold text-foreground">Specialty coverage</h2>
-          {state.specialty_coverage.availability === 'UNAVAILABLE' ? (
-            <p className="mt-2 text-sm text-warning">
-              Coverage unavailable. <span className="text-xs">{state.specialty_coverage.code}</span>
-            </p>
-          ) : (
-            <div className="mt-2 space-y-1 text-sm">
-              <p>
-                <strong>{state.specialty_coverage.status.replace('_', ' ')}</strong> ·{' '}
-                {state.specialty_coverage.remaining_specialty_seat_count} seats left
-              </p>
-              {state.specialty_coverage.guaranteed_uncovered_seat_count > 0 ? (
-                <p className="text-warning">
-                  {state.specialty_coverage.guaranteed_uncovered_seat_count} remaining specialty{' '}
-                  {state.specialty_coverage.guaranteed_uncovered_seat_count === 1
-                    ? 'seat is'
-                    : 'seats are'}{' '}
-                  lack enough eligible members.
-                </p>
-              ) : null}
-              {state.specialty_coverage.critical_member_ids.length > 0 ? (
-                <p>
-                  {state.specialty_coverage.critical_member_ids.length} members are needed to cover
-                  the remaining seats.
-                </p>
-              ) : null}
-            </div>
-          )}
-          <details className="mt-1 text-xs text-muted-foreground">
-            <summary className="min-h-11 cursor-pointer content-center font-medium">
-              Coverage details
-            </summary>
-            <p>
-              Advisory only, based on saved qualifications and current awards. Your adjustments
-              remain available.
-            </p>
-            {state.specialty_coverage.availability === 'AVAILABLE' ? (
-              <p>
-                {state.specialty_coverage.filled_specialty_seat_count} of{' '}
-                {state.specialty_coverage.total_specialty_seat_count} specialty seats filled.
-              </p>
-            ) : null}
-          </details>
-        </section>
-      ) : null}
-      {state?.credential_coverage?.availability === 'AVAILABLE' &&
-      state.credential_coverage.groups?.some((group) => group.status !== 'FEASIBLE') ? (
-        <section
-          aria-label="Qualification coverage warnings"
-          data-testid="credential-coverage-advisory"
-          className="mb-3 border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
-          aria-live="polite"
-        >
-          <h2 className="font-semibold">Qualification coverage is low</h2>
-          <ul className="mt-1 divide-y divide-warning/20">
-            {state.credential_coverage.groups
-              .filter((group) => group.status !== 'FEASIBLE')
-              .map((group) => (
-                <li
-                  key={group.id}
-                  className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-1"
-                >
-                  <span className="min-w-0 font-medium" title={group.label}>
-                    {group.label.includes(' + ')
-                      ? `${group.label.split(' + ')[0]} + ${group.label.split(' + ').length - 1} requirements`
-                      : group.label}
-                  </span>
-                  <span className="whitespace-nowrap tabular-nums">
-                    {group.eligible_member_count} qualified / {group.remaining_seat_count} seats
-                    {group.status === 'SHORTAGE' ? ' · Shortage' : ' · Low buffer'}
-                  </span>
-                </li>
-              ))}
-          </ul>
-          <details className="mt-1 text-xs">
-            <summary className="min-h-11 cursor-pointer content-center font-medium">
-              Qualifications and members
-            </summary>
-            <p className="mb-2">
-              Keep enough qualified members for these seats. Use Adjust bid for a forced assignment.
-            </p>
-            {state.credential_coverage.groups
-              .filter((group) => group.status !== 'FEASIBLE')
-              .map((group) => (
-                <div key={group.id} className="mb-2">
-                  <strong>{group.label}</strong>
-                  <p>
-                    {group.eligible_member_count} qualified members left for{' '}
-                    {group.remaining_seat_count} open seats.
-                  </p>
-                  {group.critical_member_ids.length ? (
-                    <p>
-                      Needed for coverage: {group.critical_member_ids.map(memberName).join(', ')}
-                    </p>
-                  ) : null}
-                  <details>
-                    <summary className="min-h-11 cursor-pointer content-center">
-                      View qualified members
-                    </summary>
-                    <p>{group.eligible_member_ids.map(memberName).join(', ')}</p>
-                  </details>
-                </div>
-              ))}
-          </details>
-        </section>
-      ) : state?.credential_coverage?.availability === 'UNAVAILABLE' ? (
-        <output className="mb-3 block text-sm text-warning">
-          Qualification coverage could not be checked. Refresh the bid before relying on this
-          advisory.
-        </output>
-      ) : null}
-      {pendingADay !== null && props.workspace ? (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border border-info/30 bg-info/10 p-3 text-sm">
-          <p>
-            <strong>{memberName(pendingADay.member_id)} is now due to select an A-Day</strong> for{' '}
-            {pendingADay.position_id}.
-          </p>
-          <Button type="button" onClick={() => setPanel('a-day')}>
-            Choose A-Day
-          </Button>
-        </div>
-      ) : null}
-      {state?.exceptional_assignments?.length ? (
-        <details className="mb-3 border-t border-border pt-2 text-sm">
-          <summary className="cursor-pointer font-semibold">
-            Chief-directed roles ({state.exceptional_assignments.length})
-          </summary>
-          <ul className="mt-2 space-y-1">
-            {state.exceptional_assignments.map((assignment) => (
-              <li key={assignment.assignment_id}>
-                {memberName(assignment.member_id)} · {assignment.role_label} · Forced
-              </li>
-            ))}
-          </ul>
-          <Button type="button" className="mt-2" onClick={() => setPanel('exceptional')}>
-            Manage directed roles
-          </Button>
-        </details>
-      ) : null}
-      <details
-        open={props.workspace ? undefined : true}
-        className={props.workspace ? 'mb-3 border-t border-border pt-3' : ''}
-      >
-        {props.workspace ? (
-          <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">
-            More controls
-          </summary>
         ) : null}
-        <div className="flex flex-wrap items-center gap-2">
-          <CorrectBid
+        {state !== null ? (
+          <AdministratorOverride
+            compact={props.workspace === true}
             bidSessionId={props.bidSessionId}
+            allowed={state.admin_override_allowed === true}
+            memberIds={state.admin_override_member_ids ?? []}
+            positionIds={state.admin_override_position_ids ?? []}
+            opportunityPools={state.opportunity_pools}
             members={props.members}
-            canonicalSequence={state?.sequence}
-            openRequest={correctionRequest}
-            requestedMemberId={operator?.selectedMemberId}
-            overrideAllowed={state?.admin_override_allowed === true}
-            overridePositionIds={state?.admin_override_position_ids}
-            commandsBlocked={
-              state === null || loadError !== null || authRefreshing || authReviewRequired || busy
-            }
+            positions={props.positions ?? []}
+            fills={state.fills}
+            nonBiddablePositions={state.available_non_biddable_positions}
+            onChooseTask={(task) => {
+              if (task === 'correction') setCorrectionRequest((value) => value + 1);
+              else setPanel(task);
+            }}
+            sequence={state.sequence}
+            currentMemberId={selectionMemberId}
+            currentStage={state.selection_stage?.label}
+            currentStageId={state.selection_stage?.id}
+            combatGroups={state.a_day_combat_groups}
+            aDayTiming={state.a_day_timing_by_position}
+            defaultADayTiming={state.a_day_selection}
+            termParticipation={state.term_participation}
+            commandsBlocked={loadError !== null || authRefreshing || authReviewRequired || busy}
             onCanonicalChange={() => {
               void load().catch((error: unknown) =>
                 setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
@@ -1590,47 +1381,415 @@ export function AnnualLiveControls(props: Props) {
               props.onCanonicalChange?.();
             }}
           />
-          {(
-            [
-              ['selection', 'Record selection'],
-              ['disposition', 'Skip or return a member'],
-              ['a-day', 'A-Day due'],
-              ['specialty', 'Specialty review'],
-              ['fallback', 'Fill remaining seats'],
-              ...(state?.admin_override_allowed
-                ? ([['exceptional', 'Temporary duties']] as const)
-                : []),
-              ['presentation', 'Presentation'],
-              ['session', 'Pause or resume bid'],
-              ...(props.workspace === true ? [] : ([['amendment', 'Correct selection']] as const)),
-              ['order', 'Bid order'],
-              ...(state?.current_phase === 'complete' && !state.finalization_ready
-                ? ([['finalization', 'Finalize results']] as const)
-                : []),
-            ] as const
-          ).map(([id, label]) => (
-            <Button
-              key={id}
-              type="button"
-              aria-expanded={panel === id}
-              onClick={() => setPanel(panel === id ? null : id)}
+        ) : null}
+        {props.workspace ? (
+          <section aria-label="Available positions" className="min-w-0">
+            <details>
+              <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">
+                Eligible choices · {availablePositions.length + availablePools.length}
+              </summary>
+              <div className="absolute left-0 top-full z-30 mt-1 max-h-[50dvh] w-full max-w-xl overflow-y-auto rounded border border-border bg-card p-3 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {state?.selection_stage?.label ?? 'Loading bid stage'}
+                    </p>
+                    <h2 className="mt-1 font-heading text-lg font-bold">Available positions</h2>
+                  </div>
+                  <Button type="button" onClick={() => setPanel('presentation')}>
+                    Presentation controls
+                  </Button>
+                  <p className="text-sm text-muted-foreground">
+                    {availablePositions.length + availablePools.length} choices
+                    {loadedAt !== null ? (
+                      <span className="block text-xs">
+                        Updated {new Date(loadedAt).toLocaleTimeString()}
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+                {state === null ? (
+                  <output className="mt-3 block text-sm">
+                    Loading current bidder and openings…
+                  </output>
+                ) : selectionMember ? (
+                  <p className="mt-2 text-sm">
+                    Selecting for <strong>{name(selectionMember)}</strong>
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm">No member is currently selecting a position.</p>
+                )}
+                {shifts.length > 1 ? (
+                  <fieldset className="mt-3 flex flex-wrap gap-2" aria-label="Available shift">
+                    <span className="sr-only">Choose shift</span>
+                    {shifts.map((shift) => (
+                      <Button
+                        key={shift}
+                        type="button"
+                        variant={visibleShift === shift ? 'primary' : 'default'}
+                        aria-pressed={visibleShift === shift}
+                        onClick={() => setAvailableShift(shift)}
+                      >
+                        {shift === 'D' ? 'Days' : `${shift} shift`}
+                      </Button>
+                    ))}
+                  </fieldset>
+                ) : null}
+                <div className="mt-3 grid max-h-56 gap-2 overflow-y-auto overscroll-contain sm:grid-cols-2">
+                  {availablePositions
+                    .filter((position) => position.shift === visibleShift)
+                    .map((position) => (
+                      <button
+                        key={position.id}
+                        type="button"
+                        disabled={!canSelectViewedMember || busy || pendingADay !== null}
+                        onClick={(event) => {
+                          event.currentTarget.closest('details')?.removeAttribute('open');
+                          setSelectionPositionId(position.id);
+                          setSelectionPoolId('');
+                          setPanel('selection');
+                          setNotice(null);
+                        }}
+                        aria-pressed={selectionPositionId === position.id && !selectionPoolId}
+                        className="min-h-16 border border-border bg-card px-3 py-2 text-left hover:border-info hover:bg-info/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-info aria-pressed:bg-info/10"
+                      >
+                        <span className="block text-sm font-semibold">
+                          {position.unit} · {position.positionName}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {position.station} · {position.id}
+                        </span>
+                      </button>
+                    ))}
+                  {availablePools
+                    .filter((pool) => pool.shift === visibleShift)
+                    .map((pool) => (
+                      <button
+                        key={pool.id}
+                        type="button"
+                        disabled={!canSelectViewedMember || busy || pendingADay !== null}
+                        onClick={(event) => {
+                          event.currentTarget.closest('details')?.removeAttribute('open');
+                          setSelectionPoolId(pool.id);
+                          setSelectionPositionId(pool.resolvedPositionId ?? '');
+                          setPanel('selection');
+                          setNotice(null);
+                        }}
+                        aria-pressed={selectionPoolId === pool.id}
+                        className="min-h-16 border border-border bg-card px-3 py-2 text-left hover:border-info hover:bg-info/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 aria-pressed:border-info aria-pressed:bg-info/10"
+                      >
+                        <span className="block text-sm font-semibold">{pool.label}</span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {pool.remaining} of {pool.capacity} available · pool selection
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </details>
+            {state?.current_phase === 'position_bid' &&
+            state.selection_stage?.all_opportunities_filled &&
+            state.selection_stage.next_stage &&
+            !state.returning_member &&
+            (state.unresolved_members?.length ?? 0) === 0 ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+                <p className="text-sm">All {state.selection_stage.label} seats are filled.</p>
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={busy || authRefreshing || authReviewRequired || loadError !== null}
+                  onClick={() =>
+                    void command('live.transition_stage', {
+                      stageId: state.selection_stage?.next_stage?.id,
+                    })
+                  }
+                >
+                  Continue to {state.selection_stage.next_stage.label}
+                </Button>
+              </div>
+            ) : state !== null && availablePositions.length + availablePools.length === 0 ? (
+              <p className="mt-3 text-sm text-warning">
+                No eligible openings in this stage. Use Disposition and return to record the
+                member’s next action.
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+        {props.isMock && !props.workspace ? (
+          <p className="mb-4 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-900">
+            MOCK REHEARSAL — canonical commands remain isolated from staffing and portal write-back.
+          </p>
+        ) : null}
+        <CoverageDetails
+          compact={props.workspace === true && coverageSummary.length > 0}
+          summary={coverageSummary}
+        >
+          {state?.specialty_coverage &&
+          (!props.workspace ||
+            state.specialty_coverage.availability === 'UNAVAILABLE' ||
+            state.specialty_coverage.status !== 'FEASIBLE') ? (
+            <section
+              className="mb-4 rounded border border-border bg-muted/30 px-3 py-2 text-sm"
+              data-testid="specialty-coverage-advisory"
+              aria-live="polite"
             >
-              {label}
+              <h2 className="font-semibold text-foreground">Specialty coverage</h2>
+              {state.specialty_coverage.availability === 'UNAVAILABLE' ? (
+                <p className="mt-2 text-sm text-warning">
+                  Coverage unavailable.{' '}
+                  <span className="text-xs">{state.specialty_coverage.code}</span>
+                </p>
+              ) : (
+                <div className="mt-2 space-y-1 text-sm">
+                  <p>
+                    <strong>{state.specialty_coverage.status.replace('_', ' ')}</strong> ·{' '}
+                    {state.specialty_coverage.remaining_specialty_seat_count} seats left
+                  </p>
+                  {state.specialty_coverage.guaranteed_uncovered_seat_count > 0 ? (
+                    <p className="text-warning">
+                      {state.specialty_coverage.guaranteed_uncovered_seat_count} remaining specialty{' '}
+                      {state.specialty_coverage.guaranteed_uncovered_seat_count === 1
+                        ? 'seat is'
+                        : 'seats are'}{' '}
+                      lack enough eligible members.
+                    </p>
+                  ) : null}
+                  {state.specialty_coverage.critical_member_ids.length > 0 ? (
+                    <p>
+                      {state.specialty_coverage.critical_member_ids.length} members are needed to
+                      cover the remaining seats.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+              <details className="mt-1 text-xs text-muted-foreground">
+                <summary className="min-h-11 cursor-pointer content-center font-medium">
+                  Coverage details
+                </summary>
+                <p>
+                  Advisory only, based on saved qualifications and current awards. Your adjustments
+                  remain available.
+                </p>
+                {state.specialty_coverage.availability === 'AVAILABLE' ? (
+                  <p>
+                    {state.specialty_coverage.filled_specialty_seat_count} of{' '}
+                    {state.specialty_coverage.total_specialty_seat_count} specialty seats filled.
+                  </p>
+                ) : null}
+              </details>
+            </section>
+          ) : null}
+          {state?.credential_coverage?.availability === 'AVAILABLE' &&
+          state.credential_coverage.groups?.some((group) => group.status !== 'FEASIBLE') ? (
+            <section
+              aria-label="Qualification coverage warnings"
+              data-testid="credential-coverage-advisory"
+              className="mb-3 border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
+              aria-live="polite"
+            >
+              <h2 className="font-semibold">Qualification coverage is low</h2>
+              <ul className="mt-1 divide-y divide-warning/20">
+                {state.credential_coverage.groups
+                  .filter((group) => group.status !== 'FEASIBLE')
+                  .map((group) => (
+                    <li
+                      key={group.id}
+                      className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-1"
+                    >
+                      <span className="min-w-0 font-medium" title={group.label}>
+                        {group.label.includes(' + ')
+                          ? `${group.label.split(' + ')[0]} + ${group.label.split(' + ').length - 1} requirements`
+                          : group.label}
+                      </span>
+                      <span className="whitespace-nowrap tabular-nums">
+                        {group.eligible_member_count} qualified / {group.remaining_seat_count} seats
+                        {group.status === 'SHORTAGE' ? ' · Shortage' : ' · Low buffer'}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+              <details className="mt-1 text-xs">
+                <summary className="min-h-11 cursor-pointer content-center font-medium">
+                  Qualifications and members
+                </summary>
+                <p className="mb-2">
+                  Keep enough qualified members for these seats. Use Adjust bid for a forced
+                  assignment.
+                </p>
+                {state.credential_coverage.groups
+                  .filter((group) => group.status !== 'FEASIBLE')
+                  .map((group) => (
+                    <div key={group.id} className="mb-2">
+                      <strong>{group.label}</strong>
+                      <p>
+                        {group.eligible_member_count} qualified members left for{' '}
+                        {group.remaining_seat_count} open seats.
+                      </p>
+                      {group.critical_member_ids.length ? (
+                        <p>
+                          Needed for coverage:{' '}
+                          {group.critical_member_ids.map(memberName).join(', ')}
+                        </p>
+                      ) : null}
+                      <details>
+                        <summary className="min-h-11 cursor-pointer content-center">
+                          View qualified members
+                        </summary>
+                        <p>{group.eligible_member_ids.map(memberName).join(', ')}</p>
+                      </details>
+                    </div>
+                  ))}
+              </details>
+            </section>
+          ) : state?.credential_coverage?.availability === 'UNAVAILABLE' ? (
+            <output className="mb-3 block text-sm text-warning">
+              Qualification coverage could not be checked. Refresh the bid before relying on this
+              advisory.
+            </output>
+          ) : null}
+        </CoverageDetails>
+        {pendingADay !== null && props.workspace ? (
+          <div className="order-3 mb-1 flex w-full flex-wrap items-center justify-between gap-2 border border-info/30 bg-info/10 px-3 py-1 text-sm">
+            <p>
+              <strong>{memberName(pendingADay.member_id)} is now due to select an A-Day</strong> for{' '}
+              {pendingADay.position_id}.
+            </p>
+            <Button type="button" onClick={() => setPanel('a-day')}>
+              Choose A-Day
             </Button>
-          ))}
+          </div>
+        ) : null}
+        {state?.exceptional_assignments?.length ? (
+          <details className="order-3 w-full border-t border-border pt-2 text-sm">
+            <summary className="cursor-pointer font-semibold">
+              Chief-directed roles ({state.exceptional_assignments.length})
+            </summary>
+            <ul className="mt-2 space-y-1">
+              {state.exceptional_assignments.map((assignment) => (
+                <li key={assignment.assignment_id}>
+                  {memberName(assignment.member_id)} · {assignment.role_label} · Forced
+                </li>
+              ))}
+            </ul>
+            <Button type="button" className="mt-2" onClick={() => setPanel('exceptional')}>
+              Manage directed roles
+            </Button>
+          </details>
+        ) : null}
+        <details
+          open={props.workspace ? undefined : true}
+          className={props.workspace ? 'order-1' : ''}
+          onClick={(event) => {
+            if (
+              props.workspace &&
+              event.target instanceof Element &&
+              event.target.closest('button')
+            )
+              event.currentTarget.open = false;
+          }}
+          onKeyDown={(event) => {
+            if (props.workspace && event.key === 'Escape') {
+              event.currentTarget.open = false;
+              event.currentTarget.querySelector('summary')?.focus();
+            }
+          }}
+        >
+          {props.workspace ? (
+            <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">
+              More controls
+            </summary>
+          ) : null}
+          <div
+            className={
+              props.workspace
+                ? 'absolute left-0 top-full z-30 mt-1 flex max-h-[50dvh] w-full max-w-lg flex-wrap items-center gap-2 overflow-y-auto rounded border border-border bg-card p-3 shadow-lg'
+                : 'flex flex-wrap items-center gap-2'
+            }
+          >
+            <CorrectBid
+              bidSessionId={props.bidSessionId}
+              members={props.members}
+              canonicalSequence={state?.sequence}
+              openRequest={correctionRequest}
+              requestedMemberId={operator?.selectedMemberId}
+              overrideAllowed={state?.admin_override_allowed === true}
+              overridePositionIds={state?.admin_override_position_ids}
+              commandsBlocked={
+                state === null || loadError !== null || authRefreshing || authReviewRequired || busy
+              }
+              onCanonicalChange={() => {
+                void load().catch((error: unknown) =>
+                  setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
+                );
+                props.onCanonicalChange?.();
+              }}
+            />
+            {(
+              [
+                ['selection', 'Record selection'],
+                ['disposition', 'Skip or return a member'],
+                ['a-day', 'A-Day due'],
+                ['specialty', 'Specialty review'],
+                ['fallback', 'Fill remaining seats'],
+                ...(state?.admin_override_allowed
+                  ? ([['exceptional', 'Temporary duties']] as const)
+                  : []),
+                ['presentation', 'Presentation'],
+                ['session', 'Pause or resume bid'],
+                ...(props.workspace === true
+                  ? []
+                  : ([['amendment', 'Correct selection']] as const)),
+                ['order', 'Bid order'],
+                ...(state?.current_phase === 'complete' && !state.finalization_ready
+                  ? ([['finalization', 'Finalize results']] as const)
+                  : []),
+              ] as const
+            ).map(([id, label]) => (
+              <Button
+                key={id}
+                type="button"
+                aria-expanded={panel === id}
+                onClick={() => setPanel(panel === id ? null : id)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </details>
+        {state?.active && (
+          <p className="order-3 w-full text-sm text-warning">
+            Specialty review in progress: {state.active.specialty_label}.{' '}
+            <Button type="button" onClick={() => setPanel('specialty')}>
+              Continue review
+            </Button>
+          </p>
+        )}
+        {notice && panel === null ? (
+          <output className="order-3 block w-full text-sm">{notice}</output>
+        ) : null}
+      </div>
+      {props.board ? (
+        <div className="flex min-h-0 flex-1 flex-col" data-testid="operator-seat-board">
+          {state?.a_day_combat_groups?.length ? (
+            <div
+              className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-y border-border px-3 py-2 text-xs"
+              aria-label="Recorded A-Day groups"
+            >
+              <span className="font-semibold">A-Day groups</span>
+              {state.a_day_combat_groups.map((group) => (
+                <span key={group} className="whitespace-nowrap tabular-nums">
+                  {group.replace(/^G(\d+)$/, 'Group $1')} ·{' '}
+                  {Object.values(state.fills).filter((fill) => fill.a_day === group).length}{' '}
+                  recorded
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {props.board}
         </div>
-      </details>
-      {state?.active && (
-        <p className="mt-2 text-sm text-warning">
-          Specialty review in progress: {state.active.specialty_label}.{' '}
-          <Button type="button" onClick={() => setPanel('specialty')}>
-            Continue review
-          </Button>
-        </p>
-      )}
-      {notice && panel === null ? <output className="mt-2 block text-sm">{notice}</output> : null}
+      ) : null}
       <SelectionFrame
-        inline={props.workspace === true && panel === 'selection'}
+        inline={false}
         open={panel !== null}
         onClose={() => {
           setPanel(null);
@@ -1710,31 +1869,26 @@ export function AnnualLiveControls(props: Props) {
           </fieldset>
         )}
         {panel !== 'presentation' && (
-          <OperatorNotes
-            optional={
-              props.workspace === true &&
-              (panel === 'selection' || panel === 'specialty' || panel === 'a-day')
-            }
-          >
-            <div
-              className={`flex flex-wrap items-end gap-3 ${props.workspace && panel === 'selection' ? 'order-3' : ''}`}
-            >
-              <div className="mr-auto">
-                <p className="text-xs font-bold uppercase tracking-wide text-red-700">
-                  Bid-day actions
-                </p>
-                <h2 className="font-heading text-lg text-foreground">
-                  Review and record an action
-                </h2>
+          <>
+            <OperatorNotes optional>
+              <div
+                className={`flex flex-wrap items-end gap-3 ${props.workspace && panel === 'selection' ? 'order-3' : ''}`}
+              >
+                <Label className="min-w-0 w-full text-xs text-muted-foreground">
+                  Note (optional)
+                  <Input
+                    value={reason}
+                    maxLength={500}
+                    onChange={(event) => setReason(event.target.value)}
+                    className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
+                  />
+                </Label>
               </div>
-              <Label className="min-w-0 w-full text-xs text-muted-foreground">
-                Operator reason
-                <Input
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
-                />
-              </Label>
+            </OperatorNotes>
+            <details open={panel === 'disposition'} className="mt-2 border-t border-border pt-2">
+              <summary className="min-h-11 cursor-pointer content-center text-sm text-muted-foreground">
+                Evidence reference
+              </summary>
               <Label className="min-w-0 w-full text-xs text-muted-foreground">
                 Evidence reference (when policy requires)
                 <Input
@@ -1743,8 +1897,8 @@ export function AnnualLiveControls(props: Props) {
                   className="mt-1 block w-full rounded border border-border px-3 py-2 text-sm text-foreground"
                 />
               </Label>
-            </div>
-          </OperatorNotes>
+            </details>
+          </>
         )}
 
         <div className="mt-4 space-y-4">
@@ -1864,8 +2018,7 @@ export function AnnualLiveControls(props: Props) {
               <section className="border-t border-border pt-3">
                 <h3 className="font-semibold">Return a member to the bid</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Enter the reason above, then release the directed duty. Their unawarded turn
-                  returns to the current sequence.
+                  Release the duty to return their unawarded turn to the current sequence.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {state.exceptional_assignments.map((assignment) => (
@@ -2240,9 +2393,7 @@ export function AnnualLiveControls(props: Props) {
           </article>
           <article hidden={panel !== 'session'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Pause or resume bid</h3>
-            <p className="mt-1 text-sm">
-              Pausing stops bid execution. Enter an operator reason before confirming.
-            </p>
+            <p className="mt-1 text-sm">Pausing stops new selections until you resume.</p>
             <Button
               type="button"
               disabled={busy || state === null || state.current_phase === 'complete'}
@@ -2905,8 +3056,8 @@ export function AnnualLiveControls(props: Props) {
           <article hidden={panel !== 'order'} className="rounded border border-border p-3">
             <h3 className="font-semibold text-foreground">Alter remaining order</h3>
             <p className="mt-2 text-sm text-warning">
-              Changing the order bypasses normal seniority. Every remaining turn is retained, and
-              your reason is recorded in the audit.
+              This changes the selection order. Every remaining turn is retained and the change is
+              recorded.
             </p>
             <Label className="mt-3 block text-sm">
               Find member

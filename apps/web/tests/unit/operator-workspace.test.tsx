@@ -388,7 +388,11 @@ describe('operator workspace interaction and history', () => {
     expect(container.textContent).toContain('No previous bid or assignment.');
     expect(container.textContent).toContain('This member is waiting.');
     expect(button('Engine 2').disabled).toBe(true);
-    expect(button('Confirm bid').disabled).toBe(true);
+    expect(
+      [...container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Confirm bid'),
+      ),
+    ).toBeUndefined();
     expect(commands).toHaveLength(0);
     await settle(() => button('Return to current bidder').click());
     expect(button('Engine 2').disabled).toBe(false);

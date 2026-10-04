@@ -249,7 +249,7 @@ describe('POST /api/admin/rule-books', () => {
     });
   });
 
-  it('rejects a creation request without an operator reason before inserting a draft', async () => {
+  it('creates and audits a draft without requiring an operator note', async () => {
     const res = await app.fetch(
       new Request('http://x/api/admin/rule-books', {
         method: 'POST',
@@ -257,18 +257,20 @@ describe('POST /api/admin/rule-books', () => {
           Authorization: `Bearer ${await adminJwt()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ effective_year: 2026, notes: 'No reason was supplied.' }),
+        body: JSON.stringify({ effective_year: 2026, notes: 'Optional operator note omitted.' }),
       }),
       { ...h.env, JWT_SIGNING_KEY: KEY },
     );
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
     expect(await h.db.run('SELECT version FROM rule_books ORDER BY version')).toMatchObject({
-      results: [{ version: '2026.1' }],
+      results: [{ version: '2026.1' }, { version: '2026.2' }],
     });
     expect(
-      await h.db.run("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'rule_book_clone'"),
-    ).toMatchObject({ results: [{ n: 0 }] });
+      await h.db.run(
+        "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'rule_book_clone' AND reason = ''",
+      ),
+    ).toMatchObject({ results: [{ n: 1 }] });
   });
 
   it('clones every source rule from clone_from within the create request', async () => {

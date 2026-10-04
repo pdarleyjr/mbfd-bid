@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BidCommandNoteSchema } from './bid-operation-note.js';
 
 const Ref = z.string().trim().min(1).max(200);
 const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -23,7 +24,7 @@ export const ContactDecisionEnvelopeSchema = z
     bidSessionId: z.string().min(1),
     memberId: z.number().int().positive(),
     disposition: z.enum(['HOLD', 'PASS', 'DEFER', 'SKIP', 'DECLINED', 'UNREACHABLE']),
-    reason: z.string().min(1).max(500),
+    reason: BidCommandNoteSchema,
     evidenceReference: Ref.nullable(),
     decidedAtMs: z.number().int().nonnegative(),
   })

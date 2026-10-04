@@ -35,8 +35,8 @@ export function RuleBookCreateForm({ ruleBooks }: RuleBookCreateFormProps) {
       setError('Enter an effective year from 2024 through 2100.');
       return;
     }
-    if (trimmedReason.length < 4 || trimmedReason.length > 500) {
-      setError('Provide a reason between 4 and 500 characters.');
+    if (trimmedReason.length > 500) {
+      setError('Keep the optional note within 500 characters.');
       return;
     }
 
@@ -149,20 +149,15 @@ export function RuleBookCreateForm({ ruleBooks }: RuleBookCreateFormProps) {
         </Label>
 
         <Label className="block md:col-span-2">
-          <span className="text-sm font-medium text-foreground">Reason for this change</span>
+          <span className="text-sm font-medium text-foreground">Note (optional)</span>
           <Textarea
-            required
-            minLength={4}
             maxLength={500}
             rows={4}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             className="mt-1 w-full rounded border border-border bg-card px-3 py-2 text-foreground"
-            placeholder="Record the reviewed operational reason for creating this draft."
+            placeholder="Add context if helpful"
           />
-          <span className="mt-1 block text-xs text-muted-foreground">
-            Required · 4–500 characters
-          </span>
         </Label>
 
         <div className="md:col-span-2">
@@ -173,7 +168,7 @@ export function RuleBookCreateForm({ ruleBooks }: RuleBookCreateFormProps) {
           )}
           <Button
             type="submit"
-            disabled={busy || effectiveYear.length === 0 || reason.trim().length < 4}
+            disabled={busy || effectiveYear.length === 0 || reason.trim().length > 500}
             className="mt-2 min-h-11 rounded bg-destructive px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-destructive disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? 'Creating draft…' : 'Create reviewed draft'}

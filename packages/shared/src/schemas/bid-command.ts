@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { ADayValueSchema } from './a-day.js';
 import type { BidEventEnvelope } from './bid-events.js';
+import { BidCommandNoteSchema, BidOperationNoteSchema } from './bid-operation-note.js';
 import { BidPoolSelectionSchema } from './bid-opportunity-pool.js';
 
 const CommandIdSchema = z.string().uuid();
 const ExpectedSeqSchema = z.number().int().nonnegative();
-const ReasonSchema = z.string().min(1).max(500);
+const ReasonSchema = BidCommandNoteSchema;
 /** Explicit operator acknowledgement; the server derives and rechecks every
  * warning against the canonical sequence and immutable session evidence. */
 export const AdminBidOverrideSchema = z
@@ -146,7 +147,8 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.correct_bid'),
     adminOverride: AdminBidOverrideSchema.optional(),
-    reason: ReasonSchema.trim().min(1),
+    // Corrections historically trimmed their note before receipt hashing.
+    reason: BidOperationNoteSchema,
     memberId: z.number().int().positive(),
     originalCommandId: CommandIdSchema,
     originalBidId: z.string().min(1),
@@ -270,7 +272,8 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
     operation: z.enum(['ASSIGN', 'RELEASE']),
     roleLabel: z.string().trim().min(4).max(160),
     positionId: z.string().trim().min(1).max(160).optional(),
-    reason: ReasonSchema.trim().min(4),
+    // Temporary-duty commands historically used a trimmed note as well.
+    reason: BidOperationNoteSchema,
   }).strict(),
   /** Presentation mode never changes the execution phase or selection order. */
   LiveCommandBase.extend({

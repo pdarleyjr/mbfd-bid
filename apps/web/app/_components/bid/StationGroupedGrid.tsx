@@ -1,7 +1,9 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { OperatorPositionCell } from './OperatorPositionCell';
 import { RichPositionCell } from './RichPositionCell';
 import { ShiftTabs } from './ShiftTabs';
+import styles from './StationGroupedGrid.module.css';
 import { FALLBACK_POSITION_METADATA } from './position-meta';
 import { ALL_SHIFTS, type MemberLite, type PositionMeta, type Shift } from './types';
 
@@ -14,6 +16,9 @@ interface Props {
   /** A session-bound board must not silently substitute the versionless
    * bundled catalog if its immutable material is absent. */
   snapshotBound?: boolean | undefined;
+  operatorLayout?: boolean;
+  selectedRank?: string | null;
+  toolbar?: ReactNode;
 }
 
 // Display order for stations matches the Excel bid sheet — combat first
@@ -96,8 +101,14 @@ export function StationGroupedGrid({
   onPositionClick,
   positions: immutablePositions,
   snapshotBound = false,
+  operatorLayout = false,
+  selectedRank = null,
+  toolbar,
 }: Props) {
   const [shift, setShift] = useState<Shift>(defaultShift);
+  const [view, setView] = useState<'all' | 'open' | 'rank'>('all');
+  const [viewOpen, setViewOpen] = useState(false);
+  const viewToggle = useRef<HTMLButtonElement>(null);
 
   // Only a view with no session snapshot may use the historical bundled
   // catalog. A session-bound board needs its own immutable material, otherwise
@@ -108,7 +119,11 @@ export function StationGroupedGrid({
   );
   const immutablePositionsUnavailable = snapshotBound && immutablePositions === undefined;
 
-  const grouped = useMemo(() => groupForShift(positions, shift), [positions, shift]);
+  const visiblePositions =
+    operatorLayout && view === 'rank' && selectedRank
+      ? positions.filter((position) => position.rankRequired === selectedRank)
+      : positions;
+  const grouped = useMemo(() => groupForShift(visiblePositions, shift), [visiblePositions, shift]);
   const counts = useMemo(() => countsByShift(positions), [positions]);
 
   const orderedStations = useMemo(() => {
@@ -118,7 +133,11 @@ export function StationGroupedGrid({
   }, [grouped]);
 
   return (
-    <section aria-label="Bid positions" data-testid="station-grouped-grid">
+    <section
+      aria-label="Bid positions"
+      data-testid="station-grouped-grid"
+      className={operatorLayout ? styles.operatorBoard : undefined}
+    >
       {immutablePositionsUnavailable ? (
         <output
           data-testid="immutable-positions-unavailable"
@@ -129,12 +148,75 @@ export function StationGroupedGrid({
         </output>
       ) : (
         <>
-          <ShiftTabs selected={shift} onSelect={setShift} counts={counts} />
+          <div className={operatorLayout ? styles.toolbar : undefined}>
+            <ShiftTabs
+              selected={shift}
+              onSelect={setShift}
+              counts={counts}
+              compact={operatorLayout}
+            />
+            {operatorLayout ? (
+              <div
+                className={styles.viewTools}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape' || !viewOpen) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setViewOpen(false);
+                  viewToggle.current?.focus();
+                }}
+              >
+                <button
+                  type="button"
+                  ref={viewToggle}
+                  className={styles.viewToggle}
+                  aria-expanded={viewOpen}
+                  aria-controls="operator-board-view"
+                  onClick={() => setViewOpen((open) => !open)}
+                >
+                  Board tools
+                </button>
+                <div
+                  id="operator-board-view"
+                  className={`${styles.viewOptions} ${viewOpen ? styles.viewOpen : ''}`}
+                  aria-label="Board view"
+                >
+                  {(['all', 'open', 'rank'] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={view === option}
+                      disabled={option === 'rank' && !selectedRank}
+                      onClick={() => {
+                        setView(option);
+                        if (viewOpen) {
+                          setViewOpen(false);
+                          viewToggle.current?.focus();
+                        }
+                      }}
+                      className="min-h-11 rounded px-2 text-xs font-semibold hover:bg-muted aria-pressed:bg-muted disabled:opacity-50"
+                    >
+                      {option === 'all'
+                        ? 'All seats'
+                        : option === 'open'
+                          ? 'Open seats'
+                          : `${selectedRank ?? 'Member'} seats`}
+                    </button>
+                  ))}
+                  {toolbar}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div
             id={`shift-panel-${shift}`}
             role="tabpanel"
             aria-labelledby={`shift-tab-${shift}`}
-            className="grid gap-2 p-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+            className={
+              operatorLayout
+                ? styles.operatorGrid
+                : 'grid gap-2 p-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+            }
           >
             {orderedStations.map((stationName) => {
               const apparatusMap = grouped.get(stationName);
@@ -144,36 +226,62 @@ export function StationGroupedGrid({
                 <article
                   key={stationName}
                   data-testid={`station-${stationName.replace(/\W+/g, '-').toLowerCase()}`}
-                  className="flex flex-col gap-1.5 rounded border border-border bg-background p-1.5"
+                  className={
+                    operatorLayout
+                      ? styles.station
+                      : 'flex flex-col gap-1.5 rounded border border-border bg-background p-1.5'
+                  }
                 >
-                  <header className="rounded bg-muted px-2 py-1 text-center text-xs font-bold text-foreground">
+                  <header
+                    className={
+                      operatorLayout
+                        ? styles.stationHeader
+                        : 'rounded bg-muted px-2 py-1 text-center text-xs font-bold text-foreground'
+                    }
+                  >
                     {stationName}
                     <span className="ml-2 text-[10px] font-normal text-muted-foreground">
                       {total} positions
                     </span>
                   </header>
-                  <div className="flex flex-col gap-2">
+                  <div className={operatorLayout ? styles.stationBody : 'flex flex-col gap-2'}>
                     {Array.from(apparatusMap.entries()).map(([apparatus, positions]) => (
                       <section
                         key={apparatus}
                         data-testid={`apparatus-${apparatus.replace(/\W+/g, '-').toLowerCase()}`}
-                        className="flex flex-col gap-0.5"
+                        className="flex flex-col"
                       >
-                        <h3 className="flex items-center justify-between rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
+                        <h3
+                          className={
+                            operatorLayout
+                              ? styles.unitHeader
+                              : 'flex items-center justify-between rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground'
+                          }
+                        >
                           <span>{apparatus}</span>
                           <span className="font-normal text-muted-foreground">
                             {positions.length}
                           </span>
                         </h3>
-                        <div className="flex flex-col gap-0.5">
-                          {positions.map((position) => (
-                            <RichPositionCell
-                              key={position.id}
-                              position={position}
-                              members={members}
-                              onClick={onPositionClick}
-                            />
-                          ))}
+                        <div className={operatorLayout ? 'flex flex-col' : 'flex flex-col gap-0.5'}>
+                          {positions.map((position) =>
+                            operatorLayout ? (
+                              <OperatorPositionCell
+                                key={position.id}
+                                position={position}
+                                members={members}
+                                onClick={onPositionClick}
+                                openOnly={view === 'open'}
+                              />
+                            ) : (
+                              <RichPositionCell
+                                key={position.id}
+                                position={position}
+                                members={members}
+                                onClick={onPositionClick}
+                              />
+                            ),
+                          )}
                         </div>
                       </section>
                     ))}
@@ -181,6 +289,11 @@ export function StationGroupedGrid({
                 </article>
               );
             })}
+            {orderedStations.length === 0 ? (
+              <p className="p-3 text-sm text-muted-foreground">
+                No seats in this view. Choose another shift or show all seats.
+              </p>
+            ) : null}
           </div>
         </>
       )}

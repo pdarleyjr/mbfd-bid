@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BID_EVENT_VERSION } from '../constants/bid-events.js';
+import { BidCommandNoteSchema } from './bid-operation-note.js';
 
 export const PICK_REJECT_CODES = [
   'NOT_YOUR_TURN',
@@ -70,7 +71,7 @@ export const SkipEventSchema = z.object({
   bidSessionId: z.string().min(1),
   skippedMemberId: z.number().int().positive(),
   ordinal: z.number().int().nonnegative(),
-  reason: z.string().min(1),
+  reason: BidCommandNoteSchema,
   nextBidderId: z.number().int().nonnegative().nullable(),
   turnStartedAtMs: z.number().int().nonnegative(),
 });
@@ -83,7 +84,7 @@ export const ForcedPickEventSchema = z.object({
   memberId: z.number().int().positive(),
   positionId: z.string().min(1),
   adminActorId: z.number().int().nonnegative(),
-  reason: z.string().min(1),
+  reason: BidCommandNoteSchema,
 });
 export type ForcedPickEvent = z.infer<typeof ForcedPickEventSchema>;
 
@@ -91,7 +92,7 @@ export const FreezeEventSchema = z.object({
   bidSessionId: z.string().min(1),
   frozenAt: z.number().int().nonnegative(),
   freezeActorId: z.number().int().nonnegative(),
-  reason: z.string().min(1),
+  reason: BidCommandNoteSchema,
 });
 export type FreezeEvent = z.infer<typeof FreezeEventSchema>;
 

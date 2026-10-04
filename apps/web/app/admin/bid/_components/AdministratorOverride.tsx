@@ -38,6 +38,7 @@ type Draft = {
 };
 
 interface Props {
+  compact?: boolean;
   bidSessionId: string;
   allowed: boolean;
   memberIds: readonly number[];
@@ -191,7 +192,7 @@ export function AdministratorOverride(props: Props) {
     !busy &&
     draft.memberId !== null &&
     memberIds.includes(draft.memberId) &&
-    draft.reason.trim().length >= 4 &&
+    draft.reason.trim().length <= 500 &&
     (draft.action !== 'AWARD' || !assignedPosition) &&
     (draft.action !== 'A_DAY' || (assignedPosition !== undefined && groups.includes(draft.aDay))) &&
     (draft.action !== 'DUTY' ||
@@ -384,7 +385,7 @@ export function AdministratorOverride(props: Props) {
 
   if (!props.allowed) return null;
   return (
-    <div className="mb-3">
+    <div className={props.compact ? '' : 'mb-3'}>
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
@@ -411,7 +412,7 @@ export function AdministratorOverride(props: Props) {
           setOpen(false);
         }}
         title="Adjust bid"
-        description="Choose the action. The software checks the consequences; you can override policy advice with a recorded reason."
+        description="Choose an action, review the advisories, then confirm."
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
@@ -746,13 +747,14 @@ export function AdministratorOverride(props: Props) {
             </p>
           )}
           <Label className="block">
-            Reason for administrator override
+            Note (optional)
             <Input
-              aria-label="Reason for administrator override"
+              aria-label="Note (optional)"
               value={draft.reason}
+              maxLength={500}
               disabled={busy}
               onChange={(event) => change({ reason: event.target.value })}
-              placeholder="Explain the exception for the audit"
+              placeholder="Add context if helpful"
             />
           </Label>
           {draft.action === 'AWARD' ? (

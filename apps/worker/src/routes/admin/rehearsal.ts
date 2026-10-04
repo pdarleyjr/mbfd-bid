@@ -12,7 +12,12 @@
 
 import { zValidator } from '@hono/zod-validator';
 import { evaluateEligibility } from '@mbfd/eligibility';
-import { type JwtPayload, MockFreezeCommandSchema, MockFreezeRequestSchema } from '@mbfd/shared';
+import {
+  BidOperationNoteSchema,
+  type JwtPayload,
+  MockFreezeCommandSchema,
+  MockFreezeRequestSchema,
+} from '@mbfd/shared';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { and, asc, desc, eq, inArray, like, ne, notExists, sql } from 'drizzle-orm';
@@ -292,7 +297,7 @@ router.post('/:sessionId/reset-mock', async (c) => {
 });
 
 const CloseMockBodySchema = z.object({
-  reason: z.string().trim().min(1).max(500),
+  reason: BidOperationNoteSchema,
 });
 
 /**

@@ -720,8 +720,8 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       return;
     }
     const trimmedReason = beginReason.trim();
-    if (trimmedReason.length < 4 || trimmedReason.length > 500) {
-      setError('Record a 4–500 character operator reason before beginning the synthetic scenario.');
+    if (trimmedReason.length > 500) {
+      setError('Keep the optional note within 500 characters.');
       return;
     }
     const commandId = commandIds.begin ?? createCommandId('begin');
@@ -757,10 +757,8 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       return;
     }
     const trimmedReason = candidateReason.trim();
-    if (trimmedReason.length < 4 || trimmedReason.length > 500) {
-      setError(
-        'Record a 4–500 character operator reason before resolving this synthetic candidate.',
-      );
+    if (trimmedReason.length > 500) {
+      setError('Keep the optional note within 500 characters.');
       return;
     }
     const awardReference = candidateAwardReference.trim();
@@ -795,8 +793,8 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       return;
     }
     const trimmedReason = originalReason.trim();
-    if (trimmedReason.length < 4 || trimmedReason.length > 500) {
-      setError('Record a 4–500 character operator reason before resolving the original bidder.');
+    if (trimmedReason.length > 500) {
+      setError('Keep the optional note within 500 characters.');
       return;
     }
     const awardReference = originalAwardReference.trim();
@@ -830,10 +828,8 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
       return;
     }
     const trimmedReason = resumeReason.trim();
-    if (trimmedReason.length < 4 || trimmedReason.length > 500) {
-      setError(
-        'Record a 4–500 character operator reason before resuming the synthetic normal turn.',
-      );
+    if (trimmedReason.length > 500) {
+      setError('Keep the optional note within 500 characters.');
       return;
     }
     const commandId = commandIds.resume ?? createCommandId('resume');
@@ -1393,11 +1389,9 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                   </span>
                 </Label>
                 <Label className="block lg:col-span-2">
-                  <span className="text-sm font-medium text-foreground">Operator reason</span>
+                  <span className="text-sm font-medium text-foreground">Note (optional)</span>
                   <Textarea
                     name="begin_reason"
-                    required
-                    minLength={4}
                     maxLength={500}
                     rows={3}
                     value={beginReason}
@@ -1405,7 +1399,7 @@ export function SpecialtyAdjudicationWorkspace({ wsBase }: { wsBase?: string | u
                       setBeginReason(event.target.value);
                       resetBeginKey();
                     }}
-                    placeholder="Record why this synthetic specialty fixture is being rehearsed."
+                    placeholder="Add context if helpful"
                     className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
                   />
                 </Label>
@@ -1706,16 +1700,14 @@ function ReasonAndSubmit({
   return (
     <div className="mt-5">
       <Label className="block">
-        <span className="text-sm font-medium text-foreground">Operator reason</span>
+        <span className="text-sm font-medium text-foreground">Note (optional)</span>
         <Textarea
           name={name}
-          required
-          minLength={4}
           maxLength={500}
           rows={3}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="Record the observed synthetic outcome and why it is being recorded."
+          placeholder="Add context if helpful"
           className="mt-1 block w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
         />
       </Label>

@@ -323,7 +323,7 @@ describe('Admin Bid setup routing', () => {
     expect(host.querySelector('[data-testid="bid-session-setup"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="manual-pick"]')).toBeNull();
     expect(host.querySelector('[data-testid="active-selection"]')).toBeNull();
-    expect(host.querySelector('details')?.open).toBe(false);
+    expect(host.textContent).toContain('Board');
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(startMock).not.toHaveBeenCalled();
   });

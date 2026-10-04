@@ -18,6 +18,7 @@ import {
   OPERATOR_SESSION_RENEW_INTERVAL_SEC,
 } from '@mbfd/shared';
 import { useQueryClient } from '@tanstack/react-query';
+import { usePathname } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 interface StepUpProviderProps {
@@ -50,6 +51,7 @@ function protectedApi(input: FetchInput): boolean {
 
 export function StepUpProvider({ children, initialStatus }: StepUpProviderProps) {
   const client = useQueryClient();
+  const compact = usePathname() === '/admin/bid';
   const initialOperator = useRef(initialStatus?.operatorKey ?? null);
   const clock = useRef({ status: initialStatus ?? null, receivedAt: Date.now() });
   const blocked = useRef(false);
@@ -246,7 +248,11 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
       {(remaining !== null || message) && (
         <aside
           aria-label="Operator sign-in status"
-          className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded border border-border bg-card p-3 text-sm"
+          className={
+            compact
+              ? 'flex shrink-0 flex-wrap items-center justify-between gap-x-2 border-b border-border bg-card px-3 py-0.5 text-xs'
+              : 'mx-4 mt-3 flex flex-wrap items-center gap-3 rounded border border-border bg-card p-3 text-sm'
+          }
         >
           <span>
             {identityChanged
@@ -256,16 +262,18 @@ export function StepUpProvider({ children, initialStatus }: StepUpProviderProps)
                 : remaining === null
                   ? 'Operator sign-in'
                   : remaining >= 24 * 60 * 60
-                    ? `Signed in · ${Math.ceil(remaining / (24 * 60 * 60))} days remaining; renews while you use Bid`
-                    : `Signed in · ${Math.floor(remaining / 3600)}h ${Math.floor((remaining % 3600) / 60)}m remaining; renews while you use Bid`}
+                    ? `Signed in · ${Math.ceil(remaining / (24 * 60 * 60))} days${compact ? ' · auto-renew' : ' remaining; renews while you use Bid'}`
+                    : `Signed in · ${Math.floor(remaining / 3600)}h ${Math.floor((remaining % 3600) / 60)}m${compact ? ' · auto-renew' : ' remaining; renews while you use Bid'}`}
           </span>
           <Button
             type="button"
             variant="secondary"
+            aria-label="Refresh operator sign-in"
+            className={compact ? 'px-2 py-1 text-xs [@media(pointer:fine)]:min-h-8' : undefined}
             disabled={identityChanged}
             onClick={() => setOpen(true)}
           >
-            Refresh operator sign-in
+            {compact ? 'Refresh sign-in' : 'Refresh operator sign-in'}
           </Button>
           {message && <output className="w-full">{message}</output>}
         </aside>

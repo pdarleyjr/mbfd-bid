@@ -23,7 +23,7 @@ import {
  *
  * For mock sessions the UI POSTs to `/api/admin/rehearsal/:id/manual-pick`.
  * For live sessions the existing Override dialog on the command bar handles
- * the step-up + reason flow; this hook refuses live picks so callers don't
+ * the verified operator review flow; this hook refuses live picks so callers don't
  * accidentally bypass that gate.
  */
 
@@ -115,9 +115,7 @@ export function ManualPickProvider({
       setLastError(null);
       try {
         if (!isMock) {
-          setLastError(
-            'Live sessions require step-up + reason. Use the Override button on the command bar.',
-          );
+          setLastError('Use Override on the command bar to review and confirm a live pick.');
           return { ok: false };
         }
         const expectedRevision = mockControlRevisionRef.current;

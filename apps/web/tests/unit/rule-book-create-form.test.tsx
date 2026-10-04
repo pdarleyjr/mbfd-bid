@@ -22,8 +22,8 @@ describe('RuleBookCreateForm', () => {
     expect(html).toContain('Effective year');
     expect(html).toContain('Clone source');
     expect(html).toContain('Notes (optional)');
-    expect(html).toContain('Reason for this change');
-    expect(html).toContain('minLength="4"');
+    expect(html).toContain('Note (optional)');
+    expect(html).not.toContain('minLength="4"');
     expect(html).toContain('maxLength="500"');
     expect(html).toContain('2026.1');
     expect(html).toContain('data-testid="rule-book-create-form"');

@@ -168,7 +168,9 @@ export function AdminLayoutShell({
         </div>
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-2 sm:px-6">
+        <header
+          className={`flex shrink-0 flex-wrap items-center justify-between border-b border-border bg-card ${operatorWorkspace ? 'min-h-12 gap-2 px-3 py-1' : 'min-h-16 gap-3 px-4 py-2 sm:px-6'}`}
+        >
           <div className="flex min-w-0 items-center gap-3">
             <Button
               type="button"
@@ -191,7 +193,9 @@ export function AdminLayoutShell({
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Miami Beach Fire Department
               </p>
-              <p className="mt-1 text-sm text-muted-foreground">Annual Bid · Control Center</p>
+              {!operatorWorkspace ? (
+                <p className="mt-1 text-sm text-muted-foreground">Annual Bid · Control Center</p>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -210,7 +214,7 @@ export function AdminLayoutShell({
         <main
           ref={mainContent}
           tabIndex={-1}
-          className="admin-content min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 outline-none sm:px-6 print:overflow-visible"
+          className={`admin-content min-h-0 min-w-0 flex-1 overscroll-contain outline-none print:overflow-visible ${operatorWorkspace ? 'overflow-hidden p-2 sm:p-3' : 'overflow-y-auto px-4 py-3 sm:px-6'}`}
         >
           <Suspense fallback={<p className="text-muted-foreground">Loading workspace…</p>}>
             <BidYearContext />

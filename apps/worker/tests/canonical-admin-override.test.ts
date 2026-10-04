@@ -6,6 +6,7 @@ import {
   BidSessionPolicySnapshotSchema,
   type FrozenLiveBidPolicy,
   type LiveBidCommand,
+  LiveBidCommandSchema,
 } from '@mbfd/shared';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -310,7 +311,7 @@ describe.each([
   }
   async function confirmed(state: BidSessionState, input: LiveBidCommand) {
     const preview = await execute(state, input, true);
-    expect(preview.result.kind).toBe('accepted');
+    expect(preview.result.kind, JSON.stringify(preview.result)).toBe('accepted');
     if (preview.result.kind !== 'accepted') throw new Error(preview.result.code);
     const override = (
       preview.result.envelope.payload as { adminOverride: { warningCodes: string[] } }
@@ -347,6 +348,154 @@ describe.each([
   });
   afterEach(() => sqlite.close());
 
+  it('replays a historical raw-whitespace command through the new schema without changing its digest or audit', async () => {
+    seed();
+    const before = initialState();
+    // This is the exact parsed envelope accepted by the previous schema,
+    // which preserved whitespace for ordinary canonical commands.
+    const historical = command('live.record_selection', {
+      memberId: 42,
+      positionId: 'D101',
+      reason: '  Historical operator note  ',
+    });
+    const accepted = await execute(before, historical);
+    expect(accepted.result.kind).toBe('accepted');
+    const receipt = sqlite.prepare('SELECT request_sha256 FROM bid_command_receipts').get();
+    const audit = sqlite.prepare('SELECT * FROM audit_log').all();
+    const parsed = LiveBidCommandSchema.parse(historical);
+    expect(parsed).toEqual(historical);
+    const replayed = await execute(before, parsed);
+    expect(replayed.result).toEqual(accepted.result);
+    expect(sqlite.prepare('SELECT request_sha256 FROM bid_command_receipts').get()).toEqual(
+      receipt,
+    );
+    expect(sqlite.prepare('SELECT * FROM audit_log').all()).toEqual(audit);
+    expect(audit).toMatchObject([{ reason: '  Historical operator note  ' }]);
+    // Note changes still constitute a different command and cannot reuse its id.
+    expect((await execute(before, { ...parsed, reason: 'Different note' })).result).toMatchObject({
+      kind: 'rejected',
+      code: 'COMMAND_ID_REUSED',
+    });
+  });
+
+  it('accepts a forced out-of-order award and correction with no note while preserving review, audit, replay and the waiting turn', async () => {
+    seed(true);
+    const before = initialState();
+    const input = command('live.record_selection', {
+      memberId: 44,
+      positionId: 'A102',
+      aDay: 'G1',
+      forced: true,
+      reason: '',
+      adminOverride: override,
+    });
+    const awarded = await confirmed(before, input);
+    expect(awarded.state.currentBidderId).toBe(42);
+    expect(awarded.state.fills.A102?.forced).toMatchObject({
+      actorMemberId: 99,
+      reason: '',
+      commandId: awarded.command.commandId,
+    });
+    const fill = awarded.state.fills.A102;
+    if (!fill) throw new Error('Synthetic source award required');
+    const correction = await confirmed(
+      awarded.state,
+      command(
+        'live.correct_bid',
+        {
+          memberId: 44,
+          originalCommandId: awarded.command.commandId,
+          originalBidId: fill.bidId,
+          originalPositionId: 'A102',
+          originalADayCommandId: null,
+          operation: 'REPLACE',
+          replacement: { positionId: 'A102', aDay: null },
+          reason: '',
+          adminOverride: override,
+        },
+        1,
+      ),
+    );
+    expect(correction.state.currentBidderId).toBe(42);
+    expect(correction.state.fills.A102?.aDayDeferral?.positionId).toBe('A102');
+    expect(correction.state.live?.corrections?.at(-1)).toMatchObject({
+      reason: '',
+      actorMemberId: 99,
+      before: { positionId: 'A102', fill: { aDay: 'G1' } },
+    });
+    expect((await execute(awarded.state, correction.command)).result).toEqual(correction.result);
+    const audit = sqlite
+      .prepare('SELECT actor_id,reason,before_state,after_state FROM audit_log ORDER BY rowid')
+      .all() as Array<{
+      actor_id: number;
+      reason: string;
+      before_state: string;
+      after_state: string;
+    }>;
+    expect(audit).toHaveLength(2);
+    expect(audit.every((row) => row.actor_id === 99 && row.reason === '')).toBe(true);
+    expect(audit.every((row) => row.before_state && row.after_state)).toBe(true);
+    expect((await loadCanonicalBidSessionState(db, sessionId))?.fills.A102).toEqual(
+      correction.state.fills.A102,
+    );
+    expect((await execute(before, command('live.pause', { reason: '' }))).result).toMatchObject({
+      kind: 'rejected',
+      code: 'STALE_SEQUENCE',
+    });
+  });
+
+  it('allows a note-free skip, temporary duty, release and pause without discarding the audit trail', async () => {
+    seed();
+    const skipped = await execute(
+      initialState(),
+      command('live.disposition', { disposition: 'SKIP', reason: '' }),
+    );
+    expect(skipped.result.kind).toBe('accepted');
+    if (!skipped.canonicalState) throw new Error('Synthetic skipped state required');
+    const assigned = await execute(
+      skipped.canonicalState,
+      command(
+        'live.set_exceptional_assignment',
+        {
+          memberId: 42,
+          operation: 'ASSIGN',
+          roleLabel: 'Temporary Chief duty',
+          reason: '',
+        },
+        1,
+      ),
+    );
+    expect(assigned.result.kind).toBe('accepted');
+    if (!assigned.canonicalState) throw new Error('Synthetic duty state required');
+    expect(assigned.canonicalState.live?.exceptionalAssignments?.at(-1)).toMatchObject({
+      reason: '',
+      actorMemberId: 99,
+    });
+    const released = await execute(
+      assigned.canonicalState,
+      command(
+        'live.set_exceptional_assignment',
+        {
+          memberId: 42,
+          operation: 'RELEASE',
+          roleLabel: 'Temporary Chief duty',
+          reason: '',
+        },
+        2,
+      ),
+    );
+    expect(released.result.kind).toBe('accepted');
+    if (!released.canonicalState) throw new Error('Synthetic release state required');
+    const paused = await execute(released.canonicalState, command('live.pause', { reason: '' }, 3));
+    expect(paused.result.kind).toBe('accepted');
+    expect(paused.canonicalState?.currentPhase).toBe('paused');
+    expect(
+      sqlite
+        .prepare("SELECT count(*) AS count FROM audit_log WHERE reason='' AND actor_id=99")
+        .get(),
+    ).toEqual({ count: 4 });
+  });
+
   it('defers a simultaneous A-Day under audited direction and retains its prompt across ordinary commands and reload', async () => {
     seed(true);
     const early = await confirmed(
@@ -354,6 +503,7 @@ describe.each([
       command('live.record_selection', {
         memberId: 44,
         positionId: 'A102',
+        reason: '',
         adminOverride: override,
       }),
     );
@@ -361,6 +511,7 @@ describe.each([
     expect(early.state.fills.A102?.aDayDeferral).toMatchObject({
       positionId: 'A102',
       commandId: early.command.commandId,
+      reason: '',
     });
     const ordinary = await execute(
       early.state,
@@ -432,6 +583,7 @@ describe.each([
         memberId: 44,
         positionId: 'A102',
         aDay: 'G2',
+        reason: '',
         adminOverride: override,
       }),
     );

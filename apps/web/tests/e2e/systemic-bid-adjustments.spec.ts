@@ -109,14 +109,13 @@ for (const mode of ['mock', 'real'] as const) {
       .getByRole('combobox', { name: 'Administrator override open position' })
       .selectOption('B-fixture');
     await adjustment.getByRole('checkbox', { name: 'Pick A-Day later' }).check();
-    await adjustment
-      .getByRole('textbox', { name: 'Reason for administrator override' })
-      .fill('Isolated out of order award; A-Day remains due');
+    await expect(adjustment.getByRole('textbox', { name: 'Note (optional)' })).toHaveValue('');
     await adjustment.getByRole('button', { name: 'Review adjustment', exact: true }).click();
     await expect(adjustment.getByText('A-Day remains due.', { exact: true })).toBeVisible();
     expect(previews).toHaveLength(1);
     expect(commands).toHaveLength(0);
     expect(previews[0]).not.toHaveProperty('aDay');
+    expect(previews[0]?.reason).toBe('');
     await expect(
       adjustment.getByRole('button', { name: 'Confirm administrator selection', exact: true }),
     ).toBeDisabled();
@@ -132,6 +131,7 @@ for (const mode of ['mock', 'real'] as const) {
       expectedSeq: 4,
       memberId: 2,
       positionId: 'B-fixture',
+      reason: '',
       adminOverride: { acknowledged: true, warningCodes: ['OUT_OF_ORDER', 'A_DAY_DEFERRED'] },
     });
     expect(commands[0]).not.toHaveProperty('aDay');

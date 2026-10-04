@@ -140,7 +140,8 @@ describe('Administrator Guide content contract', () => {
     expect(rules?.steps.join(' ')).toContain('Specialized Timeline');
     expect(rules?.steps.join(' ')).toContain('overlapping scopes are rejected');
     const live = GUIDE_SECTIONS.find((section) => section.id === 'live-bid');
-    expect(live?.steps.join(' ')).toContain('Review the advisories, add a reason and confirm');
+    expect(live?.steps.join(' ')).toContain('Review and acknowledge the advisories, then confirm');
+    expect(live?.steps.join(' ')).toContain('A note is optional');
     expect(live?.steps.join(' ')).toContain('Review contacts and evidence');
     expect(live?.steps.join(' ')).toContain('Choose A-Day with a normal award');
     expect(filterGuideSections('station pool').map((section) => section.id)).toContain(

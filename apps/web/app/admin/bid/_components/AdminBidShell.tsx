@@ -1,7 +1,7 @@
 'use client';
 import type { BidAdvisoryBundle } from '@mbfd/shared';
 import { useRouter } from 'next/navigation';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import type { BidderContext } from '../../../_components/bid/BidderCard';
 import type { MemberLite, PositionMeta } from '../../../_components/bid/types';
 import { AdminBoard } from './AdminBoard';
@@ -60,6 +60,30 @@ export function AdminBidShell(props: Props) {
   const refreshCanonical = useCallback(() => router.refresh(), [router]);
   const managed = props.annual !== null && props.annual !== undefined;
   const configuring = props.currentPhase === 'config';
+  const [workspaceState, setWorkspaceState] = useState({
+    aDayPendingMemberIds: [] as number[],
+    aDayDueMemberIds: [] as number[],
+    temporarilyAssignedMemberIds: [] as number[],
+  });
+  const onWorkspaceStateChange = useCallback(
+    (state: typeof workspaceState) => setWorkspaceState(state),
+    [],
+  );
+  const board = (
+    <AdminBoard
+      bidSessionId={props.bidSessionId}
+      initialSeq={props.lastSeq}
+      meMemberId={props.meMemberId}
+      initialFills={props.initialFills}
+      initialCurrentBidderId={props.currentBidderId}
+      members={props.members}
+      positions={props.positions}
+      wsBase={props.wsBase}
+      advisory={props.advisory}
+      managed={managed && !configuring}
+      workspace
+    />
+  );
   return (
     <ManualPickProvider
       bidSessionId={props.bidSessionId}
@@ -67,10 +91,12 @@ export function AdminBidShell(props: Props) {
       mockControlRevision={props.mockControlRevision}
     >
       <BidOperatorProvider currentBidderId={props.currentBidderId}>
-        <div className="flex h-full min-h-[calc(100vh-57px)] flex-col">
-          <div className="border-b border-border bg-card px-3 py-2 sm:px-5">
-            <SessionPresentationLink sessionId={props.bidSessionId} isMock={props.isMock} />
-          </div>
+        <div className="flex h-full min-h-0 flex-col">
+          {configuring || !managed ? (
+            <div className="shrink-0 border-b border-border bg-card px-3 py-1">
+              <SessionPresentationLink sessionId={props.bidSessionId} isMock={props.isMock} />
+            </div>
+          ) : null}
           {!configuring && (
             <LiveCommandBar
               bidSessionId={props.bidSessionId}
@@ -84,21 +110,51 @@ export function AdminBidShell(props: Props) {
               currentBidderId={props.currentBidderId}
               onDeck={props.onDeck}
               managed={managed}
+              presentationLink={
+                managed ? (
+                  <SessionPresentationLink
+                    sessionId={props.bidSessionId}
+                    isMock={props.isMock}
+                    compact
+                    variant="link"
+                  />
+                ) : undefined
+              }
+              presentationTools={
+                managed ? (
+                  <SessionPresentationLink
+                    sessionId={props.bidSessionId}
+                    isMock={props.isMock}
+                    compact
+                    variant="copy"
+                  />
+                ) : undefined
+              }
             />
           )}
           {managed || configuring ? (
             <BidOperatorWorkspace
               members={props.members}
               bidOrder={props.bidOrder}
+              fills={props.initialFills}
+              positions={props.positions}
+              onDeckMemberIds={props.onDeck.map((member) => member.memberId)}
+              {...workspaceState}
               preview={configuring}
+              sessionDetails={
+                !configuring ? <AnnualOperationsStatus annual={props.annual} /> : null
+              }
             >
               {configuring ? (
-                <BidSessionSetup
-                  bidSessionId={props.bidSessionId}
-                  isMock={props.isMock}
-                  memberCount={new Set(props.bidOrder.map((entry) => entry.memberId)).size}
-                  onStarted={refreshCanonical}
-                />
+                <>
+                  <BidSessionSetup
+                    bidSessionId={props.bidSessionId}
+                    isMock={props.isMock}
+                    memberCount={new Set(props.bidOrder.map((entry) => entry.memberId)).size}
+                    onStarted={refreshCanonical}
+                  />
+                  {board}
+                </>
               ) : (
                 <AnnualLiveControls
                   bidSessionId={props.bidSessionId}
@@ -110,81 +166,56 @@ export function AdminBidShell(props: Props) {
                   positions={props.positions}
                   onCanonicalChange={refreshCanonical}
                   workspace
+                  board={board}
+                  onWorkspaceStateChange={onWorkspaceStateChange}
                 />
               )}
-              <details className="border border-border bg-card">
-                <summary className="cursor-pointer px-3 py-3 text-sm font-semibold">
-                  Full board, roster, and session status
-                </summary>
-                {!configuring && <AnnualOperationsStatus annual={props.annual} />}
-                <BidRoster
-                  bidOrder={props.bidOrder}
-                  members={props.members}
-                  currentBidderId={props.currentBidderId}
-                  fills={props.initialFills}
-                  preview={props.bidOrderPreview}
-                  currentPhase={props.currentPhase}
-                  positions={props.positions}
-                  snapshotBound
-                />
-                <AdminBoard
-                  bidSessionId={props.bidSessionId}
-                  initialSeq={props.lastSeq}
-                  meMemberId={props.meMemberId}
-                  initialFills={props.initialFills}
-                  initialCurrentBidderId={props.currentBidderId}
-                  members={props.members}
-                  positions={props.positions}
-                  wsBase={props.wsBase}
-                  advisory={props.advisory}
-                  managed={!configuring}
-                />
-              </details>
             </BidOperatorWorkspace>
           ) : (
-            <>
-              <AnnualOperationsStatus annual={props.annual} />
-
-              <AnnualLiveControls
-                bidSessionId={props.bidSessionId}
-                isMock={props.isMock}
-                currentBidderId={props.currentBidderId}
-                bidOrder={props.bidOrder}
-                fills={props.initialFills}
-                members={props.members}
-                positions={props.positions}
-                onCanonicalChange={refreshCanonical}
-              />
-
-              <ManualPickBar isMock={props.isMock} members={props.members} />
-
-              <BidRoster
-                bidOrder={props.bidOrder}
-                members={props.members}
-                currentBidderId={props.currentBidderId}
-                fills={props.initialFills}
-                preview={props.bidOrderPreview}
-                currentPhase={props.currentPhase}
-                positions={props.positions}
-                snapshotBound
-              />
-
-              <div className="flex min-h-0 flex-1 flex-row">
-                <div className="min-w-0 flex-1 overflow-auto">
-                  <AdminBoard
+            <BidOperatorWorkspace
+              members={props.members}
+              bidOrder={props.bidOrder}
+              fills={props.initialFills}
+              positions={props.positions}
+              onDeckMemberIds={props.onDeck.map((member) => member.memberId)}
+              sessionDetails={
+                <>
+                  <AnnualOperationsStatus annual={props.annual} />
+                  <BidRoster
+                    bidOrder={props.bidOrder}
+                    members={props.members}
+                    currentBidderId={props.currentBidderId}
+                    fills={props.initialFills}
+                    preview={props.bidOrderPreview}
+                    currentPhase={props.currentPhase}
+                    positions={props.positions}
+                    snapshotBound
+                  />
+                </>
+              }
+            >
+              <div className="shrink-0">
+                <ManualPickBar isMock={props.isMock} members={props.members} />
+              </div>
+              <details className="shrink-0 border-b border-border px-3 text-sm">
+                <summary className="min-h-11 cursor-pointer content-center font-semibold">
+                  Bid actions
+                </summary>
+                <div className="max-h-72 overflow-y-auto">
+                  <AnnualLiveControls
                     bidSessionId={props.bidSessionId}
-                    initialSeq={props.lastSeq}
-                    meMemberId={props.meMemberId}
-                    initialFills={props.initialFills}
-                    initialCurrentBidderId={props.currentBidderId}
+                    isMock={props.isMock}
+                    currentBidderId={props.currentBidderId}
+                    bidOrder={props.bidOrder}
+                    fills={props.initialFills}
                     members={props.members}
                     positions={props.positions}
-                    wsBase={props.wsBase}
-                    advisory={props.advisory}
+                    onCanonicalChange={refreshCanonical}
                   />
                 </div>
-              </div>
-            </>
+              </details>
+              {board}
+            </BidOperatorWorkspace>
           )}
         </div>
       </BidOperatorProvider>
