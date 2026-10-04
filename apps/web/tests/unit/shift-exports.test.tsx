@@ -234,6 +234,48 @@ describe('current session shift downloads', () => {
 });
 
 describe('archived report controls', () => {
+  it('preserves a signed HTTPS archive download returned by the authenticated Worker', async () => {
+    const signedUrl = 'https://exports.example/roster.pdf?signature=synthetic';
+    const fetchMock = vi.fn(async () => Response.json({ url: signedUrl }));
+    vi.stubGlobal('fetch', fetchMock);
+    await mount(
+      <ExportCard
+        sessionId="signed-session"
+        entry={{ r2Key: 'roster.pdf', kind: 'pdf', bytes: 100, uploadedAt: '2026-10-04T00:00:00Z' }}
+      />,
+    );
+    await click('Get link');
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      '/api/admin/exports/signed-session/roster.pdf/url',
+      { credentials: 'include', cache: 'no-store' },
+    );
+    expect(host.querySelector('a')?.getAttribute('href')).toBe(signedUrl);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+  it.each([
+    'javascript:alert(1)',
+    'data:application/pdf,synthetic',
+    'http://exports.example/roster.pdf',
+    '//exports.example/roster.pdf',
+    'https://user:pass@exports.example/roster.pdf',
+    '/api/admin/exports/../../other-page',
+  ])('rejects an unsafe archive URL %s', async (url) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ url })),
+    );
+    await mount(
+      <ExportCard
+        sessionId="same-session"
+        entry={{ r2Key: 'roster.pdf', kind: 'pdf', bytes: 100, uploadedAt: '2026-10-04T00:00:00Z' }}
+      />,
+    );
+    await click('Get link');
+    expect(host.querySelector('a')).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      'download link was invalid',
+    );
+  });
   it('reports a failed Get link and supports retry into the authenticated download', async () => {
     const fetchMock = vi
       .fn()
