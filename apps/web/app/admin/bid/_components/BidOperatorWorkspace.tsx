@@ -30,6 +30,7 @@ export function BidOperatorWorkspace({
   sessionDetails,
   preview = false,
   sessionId,
+  minimumSequence = 0,
   bidYear,
 }: {
   members: Record<string, MemberLite>;
@@ -45,9 +46,11 @@ export function BidOperatorWorkspace({
   /** Before Start, history is readable but nobody is up to select a position. */
   preview?: boolean;
   sessionId?: string | undefined;
+  minimumSequence?: number;
   bidYear?: number | null | undefined;
 }) {
   const operator = useBidOperator();
+  const requiredSequence = Math.max(minimumSequence, operator?.boardSequence ?? 0);
   const manualPick = useManualPick();
   const [query, setQuery] = useState('');
   const [rosterView, setRosterView] = useState<'seniority' | 'specialty'>('seniority');
@@ -76,7 +79,7 @@ export function BidOperatorWorkspace({
     const result = new Map<number, string[]>();
     const published = operator?.aDayProjection;
     const entries =
-      published && published.sessionId === sessionId
+      published && published.sessionId === sessionId && published.sequence >= requiredSequence
         ? Object.entries(published.fills).map(
             ([positionId, fill]) => [positionId, fill.member_id] as const,
           )
@@ -85,7 +88,7 @@ export function BidOperatorWorkspace({
       result.set(memberId, [...(result.get(memberId) ?? []), positionId]);
     }
     return result;
-  }, [fills, operator?.aDayProjection, sessionId]);
+  }, [fills, operator?.aDayProjection, sessionId, requiredSequence]);
   const rows = useMemo(() => {
     const unique = [
       ...new Set([
@@ -105,7 +108,11 @@ export function BidOperatorWorkspace({
   const picked = rows.filter(({ member }) => recorded(member.id));
   const publishedSpecialtyRoster = operator?.specialtyRoster;
   const specialtyRoster =
-    publishedSpecialtyRoster?.sessionId === sessionId ? (publishedSpecialtyRoster ?? null) : null;
+    publishedSpecialtyRoster &&
+    publishedSpecialtyRoster.sessionId === sessionId &&
+    publishedSpecialtyRoster.sequence >= requiredSequence
+      ? publishedSpecialtyRoster
+      : null;
   const specialtyGroups =
     specialtyRoster?.availability === 'AVAILABLE' ? specialtyRoster.groups : [];
   const specialtyGroup =

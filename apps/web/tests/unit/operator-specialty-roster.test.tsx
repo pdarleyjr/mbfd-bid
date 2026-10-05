@@ -105,15 +105,33 @@ function roster(): OperatorSpecialtyRoster {
 function Publish({ value }: { value: OperatorSpecialtyRoster }) {
   const operator = useBidOperator();
   useEffect(() => operator?.setSpecialtyRoster(value), [operator?.setSpecialtyRoster, value]);
+  useEffect(
+    () =>
+      operator?.setADayProjection({
+        sessionId: value.sessionId,
+        sequence: value.sequence,
+        combatGroups: ['G1', 'G2', 'G3', 'G4'],
+        maximumPerGroup: null,
+        fills: { A002: { member_id: 2, a_day: 'G2' } },
+      }),
+    [operator?.setADayProjection, value.sessionId, value.sequence],
+  );
   return <output data-testid="selected-member">{operator?.selectedMemberId}</output>;
 }
-function Workspace() {
+function Workspace({
+  minimumSequence = 0,
+  currentFills = fills,
+}: {
+  minimumSequence?: number;
+  currentFills?: Record<string, { memberId: number; ordinal: number; bidId: string }>;
+}) {
   return (
     <BidOperatorWorkspace
       sessionId="specialty-fixture"
+      minimumSequence={minimumSequence}
       members={members}
       bidOrder={order}
-      fills={fills}
+      fills={currentFills}
       temporarilyAssignedMemberIds={[4]}
     >
       <div>Seat board</div>
@@ -172,6 +190,15 @@ const specialtyMemberIds = () =>
     node.getAttribute('data-testid'),
   );
 
+function ObserveBoardSequence({ sequence }: { sequence: number }) {
+  const operator = useBidOperator();
+  useEffect(
+    () => operator?.observeBoardSequence(sequence),
+    [operator?.observeBoardSequence, sequence],
+  );
+  return null;
+}
+
 describe('specialty roster display', () => {
   it('defaults to seniority with the same deduplicated remaining members and no extra fetch', async () => {
     await mount(<Workspace />);
@@ -184,7 +211,7 @@ describe('specialty roster display', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
   it('shows the server priority order and points without granting eligibility or re-sorting by seniority', async () => {
-    await mount(<Workspace />);
+    await mount(<Workspace minimumSequence={4} />);
     await clickText('Specialty');
     expect(specialtyMemberIds()).toEqual([
       'operator-member-specialty-3',
@@ -259,6 +286,42 @@ describe('specialty roster display', () => {
     expect(specialtyMemberIds()).toEqual([]);
     expect(host.textContent).toContain('Specialty lists are updating.');
     expect(host.querySelector('[aria-label="Staffing alerts"]')).toBeNull();
+  });
+  it('retains the newer server-rendered fill when the context still describes the previous sequence', async () => {
+    await mount(
+      <Workspace
+        minimumSequence={5}
+        currentFills={{ ...fills, A103: { memberId: 3, ordinal: 3, bidId: 'newer-ssr-selection' } }}
+      />,
+    );
+    expect(host.querySelector('[data-testid="operator-member-picked-3"]')?.textContent).toContain(
+      'A103',
+    );
+    expect(host.querySelector('[data-testid="operator-member-remaining-3"]')).toBeNull();
+    await clickText('Specialty');
+    expect(specialtyMemberIds()).toEqual([]);
+    expect(host.textContent).toContain('Specialty lists are updating.');
+    expect(host.querySelector('[aria-label="Staffing alerts"]')).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('refuses an older specialty and A-Day projection after a newer board websocket watermark', async () => {
+    await mount(
+      <>
+        <ObserveBoardSequence sequence={5} />
+        <Workspace
+          currentFills={{
+            ...fills,
+            A103: { memberId: 3, ordinal: 3, bidId: 'newer-websocket-selection' },
+          }}
+        />
+      </>,
+    );
+    expect(host.querySelector('[data-testid="operator-member-picked-3"]')?.textContent).toContain(
+      'A103',
+    );
+    await clickText('Specialty');
+    expect(specialtyMemberIds()).toEqual([]);
+    expect(host.textContent).toContain('Specialty lists are updating.');
   });
 });
 

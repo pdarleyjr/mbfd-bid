@@ -239,6 +239,43 @@ describe('canonical operator specialty roster', () => {
       candidates: [{ memberId: 2 }, { memberId: 4 }],
     });
   });
+  it('splits identical rule profiles when their exact published source priorities differ', () => {
+    const input = fixture();
+    for (const member of input.snapshot.members) {
+      member.scoreReferenceEvidence = ['DE1', 'DE2'].map((positionId) => ({
+        v: 1,
+        listId: `synthetic-${positionId}`,
+        positionIds: [positionId],
+        points: 0,
+        soPoints: 0,
+        moPoints: 0,
+        sourceName: `Synthetic ${positionId} published order`,
+        sourceSha256: (positionId === 'DE1' ? 'a' : 'b').repeat(64),
+        sourceLocation: { page: 1, textLine: member.memberId },
+        literalTotal: 0,
+        printedBidOrder: null,
+        sourcePriority: positionId === 'DE1' ? member.memberId : 5 - member.memberId,
+      }));
+    }
+    const result = project(input);
+    const first = result.groups.find((group) => group.id === 'profile:DE1');
+    const second = result.groups.find((group) => group.id === 'profile:DE2');
+    expect(first).toMatchObject({
+      label: 'Driver Engineer · DE1',
+      positionIds: ['DE1'],
+      rankingAvailable: true,
+    });
+    expect(second).toMatchObject({
+      label: 'Driver Engineer · DE2',
+      positionIds: ['DE2'],
+      rankingAvailable: true,
+    });
+    expect(first?.candidates.map((candidate) => candidate.memberId)).toEqual([1, 2, 4]);
+    expect(second?.candidates.map((candidate) => candidate.memberId)).toEqual([4, 2, 1]);
+    expect(
+      second?.candidates.every((candidate) => candidate.eligiblePositionIds.join() === 'DE2'),
+    ).toBe(true);
+  });
   it('keeps unresolved order separate from eligibility and fails missing frozen dates closed without mutating the session', () => {
     const input = fixture();
     const fourth = input.snapshot.members[3];

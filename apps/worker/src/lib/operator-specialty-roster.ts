@@ -2,8 +2,13 @@ import {
   type PositionRule,
   evaluateEligibility,
   evaluateEligibilityCohort,
+  scoreReferenceForPositions,
 } from '@mbfd/eligibility';
-import type { BidSessionPolicySnapshot, FrozenAnnualSpecialtyPolicy } from '@mbfd/shared';
+import type {
+  BidSessionPolicySnapshot,
+  FrozenAnnualSpecialtyPolicy,
+  FrozenBidEligibilityMember,
+} from '@mbfd/shared';
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
 import { rankFrozenSpecialtyCandidates } from './annual-specialty-policy.js';
@@ -43,13 +48,35 @@ type Input = {
   credentialCoverage: ReturnType<typeof projectFrozenCredentialCoverage>;
 };
 
-function profileSignature(rule: PositionRule) {
+function profileSignature(rule: PositionRule, members: readonly FrozenBidEligibilityMember[]) {
   return canonicalize(
     JSON.parse(
       JSON.stringify({
         requiredCriteria: rule.requiredCriteria,
         pointsPreference: rule.pointsPreference,
         tieBreakChain: rule.tieBreakChain,
+        // Identical authored rules are insufficient: exact-position reviewed
+        // score evidence can change both points and published priority. Omit
+        // documentary fields and positionIds so equivalent cross-shift scopes
+        // still share one roster.
+        effectiveScoreReferences: members.map((member) => {
+          const reference = scoreReferenceForPositions(member.scoreReferenceEvidence, [
+            rule.positionId,
+          ]);
+          return [
+            member.memberId,
+            reference
+              ? {
+                  listId: reference.listId,
+                  sourceSha256: reference.sourceSha256,
+                  sourcePriority: reference.sourcePriority,
+                  points: reference.points,
+                  soPoints: reference.soPoints,
+                  moPoints: reference.moPoints,
+                }
+              : null,
+          ];
+        }),
       }),
     ) as JsonValue,
   );
@@ -116,7 +143,7 @@ export function projectOperatorSpecialtyRoster(input: Input) {
         !hasFrozenPriorityPreference(rule)
       )
         continue;
-      const signature = profileSignature(rule);
+      const signature = profileSignature(rule, members);
       profiles.set(signature, [...(profiles.get(signature) ?? []), rule]);
     }
     for (const related of profiles.values()) {
@@ -252,6 +279,13 @@ export function projectOperatorSpecialtyRoster(input: Input) {
         ...(rankingCode ? { rankingCode } : {}),
       });
     }
+    // Split source scopes need distinguishable choices in the compact selector.
+    const labelCounts = new Map<string, number>();
+    for (const group of groups)
+      labelCounts.set(group.label, (labelCounts.get(group.label) ?? 0) + 1);
+    for (const group of groups)
+      if ((labelCounts.get(group.label) ?? 0) > 1)
+        group.label = `${group.label} · ${group.positionIds[0]}`;
     for (const distribution of policy.annualOperations?.membershipDistributions ?? []) {
       if (distribution.membershipSource !== 'REVIEWED_QUALIFIED_POOL') continue;
       const candidates = distribution.memberIds

@@ -21,15 +21,26 @@ export function projectADayBoard(
       ? [{ position, memberId: fill.member_id, aDay: fill.a_day, forced: fill.forced }]
       : [];
   });
-  const groups =
+  const configuredGroups =
     shift === 'D' ? ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] : projection.combatGroups;
+  // Accepted administrator departures remain visible without inventing capacity
+  // or enabling a group that the captured policy did not configure.
+  const savedOverrideGroups =
+    shift === 'D'
+      ? []
+      : ['G1', 'G2', 'G3', 'G4'].filter(
+          (id) => !configuredGroups.includes(id) && seats.some((seat) => seat.aDay === id),
+        );
+  const groups = [...configuredGroups, ...savedOverrideGroups];
   return {
     groups: groups.map((id) => {
       const taken = seats.filter((seat) => seat.aDay === id);
-      const maximum = shift === 'D' ? null : projection.maximumPerGroup;
+      const savedOverride = savedOverrideGroups.includes(id);
+      const maximum = shift === 'D' || savedOverride ? null : projection.maximumPerGroup;
       return {
         id,
         taken,
+        savedOverride,
         maximum,
         remaining: maximum === null ? null : Math.max(0, maximum - taken.length),
       };

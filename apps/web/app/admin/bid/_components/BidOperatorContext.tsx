@@ -37,6 +37,8 @@ interface OperatorContext {
   setADayProjection: (projection: OperatorADayProjection | null) => void;
   specialtyRoster: OperatorSpecialtyRoster | null;
   setSpecialtyRoster: (projection: OperatorSpecialtyRoster | null) => void;
+  boardSequence: number;
+  observeBoardSequence: (sequence: number) => void;
   overrideAllowed: boolean;
   setOverrideAllowed: (allowed: boolean) => void;
 }
@@ -54,6 +56,11 @@ export function BidOperatorProvider({
   const [overrideAllowed, setOverrideAllowed] = useState(false);
   const [aDayProjection, setADayProjection] = useState<OperatorADayProjection | null>(null);
   const [specialtyRoster, setSpecialtyRoster] = useState<OperatorSpecialtyRoster | null>(null);
+  const [boardSequence, setBoardSequence] = useState(0);
+  const observeBoardSequence = useCallback(
+    (sequence: number) => setBoardSequence((current) => Math.max(current, sequence)),
+    [],
+  );
   const selectMember = useCallback((id: number) => setSelectedMemberId(id), []);
   const setActiveMember = useCallback((id: number | null) => {
     const previous = activeMemberRef.current;
@@ -116,6 +123,8 @@ export function BidOperatorProvider({
       setADayProjection,
       specialtyRoster,
       setSpecialtyRoster,
+      boardSequence,
+      observeBoardSequence,
       overrideAllowed,
       setOverrideAllowed,
     }),
@@ -131,6 +140,8 @@ export function BidOperatorProvider({
       requestADay,
       aDayProjection,
       specialtyRoster,
+      boardSequence,
+      observeBoardSequence,
       overrideAllowed,
     ],
   );

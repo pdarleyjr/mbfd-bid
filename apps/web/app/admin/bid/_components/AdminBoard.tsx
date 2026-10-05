@@ -111,6 +111,9 @@ export function AdminBoard({
   useEffect(() => {
     refreshedSequence.current = Math.max(refreshedSequence.current, initialSeq);
   }, [initialSeq]);
+  useEffect(() => {
+    operator?.observeBoardSequence?.(Math.max(initialSeq, observedSequence));
+  }, [initialSeq, observedSequence, operator?.observeBoardSequence]);
 
   useEffect(() => {
     if (observedSequence <= refreshedSequence.current) return;
@@ -151,7 +154,7 @@ export function AdminBoard({
             aDayView ? (
               <OperatorADayBoard
                 sessionId={bidSessionId}
-                minimumSequence={initialSeq}
+                minimumSequence={Math.max(initialSeq, observedSequence)}
                 shift={visibleShift}
                 positions={biddablePositions ?? []}
                 members={members}

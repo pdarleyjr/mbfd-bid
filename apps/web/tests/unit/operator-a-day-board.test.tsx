@@ -53,13 +53,22 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
 });
-function Fixture({ selected = 1 }: { selected?: number }) {
+function Fixture({
+  selected = 1,
+  value = projection,
+}: { selected?: number; value?: OperatorADayProjection }) {
   const operator = useBidOperator();
   useEffect(() => {
-    operator?.setADayProjection(projection);
+    operator?.setADayProjection(value);
     operator?.setOverrideAllowed(true);
     operator?.selectMember(selected);
-  }, [operator?.setADayProjection, operator?.setOverrideAllowed, operator?.selectMember, selected]);
+  }, [
+    operator?.setADayProjection,
+    operator?.setOverrideAllowed,
+    operator?.selectMember,
+    selected,
+    value,
+  ]);
   return (
     <>
       <OperatorADayBoard
@@ -72,11 +81,11 @@ function Fixture({ selected = 1 }: { selected?: number }) {
     </>
   );
 }
-async function render(selected = 1) {
+async function render(selected = 1, value = projection) {
   await act(async () =>
     root.render(
       <BidOperatorProvider currentBidderId={selected}>
-        <Fixture selected={selected} />
+        <Fixture selected={selected} value={value} />
       </BidOperatorProvider>,
     ),
   );
@@ -123,5 +132,37 @@ describe('A-Day board', () => {
     expect(
       JSON.parse(container.querySelector('[data-testid="intent"]')?.textContent ?? 'null'),
     ).toMatchObject({ memberId: 9, action: 'AWARD', aDay: 'G2', shift: 'A' });
+  });
+  it('retains accepted unconfigured groups as saved overrides without claiming available capacity or enabling group selection', async () => {
+    const value: OperatorADayProjection = {
+      ...projection,
+      fills: {
+        ...projection.fills,
+        A102: { member_id: 2, a_day: 'G4' },
+      },
+    };
+    const before = JSON.stringify(value);
+    const board = projectADayBoard(value, positions, 'A');
+    expect(board.groups.map((group) => group.id)).toEqual(['G1', 'G2', 'G4']);
+    expect(board.groups[2]).toMatchObject({
+      id: 'G4',
+      savedOverride: true,
+      maximum: null,
+      remaining: null,
+      taken: [{ memberId: 2, aDay: 'G4', position: { id: 'A102' } }],
+    });
+    expect(board.pending).toEqual([]);
+    await render(2, value);
+    const group = container.querySelector('[aria-label="A-Day G4"]');
+    expect(group?.textContent).toContain('Group 4 · Saved override');
+    expect(group?.textContent).toContain('1 selected');
+    expect(group?.textContent).not.toContain('available');
+    expect(group?.textContent).not.toContain('Select this A-Day');
+    expect(group?.querySelectorAll('button')).toHaveLength(1);
+    await act(async () => group?.querySelector('button')?.click());
+    expect(
+      JSON.parse(container.querySelector('[data-testid="intent"]')?.textContent ?? 'null'),
+    ).toMatchObject({ memberId: 2, positionId: 'A102', action: 'A_DAY', aDay: 'G4' });
+    expect(JSON.stringify(value)).toBe(before);
   });
 });

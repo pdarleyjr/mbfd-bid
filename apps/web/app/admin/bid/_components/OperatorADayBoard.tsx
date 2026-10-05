@@ -83,7 +83,10 @@ export function OperatorADayBoard({
             className="min-w-0 rounded border border-border"
           >
             <header className="flex items-center justify-between gap-2 bg-muted px-2 py-2 text-sm">
-              <strong>{shift === 'D' ? group.id : `Group ${group.id.slice(1)}`}</strong>
+              <strong>
+                {shift === 'D' ? group.id : `Group ${group.id.slice(1)}`}
+                {group.savedOverride ? ' · Saved override' : ''}
+              </strong>
               <span className="text-xs">
                 {group.taken.length} selected
                 {group.remaining === null ? '' : ` · ${group.remaining} available`}
@@ -91,16 +94,18 @@ export function OperatorADayBoard({
             </header>
             <div className="grid gap-1 p-1">
               {group.taken.map(seatButton)}
-              <button
-                type="button"
-                disabled={!canChoose}
-                className="min-h-11 rounded border border-dashed border-border px-2 text-xs font-semibold hover:bg-muted disabled:opacity-50"
-                onClick={() =>
-                  operator.requestADay(group.id, undefined, selectedPosition?.id, shift)
-                }
-              >
-                {group.remaining === 0 ? 'Review full group' : 'Select this A-Day'}
-              </button>
+              {!group.savedOverride ? (
+                <button
+                  type="button"
+                  disabled={!canChoose}
+                  className="min-h-11 rounded border border-dashed border-border px-2 text-xs font-semibold hover:bg-muted disabled:opacity-50"
+                  onClick={() =>
+                    operator.requestADay(group.id, undefined, selectedPosition?.id, shift)
+                  }
+                >
+                  {group.remaining === 0 ? 'Review full group' : 'Select this A-Day'}
+                </button>
+              ) : null}
             </div>
           </section>
         ))}
